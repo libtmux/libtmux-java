@@ -46,15 +46,15 @@ must compile and run it without module patching, reflection, or access to an
 ```java
 package probe;
 
-import com.git_pull.libtmux.Pane;
-import com.git_pull.libtmux.ServerSnapshot;
-import com.git_pull.libtmux.format.CanonicalQueryFixture;
-import com.git_pull.libtmux.query.FilterExpr;
-import com.git_pull.libtmux.query.Pane_;
-import com.git_pull.libtmux.transport.CommandRequest;
-import com.git_pull.libtmux.transport.CommandResult;
-import com.git_pull.libtmux.transport.OperationOutcome;
-import com.git_pull.libtmux.transport.TmuxTransport;
+import io.github.libtmux.Pane;
+import io.github.libtmux.ServerSnapshot;
+import io.github.libtmux.format.CanonicalQueryFixture;
+import io.github.libtmux.query.FilterExpr;
+import io.github.libtmux.query.Pane_;
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.OperationOutcome;
+import io.github.libtmux.transport.TmuxTransport;
 import java.util.List;
 
 public final class EngineSeamProbe {

@@ -10,4 +10,4 @@ dependencies {
     testImplementation(project(":libtmux-junit5"))
 }
 
-tasks.jar { manifest { attributes("Automatic-Module-Name" to "com.git_pull.libtmux.workspace") } }
+tasks.jar { manifest { attributes("Automatic-Module-Name" to "io.github.libtmux.workspace") } }

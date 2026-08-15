@@ -23,7 +23,7 @@ integration implements decisions rather than reopening them.
 ## What the slice is
 
 Three published modules under the selected coordinates, package root
-`com.git_pull.libtmux`:
+`io.github.libtmux`:
 
 - `libtmux` — transport, snapshot, query, the hand-written metamodel, and a
   `Server` facade carrying the live operations the journey needs;

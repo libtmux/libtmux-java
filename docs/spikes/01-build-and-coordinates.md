@@ -1,5 +1,13 @@
 # Build topology and publication coordinates
 
+> **Superseded, 2026-08-15.** The coordinates below were chosen when this port
+> lived inside the Python library's tree. The group is now `io.github.libtmux`,
+> verified through the GitHub organisation that owns the code, and the Java
+> package root matches it. What the note decided about build topology — the
+> included `build-logic` convention build — still stands, and the reasoning about
+> hyphens in a group id versus a package is why the two now agree instead of
+> differing by a underscore.
+
 ## Verdict
 
 Use the included `build-logic` convention build and publish these coordinates:

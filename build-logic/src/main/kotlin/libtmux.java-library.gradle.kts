@@ -42,7 +42,7 @@ tasks.withType<JavaCompile>().configureEach {
         // Nullness is checked in JSpecify mode: @NullMarked packages are non-null by default.
         check("NullAway", net.ltgt.gradle.errorprone.CheckSeverity.ERROR)
         option("NullAway:JSpecifyMode", "true")
-        option("NullAway:AnnotatedPackages", "com.git_pull.libtmux")
+        option("NullAway:AnnotatedPackages", "io.github.libtmux")
     }
 }
 

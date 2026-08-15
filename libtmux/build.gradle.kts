@@ -1,7 +1,7 @@
 plugins { id("libtmux.published-library") }
 
 // The core resolves nothing at runtime. Anything that would change that belongs in another module.
-tasks.jar { manifest { attributes("Automatic-Module-Name" to "com.git_pull.libtmux") } }
+tasks.jar { manifest { attributes("Automatic-Module-Name" to "io.github.libtmux") } }
 
 tasks.named<Test>("test") { useJUnitPlatform { excludeTags("carrier") } }
 

@@ -8,7 +8,7 @@ plugins {
 // needs a real launcher rather than a library jar. installDist writes one with its own lib
 // directory; no stdout but the protocol may reach the client.
 application {
-    mainClass = "com.git_pull.libtmux.mcp.Main"
+    mainClass = "io.github.libtmux.mcp.Main"
     applicationName = "libtmux-mcp"
 }
 
@@ -29,4 +29,4 @@ dependencies {
     testImplementation(project(":libtmux-junit5"))
 }
 
-tasks.jar { manifest { attributes("Automatic-Module-Name" to "com.git_pull.libtmux.mcp") } }
+tasks.jar { manifest { attributes("Automatic-Module-Name" to "io.github.libtmux.mcp") } }

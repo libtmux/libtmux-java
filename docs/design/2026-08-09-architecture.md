@@ -125,9 +125,9 @@ The coordinate spike begins with this DNS-derived hypothesis:
 - Group: `com.git-pull`
 - Core artifact: `libtmux`
 - Optional artifacts: `libtmux-jackson` and `libtmux-junit5`
-- Java package root: `com.git_pull.libtmux`
-- Automatic modules: `com.git_pull.libtmux`,
-  `com.git_pull.libtmux.jackson`, and `com.git_pull.libtmux.junit5`
+- Java package root: `io.github.libtmux`
+- Automatic modules: `io.github.libtmux`,
+  `io.github.libtmux.jackson`, and `io.github.libtmux.junit5`
 
 The group preserves the exact reversed `git-pull.com` domain as required by
 [Central's namespace rules](https://central.sonatype.org/register/namespace/).

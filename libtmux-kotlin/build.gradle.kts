@@ -45,7 +45,7 @@ tasks.withType<AbstractArchiveTask>().configureEach {
 tasks.jar {
     manifest {
         attributes(
-            "Automatic-Module-Name" to "com.git_pull.libtmux.kotlin",
+            "Automatic-Module-Name" to "io.github.libtmux.kotlin",
             "Implementation-Version" to provider { project.version.toString() },
         )
     }

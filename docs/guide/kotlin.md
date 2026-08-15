@@ -4,7 +4,7 @@
 
 Not because anything was written for Kotlin, but because the Java is annotated
 with [JSpecify](https://jspecify.dev/) and Kotlin has read those annotations
-since 1.5.20. Every type in `com.git_pull.libtmux` arrives as `Window`, not
+since 1.5.20. Every type in `io.github.libtmux` arrives as `Window`, not
 `Window!`, so the compiler knows what can be absent and what cannot.
 
 Turn a mismatch into an error rather than a warning:

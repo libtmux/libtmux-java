@@ -13,4 +13,4 @@ dependencies {
     testImplementation(libs.junit.platform.testkit)
 }
 
-tasks.jar { manifest { attributes("Automatic-Module-Name" to "com.git_pull.libtmux.junit5") } }
+tasks.jar { manifest { attributes("Automatic-Module-Name" to "io.github.libtmux.junit5") } }

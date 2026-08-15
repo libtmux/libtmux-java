@@ -1002,8 +1002,8 @@ EOF
 - Create `settings.gradle.kts`, `build.gradle.kts`, and
   `gradle/libs.versions.toml` in each of `build/single-project`,
   `build/direct-multiproject`, and `build/convention-build`. Put `Probe.java`
-  and `ProbeTest.java` under `src/main/java/com/git_pull/libtmux/` and
-  `src/test/java/com/git_pull/libtmux/` only in the single-project contender.
+  and `ProbeTest.java` under `src/main/java/io/github/libtmux/` and
+  `src/test/java/io/github/libtmux/` only in the single-project contender.
 - Create `libtmux`, `libtmux-jackson`, `libtmux-junit5`, and
   `libtmux-metamodel-processor` module directories in the two multi-project
   contenders. Put the probe sources under the corresponding `libtmux/src/`
@@ -1022,10 +1022,10 @@ EOF
 ### Step 3.1: Write the shared build oracle first
 
 - [ ] Define one minimal exported `Probe` API in package
-      `com.git_pull.libtmux` for every contender.
+      `io.github.libtmux` for every contender.
 
 ```java
-package com.git_pull.libtmux;
+package io.github.libtmux;
 
 import java.util.Objects;
 import org.jspecify.annotations.NullMarked;
