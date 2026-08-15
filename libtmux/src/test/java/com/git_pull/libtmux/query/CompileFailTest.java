@@ -3,10 +3,16 @@ package com.git_pull.libtmux.query;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.io.StringWriter;
+import java.io.UncheckedIOException;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Stream;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
@@ -146,9 +152,13 @@ final class CompileFailTest {
             throw new IllegalStateException("no system java compiler; run tests on a JDK");
         }
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+        // Its own directory, removed afterwards. Writing class files straight into the temporary
+        // directory left them there for good, under the root this port reserves for tmux sockets,
+        // and gave two probes running at once the same path to write.
+        Path classes = createProbeDirectory();
         try (StandardJavaFileManager files = compiler.getStandardFileManager(diagnostics, Locale.ROOT, null)) {
-            List<String> options = List.of(
-                    "-classpath", System.getProperty("java.class.path"), "-d", System.getProperty("java.io.tmpdir"));
+            List<String> options =
+                    List.of("-classpath", System.getProperty("java.class.path"), "-d", classes.toString());
             return compiler.getTask(
                             new StringWriter(),
                             files,
@@ -159,6 +169,30 @@ final class CompileFailTest {
                     .call();
         } catch (Exception e) {
             throw new IllegalStateException("could not run the compiler probe", e);
+        } finally {
+            deleteTree(classes);
+        }
+    }
+
+    private static Path createProbeDirectory() {
+        try {
+            return Files.createTempDirectory("libtmux-probe-");
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not make somewhere for the probe's class files", e);
+        }
+    }
+
+    private static void deleteTree(Path root) {
+        try (Stream<Path> paths = Files.walk(root)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException e) {
+                    // Best effort; what is left is a directory the operating system will reclaim.
+                }
+            });
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not remove the probe's class files", e);
         }
     }
 

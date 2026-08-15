@@ -11,7 +11,12 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.extension.AfterEachCallback;
@@ -40,6 +45,97 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
 
     private static final ExtensionContext.Namespace NAMESPACE = ExtensionContext.Namespace.create(TmuxExtension.class);
     private static final String KEY = "fixture";
+
+    /**
+     * The directory a fixture is made in names the JVM that made it, which is the only durable record
+     * of who owns the server inside. A registry cannot serve: the run that most needs reaping is the
+     * one that was killed before it could write anything down.
+     */
+    private static final String PREFIX = "libtmux-" + ProcessHandle.current().pid() + "-";
+
+    private static final Pattern OWNER = Pattern.compile("libtmux-(\\d+)-.*");
+
+    /** Every fixture this JVM currently holds a server for, so the shutdown hook knows what to end. */
+    private static final Set<Fixture> LIVE = ConcurrentHashMap.newKeySet();
+
+    private static final AtomicBoolean SWEPT = new AtomicBoolean();
+
+    static {
+        // Covers the exits a lifecycle callback does not: a cancelled build, a SIGTERM, a
+        // System.exit from something else in the JVM. Measured in docs/spikes/22: the hook runs on
+        // termination and normal exit, and does not run on SIGKILL — which is what the sweep is for.
+        Runtime.getRuntime().addShutdownHook(new Thread(TmuxExtension::releaseAll, "libtmux-fixture-shutdown"));
+    }
+
+    private static void releaseAll() {
+        for (Fixture fixture : LIVE) {
+            try {
+                fixture.close();
+            } catch (RuntimeException e) {
+                // Shutdown is not a place to report; the sweep is the backstop for whatever survives.
+            }
+        }
+    }
+
+    /**
+     * Ends every tmux server under {@code root} whose owning JVM is gone, and answers how many.
+     *
+     * <p>Ownership is read from the process, not from anything this library wrote down. A server is
+     * reaped only when its executable is tmux, its {@code -S} argument is a socket under this root,
+     * and the pid named by that socket's directory is no longer running.
+     *
+     * <p>All three conditions matter. A shell whose command line merely mentions the path is not a
+     * server — the spike that produced this rule matched its own shell. And a live owner is left
+     * alone, so a run may sweep while other runs are using the same root, which Gradle's per-module
+     * workers and the tmux matrix's lanes both do.
+     *
+     * <p>A reused pid can only make this skip a server that was in fact abandoned, never make it end
+     * one that was not. Leaving an orphan for the next run is the safe direction to be wrong in.
+     */
+    static int reapAbandoned(Path root) {
+        Path resolved = root.toAbsolutePath().normalize();
+        int reaped = 0;
+        for (ProcessHandle handle : ProcessHandle.allProcesses().toList()) {
+            if (abandonedServer(handle, resolved)) {
+                handle.destroy();
+                reaped++;
+            }
+        }
+        return reaped;
+    }
+
+    private static boolean abandonedServer(ProcessHandle handle, Path root) {
+        ProcessHandle.Info info = handle.info();
+        if (!info.command()
+                .map(command -> Path.of(command).getFileName())
+                .map(Path::toString)
+                .filter("tmux"::equals)
+                .isPresent()) {
+            return false;
+        }
+        String[] argv = info.arguments().orElse(NO_ARGUMENTS);
+        for (int index = 0; index + 1 < argv.length; index++) {
+            if ("-S".equals(argv[index])) {
+                return ownerIsGone(Path.of(argv[index + 1]).toAbsolutePath().normalize(), root);
+            }
+        }
+        return false;
+    }
+
+    private static final String[] NO_ARGUMENTS = {};
+
+    private static boolean ownerIsGone(Path socket, Path root) {
+        Path directory = socket.getParent();
+        if (directory == null || !socket.startsWith(root)) {
+            return false;
+        }
+        Matcher named = OWNER.matcher(directory.getFileName().toString());
+        if (!named.matches()) {
+            // Something else's socket, or one from before this scheme. Not this sweep's to judge.
+            return false;
+        }
+        return ProcessHandle.of(Long.parseLong(named.group(1))).isEmpty();
+    }
 
     @Override
     public void beforeEach(ExtensionContext context) {
@@ -95,7 +191,12 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
             }
             started = true;
             try {
-                Path root = Files.createTempDirectory("libtmux-");
+                // Once per JVM, before this run makes its first server: whatever a killed run left
+                // behind is holding a pty and answering to a name this one might choose.
+                if (SWEPT.compareAndSet(false, true)) {
+                    reapAbandoned(Path.of(System.getProperty("java.io.tmpdir")));
+                }
+                Path root = Files.createTempDirectory(PREFIX);
                 directory = root;
                 Path config = root.resolve("tmux.conf");
                 Files.writeString(config, "");
@@ -108,6 +209,7 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
                         .endpoint(ServerEndpoint.socketPath(endpoint))
                         .configFile(config)
                         .build());
+                LIVE.add(this);
             } catch (IOException e) {
                 throw new UncheckedIOException("could not create a tmux fixture directory", e);
             }
@@ -153,6 +255,7 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
                 return;
             }
             closed = true;
+            LIVE.remove(this);
             Server current = server;
             boolean exited = true;
             if (current != null) {
