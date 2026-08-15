@@ -18,12 +18,13 @@ dependencies {
     implementation(libs.mcp.json.jackson2)
     implementation(libs.jackson.databind)
 
-    // The SDK logs through SLF4J. A launcher speaking a protocol on stdout should not greet its
-    // client with warnings about missing logging providers on stderr either.
-    runtimeOnly(libs.slf4j.nop)
+    // A model sends a filter as the versioned JSON document, which is what this module reads it
+    // from. api rather than implementation: the filter type appears on TmuxTools' own signature.
+    api(project(":libtmux-jackson"))
 
     // The SDK logs through SLF4J. A launcher speaking a protocol on stdout should not greet its
     // client with warnings about missing logging providers on stderr either.
+    runtimeOnly(libs.slf4j.nop)
 
     testImplementation(project(":libtmux-junit5"))
 }

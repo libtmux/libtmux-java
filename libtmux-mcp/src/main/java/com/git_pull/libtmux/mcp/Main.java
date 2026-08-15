@@ -3,8 +3,12 @@ package com.git_pull.libtmux.mcp;
 import com.git_pull.libtmux.Server;
 import com.git_pull.libtmux.ServerConfig;
 import com.git_pull.libtmux.ServerEndpoint;
+import java.io.FilterInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 
 /**
  * Runs the tmux MCP server over stdin and stdout.
@@ -47,7 +51,7 @@ public final class Main {
 
         // A client that disconnects closes this end. Without noticing that, the process outlives the
         // client that launched it, and an MCP client leaves one behind every time it restarts.
-        java.util.concurrent.CountDownLatch disconnected = new java.util.concurrent.CountDownLatch(1);
+        CountDownLatch disconnected = new CountDownLatch(1);
         TmuxMcpServer.overStdio(server, new EndOfInputAware(System.in, disconnected::countDown));
         try {
             disconnected.await();
@@ -59,22 +63,22 @@ public final class Main {
     }
 
     /** Wraps an input stream so end of input can be noticed by whoever is waiting for it. */
-    private static final class EndOfInputAware extends java.io.FilterInputStream {
+    private static final class EndOfInputAware extends FilterInputStream {
 
         private final Runnable onEnd;
 
-        EndOfInputAware(java.io.InputStream in, Runnable onEnd) {
+        EndOfInputAware(InputStream in, Runnable onEnd) {
             super(in);
             this.onEnd = onEnd;
         }
 
         @Override
-        public int read() throws java.io.IOException {
+        public int read() throws IOException {
             return ended(super.read());
         }
 
         @Override
-        public int read(byte[] buffer, int offset, int length) throws java.io.IOException {
+        public int read(byte[] buffer, int offset, int length) throws IOException {
             return ended(super.read(buffer, offset, length));
         }
 

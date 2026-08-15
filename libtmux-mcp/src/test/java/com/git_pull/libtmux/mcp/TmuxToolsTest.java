@@ -6,9 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.git_pull.libtmux.ObjectDoesNotExist;
+import com.git_pull.libtmux.Pane;
+import com.git_pull.libtmux.Pane_;
 import com.git_pull.libtmux.Server;
+import com.git_pull.libtmux.jackson.FilterJson;
+import com.git_pull.libtmux.jackson.LibTmuxModels;
 import com.git_pull.libtmux.junit5.TmuxExtension;
+import com.git_pull.libtmux.query.FilterExpr;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -86,6 +92,51 @@ final class TmuxToolsTest {
         assertNotEquals(now.get(0).id(), now.get(1).id());
     }
 
+    /**
+     * A model reads a listing to decide what to act on, and a server with forty panes gives it forty
+     * things to reason about. Narrowing happens here, over a snapshot already taken, so it costs no
+     * further commands.
+     */
+    @Test
+    void panesCanBeNarrowedByAnExpression(Server server) {
+        TmuxTools tools = new TmuxTools(server);
+        server.sessions().get(0).newWindow("second");
+
+        List<PaneSummary> active = tools.describe(
+                server.panes().stream().filter(Pane_.active().isTrue()).toList());
+
+        assertEquals(2, tools.panes().size(), "two windows, one pane each");
+        assertEquals(2, active.size(), "each window's only pane is its active one");
+        assertTrue(active.stream().allMatch(PaneSummary::active));
+    }
+
+    /**
+     * The filter a model actually sends is JSON, and this is the whole path: schema document to
+     * expression to a listing narrowed by it. A model cannot write Java, so if this path is broken
+     * the typed one being correct does not help anybody.
+     */
+    @Test
+    void aFilterArrivesAsTheVersionedJsonDocument(Server server) {
+        TmuxTools tools = new TmuxTools(server);
+        server.sessions().get(0).newWindow("second");
+        // Wire identifiers are tmux's own format names, so this document says the same thing to
+        // every port of libtmux rather than naming anything Java calls a field.
+        String document = "{\"schema\":\"libtmux.filter/1\",\"model\":\"pane\",\"expr\":"
+                + "{\"node\":\"compare\",\"field\":\"pane_active\",\"op\":\"equals\",\"value\":true}}";
+
+        FilterExpr<Pane> parsed = FilterJson.readString(document, LibTmuxModels.pane());
+
+        List<PaneSummary> fromJson =
+                tools.describe(server.panes().stream().filter(parsed).toList());
+
+        assertEquals(
+                tools.describe(
+                        server.panes().stream().filter(Pane_.active().isTrue()).toList()),
+                fromJson,
+                "the document and the typed expression select the same panes");
+        assertEquals(2, fromJson.size());
+    }
+
     @Test
     void aTargetThatIsNotThereSaysSoRatherThanActingOnSomethingElse(Server server) {
         TmuxTools tools = new TmuxTools(server);
@@ -105,7 +156,7 @@ final class TmuxToolsTest {
                 "tmux would read a bare number as something else entirely");
     }
 
-    private static boolean await(java.util.function.BooleanSupplier condition) throws InterruptedException {
+    private static boolean await(BooleanSupplier condition) throws InterruptedException {
         for (int attempt = 0; attempt < 100; attempt++) {
             if (condition.getAsBoolean()) {
                 return true;

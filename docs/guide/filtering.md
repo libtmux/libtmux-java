@@ -79,3 +79,35 @@ hope.
 Reading is validated against a model: a document claiming `pane` cannot be read
 as a `FilterExpr<Window>`. Unknown schema versions, models, fields, relations,
 operators and node shapes all fail closed.
+
+## Who the wire form is actually for
+
+Field and operator identifiers are tmux's own format names — `pane_current_command`,
+not anything Java calls a field. So the document means the same thing to every
+port of libtmux, and to a caller that is not a Java program at all.
+
+`libtmux-mcp` is the worked example. Its `tmux_list_panes` tool takes an optional
+`filter`, which is one of these documents:
+
+```json
+{"schema": "libtmux.filter/1", "model": "pane",
+ "expr": {"node": "compare", "field": "pane_current_command",
+          "op": "starts_with", "value": "nvim"}}
+```
+
+A model cannot write Java, so this is the only way it can say what it wants
+narrowed. What it gets back costs the same one capture the unfiltered listing
+would have, because the filter runs over what that capture returned.
+
+## Taking a filter in your own API
+
+Prefer accepting the entities and letting the caller filter:
+
+```java
+public List<PaneSummary> describe(Collection<Pane> panes) { … }
+```
+
+rather than accepting the expression and filtering inside. A method taking a
+`FilterExpr` reads as though tmux did the selecting, and it does not. Reserve
+`FilterExpr` parameters for code that inspects or translates an expression —
+serializing it, or lowering it — which is what `FilterJson` does.

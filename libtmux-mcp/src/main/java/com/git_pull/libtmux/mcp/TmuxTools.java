@@ -8,6 +8,7 @@ import com.git_pull.libtmux.Session;
 import com.git_pull.libtmux.Session_;
 import com.git_pull.libtmux.Window;
 import com.git_pull.libtmux.query.Selections;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -41,14 +42,30 @@ public final class TmuxTools {
 
     /** Every pane on the server, with the ids other tools take as targets. */
     public List<PaneSummary> panes() {
-        return server.windows().stream()
-                .flatMap(window -> window.panes().stream()
-                        .map(pane -> new PaneSummary(
-                                pane.id().value(),
-                                window.name(),
-                                window.session().name(),
-                                pane.currentCommand(),
-                                pane.active())))
+        return describe(server.panes());
+    }
+
+    /**
+     * Describes panes the caller has already chosen.
+     *
+     * <p>Takes the panes rather than an expression to select them, so narrowing stays an ordinary
+     * stream filter at the call site:
+     *
+     * <pre>{@code
+     * tools.describe(server.panes().stream().filter(Pane_.command().startsWith("nvim")).toList());
+     * }</pre>
+     *
+     * <p>A method taking the expression instead would read as though tmux did the selecting. It does
+     * not: a capture is already in hand by then, and filtering it issues no further command.
+     */
+    public List<PaneSummary> describe(Collection<Pane> panes) {
+        return panes.stream()
+                .map(pane -> new PaneSummary(
+                        pane.id().value(),
+                        pane.window().name(),
+                        pane.window().session().name(),
+                        pane.currentCommand(),
+                        pane.active()))
                 .toList();
     }
 
