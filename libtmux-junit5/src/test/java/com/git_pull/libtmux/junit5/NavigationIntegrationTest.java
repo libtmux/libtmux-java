@@ -13,6 +13,7 @@ import com.git_pull.libtmux.Session;
 import com.git_pull.libtmux.Window;
 import com.git_pull.libtmux.WindowId;
 import com.git_pull.libtmux.control.ControlClient;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -130,7 +131,7 @@ final class NavigationIntegrationTest {
         assertThrows(IllegalArgumentException.class, () -> pane.resize(Direction.UP, 0));
     }
 
-    private static boolean await(java.util.function.BooleanSupplier condition) throws InterruptedException {
+    private static boolean await(BooleanSupplier condition) throws InterruptedException {
         for (int attempt = 0; attempt < 100; attempt++) {
             if (condition.getAsBoolean()) {
                 return true;

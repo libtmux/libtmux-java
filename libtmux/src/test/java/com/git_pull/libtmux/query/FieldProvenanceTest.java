@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.git_pull.libtmux.query.Model.Pane;
 import com.git_pull.libtmux.query.Model.Pane_;
+import java.util.Locale;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test;
  *
  * <p>The bakeoff measured the hole this closes: a caller-supplied accessor that lowers to a filter on
  * its field name reads exact while answering a different question, and no compiler can inspect the
+ *
  * lambda to notice. The fix is that only a declared metamodel can mint a canonical field.
  */
 final class FieldProvenanceTest {
@@ -28,7 +30,7 @@ final class FieldProvenanceTest {
     @Test
     void aCallerBuiltFieldIsDerivedAndNotLowerable() {
         // The exact shape the bakeoff caught: right name, different semantics.
-        var shouted = Fields.text("command", (Pane pane) -> pane.command().toUpperCase(java.util.Locale.ROOT));
+        var shouted = Fields.text("command", (Pane pane) -> pane.command().toUpperCase(Locale.ROOT));
 
         assertFalse(
                 shouted.ref().provenance().lowerable(),
@@ -38,7 +40,7 @@ final class FieldProvenanceTest {
 
     @Test
     void derivedFieldsStillEvaluateLocally() {
-        var shouted = Fields.text("command", (Pane pane) -> pane.command().toUpperCase(java.util.Locale.ROOT));
+        var shouted = Fields.text("command", (Pane pane) -> pane.command().toUpperCase(Locale.ROOT));
 
         assertTrue(shouted.is("NVIM").test(new Pane("%1", "nvim", 0, true)));
         assertFalse(Pane_.command().is("NVIM").test(new Pane("%1", "nvim", 0, true)));

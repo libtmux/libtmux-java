@@ -7,7 +7,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import com.git_pull.libtmux.Pane;
 import com.git_pull.libtmux.Server;
 import com.git_pull.libtmux.Session;
+import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -41,8 +43,8 @@ final class PaneModeIntegrationTest {
      */
     @Test
     void leavingWorksWhicheverModeThePaneIsIn(Server server) {
-        for (java.util.function.Consumer<Pane> mode : java.util.List.<java.util.function.Consumer<Pane>>of(
-                Pane::copyMode, Pane::clockMode, Pane::chooseTree, Pane::customizeMode)) {
+        for (Consumer<Pane> mode :
+                List.<Consumer<Pane>>of(Pane::copyMode, Pane::clockMode, Pane::chooseTree, Pane::customizeMode)) {
             Pane pane = onlyPane(server);
             mode.accept(pane);
             assertTrue(pane.mode().isPresent(), "the pane never entered the mode");
@@ -156,7 +158,7 @@ final class PaneModeIntegrationTest {
                 "a window resolves its own index, not the session's active one");
     }
 
-    private static Optional<String> enter(Server server, java.util.function.Consumer<Pane> mode) {
+    private static Optional<String> enter(Server server, Consumer<Pane> mode) {
         Pane pane = onlyPane(server);
         pane.exitMode();
         mode.accept(pane);

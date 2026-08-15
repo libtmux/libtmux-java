@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -63,6 +64,7 @@ final class ModeBenchmark {
         private final AtomicInteger dispatches = new AtomicInteger();
 
         Counting(TmuxTransport delegate) {
+
             this.delegate = delegate;
         }
 
@@ -206,11 +208,7 @@ final class ModeBenchmark {
     // ------------------------------------------------------------------------------- measuring
 
     private Measured measure(
-            Path root,
-            ExecutionMode mode,
-            String scenario,
-            java.util.function.Consumer<Server> setUp,
-            Function<Server, String> work)
+            Path root, ExecutionMode mode, String scenario, Consumer<Server> setUp, Function<Server, String> work)
             throws IOException {
         Path home = root.resolve(mode.name() + "-" + scenario);
         Files.createDirectories(home);

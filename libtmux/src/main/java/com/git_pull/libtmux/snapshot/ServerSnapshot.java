@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * One tmux hierarchy, as it was at one moment.
@@ -150,7 +151,7 @@ public final class ServerSnapshot {
                 + windows.size() + ", panes=" + panes.size() + ", clients=" + clients.size() + "]";
     }
 
-    private static <K, V> Map<K, List<V>> group(List<V> values, java.util.function.Function<V, K> key) {
+    private static <K, V> Map<K, List<V>> group(List<V> values, Function<V, K> key) {
         Map<K, List<V>> grouped = new LinkedHashMap<>();
         for (V value : values) {
             grouped.computeIfAbsent(key.apply(value), unused -> new ArrayList<>())

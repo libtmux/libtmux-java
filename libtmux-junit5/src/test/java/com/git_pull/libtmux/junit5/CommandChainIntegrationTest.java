@@ -11,6 +11,7 @@ import com.git_pull.libtmux.batch.BatchResult;
 import com.git_pull.libtmux.batch.OperationOutcome;
 import com.git_pull.libtmux.batch.OperationResult;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -98,7 +99,7 @@ final class CommandChainIntegrationTest {
         assertTrue(result.succeeded(), result.toString());
     }
 
-    private static boolean await(java.util.function.BooleanSupplier condition) throws InterruptedException {
+    private static boolean await(BooleanSupplier condition) throws InterruptedException {
         for (int attempt = 0; attempt < 100; attempt++) {
             if (condition.getAsBoolean()) {
                 return true;

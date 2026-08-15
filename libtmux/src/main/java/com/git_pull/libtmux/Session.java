@@ -6,6 +6,7 @@ import com.git_pull.libtmux.snapshot.SessionState;
 import com.git_pull.libtmux.snapshot.WindowContext;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
@@ -53,12 +54,12 @@ public final class Session {
     }
 
     /** The window tmux had active in this session. A pure read of the capture. */
-    public java.util.Optional<Window> activeWindow() {
+    public Optional<Window> activeWindow() {
         return windows().stream().filter(Window::active).findFirst();
     }
 
     /** The active pane of the active window. A pure read of the capture. */
-    public java.util.Optional<Pane> activePane() {
+    public Optional<Pane> activePane() {
         return activeWindow().flatMap(Window::activePane);
     }
 

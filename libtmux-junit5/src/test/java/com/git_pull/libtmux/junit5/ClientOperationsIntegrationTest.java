@@ -10,7 +10,10 @@ import com.git_pull.libtmux.LibTmuxException;
 import com.git_pull.libtmux.Server;
 import com.git_pull.libtmux.Session;
 import com.git_pull.libtmux.control.ControlClient;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.BooleanSupplier;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -31,8 +34,7 @@ final class ClientOperationsIntegrationTest {
         // Whichever clients are already here belong to somebody else — a control carrier attaches
         // one of its own to carry commands at all. The client under test is the one that appears,
         // and detaching must take that one rather than whichever tmux happens to list first.
-        java.util.Set<String> before =
-                server.clients().stream().map(Client::name).collect(java.util.stream.Collectors.toSet());
+        Set<String> before = server.clients().stream().map(Client::name).collect(Collectors.toSet());
 
         try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
@@ -134,7 +136,7 @@ final class ClientOperationsIntegrationTest {
     }
 
     /** The client that attached after the named ones were already there. */
-    private static java.util.Optional<Client> appeared(Server server, java.util.Set<String> before) {
+    private static Optional<Client> appeared(Server server, Set<String> before) {
         return server.clients().stream()
                 .filter(client -> !before.contains(client.name()))
                 .findFirst();

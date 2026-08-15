@@ -1,6 +1,7 @@
 package com.git_pull.libtmux.query;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -159,8 +160,7 @@ public sealed interface FilterExpr<T> extends Predicate<T> {
 
         @Override
         public String describe() {
-            return relation + " " + quantifier.name().toLowerCase(java.util.Locale.ROOT) + " (" + predicate.describe()
-                    + ")";
+            return relation + " " + quantifier.name().toLowerCase(Locale.ROOT) + " (" + predicate.describe() + ")";
         }
     }
 

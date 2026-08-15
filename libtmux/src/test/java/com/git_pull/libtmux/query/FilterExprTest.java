@@ -11,6 +11,7 @@ import com.git_pull.libtmux.query.Model.Window;
 import com.git_pull.libtmux.query.Model.Window_;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
@@ -25,6 +26,7 @@ final class FilterExprTest {
 
     @Test
     void anExpressionIsUsableAsAPredicate() {
+
         FilterExpr<Pane> editors = Pane_.command().startsWith("nv");
 
         assertEquals(
@@ -90,7 +92,7 @@ final class FilterExprTest {
         assertEquals("(command starts-with nv and active == true)", combined.describe());
 
         // A lambda selects the inherited Predicate overload; the result is deliberately not one.
-        java.util.function.Predicate<Pane> degraded = expression.and(pane -> pane.index() == 0);
+        Predicate<Pane> degraded = expression.and(pane -> pane.index() == 0);
         assertFalse(degraded instanceof FilterExpr, "a lambda cannot be described, so it is not an expression");
         assertTrue(degraded.test(NVIM));
     }

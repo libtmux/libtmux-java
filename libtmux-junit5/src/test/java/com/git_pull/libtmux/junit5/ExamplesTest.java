@@ -24,7 +24,9 @@ import com.git_pull.libtmux.query.Selections;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -152,11 +154,11 @@ final class ExamplesTest {
 
         options.set("status-left", "one");
         options.append("status-left", "-two");
-        assertEquals(java.util.Optional.of("one-two"), options.get("status-left"));
+        assertEquals(Optional.of("one-two"), options.get("status-left"));
 
         assertFalse(options.setIfAbsent("status-left", "three"));
         options.setExpanded("status-left", "in #{session_name}");
-        assertEquals(java.util.Optional.of("in " + session.name()), options.get("status-left"));
+        assertEquals(Optional.of("in " + session.name()), options.get("status-left"));
     }
 
     /** Guide (options-and-hooks): a hook is an array, and it lives at one scope. */
@@ -297,7 +299,7 @@ final class ExamplesTest {
         Session session = server.sessions().get(0);
         server.globalOptions().set("base-index", "1");
 
-        assertEquals(java.util.Optional.of("1"), session.options().get("base-index"));
+        assertEquals(Optional.of("1"), session.options().get("base-index"));
     }
 
     /** Guide: a config file pins tmux's own configuration for a run. */
@@ -323,7 +325,7 @@ final class ExamplesTest {
         return await(() -> pane.capture().stream().anyMatch(line -> line.contains(expected)));
     }
 
-    private static boolean await(java.util.function.BooleanSupplier condition) throws InterruptedException {
+    private static boolean await(BooleanSupplier condition) throws InterruptedException {
         for (int attempt = 0; attempt < 100; attempt++) {
             if (condition.getAsBoolean()) {
                 return true;

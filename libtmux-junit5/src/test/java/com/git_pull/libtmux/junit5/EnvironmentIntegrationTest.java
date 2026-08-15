@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
@@ -37,6 +38,7 @@ final class EnvironmentIntegrationTest {
         TmuxEnvironment here = TmuxEnvironment.of(reported.exported()).orElseThrow();
 
         assertEquals(reported.pane().id(), here.pane().orElseThrow(), "TMUX_PANE names the pane it was read in");
+
         assertEquals(session.id(), here.session(), "TMUX names the session that pane is in");
         assertEquals(
                 server.cmd("display-message", "-p", "#{socket_path}").stdout().get(0),
@@ -97,11 +99,11 @@ final class EnvironmentIntegrationTest {
     /** A pane tmux started, and what tmux exported into it. */
     private record Reported(Pane pane, Map<String, String> exported) {}
 
-    private static java.util.List<String> lines(Path file) {
+    private static List<String> lines(Path file) {
         try {
-            return Files.exists(file) ? Files.readAllLines(file) : java.util.List.of();
+            return Files.exists(file) ? Files.readAllLines(file) : List.of();
         } catch (IOException e) {
-            return java.util.List.of();
+            return List.of();
         }
     }
 

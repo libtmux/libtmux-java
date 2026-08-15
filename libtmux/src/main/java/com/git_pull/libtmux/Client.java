@@ -2,6 +2,7 @@ package com.git_pull.libtmux;
 
 import com.git_pull.libtmux.snapshot.ClientState;
 import com.git_pull.libtmux.snapshot.ServerSnapshot;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -34,12 +35,12 @@ public final class Client {
      * <p>Detaching is not killing: the session outlives the client, which is the reason tmux exists.
      */
     public void detach() {
-        server.run(java.util.List.of("detach-client", "-t", state.name()));
+        server.run(List.of("detach-client", "-t", state.name()));
     }
 
     /** Detaches every other client, leaving this one attached. */
     public void detachOthers() {
-        server.run(java.util.List.of("detach-client", "-a", "-t", state.name()));
+        server.run(List.of("detach-client", "-a", "-t", state.name()));
     }
 
     /**
@@ -50,8 +51,8 @@ public final class Client {
      */
     public void switchTo(Session session) {
         Objects.requireNonNull(session, "session");
-        server.run(java.util.List.of(
-                "switch-client", "-c", state.name(), "-t", session.id().value()));
+        server.run(
+                List.of("switch-client", "-c", state.name(), "-t", session.id().value()));
     }
 
     /**
@@ -61,7 +62,7 @@ public final class Client {
      * {@code refresh-client}, and it changes the terminal rather than this handle.
      */
     public void redraw() {
-        server.run(java.util.List.of("refresh-client", "-t", state.name()));
+        server.run(List.of("refresh-client", "-t", state.name()));
     }
 
     /** The server this client is connected to. */

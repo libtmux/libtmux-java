@@ -1,6 +1,7 @@
 package com.git_pull.libtmux.query;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -133,7 +134,7 @@ public final class LegacyFilters {
         /** Collects the handles one entity exposes to legacy callers. */
         public static final class Builder<T> {
 
-            private final Map<String, Object> fields = new java.util.LinkedHashMap<>();
+            private final Map<String, Object> fields = new LinkedHashMap<>();
 
             private Builder() {}
 

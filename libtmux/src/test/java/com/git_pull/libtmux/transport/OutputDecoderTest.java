@@ -3,6 +3,7 @@ package com.git_pull.libtmux.transport;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -66,7 +67,7 @@ final class OutputDecoderTest {
     @Test
     void escapingSurvivesABufferBoundary() {
         byte[] raw = new byte[70_000];
-        java.util.Arrays.fill(raw, (byte) 0x61);
+        Arrays.fill(raw, (byte) 0x61);
         raw[69_000] = (byte) 0xff;
 
         String only = OutputDecoder.stdoutLines(raw).get(0);

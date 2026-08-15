@@ -4,6 +4,7 @@ import com.git_pull.libtmux.format.RowFormat;
 import com.git_pull.libtmux.snapshot.PaneState;
 import com.git_pull.libtmux.snapshot.ServerSnapshot;
 import com.git_pull.libtmux.snapshot.WindowContext;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -65,7 +66,7 @@ public final class Pane {
      * <p>Empty is not "no". tmux before 3.7 expands the format to nothing, and answering {@code false}
      * there would be indistinguishable from a tmux that looked and found the pane was not floating.
      */
-    public java.util.Optional<Boolean> floating() {
+    public Optional<Boolean> floating() {
         return state.floating();
     }
 
@@ -80,7 +81,7 @@ public final class Pane {
     }
 
     /** The working directory tmux reported for the pane. */
-    public java.nio.file.Path currentPath() {
+    public Path currentPath() {
         return state.currentPath();
     }
 

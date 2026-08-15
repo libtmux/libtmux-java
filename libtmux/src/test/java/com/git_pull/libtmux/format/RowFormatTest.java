@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test;
  *
  * <p>A fixed separator is breakable: tmux gives U+241E no special meaning, so a window renamed to
  * contain one turns a three-field template into four fields and shifts every field after it. The
+ *
  * separator is therefore generated once per process, and a row that does not split into exactly the
  * expected number of fields is rejected rather than parsed anyway.
  */
@@ -27,7 +29,7 @@ final class RowFormatTest {
 
         assertEquals(
                 List.of("#{session_id}", "#{window_id}", "#{window_name}"),
-                List.of(template.split(java.util.regex.Pattern.quote(separator), -1)));
+                List.of(template.split(Pattern.quote(separator), -1)));
     }
 
     @Test

@@ -14,13 +14,18 @@ import com.git_pull.libtmux.transport.ControlTransport;
 import com.git_pull.libtmux.transport.ProcessTransport;
 import com.git_pull.libtmux.transport.TmuxTransport;
 import com.git_pull.libtmux.transport.VirtualThreadTransport;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -74,7 +79,7 @@ public final class Server implements AutoCloseable {
     private static final RowFormat PANES_WITH_FLOATING = RowFormat.of(withFloating());
 
     private static String[] withFloating() {
-        String[] fields = java.util.Arrays.copyOf(PANE_FIELDS, PANE_FIELDS.length + 1);
+        String[] fields = Arrays.copyOf(PANE_FIELDS, PANE_FIELDS.length + 1);
         fields[PANE_FIELDS.length] = "pane_floating_flag";
         return fields;
     }
@@ -90,8 +95,7 @@ public final class Server implements AutoCloseable {
     private final AtomicBoolean closed = new AtomicBoolean();
 
     /** Carriers made for a per-call override. Owned here, since here is what made them. */
-    private final java.util.Map<ExecutionMode, TmuxTransport> overrides =
-            new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<ExecutionMode, TmuxTransport> overrides = new ConcurrentHashMap<>();
 
     private final ServerIdentity identity;
     private volatile @Nullable TmuxVersion version;
@@ -123,7 +127,7 @@ public final class Server implements AutoCloseable {
      * @param configure receives a builder holding tmux's defaults
      * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
      */
-    public Session newSession(java.util.function.Consumer<SessionSpec.Builder> configure) {
+    public Session newSession(Consumer<SessionSpec.Builder> configure) {
         SessionSpec.Builder builder = SessionSpec.builder();
         configure.accept(builder);
         return newSession(builder.build());
@@ -429,7 +433,7 @@ public final class Server implements AutoCloseable {
      *
      * @throws LibTmuxException if tmux could not read or run it
      */
-    public void sourceFile(java.nio.file.Path file) {
+    public void sourceFile(Path file) {
         run(List.of("source-file", file.toString()));
     }
 
@@ -617,7 +621,7 @@ public final class Server implements AutoCloseable {
                     row.get(6),
                     new Dimensions(Integer.parseInt(row.get(7)), Integer.parseInt(row.get(8))),
                     row.get(9),
-                    java.nio.file.Path.of(row.get(10)),
+                    Path.of(row.get(10)),
                     Long.parseLong(row.get(11)),
                     new PaneEdges(
                             "1".equals(row.get(12)),
@@ -773,7 +777,7 @@ public final class Server implements AutoCloseable {
         }
 
         /** Pins the config file tmux reads. */
-        public Builder configFile(java.nio.file.Path configFile) {
+        public Builder configFile(Path configFile) {
             config.configFile(configFile);
             return this;
         }

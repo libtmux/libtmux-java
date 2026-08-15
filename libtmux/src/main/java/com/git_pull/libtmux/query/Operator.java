@@ -1,6 +1,7 @@
 package com.git_pull.libtmux.query;
 
 import java.util.Collection;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 /** The scalar comparisons an expression can hold. Evaluation stays a total switch. */
@@ -30,8 +31,8 @@ public enum Operator {
     @SuppressWarnings("unchecked")
     boolean matches(Object actual, Object operand) {
         return switch (this) {
-            case EQUALS -> java.util.Objects.equals(actual, operand);
-            case NOT_EQUALS -> !java.util.Objects.equals(actual, operand);
+            case EQUALS -> Objects.equals(actual, operand);
+            case NOT_EQUALS -> !Objects.equals(actual, operand);
             case CONTAINS -> text(actual).contains((String) operand);
             case STARTS_WITH -> text(actual).startsWith((String) operand);
             case ENDS_WITH -> text(actual).endsWith((String) operand);
