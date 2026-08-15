@@ -10,6 +10,8 @@ ServerConfig config = ServerConfig.builder()
         .endpoint(ServerEndpoint.socketPath(socket))
         .mode(ExecutionMode.CONTROL)
         .build();
+
+config.mode();                             // → CONTROL
 ```
 
 Nothing else changes. The same handles answer the same questions with the same
@@ -33,6 +35,8 @@ ServerConfig config = ServerConfig.builder()
         .endpoint(ServerEndpoint.socketPath(socket))
         .mode(ExecutionMode.VIRTUAL)
         .build();
+
+config.mode();                             // → VIRTUAL
 ```
 
 `VIRTUAL` is not an async mode, and nothing about it returns sooner. The call
@@ -76,11 +80,15 @@ Highest first:
 an answer rather than a guess about what the environment held.
 
 ```java
+List<String> argv = List.of("display-message", "-p", "#{session_name}");
+
 // carried the way the config said
-server.cmd(List.of("display-message", "-p", "#{session_name}"), timeout);
+List<String> byConfig = server.cmd(argv, timeout).stdout();
 
 // carried the way this call said
-server.cmd(List.of("display-message", "-p", "#{session_name}"), timeout, ExecutionMode.DIRECT);
+List<String> byCall = server.cmd(argv, timeout, ExecutionMode.DIRECT).stdout();
+
+byConfig.equals(byCall);                   // → true
 ```
 
 Both answer the same thing. That is the point, and it is also the reason the
@@ -112,9 +120,11 @@ the first one. Until a session exists the carrier falls back to a process, and
 attaches as soon as there is something to attach to.
 
 ```java
-try (Server server = Server.open(config)) {
-    Session first = server.newSession("work");   // carried by a process
+try (Server open = Server.open(config)) {
+    Session first = open.newSession("work");     // carried by a process
     first.newWindow(w -> w.named("logs"));       // carried by the control client
+
+    open.hasSession("work");                     // → true
 }
 ```
 

@@ -50,6 +50,14 @@ tasks.withType<Javadoc>().configureEach {
     (options as StandardJavadocDocletOptions).addBooleanOption("Xdoclint:all,-missing", true)
 }
 
+// Javadoc runs in the gate, not only in a release.
+//
+// It buys less than it looks like it should: -Xlint:all with -Werror already runs doclint during
+// compilation, so a broken link or a @param naming no parameter fails long before this. What this
+// adds is the tool itself — the standard doclet, its options, and the jar the Portal requires —
+// exercised on every push rather than for the first time after a tag is pushed.
+tasks.named("check") { dependsOn(tasks.withType<Javadoc>()) }
+
 // Stated once, by the build. A version repeated in source is a version that drifts: the MCP server
 // announced 0.1.0 to every client long after the build had moved on. Lazy, because the publication
 // convention sets the version after this one is applied.

@@ -17,6 +17,14 @@ final class MyTest {
 The extension resolves `Server` and `TmuxSocketPath`. It never claims a bare
 `Path` parameter, so another extension is free to resolve those.
 
+What that hands you:
+
+```java
+server.sessions().size();                          // → 1
+server.sessions().get(0).name();                   // → libtmux
+socket.startsWith("/tmp/libtmux-java-test/");      // → true
+```
+
 ## What it guarantees
 
 Before the test, it creates a private directory and socket, registers the object

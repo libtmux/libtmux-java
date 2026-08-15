@@ -20,8 +20,8 @@ one test per section.
 Server.open(config).use { server ->                        // AutoCloseable
     val session = server.newSession { it.named("build") }  // SAM conversion
 
-    session.name()          // "build"
-    server.sessions().size  // 2
+    session.name()                       // → build
+    server.sessions().size               // → 2
 }
 ```
 
@@ -59,9 +59,14 @@ import io.github.libtmux.kotlin.activeWindowOrNull
 import io.github.libtmux.kotlin.floatingOrNull
 import io.github.libtmux.kotlin.getOrNull
 
-val window = session.activeWindowOrNull() ?: return
-val floats = pane.floatingOrNull()                     // null before tmux 3.7, which cannot report it
-val status = server.options().getOrNull("status-left")
+// A window id, or null once the session has gone.
+session.activeWindowOrNull()?.id()?.value()?.startsWith("@")   // → true
+
+// A Boolean on tmux 3.7 and later, and null before, which cannot report it.
+pane.floatingOrNull() != null                                  // → true
+
+// Absent rather than Optional.empty, so ?: and ?. work on it.
+server.options().getOrNull("no-such-option")                   // → null
 ```
 
 **Filtering with an expression.** Kotlin's own `filter` takes a function, not a

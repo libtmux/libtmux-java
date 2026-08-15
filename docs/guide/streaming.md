@@ -11,6 +11,9 @@ try (ControlClient client = ControlClient.attach(server.config(), session.id()))
     client.onOutput(seen::add);
 
     client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
+
+    // Listeners run on the reader thread; a slow one delays every reply.
+    client.isAlive();                      // → true
 }
 ```
 

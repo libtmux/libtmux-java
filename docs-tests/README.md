@@ -66,6 +66,9 @@ Two consequences worth knowing:
   Put the explanation on its own comment line above.
 - **The value is trimmed**, so one with a leading or trailing space cannot be
   expressed this way. Assert it in a test instead.
+- **The expression has to fit on the line the arrow is on.** A call split across
+  lines leaves the rewriter with a fragment, which fails to compile rather than
+  failing quietly — put the value in a local first.
 
 ## What a snippet may assume
 

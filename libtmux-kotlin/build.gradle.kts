@@ -98,16 +98,32 @@ val documentedKotlin =
                     // which document and which line, so only the dot is spelt differently.
                     val name = "${document.name.replace('.', ' ')} line $line"
 
+                    // A shown result becomes an assertion, the same rule docs-tests applies to the
+                    // Java fences: what a reader sees after the arrow is what toString produced, so
+                    // documentation cannot claim a value the library does not give.
+                    val shown = Regex("""^(\s*)(.+?)\s*//\s*(?:\u2192|->)\s*(.*?)\s*$""")
+
                     // Kotlin wants imports at the top of a file, so a snippet's own are hoisted.
                     val body =
-                        match.groupValues[2].lines().filter { statement ->
-                            if (statement.trimStart().startsWith("import ")) {
-                                imports += statement.trim()
-                                false
-                            } else {
-                                true
+                        match.groupValues[2]
+                            .lines()
+                            .filter { statement ->
+                                if (statement.trimStart().startsWith("import ")) {
+                                    imports += statement.trim()
+                                    false
+                                } else {
+                                    true
+                                }
                             }
-                        }
+                            .map { statement ->
+                                val result = shown.matchEntire(statement)
+                                if (result == null || result.groupValues[2].trimStart().startsWith("//")) {
+                                    statement
+                                } else {
+                                    val expected = result.groupValues[3].replace("\\", "\\\\").replace("\"", "\\\"")
+                                    """${result.groupValues[1]}assertEquals("$expected", (${result.groupValues[2]}).toString())"""
+                                }
+                            }
                     cases.append(
                         """
                         |    @Test
@@ -146,6 +162,7 @@ val documentedKotlin =
                     appendLine("import io.github.libtmux.*")
                     appendLine("import io.github.libtmux.junit5.TmuxExtension")
                     appendLine("import io.github.libtmux.junit5.TmuxSocketPath")
+                    appendLine("import kotlin.test.assertEquals")
                     appendLine("import org.junit.jupiter.api.Test")
                     appendLine("import org.junit.jupiter.api.extension.ExtendWith")
                     appendLine()

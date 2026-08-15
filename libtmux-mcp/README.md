@@ -152,8 +152,13 @@ Use `TmuxTools` directly if you want the behaviour without the protocol:
 ```java
 TmuxTools tools = new TmuxTools(server);
 
-List<PaneSummary> running = tools.describe(
+tools.panes().size();                      // → 1
+tools.panes().get(0).id().startsWith("%"); // → true
+
+List<PaneSummary> editors = tools.describe(
         server.panes().stream().filter(Pane_.command().startsWith("nvim")).toList());
+
+editors.size();                            // → 0
 ```
 
 ## Install

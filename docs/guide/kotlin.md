@@ -25,6 +25,8 @@ makes the core's `FilterExpr` a `FilterExpr<T : Any>`.
 ```kotlin
 Server.open(config).use { server ->                        // AutoCloseable
     val session = server.newSession { it.named("build") }  // SAM conversion
+
+    session.name()                       // → build
 }
 ```
 
@@ -45,15 +47,24 @@ do not work on it — so the accessors that can genuinely be absent get a nullab
 form:
 
 ```kotlin
-val window = session.activeWindowOrNull() ?: return
-val floats = pane.floatingOrNull()        // null before tmux 3.7, which cannot report it
-val status = server.options().getOrNull("status-left")
+// A window, or null once the session has gone.
+session.activeWindowOrNull()?.id()?.value()?.startsWith("@")   // → true
+
+// A Boolean on tmux 3.7 and later, and null before, which cannot report it.
+pane.floatingOrNull() != null                                  // → true
+
+// Absent rather than Optional.empty, so ?. and ?: work on it.
+server.options().getOrNull("no-such-option")                   // → null
 ```
 
 **Negation as an operator:**
 
 ```kotlin
-val idle = server.panes().filter(!Pane_.active().isTrue())
+import io.github.libtmux.kotlin.filter
+import io.github.libtmux.kotlin.not
+
+server.panes().filter(!Pane_.active().isTrue()).size           // → 0
+server.panes().filter(Pane_.active().isTrue()).size            // → 1
 ```
 
 There is deliberately no `and`/`or` here — see `Filters.kt` for why an extension

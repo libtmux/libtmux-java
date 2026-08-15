@@ -24,6 +24,13 @@ exact version rather than a range.
 - **`libtmux-kotlin` gained the `filter` overload Kotlin actually needs.** Kotlin's
   own `filter` takes a function rather than a `Predicate`, so passing a
   `FilterExpr` to it did not compile — the documentation had claimed it did.
+- **Javadoc runs in `check`**, so the standard doclet and the jar the Portal
+  requires are exercised on every push rather than for the first time after a tag
+  is pushed.
+- **Kotlin shows results too.** The generator translates an arrow into an
+  assertion, the same rule the Java fences follow, so both languages are held to
+  one standard. 103 shown values are asserted across the READMEs and guides, and
+  no document with executable code is left without one.
 - **Kotlin snippets are executed too.** `libtmux-kotlin` generates a test from
   every Kotlin fence in the documentation, so the Kotlin compiler and a real tmux
   check them the way `docs-tests` checks the Java ones. 66 shown values across the

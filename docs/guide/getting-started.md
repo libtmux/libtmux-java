@@ -46,6 +46,10 @@ it with a lambda, or hand it a description you built earlier.
 ```java
 Session build = server.newSession(s -> s.named("build").firstWindowNamed("editor"));
 Window logs = build.newWindow(w -> w.named("logs").running("sleep", "30"));
+
+build.name();                              // → build
+build.refresh().windows().get(0).name();   // → editor
+logs.name();                               // → logs
 ```
 
 A new window or pane is selected, because that is what `new-window` and
@@ -62,6 +66,9 @@ builder:
 ```java
 Pane side = pane.split(s -> s.toRight().percent(30));
 Pane app = pane.split(s -> s.running("sleep", "30").in(directory));
+
+side.edges().right();                      // → true
+pane.window().refresh().panes().size();    // → 3
 ```
 
 A description is also a value, so one can be named and applied wherever it fits:
@@ -71,6 +78,9 @@ SplitSpec sidebar = SplitSpec.builder().toRight().percent(25).build();
 
 Pane leftSide = session.newWindow("left").split(sidebar);
 Pane rightSide = session.newWindow("right").split(sidebar);
+
+leftSide.edges().right();                  // → true
+rightSide.edges().right();                 // → true
 ```
 
 A size is one thing with two spellings — `cells(5)` or `percent(30)` — so there
@@ -101,10 +111,14 @@ hierarchy afterwards issues no commands at all:
 for (Session session : server.sessions()) {
     for (Window window : session.windows()) {
         for (Pane pane : window.panes()) {
-            assertEquals(window.id(), pane.window().id());
+            // The window a pane reports is the one it was reached through.
+            pane.window().id().equals(window.id());   // → true
         }
     }
 }
+
+// One read. Walking it asked tmux nothing further.
+server.sessions().get(0).windows().size();   // → 1
 ```
 
 That is deliberate. tmux offers no transaction across separate listings, so a
@@ -132,7 +146,7 @@ another:
 ```java
 server.globalOptions().set("base-index", "1");
 
-assertEquals(Optional.of("1"), session.options().get("base-index"));
+session.options().get("base-index").orElseThrow();   // → 1
 ```
 
 `get` reports the value tmux will act on, inherited when the scope does not set
@@ -147,6 +161,10 @@ BatchResult result = server.batch()
         .add("new-window", "-d", "-n", "one")
         .add("new-window", "-d", "-n", "two")
         .run();
+
+result.succeeded();                        // → true
+result.operations().get(0).outcome();      // → COMPLETE
+result.operations().get(1).outcome();      // → COMPLETE
 ```
 
 tmux discards a group after its first failure, so a single exit status cannot say
@@ -162,6 +180,9 @@ server.chain()
         .splitLeftRight()
         .sendLine("echo chained")
         .run();
+
+// One request made the window and split it, with no round trip to learn its id.
+server.windows().stream().anyMatch(w -> w.name().equals("built"));   // → true
 ```
 
 No step names a target, and no round trip is needed to learn the id of something
@@ -196,6 +217,8 @@ ServerConfig pinned = ServerConfig.builder()
         .endpoint(ServerEndpoint.socketPath(directory.resolve("s")))
         .configFile(tmuxConf)
         .build();
+
+pinned.configFile().isPresent();           // → true
 ```
 
 ## Where to next
