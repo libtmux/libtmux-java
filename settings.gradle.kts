@@ -13,9 +13,15 @@ dependencyResolutionManagement {
 
 rootProject.name = "libtmux-java"
 
+// Published.
 include("libtmux")
 include("libtmux-bom")
 include("libtmux-jackson")
+include("libtmux-kotlin")
 include("libtmux-junit5")
 include("libtmux-workspace")
 include("libtmux-mcp")
+
+// Internal: exercised by the build, never released.
+include("benchmarks")
+include("integration-tests")

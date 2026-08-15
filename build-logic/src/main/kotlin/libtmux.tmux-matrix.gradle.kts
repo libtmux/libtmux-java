@@ -39,27 +39,5 @@ val laneTasks =
         }
     }
 
-// The ordinary suite must not run the benchmark either. Excluded here rather than globally: a
-// global exclude accumulates onto the same options object as modeBenchmark's include and would
-// cancel it.
-tasks.named<Test>("test") { useJUnitPlatform { excludeTags("benchmark") } }
-
-tasks.register("testTmuxMatrix") {
-    group = "verification"
-    description = "Runs the real-tmux tests against every supported tmux release."
-    dependsOn(laneTasks)
-}
-
-// The benchmark writes a file and takes seconds; it is not part of check. Excluded from every lane
-// above by its tag, and run on its own when the table needs regenerating.
-tasks.register<Test>("modeBenchmark") {
-    group = "verification"
-    description = "Measures each execution mode and rewrites docs/benchmarks/modes.md."
-    val tests = sourceSets.test.get()
-    testClassesDirs = tests.output.classesDirs
-    classpath = tests.runtimeClasspath
-    useJUnitPlatform { includeTags("benchmark") }
-    systemProperty("libtmux.tmux", providers.gradleProperty("libtmuxTmux").getOrElse("tmux"))
-    systemProperty("libtmux.benchmark.out", rootProject.layout.projectDirectory.file("docs/benchmarks/modes.md").asFile.path)
-    outputs.upToDateWhen { false }
-}
+// The benchmark lives in its own module now, so nothing here has to exclude it and no module has
+// to remember a tag to stay fast.
