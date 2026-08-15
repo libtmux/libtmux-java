@@ -96,15 +96,16 @@ returned, so a narrower answer costs no more tmux commands than the whole listin
 The tools are separate from the protocol wiring, because what a tool does to tmux
 is worth testing against real tmux and attaching it to a transport is not.
 
+<!-- snippet: compile-only: overStdio reads standard input until the client closes it -->
 ```java
 Server server = Server.open(config);
 
-// Starts serving immediately and reads until the client closes the stream.
+// Serves on stdin and stdout, reading until the client closes the stream.
 TmuxMcpServer.overStdio(server);
-
-// Or over a transport you supply, which is how it is tested:
-TmuxMcpServer.serving(server, transport);
 ```
+
+`TmuxMcpServer.serving(server, transport)` takes an MCP transport of your own,
+which is how this is tested.
 
 Use `TmuxTools` directly if you want the behaviour without the protocol:
 

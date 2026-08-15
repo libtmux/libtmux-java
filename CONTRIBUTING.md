@@ -73,6 +73,7 @@ asks the question that would have.
 | `integration-tests/`             | no        | the real-tmux suite, which spans artifacts |
 | `benchmarks/`                    | no        | the carrier measurements                   |
 | `examples/`                      | no        | whole runnable programs, run by its own suite |
+| `docs-tests/`                    | no        | compiles and runs every snippet in the docs |
 | `scripts/`                       | no        | what the build does not do                 |
 | `build-logic/`                   | no        | convention plugins, as an included build   |
 | `docs/`, `gradle/`, `.github/`   | no        | everything else                            |

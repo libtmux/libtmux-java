@@ -40,10 +40,16 @@ Ask for a `Server` and you get one that is already running with a session in it.
 Ask for a `TmuxSocketPath` and you get the socket, for code that takes a path:
 
 ```java
-@Test
-void myCodeConnectsForItself(TmuxSocketPath socket) {
-    MyThing thing = MyThing.connectingTo(socket.path());
-    ...
+@ExtendWith(TmuxExtension.class)
+class MyOtherTest {
+
+    @Test
+    void myCodeConnectsForItself(TmuxSocketPath socket) {
+        ServerConfig mine = ServerConfig.builder()
+                .endpoint(ServerEndpoint.socketPath(socket.path()))
+                .build();
+        // ... hand `mine` to whatever you are testing
+    }
 }
 ```
 

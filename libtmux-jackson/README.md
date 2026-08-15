@@ -58,7 +58,7 @@ mean the same thing to every port of libtmux — and to a model, which is how
 metamodel have wire identity:
 
 ```java
-Fields.text("session_name", r -> r.text("session_name").toLowerCase());  // caller-supplied
+Fields.text("session_name", (Session s) -> s.name().toLowerCase());  // caller-supplied
 ```
 
 That has a caller-chosen name and an accessor nobody else can resolve. Writing it

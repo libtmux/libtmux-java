@@ -1,5 +1,21 @@
 # Python test parity map
 
+> **This is a catalogue, not a status report.** Every one of the 1454 rows below
+> is marked `planned parity`, and the `PythonBehaviorParityTest` each names **does
+> not exist**. Nothing here has been ported. The table is what Python's suite
+> asserts, derived from a pytest collection, kept so that porting work can be
+> scoped and nothing is quietly dropped.
+>
+> For what this library actually tests today, read the suites: 553 tests, of which
+> 244 drive real tmux in [`integration-tests/`](../../integration-tests/), 55 check
+> every code snippet in the documentation, and the rest are unit tests beside the
+> code they cover. `./gradlew check` runs all of them; the tmux version matrix runs
+> the real-tmux ones against all eight supported releases.
+>
+> Two rows are different and are worth reading: the **defect decisions** below are
+> places where this port deliberately diverges from Python, and those *are*
+> implemented.
+
 Pytest collection is the authority for generated parametrized cases and
 documentation examples. The ordinary collection produced 1456 node IDs; the separate source-module doctest collection produced 206 node IDs and is a subset of the ordinary collection.
 Checkout prefixes embedded by pytest in Markdown doctest IDs are normalized

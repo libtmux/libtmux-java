@@ -47,7 +47,7 @@ Needs JDK 21 and a tmux between 3.2a and 3.7b.
 
 ```java
 ServerConfig config = ServerConfig.builder()
-        .endpoint(ServerEndpoint.socketPath(Path.of("/tmp/my-app/s")))
+        .endpoint(ServerEndpoint.socketPath(socket))   // wherever you want the server to live
         .build();
 
 try (Server server = Server.open(config)) {
@@ -94,15 +94,18 @@ List<Window> logs = server.windows().stream()
 
 Typed fields fail at **compile** time, not at runtime:
 
+<!-- snippet: does-not-compile -->
 ```java
-Pane_.index().startsWith("2");   // does not compile: index is a number
-Pane_.active().contains("yes");  // does not compile: active is a flag
+Pane_.index().startsWith("2");   // index is a number
+Pane_.active().contains("yes");  // active is a flag
 ```
 
 When you need exactly one, say so, and get a distinct failure for each way it can
 go wrong:
 
 ```java
+server.newSession("build");
+
 Session build = Selections.exactlyOne(
         server.sessions().stream().filter(Session_.name().is("build")).toList());
 // NoMatchException, or MultipleMatchesException — never a silent first().

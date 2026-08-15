@@ -28,9 +28,10 @@ try (Server server = Server.open(config)) {
 }
 ```
 
-Every example in this file and in the getting-started and filtering guides is
-executed by a test — `ExamplesTest` for the core ones, `FilterJsonTest` for the
-serialization ones — so a snippet that stopped working fails the build.
+**Every Java snippet in this file, in every package README, and in every guide is
+compiled and then run against a real tmux** by [`docs-tests`](docs-tests/). A
+snippet that stopped working fails the build; one that claims the compiler rejects
+it must actually be rejected.
 
 ## Three switches
 
@@ -110,7 +111,8 @@ README. Nothing is on Maven Central yet — see [Status](#status).
 
 Not published, and part of how the library is built:
 [`examples/`](examples/) · [`integration-tests/`](integration-tests/) ·
-[`benchmarks/`](benchmarks/) · [`scripts/`](scripts/) · `build-logic/`
+[`docs-tests/`](docs-tests/) · [`benchmarks/`](benchmarks/) ·
+[`scripts/`](scripts/) · `build-logic/`
 
 A directory is a published artifact exactly when it appears above, and
 `platformCoversEveryPublishedModule` fails the build if that stops being true.

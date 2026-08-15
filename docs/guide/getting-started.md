@@ -187,9 +187,11 @@ A run that reads the developer's own `.tmux.conf` is a run whose behaviour nobod
 can predict. Pin one:
 
 ```java
+Path tmuxConf = Files.writeString(directory.resolve("tmux.conf"), "");
+
 ServerConfig pinned = ServerConfig.builder()
         .endpoint(ServerEndpoint.socketPath(directory.resolve("s")))
-        .configFile(config)
+        .configFile(tmuxConf)
         .build();
 ```
 

@@ -5,6 +5,8 @@ unchanged, and — unlike a lambda — it can also be printed, stored, or transl
 into another system's filter language.
 
 ```java
+server.sessions().get(0).newWindow("editor");
+
 List<Window> editors = server.windows().stream()
         .filter(Window_.name().startsWith("edit"))
         .toList();
@@ -37,6 +39,8 @@ windows are zoomed".
 ## Saying what it is
 
 ```java
+var busy = Window_.panes().any(Pane_.command().startsWith("nv"));
+
 assertTrue(busy.describe().contains("pane_current_command"));
 ```
 
@@ -103,6 +107,7 @@ would have, because the filter runs over what that capture returned.
 
 Prefer accepting the entities and letting the caller filter:
 
+<!-- snippet: skip: a signature, shown for its shape rather than to be run -->
 ```java
 public List<PaneSummary> describe(Collection<Pane> panes) { … }
 ```

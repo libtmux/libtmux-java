@@ -1,5 +1,9 @@
 # Python API parity inventory
 
+> **A catalogue of Python's surface, not a record of what is implemented here.**
+> A row's presence says Python has it, not that Java does. Where this port
+> deliberately differs, [`test-map.md`](test-map.md) records the decision and why.
+
 This table is generated from a reconciled AST and runtime inventory of
 libtmux revision [`c4a980b`](https://github.com/tmux-python/libtmux/tree/c4a980b).
 It includes every public declaration, class member, assignment, enum value,

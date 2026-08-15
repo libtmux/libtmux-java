@@ -35,13 +35,20 @@ windows:
 ```
 
 ```java
-Workspace workspace = WorkspaceBuilder.read(Path.of("workspace.yaml"));
-// or WorkspaceBuilder.parse(yamlString)
+Workspace workspace = WorkspaceBuilder.parse("""
+        session_name: built
+        windows:
+          - window_name: editor
+            layout: even-horizontal
+            panes:
+              - shell_command: echo editor-pane-one
+              - shell_command: echo editor-pane-two
+        """);
 
-try (Server server = Server.open(config)) {
-    Session session = WorkspaceBuilder.build(server, workspace);
-}
+Session session = WorkspaceBuilder.build(server, workspace);
 ```
+
+`WorkspaceBuilder.read(path)` does the same from a file on disk.
 
 ## Read first, build second
 
@@ -49,6 +56,7 @@ try (Server server = Server.open(config)) {
 That split is the point: a description that tmux could not build is **rejected
 while it is still text**, before a single window exists.
 
+<!-- snippet: throws: IllegalArgumentException -->
 ```java
 WorkspaceBuilder.parse("session_name: s\nwindows:\n  - window_name: w\n    layout: sideways");
 // IllegalArgumentException — tmux has no layout called "sideways"
