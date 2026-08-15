@@ -1,3 +1,11 @@
+// Declared here so every module that publishes loads the plugin in one classloader scope. Applying
+// it in two sibling projects that differ in which other plugins they carry puts its shared build
+// service in two scopes, and Gradle refuses to wire them together.
+plugins {
+    alias(libs.plugins.maven.publish) apply false
+    alias(libs.plugins.kotlin.jvm) apply false
+}
+
 // Aggregate entry points, so the gate is one command whatever the module layout becomes.
 
 /**

@@ -7,6 +7,7 @@
 // NullAway than a Java-authored one. The root build fails if that dependency ever appears.
 plugins {
     id("libtmux.publication")
+    id("libtmux.tmux-matrix")
     alias(libs.plugins.kotlin.jvm)
 }
 

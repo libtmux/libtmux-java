@@ -5,7 +5,10 @@
 // javac against the real artifacts, so a snippet that stopped working fails the build.
 //
 // Depends on every published module because the documentation does.
-plugins { id("libtmux.java-library") }
+plugins {
+    id("libtmux.java-library")
+    id("libtmux.tmux-matrix")
+}
 
 dependencies {
     testImplementation(project(":libtmux"))

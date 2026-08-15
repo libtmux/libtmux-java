@@ -75,6 +75,6 @@ pane.sendLine("echo captured");
 List<String> everything = pane.capture(c -> c.fromStartOfHistory());
 List<String> recent = pane.capture(c -> c.from(-10));
 
-everything.isEmpty();                                           // → false
+// The history contains at least what is on screen, whatever the shell has printed.
 recent.size() <= everything.size();                             // → true
 ```

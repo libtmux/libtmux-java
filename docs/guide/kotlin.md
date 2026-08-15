@@ -50,8 +50,9 @@ form:
 // A window, or null once the session has gone.
 session.activeWindowOrNull()?.id()?.value()?.startsWith("@")   // → true
 
-// A Boolean on tmux 3.7 and later, and null before, which cannot report it.
-pane.floatingOrNull() != null                                  // → true
+// A Boolean on tmux 3.7 and later, and null before it, which cannot report the
+// flag at all. Absence and false are different answers, and this keeps them so.
+pane.floatingOrNull()
 
 // Absent rather than Optional.empty, so ?. and ?: work on it.
 server.options().getOrNull("no-such-option")                   // → null
