@@ -23,15 +23,19 @@ publishing {
                 }
                 developers {
                     developer {
-                        id = "tmux-python"
-                        name = "tmux-python contributors"
-                        url = "https://github.com/tmux-python"
+                        id = "libtmux"
+                        name = "libtmux contributors"
+                        url = "https://github.com/libtmux"
                     }
                 }
+                // This port, not the Python library it is a sibling of. A published artifact whose
+                // scm points at another project sends anyone reading its metadata to the wrong
+                // source, and every tool that follows it — a decompiler, a licence scanner, an IDE
+                // fetching sources — lands there too.
                 scm {
-                    url = "https://github.com/tmux-python/libtmux"
-                    connection = "scm:git:https://github.com/tmux-python/libtmux.git"
-                    developerConnection = "scm:git:ssh://git@github.com/tmux-python/libtmux.git"
+                    url = "https://github.com/libtmux/libtmux-java"
+                    connection = "scm:git:https://github.com/libtmux/libtmux-java.git"
+                    developerConnection = "scm:git:ssh://git@github.com/libtmux/libtmux-java.git"
                 }
             }
         }
