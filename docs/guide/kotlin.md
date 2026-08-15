@@ -22,12 +22,14 @@ makes the core's `FilterExpr` a `FilterExpr<T : Any>`.
 ## What already works with no module at all
 
 ```kotlin
-Server.open(config).use { server ->            // AutoCloseable
-    val session = server.newSession { it.named("build") }   // SAM conversion
-    val editors = server.windows()
-        .filter(Window_.name().startsWith("edit"))          // FilterExpr is a Predicate
+Server.open(config).use { server ->                        // AutoCloseable
+    val session = server.newSession { it.named("build") }  // SAM conversion
 }
 ```
+
+One thing does *not* carry over: Kotlin's own `filter` takes a function rather
+than a `Predicate`, so passing a `FilterExpr` to it does not compile. That is what
+`libtmux-kotlin`'s `filter` overload is for.
 
 ## What libtmux-kotlin adds
 

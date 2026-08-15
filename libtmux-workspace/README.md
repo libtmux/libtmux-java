@@ -50,6 +50,45 @@ Session session = WorkspaceBuilder.build(server, workspace);
 
 `WorkspaceBuilder.read(path)` does the same from a file on disk.
 
+## What you get back
+
+`build` returns the session it made, so there is nothing to look up afterwards:
+
+```java
+Workspace workspace = WorkspaceBuilder.parse("""
+        session_name: built
+        windows:
+          - window_name: editor
+            layout: even-horizontal
+            panes:
+              - shell_command: echo one
+              - shell_command: echo two
+          - window_name: server
+            panes:
+              - echo three
+        """);
+
+workspace.sessionName();                          // → built
+workspace.windows().size();                       // → 2
+
+Session session = WorkspaceBuilder.build(server, workspace);
+
+session.name();                                   // → built
+session.windows().size();                         // → 2
+session.windows().get(0).panes().size();          // → 2
+```
+
+It adds a session; it does not take over the one you had:
+
+```java
+Workspace workspace = WorkspaceBuilder.parse("session_name: added\nwindows:\n  - window_name: w\n");
+
+WorkspaceBuilder.build(server, workspace);
+
+server.sessions().size();                         // → 2
+server.hasSession("libtmux");                     // → true
+```
+
 ## Read first, build second
 
 `read` and `parse` produce a `Workspace` value; `build` is what touches tmux.

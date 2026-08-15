@@ -10,13 +10,18 @@ every type already arrives as `Window` rather than `Window!`.
 
 > **Alpha.** The API will change without notice.
 
+Every Kotlin example below is executed against a real tmux server by
+[`ReadmeExamplesTest`](src/test/kotlin/io/github/libtmux/kotlin/ReadmeExamplesTest.kt),
+one test per section.
+
 ## What already works with no module at all
 
 ```kotlin
 Server.open(config).use { server ->                        // AutoCloseable
     val session = server.newSession { it.named("build") }  // SAM conversion
-    val editors = server.windows()
-        .filter(Window_.name().startsWith("edit"))         // FilterExpr is a Predicate
+
+    session.name()          // "build"
+    server.sessions().size  // 2
 }
 ```
 
@@ -57,9 +62,21 @@ val floats = pane.floatingOrNull()                     // null before tmux 3.7, 
 val status = server.options().getOrNull("status-left")
 ```
 
+**Filtering with an expression.** Kotlin's own `filter` takes a function, not a
+`Predicate`, so handing it a `FilterExpr` does not compile — the one place where
+reading the Java documentation and writing Kotlin part company. This module adds
+the overload:
+
+```kotlin
+import io.github.libtmux.kotlin.filter
+
+val running = server.panes().filter(Pane_.command().startsWith("z"))
+```
+
 **Negation as an operator:**
 
 ```kotlin
+import io.github.libtmux.kotlin.filter
 import io.github.libtmux.kotlin.not
 
 val idle = server.panes().filter(!Pane_.active().isTrue())

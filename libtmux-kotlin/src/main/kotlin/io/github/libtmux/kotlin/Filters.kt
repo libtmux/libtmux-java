@@ -20,3 +20,15 @@ import io.github.libtmux.query.FilterExpr
  * is an error rather than a warning — this file did not compile until the bound was written.
  */
 public operator fun <T : Any> FilterExpr<T>.not(): FilterExpr<T> = negate()
+
+/**
+ * Selects the elements an expression matches.
+ *
+ * Kotlin's own `filter` takes a function, not a [java.util.function.Predicate], so handing it a
+ * [FilterExpr] does not compile — the one place where reading the Java documentation and writing
+ * Kotlin part company. This is that overload, so `panes.filter(Pane_.active().isTrue())` means what
+ * it appears to.
+ *
+ * The list is already in hand: this asks tmux nothing.
+ */
+public fun <T : Any> Iterable<T>.filter(expression: FilterExpr<T>): List<T> = filter(expression::test)

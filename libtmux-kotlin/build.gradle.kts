@@ -26,6 +26,8 @@ kotlin {
 dependencies {
     api(project(":libtmux"))
 
+    // For the tests that execute this module's README, against a real tmux server.
+    testImplementation(project(":libtmux-junit5"))
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(kotlin("test"))

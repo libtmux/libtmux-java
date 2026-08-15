@@ -36,6 +36,26 @@ These modules are built against each other. Mixing two releases of them is the
 failure a platform exists to prevent, and it is easy to do by hand when three
 coordinates each carry their own version string.
 
+## Check it took
+
+After adding the platform, the coordinates below need no version. If one still
+does, the platform is not being imported — most often because `platform(...)` was
+written as an ordinary dependency:
+
+```console
+$ ./gradlew dependencies --configuration runtimeClasspath
+```
+
+```text
+runtimeClasspath
++--- io.github.libtmux:libtmux-bom:0.0.1-alpha.1
+|    \--- io.github.libtmux:libtmux:0.0.1-alpha.1 (c)
+\--- io.github.libtmux:libtmux -> 0.0.1-alpha.1
+```
+
+The `-> 0.0.1-alpha.1` on a coordinate you wrote without a version is the platform
+doing its job.
+
 ## What it manages
 
 [`libtmux`](../libtmux/) · [`libtmux-jackson`](../libtmux-jackson/) ·

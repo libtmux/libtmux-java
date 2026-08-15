@@ -53,6 +53,33 @@ class MyOtherTest {
 }
 ```
 
+## What the fixture hands you
+
+A server that is already running, with one session in it, on a socket of its own:
+
+```java
+server.sessions().size();                         // → 1
+server.sessions().get(0).name();                  // → libtmux
+server.sessions().get(0).windows().size();        // → 1
+```
+
+Do whatever you like to it. The next test gets a different server:
+
+```java
+server.newSession("scratch");
+server.sessions().get(0).newWindow("more");
+
+server.sessions().size();                         // → 2
+server.hasSession("scratch");                     // → true
+```
+
+And the socket is under this port's own root, never the default one:
+
+```java
+socket.toString().startsWith("/tmp/libtmux-java-test/");   // → true
+socket.getFileName().toString();                           // → s
+```
+
 ## What it guarantees
 
 **A server per test, never shared.** All state lives in the extension store, never

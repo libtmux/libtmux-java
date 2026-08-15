@@ -10,7 +10,24 @@ exact version rather than a range.
 
 [semver]: https://semver.org/spec/v2.0.0.html
 
-## Unreleased — 0.0.1-alpha.1
+## Unreleased
+
+### Added
+
+- **Documentation shows what every call returns, and the value is asserted.** A
+  line ending in an arrow — `session.name(); // -> demo` — becomes a comparison
+  against what the expression produces, so a README cannot claim a result the
+  library does not give. It caught three claims that read perfectly and were
+  false on the day it was added.
+- **A README in every published package**, each with an install snippet, a
+  task-oriented tour with executed examples, and what it deliberately does not do.
+- **`libtmux-kotlin` gained the `filter` overload Kotlin actually needs.** Kotlin's
+  own `filter` takes a function rather than a `Predicate`, so passing a
+  `FilterExpr` to it did not compile — the documentation had claimed it did.
+- **`DocumentationFactsTest`** holds the claims that are prose rather than code:
+  every install snippet names the version this build publishes, the platform's
+  README lists exactly what it constrains, and every published module has a README
+  that names its coordinate. — 0.0.1-alpha.1
 
 ### Fixed
 

@@ -20,16 +20,38 @@ dependencies {
 }
 ```
 
-## Round trip
+## Write one
 
 ```java
 String json = FilterJson.writeString(Pane_.command().startsWith("nvim"), "pane");
-FilterExpr<Pane> restored = FilterJson.readString(json, LibTmuxModels.pane());
 
-List<Pane> matching = server.panes().stream().filter(restored).toList();
+json.contains("libtmux.filter/1");        // → true
+json.contains("pane_current_command");    // → true
 ```
 
-What that produces:
+## Read one back
+
+```java
+String json = FilterJson.writeString(Pane_.command().startsWith("nvim"), "pane");
+
+FilterExpr<Pane> restored = FilterJson.readString(json, LibTmuxModels.pane());
+
+restored.describe();                      // → pane_current_command starts-with nvim
+```
+
+## Use it like any other filter
+
+It is a `Predicate`, so it drops straight into a stream over a capture you already
+hold — reading it from JSON changes nothing about how it is applied:
+
+```java
+String json = FilterJson.writeString(Pane_.active().isTrue(), "pane");
+FilterExpr<Pane> active = FilterJson.readString(json, LibTmuxModels.pane());
+
+server.panes().stream().filter(active).toList().size();   // → 1
+```
+
+The document those calls produce:
 
 ```json
 {
@@ -57,14 +79,18 @@ mean the same thing to every port of libtmux — and to a model, which is how
 **A field built from a lambda cannot be written.** Only expressions built from a
 metamodel have wire identity:
 
+<!-- snippet: throws: SchemaException -->
 ```java
-Fields.text("session_name", (Session s) -> s.name().toLowerCase());  // caller-supplied
+FilterExpr<Session> mine = Fields.text("session_name", (Session s) -> s.name().toLowerCase())
+        .is("demo");
+
+FilterJson.writeString(mine, "session");
 ```
 
-That has a caller-chosen name and an accessor nobody else can resolve. Writing it
-would produce a document that *looks* like a filter on `#{session_name}` and
-answers a different question. Refusing it is what makes this a format rather than
-a hope.
+That field has a caller-chosen name and an accessor nobody else can resolve.
+Writing it would produce a document that *looks* like a filter on
+`#{session_name}` and answers a different question. Refusing it is what makes this
+a format rather than a hope.
 
 **Reading is validated against a model.** A document claiming `pane` cannot be
 read as a `FilterExpr<Window>`. Unknown schema versions, models, fields,
