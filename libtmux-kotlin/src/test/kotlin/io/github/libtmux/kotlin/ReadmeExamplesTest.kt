@@ -54,6 +54,9 @@ class ReadmeExamplesTest {
         // Kotlin's own filter takes a function; this overload takes the expression.
         assertEquals(1, server.panes().filter(active).size)
         assertEquals(0, server.panes().filter(!active).size)
-        assertEquals(1, server.panes().filter(Pane_.command().startsWith("z")).size)
+        // Whatever the fixture's shell is. Asserting "z" for zsh passed on a laptop and failed on
+        // a runner, which is the whole reason this suite exists.
+        val running = server.panes()[0].currentCommand()
+        assertEquals(1, server.panes().filter(Pane_.command().startsWith(running)).size)
     }
 }

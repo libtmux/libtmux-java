@@ -72,7 +72,7 @@ the overload:
 ```kotlin
 import io.github.libtmux.kotlin.filter
 
-val running = server.panes().filter(Pane_.command().startsWith("z"))
+val editors = server.panes().filter(Pane_.command().startsWith("nvim"))
 ```
 
 **Negation as an operator:**

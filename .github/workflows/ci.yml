@@ -8,9 +8,12 @@ on:
 
 # A second push to the same branch makes the first run's answer stale, and a real-tmux suite is too
 # expensive to keep running for an answer nobody will read.
+# Cancel a superseded run only on a pull request, where a new push genuinely replaces the answer.
+# On master every commit's run stands on its own: grouping them all together meant re-running an
+# older commit cancelled the newest one, which is the opposite of what a green history needs.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
