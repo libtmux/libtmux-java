@@ -45,6 +45,7 @@ Needs JDK 21 and a tmux between 3.2a and 3.7b.
 
 ## Thirty seconds
 
+<!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
 ServerConfig config = ServerConfig.builder()
         .endpoint(ServerEndpoint.socketPath(socket))   // wherever you want the server to live
@@ -58,6 +59,18 @@ try (Server server = Server.open(config)) {
     pane.sendLine("echo hello from libtmux");
     List<String> shown = pane.capture();
 }
+```
+
+What that leaves, read back:
+
+```java
+Session session = server.newSession("demo");
+Window window = session.newWindow("build");
+Pane pane = window.split();
+
+session.name();                            // → demo
+window.name();                             // → build
+window.refresh().panes().size();           // → 2
 ```
 
 Closing a `Server` closes *your client*, not tmux. The session outlives your

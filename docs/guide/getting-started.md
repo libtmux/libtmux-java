@@ -11,6 +11,7 @@ runs, and every value shown after a `→` is asserted.
 A `Server` is a client, not the tmux process. Closing one closes your connection;
 it never ends anybody's sessions.
 
+<!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
 ServerConfig config = ServerConfig.builder()
         .endpoint(ServerEndpoint.socketPath(socket))
@@ -23,6 +24,16 @@ try (Server server = Server.open(config)) {
 
     pane.sendLine("echo hello from libtmux");
 }
+```
+
+And what it leaves behind:
+
+```java
+Session session = server.newSession("demo");
+Window window = session.newWindow("build");
+
+session.name();                            // → demo
+window.name();                             // → build
 ```
 
 By default each command is one tmux process. One switch makes them share a

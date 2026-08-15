@@ -14,6 +14,7 @@ Typed, blocking access to [tmux](https://github.com/tmux/tmux) from the JVM.
 A sibling of the Python [libtmux](https://libtmux.git-pull.com/), targeting
 practical parity while reading as Java rather than as a translation.
 
+<!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
 ServerConfig config = ServerConfig.builder()
         .endpoint(ServerEndpoint.socketPath(socket))
@@ -26,6 +27,19 @@ try (Server server = Server.open(config)) {
 
     pane.sendLine("echo hello from libtmux");
 }
+```
+
+Which leaves this behind, and reading it back is where the library earns its keep:
+
+```java
+Session session = server.newSession("demo");
+Window window = session.newWindow("build");
+Pane pane = window.split();
+
+pane.sendLine("echo hello from libtmux");
+
+session.name();                            // → demo
+window.refresh().panes().size();           // → 2
 ```
 
 **Every Java snippet in this file, in every package README, and in every guide is
