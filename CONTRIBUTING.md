@@ -20,8 +20,22 @@ $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds
 ```
 
 The matrix is a local tree of built tmuxes, one directory per lane, each with
-`bin/tmux`. `.github/workflows/tmux-matrix.yml` builds exactly that tree and is
-the easiest description of what it wants.
+`bin/tmux`. Build one:
+
+```console
+$ ./scripts/tmux-matrix.sh ~/tmux-builds
+```
+
+It reads the lane list out of the build, so it cannot drift from what the matrix
+actually runs.
+
+If a real-tmux failure looks like a regression, count what is already running
+before believing it — this machine routinely carries several hundred tmux servers
+belonging to sibling ports:
+
+```console
+$ ./scripts/reap-stale-servers.sh
+```
 
 ## Tests start real tmux
 
@@ -58,6 +72,8 @@ asks the question that would have.
 | `libtmux*/`                      | yes       | one artifact each, named for its directory |
 | `integration-tests/`             | no        | the real-tmux suite, which spans artifacts |
 | `benchmarks/`                    | no        | the carrier measurements                   |
+| `examples/`                      | no        | whole runnable programs, run by its own suite |
+| `scripts/`                       | no        | what the build does not do                 |
 | `build-logic/`                   | no        | convention plugins, as an included build   |
 | `docs/`, `gradle/`, `.github/`   | no        | everything else                            |
 
