@@ -1,5 +1,9 @@
 # libtmux for Java
 
+[![CI](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml)
+[![tmux matrix](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Typed, blocking access to [tmux](https://github.com/tmux/tmux) from the JVM.
 
 A sibling of the Python [libtmux](https://libtmux.git-pull.com/), targeting
@@ -79,9 +83,20 @@ rather than collapsing both into one error.
 | `libtmux-junit5`    | a JUnit 5 extension giving each test its own tmux server              |
 | `libtmux-workspace` | builds a session from a tmuxp-shaped YAML description                 |
 | `libtmux-mcp`       | exposes a tmux server to a model over the Model Context Protocol      |
+| `libtmux-bom`       | one version for all of the above                                      |
 
-Group `com.git-pull`, artifact `libtmux`. Not yet published to Maven Central;
-build locally with:
+Group `com.git-pull`. Name the version once, through the BOM, and the rest
+follow it:
+
+```kotlin
+dependencies {
+    implementation(platform("com.git-pull:libtmux-bom:0.1.0-SNAPSHOT"))
+    implementation("com.git-pull:libtmux")
+    testImplementation("com.git-pull:libtmux-junit5")
+}
+```
+
+Not yet published to Maven Central; build locally with:
 
 ```console
 $ ./gradlew publishToMavenLocal
@@ -114,6 +129,16 @@ The design is recorded under `docs/spikes/`. Each note carries the measurements
 behind the decision it records, including the ones that overturned an earlier
 choice.
 
+## Contributing
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers the gate, the tmux matrix, and why
+every server this suite starts lives under a path naming this port.
+
 ## Status
 
-Under construction. The API is not yet stable.
+Under construction. The API is not yet stable. Changes are recorded in
+[`CHANGELOG.md`](CHANGELOG.md).
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).

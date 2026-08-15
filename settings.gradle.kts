@@ -14,6 +14,7 @@ dependencyResolutionManagement {
 rootProject.name = "libtmux-java"
 
 include("libtmux")
+include("libtmux-bom")
 include("libtmux-jackson")
 include("libtmux-junit5")
 include("libtmux-workspace")
