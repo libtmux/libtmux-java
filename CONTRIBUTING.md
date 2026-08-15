@@ -1,0 +1,71 @@
+# Contributing
+
+## The gate
+
+One command has to pass before anything is proposed:
+
+```console
+$ ./gradlew check
+```
+
+It runs formatting, Error Prone, NullAway, and every test including the ones
+that start real tmux servers. A green `check` that reported `UP-TO-DATE` for
+every task verified nothing; force it with `--rerun-tasks` when that matters.
+
+Against every supported tmux release, which is what the compatibility claim in
+the README rests on:
+
+```console
+$ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds
+```
+
+The matrix is a local tree of built tmuxes, one directory per lane, each with
+`bin/tmux`. `.github/workflows/tmux-matrix.yml` builds exactly that tree and is
+the easiest description of what it wants.
+
+## Tests start real tmux
+
+Every server this project starts belongs under a path naming this port —
+`/tmp/libtmux-java-test/` for tests, `/tmp/libtmux-java-dev/` for anything
+started by hand. `AGENTS.md` explains why in full, and it is not tidiness: this
+machine runs several libtmux ports at once, and their leftovers turn into this
+suite's intermittent failures.
+
+## What a change is expected to carry
+
+- **A test that failed before it.** For a bug, that test is the evidence the bug
+  was real; without it there is nothing to distinguish a fix from a coincidence.
+- **A measurement, when the claim is about tmux.** tmux's behaviour differs
+  across the supported range in ways no amount of reading settles. Notes under
+  `docs/spikes/` record what was measured and against which release.
+- **Nothing generated-looking.** Names that say what a thing is for, comments
+  that say why rather than what, no abstraction without a second caller.
+
+## Commit messages
+
+Imperative subject, then why the change was needed, then what it did:
+
+```
+Refuse a request control mode cannot answer
+
+why: Control mode frames a reply per command, so a request holding
+several produced several replies for one awaited request, and the
+extras were matched to whatever asked next.
+
+what:
+- Refuse a command group before writing anything
+```
+
+No emoji, no prefixes, no trailing attribution.
+
+## Carriers
+
+`ExecutionMode` chooses how a command travels. A suite can run under any of
+them, and a failure that appears under only one is a real finding:
+
+```console
+$ LIBTMUX_MODE=control ./gradlew check
+```
+
+Confirm it against a clean `/tmp` first. Cross-port debris and a genuine carrier
+defect look alike.

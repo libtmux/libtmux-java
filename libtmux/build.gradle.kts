@@ -7,8 +7,8 @@ tasks.named<Test>("test") { useJUnitPlatform { excludeTags("carrier") } }
 
 // The carrier gate needs a scheduler with exactly one carrier. That is a JVM-wide setting, so it
 // gets its own fork rather than distorting every other test in the suite.
-val carrierTest by
-    tasks.registering(Test::class) {
+val carrierTest =
+    tasks.register<Test>("carrierTest") {
         group = "verification"
         description = "Runs the transport's drain gate under a one-carrier virtual-thread scheduler."
         val tests = sourceSets.test.get()

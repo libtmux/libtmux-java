@@ -1,12 +1,11 @@
-# AGENTS.md — java/
+# AGENTS.md
 
-Guidance for agents working in `java/`. The repository root `AGENTS.md` covers
-the Python library; this file governs this directory and wins where the two
-disagree about Java.
+Guidance for agents working on libtmux for Java. This repository is the whole
+of the port; nothing outside it governs the Java code.
 
 ## Keep off other ports' sockets
 
-Sibling libtmux ports — Python, Swift, Go, TypeScript, C# — are worked on in
+Sibling libtmux ports — Python, Go, Rust, TypeScript, C#, C++ — are worked on in
 parallel on this machine, and every one of them starts real tmux servers in
 `/tmp`. Their debris outlives their test runs: servers from an exited benchmark
 stay up, holding ptys, until something kills them.

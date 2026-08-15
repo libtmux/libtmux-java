@@ -1,5 +1,12 @@
 # Spike evidence review
 
+> **Superseded in part, 2026-08-15.** This audit was written before the clean
+> rewrite. Its closing section lists the rewrite and the two consumer packages as
+> not yet begun; all three have since landed, and this repository is now the
+> port's only home rather than a directory inside the Python library's tree. The
+> defects and the rules carried out of them still stand, and the rest of the
+> document is left as the record it was.
+
 An audit of what the six spike notes claim against what can still be verified.
 It reports two defects in the evidence discipline itself, both of which make a
 citation resolve to the wrong thing rather than fail loudly.

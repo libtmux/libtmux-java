@@ -1,0 +1,114 @@
+name: tmux matrix
+
+# The README claims tmux 3.2a through 3.7b, and says that range is not a claim because the suite runs
+# against every one of them. This is where that stops depending on someone running it locally.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    # Weekly, so a break that arrives from outside this repository — a runner image, a libevent, a
+    # JDK — is found by the schedule rather than by the next person to open a pull request.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lanes:
+    name: tmux ${{ matrix.tmux }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Must match the lanes in build-logic/src/main/kotlin/libtmux.tmux-matrix.gradle.kts, which
+        # is the source of truth. The agree step below fails if they drift apart.
+        tmux: ['3.2a', '3.3a', '3.4', '3.5', '3.6', '3.7', '3.7a', '3.7b']
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: This lane is one the build knows about
+        env:
+          LANE: ${{ matrix.tmux }}
+        run: |
+          plugin=build-logic/src/main/kotlin/libtmux.tmux-matrix.gradle.kts
+          grep -q "\"$LANE\"" "$plugin" || {
+            echo "::error::tmux $LANE is not a lane in $plugin"
+            exit 1
+          }
+
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential libevent-dev libncurses-dev bison pkg-config
+
+      # Keyed by version alone: a released tarball does not change, so a hit is the same binary the
+      # miss would have built.
+      - name: Restore tmux ${{ matrix.tmux }}
+        id: tmux-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/tmux-builds/${{ matrix.tmux }}
+          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build tmux ${{ matrix.tmux }}
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        env:
+          LANE: ${{ matrix.tmux }}
+        run: |
+          set -eux
+          work="$(mktemp -d)"
+          curl -fsSL -o "$work/tmux.tar.gz" \
+            "https://github.com/tmux/tmux/releases/download/$LANE/tmux-$LANE.tar.gz"
+          tar -xzf "$work/tmux.tar.gz" -C "$work"
+          cd "$work/tmux-$LANE"
+          ./configure --prefix="$HOME/tmux-builds/$LANE"
+          make -j"$(nproc)"
+          make install
+
+      - name: The lane runs the tmux it is named after
+        env:
+          LANE: ${{ matrix.tmux }}
+        run: |
+          "$HOME/tmux-builds/$LANE/bin/tmux" -V
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
+
+      # One lane rather than testTmuxMatrix: each version builds and runs on its own runner, so the
+      # eight of them take the time of the slowest instead of the sum.
+      - name: Run the real-tmux suite
+        env:
+          LANE: ${{ matrix.tmux }}
+        run: ./gradlew "test-tmux-$LANE" -PlibtmuxMatrix="$HOME/tmux-builds" --stacktrace
+
+      - name: No tmux server outlived the suite
+        if: always()
+        run: |
+          left="$(pgrep -c tmux || true)"
+          if [ "${left:-0}" -ne 0 ]; then
+            echo "::error::$left tmux server(s) survived the suite"
+            for p in $(pgrep tmux); do tr '\0' ' ' < "/proc/$p/cmdline"; echo; done
+            exit 1
+          fi
+          echo "no tmux server survived the suite"
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: reports-tmux-${{ matrix.tmux }}
+          path: '**/build/reports/**'
+          retention-days: 7

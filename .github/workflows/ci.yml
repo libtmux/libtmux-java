@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run's answer stale, and a real-tmux suite is too
+# expensive to keep running for an answer nobody will read.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check (JDK ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 21 is the baseline the library compiles against; the newest LTS is here because a library
+        # is run on JDKs its author never chose, and the ones that break it break at runtime.
+        java: ['21', '25']
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install tmux
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y tmux
+          tmux -V
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          # The wrapper jar is a binary this repository executes, so its checksum is verified against
+          # the ones Gradle published rather than trusted because it is committed here.
+          validate-wrappers: true
+
+      - run: ./gradlew check --stacktrace
+
+      # A real-tmux suite that leaves servers running would be invisible here and expensive on a
+      # developer's machine. The runner is discarded either way, so this is the only place the
+      # question gets asked for free.
+      - name: No tmux server outlived the suite
+        if: always()
+        run: |
+          left="$(pgrep -c tmux || true)"
+          if [ "${left:-0}" -ne 0 ]; then
+            echo "::error::$left tmux server(s) survived the suite"
+            for p in $(pgrep tmux); do tr '\0' ' ' < "/proc/$p/cmdline"; echo; done
+            exit 1
+          fi
+          echo "no tmux server survived the suite"
+
+      - name: Publish to a local repository
+        run: ./gradlew publishToMavenLocal --stacktrace
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: reports-jdk${{ matrix.java }}
+          path: '**/build/reports/**'
+          retention-days: 7
