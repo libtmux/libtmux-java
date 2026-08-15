@@ -27,6 +27,7 @@ Server.open(config).use { server ->                        // AutoCloseable
 
 Make a nullness mismatch an error rather than a warning:
 
+<!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 kotlin {
     compilerOptions { freeCompilerArgs.addAll("-Xjspecify-annotations=strict") }
@@ -39,6 +40,7 @@ operator did not compile until its type parameter was bounded `T : Any`, because
 
 ## Install
 
+<!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
     implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.1"))

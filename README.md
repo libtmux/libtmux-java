@@ -234,6 +234,7 @@ Name the version once, through the platform, and every other coordinate follows
 it. That is what stops a project mixing two releases of modules that were built
 against each other.
 
+<!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
     implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.1"))

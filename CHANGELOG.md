@@ -24,6 +24,10 @@ exact version rather than a range.
 - **`libtmux-kotlin` gained the `filter` overload Kotlin actually needs.** Kotlin's
   own `filter` takes a function rather than a `Predicate`, so passing a
   `FilterExpr` to it did not compile — the documentation had claimed it did.
+- **Kotlin snippets are executed too.** `libtmux-kotlin` generates a test from
+  every Kotlin fence in the documentation, so the Kotlin compiler and a real tmux
+  check them the way `docs-tests` checks the Java ones. 66 shown values across the
+  READMEs and guides are now asserted.
 - **`DocumentationFactsTest`** holds the claims that are prose rather than code:
   every install snippet names the version this build publishes, the platform's
   README lists exactly what it constrains, and every published module has a README

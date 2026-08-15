@@ -21,9 +21,11 @@ including what the scope inherits:
 ```java
 Options options = session.options();
 
-assertTrue(options.all().isEmpty());              // a fresh session sets nothing
-assertFalse(options.effective().isEmpty());       // but it acts on plenty
+options.all().isEmpty();                          // → true
+options.effective().isEmpty();                    // → false
 ```
+
+A fresh session sets nothing of its own, and acts on plenty.
 
 `get(name)` answers with what tmux will act on, which is the wide question.
 
@@ -34,12 +36,17 @@ That star never reaches you: the name you look up is the name you get back, and
 ## Writing without replacing
 
 ```java
-options.set("status-left", "one");
-options.append("status-left", "-two");            // one-two
+Options options = session.options();
 
-options.setIfAbsent("status-left", "three");      // false: already set
-options.setExpanded("status-left", "in #{session_name}");   // stores "in work"
+options.set("status-left", "one");
+options.append("status-left", "-two");
+
+options.get("status-left").orElseThrow();         // → one-two
+options.setIfAbsent("status-left", "three");      // → false
 ```
+
+`setExpanded` stores what a format comes to rather than the format itself, so
+`in #{session_name}` is written as the name it expanded to.
 
 `setIfAbsent` answers with whether the value was taken. tmux calls the
 already-set case an error; declining to overwrite is the request, not a failure.
@@ -54,11 +61,11 @@ of one rather than a special case:
 
 ```java
 Hooks hooks = session.hooks();
+
 hooks.set("after-new-window", "display-message one");
 hooks.append("after-new-window", "display-message two");
 
-assertEquals(List.of("display-message one", "display-message two"),
-        hooks.all().get("after-new-window"));
+hooks.all().get("after-new-window");              // → [display-message one, display-message two]
 ```
 
 `set` replaces the whole array; `append` adds to it. `run(event)` runs what is
@@ -73,9 +80,11 @@ silently discarded** — no error, on any supported release:
 window.hooks().set("pane-focus-in", "display-message belongs-here");   // a window hook
 window.hooks().set("alert-bell", "display-message does-not");          // a session hook
 
-assertTrue(window.hooks().all().containsKey("pane-focus-in"));
-assertFalse(window.hooks().all().containsKey("alert-bell"));           // gone, quietly
+window.hooks().all().containsKey("pane-focus-in");   // → true
+window.hooks().all().containsKey("alert-bell");      // → false
 ```
+
+The second one is gone, quietly: tmux keeps it at the session, not the window.
 
 So a hook that never fires is worth checking against `all()` before it is worth
 debugging.

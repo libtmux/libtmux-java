@@ -9,6 +9,7 @@ since 1.5.20. Every type in `io.github.libtmux` arrives as `Window`, not
 
 Turn a mismatch into an error rather than a warning:
 
+<!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 kotlin {
     compilerOptions { freeCompilerArgs.addAll("-Xjspecify-annotations=strict") }
@@ -33,6 +34,7 @@ than a `Predicate`, so passing a `FilterExpr` to it does not compile. That is wh
 
 ## What libtmux-kotlin adds
 
+<!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.1"))
 implementation("io.github.libtmux:libtmux-kotlin")

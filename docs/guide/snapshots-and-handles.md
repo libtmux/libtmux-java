@@ -36,8 +36,12 @@ orders and addresses those separately.
 Session before = server.sessions().get(0);
 Session renamed = before.rename("something-else");
 
-assertEquals(before, renamed);     // the same session, differently labelled
+renamed.name();                    // → something-else
+before.equals(renamed);            // → true
 ```
+
+The name changed; the session did not. Identity is the id tmux assigned, which a
+user cannot edit, so a handle stays valid across a rename.
 
 `Window.id()` compares the underlying window across links.
 
@@ -51,8 +55,9 @@ A snapshot carries the fields worth carrying. `expand` reaches everything else
 tmux knows, including fields from a release this library has never heard of:
 
 ```java
-String where = pane.expand("#{session_name}:#{window_index}.#{pane_index}");
-String version = server.expand("#{version}");
+pane.expand("#{session_name}:#{window_index}.#{pane_index}");   // → libtmux:0.0
+
+server.expand("#{version}").isEmpty();                          // → false
 ```
 
 Available on `Server`, `Session`, `Window` and `Pane`, each resolving in its own
@@ -65,6 +70,11 @@ range — lines count from the top of the visible area, and negatives climb into
 the history:
 
 ```java
+pane.sendLine("echo captured");
+
 List<String> everything = pane.capture(c -> c.fromStartOfHistory());
 List<String> recent = pane.capture(c -> c.from(-10));
+
+everything.isEmpty();                                           // → false
+recent.size() <= everything.size();                             // → true
 ```

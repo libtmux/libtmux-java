@@ -13,8 +13,9 @@ BatchResult result = server.batch()
         .add("new-window", "-d", "-n", "two")
         .run();
 
-assertTrue(result.succeeded());
-assertEquals(2, result.operations().size());
+result.succeeded();                               // → true
+result.operations().size();                       // → 2
+result.operations().get(0).outcome();             // → COMPLETE
 ```
 
 tmux discards a group after its first failure, so a single exit status cannot say
@@ -33,6 +34,9 @@ server.chain()
         .splitLeftRight()
         .sendLine("echo chained")
         .run();
+
+// One request built a window and split it, with no round trip to learn the id.
+server.windows().stream().anyMatch(w -> w.name().equals("built"));   // → true
 ```
 
 No step names a target. tmux moves its own current target as a group runs, so

@@ -3,6 +3,9 @@
 Every snippet here is executed by `ExamplesTest`. If one stops working the build
 fails, rather than the page quietly going stale.
 
+Every Java block in this guide runs against a real tmux server when the build
+runs, and every value shown after a `→` is asserted.
+
 ## Reaching a server
 
 A `Server` is a client, not the tmux process. Closing one closes your connection;

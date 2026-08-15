@@ -12,6 +12,9 @@ List<Window> editors = server.windows().stream()
         .toList();
 
 Window only = Selections.exactlyOne(editors);
+
+editors.size();                      // → 1
+only.name();                         // → editor
 ```
 
 ## Typed fields
@@ -41,7 +44,7 @@ windows are zoomed".
 ```java
 var busy = Window_.panes().any(Pane_.command().startsWith("nv"));
 
-assertTrue(busy.describe().contains("pane_current_command"));
+busy.describe();                     // → panes any (pane_current_command starts-with nv)
 ```
 
 This is the half a lambda cannot do, and the reason the AST is a sealed tree of
@@ -73,6 +76,8 @@ the core suite does not depend on Jackson:
 ```java
 String json = FilterJson.writeString(Pane_.command().startsWith("nv"), "pane");
 FilterExpr<Pane> restored = FilterJson.readString(json, LibTmuxModels.pane());
+
+restored.describe();                 // → pane_current_command starts-with nv
 ```
 
 Only expressions built from a metamodel can be written. A field built from a

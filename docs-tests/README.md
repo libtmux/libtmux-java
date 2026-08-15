@@ -78,6 +78,21 @@ copying it would get anyway.
 Consequently a fence cannot depend on a variable another fence declared — and
 neither can a reader who copies just that fence.
 
+## Kotlin fences
+
+This module reads Java. The Kotlin fences in the root README, `libtmux-kotlin`'s
+README and the Kotlin guide are checked a different way: `libtmux-kotlin` has a
+`generateDocumentationSnippets` task that turns each one into a test function, and
+the ordinary Kotlin compilation and test run do the checking.
+
+Generating a source file rather than running the Kotlin compiler in-process is the
+same guarantee by a shorter road — and because the generated file *is* the
+documentation, the two cannot drift.
+
+```console
+$ ./gradlew :libtmux-kotlin:test
+```
+
 ## Which documents
 
 `README.md`, every package's `README.md`, and `docs/guide/*.md`.
