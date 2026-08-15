@@ -110,6 +110,12 @@ public final class ControlClient implements AutoCloseable {
         if (argv.isEmpty()) {
             throw new IllegalArgumentException("a command has no words");
         }
+        if (isCommandGroup(argv)) {
+            // Refused before anything is written, so the stream stays in step and the caller can
+            // send the commands one at a time — which is what this carrier is for.
+            throw new IllegalArgumentException(
+                    "a control-mode request is one command, and this argv is several: " + argv);
+        }
         if (closed) {
             throw new IllegalStateException("control client is closed");
         }
@@ -141,7 +147,13 @@ public final class ControlClient implements AutoCloseable {
         return process.isAlive();
     }
 
-    /** Subscribes to terminal output tmux pushes. Listeners run on the reader thread. */
+    /**
+     * Subscribes to terminal output tmux pushes.
+     *
+     * <p>Listeners run on the reader thread, which is also the only thread that resolves replies, so
+     * a slow listener delays every answer. One that throws does not end it: the failure goes to the
+     * thread's uncaught-exception handler and the remaining listeners are still told.
+     */
     public void onOutput(Consumer<PaneOutput> listener) {
         listeners.add(listener);
     }
@@ -174,9 +186,35 @@ public final class ControlClient implements AutoCloseable {
     // -------------------------------------------------------------------------------- protocol
 
     /**
+     * Whether this argv is more than one tmux command.
+     *
+     * <p>tmux ends a command at a semicolon that ends any argument, not only at one standing alone,
+     * and a backslash before it keeps the semicolon instead. That is the rule its own argv parser
+     * applies before a command runs, so {@code ["kill-window;", "list-windows"]} is two commands and
+     * {@code ["display-message", "-p", "done\\;"]} is one.
+     *
+     * <p>Public because a carrier has to make this judgement before choosing how to send. Control
+     * mode frames a reply per command, so a request of several has several replies and this client
+     * can account for only one.
+     */
+    public static boolean isCommandGroup(List<String> argv) {
+        for (String argument : argv) {
+            if (argument.endsWith(";") && !argument.endsWith("\\;")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * tmux parses a control-mode request as one line, so an argument has to survive its lexer.
      * Single quotes preserve everything except a single quote, which is closed, escaped and
      * reopened.
+     *
+     * <p>The backslash guarding a trailing semicolon is spent here rather than passed on. It exists
+     * for tmux's argv parser, which the process carrier goes through and this one does not, so
+     * quoting it would deliver a backslash the other carrier had already consumed and the two would
+     * disagree about what the argument was.
      */
     static String line(List<String> argv) {
         StringBuilder text = new StringBuilder();
@@ -184,15 +222,8 @@ public final class ControlClient implements AutoCloseable {
             if (text.length() > 0) {
                 text.append(' ');
             }
-            if (";".equals(argument)) {
-                // A bare semicolon separates commands rather than being one of their arguments, and
-                // quoting it would turn a group of commands into a single malformed one. The process
-                // carrier already passes it through as a separator — tmux's own argv parser reads it
-                // that way — so control mode agrees rather than inventing a second reading.
-                text.append(';');
-            } else {
-                text.append('\'').append(argument.replace("'", "'\\''")).append('\'');
-            }
+            String literal = argument.endsWith("\\;") ? argument.substring(0, argument.length() - 2) + ';' : argument;
+            text.append('\'').append(literal.replace("'", "'\\''")).append('\'');
         }
         return text.toString();
     }
@@ -249,7 +280,15 @@ public final class ControlClient implements AutoCloseable {
         PaneOutput output = new PaneOutput(
                 new PaneId(line.substring("%output ".length(), paneEnd)), unescape(line.substring(paneEnd + 1)));
         for (Consumer<PaneOutput> listener : listeners) {
-            listener.accept(output);
+            try {
+                listener.accept(output);
+            } catch (RuntimeException e) {
+                // This thread also resolves every reply, so one listener's failure must not end it.
+                // Reported rather than swallowed, and through the thread's own handler rather than a
+                // logger, because a dependency-free core has nowhere else to say it.
+                Thread current = Thread.currentThread();
+                current.getUncaughtExceptionHandler().uncaughtException(current, e);
+            }
         }
     }
 

@@ -12,12 +12,14 @@ import com.git_pull.libtmux.control.ControlClient;
 import com.git_pull.libtmux.control.ControlReply;
 import com.git_pull.libtmux.control.PaneOutput;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -39,6 +41,7 @@ final class ControlModeIntegrationTest {
     @Test
     void aCommandGetsItsOwnReply(Server server) {
         try (ControlClient client = attach(server)) {
+
             ControlReply reply = client.send("display-message", "-p", "hello");
 
             assertTrue(reply.succeeded());
@@ -86,6 +89,37 @@ final class ControlModeIntegrationTest {
                     List.of("semi;colon"),
                     client.send("display-message", "-p", "semi;colon").lines(),
                     "a semicolon inside an argument is not a command separator");
+            assertEquals(
+                    List.of("trailing;"),
+                    client.send("display-message", "-p", "trailing\\;").lines(),
+                    "an escaped trailing semicolon is part of the argument, not a separator");
+        }
+    }
+
+    /**
+     * A reply is framed per command, so a request that is several commands has several replies and
+     * this client can only account for one of them. The rest go to whoever asks next.
+     *
+     * <p>Both spellings are refused, because tmux reads both: a semicolon standing alone between two
+     * commands, and one ending an argument of the first.
+     */
+    @Test
+    void aRequestOfSeveralCommandsIsRefusedRatherThanMisframed(Server server) {
+        try (ControlClient client = attach(server)) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> client.send(
+                            List.of("display-message", "-p", "first", ";", "display-message", "-p", "second")),
+                    "a semicolon standing alone separates two commands");
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> client.send(List.of("new-window", "-d", "-n", "grouped;", "list-windows")),
+                    "a semicolon ending an argument separates two commands just as well");
+
+            assertEquals(
+                    List.of("still answering"),
+                    client.send("display-message", "-p", "still answering").lines(),
+                    "a refusal writes nothing, so the stream is still in step");
         }
     }
 
@@ -94,7 +128,7 @@ final class ControlModeIntegrationTest {
         try (ControlClient client = attach(server)) {
             ExecutorService callers = Executors.newFixedThreadPool(8);
             try {
-                List<Future<ControlReply>> pending = new java.util.ArrayList<>();
+                List<Future<ControlReply>> pending = new ArrayList<>();
                 for (int index = 0; index < 40; index++) {
                     String expected = "reply-" + index;
                     pending.add(callers.submit(() -> client.send("display-message", "-p", expected)));
@@ -124,6 +158,32 @@ final class ControlModeIntegrationTest {
             assertTrue(
                     await(() -> seen.stream().anyMatch(output -> output.data().contains("control-mode-saw-this"))),
                     "attaching is what makes tmux push output, and it did not arrive");
+        }
+    }
+
+    /**
+     * Listeners run on the reader thread, which is also the only thread that resolves replies. A
+     * listener that threw would end it, and the client would then answer nothing at all — every
+     * later request timing out for a reason belonging to somebody else's callback.
+     */
+    @Test
+    void aListenerThatThrowsDoesNotTakeTheClientDownWithIt(Server server) throws Exception {
+        try (ControlClient client = attach(server)) {
+            List<PaneOutput> seen = new CopyOnWriteArrayList<>();
+            client.onOutput(output -> {
+                throw new IllegalStateException("this listener is broken");
+            });
+            client.onOutput(seen::add);
+
+            client.send("send-keys", "-t", "libtmux", "echo listener-survived-this", "Enter");
+
+            assertTrue(
+                    await(() -> seen.stream().anyMatch(output -> output.data().contains("listener-survived-this"))),
+                    "a listener registered after the broken one still has to be told");
+            assertEquals(
+                    List.of("still answering"),
+                    client.send("display-message", "-p", "still answering").lines(),
+                    "the reader survived, so replies still arrive");
         }
     }
 
@@ -184,7 +244,7 @@ final class ControlModeIntegrationTest {
         assertTrue(kill.waitFor(20, TimeUnit.SECONDS) && kill.exitValue() == 0, "could not " + signal + " tmux");
     }
 
-    private static boolean await(java.util.function.BooleanSupplier condition) throws InterruptedException {
+    private static boolean await(BooleanSupplier condition) throws InterruptedException {
         for (int attempt = 0; attempt < 100; attempt++) {
             if (condition.getAsBoolean()) {
                 return true;

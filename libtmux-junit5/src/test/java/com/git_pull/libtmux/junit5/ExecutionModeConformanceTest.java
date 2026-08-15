@@ -18,7 +18,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -115,7 +117,24 @@ final class ExecutionModeConformanceTest {
                         .filter("guarded"::equals)
                         .toList()
                         .toString();
-            }));
+            }),
+            // tmux ends a command at a trailing semicolon on any argument, not only at one standing
+            // alone, so this argv is two commands however it travels. A carrier that quoted the
+            // semicolon instead would make it one — the window would be named "grouped;" and would
+            // take the listing as the program to run in it.
+            new Step("an argv whose trailing semicolon ends a command", server -> {
+                server.cmd(List.of("new-window", "-d", "-n", "grouped;", "list-windows", "-F", "#{window_name}"));
+                Session session = server.sessions().get(0);
+                return session.refresh().windows().stream()
+                        .map(Window::name)
+                        .filter(name -> name.startsWith("grouped"))
+                        .sorted()
+                        .toList()
+                        .toString();
+            }),
+            // The other half of the same rule: a backslash before that semicolon keeps it, and the
+            // argument ends with a semicolon rather than the command ending there.
+            new Step("an argv whose trailing semicolon is escaped", server -> server.expand("escaped\\;")));
 
     private static boolean named(Session session, String name) {
         return session.refresh().windows().stream().anyMatch(window -> name.equals(window.name()));
@@ -147,8 +166,7 @@ final class ExecutionModeConformanceTest {
 
         // DIRECT is the baseline by name rather than by position: it is the default, and a reader
         // comparing against "whichever came first" would be reading the enum's declaration order.
-        List<Object> expected =
-                java.util.Objects.requireNonNull(byMode.get(ExecutionMode.DIRECT), "no trajectory for DIRECT");
+        List<Object> expected = Objects.requireNonNull(byMode.get(ExecutionMode.DIRECT), "no trajectory for DIRECT");
         byMode.forEach((mode, answered) -> {
             for (int step = 0; step < SCENARIOS.size(); step++) {
                 assertEquals(
@@ -199,7 +217,7 @@ final class ExecutionModeConformanceTest {
 
     /** Runs every scenario in order against one server, and answers with what each one said. */
     private static List<Object> trajectory(Path root, ExecutionMode mode) throws IOException {
-        Path home = root.resolve(mode.name().toLowerCase(java.util.Locale.ROOT));
+        Path home = root.resolve(mode.name().toLowerCase(Locale.ROOT));
         Files.createDirectories(home);
         Path config = home.resolve("empty.conf");
         Files.writeString(config, "");

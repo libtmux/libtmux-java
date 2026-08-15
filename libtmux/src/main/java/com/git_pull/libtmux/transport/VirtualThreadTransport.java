@@ -41,11 +41,13 @@ public final class VirtualThreadTransport implements TmuxTransport {
             throw new IllegalStateException("transport is closed");
         }
         AtomicReference<CommandResult> answered = new AtomicReference<>();
-        AtomicReference<RuntimeException> failed = new AtomicReference<>();
+        // Every Throwable, not only the ones a caller was expecting. An Error left behind would kill
+        // the worker with nothing recorded, and the join would then return an answer of null.
+        AtomicReference<Throwable> failed = new AtomicReference<>();
         Thread worker = Thread.ofVirtual().name("libtmux-virtual").start(() -> {
             try {
                 answered.set(delegate.execute(request));
-            } catch (RuntimeException e) {
+            } catch (Throwable e) {
                 failed.set(e);
             }
         });
@@ -55,13 +57,26 @@ public final class VirtualThreadTransport implements TmuxTransport {
             Thread.currentThread().interrupt();
             throw new TmuxTransportException("interrupted while waiting for tmux", DispatchOutcome.UNKNOWN, e);
         }
-        RuntimeException thrown = failed.get();
-        if (thrown != null) {
-            // Rethrown as it was, so a caller sees the same failure and the same dispatch certainty
-            // it would have seen without this carrier in the way.
-            throw thrown;
+        // Rethrown as it was, so a caller sees the same failure and the same dispatch certainty it
+        // would have seen without this carrier in the way. execute declares no checked exception, so
+        // the first two arms are the whole of what a conforming delegate can throw.
+        Throwable thrown = failed.get();
+        if (thrown instanceof RuntimeException runtime) {
+            throw runtime;
         }
-        return answered.get();
+        if (thrown instanceof Error error) {
+            throw error;
+        }
+        if (thrown != null) {
+            throw new TmuxTransportException("tmux could not be run to completion", DispatchOutcome.UNKNOWN, thrown);
+        }
+        CommandResult result = answered.get();
+        if (result == null) {
+            // A delegate that answers null is not one this library wrote. Refused here rather than
+            // handed on, because a null crossing into annotated code fails somewhere far less clear.
+            throw new TmuxTransportException("the carrier beneath answered nothing", DispatchOutcome.UNKNOWN, null);
+        }
+        return result;
     }
 
     @Override

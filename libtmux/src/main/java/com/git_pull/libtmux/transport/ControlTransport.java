@@ -8,6 +8,7 @@ import com.git_pull.libtmux.batch.OperationOutcome;
 import com.git_pull.libtmux.control.ControlClient;
 import com.git_pull.libtmux.control.ControlReply;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 import org.jspecify.annotations.Nullable;
@@ -45,9 +46,7 @@ public final class ControlTransport implements TmuxTransport {
 
     @Override
     public CommandResult execute(CommandRequest request) {
-        if (closed.get()) {
-            throw new IllegalStateException("transport is closed");
-        }
+        requireOpen();
         ControlClient attached = attachedClient();
         if (attached == null || carriedByProcess(request)) {
             return bootstrap.execute(request);
@@ -90,7 +89,7 @@ public final class ControlTransport implements TmuxTransport {
      * hook's, block on a channel — and control mode reports that work in the same stream as the
      * replies. Those extra blocks belong to no request this client sent.
      */
-    private static final java.util.Set<String> DEFERRING = java.util.Set.of(
+    private static final Set<String> DEFERRING = Set.of(
             "if-shell",
             "if",
             "run-shell",
@@ -109,7 +108,7 @@ public final class ControlTransport implements TmuxTransport {
      * server ends the connection the reply was going to arrive on. Sent down the client, it races
      * its own effect and fails to write as often as it succeeds.
      */
-    private static final java.util.Set<String> SELF_DESTROYING = java.util.Set.of("kill-server");
+    private static final Set<String> SELF_DESTROYING = Set.of("kill-server");
 
     /**
      * Whether this request must go over a process rather than the control client.
@@ -122,20 +121,21 @@ public final class ControlTransport implements TmuxTransport {
      * that listing.
      *
      * <p>So a request goes over a process whenever the stream cannot be trusted after it. Three
-     * kinds cannot. A group says so in its argv. A command that makes tmux run or await something
-     * else does not, and is recognised by name — including {@code set-hook -R}, which runs a hook's
-     * commands rather than recording them. And a command that ends the client carrying it can only
-     * race its own effect.
+     * kinds cannot. A group says so in its argv, by tmux's own rule rather than by a semicolon
+     * standing alone — see {@link ControlClient#isCommandGroup}. A command that makes tmux run or
+     * await something else does not say so, and is recognised by name — including {@code set-hook
+     * -R}, which runs a hook's commands rather than recording them. And a command that ends the
+     * client carrying it can only race its own effect.
      *
      * <p>A group is one invocation either way, and the rest are rare enough that a process costs
      * nothing worth having. Nothing is lost but the illusion that control mode carried it.
      */
     private static boolean carriedByProcess(CommandRequest request) {
-        java.util.List<String> argv = request.argv();
+        List<String> argv = request.argv();
         if (argv.isEmpty()) {
             return false;
         }
-        if (argv.contains(";")) {
+        if (ControlClient.isCommandGroup(argv)) {
             return true;
         }
         String name = argv.get(0);
@@ -149,6 +149,11 @@ public final class ControlTransport implements TmuxTransport {
      *
      * <p>Asked of the bootstrap transport rather than of a {@code Server}, because a transport is
      * what a server is built on and cannot ask one back.
+     *
+     * <p>Closing is checked on both sides of the attach rather than only at the door. Finding a
+     * session takes a command of its own, so a close can land after this began and before a client
+     * exists — and a close cannot release a client that was not there to be seen. Whoever attached
+     * it is therefore the one that has to release it.
      */
     private @Nullable ControlClient attachedClient() {
         ControlClient existing = client;
@@ -160,14 +165,27 @@ public final class ControlTransport implements TmuxTransport {
             if (client != null) {
                 return client;
             }
+            requireOpen();
             SessionId session = firstSession();
             if (session == null) {
                 return null;
             }
-            client = ControlClient.attach(config, session);
-            return client;
+            requireOpen();
+            ControlClient attached = ControlClient.attach(config, session);
+            if (closed.get()) {
+                attached.close();
+                throw new IllegalStateException("transport is closed");
+            }
+            client = attached;
+            return attached;
         } finally {
             attaching.unlock();
+        }
+    }
+
+    private void requireOpen() {
+        if (closed.get()) {
+            throw new IllegalStateException("transport is closed");
         }
     }
 
