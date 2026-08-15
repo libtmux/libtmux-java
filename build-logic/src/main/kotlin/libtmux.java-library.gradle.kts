@@ -48,6 +48,13 @@ tasks.withType<Javadoc>().configureEach {
     (options as StandardJavadocDocletOptions).addBooleanOption("Xdoclint:all,-missing", true)
 }
 
+// Stated once, by the build. A version repeated in source is a version that drifts: the MCP server
+// announced 0.1.0 to every client long after the build had moved on. Lazy, because the publication
+// convention sets the version after this one is applied.
+tasks.jar {
+    manifest { attributes("Implementation-Version" to provider { project.version.toString() }) }
+}
+
 // Reproducible archives: no timestamps, stable entry order.
 tasks.withType<AbstractArchiveTask>().configureEach {
     isPreserveFileTimestamps = false

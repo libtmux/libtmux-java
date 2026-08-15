@@ -2,12 +2,12 @@
 
 ## There is nothing to install
 
-`com.git-pull:libtmux` is a Java artifact and carries no Scala binary-version
+`io.github.libtmux:libtmux` is a Java artifact and carries no Scala binary-version
 suffix, which is exactly what makes it usable from every Scala version at once.
 Depend on it with a single `%`, never `%%`:
 
 ```scala
-libraryDependencies += "com.git-pull" % "libtmux" % "0.1.0"
+libraryDependencies += "io.github.libtmux" % "libtmux" % "0.0.1-alpha.1"
 ```
 
 `%%` would ask for `libtmux_3`, which does not exist and should not. A Java

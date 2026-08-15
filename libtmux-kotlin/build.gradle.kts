@@ -52,4 +52,11 @@ tasks.withType<AbstractArchiveTask>().configureEach {
     filePermissions { unix("644") }
 }
 
-tasks.jar { manifest { attributes("Automatic-Module-Name" to "com.git_pull.libtmux.kotlin") } }
+tasks.jar {
+    manifest {
+        attributes(
+            "Automatic-Module-Name" to "com.git_pull.libtmux.kotlin",
+            "Implementation-Version" to provider { project.version.toString() },
+        )
+    }
+}

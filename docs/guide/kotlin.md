@@ -32,8 +32,8 @@ Server.open(config).use { server ->            // AutoCloseable
 ## What libtmux-kotlin adds
 
 ```kotlin
-implementation(platform("com.git-pull:libtmux-bom:0.1.0"))
-implementation("com.git-pull:libtmux-kotlin")
+implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.1"))
+implementation("io.github.libtmux:libtmux-kotlin")
 ```
 
 **Absence as `null`.** `Optional` is inert in Kotlin — `?.`, `?:` and smart casts

@@ -2,9 +2,9 @@
 // which is what stops a project mixing two releases of modules that were built against each other.
 //
 //     dependencies {
-//         implementation(platform("com.git-pull:libtmux-bom:<version>"))
-//         implementation("com.git-pull:libtmux")
-//         testImplementation("com.git-pull:libtmux-junit5")
+//         implementation(platform("io.github.libtmux:libtmux-bom:<version>"))
+//         implementation("io.github.libtmux:libtmux")
+//         testImplementation("io.github.libtmux:libtmux-junit5")
 //     }
 plugins {
     `java-platform`

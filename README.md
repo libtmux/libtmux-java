@@ -3,6 +3,11 @@
 [![CI](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml)
 [![tmux matrix](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#status)
+
+> **Alpha.** Every published version carries an `-alpha` qualifier and a `0.0.x`
+> number, both of which mean the same thing: the API will change without notice,
+> and no release is supported once the next one exists. Pin an exact version.
 
 Typed, blocking access to [tmux](https://github.com/tmux/tmux) from the JVM.
 
@@ -90,14 +95,14 @@ A directory here is a published artifact exactly when its name appears above, an
 `platformCoversEveryPublishedModule` fails the build if that stops being true.
 `benchmarks/` and `integration-tests/` are the build's own, and are never released.
 
-Group `com.git-pull`. Name the version once, through the BOM, and the rest
+Group `io.github.libtmux`. Name the version once, through the BOM, and the rest
 follow it:
 
 ```kotlin
 dependencies {
-    implementation(platform("com.git-pull:libtmux-bom:0.1.0-SNAPSHOT"))
-    implementation("com.git-pull:libtmux")
-    testImplementation("com.git-pull:libtmux-junit5")
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.1"))
+    implementation("io.github.libtmux:libtmux")
+    testImplementation("io.github.libtmux:libtmux-junit5")
 }
 ```
 
@@ -145,6 +150,10 @@ $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds
 - [Streaming](docs/guide/streaming.md)
 - [Testing with real tmux](docs/guide/testing.md)
 - [Kotlin](docs/guide/kotlin.md) and [Scala](docs/guide/scala.md)
+- [Releasing](RELEASING.md)
+
+Whole runnable programs live in [`examples/`](examples/), and the suite there runs
+every one of them against a real tmux.
 
 The design is recorded under `docs/spikes/`. Each note carries the measurements
 behind the decision it records, including the ones that overturned an earlier
@@ -157,8 +166,21 @@ every server this suite starts lives under a path naming this port.
 
 ## Status
 
-Under construction. The API is not yet stable. Changes are recorded in
-[`CHANGELOG.md`](CHANGELOG.md).
+**Alpha.** `alpha` is the lowest qualifier Maven's own comparator recognises —
+its order runs `alpha < beta < milestone < rc < snapshot < release` — so nothing
+published here can sort below what is published today, and every future release
+supersedes it cleanly.
+
+What that means in practice:
+
+- **The API will change without notice**, including in ways that do not compile.
+- **Only the newest version is supported.** There are no backports.
+- **Pin an exact version.** A range will move under you.
+- What is *not* alpha is the tmux correctness: the whole real-tmux suite runs
+  against all eight supported releases on every push.
+
+Changes are recorded in [`CHANGELOG.md`](CHANGELOG.md); how a release is cut is
+in [`RELEASING.md`](RELEASING.md).
 
 ## License
 

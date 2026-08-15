@@ -44,6 +44,18 @@ public final class TmuxMcpServer {
 
     private TmuxMcpServer() {}
 
+    /**
+     * What this build calls itself, as the jar's manifest records it.
+     *
+     * <p>Read rather than written down. A version repeated in source drifts from the one the build
+     * publishes, and a model told the wrong one has no way to notice. Outside a jar — a test, an IDE
+     * — there is no manifest, and "unreleased" is the honest answer rather than a stale number.
+     */
+    private static String version() {
+        String stated = TmuxMcpServer.class.getPackage().getImplementationVersion();
+        return stated == null ? "unreleased" : stated;
+    }
+
     /** Serves a tmux server over stdin and stdout, which is how an MCP client launches a tool. */
     public static McpSyncServer overStdio(Server server) {
         return overStdio(server, System.in);
@@ -64,7 +76,7 @@ public final class TmuxMcpServer {
     public static McpSyncServer serving(Server server, McpServerTransportProvider transport) {
         TmuxTools tools = new TmuxTools(server);
         return McpServer.sync(transport)
-                .serverInfo("libtmux", "0.1.0")
+                .serverInfo("libtmux", version())
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
                 .toolCall(
                         tool("tmux_list_sessions", "Lists tmux sessions and the windows in each.", Map.of()),

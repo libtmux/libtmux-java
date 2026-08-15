@@ -6,14 +6,14 @@
 // notices and nobody meant.
 plugins { `maven-publish` }
 
-group = "com.git-pull"
-version = providers.gradleProperty("libtmuxVersion").getOrElse("0.1.0-SNAPSHOT")
+group = "io.github.libtmux"
+version = providers.gradleProperty("libtmuxVersion").getOrElse("0.0.1-alpha.1-SNAPSHOT")
 
 publishing {
     publications.withType<MavenPublication>().configureEach {
         pom {
             name = project.name
-            description = "Typed tmux access for the JVM"
+            description = "Typed tmux access for the JVM. Alpha: the API is not stable and will change without notice."
             url = "https://libtmux.git-pull.com/"
             licenses {
                 license {

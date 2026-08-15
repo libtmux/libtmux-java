@@ -1,11 +1,16 @@
 # Changelog
 
-Notable changes, newest first. Versions follow [semantic versioning][semver];
-until 1.0 the public API may change in a minor release.
+Notable changes, newest first. Versions follow [semantic versioning][semver].
+
+**This project is alpha.** Every version carries an `-alpha` qualifier, which is
+the lowest Maven's comparator recognises, and a `0.0.x` number. Both say the same
+thing: anything below may change in any release, including in ways that do not
+compile. Only the newest version is supported, and there are no backports. Pin an
+exact version rather than a range.
 
 [semver]: https://semver.org/spec/v2.0.0.html
 
-## Unreleased
+## Unreleased — 0.0.1-alpha.1
 
 ### Fixed
 
@@ -35,6 +40,11 @@ until 1.0 the public API may change in a minor release.
 
 ### Added
 
+- `RELEASING.md`, covering namespace verification, the signing key, and why the
+  publishing plugin is not the one most tutorials name.
+- `examples/`, whole runnable programs whose own suite runs each against real
+  tmux, and `scripts/` for building the tmux matrix and reaping abandoned
+  servers by hand.
 - **`libtmux-kotlin`.** The core was already null-safe from Kotlin — it is
   annotated with JSpecify, which Kotlin has read since 1.5.20 — so this is what
   Java cannot express: absence as `null` rather than `Optional`, and `!expr` on
@@ -45,9 +55,12 @@ until 1.0 the public API may change in a minor release.
 - **A guide for [Kotlin](docs/guide/kotlin.md) and [Scala](docs/guide/scala.md)**,
   including why there is no `libtmux-scala` and what shape it would take.
 - **`platformCoversEveryPublishedModule`.** A module is published exactly when it
-  applies `libtmux.published-library`, and the build now fails when that set
-  stops matching `libtmux-bom`, rather than shipping an artifact the platform
-  does not manage.
+  declares a Maven publication, and the build now fails when that set stops
+  matching `libtmux-bom`, rather than shipping an artifact the platform does not
+  manage. It asks about the publication rather than the plugin because those came
+  apart once already: `libtmux-kotlin` applied the publishing convention, which
+  configures publications rather than creating one, and released no jar while
+  looking published to the build.
 - **`kotlinStaysDownstream`**, which fails when anything not written in Kotlin
   depends on the Kotlin module. Per the JSpecify specification a class carrying
   `@kotlin.Metadata` is not null-marked, so such a dependency would silently cost
@@ -77,6 +90,11 @@ until 1.0 the public API may change in a minor release.
 
 ### Changed
 
+- **The group is `io.github.libtmux`**, verified on the Central Portal, and the
+  version is `0.0.1-alpha.1`. `alpha` is the lowest qualifier Maven's comparator
+  recognises, so nothing published later can sort beneath it.
+- The MCP server reports the version from its jar manifest instead of a literal,
+  which had already drifted to `0.1.0`.
 - The build no longer uses any API removed in Gradle 10.
 - Types are named rather than fully qualified inline: 67 occurrences across 26
   files, where the same type was already imported directly above.
