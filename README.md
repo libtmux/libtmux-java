@@ -81,9 +81,14 @@ rather than collapsing both into one error.
 | `libtmux`           | transport, snapshots, entities, options, hooks, batching, control mode, query model. No runtime dependencies. |
 | `libtmux-jackson`   | the versioned JSON form of a filter expression                        |
 | `libtmux-junit5`    | a JUnit 5 extension giving each test its own tmux server              |
+| `libtmux-kotlin`    | Kotlin ergonomics over the Java API                                   |
 | `libtmux-workspace` | builds a session from a tmuxp-shaped YAML description                 |
 | `libtmux-mcp`       | exposes a tmux server to a model over the Model Context Protocol      |
 | `libtmux-bom`       | one version for all of the above                                      |
+
+A directory here is a published artifact exactly when its name appears above, and
+`platformCoversEveryPublishedModule` fails the build if that stops being true.
+`benchmarks/` and `integration-tests/` are the build's own, and are never released.
 
 Group `com.git-pull`. Name the version once, through the BOM, and the rest
 follow it:
@@ -101,6 +106,21 @@ Not yet published to Maven Central; build locally with:
 ```console
 $ ./gradlew publishToMavenLocal
 ```
+
+## Kotlin and Scala
+
+Both work without a wrapper, because the core is annotated with
+[JSpecify](https://jspecify.dev/) and carries no Scala version suffix.
+
+**Kotlin** sees the API as null-safe rather than as platform types — Kotlin has
+read JSpecify since 1.5.20. `Server` is `AutoCloseable`, so `use {}` works, and
+the `Consumer<Builder>` overloads take trailing lambdas. `libtmux-kotlin` adds
+what Java cannot express: absence as `null` rather than `Optional`, and `!expr`
+on a filter.
+
+**Scala** consumes the Java artifacts directly. There is no `_2.13` or `_3`
+build, and there should not be — a Java artifact carrying a Scala suffix is a
+bug. See [the Scala guide](docs/guide/scala.md).
 
 ## Requirements
 
@@ -124,6 +144,7 @@ $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds
 - [Snapshots and handles](docs/guide/snapshots-and-handles.md)
 - [Streaming](docs/guide/streaming.md)
 - [Testing with real tmux](docs/guide/testing.md)
+- [Kotlin](docs/guide/kotlin.md) and [Scala](docs/guide/scala.md)
 
 The design is recorded under `docs/spikes/`. Each note carries the measurements
 behind the decision it records, including the ones that overturned an earlier

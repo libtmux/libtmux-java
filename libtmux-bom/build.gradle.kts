@@ -18,6 +18,7 @@ dependencies {
         // that belongs in the BOM is one line; one that does not belongs nowhere near it.
         api(project(":libtmux"))
         api(project(":libtmux-jackson"))
+        api(project(":libtmux-kotlin"))
         api(project(":libtmux-junit5"))
         api(project(":libtmux-mcp"))
         api(project(":libtmux-workspace"))
