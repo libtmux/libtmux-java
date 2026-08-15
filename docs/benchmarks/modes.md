@@ -8,17 +8,17 @@ Measured against tmux `3.7b`, 20 rounds per scenario, on one machine at one mome
 
 | mode | wall clock | commands dispatched | tmux processes |
 | --- | --- | --- | --- |
-| `DIRECT` | 1635 ms | 80 | 80 |
-| `CONTROL` | 132 ms | 80 | 1 client, reused |
-| `VIRTUAL` | 1139 ms | 80 | 80 |
+| `DIRECT` | 1300 ms | 80 | 80 |
+| `CONTROL` | 172 ms | 80 | 1 client, reused |
+| `VIRTUAL` | 766 ms | 80 | 80 |
 
 ## Building a workspace
 
 | mode | wall clock | commands dispatched | tmux processes |
 | --- | --- | --- | --- |
-| `DIRECT` | 2305 ms | 108 | 108 |
-| `CONTROL` | 474 ms | 108 | 1 client, reused |
-| `VIRTUAL` | 2192 ms | 108 | 108 |
+| `DIRECT` | 2314 ms | 108 | 108 |
+| `CONTROL` | 317 ms | 108 | 1 client, reused |
+| `VIRTUAL` | 1418 ms | 108 | 108 |
 
 ## Collapsing round trips
 
@@ -26,15 +26,15 @@ The same 20 windows, asked for three ways under each carrier. `batch()` and `cha
 
 | carrier and strategy | wall clock | commands dispatched | tmux processes |
 | --- | --- | --- | --- |
-| `DIRECT, one call at a time` | 2305 ms | 108 | 108 |
-| `DIRECT, batch()` | 327 ms | 9 | 9 |
-| `DIRECT, chain()` | 469 ms | 9 | 9 |
-| `CONTROL, one call at a time` | 474 ms | 108 | 1 client, reused |
-| `CONTROL, batch()` | 90 ms | 9 | 1 client, reused + 1 |
-| `CONTROL, chain()` | 173 ms | 9 | 1 client, reused + 1 |
-| `VIRTUAL, one call at a time` | 2192 ms | 108 | 108 |
-| `VIRTUAL, batch()` | 457 ms | 9 | 9 |
-| `VIRTUAL, chain()` | 278 ms | 9 | 9 |
+| `DIRECT, one call at a time` | 2314 ms | 108 | 108 |
+| `DIRECT, batch()` | 279 ms | 9 | 9 |
+| `DIRECT, chain()` | 196 ms | 9 | 9 |
+| `CONTROL, one call at a time` | 317 ms | 108 | 1 client, reused |
+| `CONTROL, batch()` | 110 ms | 9 | 1 client, reused + 1 |
+| `CONTROL, chain()` | 96 ms | 9 | 1 client, reused + 1 |
+| `VIRTUAL, one call at a time` | 1418 ms | 108 | 108 |
+| `VIRTUAL, batch()` | 170 ms | 9 | 9 |
+| `VIRTUAL, chain()` | 173 ms | 9 | 9 |
 
 A group is carried by a process even under `CONTROL`, because a control client frames one reply per command and a group would desynchronise the stream. The process column is counted, not assumed, so that shows up here.
 
