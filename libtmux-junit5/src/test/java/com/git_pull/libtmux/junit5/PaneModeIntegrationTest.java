@@ -2,6 +2,7 @@ package com.git_pull.libtmux.junit5;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.git_pull.libtmux.Pane;
 import com.git_pull.libtmux.Server;
@@ -80,6 +81,10 @@ final class PaneModeIntegrationTest {
 
     @Test
     void theClientChooserLeavesADetachedPaneAlone(Server server) {
+        // The chooser has nothing to offer only while nothing is attached. A control carrier
+        // attaches a client to carry commands at all, which gives the chooser something to list.
+        assumeTrue(server.clients().isEmpty(), "a carrier has a client attached, so there is one to choose");
+
         Pane pane = onlyPane(server);
 
         pane.chooseClient();

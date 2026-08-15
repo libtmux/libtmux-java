@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.git_pull.libtmux.LibTmuxException;
 import com.git_pull.libtmux.Pane;
@@ -112,6 +113,11 @@ final class WindowMovementIntegrationTest {
     /** tmux draws a popup for a client, and a detached fixture session has none. */
     @Test
     void aPopupWithoutAClientIsReportedRatherThanIgnored(Server server) {
+        // A popup needs a client to draw on, and this is about what happens when there is none.
+        // A control carrier attaches one to carry commands at all, so under that carrier the
+        // premise cannot hold and there is nothing here to test rather than something failing.
+        assumeTrue(server.clients().isEmpty(), "a carrier has a client attached, so a popup has one");
+
         Window window = server.sessions().get(0).windows().get(0);
 
         assertThrows(LibTmuxException.class, () -> window.displayPopup("true"));

@@ -28,14 +28,20 @@ final class ClientOperationsIntegrationTest {
     void aClientCanBeDetachedAndTheSessionSurvives(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
+        // Whichever clients are already here belong to somebody else — a control carrier attaches
+        // one of its own to carry commands at all. The client under test is the one that appears,
+        // and detaching must take that one rather than whichever tmux happens to list first.
+        java.util.Set<String> before =
+                server.clients().stream().map(Client::name).collect(java.util.stream.Collectors.toSet());
+
         try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
-            assertTrue(await(() -> !server.clients().isEmpty()), "no client ever attached");
-            Client client = server.clients().get(0);
+            assertTrue(await(() -> appeared(server, before).isPresent()), "no client ever attached");
+            Client client = appeared(server, before).orElseThrow();
 
             client.detach();
 
-            assertTrue(await(() -> server.clients().isEmpty()), "the client is still attached");
+            assertTrue(await(() -> appeared(server, before).isEmpty()), "the client is still attached");
             assertTrue(server.isAlive(), "detaching is not killing");
             assertTrue(
                     server.sessions().stream().anyMatch(seen -> seen.id().equals(session.id())),
@@ -125,6 +131,13 @@ final class ClientOperationsIntegrationTest {
     @Test
     void killingASessionThatIsNotThereSaysSo(Server server) {
         assertThrows(LibTmuxException.class, () -> server.killSession("never-existed"));
+    }
+
+    /** The client that attached after the named ones were already there. */
+    private static java.util.Optional<Client> appeared(Server server, java.util.Set<String> before) {
+        return server.clients().stream()
+                .filter(client -> !before.contains(client.name()))
+                .findFirst();
     }
 
     private static boolean await(BooleanSupplier condition) throws InterruptedException {

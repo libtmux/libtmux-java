@@ -151,15 +151,27 @@ final class BuffersAndClientIntegrationTest {
     @Test
     void aClientThatHasGoneRefreshesToNothing(Server server) throws Exception {
         Session session = server.sessions().get(0);
+        // Whichever clients are already here belong to somebody else — a control carrier attaches
+        // one of its own to carry commands at all. The client under test is the one that appears.
+        java.util.Set<String> before =
+                server.clients().stream().map(Client::name).collect(java.util.stream.Collectors.toSet());
+
         Client client;
         try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
-            assertTrue(await(() -> !server.clients().isEmpty()));
-            client = server.clients().get(0);
+            assertTrue(await(() -> appeared(server, before).isPresent()), "no client ever attached");
+            client = appeared(server, before).orElseThrow();
         }
 
         assertTrue(await(() -> client.refresh().isEmpty()), "the client outlived the connection that made it");
         assertEquals(java.util.Optional.empty(), client.fetchAttachment());
+    }
+
+    /** The client that attached after the named ones were already there. */
+    private static java.util.Optional<Client> appeared(Server server, java.util.Set<String> before) {
+        return server.clients().stream()
+                .filter(client -> !before.contains(client.name()))
+                .findFirst();
     }
 
     private static boolean await(java.util.function.BooleanSupplier condition) throws InterruptedException {
