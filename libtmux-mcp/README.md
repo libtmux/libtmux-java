@@ -1,12 +1,11 @@
 # libtmux-mcp
 
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-mcp?label=libtmux-mcp&color=blue)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-mcp)
-[![javadoc](https://javadoc.io/badge2/io.github.libtmux/libtmux-mcp/javadoc.svg)](https://javadoc.io/doc/io.github.libtmux/libtmux-mcp)
-
 **A tmux server, exposed to a model over the Model Context Protocol.**
 
 Point Claude Desktop, Claude Code, or any MCP client at a tmux socket and it can
 list sessions, read what a pane is showing, and run things in one.
+
+`io.github.libtmux:libtmux-mcp` — not yet on Maven Central.
 
 > **Alpha.** Tool names and shapes will change without notice.
 

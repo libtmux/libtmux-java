@@ -1,12 +1,11 @@
 # libtmux-junit5
 
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-junit5?label=libtmux-junit5&color=blue)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-junit5)
-[![javadoc](https://javadoc.io/badge2/io.github.libtmux/libtmux-junit5/javadoc.svg)](https://javadoc.io/doc/io.github.libtmux/libtmux-junit5)
-
 **A JUnit 5 extension that gives each test its own tmux server, and guarantees it
 is gone afterwards.**
 
 For testing *your* code against real tmux — not for testing libtmux.
+
+`io.github.libtmux:libtmux-junit5` — not yet on Maven Central.
 
 > **Alpha.** The API will change without notice.
 

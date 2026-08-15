@@ -1,12 +1,11 @@
 # libtmux-workspace
 
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-workspace?label=libtmux-workspace&color=blue)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace)
-[![javadoc](https://javadoc.io/badge2/io.github.libtmux/libtmux-workspace/javadoc.svg)](https://javadoc.io/doc/io.github.libtmux/libtmux-workspace)
-
 **Builds a session from a tmuxp-shaped YAML description.**
 
 Enough of [tmuxp](https://tmuxp.git-pull.com/)'s format to describe a workspace
 and build it. Not a runtime-compatible reimplementation.
+
+`io.github.libtmux:libtmux-workspace` — not yet on Maven Central.
 
 > **Alpha.** The API will change without notice.
 

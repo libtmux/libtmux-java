@@ -1,7 +1,5 @@
 # libtmux-bom
 
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-bom?label=libtmux-bom&color=blue)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-bom)
-
 **Name a version once. Every other libtmux coordinate follows it.**
 
 ```kotlin

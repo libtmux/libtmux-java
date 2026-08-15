@@ -81,25 +81,39 @@ rather than collapsing both into one error.
 
 ## Modules
 
-Group `io.github.libtmux`. Every directory below is its own artifact and its own
-README.
+Group `io.github.libtmux`. Each directory is its own artifact, with its own
+README. Nothing is on Maven Central yet — see [Status](#status).
 
-| artifact | | what it is for |
-| --- | --- | --- |
-| **[`libtmux`](libtmux/)** | [![](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux?label=)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux) | the library: transport, snapshots, entities, options, hooks, batching, control mode, query model. **No runtime dependencies.** |
-| [`libtmux-bom`](libtmux-bom/) | [![](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-bom?label=)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-bom) | name a version once, for all of the below |
-| [`libtmux-mcp`](libtmux-mcp/) | [![](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-mcp?label=)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-mcp) | **give a model a tmux server**, over the Model Context Protocol |
-| [`libtmux-junit5`](libtmux-junit5/) | [![](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-junit5?label=)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-junit5) | test *your* code against real tmux, one server per test |
-| [`libtmux-kotlin`](libtmux-kotlin/) | [![](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-kotlin?label=)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin) | Kotlin ergonomics; the core is already null-safe without it |
-| [`libtmux-jackson`](libtmux-jackson/) | [![](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-jackson?label=)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-jackson) | a filter expression as a versioned JSON document |
-| [`libtmux-workspace`](libtmux-workspace/) | [![](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-workspace?label=)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace) | build a session from a tmuxp-shaped YAML file |
+- **[`libtmux`](libtmux/)** — the library itself. Transport, snapshots,
+  entities, options, hooks, batching, control mode, query model.
+  **No runtime dependencies.**
+
+- **[`libtmux-bom`](libtmux-bom/)** — name a version once, and every coordinate
+  below follows it.
+
+- **[`libtmux-mcp`](libtmux-mcp/)** — give a model a tmux server, over the
+  [Model Context Protocol](https://modelcontextprotocol.io/). Lists panes, reads
+  what one is showing, runs things in it.
+
+- **[`libtmux-junit5`](libtmux-junit5/)** — test *your* code against real tmux.
+  One server per test, guaranteed gone afterwards even if the JVM is killed.
+
+- **[`libtmux-kotlin`](libtmux-kotlin/)** — Kotlin ergonomics. Optional: the core
+  is already null-safe from Kotlin without it.
+
+- **[`libtmux-jackson`](libtmux-jackson/)** — a filter expression as a versioned
+  JSON document, so it can be stored, sent, or written by something that is not
+  a Java program.
+
+- **[`libtmux-workspace`](libtmux-workspace/)** — build a session from a
+  tmuxp-shaped YAML file.
 
 Not published, and part of how the library is built:
 [`examples/`](examples/) · [`integration-tests/`](integration-tests/) ·
 [`benchmarks/`](benchmarks/) · [`scripts/`](scripts/) · `build-logic/`
 
-A directory is a published artifact exactly when it appears in the table above,
-and `platformCoversEveryPublishedModule` fails the build if that stops being true.
+A directory is a published artifact exactly when it appears above, and
+`platformCoversEveryPublishedModule` fails the build if that stops being true.
 
 ## Kotlin and Scala
 

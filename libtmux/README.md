@@ -1,12 +1,11 @@
 # libtmux
 
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux?label=libtmux&color=blue)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux)
-[![javadoc](https://javadoc.io/badge2/io.github.libtmux/libtmux/javadoc.svg)](https://javadoc.io/doc/io.github.libtmux/libtmux)
-
 **Typed, blocking access to a tmux server. No runtime dependencies.**
 
 This is the whole library. Everything else in the repository is an adapter to
 something — Jackson, JUnit, Kotlin, MCP, tmuxp — and depends on this.
+
+`io.github.libtmux:libtmux` — not yet on Maven Central.
 
 > **Alpha.** The API will change without notice. Pin an exact version.
 
@@ -177,15 +176,15 @@ try {
 
 ## Package map
 
-| package | holds |
-| --- | --- |
-| `io.github.libtmux` | `Server`, `Session`, `Window`, `Pane`, `Client`, `Options`, `Hooks`, and the typed fields `Pane_`, `Window_`, `Session_`, `Client_` |
-| `…​.query` | `FilterExpr` and its record nodes, `Selections`, `Fields` |
-| `…​.snapshot` | the immutable capture a traversal reads from |
-| `…​.transport` | how a command travels; `TmuxTransport`, `CommandResult`, dispatch certainty |
-| `…​.control` | `ControlClient`, for tmux's control mode and `%output` |
-| `…​.batch` | `Batch`, `BatchResult`, per-operation outcomes |
-| `…​.format` | tmux format templates and row parsing |
+- **`io.github.libtmux`** — `Server`, `Session`, `Window`, `Pane`, `Client`,
+  `Options`, `Hooks`, and the typed fields `Pane_`, `Window_`, `Session_`, `Client_`
+- **`io.github.libtmux.query`** — `FilterExpr` and its record nodes, `Selections`, `Fields`
+- **`io.github.libtmux.snapshot`** — the immutable capture a traversal reads from
+- **`io.github.libtmux.transport`** — how a command travels: `TmuxTransport`,
+  `CommandResult`, and dispatch certainty
+- **`io.github.libtmux.control`** — `ControlClient`, for control mode and `%output`
+- **`io.github.libtmux.batch`** — `Batch`, `BatchResult`, per-operation outcomes
+- **`io.github.libtmux.format`** — tmux format templates and row parsing
 
 ## Next
 

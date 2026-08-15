@@ -1,12 +1,12 @@
 # libtmux-kotlin
 
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-kotlin?label=libtmux-kotlin&color=blue)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin)
-
 **Kotlin ergonomics over the Java API. Sugar, not enablement.**
 
 You do not need this module to use libtmux from Kotlin. The core is annotated
 with [JSpecify](https://jspecify.dev/), which Kotlin has read since 1.5.20, so
 every type already arrives as `Window` rather than `Window!`.
+
+`io.github.libtmux:libtmux-kotlin` — not yet on Maven Central.
 
 > **Alpha.** The API will change without notice.
 
