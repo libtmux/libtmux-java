@@ -41,6 +41,30 @@ suite's intermittent failures.
 - **Nothing generated-looking.** Names that say what a thing is for, comments
   that say why rather than what, no abstraction without a second caller.
 
+## Where things live
+
+A directory is a published artifact exactly when it declares a Maven publication,
+and `platformCoversEveryPublishedModule` fails the build when that set stops
+matching `libtmux-bom`. Nothing about this is a convention you have to remember.
+
+Note the wording: *declares a publication*, not *applies the publishing plugin*.
+Those came apart once already — `libtmux-kotlin` applied `libtmux.publication`,
+which configures publications rather than creating one, so it looked published to
+the build and released no jar. A `publishToMavenLocal` found it; the gate now
+asks the question that would have.
+
+| directory                        | published | holds                                     |
+| -------------------------------- | --------- | ----------------------------------------- |
+| `libtmux*/`                      | yes       | one artifact each, named for its directory |
+| `integration-tests/`             | no        | the real-tmux suite, which spans artifacts |
+| `benchmarks/`                    | no        | the carrier measurements                   |
+| `build-logic/`                   | no        | convention plugins, as an included build   |
+| `docs/`, `gradle/`, `.github/`   | no        | everything else                            |
+
+The suite lives outside every published module on purpose. A suite inside one
+artifact's tests makes that artifact's dependencies and lifecycle answerable for
+how the whole library is tested.
+
 ## Commit messages
 
 Imperative subject, then why the change was needed, then what it did:

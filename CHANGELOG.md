@@ -35,6 +35,23 @@ until 1.0 the public API may change in a minor release.
 
 ### Added
 
+- **`libtmux-kotlin`.** The core was already null-safe from Kotlin — it is
+  annotated with JSpecify, which Kotlin has read since 1.5.20 — so this is what
+  Java cannot express: absence as `null` rather than `Optional`, and `!expr` on
+  a filter. Built with `-Xjspecify-annotations=strict`, which is how the claim
+  stays honest: `!` did not compile until its type parameter was bounded `T : Any`,
+  because `@NullMarked` makes the core's `FilterExpr` a `FilterExpr<T : Any>`.
+  Nothing written in Java may depend on it, and the build fails if that changes.
+- **A guide for [Kotlin](docs/guide/kotlin.md) and [Scala](docs/guide/scala.md)**,
+  including why there is no `libtmux-scala` and what shape it would take.
+- **`platformCoversEveryPublishedModule`.** A module is published exactly when it
+  applies `libtmux.published-library`, and the build now fails when that set
+  stops matching `libtmux-bom`, rather than shipping an artifact the platform
+  does not manage.
+- **`kotlinStaysDownstream`**, which fails when anything not written in Kotlin
+  depends on the Kotlin module. Per the JSpecify specification a class carrying
+  `@kotlin.Metadata` is not null-marked, so such a dependency would silently cost
+  a Java caller its nullness.
 - **Teardown that outlives the process meant to do it.** A test JVM killed
   outright left a tmux server running, and once the host's temporary-file
   cleaner removed its directory the socket could not be reached to kill it —
@@ -65,3 +82,8 @@ until 1.0 the public API may change in a minor release.
   files, where the same type was already imported directly above.
 - The compile-probe test writes its class files to a directory of its own and
   removes them, instead of leaving them under the root reserved for sockets.
+- **The real-tmux suite and the benchmark moved out of `libtmux-junit5`** into
+  `integration-tests/` and `benchmarks/`, neither of which is published. A suite
+  living in one artifact's test source set made that artifact's dependencies and
+  lifecycle answerable for how the whole library is tested, and kept the
+  benchmark one forgotten tag away from running in an ordinary build.
