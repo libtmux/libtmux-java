@@ -19,7 +19,25 @@ That writes a launcher at `libtmux-mcp/build/install/libtmux-mcp/bin/libtmux-mcp
 An MCP client starts it as a subprocess and speaks JSON-RPC over its stdin and
 stdout.
 
-### Claude Desktop / Claude Code
+The launcher takes `--socket <path>`, `--socket-name <name>` and `--tmux <binary>`.
+Set `LIBTMUX_MODE=control` in its environment to reuse one tmux client instead of
+starting a process per command.
+
+### Claude Code
+
+```console
+$ claude mcp add tmux -- /absolute/path/to/libtmux-mcp --socket /tmp/my-app/s
+```
+
+### Codex CLI
+
+```console
+$ codex mcp add tmux -- /absolute/path/to/libtmux-mcp --socket /tmp/my-app/s
+```
+
+### Claude Desktop
+
+Add to `claude_desktop_config.json`:
 
 ```json
 {
@@ -32,9 +50,31 @@ stdout.
 }
 ```
 
-The launcher takes `--socket <path>`, `--socket-name <name>`, and `--tmux <binary>`.
-Set `LIBTMUX_MODE=control` in its environment to reuse one tmux client instead of
-starting a process per command.
+### Any other client
+
+It speaks JSON-RPC over stdin and stdout, so anything implementing MCP's stdio
+transport can launch it. There is nothing to configure but the path and the flags.
+
+## What it feels like
+
+> **You:** What's running in my tmux panes, and is the test suite still going?
+>
+> **Agent:** Three panes. `%0` is a shell, `%1` is running `pytest`, `%2` is a
+> shell in the `logs` window. Reading `%1` now — it is on `tests/test_auth.py`,
+> 84 passed so far, nothing failed yet. Want me to wait for it to finish?
+
+The agent reads and drives the terminal directly. No pasting output back and
+forth, no switching windows to check on something long-running.
+
+## When it earns its keep
+
+For a single `tmux send-keys`, it does not. It earns its keep the moment the
+agent has to *wait*, *inspect*, or avoid disturbing the terminal a person is
+using — a test run finishing, a dev server printing which port it took, a deploy
+log settling.
+
+The difference is not more access to tmux. It is a better place to put the loop
+that watches it.
 
 ## Tools
 

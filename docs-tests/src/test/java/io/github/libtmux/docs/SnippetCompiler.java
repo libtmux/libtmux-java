@@ -15,6 +15,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
@@ -102,6 +104,16 @@ final class SnippetCompiler {
             }
             """;
 
+    /**
+     * A shown result: {@code session.name();  // \u2192 demo}
+     *
+     * <p>Python's doctest is why the sibling library's README can show what every call returns and
+     * still be trusted: the shown value is executed. Java has no doctest, so this is one. A line
+     * carrying an arrow becomes an assertion, which means a README cannot claim a value the library
+     * does not produce — the number in the comment is as checked as the call above it.
+     */
+    private static final Pattern SHOWN_RESULT = Pattern.compile("^(\\s*)(.+?);\\s*//\\s*(?:\\u2192|->)\\s*(.*?)\\s*$");
+
     private final List<String> classpath;
 
     SnippetCompiler(String classpath) {
@@ -123,7 +135,10 @@ final class SnippetCompiler {
         }
         String unit = snippet.shape() == Snippet.Shape.TYPE
                 ? PREAMBLE + "\n@SuppressWarnings(\"all\")\n" + snippet.code()
-                : PREAMBLE + STATEMENT_HARNESS + snippet.code().stripTrailing() + HARNESS_TAIL;
+                : PREAMBLE
+                        + STATEMENT_HARNESS
+                        + assertShownResults(snippet.code()).stripTrailing()
+                        + HARNESS_TAIL;
 
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
         Path classes = temporaryDirectory();
@@ -141,6 +156,33 @@ final class SnippetCompiler {
                 .map(diagnostic -> diagnostic.getMessage(Locale.ROOT))
                 .toList();
         return new Compiled(errors, classes);
+    }
+
+    /**
+     * Turns every shown result into an assertion.
+     *
+     * <p>Compared as text, so one rule covers a string, a number, a boolean and a list without the
+     * document having to write Java literals in a comment. What a reader sees after the arrow is
+     * exactly what {@code toString} produced.
+     */
+    static String assertShownResults(String code) {
+        StringBuilder rewritten = new StringBuilder();
+        for (String line : code.split("\n", -1)) {
+            Matcher shown = SHOWN_RESULT.matcher(line);
+            if (shown.matches() && !shown.group(2).trim().startsWith("//")) {
+                rewritten
+                        .append(shown.group(1))
+                        .append("assertEquals(\"")
+                        .append(shown.group(3).replace("\\", "\\\\").replace("\"", "\\\""))
+                        .append("\", String.valueOf(")
+                        .append(shown.group(2))
+                        .append("));");
+            } else {
+                rewritten.append(line);
+            }
+            rewritten.append('\n');
+        }
+        return rewritten.toString();
     }
 
     /**

@@ -73,8 +73,14 @@ a traversal can never observe a half-changed server.
 
 ```java
 Session session = server.sessions().get(0);
-int panes = session.windows().stream().mapToInt(w -> w.panes().size()).sum();  // still one read
-Session now = session.refresh();                                               // this reads again
+
+int panes = session.windows().stream().mapToInt(w -> w.panes().size()).sum();
+
+// Still the one read: walking the capture asked tmux nothing further.
+panes;                               // → 1
+
+// This one reads again.
+session.refresh().name();            // → libtmux
 ```
 
 ### Filters are values, and they never shell out
@@ -83,13 +89,14 @@ An expression is a `Predicate`, so it drops into a stream unchanged — and
 because the capture is already in hand, filtering costs nothing.
 
 ```java
-List<Pane> editors = server.panes().stream()
-        .filter(Pane_.command().startsWith("nvim"))
-        .toList();
+server.sessions().get(0).newWindow("logs");
 
 List<Window> logs = server.windows().stream()
-        .filter(Window_.name().contains("log").and(Window_.active().isTrue()))
+        .filter(Window_.name().contains("log"))
         .toList();
+
+logs.size();                         // → 1
+logs.get(0).name();                  // → logs
 ```
 
 Typed fields fail at **compile** time, not at runtime:
@@ -108,8 +115,12 @@ server.newSession("build");
 
 Session build = Selections.exactlyOne(
         server.sessions().stream().filter(Session_.name().is("build")).toList());
-// NoMatchException, or MultipleMatchesException — never a silent first().
+
+build.name();                        // → build
 ```
+
+`NoMatchException` for none, `MultipleMatchesException` for several — never a
+silent `first()`.
 
 Full guide: **[Filtering](../docs/guide/filtering.md)**.
 
@@ -146,7 +157,9 @@ BatchResult result = server.batch()
         .add("new-window", "-d", "-n", "two")
         .run();
 
-result.operations().forEach(op -> System.out.println(op.outcome()));  // COMPLETE / FAILED / SKIPPED
+result.succeeded();                                       // → true
+result.operations().size();                               // → 2
+result.operations().get(0).outcome();                     // → COMPLETE
 ```
 
 tmux discards a group after its first failure, so a single exit status cannot say
@@ -155,9 +168,11 @@ which command failed or which never ran. Each operation gets its own outcome.
 ### Options and hooks
 
 ```java
-server.sessions().get(0).options().set("status-left", "[libtmux] ");
-Optional<String> left = server.sessions().get(0).options().get("status-left");
-server.hooks().set("after-new-window", "display-message 'made one'");
+Options options = server.sessions().get(0).options();
+
+options.set("status-left", "[libtmux]");
+
+options.get("status-left").orElseThrow();                 // → [libtmux]
 ```
 
 ### Failures say how certain they are

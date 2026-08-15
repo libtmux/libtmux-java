@@ -33,6 +33,117 @@ compiled and then run against a real tmux** by [`docs-tests`](docs-tests/). A
 snippet that stopped working fails the build; one that claims the compiler rejects
 it must actually be rejected.
 
+## Quickstart
+
+Each block below runs against a real tmux server, and every value after a `→` is
+asserted. If any of them stopped being true, the build would fail.
+
+### Create things
+
+```java
+Session session = server.newSession("demo");
+Window editor = session.newWindow("editor");
+Pane right = editor.split();
+
+session.name();                      // → demo
+editor.name();                       // → editor
+editor.refresh().panes().size();     // → 2
+```
+
+### Read the state back
+
+One read hands you handles. Walking them issues no further commands, so a
+traversal cannot see a half-changed server.
+
+```java
+server.newSession("demo").newWindow("editor");
+
+List<String> names = server.windows().stream().map(Window::name).sorted().toList();
+
+names.contains("editor");            // → true
+server.sessions().size();            // → 2
+```
+
+### Filter, without asking tmux again
+
+```java
+server.sessions().get(0).newWindow("editor");
+
+List<Window> editors = server.windows().stream()
+        .filter(Window_.name().startsWith("edit"))
+        .toList();
+
+editors.size();                      // → 1
+editors.get(0).name();               // → editor
+```
+
+An expression is a value, so it can also say what it is — which a lambda cannot:
+
+```java
+Window_.name().startsWith("edit").describe();   // → window_name starts-with edit
+```
+
+### Say how many you expect
+
+```java
+server.newSession("build");
+
+Session build = Selections.exactlyOne(
+        server.sessions().stream().filter(Session_.name().is("build")).toList());
+
+build.name();                        // → build
+```
+
+`exactlyOne` raises `NoMatchException` for none and `MultipleMatchesException`
+for several, because those are different bugs in the calling code.
+
+### Send keys and read what a pane shows
+
+```java
+Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
+
+pane.sendLine("echo hello from libtmux");
+
+pane.capture().isEmpty();            // → false
+```
+
+### Traverse in both directions
+
+```java
+Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
+
+pane.window().session().name();      // → libtmux
+```
+
+### Run any tmux command
+
+Nothing is hidden behind the typed API. Every object can reach tmux directly, and
+a nonzero exit is data rather than an exception:
+
+```java
+server.cmd("display-message", "-p", "#{version}").succeeded();   // → true
+server.cmd("kill-session", "-t", "=nope").succeeded();           // → false
+```
+
+### Know where you are running
+
+Code running *inside* a pane — a script in a split, a tmux hook, an agent — can
+ask where it is. tmux writes `TMUX` and `TMUX_PANE` into every pane it spawns,
+and `TmuxEnvironment` reads them back:
+
+```java
+Map<String, String> inside = Map.of("TMUX", socket + ",1,$0", "TMUX_PANE", "%0");
+
+TmuxEnvironment here = TmuxEnvironment.of(inside).orElseThrow();
+
+here.session().value();              // → $0
+here.pane().orElseThrow().value();   // → %0
+```
+
+In a real pane those two variables are already set, so `TmuxEnvironment.current()`
+takes nothing and returns empty when there is no pane to describe. This README is
+not running inside one, so the example supplies them.
+
 ## Three switches
 
 | to stop                                     | write                          | which costs                    |
@@ -116,6 +227,48 @@ Not published, and part of how the library is built:
 
 A directory is a published artifact exactly when it appears above, and
 `platformCoversEveryPublishedModule` fails the build if that stops being true.
+
+## Installation
+
+Name the version once, through the platform, and every other coordinate follows
+it. That is what stops a project mixing two releases of modules that were built
+against each other.
+
+```kotlin
+dependencies {
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.1"))
+
+    implementation("io.github.libtmux:libtmux")
+    testImplementation("io.github.libtmux:libtmux-junit5")
+}
+```
+
+<details>
+<summary>Maven</summary>
+
+```xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>io.github.libtmux</groupId>
+      <artifactId>libtmux-bom</artifactId>
+      <version>0.0.1-alpha.1</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+
+<dependency>
+  <groupId>io.github.libtmux</groupId>
+  <artifactId>libtmux</artifactId>
+</dependency>
+```
+
+</details>
+
+Nothing is on Maven Central yet. Until the first release, build it locally with
+`./gradlew publishToMavenLocal`.
 
 ## Kotlin and Scala
 

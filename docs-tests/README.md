@@ -40,6 +40,33 @@ prevent.
 `Pane_.index().startsWith("2")` an error. A README claiming the compiler rejects
 something would otherwise survive the day it stopped being true.
 
+## Showing what a call returns
+
+A line ending in an arrow is an assertion:
+
+<!-- snippet: compile-only: shows the syntax; the values belong to a session this fixture does not have -->
+```java
+session.name();                      // → demo
+server.sessions().size();            // → 2
+server.hasSession("demo");           // → true
+```
+
+Python's doctest is why the sibling library's README can show what every call
+returns and still be trusted. Java has no doctest, so this is one: the value after
+the arrow is compared against `String.valueOf(…)` of the expression above it, and
+a README cannot claim a value the library does not produce.
+
+Comparing as text means one rule covers a string, a number, a boolean and a list
+without a comment having to contain Java literals — what you see after the arrow
+is exactly what `toString` gave.
+
+Two consequences worth knowing:
+
+- **Everything after the arrow is the expected value**, so prose cannot trail it.
+  Put the explanation on its own comment line above.
+- **The value is trimmed**, so one with a leading or trailing space cannot be
+  expressed this way. Assert it in a test instead.
+
 ## What a snippet may assume
 
 Documentation shows the interesting line, not the six before it that made a
