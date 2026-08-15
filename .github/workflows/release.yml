@@ -1,0 +1,86 @@
+name: Release
+
+# Sends a deployment to the Maven Central Portal. It is not released automatically: the deployment
+# waits in the Portal until someone looks at it and presses publish. A pending deployment can be
+# dropped; a released one cannot be unpublished, and that asymmetry is the whole reason for the
+# manual step.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, for example 0.0.1-alpha.1'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install tmux
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y tmux
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
+
+      # A tag names the version; a manual run states it. Either way it is passed in rather than
+      # committed, so no commit ever carries a release version in gradle.properties.
+      - name: Work out the version
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            version="$INPUT_VERSION"
+          else
+            version="${REF_NAME#v}"
+          fi
+          # Validated rather than trusted. This value reaches a command line, and a tag name is
+          # whatever the person pushing the tag typed; anything outside this shape is not a version
+          # this project publishes. It also catches the spellings Maven orders wrongly — see
+          # RELEASING.md for why 0.0.1-a.1 sorts after 0.0.1.
+          case "$version" in
+            *-SNAPSHOT) echo "::error::refusing to release a snapshot: $version"; exit 1 ;;
+          esac
+          printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|milestone|rc)\.[0-9]+)?$' || {
+            echo "::error::not a version this project publishes: $version"
+            exit 1
+          }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "releasing $version"
+
+      # The gate runs before anything is uploaded. A deployment can be dropped, but a broken one
+      # should never get as far as needing to be.
+      - name: Check
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: ./gradlew check -PlibtmuxVersion="$VERSION" --stacktrace
+
+      - name: Publish to the Central Portal
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.CENTRAL_PORTAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: ./gradlew publishToMavenCentral -PlibtmuxVersion="$VERSION" --stacktrace
+
+      - name: What to do next
+        run: |
+          echo "::notice::Deployment uploaded. Open https://central.sonatype.com/publishing/deployments and publish or drop it."

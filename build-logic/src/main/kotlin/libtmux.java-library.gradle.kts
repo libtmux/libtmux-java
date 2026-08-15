@@ -16,9 +16,11 @@ java {
         languageVersion = JavaLanguageVersion.of(21)
         vendor = JvmVendorSpec.ADOPTIUM
     }
-    withSourcesJar()
-    withJavadocJar()
 }
+
+// Sources and javadoc jars are the publisher's to make. Declaring them here too produced two tasks
+// writing one path, which Gradle reports as an undeclared dependency between them rather than as the
+// collision it is. Modules that are never published do not need them at all.
 
 dependencies {
     // JSpecify annotations are class-retention, so compile-only keeps them out of a consumer's graph.

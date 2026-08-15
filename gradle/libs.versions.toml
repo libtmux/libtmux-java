@@ -9,6 +9,7 @@ errorprone = "2.50.0"
 nullaway = "0.13.8"
 errorprone-plugin = "5.1.0"
 spotless = "8.9.0"
+maven-publish-plugin = "0.37.0"
 palantir-format = "2.97.0"
 
 [libraries]
@@ -30,3 +31,4 @@ nullaway = { module = "com.uber.nullaway:nullaway", version.ref = "nullaway" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "maven-publish-plugin" }

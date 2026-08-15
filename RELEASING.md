@@ -1,7 +1,8 @@
 # Releasing
 
-Nothing here is published to Maven Central yet. Two things gate the first
-release, neither of them code, and both are worth doing before they are urgent.
+Nothing here is published to Maven Central yet. The namespace is verified and
+the build can publish; what remains is a signing key and a Portal token, neither
+of which is code.
 
 ## Versions
 
@@ -20,14 +21,20 @@ Write the qualifier after a hyphen and the increment after a dot:
 match `major[.minor[.increment]][-qualifier]` as one long qualifier string, and
 then nothing orders the way it looks like it should.
 
-Cut a release by overriding the property; nothing is committed with the release
-version in it:
+Cut a release by tagging. The workflow reads the version from the tag, refuses a
+snapshot, and refuses anything that is not a shape this project publishes:
 
 ```console
-$ ./gradlew publish -PlibtmuxVersion=0.0.1-alpha.1
+$ git tag v0.0.1-alpha.1 && git push origin v0.0.1-alpha.1
 ```
 
-## Gate 1 — own the namespace
+Nothing is ever committed with a release version in it — `gradle.properties`
+stays on the `-SNAPSHOT` value and the release overrides it.
+
+## Gate 1 — own the namespace — **done**
+
+`io.github.libtmux` is verified on the Central Portal, against the `libtmux`
+organisation. Kept here because it is the step nobody remembers a year later.
 
 The group is `io.github.libtmux`, which Central verifies through GitHub rather
 than through DNS. There is nothing to change in a zone file: you prove control of
@@ -93,22 +100,25 @@ A Portal token is not an OSSRH token. OSSRH reached end of life on 30 June 2025
 and any instructions naming `oss.sonatype.org` are describing a service that no
 longer exists.
 
-## Which plugin
+## The plugin, already wired
 
-Sonatype ships no first-party Gradle plugin. Two real options:
+`com.vanniktech.maven.publish` is applied by `libtmux.publication`. Sonatype
+ships no first-party Gradle plugin, and this one talks to the Portal API
+directly.
 
-| plugin                            | why you would pick it                                                    |
-| --------------------------------- | ------------------------------------------------------------------------ |
-| `com.vanniktech.maven.publish`     | knows the Portal API directly, configures signing and the POM, one block  |
-| JReleaser                          | one release tool across artifacts, changelog and GitHub release           |
+Its own API records how thoroughly OSSRH is gone: version 0.37 dropped the
+`SonatypeHost` parameter entirely, because there is no longer another host to
+choose. Anything written against `oss.sonatype.org` — `gradle-nexus/publish-plugin`
+included — targets a service that no longer exists.
 
-**Recommended: `com.vanniktech.maven.publish`**, because this repository already
-writes its own POM in `libtmux.publication` and wants a publisher, not a release
-manager. It replaces the `maven-publish` block in that convention plugin and
-nothing else changes.
+Two behaviours worth knowing:
 
-Do not reach for `io.github.gradle-nexus.publish-plugin`. It targets the OSSRH
-staging API, which is the retired path.
+- **Signing is conditional.** It is enabled only when `signingInMemoryKey` is
+  present, so `publishToMavenLocal` works on a machine with no key. That is how
+  a publication gets checked before anything reaches Central.
+- **`automaticRelease` is false.** The upload lands as a *pending deployment*.
+  Someone has to open the Portal and publish it. A pending deployment can be
+  dropped; a released one can never be unpublished.
 
 ## The order to do this in
 
@@ -116,7 +126,8 @@ staging API, which is the retired path.
    public repository and a minute.
 2. Create and publish the signing key.
 3. Add the secrets.
-4. Swap the publishing plugin and dry-run with
+4. Dry-run locally, which needs no key and no token:
    `./gradlew publishToMavenLocal -PlibtmuxVersion=0.0.1-alpha.1`.
-5. Publish, then check the deployment in the Portal before releasing it — a
-   deployment can be dropped, a release cannot be unpublished.
+5. Tag. The Release workflow runs `check`, uploads, and stops.
+6. Open [the Portal](https://central.sonatype.com/publishing/deployments) and
+   publish the deployment, or drop it.

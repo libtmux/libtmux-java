@@ -24,5 +24,3 @@ dependencies {
         api(project(":libtmux-workspace"))
     }
 }
-
-publishing { publications { create<MavenPublication>("maven") { from(components["javaPlatform"]) } } }

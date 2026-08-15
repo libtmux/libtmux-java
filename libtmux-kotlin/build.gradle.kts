@@ -32,16 +32,6 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
-java {
-    withSourcesJar()
-    withJavadocJar()
-}
-
-// The publication convention configures publications; it does not invent one. Declared here rather
-// than inherited from libtmux.published-library, which brings the Java conventions this module has
-// no Java to apply them to.
-publishing { publications { create<MavenPublication>("maven") { from(components["java"]) } } }
-
 tasks.withType<Test>().configureEach { useJUnitPlatform() }
 
 // Reproducible archives, as every other module here publishes them.
