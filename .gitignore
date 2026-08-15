@@ -1,3 +1,17 @@
+# Build output. No leading slash, so it holds in every module too.
 build/
 .gradle/
 .kotlin/
+
+# Editors and desktops
+.idea/
+*.iml
+.vscode/
+*.swp
+.DS_Store
+
+# Per-machine agent notes and settings. CLAUDE.md itself is committed and does
+# not match these: the pattern needs a segment between the dots.
+**/CLAUDE.local.md
+**/CLAUDE.*.md
+**/.claude/settings.local.json
