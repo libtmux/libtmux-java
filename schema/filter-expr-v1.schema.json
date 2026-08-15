@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://libtmux.git-pull.com/schema/filter-expr-v1.schema.json",
+  "title": "libtmux filter expression, version 1",
+  "description": "A filter over one entity model. Field, relation and operator ids are stable wire identifiers; they are tmux format names where one exists. Java class names and record component names are deliberately not wire identifiers.",
+  "type": "object",
+  "required": ["schema", "model", "expr"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "libtmux.filter/1" },
+    "model": { "type": "string", "description": "Which entity the expression filters." },
+    "expr": { "$ref": "#/$defs/node" }
+  },
+  "$defs": {
+    "node": {
+      "oneOf": [
+        { "$ref": "#/$defs/and" },
+        { "$ref": "#/$defs/or" },
+        { "$ref": "#/$defs/not" },
+        { "$ref": "#/$defs/compare" },
+        { "$ref": "#/$defs/toMany" },
+        { "$ref": "#/$defs/toOne" }
+      ]
+    },
+    "and": {
+      "type": "object",
+      "required": ["node", "operands"],
+      "additionalProperties": false,
+      "description": "True when every operand is. An empty conjunction is true.",
+      "properties": {
+        "node": { "const": "and" },
+        "operands": { "type": "array", "items": { "$ref": "#/$defs/node" } }
+      }
+    },
+    "or": {
+      "type": "object",
+      "required": ["node", "operands"],
+      "additionalProperties": false,
+      "description": "True when any operand is. An empty disjunction is false.",
+      "properties": {
+        "node": { "const": "or" },
+        "operands": { "type": "array", "items": { "$ref": "#/$defs/node" } }
+      }
+    },
+    "not": {
+      "type": "object",
+      "required": ["node", "operand"],
+      "additionalProperties": false,
+      "properties": {
+        "node": { "const": "not" },
+        "operand": { "$ref": "#/$defs/node" }
+      }
+    },
+    "compare": {
+      "type": "object",
+      "required": ["node", "field", "op", "value"],
+      "additionalProperties": false,
+      "description": "Compares one field. The operand's type follows the field's kind, not what the document happens to carry.",
+      "properties": {
+        "node": { "const": "compare" },
+        "field": { "type": "string" },
+        "op": {
+          "enum": [
+            "equals", "not_equals", "contains", "starts_with", "ends_with",
+            "matches", "less_than", "at_most", "greater_than", "at_least", "in"
+          ]
+        },
+        "value": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "integer" },
+            { "type": "boolean" },
+            { "type": "array" },
+            { "$ref": "#/$defs/regex" }
+          ]
+        }
+      }
+    },
+    "regex": {
+      "type": "object",
+      "required": ["pattern"],
+      "additionalProperties": false,
+      "description": "Used only with the matches operator. Flags are java.util.regex flag bits.",
+      "properties": {
+        "pattern": { "type": "string" },
+        "flags": { "type": "integer", "default": 0 }
+      }
+    },
+    "toMany": {
+      "type": "object",
+      "required": ["node", "relation", "quantifier", "predicate"],
+      "additionalProperties": false,
+      "description": "Quantifies over a to-many relation. all over an empty relation is true.",
+      "properties": {
+        "node": { "const": "to_many" },
+        "relation": { "type": "string" },
+        "quantifier": { "enum": ["any", "all", "none"] },
+        "predicate": { "$ref": "#/$defs/node" }
+      }
+    },
+    "toOne": {
+      "type": "object",
+      "required": ["node", "relation", "predicate"],
+      "additionalProperties": false,
+      "description": "Filters across a to-one relation. An absent target does not satisfy it.",
+      "properties": {
+        "node": { "const": "to_one" },
+        "relation": { "type": "string" },
+        "predicate": { "$ref": "#/$defs/node" }
+      }
+    }
+  }
+}
