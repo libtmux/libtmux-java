@@ -82,3 +82,21 @@ claims the answer does not depend on the carrier, and
 `ExecutionModeConformanceTest` is where that claim is gated. Confirm it against
 a clean `/tmp` first: the failure modes of cross-port debris and of a genuine
 carrier defect look alike.
+
+## Comments earn their maintenance cost
+
+Keep an implementation comment only when losing it would force a future
+maintainer to rediscover a consequential, non-obvious fact that the code,
+types, assertions, and tests do not already communicate. It states a durable
+truth about the shipped system rather than the author's reasoning, and it does
+not restate a value or a fact that can change without it — a comment that
+duplicates either goes stale silently. Write it as tersely as a mature,
+long-lived library would.
+
+Delete comments that narrate, restate, speculate, excuse, or preserve
+development history, and prefer deletion in the borderline case. What survives
+is what a reader could not recover from the code.
+
+Javadoc on the public surface — summaries, `@param` descriptions, and
+examples — is judged on the other axis: what it is worth to a caller, not
+whether it is non-obvious. It stays precise, succinct, and maintainable.
