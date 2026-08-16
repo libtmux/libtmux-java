@@ -99,15 +99,35 @@ passphrase if the key has a life outside CI.
 $ gpg --quick-generate-key "libtmux <tony@git-pull.com>" rsa4096 sign 2y
 ```
 
-Publish the public half so Central can find it, and export the private half in
-the ASCII form a secret can hold:
+Publish the public half where Central looks. It checks `keyserver.ubuntu.com`,
+`keys.openpgp.org` and `pgp.mit.edu` — and since the SKS network was deprecated
+those no longer sync with each other, so send it to more than one rather than
+trusting propagation. `pgp.mit.edu` is the least reliable of the three.
 
 ```console
-$ gpg --keyserver keyserver.ubuntu.com --send-keys <KEY_ID>
+$ gpg --keyserver keyserver.ubuntu.com --send-keys <FINGERPRINT>
 ```
 
 ```console
-$ gpg --armor --export-secret-keys <KEY_ID> > /tmp/libtmux-signing.asc
+$ gpg --keyserver keys.openpgp.org --send-keys <FINGERPRINT>
+```
+
+Use the **full fingerprint**, not a short key id. Then prove it arrived, because a
+key Central cannot fetch fails the deployment and a key nobody can fetch later
+makes every signature unverifiable:
+
+```console
+$ gpg --keyserver keyserver.ubuntu.com --recv-keys <FINGERPRINT>
+```
+
+`keys.openpgp.org` stores the key immediately but strips the user id until you
+answer its verification email, so the key is servable and unattributed until you
+do.
+
+Export the private half in the ASCII form a secret can hold:
+
+```console
+$ gpg --armor --export-secret-keys <FINGERPRINT> > /tmp/libtmux-signing.asc
 ```
 
 | secret | value |
@@ -132,7 +152,24 @@ Two more things that fail a release rather than a build:
 - **Sign with the primary key.** Some tools sign with a subkey by default, and
   Central verifies against the primary.
 - **Watch the expiry.** An expired key fails validation, and `2y` above is a
-  choice, not a default.
+  choice, not a default. Extending it with `gpg --edit-key` is not enough on its
+  own: keyservers do not pick the extension up, so send the key again.
+
+### Can an existing key be used — a Keybase one, say?
+
+Yes, with two conditions, and it is still usually the wrong choice.
+
+A Keybase PGP key is an ordinary OpenPGP key and exports like any other
+(`keybase pgp export -s`). But **Keybase's own keyserver is not one Central
+checks**, so the public half has to go to `keyserver.ubuntu.com` or
+`keys.openpgp.org` regardless — being on Keybase buys nothing here. Keybase also
+generates with a passphrase, which puts you on the four-secret path.
+
+The stronger objection is what the key is *for*. A release key ends up in a
+repository secret, usable by anything that can run a workflow. An identity key —
+one that signs commits, or proves accounts — should not be in that position. A
+key minted for this repository can be revoked without touching anything else,
+which is the whole argument for a dedicated one.
 
 A Portal token is not an OSSRH token. OSSRH reached end of life on 30 June 2025,
 and anything naming `oss.sonatype.org` describes a service that no longer exists.
