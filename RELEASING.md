@@ -1,8 +1,8 @@
 # Releasing
 
-Nothing here is published to Maven Central yet. The namespace is verified and
-the build can publish; what remains is a signing key and a Portal token, neither
-of which is code.
+Nothing here is published to Maven Central yet. The namespace is verified, the
+signing key is published and the Portal token is set, so what remains is a tag
+and someone pressing publish.
 
 ## Versions
 
@@ -63,7 +63,18 @@ Two things worth knowing:
   is the name every consumer writes down, and it should name the project rather
   than the person who happened to register a domain.
 
-## Gate 2 — a signing key CI can use
+## Gate 2 — a signing key CI can use — **done**
+
+What was done, recorded because a key outlives the memory of setting one up:
+
+- **Key** `D6B3443B2E8F467A7CEC14BF3FACCB0FE2F4C97B`, `libtmux <tony@git-pull.com>`.
+- **It carries a passphrase**, so this repository is on the four-secret path
+  described below, `SIGNING_PASSWORD` included.
+- **Published to both keyservers.** `keyserver.ubuntu.com` serves it complete.
+  `keys.openpgp.org` serves the key but strips the user id, which is its policy
+  until the verification email is answered — a fetch from there returns a key
+  `gpg --import` skips for having no user id. That does not affect validation,
+  which checks the signature rather than the name attached to it.
 
 Central rejects unsigned artifacts, and that has not changed. Sonatype is rolling
 out Sigstore alongside PGP, but a missing Sigstore signature does not block a
@@ -196,10 +207,10 @@ Two behaviours worth knowing:
 
 ## The order to do this in
 
-1. Verify the namespace — everything else is blocked on it, and it costs one
-   public repository and a minute.
-2. Create and publish the signing key.
-3. Add the secrets.
+1. ~~Verify the namespace~~ — everything else is blocked on it, and it costs one
+   public repository and a minute. **Done.**
+2. ~~Create and publish the signing key.~~ **Done.**
+3. ~~Add the secrets.~~ **Done** — all four.
 4. Dry-run locally, which needs no key and no token:
    `./gradlew publishToMavenLocal -PlibtmuxVersion=0.0.1-alpha.1`.
 5. Tag. The Release workflow runs `check`, uploads, and stops.
