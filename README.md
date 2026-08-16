@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml)
 [![tmux matrix](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux.svg)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#status)
 
@@ -208,7 +209,7 @@ rather than collapsing both into one error.
 ## Modules
 
 Group `io.github.libtmux`. Each directory is its own artifact, with its own
-README. Nothing is on Maven Central yet — see [Status](#status).
+README, and each is [on Maven Central](https://central.sonatype.com/namespace/io.github.libtmux).
 
 - **[`libtmux`](libtmux/)** — the library itself. Transport, snapshots,
   entities, options, hooks, batching, control mode, query model.
@@ -282,8 +283,8 @@ dependencies {
 
 </details>
 
-Nothing is on Maven Central yet. Until the first release, build it locally with
-`./gradlew publishToMavenLocal`.
+To build against an unreleased change instead, `./gradlew publishToMavenLocal`
+installs every module into your local repository under the same coordinates.
 
 ## Kotlin and Scala
 

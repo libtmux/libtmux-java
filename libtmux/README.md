@@ -5,7 +5,7 @@
 This is the whole library. Everything else in the repository is an adapter to
 something — Jackson, JUnit, Kotlin, MCP, tmuxp — and depends on this.
 
-`io.github.libtmux:libtmux` — not yet on Maven Central.
+`io.github.libtmux:libtmux` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux).
 
 > **Alpha.** The API will change without notice. Pin an exact version.
 

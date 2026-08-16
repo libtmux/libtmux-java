@@ -5,7 +5,7 @@ is gone afterwards.**
 
 For testing *your* code against real tmux — not for testing libtmux.
 
-`io.github.libtmux:libtmux-junit5` — not yet on Maven Central.
+`io.github.libtmux:libtmux-junit5` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-junit5).
 
 > **Alpha.** The API will change without notice.
 

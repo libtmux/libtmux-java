@@ -1,8 +1,7 @@
 # Releasing
 
-Nothing here is published to Maven Central yet. The namespace is verified, the
-signing key is published and the Portal token is set, so what remains is a tag
-and someone pressing publish.
+`0.0.1-alpha.1` is on Maven Central, published 16 August 2026. Both gates below
+are done, so cutting the next release is a tag and someone pressing publish.
 
 ## Versions
 

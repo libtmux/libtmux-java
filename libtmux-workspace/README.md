@@ -5,7 +5,7 @@
 Enough of [tmuxp](https://tmuxp.git-pull.com/)'s format to describe a workspace
 and build it. Not a runtime-compatible reimplementation.
 
-`io.github.libtmux:libtmux-workspace` — not yet on Maven Central.
+`io.github.libtmux:libtmux-workspace` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace).
 
 > **Alpha.** The API will change without notice.
 

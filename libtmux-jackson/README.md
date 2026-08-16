@@ -6,7 +6,7 @@ The core has no dependencies and never will. This module is where Jackson lives,
 so that a filter can be stored, sent over a wire, or written by something that is
 not a Java program.
 
-`io.github.libtmux:libtmux-jackson` — not yet on Maven Central.
+`io.github.libtmux:libtmux-jackson` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-jackson).
 
 > **Alpha.** The API will change without notice. The `libtmux.filter/1` wire
 > format is versioned separately and will not change under that name.

@@ -10,7 +10,10 @@ exact version rather than a range.
 
 [semver]: https://semver.org/spec/v2.0.0.html
 
-## Unreleased
+## 0.0.1-alpha.1 — 2026-08-16
+
+First release. Published to Maven Central under `io.github.libtmux`, signed with
+key `D6B3443B2E8F467A7CEC14BF3FACCB0FE2F4C97B`.
 
 ### Added
 
@@ -38,36 +41,7 @@ exact version rather than a range.
 - **`DocumentationFactsTest`** holds the claims that are prose rather than code:
   every install snippet names the version this build publishes, the platform's
   README lists exactly what it constrains, and every published module has a README
-  that names its coordinate. — 0.0.1-alpha.1
-
-### Fixed
-
-- **A trailing semicolon ended a command under one carrier and not the other.**
-  tmux ends a command at a semicolon ending *any* argument, not only at one
-  standing alone, and a backslash before it keeps the semicolon. The control
-  carrier quoted both, so `server.cmd(List.of("new-window", "-d", "-n",
-  "grouped;", "list-windows"))` created a window under `DIRECT` and none under
-  `CONTROL`. `ControlClient.isCommandGroup` is now the single reading of that
-  rule and both carriers consult it. Measurements in
-  [`docs/spikes/21`](docs/spikes/21-command-group-boundaries.md).
-- **`ControlClient.send` accepted a request it could not answer.** Control mode
-  frames a reply per command, so a group produced several replies for one
-  awaited request and the extras were matched to whatever asked next. It now
-  refuses a group before writing anything, leaving the stream in step.
-- **A control transport closed mid-attach left a tmux client running.** Finding
-  a session takes a command of its own, and a close landing in that window could
-  not see a client that did not exist yet. The attach now checks on both sides
-  and releases what it made.
-- **`VirtualThreadTransport` could return `null`.** It rescued
-  `RuntimeException` only, so an `Error` on the worker killed the thread with
-  nothing recorded and the join returned no result and no failure.
-- **A `%output` listener that threw ended the reader thread**, which is also the
-  only thread that resolves replies, so every later request timed out for a
-  reason belonging to somebody else's callback. Listener failures now go to the
-  thread's uncaught-exception handler and the remaining listeners still run.
-
-### Added
-
+  that names its coordinate.
 - `RELEASING.md`, covering namespace verification, the signing key, and why the
   publishing plugin is not the one most tutorials name.
 - `examples/`, whole runnable programs whose own suite runs each against real
@@ -133,3 +107,29 @@ exact version rather than a range.
   living in one artifact's test source set made that artifact's dependencies and
   lifecycle answerable for how the whole library is tested, and kept the
   benchmark one forgotten tag away from running in an ordinary build.
+
+### Fixed
+
+- **A trailing semicolon ended a command under one carrier and not the other.**
+  tmux ends a command at a semicolon ending *any* argument, not only at one
+  standing alone, and a backslash before it keeps the semicolon. The control
+  carrier quoted both, so `server.cmd(List.of("new-window", "-d", "-n",
+  "grouped;", "list-windows"))` created a window under `DIRECT` and none under
+  `CONTROL`. `ControlClient.isCommandGroup` is now the single reading of that
+  rule and both carriers consult it. Measurements in
+  [`docs/spikes/21`](docs/spikes/21-command-group-boundaries.md).
+- **`ControlClient.send` accepted a request it could not answer.** Control mode
+  frames a reply per command, so a group produced several replies for one
+  awaited request and the extras were matched to whatever asked next. It now
+  refuses a group before writing anything, leaving the stream in step.
+- **A control transport closed mid-attach left a tmux client running.** Finding
+  a session takes a command of its own, and a close landing in that window could
+  not see a client that did not exist yet. The attach now checks on both sides
+  and releases what it made.
+- **`VirtualThreadTransport` could return `null`.** It rescued
+  `RuntimeException` only, so an `Error` on the worker killed the thread with
+  nothing recorded and the join returned no result and no failure.
+- **A `%output` listener that threw ended the reader thread**, which is also the
+  only thread that resolves replies, so every later request timed out for a
+  reason belonging to somebody else's callback. Listener failures now go to the
+  thread's uncaught-exception handler and the remaining listeners still run.

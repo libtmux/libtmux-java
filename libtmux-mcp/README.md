@@ -5,7 +5,7 @@
 Point Claude Desktop, Claude Code, or any MCP client at a tmux socket and it can
 list sessions, read what a pane is showing, and run things in one.
 
-`io.github.libtmux:libtmux-mcp` — not yet on Maven Central.
+`io.github.libtmux:libtmux-mcp` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-mcp).
 
 > **Alpha.** Tool names and shapes will change without notice.
 
