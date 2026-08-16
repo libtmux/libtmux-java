@@ -29,7 +29,7 @@ tasks.withType<Test>().configureEach {
     val root = rootProject.layout.projectDirectory
     val documents =
         rootProject.fileTree(root) {
-            include("README.md", "*/README.md", "docs/guide/*.md")
+            include("README.md", "*/README.md", "docs/guide/*.md", "docs/parity/*.md")
         }
 
     inputs.files(classpath)

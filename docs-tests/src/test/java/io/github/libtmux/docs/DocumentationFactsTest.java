@@ -7,8 +7,12 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -30,6 +34,9 @@ final class DocumentationFactsTest {
     /** Published modules, which is what a reader is told to depend on. */
     private static final List<String> PUBLISHED = List.of(
             "libtmux", "libtmux-jackson", "libtmux-junit5", "libtmux-kotlin", "libtmux-mcp", "libtmux-workspace");
+
+    /** The parity inventories, whose every row names the contract test that row will need. */
+    private static final List<String> PARITY = List.of("docs/parity/python-api.md", "docs/parity/test-map.md");
 
     private static String read(String path) {
         try {
@@ -92,6 +99,66 @@ final class DocumentationFactsTest {
             assertTrue(
                     text.contains("io.github.libtmux:" + module),
                     module + "'s README never states the coordinate to depend on");
+        }
+    }
+
+    /**
+     * A test the parity documents name is either unwritten or real, never half of each.
+     *
+     * <p>Those documents name thousands of contract tests in the scheme the tests will use, which is
+     * a plan and not a citation. The rot they are exposed to is the day the first one is written: the
+     * class exists from then on, and every name beside it that does not resolve has become a claim
+     * about code rather than about intent.
+     */
+    @Test
+    void everyContractTestTheParityDocumentsNameIsUnwrittenOrReal() {
+        List<String> wrong = new ArrayList<>();
+        claimedContractTests()
+                .forEach((type, methods) -> sourceOf(type).ifPresent(source -> {
+                    String declared = read(ROOT.relativize(source).toString());
+                    methods.stream()
+                            .filter(method -> !declared.contains(method))
+                            .forEach(method -> wrong.add(type + "#" + method));
+                }));
+
+        assertEquals(List.of(), wrong, "the parity documents cite a test its own class does not declare");
+    }
+
+    /** While those tests are unwritten, each document has to keep saying so where a reader will look. */
+    @Test
+    void theParityDocumentsCallTheirTestsPlannedWhileTheyAre() {
+        for (String document : PARITY) {
+            Set<String> named = claimedContractTests().keySet();
+            if (named.stream().anyMatch(type -> sourceOf(type).isPresent())) {
+                continue;
+            }
+            assertTrue(read(document).contains("planned parity"), document + " no longer says its tests are planned");
+        }
+    }
+
+    /** Every {@code Class#method} the parity documents name, grouped by the class that would hold it. */
+    private static Map<String, Set<String>> claimedContractTests() {
+        Map<String, Set<String>> claimed = new TreeMap<>();
+        Pattern cited = Pattern.compile("<code>([A-Z][A-Za-z0-9]*)#([A-Za-z0-9_]+)</code>");
+        for (String document : PARITY) {
+            cited.matcher(read(document))
+                    .results()
+                    .forEach(found -> claimed.computeIfAbsent(found.group(1), type -> new TreeSet<>())
+                            .add(found.group(2)));
+        }
+        assertTrue(!claimed.isEmpty(), "the parity documents name no contract tests at all");
+        return claimed;
+    }
+
+    /** Searched for by file name rather than loaded, since these will not be on this module's path. */
+    private static Optional<Path> sourceOf(String type) {
+        try (Stream<Path> tree = Files.walk(ROOT)) {
+            return tree.filter(path -> !path.toString().contains("/build/"))
+                    .filter(path -> path.getFileName().toString().equals(type + ".java")
+                            || path.getFileName().toString().equals(type + ".kt"))
+                    .findFirst();
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not search for " + type, e);
         }
     }
 
