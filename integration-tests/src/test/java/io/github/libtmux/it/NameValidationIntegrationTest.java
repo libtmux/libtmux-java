@@ -8,21 +8,24 @@ import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.TmuxVersion;
+import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
- * What a session name containing a target delimiter becomes.
- *
- * <p>tmux changes this twice inside the range this library supports, and the library passes the name
- * through, so a caller sees a different session on 3.6 than on 3.7b for the same call.
+ * What a name containing a target delimiter becomes. tmux changes its mind inside the supported
+ * range and this library passes the name through, so the same call answers differently per release.
  */
 @ExtendWith(TmuxExtension.class)
-final class SessionNameIntegrationTest {
+final class NameValidationIntegrationTest {
 
     private static final TmuxVersion REJECTS = new TmuxVersion(3, 7, "");
     private static final TmuxVersion ACCEPTS_AGAIN = new TmuxVersion(3, 7, "a");
+
+    private static boolean refuses(Server server) {
+        return server.version().atLeast(REJECTS) && !server.version().atLeast(ACCEPTS_AGAIN);
+    }
 
     /**
      * Measured on every supported build: rewritten to {@code a_b} through 3.6, refused on 3.7, kept
@@ -30,19 +33,14 @@ final class SessionNameIntegrationTest {
      */
     @Test
     void aDelimiterInASessionNameIsRewrittenRefusedOrKeptDependingOnTheTmux(Server server) {
-        TmuxVersion running = server.version();
-
-        if (running.atLeast(REJECTS) && !running.atLeast(ACCEPTS_AGAIN)) {
-            assertThrows(
-                    LibTmuxException.class,
-                    () -> server.newSession("a:b"),
-                    "3.7 refuses a delimiter in a session name");
+        if (refuses(server)) {
+            assertThrows(LibTmuxException.class, () -> server.newSession("a:b"));
             return;
         }
 
         Session made = server.newSession("a:b");
 
-        if (running.atLeast(ACCEPTS_AGAIN)) {
+        if (server.version().atLeast(ACCEPTS_AGAIN)) {
             assertEquals("a:b", made.name());
         } else {
             assertEquals("a_b", made.name());
@@ -67,5 +65,21 @@ final class SessionNameIntegrationTest {
                 LibTmuxException.class,
                 () -> server.killSession("a:b"),
                 "tmux reads the delimiter as a window, so the name cannot select the session");
+    }
+
+    /**
+     * Window names take a different path from session names: kept as written on every supported
+     * build except 3.7, which refuses them. Measured rather than derived from the session rule.
+     */
+    @Test
+    void aDelimiterInAWindowNameIsKeptEverywhereExceptTheOneReleaseThatRefusesIt(Server server) {
+        Window window = server.sessions().get(0).windows().get(0);
+
+        if (refuses(server)) {
+            assertThrows(LibTmuxException.class, () -> window.rename("w:x"));
+            return;
+        }
+
+        assertEquals("w:x", window.rename("w:x").name(), "a window name is never rewritten");
     }
 }

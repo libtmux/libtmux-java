@@ -159,7 +159,13 @@ public final class Window {
         return reported.isEmpty() ? "" : reported.get(0);
     }
 
-    /** Renames this window and returns a handle on it as it is now. */
+    /**
+     * Renames this window and returns a handle on it as it is now.
+     *
+     * <p>A {@code :} or {@code .} is kept as written on every supported release but 3.7, which
+     * refuses the name. A kept delimiter cannot then address the window, since a target splits on
+     * both. Unlike a session name, a window name is never rewritten.
+     */
     public Window rename(String name) {
         server.run(List.of("rename-window", "-t", target(), name));
         return refresh();
