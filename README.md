@@ -219,8 +219,9 @@ README, and each is [on Maven Central](https://central.sonatype.com/namespace/io
   below follows it.
 
 - **[`libtmux-mcp`](libtmux-mcp/)** — give a model a tmux server, over the
-  [Model Context Protocol](https://modelcontextprotocol.io/). Lists panes, reads
-  what one is showing, runs things in it.
+  [Model Context Protocol](https://modelcontextprotocol.io/). Finds its way
+  around, reads what a pane shows, runs a command and waits for its exit status,
+  and pushes notifications as tmux changes.
 
 - **[`libtmux-junit5`](libtmux-junit5/)** — test *your* code against real tmux.
   One server per test, guaranteed gone afterwards even if the JVM is killed.
@@ -322,6 +323,7 @@ $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds
 - [Batching and chaining](docs/guide/batching-and-chaining.md)
 - [Snapshots and handles](docs/guide/snapshots-and-handles.md)
 - [Streaming](docs/guide/streaming.md)
+- [Driving tmux from a model](docs/guide/mcp.md)
 - [Testing with real tmux](docs/guide/testing.md)
 - [Kotlin](docs/guide/kotlin.md) and [Scala](docs/guide/scala.md)
 - [Releasing](RELEASING.md)

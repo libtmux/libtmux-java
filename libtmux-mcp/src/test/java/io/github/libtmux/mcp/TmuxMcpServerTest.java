@@ -24,7 +24,7 @@ final class TmuxMcpServerTest {
 
     @Test
     void theFilterExampleShownToAModelIsOneTheLibraryReads() {
-        FilterExpr<Pane> parsed = FilterJson.readString(TmuxMcpServer.EXAMPLE_FILTER, LibTmuxModels.pane());
+        FilterExpr<Pane> parsed = FilterJson.readString(Catalog.EXAMPLE_FILTER, LibTmuxModels.pane());
 
         assertEquals(
                 Pane_.command().startsWith("nvim").describe(),
@@ -35,7 +35,7 @@ final class TmuxMcpServerTest {
     /** And it has to select on a real server, not merely parse. */
     @Test
     void theFilterExampleSelectsAgainstRealTmux(Server server) {
-        FilterExpr<Pane> parsed = FilterJson.readString(TmuxMcpServer.EXAMPLE_FILTER, LibTmuxModels.pane());
+        FilterExpr<Pane> parsed = FilterJson.readString(Catalog.EXAMPLE_FILTER, LibTmuxModels.pane());
 
         assertTrue(
                 server.panes().stream().noneMatch(parsed),

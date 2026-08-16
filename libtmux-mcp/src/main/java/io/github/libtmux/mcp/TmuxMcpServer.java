@@ -2,45 +2,42 @@ package io.github.libtmux.mcp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.libtmux.LibTmuxException;
-import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
-import io.github.libtmux.jackson.FilterJson;
-import io.github.libtmux.jackson.LibTmuxModels;
-import io.github.libtmux.query.FilterExpr;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpServerTransportProvider;
 import java.io.InputStream;
-import java.util.LinkedHashMap;
-import java.util.List;
+import java.time.Duration;
 import java.util.Map;
-import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Exposes a tmux server to a model over the Model Context Protocol.
  *
- * <p>Thin by design. The tools themselves live in {@link TmuxTools}, which is what gets tested
- * against real tmux; this class only describes them and turns their answers into text.
+ * <p>Thin by design. What the tools do lives in {@link Catalog} and the classes it names, which is
+ * what gets tested against real tmux; this class describes them to a client and turns their answers
+ * into protocol.
  *
- * <p>A tool that fails returns the failure as a tool error rather than throwing. A model can act on
- * "no pane %9" — by listing panes again — and cannot act on a transport-level exception.
+ * <p>Synchronous, and deliberately. The SDK runs a synchronous handler on
+ * {@code Schedulers.boundedElastic} rather than on the thread reading the transport, so a tool that
+ * blocks for a minute does not stop the connection answering anything else — measured at twenty
+ * interleaved calls served during one six-second call. Writing the same handlers as reactive
+ * pipelines measured worse: a {@code Mono.fromCallable} that blocks pins the single reactor thread
+ * and serves nothing at all until it lets go.
  */
 public final class TmuxMcpServer {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
-
     /**
-     * The filter document shown to a model, and the only one it is given to copy.
+     * How long the SDK waits for a client to answer something this server asked it.
      *
-     * <p>A constant rather than prose inside the description, because an example that stopped parsing
-     * would still read perfectly. {@code TmuxMcpServerTest} parses this one.
+     * <p>Not a bound on a tool call: those bound themselves. Generous because the wait tools may
+     * legitimately hold a request open to the wait ceiling.
      */
-    static final String EXAMPLE_FILTER = "{\"schema\":\"" + FilterJson.SCHEMA + "\",\"model\":\"pane\","
-            + "\"expr\":{\"node\":\"compare\",\"field\":\"pane_current_command\","
-            + "\"op\":\"starts_with\",\"value\":\"nvim\"}}";
+    private static final Duration REQUEST_TIMEOUT = Duration.ofMinutes(5);
 
     private TmuxMcpServer() {}
 
@@ -58,148 +55,122 @@ public final class TmuxMcpServer {
 
     /** Serves a tmux server over stdin and stdout, which is how an MCP client launches a tool. */
     public static McpSyncServer overStdio(Server server) {
-        return overStdio(server, System.in);
+        return overStdio(server, System.in, Safety.MUTATING, false);
     }
 
     /**
      * Serves a tmux server over a caller-supplied input stream and stdout.
      *
-     * <p>Taking the stream lets a launcher notice end of input for itself. A client that
-     * disconnects closes this end, and a server that did not notice would outlive it.
+     * <p>Taking the stream lets a launcher notice end of input for itself. A client that disconnects
+     * closes this end, and a server that did not notice would outlive it.
+     *
+     * @param watching whether to attach a control client and push notifications as tmux changes
      */
-    public static McpSyncServer overStdio(Server server, InputStream in) {
+    public static McpSyncServer overStdio(Server server, InputStream in, Safety ceiling, boolean watching) {
         return serving(
-                server, new StdioServerTransportProvider(new JacksonMcpJsonMapper(new ObjectMapper()), in, System.out));
+                server,
+                ceiling,
+                watching,
+                new StdioServerTransportProvider(new JacksonMcpJsonMapper(new ObjectMapper()), in, System.out));
     }
 
     /** Serves a tmux server over a caller-supplied transport. */
-    public static McpSyncServer serving(Server server, McpServerTransportProvider transport) {
-        TmuxTools tools = new TmuxTools(server);
-        return McpServer.sync(transport)
+    public static McpSyncServer serving(Server server, Safety ceiling, McpServerTransportProvider transport) {
+        return serving(server, ceiling, false, transport);
+    }
+
+    /** Serves a tmux server over a caller-supplied transport, optionally watching it for changes. */
+    public static McpSyncServer serving(
+            Server server, Safety ceiling, boolean watching, McpServerTransportProvider transport) {
+        Connection connection = Connection.to(server, ceiling);
+        var specification = McpServer.sync(transport)
                 .serverInfo("libtmux", version())
-                .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
-                .toolCall(
-                        tool("tmux_list_sessions", "Lists tmux sessions and the windows in each.", Map.of()),
-                        (exchange, request) -> text(() -> render(tools.sessions())))
-                .toolCall(
-                        listPanesTool(),
-                        (exchange, request) -> text(() -> render(tools.describe(chosen(server, request)))))
-                .toolCall(
-                        tool(
-                                "tmux_capture_pane",
-                                "Returns what a pane is currently showing.",
-                                Map.of("pane_id", "The pane id, such as %1.")),
-                        (exchange, request) -> text(() -> render(tools.capture(argument(request, "pane_id")))))
-                .toolCall(
-                        tool(
-                                "tmux_run",
-                                "Runs a command in a pane, as though it had been typed there.",
-                                Map.of("pane_id", "The pane id, such as %1.", "command", "The command to run.")),
-                        (exchange, request) -> text(() -> {
-                            tools.run(argument(request, "pane_id"), argument(request, "command"));
-                            return render(Map.of("sent", true));
-                        }))
-                .toolCall(
-                        tool(
-                                "tmux_new_window",
-                                "Creates a window in a session and returns its first pane id.",
-                                Map.of("session", "The session name.", "name", "The window name.")),
-                        (exchange, request) -> text(() -> render(Map.of(
-                                "pane_id", tools.newWindow(argument(request, "session"), argument(request, "name"))))))
-                .build();
-    }
+                .instructions(Instructions.forServer(ceiling, watching))
+                .requestTimeout(REQUEST_TIMEOUT)
+                .capabilities(McpSchema.ServerCapabilities.builder()
+                        .tools(true)
+                        // Subscription is offered only when something is actually watching tmux.
+                        // Advertising it otherwise invites a client to subscribe and wait forever for
+                        // an update nothing will ever send.
+                        .resources(watching, true)
+                        .prompts(false)
+                        .completions()
+                        .logging()
+                        .build())
+                .resources(Resources.fixed(connection))
+                .resourceTemplates(Resources.templated(connection))
+                .prompts(Prompts.all())
+                .completions(Completions.all(connection));
 
-    /**
-     * The one tool with a structured, optional argument, so it describes itself rather than bending
-     * the string-argument helper into covering a case it does not have.
-     *
-     * <p>The filter is the same versioned document every port of libtmux reads, and its field names
-     * are tmux format names — {@code pane_current_command} rather than anything Java calls a field —
-     * so a model that has seen the schema once can write one for any of them.
-     */
-    private static McpSchema.Tool listPanesTool() {
-        Map<String, Object> filter = new LinkedHashMap<>();
-        filter.put("type", "object");
-        filter.put(
-                "description",
-                "A " + FilterJson.SCHEMA + " document over the pane model, for example " + EXAMPLE_FILTER
-                        + ". Omit it to list every pane.");
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of("filter", filter));
-        schema.put("required", List.of());
-        return McpSchema.Tool.builder("tmux_list_panes", schema)
-                .description("Lists panes with the id other tools take as a target, optionally narrowed by a filter.")
-                .build();
-    }
-
-    /**
-     * The panes a request asked about: every one, or those its filter selects.
-     *
-     * <p>One capture either way. Filtering happens over what that capture already returned, so a
-     * narrower answer costs no more tmux commands than the whole listing does.
-     */
-    private static List<Pane> chosen(Server server, McpSchema.CallToolRequest request) {
-        List<Pane> panes = server.panes();
-        Object filter = request.arguments().get("filter");
-        if (filter == null) {
-            return panes;
+        for (ToolSpec tool : Catalog.offered(ceiling).values()) {
+            specification = specification.toolCall(
+                    tool.describe(), (exchange, request) -> answer(connection, tool, exchange, request));
         }
-        FilterExpr<Pane> expression = FilterJson.read(JSON.valueToTree(filter), LibTmuxModels.pane());
-        return panes.stream().filter(expression).toList();
-    }
+        McpSyncServer mcp = specification.build();
+        if (watching) {
+            // Started after the server exists, because a notification has nowhere to go before that.
+            Watches.Notifier notifier = new Watches.Notifier() {
+                @Override
+                public void updated(String uri) {
+                    mcp.notifyResourcesUpdated(new McpSchema.ResourcesUpdatedNotification(uri));
+                }
 
-    /** Every other tool here takes plain string arguments, so one schema shape covers all of them. */
-    private static McpSchema.Tool tool(String name, String description, Map<String, String> arguments) {
-        Map<String, Object> properties = new LinkedHashMap<>();
-        arguments.forEach(
-                (argument, describes) -> properties.put(argument, Map.of("type", "string", "description", describes)));
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", properties);
-        schema.put("required", List.copyOf(arguments.keySet()));
-        return McpSchema.Tool.builder(name, schema).description(description).build();
-    }
-
-    private static String argument(McpSchema.CallToolRequest request, String name) {
-        Object value = request.arguments().get(name);
-        if (value == null) {
-            throw new IllegalArgumentException("missing argument '" + name + "'");
+                @Override
+                public void listChanged() {
+                    mcp.notifyResourcesListChanged();
+                }
+            };
+            Watches.start(connection, notifier)
+                    .ifPresent(watches ->
+                            Runtime.getRuntime().addShutdownHook(new Thread(watches::close, "libtmux-mcp-watches")));
         }
-        return value.toString();
+        return mcp;
     }
 
     /**
-     * Turns an answer into a tool result, and a failure into a tool error.
+     * Runs one tool and turns whatever happens into something a model can act on.
      *
-     * <p>A model can do something with "no pane %9" — list panes again — and can do nothing with an
-     * exception that never reaches it.
+     * <p>A failure is a tool error rather than a thrown exception, because a transport-level
+     * exception never reaches the model — and the model is the one participant able to choose a
+     * different pane.
      */
-    private static McpSchema.CallToolResult text(Supplier<String> answer) {
+    private static McpSchema.CallToolResult answer(
+            Connection connection, ToolSpec tool, McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
         try {
-            return McpSchema.CallToolResult.builder()
-                    .content(List.of(new McpSchema.TextContent(null, answer.get(), null)))
-                    .isError(false)
-                    .build();
-        } catch (LibTmuxException | IllegalArgumentException e) {
-            return McpSchema.CallToolResult.builder()
-                    .content(List.of(new McpSchema.TextContent(null, String.valueOf(e.getMessage()), null)))
-                    .isError(true)
-                    .build();
+            Map<String, Object> arguments = request.arguments() == null ? Map.of() : request.arguments();
+            Call call = connection.call(arguments, progress(exchange, request));
+            return Answers.ok(tool.answer().apply(call));
+        } catch (LibTmuxException | IllegalArgumentException | IllegalStateException e) {
+            return Answers.failure(String.valueOf(e.getMessage()));
         }
     }
 
     /**
-     * Answers with JSON.
+     * Reports how a slow tool is going, when the client asked to be told.
      *
-     * <p>A model reads these, and a Java record's own rendering would make it reverse-engineer
-     * {@code PaneSummary[id=%0, window=zsh]} to find a pane id it is then supposed to pass back.
+     * <p>A client sends a progress token only when it wants notifications; without one, sending them
+     * would be talking to nobody. A failure to report is swallowed: the client has usually gone, and
+     * a wait must not fail because nobody was listening to it.
      */
-    private static String render(Object value) {
-        try {
-            return JSON.writeValueAsString(value);
-        } catch (com.fasterxml.jackson.core.JacksonException e) {
-            throw new IllegalStateException("could not render a tool result", e);
+    private static Call.Progress progress(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
+        Object token = token(request);
+        if (token == null) {
+            return Call.Progress.SILENT;
         }
+        return (elapsed, total, message) -> {
+            try {
+                exchange.progressNotification(McpSchema.ProgressNotification.builder(token, elapsed.toMillis() / 1000.0)
+                        .total(total.toMillis() / 1000.0)
+                        .message(message)
+                        .build());
+            } catch (RuntimeException e) {
+                // The client stopped listening. What it asked for still has to finish.
+            }
+        };
+    }
+
+    private static @Nullable Object token(McpSchema.CallToolRequest request) {
+        Map<String, Object> meta = request.meta();
+        return meta == null ? null : meta.get("progressToken");
     }
 }

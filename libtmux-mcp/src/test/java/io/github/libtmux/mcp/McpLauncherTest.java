@@ -97,8 +97,164 @@ final class McpLauncherTest {
                     .build()));
 
             assertTrue(matching.contains("\"id\":\"%"), "the filter excluded the pane that matches it: " + matching);
-            assertEquals("[]", missing, "a filter matching nothing must return nothing, not everything");
+            assertTrue(missing.contains("\"count\":0"), "a filter matching nothing returned panes: " + missing);
+            assertFalse(missing.contains("\"id\":\"%"), "a filter matching nothing must not return everything");
+            assertTrue(
+                    missing.contains("without 'filter'"),
+                    "an empty answer has to say whether the server was empty or the filter was wrong: " + missing);
         }
+    }
+
+    /**
+     * The surface a model meets before it calls anything: what this server is for, and which tool to
+     * reach for. A description drifting from what the tools do sends every model the same wrong way.
+     */
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void theServerTellsAModelHowToUseItBeforeItCallsAnything(Server server, TmuxSocketPath socket) {
+        try (McpSyncClient client = launch(socket.path())) {
+            McpSchema.InitializeResult initialized = client.initialize();
+            String instructions = String.valueOf(initialized.instructions());
+
+            assertTrue(instructions.contains("WAIT, DO NOT POLL"), instructions);
+            assertTrue(instructions.contains("tmux_whoami"), "a model has to be told how to find its own pane");
+            assertTrue(instructions.contains("Do NOT use them for browser tabs"), "anti-triggers must be stated");
+            assertTrue(instructions.contains("SAFETY"), "and what it is not allowed to do");
+        }
+    }
+
+    /** Resources, prompts and completion are all advertised, or a client will never ask for them. */
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void theOtherHalvesOfTheProtocolAreOfferedToo(Server server, TmuxSocketPath socket) {
+        try (McpSyncClient client = launch(socket.path())) {
+            client.initialize();
+
+            List<String> resources = client.listResources().resources().stream()
+                    .map(McpSchema.Resource::uri)
+                    .toList();
+            List<String> templates = client.listResourceTemplates().resourceTemplates().stream()
+                    .map(McpSchema.ResourceTemplate::uriTemplate)
+                    .toList();
+            List<String> prompts = client.listPrompts().prompts().stream()
+                    .map(McpSchema.Prompt::name)
+                    .toList();
+
+            assertTrue(resources.contains("tmux://panes"), resources.toString());
+            assertTrue(templates.contains("tmux://panes/{pane_id}/content"), templates.toString());
+            assertTrue(prompts.contains("run_and_wait"), prompts.toString());
+        }
+    }
+
+    /** A pane resource is the pane's own text, addressable without spending a tool call on it. */
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void aPaneCanBeReadAsAResource(Server server, TmuxSocketPath socket) {
+        String pane = server.panes().get(0).id().value();
+
+        try (McpSyncClient client = launch(socket.path())) {
+            client.initialize();
+
+            McpSchema.ReadResourceResult read =
+                    client.readResource(McpSchema.ReadResourceRequest.builder("tmux://panes/" + pane + "/content")
+                            .build());
+
+            assertEquals(1, read.contents().size());
+            assertEquals(
+                    "text/plain",
+                    ((McpSchema.TextResourceContents) read.contents().get(0)).mimeType(),
+                    "terminal text is not JSON and must not be labelled as it");
+        }
+    }
+
+    /**
+     * Completion answered from tmux rather than from a fixed list. Without it, finding a pane id
+     * costs a listing call, a read of that listing, and a choice.
+     */
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void completionOffersThePaneIdsThatActuallyExist(Server server, TmuxSocketPath socket) {
+        String pane = server.panes().get(0).id().value();
+
+        try (McpSyncClient client = launch(socket.path())) {
+            client.initialize();
+
+            McpSchema.CompleteResult completed = client.completeCompletion(McpSchema.CompleteRequest.builder(
+                            new McpSchema.ResourceReference("tmux://panes/{pane_id}"),
+                            new McpSchema.CompleteRequest.CompleteArgument("pane_id", "%"))
+                    .build());
+
+            assertTrue(
+                    completed.completion().values().contains(pane),
+                    "the pane that exists was not offered: "
+                            + completed.completion().values());
+        }
+    }
+
+    /** What a client decides to confirm with a person on comes from these, so they have to arrive. */
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void everyToolArrivesWithItsRiskDeclared(Server server, TmuxSocketPath socket) {
+        try (McpSyncClient client = launch(socket.path())) {
+            client.initialize();
+
+            for (McpSchema.Tool tool : client.listTools().tools()) {
+                assertTrue(tool.annotations() != null, tool.name() + " arrived with no annotations");
+            }
+            McpSchema.Tool reading = named(client, "tmux_capture_pane");
+            McpSchema.Tool running = named(client, "tmux_run");
+
+            assertEquals(true, reading.annotations().readOnlyHint(), "reading a pane changes nothing");
+            assertEquals(false, running.annotations().readOnlyHint(), "running a command does");
+        }
+    }
+
+    /** A ceiling removes tools rather than refusing them, and this is where that reaches a client. */
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void aReadOnlyLauncherDoesNotEvenOfferTheToolsThatChangeThings(Server server, TmuxSocketPath socket) {
+        try (McpSyncClient client = launch(socket.path(), "--safety", "readonly")) {
+            client.initialize();
+
+            List<String> offered = client.listTools().tools().stream()
+                    .map(McpSchema.Tool::name)
+                    .toList();
+
+            assertTrue(offered.contains("tmux_capture_pane"), offered.toString());
+            assertFalse(offered.contains("tmux_run"), "a read-only server must not offer to run commands");
+            assertFalse(offered.contains("tmux_kill"), offered.toString());
+        }
+    }
+
+    /**
+     * The flagship path over a real wire: a command sent, waited for, and its exit status handed back
+     * as a number rather than something to infer from the screen.
+     */
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void aCommandRunsAndItsExitStatusComesBack(Server server, TmuxSocketPath socket) {
+        String pane = server.panes().get(0).id().value();
+
+        try (McpSyncClient client = launch(socket.path())) {
+            client.initialize();
+
+            McpSchema.CallToolResult ran = client.callTool(McpSchema.CallToolRequest.builder("tmux_run")
+                    .arguments(Map.of("pane_id", pane, "command", "echo over-the-wire; exit 7", "timeout", 30))
+                    .build());
+
+            String answer = textOf(ran);
+            assertTrue(answer.contains("\"exit_status\":7"), answer);
+            assertTrue(answer.contains("over-the-wire"), answer);
+            assertFalse(answer.contains("wait-for"), "no plumbing may reach the model: " + answer);
+            assertTrue(ran.structuredContent() != null, "a client that parses gets the object too");
+        }
+    }
+
+    private static McpSchema.Tool named(McpSyncClient client, String name) {
+        return client.listTools().tools().stream()
+                .filter(tool -> tool.name().equals(name))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(name + " was not offered"));
     }
 
     /**
@@ -171,28 +327,31 @@ final class McpLauncherTest {
                 .orElseThrow(() -> new AssertionError("the tool answered with no text at all"));
     }
 
-    private static McpSyncClient launch(Path socket) {
-        return launch("--socket", socket.toString(), Map.of());
+    private static McpSyncClient launch(Path socket, String... extra) {
+        return launch("--socket", socket.toString(), Map.of(), extra);
     }
 
     /**
      * The SDK adds its environment to an inherited one rather than replacing it, so what keeps a
      * child off the suite's own server is the build having removed {@code TMUX}, asserted here.
      */
-    private static McpSyncClient launch(String endpoint, String value, Map<String, String> environment) {
+    private static McpSyncClient launch(
+            String endpoint, String value, Map<String, String> environment, String... extra) {
         assertNull(System.getenv("TMUX"), "the suite is running inside tmux, so a child could inherit it");
         assertNull(System.getenv("TMUX_PANE"), "the suite is running inside a pane, so a child could inherit it");
 
+        List<String> args = new java.util.ArrayList<>(List.of(
+                "-classpath",
+                System.getProperty("java.class.path"),
+                Main.class.getName(),
+                endpoint,
+                value,
+                "--tmux",
+                TMUX));
+        args.addAll(List.of(extra));
         ServerParameters launcher = ServerParameters.builder(
                         Path.of(System.getProperty("java.home"), "bin", "java").toString())
-                .args(
-                        "-classpath",
-                        System.getProperty("java.class.path"),
-                        Main.class.getName(),
-                        endpoint,
-                        value,
-                        "--tmux",
-                        TMUX)
+                .args(args)
                 .env(environment)
                 .build();
         return McpClient.sync(new StdioClientTransport(launcher, new JacksonMcpJsonMapper(new ObjectMapper())))

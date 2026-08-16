@@ -87,4 +87,36 @@ final class MainTest {
 
         assertEquals(ServerEndpoint.namedSocket("--tmux"), config.endpoint());
     }
+
+    /**
+     * The ceiling decides which tools exist at all, so a launcher that quietly ignored the flag would
+     * hand a model the power to kill things its operator meant to withhold.
+     */
+    @Test
+    void theSafetyCeilingIsReadFromTheFlag() {
+        assertEquals(Safety.READONLY, Main.safety(List.of("--safety", "readonly")));
+        assertEquals(Safety.DESTRUCTIVE, Main.safety(List.of("--socket-name", "work", "--safety", "destructive")));
+    }
+
+    /** Left unsaid, a server reads and changes tmux but cannot destroy anything. */
+    @Test
+    void theCeilingLeftUnsaidStopsShortOfDestroying() {
+        assertEquals(Safety.MUTATING, Main.safety(List.of("--socket-name", "work")));
+    }
+
+    @Test
+    void aCeilingNobodyRecognisesStopsTheLauncher() {
+        IllegalArgumentException refused =
+                assertThrows(IllegalArgumentException.class, () -> Main.safety(List.of("--safety", "yolo")));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains("readonly"), String.valueOf(refused.getMessage()));
+    }
+
+    /** The endpoint parser has to know the flag exists, or it would reject a launch that is correct. */
+    @Test
+    void theSafetyFlagDoesNotConfuseTheEndpointParser() {
+        ServerConfig config = Main.configure(List.of("--safety", "readonly", "--socket-name", "work"));
+
+        assertEquals(ServerEndpoint.namedSocket("work"), config.endpoint());
+    }
 }

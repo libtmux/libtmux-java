@@ -19,8 +19,11 @@ dependencies {
     implementation(libs.jackson.databind)
 
     // A model sends a filter as the versioned JSON document, which is what this module reads it
-    // from. api rather than implementation: the filter type appears on TmuxTools' own signature.
+    // from. api rather than implementation: the filter type appears on the catalog's own signature.
     api(project(":libtmux-jackson"))
+
+    // A whole session described in one document, which is what tmux_apply_workspace takes.
+    implementation(project(":libtmux-workspace"))
 
     // The SDK logs through SLF4J. A launcher speaking a protocol on stdout should not greet its
     // client with warnings about missing logging providers on stderr either.
