@@ -12,6 +12,67 @@ exact version rather than a range.
 
 ## Unreleased
 
+### Added
+
+- **`libtmux-mcp` can wait, so an agent does not have to poll.** `tmux_run`
+  sends a command, waits for it on a private tmux channel, and returns its output
+  with an exit status in one call; `tmux_wait_for_text` watches output nobody here
+  started, with stop patterns so a run that fails is not waited on to the
+  deadline; `tmux_wait_for_channel` blocks inside tmux and infers nothing from the
+  screen. Every wait is bounded and reports the ceiling it enforced, and each
+  carries `WakeReason` through — a server that died under a wait is reported as
+  `SERVER_GONE` rather than as success, which is the one thing tmux's own
+  `wait-for` cannot tell a caller.
+- **`tmux_capture_since` returns only what is new.** It hands back an opaque
+  cursor; passing it back costs the lines a pane has added rather than the screen
+  again. The capture starts one line before the cursor, so the same read that
+  fetches new output also proves it follows on from the last — and says
+  `continuous: false` when a clear or a rolled-over history means it does not.
+- **A safety ceiling that removes tools rather than refusing them.**
+  `--safety readonly|mutating|destructive`, or `LIBTMUX_SAFETY`. A tool above the
+  ceiling is never listed, so a model is not offered something it will only be
+  refused, and the server's instructions say plainly what is missing. MCP's own
+  `readOnlyHint` and `destructiveHint` are derived from the same tier.
+- **The pane the conversation runs through is known, and protected.** `tmux_whoami`
+  names it, resolving `TMUX_PANE` against the server's own socket path before
+  believing it. `tmux_kill` refuses that pane, and the window and session holding
+  it, unless `confirm_self` is passed.
+- **Resources, prompts, live completion and server instructions.** `tmux://`
+  resources expose the same state for a client to hold without spending a tool
+  call; five prompts carry the recipes that take several tools in an order that
+  matters; and `completion/complete` is answered from tmux, so a client asking
+  what could go in `{pane_id}` gets the ids that exist right now.
+- **`--watch` turns tmux's own change detection into MCP notifications.** A
+  control client and `refresh-client -B` let tmux compare formats on its own timer
+  and report only differences, so a subscribed client spends nothing while a
+  server is idle. The client this attaches is hidden from `tmux_list_clients`, so
+  watching cannot be mistaken for a person watching.
+- **`ControlClient` surfaces what tmux volunteers.** `onEvent` publishes every
+  notification a control client is sent, and `watch`/`unwatch` register a format
+  for tmux to report when its value changes.
+- **`tmux_apply_workspace` builds a whole session from one document**, in the
+  shape tmuxp uses — one call instead of a dozen, and a layout tmux would refuse
+  is refused before anything is half-built.
+
+### Changed
+
+- **Every read is bounded and says what it dropped.** A capture keeps the newest
+  lines within a line budget and a character budget, because a pane showing
+  minified output is one line of half a megabyte and a line budget alone lets it
+  through. An answer silently shortened reads as a complete one.
+- **Answers are objects, in snake_case, with nulls omitted.** Named fields rather
+  than a bare array, so a model does not count positions to find out how many
+  panes it got, and the same convention as the arguments it sent. Sent as
+  `structuredContent` and as text.
+- **Failures name the recovery.** `no pane %9 on this server; call tmux_list_panes
+  for the 3 that exist`, rather than a message a model can only repeat.
+
+### Removed
+
+- **`TmuxTools`, `PaneSummary` and `SessionSummary`.** The tool surface is
+  declared in one place now, with each tool's arguments, risk and behaviour stated
+  together so they cannot drift apart.
+
 ## 0.0.1-alpha.3 — 2026-08-16
 
 ### Fixed
