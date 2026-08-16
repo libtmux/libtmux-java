@@ -1,6 +1,7 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -12,6 +13,7 @@ import io.github.libtmux.Session_;
 import io.github.libtmux.Window;
 import io.github.libtmux.Window_;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.query.Fields;
 import io.github.libtmux.query.FilterExpr;
 import io.github.libtmux.query.Selections;
 import java.util.List;
@@ -133,5 +135,29 @@ final class FilteringIntegrationTest {
 
         assertTrue(rendered.contains("window_name"), "a lambda could not say this: " + rendered);
         assertTrue(rendered.contains("window_active"), rendered);
+    }
+
+    /**
+     * A caller may build a field carrying a canonical field's name and answering a different
+     * question, which is why such a field is never eligible to be lowered to tmux's own predicate.
+     * These two disagree over the same real rows, so lowering this one by its name would change the
+     * answer rather than only where it was computed.
+     */
+    @Test
+    void aCallerBuiltFieldIsAnsweredHereRatherThanByTmux(Server server) {
+        String running = server.panes().get(0).currentCommand();
+        Fields.TextField<Pane> prefixed =
+                Fields.text("pane_current_command", (Pane pane) -> "shell-" + pane.currentCommand());
+
+        assertFalse(prefixed.ref().provenance().lowerable());
+        assertEquals(
+                1,
+                server.panes().stream().filter(prefixed.is("shell-" + running)).count());
+        assertEquals(
+                0,
+                server.panes().stream()
+                        .filter(Pane_.command().is("shell-" + running))
+                        .count(),
+                "the canonical field of the same name answers differently over these rows");
     }
 }
