@@ -47,6 +47,7 @@ public final class ControlClient implements AutoCloseable {
     private final Thread reader;
     private final Queue<Pending> awaiting = new ConcurrentLinkedQueue<>();
     private final List<Consumer<PaneOutput>> listeners = new CopyOnWriteArrayList<>();
+    private final List<Consumer<ControlEvent>> events = new CopyOnWriteArrayList<>();
     private final ReentrantLock sending = new ReentrantLock();
     private volatile boolean closed;
 
@@ -158,6 +159,38 @@ public final class ControlClient implements AutoCloseable {
         listeners.add(listener);
     }
 
+    /**
+     * Subscribes to everything else tmux volunteers: windows appearing, sessions renamed, layouts
+     * moving, and the values of any {@link #watch} registered here.
+     *
+     * <p>Same threading contract as {@link #onOutput}.
+     */
+    public void onEvent(Consumer<ControlEvent> listener) {
+        events.add(listener);
+    }
+
+    /**
+     * Asks tmux to report a format whenever its value changes.
+     *
+     * <p>tmux re-expands the format about once a second and writes a {@code subscription-changed}
+     * event only when the result differs from last time, so the comparison happens in the server and
+     * a client that subscribes does nothing at all between changes. This is what makes watching a
+     * server cost nothing while it is idle.
+     *
+     * @param name what to call it; registering the same name again replaces the old one
+     * @param target {@code %*} for every pane, {@code @*} for every window, a specific {@code %id} or
+     *     {@code @id}, or anything else for the attached session
+     * @param format a tmux format, such as {@code #{pane_current_command}}
+     */
+    public ControlReply watch(String name, String target, String format) {
+        return send("refresh-client", "-B", name + ":" + target + ":" + format);
+    }
+
+    /** Stops a watch. tmux reads a name with no colon in it as one to remove. */
+    public ControlReply unwatch(String name) {
+        return send("refresh-client", "-B", name);
+    }
+
     /** Ends the client. Every request still waiting is resolved as {@code UNKNOWN}. */
     @Override
     public void close() {
@@ -247,8 +280,11 @@ public final class ControlClient implements AutoCloseable {
                     block.add(line);
                 } else if (line.startsWith("%output ")) {
                     publish(line);
+                } else if (line.startsWith("%")) {
+                    // Everything else tmux volunteers about its own state. A snapshot is still how
+                    // state is read; this only says when reading it again would be worth the trouble.
+                    ControlEvent.parse(line).ifPresent(this::announce);
                 }
-                // Any other notification is state tmux volunteers; a snapshot is how state is read.
             }
         } catch (IOException e) {
             // The client ended. Everything still waiting is resolved below.
@@ -279,13 +315,23 @@ public final class ControlClient implements AutoCloseable {
         }
         PaneOutput output = new PaneOutput(
                 new PaneId(line.substring("%output ".length(), paneEnd)), unescape(line.substring(paneEnd + 1)));
-        for (Consumer<PaneOutput> listener : listeners) {
+        tell(listeners, output);
+    }
+
+    private void announce(ControlEvent event) {
+        tell(events, event);
+    }
+
+    /**
+     * This thread also resolves every reply, so one listener's failure must not end it. Reported
+     * rather than swallowed, and through the thread's own handler rather than a logger, because a
+     * dependency-free core has nowhere else to say it.
+     */
+    private static <T> void tell(List<Consumer<T>> listeners, T value) {
+        for (Consumer<T> listener : listeners) {
             try {
-                listener.accept(output);
+                listener.accept(value);
             } catch (RuntimeException e) {
-                // This thread also resolves every reply, so one listener's failure must not end it.
-                // Reported rather than swallowed, and through the thread's own handler rather than a
-                // logger, because a dependency-free core has nowhere else to say it.
                 Thread current = Thread.currentThread();
                 current.getUncaughtExceptionHandler().uncaughtException(current, e);
             }

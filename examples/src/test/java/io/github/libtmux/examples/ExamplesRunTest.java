@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.control.ControlEvent;
 import io.github.libtmux.control.PaneOutput;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.junit5.TmuxSocketPath;
@@ -49,5 +50,14 @@ final class ExamplesRunTest {
         List<PaneOutput> seen = WatchPaneOutput.run(socket.path(), Duration.ofSeconds(30), output -> {});
 
         assertFalse(seen.isEmpty(), "attaching is what makes tmux push output, and none arrived");
+    }
+
+    @Test
+    void watchingAServerIsToldWhenAWindowAppears(TmuxSocketPath socket) {
+        List<ControlEvent> seen = WatchWhatChanges.run(socket.path(), Duration.ofSeconds(30), event -> {});
+
+        assertTrue(
+                WatchWhatChanges.sawTheNewWindow(seen),
+                "tmux compares a watched format itself and reports the difference: " + seen);
     }
 }
