@@ -94,6 +94,33 @@ final class OperationsIntegrationTest {
         assertTrue(!names.contains("doomed"), "the killed window is gone from the next capture");
     }
 
+    /**
+     * The title rides the capture row rather than a lookup of its own, so a stale handle keeps
+     * reporting the old one until it is refreshed. That is the whole reason to check it here rather
+     * than trust {@code #{pane_title}}: the value has to survive being framed and parsed with
+     * everything else on the row.
+     *
+     * <p>Set through a raw command because the API has a getter and no setter. If that asymmetry is
+     * wrong it is a library gap, not a gap in this test.
+     */
+    @Test
+    void aPaneReportsTheTitleItWasGiven(Server server) {
+        Pane pane = session(server).windows().get(0).panes().get(0);
+        String before = pane.title();
+
+        assertTrue(
+                server.cmd("select-pane", "-t", pane.id().value(), "-T", "probe-title")
+                        .succeeded(),
+                "tmux refused to set the title");
+
+        assertEquals("probe-title", pane.refresh().title());
+        assertNotEquals(before, pane.refresh().title(), "the title never actually changed");
+        assertEquals(
+                "probe-title",
+                server.panes().get(0).title(),
+                "a fresh capture of the whole server carries it too, so it is not a per-pane lookup");
+    }
+
     @Test
     void refreshingSomethingThatIsGoneSaysSo(Server server) {
         Window extra = session(server).newWindow("doomed");
