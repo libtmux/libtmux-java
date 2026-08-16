@@ -53,6 +53,7 @@ final class WaitingForText {
         List<Matcher> wanted = matchers(call.strings("patterns"), call.flag("regex", false));
         List<Matcher> stops = matchers(call.strings("stop"), call.flag("regex", false));
 
+        int budget = Trim.lineBudget(call);
         Cursor cursor = call.maybe("cursor")
                 .map(Cursor::decode)
                 .orElseGet(() -> Watching.from(pane).cursor());
@@ -65,7 +66,7 @@ final class WaitingForText {
         String hitLine = null;
 
         while (true) {
-            Watching.Fresh fresh = Watching.since(pane, cursor);
+            Watching.Fresh fresh = Watching.since(pane, cursor, budget);
             cursor = fresh.cursor();
             seen.addAll(fresh.lines());
 

@@ -108,14 +108,29 @@ Two consequences worth knowing, both pinned by tests:
 plus the next one. The tenth look at a build log costs the few lines it added,
 not the nine screens already read.
 
-It is one capture, and it answers two questions at once. The capture starts one
-line *before* the cursor, so the line already delivered comes back first: if that
-line still hashes to what it did, everything after it is new. If it does not, the
-pane was cleared or its output has outrun the history tmux keeps — and the answer
-says `continuous: false` rather than stitching two unrelated screens together.
+It is one look, and it answers two questions at once. The look reaches back past
+the line already delivered: if that line still hashes to what it did, everything
+after it is new. If it does not, the pane was cleared or its output has outrun the
+history tmux keeps — and the answer says `continuous: false` rather than stitching
+two unrelated screens together.
 
 Handing back lines that do not follow the ones before them, without saying so, is
-worse than handing back nothing.
+worse than handing back nothing. Which is why two things about that look are not
+optional, and both were measured after a false `continuous: false` reached CI
+([the spike](../spikes/27-torn-reads.md)):
+
+**The capture and the pane's position come from one tmux invocation.** Where a
+line sits in a capture depends on how far the pane has scrolled, so two
+invocations can describe different moments — measured, they disagreed in 40 of 60
+attempts under continuous output, and a pane that merely scrolled then looks
+exactly like one that was cleared. Batched, none of 60 did: tmux does not process
+pane output between two commands of the same invocation.
+
+**Only finished lines are delivered or anchored to.** A terminal is a grid rather
+than a log, so the row the cursor sits on is still being drawn — a capture catches
+`line-123` as `line-12` — and a shell redrawing a wrapped command line rewrites
+rows that were already handed over. `#{cursor_y}` comes back in the same
+invocation, and everything at or below it waits until it is finished.
 
 ## Being told, instead of asking
 

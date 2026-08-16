@@ -28,8 +28,18 @@ record Cursor(String paneId, int absolute, String anchor) {
 
     /** Where a pane is now: everything down to its last written line has been seen. */
     static Cursor at(Pane pane, int history, List<String> seen) {
-        String last = seen.isEmpty() ? "" : seen.get(seen.size() - 1);
-        return new Cursor(pane.id().value(), history + seen.size(), digest(last));
+        return of(pane.id().value(), history, seen);
+    }
+
+    /**
+     * A cursor one past the last of {@code written}.
+     *
+     * @param firstAbsolute how many lines the pane had written above {@code written}'s first line
+     * @param written the pane's lines, trailing blanks already removed
+     */
+    static Cursor of(String paneId, int firstAbsolute, List<String> written) {
+        String last = written.isEmpty() ? "" : written.get(written.size() - 1);
+        return new Cursor(paneId, firstAbsolute + written.size(), digest(last));
     }
 
     String encode() {

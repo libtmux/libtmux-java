@@ -27,9 +27,12 @@ exact version rather than a range.
   `wait-for` cannot tell a caller.
 - **`tmux_capture_since` returns only what is new.** It hands back an opaque
   cursor; passing it back costs the lines a pane has added rather than the screen
-  again. The capture starts one line before the cursor, so the same read that
-  fetches new output also proves it follows on from the last — and says
-  `continuous: false` when a clear or a rolled-over history means it does not.
+  again. The same read that fetches new output also proves it follows on from the
+  last, and says `continuous: false` when a clear or a rolled-over history means
+  it does not. That proof needs the capture and the pane's position to come from
+  one tmux invocation, and it anchors only to lines the terminal's cursor has
+  moved past — a pane that merely scrolled, or a line still being drawn, is not a
+  discontinuity.
 - **A safety ceiling that removes tools rather than refusing them.**
   `--safety readonly|mutating|destructive`, or `LIBTMUX_SAFETY`. A tool above the
   ceiling is never listed, so a model is not offered something it will only be

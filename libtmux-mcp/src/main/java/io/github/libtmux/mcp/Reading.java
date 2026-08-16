@@ -49,17 +49,15 @@ final class Reading {
     /** What a pane shows now, newest last, with a cursor for watching it from here. */
     static Captured capture(Call call) {
         Pane pane = Targets.pane(call.server(), call.string("pane_id"));
-        boolean history = call.flag("history", false);
-        List<String> lines = Watching.withoutTrailingBlanks(
-                history ? pane.capture(spec -> spec.fromStartOfHistory()) : pane.capture());
-        Trim.Trimmed trimmed = Trim.tail(lines, Trim.lineBudget(call));
+        Watching.Fresh look = Watching.everything(pane, call.flag("history", false));
+        Trim.Trimmed trimmed = Trim.tail(look.lines(), Trim.lineBudget(call));
         return new Captured(
                 pane.id().value(),
                 trimmed.lines().size(),
                 trimmed.lines(),
                 trimmed.truncated(),
                 trimmed.dropped(),
-                Cursor.at(pane, Watching.Geometry.of(pane).history(), lines).encode(),
+                look.cursor().encode(),
                 trimmed.truncated()
                         ? "The oldest " + trimmed.dropped() + " lines were dropped to fit 'max_lines'. "
                                 + "What is here is the most recent output."
@@ -79,7 +77,7 @@ final class Reading {
             throw new IllegalArgumentException("that cursor belongs to pane " + from.paneId() + ", not "
                     + pane.id().value() + "; each pane has its own");
         }
-        Watching.Fresh fresh = Watching.since(pane, from);
+        Watching.Fresh fresh = Watching.since(pane, from, Trim.lineBudget(call));
         Trim.Trimmed trimmed = Trim.tail(fresh.lines(), Trim.lineBudget(call));
         return new Since(
                 pane.id().value(),

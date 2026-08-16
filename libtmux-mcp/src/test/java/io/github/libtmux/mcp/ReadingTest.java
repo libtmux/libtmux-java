@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -117,6 +118,49 @@ final class ReadingTest {
 
         assertFalse(fresh.continuous(), "the pane no longer follows on from where the cursor was");
         assertTrue(String.valueOf(fresh.note()).contains("does not follow on"), String.valueOf(fresh.note()));
+    }
+
+    /**
+     * A pane that is scrolling is still continuous, and this is the case that says so.
+     *
+     * <p>Where a line sits in a capture depends on how far the pane has scrolled, so a capture and a
+     * position read as two tmux invocations can disagree — and a pane that merely scrolled between
+     * them then looks exactly like a pane that was cleared. Measured before the reads were batched,
+     * this reported two false discontinuities in forty; it must now report none, because a model
+     * told its cursor is broken will start again and re-read everything.
+     */
+    @Test
+    void aPaneScrollingUnderTheReaderIsNeverMistakenForAClearedOne(Server server) throws Exception {
+        // A history far larger than this can fill, so output outrunning it — a real discontinuity —
+        // cannot be what this measures. Set before the window exists, because the limit a pane keeps
+        // is the one in force when it was made.
+        server.globalOptions().set("history-limit", "20000");
+        var window = server.sessions().get(0).newWindow("scrolling");
+        String pane = window.panes().get(0).id().value();
+        // Short, so every line of output scrolls it, and fast enough that lines land between two
+        // tmux invocations — which is exactly the gap this is here to prove is closed.
+        server.cmd("resize-window", "-t", window.id().value(), "-x", "80", "-y", "10");
+        server.run(List.of(
+                "send-keys",
+                "-l",
+                "-t",
+                pane,
+                "for r in $(seq 1 200); do for i in $(seq 1 30); do echo line-$r-$i; done; sleep 0.01; done"));
+        server.run(List.of("send-keys", "-t", pane, "Enter"));
+        Thread.sleep(300);
+
+        String cursor = Reading.since(TestCalls.on(server, "pane_id", pane)).cursor();
+        List<String> broken = new ArrayList<>();
+        for (int attempt = 0; attempt < 60; attempt++) {
+            Reading.Since since = Reading.since(TestCalls.on(server, "pane_id", pane, "cursor", cursor));
+            cursor = since.cursor();
+            if (!since.continuous()) {
+                broken.add(String.valueOf(since.note()));
+            }
+            Thread.sleep(10);
+        }
+
+        assertEquals(List.of(), broken, "a scrolling pane was reported as a discontinuity");
     }
 
     @Test

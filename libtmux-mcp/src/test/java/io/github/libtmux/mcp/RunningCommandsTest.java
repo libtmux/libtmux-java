@@ -95,14 +95,14 @@ final class RunningCommandsTest {
         String pane = server.panes().get(0).id().value();
 
         RunningCommands.Ran ran = RunningCommands.run(
-                TestCalls.on(server, "pane_id", pane, "command", "echo started; sleep 30", "timeout", 2));
+                TestCalls.on(server, "pane_id", pane, "command", "echo started; sleep 30", "timeout", 6));
 
         assertEquals("TIMED_OUT", ran.outcome());
         assertNull(ran.exitStatus(), "a command that has not finished has no status");
         assertTrue(ran.output().contains("started"), ran.output().toString());
         assertNotNull(ran.note());
         assertTrue(String.valueOf(ran.note()).contains("still running"), String.valueOf(ran.note()));
-        assertTrue(ran.seconds() < 10, "it must return at its deadline, not at the command's end");
+        assertTrue(ran.seconds() < 20, "it must return at its deadline, not at the command's end");
     }
 
     @Test

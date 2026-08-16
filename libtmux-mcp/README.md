@@ -108,7 +108,7 @@ one, which is how a model concludes a build printed nothing.
 | tool | gives back |
 | --- | --- |
 | `tmux_capture_pane` | what a pane shows now, plus a cursor |
-| `tmux_capture_since` | **only what is new** since a cursor, plus the next cursor |
+| `tmux_capture_since` | **only what is new** since a cursor, plus the next cursor — finished lines only, so half a line is never handed over as though it were the whole of one |
 | `tmux_search_panes` | which panes are showing some text |
 
 `tmux_list_panes` reads metadata — what is *running*, and where. `tmux_search_panes`

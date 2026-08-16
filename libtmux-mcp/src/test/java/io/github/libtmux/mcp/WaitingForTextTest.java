@@ -137,8 +137,8 @@ final class WaitingForTextTest {
     void theTimeoutIsClampedToTheCeiling(Server server) {
         String pane = server.panes().get(0).id().value();
 
-        WaitingForText.Waited waited =
-                WaitingForText.waitFor(TestCalls.on(server, "pane_id", pane, "patterns", List.of("x"), "timeout", 0.2));
+        WaitingForText.Waited waited = WaitingForText.waitFor(TestCalls.on(
+                server, "pane_id", pane, "patterns", List.of("no-pane-anywhere-prints-this"), "timeout", 0.2));
 
         assertEquals("TIMED_OUT", waited.outcome());
         assertTrue(waited.effectiveTimeout() <= Waits.CEILING.toSeconds());

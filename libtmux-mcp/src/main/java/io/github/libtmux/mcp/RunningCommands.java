@@ -91,7 +91,8 @@ final class RunningCommands {
         double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
 
         Integer status = wake == WakeReason.SIGNALLED ? readStatus(pane, statusOption) : null;
-        Watching.Fresh fresh = wake == WakeReason.SERVER_GONE ? null : Watching.since(pane, before);
+        Watching.Fresh fresh =
+                wake == WakeReason.SERVER_GONE ? null : Watching.since(pane, before, Trim.lineBudget(call));
         Framed framed = fresh == null ? new Framed(List.of(), false) : frame(fresh.lines(), startMark, endMark);
         Trim.Trimmed trimmed = Trim.tail(framed.lines(), Trim.lineBudget(call));
 
