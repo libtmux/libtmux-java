@@ -66,12 +66,14 @@ val documentedKotlin =
     tasks.register("generateDocumentationSnippets") {
         description = "Turns every Kotlin fence in the documentation into a test."
 
+        // The same set Documentation.readable finds on the Java side, so a document is either
+        // checked in both languages or neither. A file tree rather than a computed list, so a
+        // document appearing later changes this task's inputs instead of being invisible to it.
         val documents =
-            listOf(
-                rootProject.file("README.md"),
-                rootProject.file("libtmux-kotlin/README.md"),
-                rootProject.file("docs/guide/kotlin.md"),
-            )
+            rootProject.fileTree(rootProject.projectDir) {
+                include("README.md", "*/README.md", "docs/guide/*.md")
+                exclude("**/build/**")
+            }
         val generated = layout.buildDirectory.dir("generated/documentation")
 
         inputs.files(documents).withPathSensitivity(PathSensitivity.RELATIVE)
@@ -87,17 +89,20 @@ val documentedKotlin =
             val cases = StringBuilder()
             var found = 0
 
-            documents.forEach { document ->
+            // Sorted, so the generated file does not depend on the order of a directory scan.
+            documents.sorted().forEach { document ->
                 val text = document.readText()
+                val where = document.relativeTo(rootProject.projectDir).path
                 fence.findAll(text).forEach { match ->
                     val directive = match.groupValues[1]
                     if (directive.startsWith("skip:")) return@forEach
                     found++
 
                     val line = text.substring(0, match.range.first).count { it == '\n' } + 1
-                    // A backticked name may not hold a dot, and the point of the name is to say
-                    // which document and which line, so only the dot is spelt differently.
-                    val name = "${document.name.replace('.', ' ')} line $line"
+                    // A backticked name may hold neither a dot nor a separator. The whole path
+                    // rather than the file name: every module has a README, and two with a fence on
+                    // the same line would otherwise generate one function twice.
+                    val name = "${where.replace('/', ' ').replace('.', ' ')} line $line"
 
                     // A shown result becomes an assertion, the same rule docs-tests applies to the
                     // Java fences: what a reader sees after the arrow is what toString produced, so

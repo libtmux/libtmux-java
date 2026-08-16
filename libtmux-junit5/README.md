@@ -11,6 +11,7 @@ For testing *your* code against real tmux — not for testing libtmux.
 
 ## Install
 
+<!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
     testImplementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.1"))

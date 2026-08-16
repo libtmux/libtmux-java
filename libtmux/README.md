@@ -11,6 +11,7 @@ something — Jackson, JUnit, Kotlin, MCP, tmuxp — and depends on this.
 
 ## Install
 
+<!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
     implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.1"))

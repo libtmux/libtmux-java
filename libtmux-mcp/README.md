@@ -163,6 +163,7 @@ editors.size();                            // → 0
 
 ## Install
 
+<!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
     implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.1"))
