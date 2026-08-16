@@ -1,0 +1,27 @@
+# Automatic dependency submission resolves the whole Gradle build, so the graph — and any advisory
+# raised against it — includes plugin and toolchain entries that no published POM carries. Check
+# which of the two an alert names before treating it as reaching a consumer.
+version: 2
+updates:
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      gradle:
+        patterns: ["*"]
+    # A version released moments ago has had no time to be found compromised, and this project is
+    # never in such a hurry that it needs one.
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      actions:
+        patterns: ["*"]
+    cooldown:
+      default-days: 7
