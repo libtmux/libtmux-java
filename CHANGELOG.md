@@ -12,6 +12,15 @@ exact version rather than a range.
 
 ## Unreleased
 
+### Added
+
+- **`FilterModel.fieldNames` and `relationNames` say what a document may name.**
+  The useful thing to tell a caller whose field was not recognised is which ones
+  exist, and nothing outside the class could find that out. `libtmux-mcp` now puts
+  the pane model's fields in `tmux_list_panes`'s own description and repeats them
+  when a filter will not read — measured against a real agent, which guessed a
+  plain field map and spent a call discovering the shape.
+
 ## 0.0.1-alpha.5 — 2026-08-16
 
 ### Added

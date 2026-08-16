@@ -9,6 +9,7 @@ import static io.github.libtmux.mcp.Argument.seconds;
 import static io.github.libtmux.mcp.Argument.strings;
 
 import io.github.libtmux.jackson.FilterJson;
+import io.github.libtmux.jackson.LibTmuxModels;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -96,7 +97,12 @@ final class Catalog {
                         "filter",
                         "object",
                         "A " + FilterJson.SCHEMA + " document over the pane model, for example " + EXAMPLE_FILTER
-                                + ". Field names are tmux's own format names. Omit it to list every pane.",
+                                + ". Field names are tmux's own format names, and these are the only ones a pane "
+                                + "document may compare: "
+                                + String.join(", ", LibTmuxModels.pane().fieldNames())
+                                + ". Anything else — a window's name, a pane's path — is in the answer rather "
+                                + "than the filter, so list the panes and choose from what comes back. Omit it "
+                                + "to list every pane.",
                         false,
                         null)),
                 Listings::panes));

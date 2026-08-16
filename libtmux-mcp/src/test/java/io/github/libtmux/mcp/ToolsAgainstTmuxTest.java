@@ -53,6 +53,42 @@ final class ToolsAgainstTmuxTest {
         assertTrue(String.valueOf(panes.note()).contains("without 'filter'"), String.valueOf(panes.note()));
     }
 
+    /**
+     * A model that guesses the filter's shape gets told the shape, not only that its guess was
+     * wrong. Measured against a real agent, which guessed a plain field map first and had to spend a
+     * call finding out.
+     */
+    @Test
+    void aFilterThatWillNotReadSaysWhatOneLooksLike(Server server) {
+        IllegalArgumentException refused = assertThrows(
+                IllegalArgumentException.class,
+                () -> Listings.panes(TestCalls.on(server, "filter", java.util.Map.of("window_name", "build"))));
+
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("libtmux.filter/1"), message);
+        assertTrue(message.contains("\"node\":\"compare\""), "the shape to copy has to be in it: " + message);
+        assertTrue(message.contains("pane_current_command"), "and the fields it may name: " + message);
+    }
+
+    /** A field the pane model does not have is named alongside the ones it does. */
+    @Test
+    void aFieldThePaneModelLacksSaysWhichItHas(Server server) {
+        Object document = java.util.Map.of(
+                "schema",
+                "libtmux.filter/1",
+                "model",
+                "pane",
+                "expr",
+                java.util.Map.of("node", "compare", "field", "window_name", "op", "equals", "value", "build"));
+
+        IllegalArgumentException refused = assertThrows(
+                IllegalArgumentException.class, () -> Listings.panes(TestCalls.on(server, "filter", document)));
+
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("pane_active"), message);
+        assertTrue(message.contains("list the panes"), "and where to look instead: " + message);
+    }
+
     @Test
     void whoamiSaysWhichServerAndThatNoPaneIsSpecial(Server server) {
         Listings.Whoami whoami = Listings.whoami(server, Caller.nowhere(), Safety.MUTATING);

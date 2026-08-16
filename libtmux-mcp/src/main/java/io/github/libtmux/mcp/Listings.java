@@ -129,8 +129,7 @@ final class Listings {
         String note = null;
         Object filter = call.arguments().get("filter");
         if (filter != null) {
-            FilterExpr<Pane> expression = FilterJson.read(JSON.valueToTree(filter), LibTmuxModels.pane());
-            List<Pane> narrowed = panes.stream().filter(expression).toList();
+            List<Pane> narrowed = panes.stream().filter(paneFilter(filter)).toList();
             note = narrowed.isEmpty() && !panes.isEmpty()
                     ? "The filter matched none of the " + panes.size() + " panes on this server. "
                             + "Call again without 'filter' to see them all."
@@ -138,6 +137,26 @@ final class Listings {
             panes = narrowed;
         }
         return new Panes(panes.size(), describe(panes, caller), note);
+    }
+
+    /**
+     * Reads a filter document, and says what one looks like when it will not read.
+     *
+     * <p>What the parser knows is that a key was missing or a field unrecognised. What a caller
+     * needs is the shape to send and the names it may use — neither of which the parser has any
+     * business knowing, and both of which are free here.
+     */
+    private static FilterExpr<Pane> paneFilter(Object filter) {
+        try {
+            return FilterJson.read(JSON.valueToTree(filter), LibTmuxModels.pane());
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("that filter is not a " + FilterJson.SCHEMA + " document: "
+                    + e.getMessage() + ". One looks like " + Catalog.EXAMPLE_FILTER
+                    + " and may compare these fields only: "
+                    + String.join(", ", LibTmuxModels.pane().fieldNames())
+                    + ". To narrow by anything else — a window's name, a pane's path — list the panes "
+                    + "and choose from what comes back.");
+        }
     }
 
     static List<PaneSummary> describe(List<Pane> panes, Caller caller) {

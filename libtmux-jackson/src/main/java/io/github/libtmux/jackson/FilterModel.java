@@ -4,9 +4,11 @@ import io.github.libtmux.query.FieldRef;
 import io.github.libtmux.query.Fields;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
 
@@ -42,6 +44,24 @@ public final class FilterModel<T> {
     /** The id documents name this model by. */
     public String id() {
         return id;
+    }
+
+    /**
+     * Every field a document may compare on, in the order the model declared them.
+     *
+     * <p>Public because the useful thing to say about a field nobody recognises is which ones exist.
+     * A caller writing a document by hand — or a model being told why its last one was refused —
+     * cannot otherwise find out without reading this file.
+     */
+    public Set<String> fieldNames() {
+        return fields.keySet();
+    }
+
+    /** Every relation a document may navigate, in the order the model declared them. */
+    public Set<String> relationNames() {
+        Set<String> names = new LinkedHashSet<>(toOne.keySet());
+        names.addAll(toMany.keySet());
+        return Collections.unmodifiableSet(names);
     }
 
     FieldRef<T, ?> field(String fieldId) {
