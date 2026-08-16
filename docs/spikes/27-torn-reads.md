@@ -82,6 +82,17 @@ look like a passing test:
   reads, and the discontinuity it reports is *correct*, so the guard fails
   against code that is right.
 
+## What `clear` does is not the same everywhere
+
+Pinning the opposite case — a cursor that genuinely cannot be resumed — through
+the shell's `clear` looked obvious and was version-specific. On 3.2a the cleared
+lines are still in the pane's history, so a reader that finds the anchor there and
+reports continuity is *right*; on 3.7 it is not there to find.
+
+The tool was correct on both. The test was asserting what a terminal does with an
+escape sequence rather than what this server promises, so it now drops the history
+through tmux's own `clear-history` and asserts the promise.
+
 ## What it cost to find
 
 Two tests failed in CI on a tag that had passed `check --rerun-tasks` twice

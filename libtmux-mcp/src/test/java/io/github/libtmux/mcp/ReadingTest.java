@@ -102,22 +102,33 @@ final class ReadingTest {
     }
 
     /**
-     * The case a cursor exists to notice. After the screen is cleared, the line the cursor was
-     * anchored to is gone, so what follows does not follow — and the answer has to say so rather than
-     * quietly stitching two unrelated screens together.
+     * The case a cursor exists to notice: the line it was anchored to is genuinely gone, so what
+     * follows does not follow, and the answer says so rather than quietly stitching two unrelated
+     * screens together.
+     *
+     * <p>The history is dropped through tmux rather than by running {@code clear} in the pane. What
+     * the shell's own clear does to the scrollback is not the same across the supported range — on
+     * 3.2a the cleared lines are still in history, so a reader that found them there and reported
+     * continuity was right — and this is here to pin what this server promises, not what a terminal
+     * happens to do with an escape sequence.
      */
     @Test
-    void aClearedPaneIsReportedAsADiscontinuityRatherThanStitchedOn(Server server) {
+    void aPaneWhoseHistoryIsGoneIsReportedAsADiscontinuity(Server server) {
         String pane = server.panes().get(0).id().value();
         run(server, pane, "echo before-the-clear");
         String cursor = Reading.since(TestCalls.on(server, "pane_id", pane)).cursor();
+
         run(server, pane, "clear");
+        server.cmd("clear-history", "-t", pane);
         run(server, pane, "echo after-the-clear");
 
         Reading.Since fresh = Reading.since(TestCalls.on(server, "pane_id", pane, "cursor", cursor));
 
         assertFalse(fresh.continuous(), "the pane no longer follows on from where the cursor was");
         assertTrue(String.valueOf(fresh.note()).contains("does not follow on"), String.valueOf(fresh.note()));
+        assertTrue(
+                fresh.content().stream().anyMatch(line -> line.contains("after-the-clear")),
+                "and what it does show is what the pane shows now: " + fresh.content());
     }
 
     /**
