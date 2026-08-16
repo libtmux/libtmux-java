@@ -112,6 +112,11 @@ public final class Server implements AutoCloseable {
      *
      * <p>tmux reports which session it made, so the result is exact even when another session
      * already carries the same name.
+     *
+     * <p>Keep {@code :} and {@code .} out of the name. tmux decides what to do with them and changes
+     * its mind across the supported range: 3.2a through 3.6 rewrite each one to {@code _}, 3.7
+     * refuses the name, and 3.7a onwards keeps it — where it then cannot address the session,
+     * because a target splits on both. {@link Session#name()} reports what tmux settled on.
      */
     public Session newSession(String name) {
         return newSession(SessionSpec.builder().named(name).build());
