@@ -10,6 +10,17 @@ exact version rather than a range.
 
 [semver]: https://semver.org/spec/v2.0.0.html
 
+## Unreleased
+
+### Fixed
+
+- **The published POM sent readers to the Python library's documentation.** Its
+  `url` was `https://libtmux.git-pull.com/`, so the homepage on this artifact's
+  Central page belonged to a sibling project. It now names this repository, which
+  is the reasoning the `scm` block already carried and this element had missed.
+  `0.0.1-alpha.1` carries the wrong value permanently — a released POM cannot be
+  changed.
+
 ## 0.0.1-alpha.1 — 2026-08-16
 
 First release. Published to Maven Central under `io.github.libtmux`, signed with

@@ -39,7 +39,11 @@ mavenPublishing {
     pom {
         name = project.name
         description = "Typed tmux access for the JVM. Alpha: the API is not stable and will change without notice."
-        url = "https://libtmux.git-pull.com/"
+        // This port's home, for the same reason the scm below is: a consumer who follows the
+        // homepage in this POM should arrive at the source of the artifact they are holding.
+        // https://libtmux.git-pull.com/ documents the Python library, which shipped here in
+        // 0.0.1-alpha.1 and sent everyone reading the artifact page to a sibling project.
+        url = "https://github.com/libtmux/libtmux-java"
         inceptionYear = "2026"
         licenses {
             license {
