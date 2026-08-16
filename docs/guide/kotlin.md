@@ -38,7 +38,7 @@ than a `Predicate`, so passing a `FilterExpr` to it does not compile. That is wh
 
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
-implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.3"))
+implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.4"))
 implementation("io.github.libtmux:libtmux-kotlin")
 ```
 

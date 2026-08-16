@@ -12,6 +12,8 @@ exact version rather than a range.
 
 ## Unreleased
 
+## 0.0.1-alpha.4 — 2026-08-16
+
 ### Added
 
 - **`libtmux-mcp` can wait, so an agent does not have to poll.** `tmux_run`
