@@ -12,6 +12,17 @@ exact version rather than a range.
 
 ## Unreleased
 
+## 0.0.1-alpha.2 — 2026-08-16
+
+### Added
+
+- **`Pane.retitle` gives a pane the title it reports.** `Pane.title()` could be
+  read and not set, so setting one meant reaching past the API for
+  `select-pane -T`. It returns a handle carrying the new value, the way
+  `Window.rename` and `Session.rename` already do. A program running in the pane
+  can still set its own title through an escape sequence, so what comes back says
+  what the title is now and not what it will stay.
+
 ### Fixed
 
 - **The published POM sent readers to the Python library's documentation.** Its

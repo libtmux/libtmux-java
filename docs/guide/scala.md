@@ -8,7 +8,7 @@ Depend on it with a single `%`, never `%%`:
 
 <!-- snippet: skip: build configuration, not library code -->
 ```scala
-libraryDependencies += "io.github.libtmux" % "libtmux" % "0.0.1-alpha.1"
+libraryDependencies += "io.github.libtmux" % "libtmux" % "0.0.1-alpha.2"
 ```
 
 `%%` would ask for `libtmux_3`, which does not exist and should not. A Java
