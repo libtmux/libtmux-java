@@ -18,7 +18,9 @@ version = providers.gradleProperty("libtmuxVersion").getOrElse("0.0.1-alpha.1-SN
 // Supplied by CI as ORG_GRADLE_PROJECT_signingInMemoryKey, and absent on a developer's machine. A
 // build that demanded it everywhere could not run publishToMavenLocal, which is how a publication
 // gets checked before anything reaches Central.
-val signingKey = providers.gradleProperty("signingInMemoryKey")
+// Blank is absent. An unset repository secret reaches a workflow as an empty string, and a build
+// that read that as "there is a key" would fail inside the signer rather than skip signing.
+val signingKey = providers.gradleProperty("signingInMemoryKey").filter { it.isNotBlank() }
 
 mavenPublishing {
     // There is no host to choose any more: this plugin dropped SonatypeHost in favour of the Portal

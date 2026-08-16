@@ -72,12 +72,25 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: ./gradlew check -PlibtmuxVersion="$VERSION" --stacktrace
 
+      # A signing key may or may not carry a passphrase, and an unset secret arrives as an empty
+      # string rather than as nothing. The publisher does not treat blank as absent, so an empty
+      # value is offered as the passphrase and decryption fails. Set it only when there is one.
+      - name: Carry the passphrase only if the key has one
+        env:
+          PASSPHRASE: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if [ -n "$PASSPHRASE" ]; then
+            echo "ORG_GRADLE_PROJECT_signingInMemoryKeyPassword=$PASSPHRASE" >> "$GITHUB_ENV"
+            echo "signing key has a passphrase"
+          else
+            echo "signing key has no passphrase"
+          fi
+
       - name: Publish to the Central Portal
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.CENTRAL_PORTAL_PASSWORD }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
           VERSION: ${{ steps.version.outputs.version }}
         run: ./gradlew publishToMavenCentral -PlibtmuxVersion="$VERSION" --stacktrace
 

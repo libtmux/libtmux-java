@@ -65,15 +65,42 @@ Two things worth knowing:
 
 ## Gate 2 — a signing key CI can use
 
-Central rejects unsigned artifacts. Generate a key that belongs to the project
-rather than to a laptop.
+Central rejects unsigned artifacts, and that has not changed. Sonatype is rolling
+out Sigstore alongside PGP, but a missing Sigstore signature does not block a
+publish and PGP is not going away — an invalid Sigstore signature will eventually
+block one, which is a reason to leave it alone rather than to rely on it.
+
+**There is no OIDC.** The Central Portal API documents one authentication method:
+a user token, base64-encoded into an `Authorization` header. There is no trusted
+publishing, no workload identity federation, and no way to exchange a GitHub
+Actions identity for a Portal credential. Every comparable project checked here
+does the same thing — the MCP Java SDK, Conductor and OpenMetadata all carry a
+token and a key as repository secrets. Where `id-token: write` appears in a Java
+release workflow it is for build attestations, not for Central.
+
+So the credentials are long-lived secrets, and the question worth asking is how
+few of them there can be.
+
+### Three secrets, or four
+
+A passphrase on the signing key is optional, and the plugin only wants
+`signingInMemoryKeyPassword` if the key has one.
+
+| | secrets | when it makes sense |
+| --- | --- | --- |
+| **key with no passphrase** | 3 | a key made for this repository and nothing else, revocable on its own |
+| key with a passphrase | 4 | a key that also lives somewhere else, where the passphrase is a second factor |
+
+A passphrase stored in the same secret store as the key it protects adds very
+little, so a dedicated release key without one is the reasonable default. Use a
+passphrase if the key has a life outside CI.
 
 ```console
 $ gpg --quick-generate-key "libtmux <tony@git-pull.com>" rsa4096 sign 2y
 ```
 
 Publish the public half so Central can find it, and export the private half in
-the ASCII form a CI secret can hold:
+the ASCII form a secret can hold:
 
 ```console
 $ gpg --keyserver keyserver.ubuntu.com --send-keys <KEY_ID>
@@ -83,22 +110,32 @@ $ gpg --keyserver keyserver.ubuntu.com --send-keys <KEY_ID>
 $ gpg --armor --export-secret-keys <KEY_ID> > /tmp/libtmux-signing.asc
 ```
 
-Then add four repository secrets, and delete the exported file:
-
-| secret                     | value                                     |
-| -------------------------- | ----------------------------------------- |
-| `SIGNING_KEY`              | the contents of the exported `.asc`       |
-| `SIGNING_PASSWORD`         | the key's passphrase                      |
-| `CENTRAL_PORTAL_USERNAME`  | from central.sonatype.com/usertoken       |
-| `CENTRAL_PORTAL_PASSWORD`  | the token's password half                 |
+| secret | value |
+| --- | --- |
+| `SIGNING_KEY` | the contents of the exported `.asc` |
+| `SIGNING_PASSWORD` | the passphrase — **omit entirely if the key has none** |
+| `CENTRAL_PORTAL_USERNAME` | from central.sonatype.com/usertoken |
+| `CENTRAL_PORTAL_PASSWORD` | the token's password half |
 
 ```console
 $ gh secret set SIGNING_KEY < /tmp/libtmux-signing.asc && rm /tmp/libtmux-signing.asc
 ```
 
-A Portal token is not an OSSRH token. OSSRH reached end of life on 30 June 2025
-and any instructions naming `oss.sonatype.org` are describing a service that no
-longer exists.
+An unset secret reaches a workflow as an **empty string**, not as nothing, and
+the publisher does not read blank as absent — it would offer the empty string as
+the passphrase and fail to decrypt. The release workflow therefore sets that
+variable only when there is a passphrase to set, and the build treats a blank key
+as no key.
+
+Two more things that fail a release rather than a build:
+
+- **Sign with the primary key.** Some tools sign with a subkey by default, and
+  Central verifies against the primary.
+- **Watch the expiry.** An expired key fails validation, and `2y` above is a
+  choice, not a default.
+
+A Portal token is not an OSSRH token. OSSRH reached end of life on 30 June 2025,
+and anything naming `oss.sonatype.org` describes a service that no longer exists.
 
 ## The plugin, already wired
 
