@@ -10,6 +10,7 @@ import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -94,6 +95,28 @@ final class OptionsIntegrationTest {
         assertEquals(Optional.of("3"), session.options().get("base-index"));
         assertFalse(session.options().all().containsKey("base-index"), "the session sets nothing itself");
         assertEquals(3, session.newWindow("proof").index().value(), "tmux really did act on the inherited value");
+    }
+
+    /**
+     * A window option lookup never passes through a session tree, so a window linked into two
+     * sessions cannot hold a different value in each. Window state is not per-session.
+     */
+    @Test
+    void aLinkedWindowReadsOneSetOfOptionsThroughEitherSession(Server server) {
+        Session origin = server.sessions().get(0);
+        Session other = server.newSession("other");
+        Window shared = origin.windows().get(0);
+        shared.linkTo(other);
+
+        shared.options().set("main-pane-width", "81");
+
+        List<Window> links = server.windows().stream()
+                .filter(window -> window.id().equals(shared.id()))
+                .toList();
+        assertEquals(2, links.size(), "the window is in both sessions");
+        for (Window link : links) {
+            assertEquals(Optional.of("81"), link.options().get("main-pane-width"));
+        }
     }
 
     @Test
