@@ -53,11 +53,20 @@ record Argument(
     /** The JSON Schema fragment describing this one argument. */
     Map<String, Object> schema() {
         Map<String, Object> described = new LinkedHashMap<>();
-        described.put("type", type);
-        described.put("description", description + (fallback == null ? "" : " Defaults to " + fallback + "."));
         if ("array".equals(type)) {
+            // A single value is accepted where a list is wanted, because models send one — and the
+            // schema has to say so. The server validates arguments against this before a tool sees
+            // them, so a reader that quietly coped with a bare string would never be reached.
+            described.put("type", List.of("array", "string"));
             described.put("items", Map.of("type", "string"));
+        } else {
+            described.put("type", type);
         }
+        described.put(
+                "description",
+                description
+                        + ("array".equals(type) ? " One value may be sent on its own, without a list." : "")
+                        + (fallback == null ? "" : " Defaults to " + fallback + "."));
         if (fallback != null) {
             described.put("default", fallback);
         }

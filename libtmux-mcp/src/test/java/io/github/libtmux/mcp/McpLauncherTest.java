@@ -250,6 +250,61 @@ final class McpLauncherTest {
         }
     }
 
+    /**
+     * A model that sends one value where a list is wanted meant the one value.
+     *
+     * <p>Over the wire, not in process: the server validates arguments against a tool's own schema
+     * before the tool sees them, so a reader that copes with a bare string proves nothing unless the
+     * schema says a bare string is allowed. Tested in process only, this passed while every real
+     * client was refused.
+     */
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void oneValueIsAcceptedWhereAListIsWanted(Server server, TmuxSocketPath socket) {
+        String pane = server.panes().get(0).id().value();
+
+        try (McpSyncClient client = launch(socket.path())) {
+            client.initialize();
+
+            McpSchema.CallToolResult keys = client.callTool(McpSchema.CallToolRequest.builder("tmux_send_keys")
+                    .arguments(Map.of("pane_id", pane, "keys", "q"))
+                    .build());
+            McpSchema.CallToolResult waited = client.callTool(McpSchema.CallToolRequest.builder("tmux_wait_for_text")
+                    .arguments(Map.of("pane_id", pane, "patterns", "never-appears-here", "timeout", 1))
+                    .build());
+
+            assertEquals(false, keys.isError(), textOf(keys));
+            assertEquals(false, waited.isError(), textOf(waited));
+        }
+    }
+
+    /**
+     * The tool a model is told to call first, on a socket no server is listening on. Everything else
+     * here needs a server to answer, so this one has to answer without one.
+     */
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void whoamiAnswersWhenNoServerIsRunning(@TempDir Path directory) {
+        Path absent = directory.resolve("nothing-here");
+
+        try (McpSyncClient client = launch(absent)) {
+            client.initialize();
+
+            McpSchema.CallToolResult whoami = client.callTool(
+                    McpSchema.CallToolRequest.builder("tmux_whoami").build());
+            McpSchema.CallToolResult panes = client.callTool(
+                    McpSchema.CallToolRequest.builder("tmux_list_panes").build());
+
+            assertEquals(false, whoami.isError(), "asking where we are must not fail: " + textOf(whoami));
+            assertTrue(textOf(whoami).contains("No tmux server is running"), textOf(whoami));
+            assertTrue(textOf(whoami).contains("tmux_list_servers"), "and where to look instead");
+            assertEquals(false, panes.isError(), textOf(panes));
+            assertTrue(
+                    textOf(panes).contains("No tmux server is running"),
+                    "an empty listing has to say whether the server was empty or absent: " + textOf(panes));
+        }
+    }
+
     private static McpSchema.Tool named(McpSyncClient client, String name) {
         return client.listTools().tools().stream()
                 .filter(tool -> tool.name().equals(name))

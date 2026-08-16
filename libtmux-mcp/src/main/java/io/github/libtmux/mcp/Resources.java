@@ -75,7 +75,8 @@ final class Resources {
                                     found.windows().size(),
                                     found.windows().stream()
                                             .map(window -> window.name())
-                                            .toList())));
+                                            .toList())),
+                            null);
                 }),
                 jsonTemplate(
                         PANE_TEMPLATE,

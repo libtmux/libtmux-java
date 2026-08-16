@@ -2,6 +2,7 @@ package io.github.libtmux.mcp;
 
 import io.github.libtmux.Layout;
 import io.github.libtmux.Pane;
+import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
@@ -164,20 +165,18 @@ final class Shaping {
         Server server = call.server();
         if (target.startsWith("%")) {
             Pane pane = Targets.pane(server, target);
-            guard(call, pane.id().value(), confirmed, "pane");
+            guard(call, List.of(pane), confirmed, "pane");
             pane.kill();
             return new Ended("pane", target, null);
         }
         if (target.startsWith("@")) {
             Window window = Targets.window(server, target);
-            window.panes().forEach(pane -> guard(call, pane.id().value(), confirmed, "window"));
+            guard(call, window.panes(), confirmed, "window");
             window.kill();
             return new Ended("window", target, null);
         }
         if ("server".equals(target)) {
-            if (call.caller().pane().isPresent() && !confirmed) {
-                throw new IllegalStateException(refusal("server"));
-            }
+            guard(call, server.panes(), confirmed, "server");
             server.killServer();
             return new Ended(
                     "server",
@@ -186,9 +185,13 @@ final class Shaping {
                             + "server. Nothing else in this conversation can act on it.");
         }
         Session session = Targets.session(server, target);
-        session.windows().stream()
-                .flatMap(window -> window.panes().stream())
-                .forEach(pane -> guard(call, pane.id().value(), confirmed, "session"));
+        guard(
+                call,
+                session.windows().stream()
+                        .flatMap(window -> window.panes().stream())
+                        .toList(),
+                confirmed,
+                "session");
         session.kill();
         return new Ended("session", session.id().value(), null);
     }
@@ -200,19 +203,36 @@ final class Shaping {
      * ending the conversation's own pane has to be the thing that was meant rather than the thing
      * that happened.
      */
-    private static void guard(Call call, String paneId, boolean confirmed, String kind) {
+    private static void guard(Call call, List<Pane> going, boolean confirmed, String kind) {
         if (confirmed) {
             return;
         }
-        if (call.caller().isSelf(Targets.paneId(paneId))) {
-            throw new IllegalStateException(refusal(kind));
+        Optional<PaneId> mine = call.caller().pane();
+        if (mine.isEmpty() || going.stream().noneMatch(pane -> call.caller().isSelf(pane.id()))) {
+            return;
         }
+        List<String> others = going.stream()
+                .map(pane -> pane.id().value())
+                .filter(id -> !id.equals(mine.get().value()))
+                .toList();
+        throw new IllegalStateException(refusal(kind, mine.get().value(), others));
     }
 
-    private static String refusal(String kind) {
-        return "That " + kind + " holds the pane this MCP server is running in, so ending it ends this "
-                + "conversation's connection to tmux. Call tmux_whoami to see which pane that is. If it is "
-                + "really what you meant, pass confirm_self=true.";
+    /**
+     * Leads with what can be ended, because that is what gets acted on.
+     *
+     * <p>An earlier wording offered {@code confirm_self=true} as the next step. A model told to tidy
+     * up a session read that as the way to finish the job, passed it, and killed the server it was
+     * speaking through — so the override now comes last and says what it costs.
+     */
+    private static String refusal(String kind, String mine, List<String> others) {
+        String instead = others.isEmpty()
+                ? "Nothing else is in it, so there is nothing here to end safely."
+                : "End these instead, and leave " + mine + " alone: " + String.join(", ", others) + ".";
+        return "Refused. " + ("pane".equals(kind) ? "That is" : "That " + kind + " holds") + " pane " + mine
+                + ", which this MCP server is running in, so ending it cuts this conversation off from tmux "
+                + "— every later tmux call fails, including the ones that would say why. " + instead
+                + " Pass confirm_self=true only if disconnecting yourself is the actual goal.";
     }
 
     /** tmux names a layout with hyphens; the enum names it with underscores. */

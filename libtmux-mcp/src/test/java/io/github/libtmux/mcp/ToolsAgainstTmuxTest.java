@@ -89,6 +89,45 @@ final class ToolsAgainstTmuxTest {
         assertTrue(message.contains("list the panes"), "and where to look instead: " + message);
     }
 
+    /** Ending a container that holds the caller's pane names the ones that could be ended instead. */
+    @Test
+    void refusingToEndAContainerNamesWhatCanBeEnded(Server server) {
+        String mine = server.panes().get(0).id().value();
+        String other = server.sessions().get(0).windows().get(0).split().id().value();
+
+        IllegalStateException refused = assertThrows(
+                IllegalStateException.class, () -> Shaping.kill(TestCalls.asCaller(server, mine, "target", "libtmux")));
+
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains(other), "the pane that could go is named: " + message);
+        assertTrue(message.contains(mine), message);
+        assertEquals(2, server.panes().size());
+    }
+
+    @Test
+    void whoamiOnAServerThatIsNotRunningSaysSoRatherThanFailing(Server server) {
+        server.killServer();
+
+        Listings.Whoami whoami = Listings.whoami(server, Caller.nowhere(), Safety.MUTATING);
+
+        assertTrue(whoami.note().contains("No tmux server is running"), whoami.note());
+        assertTrue(whoami.note().contains("tmux_list_servers"), "and where to look instead: " + whoami.note());
+        assertEquals(0, whoami.panes());
+    }
+
+    /** An empty listing has to say whether the server was empty or absent; a count cannot. */
+    @Test
+    void anEmptyListingSaysWhetherThereIsAServerAtAll(Server server) {
+        Listings.Sessions running = Listings.sessions(server);
+        server.killServer();
+        Listings.Sessions gone = Listings.sessions(server);
+
+        assertEquals(1, running.count());
+        assertEquals(null, running.note(), "a listing that found something says nothing extra");
+        assertEquals(0, gone.count());
+        assertTrue(String.valueOf(gone.note()).contains("No tmux server is running"), String.valueOf(gone.note()));
+    }
+
     @Test
     void whoamiSaysWhichServerAndThatNoPaneIsSpecial(Server server) {
         Listings.Whoami whoami = Listings.whoami(server, Caller.nowhere(), Safety.MUTATING);
@@ -157,8 +196,13 @@ final class ToolsAgainstTmuxTest {
                 IllegalStateException.class, () -> Shaping.kill(TestCalls.asCaller(server, pane, "target", pane)));
 
         String message = String.valueOf(refused.getMessage());
-        assertTrue(message.contains("tmux_whoami"), message);
+        assertTrue(message.contains(pane), "the refusal names the pane it protected: " + message);
         assertTrue(message.contains("confirm_self"), message);
+        // The override is offered, but only after what to do instead — a model told to tidy up acts
+        // on whichever it reads first, and one that read confirm_self first killed its own server.
+        assertTrue(
+                message.indexOf("instead") < message.indexOf("confirm_self"),
+                "what can be ended safely has to come before the override: " + message);
         assertEquals(2, server.panes().size(), "and the pane is still there");
     }
 

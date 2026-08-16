@@ -12,6 +12,31 @@ exact version rather than a range.
 
 ## Unreleased
 
+### Fixed
+
+- **`tmux_whoami` failed on a socket with no server behind it.** It is the tool
+  the instructions tell a model to call first, and it asked tmux for its version —
+  which needs a running server — so the first call on an unstarted socket answered
+  with a raw `error connecting to …`. It now says there is no server and points at
+  `tmux_list_servers`.
+- **An empty listing could not be told from an absent server.** `tmux_list_panes`
+  on a socket with nothing behind it answered `count: 0`, exactly as a running
+  server with no panes does. Both now carry a note saying which, asked only on the
+  empty answer so a listing that found something costs no extra tmux command.
+- **A single value where a list was wanted was refused before the tool saw it.**
+  The server validates arguments against each tool's schema first, so `keys: "q"`
+  was rejected even though the reader behind it coped — and the test that covered
+  it called the tool in process, where no validation happens. The schema now
+  accepts one value or a list, and the case is tested over the wire.
+
+### Changed
+
+- **Refusing to end the caller's own pane leads with what can be ended.** The
+  earlier wording offered `confirm_self=true` as the next step; a model told to
+  tidy up read that as how to finish the job. It now names the other panes first
+  and says what the override costs — measured against a real agent, whose account
+  of what it had done went from wrong to accurate.
+
 ### Added
 
 - **`FilterModel.fieldNames` and `relationNames` say what a document may name.**

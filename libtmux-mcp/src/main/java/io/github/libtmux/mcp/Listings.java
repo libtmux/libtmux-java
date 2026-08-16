@@ -58,9 +58,15 @@ final class Listings {
     record Panes(
             int count, List<PaneSummary> panes, @Nullable String note) {}
 
-    record Windows(int count, List<WindowSummary> windows) {}
+    record Windows(
+            int count,
+            List<WindowSummary> windows,
+            @Nullable String note) {}
 
-    record Sessions(int count, List<SessionSummary> sessions) {}
+    record Sessions(
+            int count,
+            List<SessionSummary> sessions,
+            @Nullable String note) {}
 
     record Clients(
             int count,
@@ -75,7 +81,7 @@ final class Listings {
             String realm,
             String server,
             @Nullable String socket,
-            String version,
+            @Nullable String version,
             @Nullable String callerPane,
             int sessions,
             int windows,
@@ -100,7 +106,7 @@ final class Listings {
                         session.windows().size(),
                         session.windows().stream().map(Window::name).toList()))
                 .toList();
-        return new Sessions(summaries.size(), summaries);
+        return new Sessions(summaries.size(), summaries, emptiness(server, summaries.size(), "session"));
     }
 
     static Windows windows(Call call) {
@@ -119,7 +125,7 @@ final class Listings {
                         window.active(),
                         window.panes().size()))
                 .toList();
-        return new Windows(summaries.size(), summaries);
+        return new Windows(summaries.size(), summaries, emptiness(server, summaries.size(), "window"));
     }
 
     static Panes panes(Call call) {
@@ -136,7 +142,8 @@ final class Listings {
                     : null;
             panes = narrowed;
         }
-        return new Panes(panes.size(), describe(panes, caller), note);
+        return new Panes(
+                panes.size(), describe(panes, caller), note != null ? note : emptiness(server, panes.size(), "pane"));
     }
 
     /**
@@ -157,6 +164,23 @@ final class Listings {
                     + ". To narrow by anything else — a window's name, a pane's path — list the panes "
                     + "and choose from what comes back.");
         }
+    }
+
+    /**
+     * Why a listing is empty, when it is.
+     *
+     * <p>A server with nothing on it and a socket with no server behind it both list nothing, and a
+     * model cannot tell them apart from a count. Only asked on the empty answer, so a listing that
+     * found something costs no extra tmux command.
+     */
+    private static @Nullable String emptiness(Server server, int found, String what) {
+        if (found > 0) {
+            return null;
+        }
+        return server.isAlive()
+                ? "This tmux server is running and has no " + what + "s on it."
+                : "No tmux server is running on the socket this was pointed at, so there is nothing to "
+                        + "list. Call tmux_list_servers to find the ones that are.";
     }
 
     static List<PaneSummary> describe(List<Pane> panes, Caller caller) {
@@ -206,6 +230,25 @@ final class Listings {
      * refuse to do that need to know which pane that is.
      */
     static Whoami whoami(Server server, Caller caller, Safety ceiling) {
+        // Asked before anything else, including on a socket no server is listening on. Every other
+        // question here needs a server to answer it, so the answer to "is there one" comes first —
+        // the tool a model is told to call first must not fail at being told there is nothing there.
+        if (!server.isAlive()) {
+            return new Whoami(
+                    server.identity().realm(),
+                    server.identity().server(),
+                    null,
+                    null,
+                    null,
+                    0,
+                    0,
+                    0,
+                    ceiling.wireName(),
+                    "No tmux server is running on the socket this was pointed at. Nothing here can act "
+                            + "until one is, and tmux_new_session will start one. Call tmux_list_servers to see "
+                            + "the servers that are running — the sessions you expected are probably on one of "
+                            + "them, and a different socket cannot see them.");
+        }
         return new Whoami(
                 server.identity().realm(),
                 server.identity().server(),
