@@ -28,21 +28,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The launcher an MCP client actually starts, started the way an MCP client starts it.
- *
- * <p>Everything below the protocol is covered by {@link TmuxToolsTest} against a server built in
- * process. That leaves the part no in-process test can reach: whether the flags a README tells
- * people to write reach a tmux server at all, and whether a tool call survives the round trip
- * through JSON-RPC and a pipe. A launcher that parsed {@code --socket} into the wrong endpoint would
- * still pass every other test in this module and serve a model the wrong machine's tmux.
- *
- * <p>The subprocess is a JVM of its own, so it takes the tmux binary explicitly: on a matrix lane
- * the fixture runs a specific build, and a child resolving {@code tmux} from {@code PATH} would
- * quietly answer about a different one.
+ * The launcher an MCP client starts, started that way. A wrong endpoint passes every in-process
+ * test in this module and still serves a model the wrong machine's tmux.
  */
 @ExtendWith(TmuxExtension.class)
 final class McpLauncherTest {
 
+    /** Named explicitly: a child resolving tmux from PATH would answer about a different build. */
     private static final String TMUX = System.getProperty("libtmux.tmux", "tmux");
 
     /** Longer than any single call needs, short enough that a hung launcher fails as itself. */
@@ -135,11 +127,7 @@ final class McpLauncherTest {
         }
     }
 
-    /**
-     * A name is not a path: tmux resolves it under {@code TMUX_TMPDIR} when the child execs, so this
-     * is the one arm whose answer depends on the environment as well as the arguments. The directory
-     * is stated rather than inherited, so what this proves does not depend on the suite's own.
-     */
+    /** A name resolves under {@code TMUX_TMPDIR}, so it is stated rather than left to be inherited. */
     @Test
     @Timeout(PATIENCE_SECONDS)
     void aServerAddressedByNameIsFoundToo(@TempDir Path directory) throws Exception {
@@ -188,12 +176,8 @@ final class McpLauncherTest {
     }
 
     /**
-     * Starts the launcher as a client would, on this JVM's own classpath.
-     *
-     * <p>The SDK adds {@code ServerParameters}' environment to an inherited one rather than replacing
-     * it, so its allowlist restricts nothing and the child holds whatever this JVM holds. What keeps
-     * a launched program off the suite's own server is the build removing {@code TMUX} and
-     * {@code TMUX_PANE} from every test task, asserted here so that it cannot quietly stop.
+     * The SDK adds its environment to an inherited one rather than replacing it, so what keeps a
+     * child off the suite's own server is the build having removed {@code TMUX}, asserted here.
      */
     private static McpSyncClient launch(String endpoint, String value, Map<String, String> environment) {
         assertNull(System.getenv("TMUX"), "the suite is running inside tmux, so a child could inherit it");

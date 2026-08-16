@@ -86,23 +86,8 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
     }
 
     /**
-     * Ends every tmux server under {@code root} whose owning JVM is gone, and answers how many.
-     *
-     * <p>Ownership is read from the process, not from anything this library wrote down. A server is
-     * reaped only when its executable is tmux, its {@code -S} argument is a socket under this root,
-     * and the pid named by that socket's directory is no longer running.
-     *
-     * <p>All three conditions matter. A shell whose command line merely mentions the path is not a
-     * server — the spike that produced this rule matched its own shell. And a live owner is left
-     * alone, so a run may sweep while other runs are using the same root, which Gradle's per-module
-     * workers and the tmux matrix's lanes both do.
-     *
-     * <p>A reused pid can only make this skip a server that was in fact abandoned, never make it end
-     * one that was not. Leaving an orphan for the next run is the safe direction to be wrong in.
-     *
-     * <p>Counts what exited, not what was signalled. SIGTERM only asks: tmux answers it by destroying
-     * every session, which kills each pane's children and waits to reap them, so the process outlives
-     * the signal by as long as that takes.
+     * Ends every tmux server under {@code root} whose owning JVM is gone, and answers how many
+     * ended. Runs while other runs are using the same root, so it may only touch abandoned servers.
      */
     static int reapAbandoned(Path root) {
         Path resolved = root.toAbsolutePath().normalize();
@@ -122,7 +107,10 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
         return reaped;
     }
 
-    /** Whether a server signalled by {@link #reapAbandoned} is actually gone. */
+    /**
+     * SIGTERM only asks: tmux destroys every session and reaps each pane's children before it goes,
+     * so a signalled server is still alive for as long as that takes.
+     */
     private static boolean ended(ProcessHandle handle) {
         try {
             handle.onExit().get(SHUTDOWN.toMillis(), TimeUnit.MILLISECONDS);
@@ -135,6 +123,7 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
         }
     }
 
+    /** Matched on the executable too: a shell whose command line mentions the socket is not a server. */
     private static boolean abandonedServer(ProcessHandle handle, Path root) {
         ProcessHandle.Info info = handle.info();
         if (!info.command()
@@ -155,6 +144,7 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
 
     private static final String[] NO_ARGUMENTS = {};
 
+    /** A reused pid can only spare an abandoned server, never condemn a live one. */
     private static boolean ownerIsGone(Path socket, Path root) {
         Path directory = socket.getParent();
         if (directory == null || !socket.startsWith(root)) {

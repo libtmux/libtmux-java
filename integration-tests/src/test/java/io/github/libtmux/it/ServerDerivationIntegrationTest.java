@@ -16,13 +16,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Deriving one server from another.
- *
- * <p>{@code toBuilder} lends the original's transport onward only when the original borrowed it too.
- * {@code ServerTest} settles the borrowed half against a transport that can be asked what happened
- * to it; the owned half is what every caller reaches through {@link Server#open}, and what it turns
- * on — that the derived server is not left holding a connection its parent closes — needs a real
- * one at both ends.
+ * {@code toBuilder} lends the original's transport onward only when the original borrowed it too, so
+ * a server derived from an owned one must not be left holding the connection its parent closes.
  */
 @ExtendWith(TmuxExtension.class)
 final class ServerDerivationIntegrationTest {
@@ -42,12 +37,8 @@ final class ServerDerivationIntegrationTest {
     }
 
     /**
-     * Built here rather than taken from the fixture because the original has to be closed while the
-     * test is still running, which is the fixture's job to do and not a test's.
-     *
-     * <p>Ended through a handle opened for the purpose. The way this fails is with the derived
-     * server's transport closed, so a cleanup issued through that same transport would fail too and
-     * leave a tmux running under a directory the fixture's sweep does not recognise.
+     * Ended through a third handle: this fails with the derived server's transport closed, and a
+     * cleanup issued through that transport would fail too and strand the server.
      */
     @Test
     void aDerivedServerOutlivesTheOriginalBeingClosed(@TempDir Path directory) throws IOException {

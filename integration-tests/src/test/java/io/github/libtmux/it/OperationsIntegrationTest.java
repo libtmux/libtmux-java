@@ -94,11 +94,7 @@ final class OperationsIntegrationTest {
         assertTrue(!names.contains("doomed"), "the killed window is gone from the next capture");
     }
 
-    /**
-     * The title rides the capture row rather than a lookup of its own, so it has to survive being
-     * framed and parsed with everything else on the row, and a handle keeps reporting the old one
-     * until refreshed.
-     */
+    /** The title rides the capture row, so it has to survive being framed and parsed with the rest. */
     @Test
     void aPaneReportsTheTitleItWasGiven(Server server) {
         Pane pane = session(server).windows().get(0).panes().get(0);

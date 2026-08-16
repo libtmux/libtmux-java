@@ -38,6 +38,22 @@ final class DocumentationFactsTest {
     /** The parity inventories, whose every row names the contract test that row will need. */
     private static final List<String> PARITY = List.of("docs/parity/python-api.md", "docs/parity/test-map.md");
 
+    /**
+     * Every way a document spells a coordinate, since a version only checked in one of them is a
+     * version wrong in the others.
+     */
+    private static final List<Pattern> COORDINATES = List.of(
+            Pattern.compile("io\\.github\\.libtmux:[a-z0-9-]+:([0-9][^\"'<\\s)]*)"),
+            Pattern.compile("\"io\\.github\\.libtmux\"\\s*%%?\\s*\"[a-z0-9-]+\"\\s*%\\s*\"([0-9][^\"]*)\""),
+            Pattern.compile("<artifactId>libtmux[a-z0-9-]*</artifactId>\\s*<version>([0-9][^<]*)</version>"),
+            Pattern.compile("io\\.github\\.libtmux:[a-z0-9-]+ -> ([0-9][^\\s)]*)"));
+
+    /** Fences this build compiles and runs. A fence in any other source language is not checked. */
+    private static final Set<String> EXECUTED = Set.of("java", "kotlin");
+
+    /** Source languages a guide may reasonably carry, whether or not anything here builds them. */
+    private static final Set<String> SOURCE = Set.of("java", "kotlin", "scala", "groovy");
+
     private static String read(String path) {
         try {
             return Files.readString(ROOT.resolve(path));
@@ -53,16 +69,6 @@ final class DocumentationFactsTest {
         assertTrue(declared.find(), "gradle.properties names no version");
         return declared.group(1).replace("-SNAPSHOT", "");
     }
-
-    /**
-     * Every way a document spells a coordinate, since a version only checked in one of them is a
-     * version wrong in the others.
-     */
-    private static final List<Pattern> COORDINATES = List.of(
-            Pattern.compile("io\\.github\\.libtmux:[a-z0-9-]+:([0-9][^\"'<\\s)]*)"),
-            Pattern.compile("\"io\\.github\\.libtmux\"\\s*%%?\\s*\"[a-z0-9-]+\"\\s*%\\s*\"([0-9][^\"]*)\""),
-            Pattern.compile("<artifactId>libtmux[a-z0-9-]*</artifactId>\\s*<version>([0-9][^<]*)</version>"),
-            Pattern.compile("io\\.github\\.libtmux:[a-z0-9-]+ -> ([0-9][^\\s)]*)"));
 
     /**
      * Every coordinate a document tells someone to paste names the version this build would publish.
@@ -112,20 +118,7 @@ final class DocumentationFactsTest {
         }
     }
 
-    /** Fences this build compiles and runs. A fence in any other source language is not checked. */
-    private static final Set<String> EXECUTED = Set.of("java", "kotlin");
-
-    /** Source languages a guide may reasonably carry, whether or not anything here builds them. */
-    private static final Set<String> SOURCE = Set.of("java", "kotlin", "scala", "groovy");
-
-    /**
-     * An example nobody runs says so where it is written.
-     *
-     * <p>Java fences go through docs-tests and Kotlin fences through the generator in
-     * libtmux-kotlin. A fence in a language neither of those builds — the Scala guide's, today — is
-     * indistinguishable to a reader from one that is executed, and rots the first time the API it
-     * shows is renamed. Requiring the directive makes the exemption a decision somebody wrote down.
-     */
+    /** An unrun example reads exactly like an executed one, so it has to say which it is. */
     @Test
     void anExampleInALanguageNothingBuildsSaysThatItIsUnchecked() {
         List<String> silent = new ArrayList<>();
@@ -161,12 +154,8 @@ final class DocumentationFactsTest {
     }
 
     /**
-     * A test the parity documents name is either unwritten or real, never half of each.
-     *
-     * <p>Those documents name thousands of contract tests in the scheme the tests will use, which is
-     * a plan and not a citation. The rot they are exposed to is the day the first one is written: the
-     * class exists from then on, and every name beside it that does not resolve has become a claim
-     * about code rather than about intent.
+     * Those documents name tests in the scheme the tests will use, which is a plan and not a
+     * citation. Once the class exists, every name beside it that does not resolve becomes a claim.
      */
     @Test
     void everyContractTestTheParityDocumentsNameIsUnwrittenOrReal() {

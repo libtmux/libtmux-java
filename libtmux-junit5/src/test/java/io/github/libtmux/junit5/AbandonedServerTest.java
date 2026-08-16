@@ -95,10 +95,7 @@ final class AbandonedServerTest {
         assertFalse(alive(socket), "a server nobody owns must not outlive the sweep");
     }
 
-    /**
-     * Asserted on the process rather than the socket, so it measures the sweep and not the time a
-     * client takes to be told the server is gone.
-     */
+    /** Asserted on the process, so a client's own startup cost cannot hide the window. */
     @Test
     void theSweepCountsServersThatEndedRatherThanSignalsItSent(@TempDir Path root) throws Exception {
         Path socket = socketFor(root, deadPid());

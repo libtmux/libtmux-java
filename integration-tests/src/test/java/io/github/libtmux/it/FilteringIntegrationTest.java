@@ -138,10 +138,8 @@ final class FilteringIntegrationTest {
     }
 
     /**
-     * A caller may build a field carrying a canonical field's name and answering a different
-     * question, which is why such a field is never eligible to be lowered to tmux's own predicate.
-     * These two disagree over the same real rows, so lowering this one by its name would change the
-     * answer rather than only where it was computed.
+     * A caller's accessor may carry a canonical field's name and answer a different question, so
+     * lowering it by that name would change the answer and not just where it was computed.
      */
     @Test
     void aCallerBuiltFieldIsAnsweredHereRatherThanByTmux(Server server) {

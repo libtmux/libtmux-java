@@ -15,10 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * A server addressed by name rather than by path.
- *
- * <p>These servers are outside the fixture's safety net: {@code TmuxExtension} reaps by matching a
- * server's {@code -S} argument against the fixture root, and {@code -L} carries no such argument, so
+ * A server addressed by name. The fixture's sweep matches {@code -S} and these carry {@code -L}, so
  * nothing but the {@code finally} below ends them.
  */
 final class NamedSocketIntegrationTest {

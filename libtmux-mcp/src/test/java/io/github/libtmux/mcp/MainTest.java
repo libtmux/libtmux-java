@@ -11,12 +11,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Which tmux server the launcher was told to expose.
- *
- * <p>An MCP client launches this as a subprocess and never sees the arguments again, so a flag
- * misread here is invisible: the model gets a working server that is not the one the user named.
- * No tmux is started — the question is entirely what a list of strings becomes, and answering it
- * without a server is what keeps these cases able to cover the refusals too.
+ * Which server the launcher was told to expose. A client passes these once and never sees them
+ * again, so a misread flag hands the model a working server that is not the one it named.
  */
 final class MainTest {
 
@@ -51,11 +47,7 @@ final class MainTest {
         assertEquals("/usr/local/bin/tmux", config.binary());
     }
 
-    /**
-     * The README shows both spellings of the endpoint, so nothing stops a caller giving both. Last
-     * wins, which is the shell convention and the only one that makes a wrapper script's appended
-     * flag able to override what it wrapped.
-     */
+    /** Both spellings are documented, so both can be given. Last wins, as a shell caller expects. */
     @Test
     void theLastEndpointNamedIsTheOneUsed() {
         ServerConfig config =
