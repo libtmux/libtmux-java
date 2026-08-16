@@ -11,6 +11,9 @@ updates:
     groups:
       gradle:
         patterns: ["*"]
+    # The trailing space stops Dependabot appending a colon.
+    commit-message:
+      prefix: "java(deps) "
     # A version released moments ago has had no time to be found compromised, and this project is
     # never in such a hurry that it needs one.
     cooldown:
@@ -23,5 +26,7 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    commit-message:
+      prefix: "ci(deps) "
     cooldown:
       default-days: 7
