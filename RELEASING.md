@@ -67,7 +67,9 @@ Two things worth knowing:
 
 What was done, recorded because a key outlives the memory of setting one up:
 
-- **Key** `D6B3443B2E8F467A7CEC14BF3FACCB0FE2F4C97B`, `libtmux <tony@git-pull.com>`.
+- **Key** `D6B3443B2E8F467A7CEC14BF3FACCB0FE2F4C97B`, uid `libtmux`. The fingerprint
+  is the whole identity that matters here, and it is public by construction —
+  keyservers serve it and every signature carries it.
 - **It carries a passphrase**, so this repository is on the four-secret path
   described below, `SIGNING_PASSWORD` included.
 - **Published to both keyservers.** `keyserver.ubuntu.com` serves it complete.
@@ -107,7 +109,7 @@ little, so a dedicated release key without one is the reasonable default. Use a
 passphrase if the key has a life outside CI.
 
 ```console
-$ gpg --quick-generate-key "libtmux <tony@git-pull.com>" rsa4096 sign 2y
+$ gpg --quick-generate-key "libtmux <you@example.com>" rsa4096 sign 2y
 ```
 
 Publish the public half where Central looks. It checks `keyserver.ubuntu.com`,
