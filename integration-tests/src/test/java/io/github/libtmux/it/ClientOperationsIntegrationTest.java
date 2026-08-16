@@ -9,8 +9,10 @@ import io.github.libtmux.Client;
 import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
+import io.github.libtmux.SessionId;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
@@ -104,6 +106,29 @@ final class ClientOperationsIntegrationTest {
 
             assertTrue(await(() -> server.clients().size() == 1), "the others are still attached");
             assertEquals(survivor.name(), server.clients().get(0).name(), "and the survivor is the one that asked");
+        }
+    }
+
+    /**
+     * The listing is derived from each session's attached count, not from asking tmux a second
+     * question, so a session nobody is looking at must stay out of it even while another is.
+     */
+    @Test
+    void onlyTheSessionsSomebodyIsAttachedToAreListed(Server server) throws Exception {
+        Session watched = server.sessions().get(0);
+        Session ignored = server.newSession(s -> s.named("nobody-here"));
+
+        assertEquals(List.of(), server.attachedSessions(), "nothing is attached yet");
+
+        try (ControlClient attached = ControlClient.attach(server.config(), watched.id())) {
+            assertTrue(attached.send("display-message", "-p", "ready").succeeded());
+            assertTrue(await(() -> !server.attachedSessions().isEmpty()), "no session ever became attached");
+
+            List<SessionId> listed =
+                    server.attachedSessions().stream().map(Session::id).toList();
+
+            assertEquals(List.of(watched.id()), listed);
+            assertFalse(listed.contains(ignored.id()), "a session with no client was listed as attached");
         }
     }
 
