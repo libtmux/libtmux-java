@@ -102,6 +102,54 @@ final class DocumentationFactsTest {
         }
     }
 
+    /** Fences this build compiles and runs. A fence in any other source language is not checked. */
+    private static final Set<String> EXECUTED = Set.of("java", "kotlin");
+
+    /** Source languages a guide may reasonably carry, whether or not anything here builds them. */
+    private static final Set<String> SOURCE = Set.of("java", "kotlin", "scala", "groovy");
+
+    /**
+     * An example nobody runs says so where it is written.
+     *
+     * <p>Java fences go through docs-tests and Kotlin fences through the generator in
+     * libtmux-kotlin. A fence in a language neither of those builds — the Scala guide's, today — is
+     * indistinguishable to a reader from one that is executed, and rots the first time the API it
+     * shows is renamed. Requiring the directive makes the exemption a decision somebody wrote down.
+     */
+    @Test
+    void anExampleInALanguageNothingBuildsSaysThatItIsUnchecked() {
+        List<String> silent = new ArrayList<>();
+        Pattern fence = Pattern.compile("(?:<!--\\s*snippet:[^>]*-->\\s*\\n)?^```([a-z]+)$", Pattern.MULTILINE);
+        for (String document : readerFacing()) {
+            fence.matcher(read(document)).results().forEach(found -> {
+                String language = found.group(1);
+                if (SOURCE.contains(language)
+                        && !EXECUTED.contains(language)
+                        && !found.group().startsWith("<!--")) {
+                    silent.add(document + " has an unmarked " + language + " fence");
+                }
+            });
+        }
+
+        assertEquals(List.of(), silent, "an example nothing compiles must carry a snippet directive saying so");
+    }
+
+    /** Everything a reader is expected to act on, which is what Documentation.readable also covers. */
+    private static List<String> readerFacing() {
+        List<String> found = new ArrayList<>(List.of("README.md"));
+        PUBLISHED.forEach(module -> found.add(module + "/README.md"));
+        found.add("libtmux-bom/README.md");
+        try (Stream<Path> guides = Files.list(ROOT.resolve("docs/guide"))) {
+            guides.map(guide -> "docs/guide/" + guide.getFileName())
+                    .filter(guide -> guide.endsWith(".md"))
+                    .sorted()
+                    .forEach(found::add);
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not list the guides", e);
+        }
+        return found;
+    }
+
     /**
      * A test the parity documents name is either unwritten or real, never half of each.
      *

@@ -6,6 +6,7 @@
 suffix, which is exactly what makes it usable from every Scala version at once.
 Depend on it with a single `%`, never `%%`:
 
+<!-- snippet: skip: build configuration, not library code -->
 ```scala
 libraryDependencies += "io.github.libtmux" % "libtmux" % "0.0.1-alpha.1"
 ```
@@ -18,6 +19,7 @@ artifact published under a Scala suffix is a packaging bug, not a convenience.
 The API returns `java.util.List` and `java.util.Optional`, which one import
 converts:
 
+<!-- snippet: skip: no Scala module builds here; see the section below -->
 ```scala
 import scala.jdk.CollectionConverters.*
 import scala.jdk.OptionConverters.*
@@ -29,6 +31,7 @@ val active  = session.activeWindow.toScala   // Option[Window]
 Filters are `java.util.function.Predicate`, so a Scala lambda works where one is
 expected, and a `FilterExpr` drops into `filter` unchanged:
 
+<!-- snippet: skip: no Scala module builds here; see the section below -->
 ```scala
 server.panes.asScala.filter(Pane_.command.startsWith("nvim").test).toSeq
 ```
