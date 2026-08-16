@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -62,6 +63,26 @@ final class AbandonedServerTest {
         return gone.pid();
     }
 
+    /** The tmux server listening on a socket, which outlives the client that started it. */
+    private static Optional<ProcessHandle> serverOn(Path socket) {
+        return ProcessHandle.allProcesses()
+                .filter(handle -> handle.info()
+                        .command()
+                        .map(command -> Path.of(command).getFileName().toString())
+                        .filter("tmux"::equals)
+                        .isPresent())
+                .filter(handle -> {
+                    String[] argv = handle.info().arguments().orElse(new String[0]);
+                    for (int index = 0; index + 1 < argv.length; index++) {
+                        if ("-S".equals(argv[index]) && argv[index + 1].equals(socket.toString())) {
+                            return true;
+                        }
+                    }
+                    return false;
+                })
+                .findFirst();
+    }
+
     @Test
     void aServerWhoseOwnerIsGoneIsReaped(@TempDir Path root) throws Exception {
         Path socket = socketFor(root, deadPid());
@@ -72,6 +93,22 @@ final class AbandonedServerTest {
 
         assertEquals(1, reaped);
         assertFalse(alive(socket), "a server nobody owns must not outlive the sweep");
+    }
+
+    /**
+     * Asserted on the process rather than the socket, so it measures the sweep and not the time a
+     * client takes to be told the server is gone.
+     */
+    @Test
+    void theSweepCountsServersThatEndedRatherThanSignalsItSent(@TempDir Path root) throws Exception {
+        Path socket = socketFor(root, deadPid());
+        startServer(socket);
+        ProcessHandle server = serverOn(socket).orElseThrow(() -> new AssertionError("no server to reap"));
+
+        int reaped = TmuxExtension.reapAbandoned(root);
+
+        assertEquals(1, reaped);
+        assertFalse(server.isAlive(), "the sweep counted a server it had only asked to stop");
     }
 
     /**

@@ -13,7 +13,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -58,6 +60,12 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
     /** Every fixture this JVM currently holds a server for, so the shutdown hook knows what to end. */
     private static final Set<Fixture> LIVE = ConcurrentHashMap.newKeySet();
 
+    /**
+     * How long a signalled server is given to go. Generous because it is spent only on servers that
+     * are already abandoned, and only once per JVM.
+     */
+    private static final Duration SHUTDOWN = Duration.ofSeconds(30);
+
     private static final AtomicBoolean SWEPT = new AtomicBoolean();
 
     static {
@@ -91,17 +99,40 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
      *
      * <p>A reused pid can only make this skip a server that was in fact abandoned, never make it end
      * one that was not. Leaving an orphan for the next run is the safe direction to be wrong in.
+     *
+     * <p>Counts what exited, not what was signalled. SIGTERM only asks: tmux answers it by destroying
+     * every session, which kills each pane's children and waits to reap them, so the process outlives
+     * the signal by as long as that takes.
      */
     static int reapAbandoned(Path root) {
         Path resolved = root.toAbsolutePath().normalize();
+        List<ProcessHandle> abandoned = ProcessHandle.allProcesses()
+                .filter(handle -> abandonedServer(handle, resolved))
+                .toList();
+
+        // Asked together, waited for afterwards, so one slow server does not serialise the rest.
+        abandoned.forEach(ProcessHandle::destroy);
+
         int reaped = 0;
-        for (ProcessHandle handle : ProcessHandle.allProcesses().toList()) {
-            if (abandonedServer(handle, resolved)) {
-                handle.destroy();
+        for (ProcessHandle handle : abandoned) {
+            if (ended(handle)) {
                 reaped++;
             }
         }
         return reaped;
+    }
+
+    /** Whether a server signalled by {@link #reapAbandoned} is actually gone. */
+    private static boolean ended(ProcessHandle handle) {
+        try {
+            handle.onExit().get(SHUTDOWN.toMillis(), TimeUnit.MILLISECONDS);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (ExecutionException | TimeoutException e) {
+            return !handle.isAlive();
+        }
     }
 
     private static boolean abandonedServer(ProcessHandle handle, Path root) {
