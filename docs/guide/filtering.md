@@ -108,6 +108,35 @@ A model cannot write Java, so this is the only way it can say what it wants
 narrowed. What it gets back costs the same one capture the unfiltered listing
 would have, because the filter runs over what that capture returned.
 
+## Filters that arrive as strings
+
+A CLI flag, a config file or a stored query carries the field and the operator as
+untrusted text. `LegacyFilters` is the one supported way in, so the rest of the
+library never has to accept that shape. The key is `field__operator`; a bare
+field name means equality.
+
+```java
+var catalog = LegacyFilters.FieldCatalog.<Pane>builder()
+        .add("index", Pane_.index())
+        .add("active", Pane_.active())
+        .build();
+
+FilterExpr<Pane> here = catalog.parse(Map.of("index__lt", "1"));
+
+here.describe();                     // → (pane_index < 1)
+server.panes().stream().filter(here).toList().size();    // → 1
+```
+
+The catalog decides which identifiers a caller may name, so an unknown field is
+refused rather than guessed. Note what `describe` prints: the catalog key is the
+alias you chose to expose, but the expression underneath carries tmux's own
+`pane_index`, which is what keeps it meaningful to a port that is not this one.
+
+Everything this refuses is a compile error in the typed form — a text operator on
+a number field, an ordering operator on text, a value of the wrong type. That is
+the trade made explicit: one place where a wrong name becomes a runtime failure,
+and the type system everywhere else.
+
 ## Taking a filter in your own API
 
 Prefer accepting the entities and letting the caller filter:
