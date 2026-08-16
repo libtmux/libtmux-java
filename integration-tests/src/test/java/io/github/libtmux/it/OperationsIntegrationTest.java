@@ -95,26 +95,20 @@ final class OperationsIntegrationTest {
     }
 
     /**
-     * The title rides the capture row rather than a lookup of its own, so a stale handle keeps
-     * reporting the old one until it is refreshed. That is the whole reason to check it here rather
-     * than trust {@code #{pane_title}}: the value has to survive being framed and parsed with
-     * everything else on the row.
-     *
-     * <p>Set through a raw command because the API has a getter and no setter. If that asymmetry is
-     * wrong it is a library gap, not a gap in this test.
+     * The title rides the capture row rather than a lookup of its own, so it has to survive being
+     * framed and parsed with everything else on the row, and a handle keeps reporting the old one
+     * until refreshed.
      */
     @Test
     void aPaneReportsTheTitleItWasGiven(Server server) {
         Pane pane = session(server).windows().get(0).panes().get(0);
         String before = pane.title();
 
-        assertTrue(
-                server.cmd("select-pane", "-t", pane.id().value(), "-T", "probe-title")
-                        .succeeded(),
-                "tmux refused to set the title");
+        Pane retitled = pane.retitle("probe-title");
 
-        assertEquals("probe-title", pane.refresh().title());
-        assertNotEquals(before, pane.refresh().title(), "the title never actually changed");
+        assertEquals("probe-title", retitled.title());
+        assertNotEquals(before, retitled.title(), "the title never actually changed");
+        assertEquals("probe-title", pane.refresh().title(), "and the handle it was called on agrees");
         assertEquals(
                 "probe-title",
                 server.panes().get(0).title(),

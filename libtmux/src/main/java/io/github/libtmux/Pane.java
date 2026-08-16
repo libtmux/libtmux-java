@@ -207,6 +207,18 @@ public final class Pane {
         server.run(List.of("select-pane", "-t", state.id().value()));
     }
 
+    /**
+     * Retitles this pane and returns a handle on it as it is now.
+     *
+     * <p>A program running in the pane can set its own title through an escape sequence, and tmux
+     * reports that one instead. This says what the title is now, not what it will stay.
+     */
+    public Pane retitle(String title) {
+        Objects.requireNonNull(title, "title");
+        server.run(List.of("select-pane", "-t", state.id().value(), "-T", title));
+        return refresh();
+    }
+
     /** Resizes this pane. */
     public void resizeTo(Dimensions size) {
         server.run(List.of(
