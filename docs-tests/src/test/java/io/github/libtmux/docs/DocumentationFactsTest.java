@@ -55,6 +55,16 @@ final class DocumentationFactsTest {
     }
 
     /**
+     * Every way a document spells a coordinate, since a version only checked in one of them is a
+     * version wrong in the others.
+     */
+    private static final List<Pattern> COORDINATES = List.of(
+            Pattern.compile("io\\.github\\.libtmux:[a-z0-9-]+:([0-9][^\"'<\\s)]*)"),
+            Pattern.compile("\"io\\.github\\.libtmux\"\\s*%%?\\s*\"[a-z0-9-]+\"\\s*%\\s*\"([0-9][^\"]*)\""),
+            Pattern.compile("<artifactId>libtmux[a-z0-9-]*</artifactId>\\s*<version>([0-9][^<]*)</version>"),
+            Pattern.compile("io\\.github\\.libtmux:[a-z0-9-]+ -> ([0-9][^\\s)]*)"));
+
+    /**
      * Every coordinate a document tells someone to paste names the version this build would publish.
      *
      * <p>An install block is the first thing copied and the last thing updated.
@@ -62,14 +72,14 @@ final class DocumentationFactsTest {
     @Test
     void everyInstallSnippetNamesTheCurrentVersion() {
         String expected = releaseVersion();
-        Pattern coordinate = Pattern.compile("io\\.github\\.libtmux:[a-z0-9-]+:([0-9][^\"'<\\s)]*)");
 
         List<String> wrong = documents()
-                .flatMap(document -> coordinate
-                        .matcher(read(document))
-                        .results()
-                        .filter(found -> !found.group(1).equals(expected))
-                        .map(found -> document + " says " + found.group(1)))
+                .flatMap(document -> COORDINATES.stream()
+                        .flatMap(coordinate -> coordinate
+                                .matcher(read(document))
+                                .results()
+                                .filter(found -> !found.group(1).equals(expected))
+                                .map(found -> document + " says " + found.group(1))))
                 .toList();
 
         assertEquals(List.of(), wrong, "install snippets name a version this build does not publish: " + expected);
