@@ -12,6 +12,27 @@ exact version rather than a range.
 
 ## Unreleased
 
+## 0.0.1-alpha.3 — 2026-08-16
+
+### Fixed
+
+- **The fixture's sweep counted servers it had only asked to stop.**
+  `TmuxExtension` ended an abandoned server with `destroy`, which sends SIGTERM
+  and returns; tmux answers that by destroying every session and reaping each
+  pane's children first, so the process outlived the signal by up to 244ms under
+  load. The sweep now waits for each exit and counts what ended, which is what it
+  always claimed to return. The tmux matrix failed on that margin on its slowest
+  lane.
+
+### Documented
+
+- **A `:` or `.` in a session or window name does three different things across
+  the supported range.** 3.2a through 3.6 rewrite each one to `_` in a session
+  name, 3.7 refuses the name outright, and 3.7a onwards keeps it — where it can
+  no longer address the object, because a target splits on both. A window name is
+  never rewritten, only kept or refused. `Server.newSession` and `Window.rename`
+  now say so, and the behaviour is asserted on every lane.
+
 ## 0.0.1-alpha.2 — 2026-08-16
 
 ### Added

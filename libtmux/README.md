@@ -14,7 +14,7 @@ something — Jackson, JUnit, Kotlin, MCP, tmuxp — and depends on this.
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.2"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.3"))
     implementation("io.github.libtmux:libtmux")
 }
 ```
@@ -28,7 +28,7 @@ dependencies {
     <dependency>
       <groupId>io.github.libtmux</groupId>
       <artifactId>libtmux-bom</artifactId>
-      <version>0.0.1-alpha.2</version>
+      <version>0.0.1-alpha.3</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
