@@ -43,7 +43,7 @@ operator did not compile until its type parameter was bounded `T : Any`, because
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.5"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.6"))
     implementation("io.github.libtmux:libtmux-kotlin")
 }
 ```

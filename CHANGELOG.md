@@ -12,6 +12,8 @@ exact version rather than a range.
 
 ## Unreleased
 
+## 0.0.1-alpha.6 — 2026-08-16
+
 ### Fixed
 
 - **`tmux_whoami` failed on a socket with no server behind it.** It is the tool
