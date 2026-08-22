@@ -18,15 +18,3 @@ updates:
     # never in such a hurry that it needs one.
     cooldown:
       default-days: 7
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-    groups:
-      actions:
-        patterns: ["*"]
-    commit-message:
-      prefix: "ci(deps) "
-    cooldown:
-      default-days: 7
