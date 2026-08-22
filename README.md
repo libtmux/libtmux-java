@@ -337,8 +337,9 @@ choice.
 
 ## Contributing
 
-[`CONTRIBUTING.md`](CONTRIBUTING.md) covers the gate, the tmux matrix, and why
-every server this suite starts lives under a path naming this port.
+[`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) covers the gate, the tmux
+matrix, and why every server this suite starts lives under a path naming this
+port.
 
 ## Status
 

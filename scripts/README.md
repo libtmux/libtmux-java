@@ -37,7 +37,7 @@ since removed, which is then addressable only by its own argv.
 
 **It only ever touches sockets under this port's roots** — `/tmp/libtmux-java-test`
 and `/tmp/libtmux-java-dev`. Sibling ports' servers are counted and reported, never
-killed. [`AGENTS.md`](../AGENTS.md) explains why.
+killed. [`CONTRIBUTING.md`](../.github/CONTRIBUTING.md) explains why.
 
 ## Try the MCP server in a real agent
 
@@ -77,4 +77,4 @@ invocation instead — `claude --mcp-config <file> --strict-mcp-config`, or
 
 ## Next
 
-- [CONTRIBUTING](../CONTRIBUTING.md) · [Root README](../README.md)
+- [CONTRIBUTING](../.github/CONTRIBUTING.md) · [Root README](../README.md)

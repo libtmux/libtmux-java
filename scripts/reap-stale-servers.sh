@@ -9,7 +9,8 @@
 # argv, and nothing reaps it until the next run. This is that, by hand.
 #
 # Only sockets under this port's roots are ever touched. Sibling libtmux ports run on this machine
-# and their leftovers are not ours to reap, however much they cost us; AGENTS.md explains why.
+# and their leftovers are not ours to reap, however much they cost us;
+# .github/CONTRIBUTING.md explains why.
 set -eu
 
 reap=false

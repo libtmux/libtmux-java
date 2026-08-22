@@ -64,11 +64,12 @@ design, so tmux would destroy them the moment they were made.
 
 **D** works, and works quickly. A `run-shell -b` loop polling the owner's pid
 reaped the server 0.2 s after `kill -9` of its owner. It was still rejected.
-`AGENTS.md` records this machine failing with `fork: No space left on device`
-when too many tmux servers are alive; doubling the processes each server holds
-spends exactly the resource that is already short, permanently, to shorten a
-window that a sweep closes for free. It also needs the lane's own tmux binary
-inside a shell string, which the matrix would get wrong.
+`.github/CONTRIBUTING.md` records this machine failing with `fork: No space
+left on device` when too many tmux servers are alive; doubling the processes
+each server holds spends exactly the resource that is already short,
+permanently, to shorten a window that a sweep closes for free. It also needs
+the lane's own tmux binary inside a shell string, which the matrix would get
+wrong.
 
 **A** was measured rather than assumed:
 
