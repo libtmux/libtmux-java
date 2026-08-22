@@ -6,9 +6,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#status)
 
-> **Alpha.** Every published version carries an `-alpha` qualifier and a `0.0.x`
-> number, both of which mean the same thing: the API will change without notice,
-> and no release is supported once the next one exists. Pin an exact version.
+> **Alpha.** Releases carry an `-alpha` prerelease tag. The API is not
+> settled, and any release may change or remove exported identifiers without a
+> deprecation period. Pin an exact version. Not recommended for production.
 
 Typed, blocking access to [tmux](https://github.com/tmux/tmux) from the JVM.
 
