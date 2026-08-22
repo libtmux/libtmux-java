@@ -12,6 +12,14 @@ production.
 
 ## Unreleased
 
+### Documented
+
+- **`CONTRIBUTING.md` has moved to `.github/CONTRIBUTING.md`.** The policy an
+  agent or contributor reads is now split three ways: `AGENTS.md` routes and
+  carries only what applies to every change, `.github/WRITING.md` covers how
+  this project writes, and `.github/CONTRIBUTING.md` covers how it works. A
+  link to the old path needs updating; GitHub finds the new one on its own.
+
 ## 0.0.1-alpha.6 — 2026-08-16
 
 ### Fixed
