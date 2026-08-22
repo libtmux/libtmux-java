@@ -66,8 +66,8 @@ observe.
 Entries land under `## Unreleased`. The maintainer assigns the version when
 cutting a release, so nothing written here predicts one.
 
-Group under the headings already in use — `Added`, `Changed`, `Fixed`,
-`Removed`, `Documented`, `Security` — newest release first, dated `YYYY-MM-DD`.
+Group under `Added`, `Changed`, `Fixed`, `Removed`, `Documented`, or `Security`,
+newest release first, dated `YYYY-MM-DD`.
 
 An entry opens with a bold clause naming what changed, then gives the prose that
 makes it decidable:

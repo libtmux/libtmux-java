@@ -1,6 +1,6 @@
 # Contributing
 
-libtmux for Java is twelve Gradle subprojects plus `build-logic`, an included
+libtmux for Java is a multi-project Gradle build plus `build-logic`, an included
 build holding the convention plugins. The gates below are what a change has to
 pass before it is proposed.
 
