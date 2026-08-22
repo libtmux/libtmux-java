@@ -12,6 +12,8 @@ production.
 
 ## Unreleased
 
+## 0.0.1-alpha.7 — 2026-08-22
+
 ### Documented
 
 - **`CONTRIBUTING.md` has moved to `.github/CONTRIBUTING.md`.** The policy an

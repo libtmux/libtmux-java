@@ -315,7 +315,7 @@ it attach a control client and push notifications as tmux changes.
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.6"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.7"))
     implementation("io.github.libtmux:libtmux-mcp")
 }
 ```
