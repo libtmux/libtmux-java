@@ -1,6 +1,7 @@
 # docs-tests
 
-**Compiles and runs the code in the documentation. Not published.**
+**Compiles and runs the code in the documentation, and checks the claims around
+it. Not published.**
 
 A snippet is the part of a project people copy and the part nothing compiles, so
 it goes stale silently — and a stale snippet reads exactly as well as a working
@@ -32,9 +33,19 @@ Say otherwise with an HTML comment directly above the fence:
 | `<!-- snippet: compile-only: <reason> -->` | compiles; not run, for the stated reason |
 | `<!-- snippet: skip: <reason> -->` | not checked, for the stated reason |
 
-An unrecognised directive fails the build. A snippet nobody is checking, because
-of a typo in the thing that says how to check it, is the state this exists to
+The comment has to sit directly above the fence, with nothing between them. An
+unrecognised directive fails the build: a snippet nobody is checking, because of
+a typo in the thing that says how to check it, is the state this exists to
 prevent.
+
+`throws:` names the exception's simple name, not its package — the comparison is
+against `getClass().getSimpleName()`, so `IllegalArgumentException` matches and
+`java.lang.IllegalArgumentException` does not.
+
+A block that declares a type — a `class`, `record`, `interface` or `enum` — is
+compiled and never run, whatever its directive says, because a declaration has
+nothing to execute. Statements are wrapped in a method body with the fixtures
+below in scope; a type is compiled as it stands.
 
 `does-not-compile` earns its keep: it is what keeps
 `Pane_.index().startsWith("2")` an error. A README claiming the compiler rejects
@@ -72,11 +83,11 @@ Two consequences worth knowing:
 
 ## What a snippet may assume
 
-Documentation shows the interesting line, not the six before it that made a
-server. Those six are supplied: `server`, `config`, `session`, `window`, `pane`,
-`options`, `socket`, `directory`, `timeout`, and the common imports. A snippet
-declaring its own `server` shadows the supplied one, which is what a reader
-copying it would get anyway.
+Documentation shows the interesting line, not the ones before it that made a
+server. Those are supplied: `server`, `config`, `session`, `window`, `pane`,
+`options`, `socket`, `directory`, `timeout`, `yamlString`, and the common
+imports. A snippet declaring its own `server` shadows the supplied one, which is
+what a reader copying it would get anyway.
 
 Consequently a fence cannot depend on a variable another fence declared — and
 neither can a reader who copies just that fence.
@@ -96,9 +107,34 @@ documentation, the two cannot drift.
 $ ./gradlew :libtmux-kotlin:test
 ```
 
+## Claims that are not code
+
+A snippet is executed, so it cannot lie. A version in an install block, or a
+list of what the platform manages, is prose — and prose is what is still wrong
+six months later, in the one place every reader starts. Those are checked too:
+
+| what is checked | where it looks |
+| --- | --- |
+| Every coordinate names the version this build would publish | the root README, `libtmux-bom`'s, every published module's, the Kotlin and Scala guides, and `RELEASING.md` |
+| `libtmux-bom`'s README lists exactly what the platform constrains | that README against `libtmux-bom/build.gradle.kts` |
+| Every published module's README names it first and states its coordinate | each published module's README |
+| A fence in a source language nothing here builds carries a directive saying so | every reader-facing document |
+| The contract tests the parity documents cite are unwritten or really declared | `docs/parity/python-api.md`, `docs/parity/test-map.md` |
+| Those documents keep saying "planned parity" while those tests are unwritten | the same two |
+
+The last two are why this module reads documents it takes no snippets from.
+`docs/parity/` holds no Java, and `RELEASING.md` is not a place snippets come
+from, but a coordinate in either is a claim like any other.
+
+The snippet suite also asserts a floor on how much it found. A filter or a
+rename can reduce a parameterised suite to nothing without failing anything, and
+a suite that discovers nothing passes loudly.
+
 ## Which documents
 
-`README.md`, every package's `README.md`, and `docs/guide/*.md`.
+Snippets come from `README.md`, every package's `README.md`, and
+`docs/guide/*.md`. The checks above that are not about snippets read more than
+that, and each row says where it looks.
 
 Not `docs/spikes`, `docs/plans` or `docs/studies`: those are dated records of what
 was measured or decided at the time. Holding them to today's API would either
