@@ -120,8 +120,9 @@ Which is how one suite runs against a whole matrix of releases — see
 
 If your project also runs another tmux-using suite, give each one a socket root
 that names it, and never use the default socket. This repository's own rule and
-the failure modes behind it are in [`AGENTS.md`](../AGENTS.md); the short version
-is that another suite's leftovers become your intermittent failures.
+the failure modes behind it are in
+[`CONTRIBUTING.md`](../.github/CONTRIBUTING.md); the short version is that
+another suite's leftovers become your intermittent failures.
 
 ## Next
 

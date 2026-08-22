@@ -43,9 +43,9 @@ first:
 $ ./scripts/reap-stale-servers.sh
 ```
 
-[`AGENTS.md`](../AGENTS.md) explains why their debris becomes this suite's
-intermittent failures, and why only servers under this port's own roots are ever
-reaped.
+[`CONTRIBUTING.md`](../.github/CONTRIBUTING.md) explains why their debris
+becomes this suite's intermittent failures, and why only servers under this
+port's own roots are ever reaped.
 
 ## Next
 
