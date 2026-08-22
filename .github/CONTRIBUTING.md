@@ -18,7 +18,7 @@ Nothing about this is a convention you have to remember:
 | `integration-tests/` | no | the real-tmux suite, which spans artifacts |
 | `benchmarks/` | no | the carrier measurements |
 | `examples/` | no | whole runnable programs, run by its own suite |
-| `docs-tests/` | no | compiles and runs every snippet in the docs |
+| [`docs-tests/`](../docs-tests/) | no | compiles and runs every snippet in the docs |
 | `scripts/` | no | what the build does not do |
 | `build-logic/` | no | convention plugins, as an included build |
 | `docs/`, `gradle/`, `.github/` | no | everything else |
@@ -126,9 +126,20 @@ $ ./gradlew check
 ```
 
 It runs formatting, Error Prone, NullAway in JSpecify mode, and every test
-including the ones that start real tmux servers. It also compiles and runs every
-Java snippet in `README.md`, in each module's README, and in the guides — a
-snippet that stopped working fails the build.
+including the ones that start real tmux servers.
+
+The Java in the documentation is compiled and run as part of that, and the
+claims around it — the version in every install block, what the platform says it
+manages — are checked with it:
+
+```console
+$ ./gradlew :docs-tests:test
+```
+
+How a fence says what it is — the directives, the `// →` assertions, the
+fixtures a snippet may assume — is in
+[`docs-tests/README.md`](../docs-tests/README.md), beside the code that reads
+them.
 
 A green `check` that reported `UP-TO-DATE` for every task verified nothing.
 Force it when that matters:
