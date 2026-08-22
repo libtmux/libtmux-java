@@ -343,15 +343,15 @@ port.
 
 ## Status
 
-**Alpha.** `alpha` is the lowest qualifier Maven's own comparator recognises —
-its order runs `alpha < beta < milestone < rc < snapshot < release` — so nothing
-published here can sort below what is published today, and every future release
-supersedes it cleanly.
+**Alpha.** Releases carry an `-alpha` prerelease tag. The API is not settled,
+and any release may change or remove exported identifiers without a deprecation
+period. Pin an exact version. Not recommended for production.
 
 What that means in practice:
 
-- **The API will change without notice**, including in ways that do not compile.
-- **Only the newest version is supported.** There are no backports.
+- **Any release may change or remove exported identifiers**, without a
+  deprecation period, including in ways that do not compile.
+- **Only the newest release is supported.** There are no backports.
 - **Pin an exact version.** A range will move under you.
 - What is *not* alpha is the tmux correctness: the whole real-tmux suite runs
   against all eight supported releases on every push.
