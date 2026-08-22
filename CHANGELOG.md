@@ -2,11 +2,11 @@
 
 Notable changes, newest first. Versions follow [semantic versioning][semver].
 
-**This project is alpha.** Every version carries an `-alpha` qualifier, which is
-the lowest Maven's comparator recognises, and a `0.0.x` number. Both say the same
-thing: anything below may change in any release, including in ways that do not
-compile. Only the newest version is supported, and there are no backports. Pin an
-exact version rather than a range.
+**This project is alpha.** Releases carry an `-alpha` prerelease tag. The API is
+not settled, and any release may change or remove exported identifiers without a
+deprecation period. Only the newest release is supported, and there are no
+backports. Pin an exact version rather than a range. Not recommended for
+production.
 
 [semver]: https://semver.org/spec/v2.0.0.html
 
