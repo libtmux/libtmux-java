@@ -21,15 +21,15 @@ public final class Batch {
 
     private static final String MARKER = Tokens.perProcess();
 
-    private final Function<List<String>, CommandResult> dispatch;
+    private final Function<List<List<String>>, CommandResult> dispatch;
     private final List<List<String>> operations = new ArrayList<>();
 
     /**
      * Collects operations to run together.
      *
-     * @param dispatch runs the assembled command group and returns tmux's raw reply
+     * @param dispatch runs the assembled commands in one invocation and returns tmux's raw reply
      */
-    public Batch(Function<List<String>, CommandResult> dispatch) {
+    public Batch(Function<List<List<String>>, CommandResult> dispatch) {
         this.dispatch = dispatch;
     }
 
@@ -65,18 +65,14 @@ public final class Batch {
         return attribute(reply);
     }
 
-    /** {@code op0 ; marker0 ; op1 ; marker1 ; …}, with each {@code ;} its own argv element. */
-    private List<String> assemble() {
-        List<String> argv = new ArrayList<>();
+    /** {@code op0, marker0, op1, marker1, …}: each operation followed by the marker that closes it. */
+    private List<List<String>> assemble() {
+        List<List<String>> commands = new ArrayList<>(operations.size() * 2);
         for (int index = 0; index < operations.size(); index++) {
-            if (index > 0) {
-                argv.add(";");
-            }
-            argv.addAll(operations.get(index));
-            argv.add(";");
-            argv.addAll(List.of("display-message", "-p", marker(index)));
+            commands.add(operations.get(index));
+            commands.add(List.of("display-message", "-p", marker(index)));
         }
-        return argv;
+        return commands;
     }
 
     private static String marker(int index) {

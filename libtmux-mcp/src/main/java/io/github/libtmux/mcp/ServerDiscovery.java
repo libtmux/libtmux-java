@@ -217,7 +217,7 @@ final class ServerDiscovery {
 
     private KnownServer probe(ProcessTransport transport, String binary, Path socket) {
         try {
-            CommandResult result = transport.execute(new CommandRequest(
+            CommandResult result = transport.execute(CommandRequest.of(
                     List.of(binary, "-S", socket.toString()),
                     List.of("list-sessions", "-F", "#{session_id}"),
                     probeTimeout));

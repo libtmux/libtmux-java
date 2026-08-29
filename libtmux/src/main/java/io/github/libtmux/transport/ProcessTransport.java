@@ -128,7 +128,7 @@ public final class ProcessTransport implements TmuxTransport {
 
     private CommandResult execute(CommandRequest request, boolean waiting) {
         requireOpen();
-        requireDispatchable(request.argv());
+        requireDispatchable(request.commands());
         @Nullable Semaphore waitingPermit = waiting ? waitingAdmission : null;
         if (waiting && waitingPermit == null) {
             throw new TmuxTransportException(
@@ -256,10 +256,12 @@ public final class ProcessTransport implements TmuxTransport {
     }
 
     /** POSIX {@code execve} takes NUL-terminated strings, so an embedded NUL cannot survive. */
-    private static void requireDispatchable(List<String> argv) {
-        for (int index = 0; index < argv.size(); index++) {
-            if (argv.get(index).indexOf('\0') >= 0) {
-                throw new IllegalArgumentException("embedded null byte in argv element " + index);
+    private static void requireDispatchable(List<List<String>> commands) {
+        for (List<String> argv : commands) {
+            for (int index = 0; index < argv.size(); index++) {
+                if (argv.get(index).indexOf('\0') >= 0) {
+                    throw new IllegalArgumentException("embedded null byte in argv element " + index);
+                }
             }
         }
     }

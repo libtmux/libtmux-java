@@ -61,55 +61,15 @@ final class ControlClientTest {
         }
     }
 
+    /** Quoting carries a semicolon anywhere in an argument, so no escape reaches tmux. */
     @Test
-    void aSemicolonEndingAnArgumentEndsTheCommand() {
-        assertTrue(ControlClient.isCommandGroup(List.of("kill-window;", "list-windows")));
-        assertTrue(ControlClient.isCommandGroup(List.of("list-windows", ";", "list-panes")));
-    }
-
-    /** tmux looks at the end of an argument, so a semicolon anywhere else is just a character. */
-    @Test
-    void aSemicolonAnywhereElseIsPartOfTheArgument() {
-        assertFalse(ControlClient.isCommandGroup(List.of("display-message", "-p", "semi;colon")));
-        assertFalse(ControlClient.isCommandGroup(List.of("display-message", "-p", ";leading")));
-        assertFalse(ControlClient.isCommandGroup(List.of("display-message", "-p", "plain")));
-    }
-
-    @Test
-    void aBackslashKeepsTheSemicolonInsteadOfEndingTheCommand() {
-        assertFalse(ControlClient.isCommandGroup(List.of("display-message", "-p", "trailing\\;")));
-    }
-
-    @Test
-    void aRejectedCommandGroupDoesNotDiscloseItsArguments(@TempDir Path directory) throws Exception {
-        String secret = "pane-secret;";
-        ServerConfig config = fakeTmux(directory, """
-                printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                while IFS= read -r request; do :; done
-                """);
-
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
-            IllegalArgumentException failure =
-                    assertThrows(IllegalArgumentException.class, () -> client.send(List.of("display-message", secret)));
-
-            assertFalse(String.valueOf(failure.getMessage()).contains(secret));
-        }
-    }
-
-    /**
-     * The process carrier reaches tmux's argv parser and this one does not, so the backslash that
-     * parser would consume is consumed here instead. Passing it on would deliver a different
-     * argument than the other carrier did.
-     */
-    @Test
-    void theEscapeGuardingATrailingSemicolonIsSpentRatherThanSent() {
+    void everyArgumentReachesTmuxExactlyAsGiven() {
         assertEquals(
                 "'display-message' '-p' 'trailing;'",
+                ControlClient.line(List.of("display-message", "-p", "trailing;")));
+        assertEquals(
+                "'display-message' '-p' 'trailing\\;'",
                 ControlClient.line(List.of("display-message", "-p", "trailing\\;")));
-    }
-
-    @Test
-    void everyOtherArgumentReachesTmuxExactlyAsGiven() {
         assertEquals(
                 "'display-message' '-p' 'semi;colon'",
                 ControlClient.line(List.of("display-message", "-p", "semi;colon")));

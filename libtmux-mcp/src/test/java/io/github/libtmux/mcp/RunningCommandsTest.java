@@ -187,7 +187,7 @@ final class RunningCommandsTest {
         try (ProcessTransport processes = new ProcessTransport()) {
             TmuxTransport uncertain = borrowing(request -> {
                 CommandResult result = processes.execute(request);
-                if (request.argv().stream().anyMatch(argument -> argument.contains("ch_lt"))) {
+                if (request.commands().get(0).stream().anyMatch(argument -> argument.contains("ch_lt"))) {
                     throw new TmuxTransportException("simulated failure after delivery", DispatchOutcome.UNKNOWN, null);
                 }
                 return result;
@@ -288,7 +288,7 @@ final class RunningCommandsTest {
         try (ProcessTransport processes = new ProcessTransport()) {
             TmuxTransport interleaving = borrowing(request -> {
                 CommandResult result = processes.execute(request);
-                String argv = String.join("\0", request.argv());
+                String argv = String.join("\0", request.commands().get(0));
                 if (argv.contains("send-keys") && argv.contains("ch_lt")) {
                     bothLinesSent.countDown();
                     await(bothLinesSent);

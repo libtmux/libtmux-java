@@ -92,7 +92,7 @@ final class TypingTest {
                 @Override
                 public CommandResult execute(CommandRequest request) {
                     CommandResult result = processes.execute(request);
-                    if (String.join(" ", request.argv()).contains("set-buffer")) {
+                    if (String.join(" ", request.commands().get(0)).contains("set-buffer")) {
                         pasting.get().close();
                     }
                     return result;
@@ -126,7 +126,7 @@ final class TypingTest {
             TmuxTransport interleaving = new TmuxTransport() {
                 @Override
                 public CommandResult execute(CommandRequest request) {
-                    if (String.join(" ", request.argv()).contains("paste-buffer")) {
+                    if (String.join(" ", request.commands().get(0)).contains("paste-buffer")) {
                         // Hold both pastes open at once, so a shared buffer name would collide.
                         bothPending.countDown();
                         await(bothPending);

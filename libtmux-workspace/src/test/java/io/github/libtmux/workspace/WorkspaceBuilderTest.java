@@ -329,7 +329,7 @@ final class WorkspaceBuilderTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.argv().get(0).equals("display-message")) {
+                if (request.commands().get(0).get(0).equals("display-message")) {
                     return new CommandResult(
                             0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.4")), List.of());
                 }
@@ -358,12 +358,16 @@ final class WorkspaceBuilderTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.argv().get(0).equals("new-session")) {
-                    staged.set(request.argv().get(request.argv().indexOf("-s") + 1));
+                if (request.commands().get(0).get(0).equals("new-session")) {
+                    staged.set(request.commands()
+                            .get(0)
+                            .get(request.commands().get(0).indexOf("-s") + 1));
                     throw new TmuxTransportException("reply lost", DispatchOutcome.UNKNOWN, null);
                 }
-                if (request.argv().get(0).equals("kill-session")) {
-                    cleaned.set(request.argv().get(request.argv().indexOf("-t") + 1));
+                if (request.commands().get(0).get(0).equals("kill-session")) {
+                    cleaned.set(request.commands()
+                            .get(0)
+                            .get(request.commands().get(0).indexOf("-t") + 1));
                     return new CommandResult(0, List.of(), List.of());
                 }
                 return new CommandResult(0, List.of(), List.of());

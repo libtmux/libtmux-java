@@ -215,7 +215,7 @@ public final class Server implements AutoCloseable {
      * single exit status cannot say which command failed or which never ran.
      */
     public Batch batch() {
-        return new Batch(argv -> cmd(argv, config.defaultTimeout()));
+        return new Batch(commands -> transport.execute(request(commands, config.defaultTimeout(), "")));
     }
 
     /**
@@ -565,19 +565,16 @@ public final class Server implements AutoCloseable {
     }
 
     private CommandResult cmd(List<String> argv, Duration timeout, String input) {
-        return transport.execute(request(argv, timeout, input));
+        return transport.execute(request(List.of(argv), timeout, input));
     }
 
     private CommandRequest request(List<String> argv, Duration timeout) {
-        return request(argv, timeout, "");
+        return request(List.of(argv), timeout, "");
     }
 
-    private CommandRequest request(List<String> argv, Duration timeout, String input) {
+    private CommandRequest request(List<List<String>> commands, Duration timeout, String input) {
         requireOpen();
-        List<String> endpoint = config.endpointCommand();
-        List<String> command = new ArrayList<>(endpoint.size());
-        command.addAll(endpoint);
-        return new CommandRequest(command, argv, timeout, input);
+        return new CommandRequest(config.endpointCommand(), commands, timeout, input);
     }
 
     private void requireOpen() {

@@ -48,11 +48,11 @@ final class ProcessTransportTest {
     private static final int FLOOD_BYTES = 262_144;
 
     private static CommandRequest shell(String script, Duration timeout) {
-        return new CommandRequest(List.of("/bin/sh"), List.of("-c", script), timeout);
+        return CommandRequest.of(List.of("/bin/sh"), List.of("-c", script), timeout);
     }
 
     private static CommandRequest bash(String script, Duration timeout) {
-        return new CommandRequest(List.of("/bin/bash"), List.of("-c", script), timeout);
+        return CommandRequest.of(List.of("/bin/bash"), List.of("-c", script), timeout);
     }
 
     // ------------------------------------------------------------------ channels and exit status
@@ -109,7 +109,7 @@ final class ProcessTransportTest {
     void aSemicolonInsideOneArgumentIsNeverASeparator() {
         try (ProcessTransport transport = new ProcessTransport()) {
             CommandResult result =
-                    transport.execute(new CommandRequest(List.of("/bin/echo"), List.of("left;right"), GENEROUS));
+                    transport.execute(CommandRequest.of(List.of("/bin/echo"), List.of("left;right"), GENEROUS));
 
             assertEquals(List.of("left;right"), result.stdout());
         }
@@ -140,7 +140,7 @@ final class ProcessTransportTest {
         try (ProcessTransport transport = new ProcessTransport()) {
             TmuxTransportException failure = assertThrows(
                     TmuxTransportException.class,
-                    () -> transport.execute(new CommandRequest(List.of("/nonexistent/tmux"), List.of("ls"), GENEROUS)));
+                    () -> transport.execute(CommandRequest.of(List.of("/nonexistent/tmux"), List.of("ls"), GENEROUS)));
 
             assertEquals(
                     DispatchOutcome.NOT_DISPATCHED, failure.outcome(), "nothing ran, so the caller may retry freely");
@@ -244,7 +244,7 @@ final class ProcessTransportTest {
                 + "while [ ! -f \"$1\" ]; do :; done; "
                 + "while :; do printf 1234567890; done";
         long descendant = -1;
-        CommandRequest request = new CommandRequest(
+        CommandRequest request = CommandRequest.of(
                 List.of("/bin/bash"), List.of("-c", script, "probe", descendantPid.toString()), GENEROUS);
 
         try (ProcessTransport transport = new ProcessTransport(1, 1_024)) {
@@ -268,7 +268,7 @@ final class ProcessTransportTest {
                 + "mv \"$1.tmp\" \"$1\"; exec sleep 30) </dev/null >/dev/null 2>&1 & "
                 + "while :; do :; done' TERM; "
                 + "while :; do sleep 30; done";
-        CommandRequest request = new CommandRequest(
+        CommandRequest request = CommandRequest.of(
                 List.of("/bin/bash"), List.of("-c", script, "probe", descendantPid.toString()), Duration.ofMillis(250));
         long descendant = -1;
 
@@ -448,7 +448,7 @@ final class ProcessTransportTest {
         String script = "trap 'exit 0' TERM; "
                 + "(trap '' HUP TERM; echo \"$BASHPID\" > \"$1.tmp\"; "
                 + "mv \"$1.tmp\" \"$1\"; exec sleep 30) & wait";
-        CommandRequest request = new CommandRequest(
+        CommandRequest request = CommandRequest.of(
                 List.of("/bin/bash"), List.of("-c", script, "probe", descendantPid.toString()), GENEROUS);
         ProcessTransport transport = new ProcessTransport();
 
@@ -514,7 +514,7 @@ final class ProcessTransportTest {
         ProcessTransport transport = new ProcessTransport(1);
         try {
             Path started = directory.resolve("started");
-            CommandRequest occupying = new CommandRequest(
+            CommandRequest occupying = CommandRequest.of(
                     List.of("/bin/sh"),
                     List.of("-c", "touch \"$1\"; while :; do :; done", "probe", started.toString()),
                     GENEROUS);

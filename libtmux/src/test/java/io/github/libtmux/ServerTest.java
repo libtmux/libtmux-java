@@ -171,7 +171,7 @@ final class ServerTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.argv().contains("wait-for")) {
+                if (request.commands().get(0).contains("wait-for")) {
                     throw failure;
                 }
                 return new CommandResult(0, List.of("4242"), List.of());
@@ -198,7 +198,7 @@ final class ServerTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.argv().contains("wait-for")) {
+                if (request.commands().get(0).contains("wait-for")) {
                     throw failure;
                 }
                 return new CommandResult(1, List.of(), List.of("no server running"));
@@ -275,7 +275,7 @@ final class ServerTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                return switch (request.argv().getFirst()) {
+                return switch (request.commands().get(0).getFirst()) {
                     case "display-message" ->
                         new CommandResult(
                                 0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.2a")), List.of());
@@ -464,7 +464,7 @@ final class ServerTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
-            return request.argv().contains("kill-server")
+            return request.commands().get(0).contains("kill-server")
                     ? new CommandResult(1, List.of(), List.of("permission denied"))
                     : new CommandResult(0, List.of("4242"), List.of());
         }
@@ -495,7 +495,7 @@ final class ServerTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
-            return switch (request.argv().get(0)) {
+            return switch (request.commands().get(0).get(0)) {
                 case "list-sessions" -> new CommandResult(0, List.of(sessionRow), List.of());
                 case "display-message" ->
                     new CommandResult(
@@ -522,7 +522,7 @@ final class ServerTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
-            return switch (request.argv().get(0)) {
+            return switch (request.commands().get(0).get(0)) {
                 case "display-message" -> identity(identities.get(identityReads.getAndIncrement()));
                 case "list-sessions" ->
                     new CommandResult(0, List.of(sessionRows.get(sessionReads.getAndIncrement())), List.of());
@@ -559,7 +559,7 @@ final class ServerTest {
         @Override
         public CommandResult execute(CommandRequest request) {
             boolean firstCapture = identityReads.get() == 1;
-            return switch (request.argv().get(0)) {
+            return switch (request.commands().get(0).get(0)) {
                 case "display-message" ->
                     identityReads.getAndIncrement() == 0
                             ? identity("4242", failure == CaptureFailure.PANE_SHAPE ? "3.7" : "3.6")

@@ -97,35 +97,28 @@ final class ControlModeIntegrationTest {
                     "a semicolon inside an argument is not a command separator");
             assertEquals(
                     List.of("trailing;"),
-                    client.send("display-message", "-p", "trailing\\;").lines(),
-                    "an escaped trailing semicolon is part of the argument, not a separator");
+                    client.send("display-message", "-p", "trailing;").lines(),
+                    "a semicolon ending an argument is data, not a separator");
         }
     }
 
     /**
-     * A reply is framed per command, so a request that is several commands has several replies and
-     * this client can only account for one of them. The rest go to whoever asks next.
-     *
-     * <p>Both spellings are refused, because tmux reads both: a semicolon standing alone between two
-     * commands, and one ending an argument of the first.
+     * A reply is framed per command, so this client sends exactly one. An argv is one command by
+     * construction: every word is quoted, so nothing a caller passes can open a second one and
+     * strand its reply for whoever asks next.
      */
     @Test
-    void aRequestOfSeveralCommandsIsRefusedRatherThanMisframed(Server server) {
+    void anArgumentCannotOpenASecondCommandAndStrandItsReply(Server server) {
         try (ControlClient client = attach(server)) {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> client.send(
-                            List.of("display-message", "-p", "first", ";", "display-message", "-p", "second")),
-                    "a semicolon standing alone separates two commands");
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> client.send(List.of("new-window", "-d", "-n", "grouped;", "list-windows")),
-                    "a semicolon ending an argument separates two commands just as well");
+            assertEquals(
+                    List.of("first ; display-message -p second"),
+                    client.send(List.of("display-message", "-p", "first ; display-message -p second"))
+                            .lines());
 
             assertEquals(
                     List.of("still answering"),
                     client.send("display-message", "-p", "still answering").lines(),
-                    "a refusal writes nothing, so the stream is still in step");
+                    "one command in, one reply out, so the stream is still in step");
         }
     }
 

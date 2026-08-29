@@ -250,7 +250,7 @@ final class HandleTest {
 
     private static String last(CountingTransport transport) {
         List<String> argv =
-                transport.requests.get(transport.requests.size() - 1).argv();
+                transport.requests.get(transport.requests.size() - 1).commands().get(0);
         return argv.get(argv.size() - 2);
     }
 
@@ -272,7 +272,7 @@ final class HandleTest {
         public CommandResult execute(CommandRequest request) {
             calls.incrementAndGet();
             requests.add(request);
-            String command = request.argv().get(0);
+            String command = request.commands().get(0).get(0);
             return new CommandResult(0, rows(command), List.of());
         }
 

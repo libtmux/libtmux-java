@@ -160,11 +160,6 @@ public final class ControlClient implements AutoCloseable {
         if (timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException("timeout is not positive");
         }
-        if (isCommandGroup(argv)) {
-            // Refused before anything is written, so the stream stays in step and the caller can
-            // send the commands one at a time — which is what this carrier is for.
-            throw new IllegalArgumentException("a control-mode request must contain one command");
-        }
         if (closed.get() || failed) {
             throw new IllegalStateException("control client is not usable");
         }
@@ -271,35 +266,9 @@ public final class ControlClient implements AutoCloseable {
     // -------------------------------------------------------------------------------- protocol
 
     /**
-     * Whether this argv is more than one tmux command.
-     *
-     * <p>tmux ends a command at a semicolon that ends any argument, not only at one standing alone,
-     * and a backslash before it keeps the semicolon instead. That is the rule its own argv parser
-     * applies before a command runs, so {@code ["kill-window;", "list-windows"]} is two commands and
-     * {@code ["display-message", "-p", "done\\;"]} is one.
-     *
-     * <p>Public because a carrier has to make this judgement before choosing how to send. Control
-     * mode frames a reply per command, so a request of several has several replies and this client
-     * can account for only one.
-     */
-    public static boolean isCommandGroup(List<String> argv) {
-        for (String argument : argv) {
-            if (argument.endsWith(";") && !argument.endsWith("\\;")) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
      * tmux parses a control-mode request as one line, so an argument has to survive its lexer.
      * Single quotes preserve everything except a single quote, which is closed, escaped and
      * reopened.
-     *
-     * <p>The backslash guarding a trailing semicolon is spent here rather than passed on. It exists
-     * for tmux's argv parser, which the process carrier goes through and this one does not, so
-     * quoting it would deliver a backslash the other carrier had already consumed and the two would
-     * disagree about what the argument was.
      */
     static String line(List<String> argv) {
         return ControlProtocol.line(argv);
