@@ -5,6 +5,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -152,8 +154,8 @@ public final class ProcessTransport implements TmuxTransport {
         }
         Drains drains = null;
         try {
-            closeQuietly(process.process().getOutputStream(), null);
             drains = submit(process);
+            supplyInput(process, request.input());
             return complete(process, drains, deadline);
         } finally {
             live.remove(process);
@@ -469,6 +471,26 @@ public final class ProcessTransport implements TmuxTransport {
     private static void restoreInterrupt(AtomicBoolean interrupted) {
         if (interrupted.get()) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Writes what the command reads, then closes its standard input.
+     *
+     * <p>After the drains are running rather than before: tmux replies while it reads, and an
+     * input large enough to fill the pipe would otherwise wait on a stdout nobody is draining.
+     */
+    private static void supplyInput(RunningProcess process, String input) {
+        OutputStream stdin = process.process().getOutputStream();
+        try {
+            if (!input.isEmpty()) {
+                stdin.write(input.getBytes(StandardCharsets.UTF_8));
+                stdin.flush();
+            }
+        } catch (IOException stoppedReading) {
+            // What tmux made of it is in its exit status and stderr, which say more than this.
+        } finally {
+            closeQuietly(stdin, null);
         }
     }
 

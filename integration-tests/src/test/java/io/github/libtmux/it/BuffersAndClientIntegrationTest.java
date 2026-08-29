@@ -158,6 +158,38 @@ final class BuffersAndClientIntegrationTest {
                 "the paste kept no buffer of its own");
     }
 
+    @Test
+    void pastedTextReachesThePaneExactly(Server server) throws Exception {
+        Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
+        if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
+            return;
+        }
+
+        // A semicolon ends a tmux command and a quote ends a quoted argument, so text carrying both
+        // is what shows the text never reaches tmux's parser.
+        pane.paste("printf 'a;b \"c\" d\\n'\n");
+
+        assertTrue(
+                await(() -> pane.capture().stream().anyMatch(line -> line.contains("a;b \"c\" d"))),
+                "the text did not arrive as written");
+        assertThrows(IllegalArgumentException.class, () -> pane.paste("has\0nul"), "NUL is not typeable");
+    }
+
+    /** tmux refuses a command whose packed argv exceeds MAX_IMSGSIZE, which is 16384 bytes. */
+    @Test
+    void pastedTextIsNotBoundedByTheSizeOfACommand(Server server) throws Exception {
+        Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
+        if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
+            return;
+        }
+
+        pane.paste("y".repeat(20_000) + "END-OF-A-LARGE-PASTE");
+
+        assertTrue(
+                await(() -> pane.capture().stream().anyMatch(line -> line.contains("END-OF-A-LARGE-PASTE"))),
+                "text larger than a tmux command never arrived");
+    }
+
     /** The one case where the group's own cleanup cannot run, so the caller's has to. */
     @Test
     void aPasteThatFailsRemovesOnlyTheBufferItMade(Server server) {

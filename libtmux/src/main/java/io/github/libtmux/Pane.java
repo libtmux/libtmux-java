@@ -504,11 +504,19 @@ public final class Pane {
      * that consumes it. A caller that stops in between therefore cannot leave the text in the paste
      * history every session on the server can read.
      *
+     * <p>The text goes to tmux on standard input rather than as an argument, so it is not bounded by
+     * the size of a tmux command and never reaches tmux's parser.
+     *
+     * @throws IllegalArgumentException if the text contains NUL, which a terminal cannot receive and
+     *     {@link #send} refuses too
      * @throws UnsupportedTmuxVersion before tmux 3.4, where deleting the buffer left by a failed
      *     paste can remove one this did not create
      */
     public void paste(String text) {
         Objects.requireNonNull(text, "text");
+        if (text.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("pasted text cannot contain NUL");
+        }
         TmuxVersion running = server.version(snapshot);
         if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
             throw new UnsupportedTmuxVersion("pasting text", Buffers.EXACT_NAMED_DELETE, running);
@@ -517,8 +525,9 @@ public final class Pane {
         try {
             server.runTogether(
                     snapshot,
+                    text,
                     List.of(
-                            List.of("set-buffer", "-b", buffer, Buffers.argument(text)),
+                            List.of("load-buffer", "-b", buffer, "-"),
                             // -d removes the buffer as it pastes, so the success path leaves nothing
                             // even when this is the last thing the caller manages to run.
                             List.of(

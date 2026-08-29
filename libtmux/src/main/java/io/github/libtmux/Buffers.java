@@ -91,7 +91,7 @@ public final class Buffers {
     }
 
     /** Protects a final semicolon from tmux's command-group parser on every transport. */
-    static String argument(String value) {
+    private static String argument(String value) {
         Objects.requireNonNull(value, "value");
         return value.endsWith(";") ? value.substring(0, value.length() - 1) + "\\;" : value;
     }

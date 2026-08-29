@@ -561,15 +561,23 @@ public final class Server implements AutoCloseable {
 
     /** Runs one tmux command against this server, overriding the configured deadline. */
     public CommandResult cmd(List<String> argv, Duration timeout) {
-        return transport.execute(request(argv, timeout));
+        return cmd(argv, timeout, "");
+    }
+
+    private CommandResult cmd(List<String> argv, Duration timeout, String input) {
+        return transport.execute(request(argv, timeout, input));
     }
 
     private CommandRequest request(List<String> argv, Duration timeout) {
+        return request(argv, timeout, "");
+    }
+
+    private CommandRequest request(List<String> argv, Duration timeout, String input) {
         requireOpen();
         List<String> endpoint = config.endpointCommand();
         List<String> command = new ArrayList<>(endpoint.size());
         command.addAll(endpoint);
-        return new CommandRequest(command, argv, timeout);
+        return new CommandRequest(command, argv, timeout, input);
     }
 
     private void requireOpen() {
@@ -807,7 +815,12 @@ public final class Server implements AutoCloseable {
      * cleans up after its first needs.
      */
     CommandResult runTogether(ServerSnapshot snapshot, List<List<String>> commands) {
-        CommandResult result = guarded(snapshot, CommandStrings.group(commands));
+        return runTogether(snapshot, "", commands);
+    }
+
+    /** As {@link #runTogether}, with {@code input} on tmux's standard input for the group to read. */
+    CommandResult runTogether(ServerSnapshot snapshot, String input, List<List<String>> commands) {
+        CommandResult result = guarded(snapshot, CommandStrings.group(commands), input);
         if (!result.succeeded()) {
             String verbs = commands.stream().map(argv -> argv.get(0)).collect(Collectors.joining(" then "));
             throw new LibTmuxException("tmux " + verbs + " failed: " + String.join("; ", result.stderr()));
@@ -817,10 +830,15 @@ public final class Server implements AutoCloseable {
 
     /** Refuses to reach a tmux server that is not the one this handle was made against. */
     private CommandResult guarded(ServerSnapshot snapshot, String command) {
+        return guarded(snapshot, command, "");
+    }
+
+    private CommandResult guarded(ServerSnapshot snapshot, String command, String input) {
         long pid = snapshot.serverPid()
                 .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
         String stale = "libtmux-stale-handle-" + pid;
-        CommandResult result = cmd(List.of("if-shell", "-F", "#{==:#{pid}," + pid + "}", command, stale));
+        CommandResult result = cmd(
+                List.of("if-shell", "-F", "#{==:#{pid}," + pid + "}", command, stale), config.defaultTimeout(), input);
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
             throw new ObjectDoesNotExist("the tmux server this handle belonged to has ended");
         }

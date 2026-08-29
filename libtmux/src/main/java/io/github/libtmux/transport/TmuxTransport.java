@@ -12,7 +12,11 @@ public interface TmuxTransport extends AutoCloseable {
     /**
      * Runs the request to completion.
      *
-     * @param request what to run and how long to wait
+     * <p>An implementation writes {@link CommandRequest#input()} to tmux's standard input and
+     * closes it. A command that reads standard input and is given none reads end of file, which
+     * tmux reports as success over an empty result rather than as a failure.
+     *
+     * @param request what to run, what it reads, and how long to wait
      * @return the exit status and both channels; a nonzero exit is a result, not a failure
      * @throws TmuxTransportException if the command could not be run to completion, carrying how
      *     certain it is that tmux applied it
