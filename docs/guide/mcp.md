@@ -176,6 +176,11 @@ Safety.DESTRUCTIVE.allows(Safety.MUTATING);   // → true
 Safety.ofWireName("readonly");                // → READONLY
 ```
 
+The ceiling filters the tool catalog and supplies protocol hints; it does not
+confine effects. `MUTATING` includes `tmux_run`, key input, and pasted text, so
+it can run programs or delete data in a pane. Use a separate OS account, socket
+permissions, or a container when effects must be contained.
+
 A tool above the ceiling is never listed. A model cannot be tempted by a tool it
 never saw, and an error it can do nothing about is context spent for nothing. The
 server's instructions say plainly what is absent and how an operator would enable
