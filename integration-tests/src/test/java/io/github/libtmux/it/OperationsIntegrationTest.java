@@ -82,7 +82,10 @@ final class OperationsIntegrationTest {
         // failure reports that Enter was pressed when the line was typed before anything was reading.
         pane.sendLine("echo defined-the-function");
         assertTrue(awaitOutput(pane, "defined-the-function"), "the shell never read the definition");
+        // Clearing is what makes the marker below unambiguous, so it too has to have happened.
         pane.sendLine("clear");
+        pane.sendLine("echo cleared-the-screen");
+        assertTrue(awaitOutput(pane, "cleared-the-screen"), "the shell never reached the clear");
 
         pane.sendLine("Enter");
         assertDoesNotThrow(() -> pane.sendLine("-R"), "a line is not a send-keys option");
