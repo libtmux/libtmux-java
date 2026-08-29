@@ -3,22 +3,19 @@ package io.github.libtmux.mcp;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
-import io.modelcontextprotocol.json.TypeRef;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
-import io.modelcontextprotocol.spec.McpServerTransport;
 import io.modelcontextprotocol.spec.McpServerTransportProvider;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.jspecify.annotations.Nullable;
-import reactor.core.publisher.Mono;
 
 /**
  * Exposes a tmux server to a model over the Model Context Protocol.
@@ -77,13 +74,15 @@ public final class TmuxMcpServer {
 
     static McpSyncServer overStdio(
             Server server, InputStream in, Safety ceiling, boolean watching, Runnable onSessionEnd) {
-        return serving(
-                server,
-                ceiling,
-                watching,
-                new SessionEndedProvider(
-                        new StdioServerTransportProvider(new JacksonMcpJsonMapper(new ObjectMapper()), in, System.out),
-                        onSessionEnd));
+        return overStdio(server, in, System.out, ceiling, watching, onSessionEnd);
+    }
+
+    static McpSyncServer overStdio(
+            Server server, InputStream in, OutputStream out, Safety ceiling, boolean watching, Runnable onSessionEnd) {
+        SessionLifetime lifetime = new SessionLifetime(onSessionEnd);
+        var provider = new StdioServerTransportProvider(
+                new JacksonMcpJsonMapper(new ObjectMapper()), in, lifetime.observe(out));
+        return serving(server, ceiling, watching, lifetime.observe(provider));
     }
 
     /** Serves a tmux server over a caller-supplied transport. */
@@ -182,90 +181,6 @@ public final class TmuxMcpServer {
                     super.close();
                 }
             }
-        }
-    }
-
-    /** Makes the SDK's actual protocol-session lifetime observable to a stdio launcher. */
-    private static final class SessionEndedProvider implements McpServerTransportProvider {
-
-        private final McpServerTransportProvider delegate;
-        private final Runnable ended;
-
-        SessionEndedProvider(McpServerTransportProvider delegate, Runnable ended) {
-            this.delegate = delegate;
-            AtomicBoolean signalled = new AtomicBoolean();
-            this.ended = () -> {
-                if (signalled.compareAndSet(false, true)) {
-                    ended.run();
-                }
-            };
-        }
-
-        @Override
-        public void setSessionFactory(io.modelcontextprotocol.spec.McpServerSession.Factory factory) {
-            delegate.setSessionFactory(transport -> factory.create(new SessionEndedTransport(transport, ended)));
-        }
-
-        @Override
-        public Mono<Void> notifyClients(String method, Object params) {
-            return delegate.notifyClients(method, params);
-        }
-
-        @Override
-        public Mono<Void> notifyClient(String sessionId, String method, Object params) {
-            return delegate.notifyClient(sessionId, method, params);
-        }
-
-        @Override
-        public Mono<Void> closeGracefully() {
-            return delegate.closeGracefully().doFinally(ignored -> ended.run());
-        }
-
-        @Override
-        public void close() {
-            try {
-                delegate.close();
-            } finally {
-                ended.run();
-            }
-        }
-
-        @Override
-        public List<String> protocolVersions() {
-            return delegate.protocolVersions();
-        }
-    }
-
-    /** Signals both graceful and immediate session termination without changing transport behavior. */
-    private record SessionEndedTransport(McpServerTransport delegate, Runnable ended) implements McpServerTransport {
-
-        @Override
-        public Mono<Void> sendMessage(McpSchema.JSONRPCMessage message) {
-            return delegate.sendMessage(message);
-        }
-
-        @Override
-        public <T> T unmarshalFrom(Object value, TypeRef<T> type) {
-            return delegate.unmarshalFrom(value, type);
-        }
-
-        @Override
-        public Mono<Void> closeGracefully() {
-            return delegate.closeGracefully().doFinally(ignored -> ended.run());
-        }
-
-        @Override
-        public void close() {
-            try {
-                delegate.close();
-            } finally {
-                ended.run();
-            }
-        }
-
-        @Override
-        public List<String> protocolVersions() {
-            return delegate.protocolVersions();
         }
     }
 

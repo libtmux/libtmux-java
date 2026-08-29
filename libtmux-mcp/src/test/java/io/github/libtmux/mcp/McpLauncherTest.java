@@ -18,6 +18,7 @@ import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.ProtocolVersions;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -47,18 +48,7 @@ final class McpLauncherTest {
     @Test
     void malformedInputDoesNotLeaveTheLauncherWaitingForEndOfInput(Server server, TmuxSocketPath socket)
             throws Exception {
-        Process launcher = new ProcessBuilder(List.of(
-                        Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                        "-classpath",
-                        System.getProperty("java.class.path"),
-                        Main.class.getName(),
-                        "--socket",
-                        socket.path().toString(),
-                        "--tmux",
-                        TMUX))
-                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                .redirectError(ProcessBuilder.Redirect.DISCARD)
-                .start();
+        Process launcher = rawLauncher(socket.path(), ProcessBuilder.Redirect.DISCARD);
         try {
             launcher.getOutputStream().write("{not-json}\n".getBytes(StandardCharsets.UTF_8));
             launcher.getOutputStream().flush();
@@ -67,11 +57,29 @@ final class McpLauncherTest {
                     launcher.waitFor(5, TimeUnit.SECONDS),
                     "the protocol session ended, but the launcher was still waiting for stdin EOF");
         } finally {
-            launcher.getOutputStream().close();
-            if (!launcher.waitFor(5, TimeUnit.SECONDS)) {
-                launcher.destroyForcibly();
-                launcher.waitFor(5, TimeUnit.SECONDS);
-            }
+            stop(launcher);
+        }
+    }
+
+    /** Broken stdout is also a disconnect, even if the client leaves stdin open. */
+    @Test
+    void brokenOutputDoesNotLeaveTheLauncherWaitingForEndOfInput(Server server, TmuxSocketPath socket)
+            throws Exception {
+        Process launcher = rawLauncher(socket.path(), ProcessBuilder.Redirect.PIPE);
+        try {
+            launcher.getInputStream().close();
+            String initialize = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{"
+                    + "\"protocolVersion\":\"" + ProtocolVersions.MCP_2025_11_25
+                    + "\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}\n";
+            launcher.getOutputStream().write(initialize.getBytes(StandardCharsets.UTF_8));
+            launcher.getOutputStream().flush();
+
+            assertTrue(
+                    launcher.waitFor(5, TimeUnit.SECONDS),
+                    "stdout failed, but the launcher was still waiting for stdin EOF");
+            assertEquals(0, launcher.exitValue());
+        } finally {
+            stop(launcher);
         }
     }
 
@@ -447,6 +455,29 @@ final class McpLauncherTest {
                 .build();
         return McpClient.sync(new StdioClientTransport(launcher, new JacksonMcpJsonMapper(new ObjectMapper())))
                 .build();
+    }
+
+    private static Process rawLauncher(Path socket, ProcessBuilder.Redirect output) throws IOException {
+        return new ProcessBuilder(List.of(
+                        Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                        "-classpath",
+                        System.getProperty("java.class.path"),
+                        Main.class.getName(),
+                        "--socket",
+                        socket.toString(),
+                        "--tmux",
+                        TMUX))
+                .redirectOutput(output)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
+    }
+
+    private static void stop(Process launcher) throws InterruptedException, IOException {
+        launcher.getOutputStream().close();
+        if (!launcher.waitFor(5, TimeUnit.SECONDS)) {
+            launcher.destroyForcibly();
+            launcher.waitFor(5, TimeUnit.SECONDS);
+        }
     }
 
     private static Server openNamed(String name, Path directory) throws IOException {

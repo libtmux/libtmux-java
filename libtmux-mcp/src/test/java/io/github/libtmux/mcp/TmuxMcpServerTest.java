@@ -1,6 +1,8 @@
 package io.github.libtmux.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,10 +16,18 @@ import io.github.libtmux.query.FilterExpr;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
+import io.modelcontextprotocol.spec.ProtocolVersions;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -72,6 +82,62 @@ final class TmuxMcpServerTest {
                 }
             }
         }
+    }
+
+    @Test
+    void brokenOutputEndsAStdioSessionEvenWhileInputRemainsOpen(Server server) throws Exception {
+        CountDownLatch ended = new CountDownLatch(1);
+        AtomicInteger endCalls = new AtomicInteger();
+        PipedInputStream input = new PipedInputStream();
+        try (PipedOutputStream client = new PipedOutputStream(input);
+                PrintStream output = new PrintStream(brokenOutput(), true, StandardCharsets.UTF_8)) {
+            McpSyncServer mcp = TmuxMcpServer.overStdio(server, input, output, Safety.MUTATING, false, () -> {
+                endCalls.incrementAndGet();
+                ended.countDown();
+            });
+            try {
+                String initialize = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{"
+                        + "\"protocolVersion\":\"" + ProtocolVersions.MCP_2025_11_25
+                        + "\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}\n";
+                client.write(initialize.getBytes(StandardCharsets.UTF_8));
+                client.flush();
+
+                assertTrue(ended.await(3, TimeUnit.SECONDS), "stdout failed but the protocol session stayed alive");
+            } finally {
+                mcp.close();
+            }
+            assertEquals(1, endCalls.get(), "one failed session reported more than one end");
+        }
+    }
+
+    @Test
+    void callbackFailureDoesNotHideProtocolOutputFailure() {
+        IOException outputFailure = new IOException("client stopped reading");
+        IllegalStateException callbackFailure = new IllegalStateException("session-end callback failed");
+        OutputStream output = new SessionLifetime(() -> {
+                    throw callbackFailure;
+                })
+                .observe(new OutputStream() {
+                    @Override
+                    public void write(int value) throws IOException {
+                        throw outputFailure;
+                    }
+                });
+
+        IOException thrown = assertThrows(IOException.class, () -> output.write(0));
+
+        assertSame(outputFailure, thrown);
+        assertEquals(1, thrown.getSuppressed().length);
+        assertSame(callbackFailure, thrown.getSuppressed()[0]);
+    }
+
+    private static OutputStream brokenOutput() {
+        return new OutputStream() {
+            @Override
+            public void write(int value) throws IOException {
+                throw new IOException("client stopped reading");
+            }
+        };
     }
 
     private static boolean await(java.util.function.BooleanSupplier condition) throws InterruptedException {
