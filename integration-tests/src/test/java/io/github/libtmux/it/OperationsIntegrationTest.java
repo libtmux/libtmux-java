@@ -76,6 +76,10 @@ final class OperationsIntegrationTest {
     void aLineThatIsAKeyNameIsTypedLiterally(Server server) {
         Pane pane = session(server).windows().get(0).panes().get(0);
         pane.sendLine("Enter() { printf 'literal-%s-command\\n' enter; }");
+        // The shell has to have read the definition before the name is used. Without this the same
+        // failure reports that Enter was pressed when the line was typed before anything was reading.
+        pane.sendLine("echo defined-the-function");
+        assertTrue(awaitOutput(pane, "defined-the-function"), "the shell never read the definition");
         pane.sendLine("clear");
 
         pane.sendLine("Enter");
