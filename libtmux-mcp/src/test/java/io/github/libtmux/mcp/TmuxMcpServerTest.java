@@ -1,6 +1,7 @@
 package io.github.libtmux.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,6 +16,8 @@ import io.github.libtmux.query.FilterExpr;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
+import io.modelcontextprotocol.spec.McpServerSession;
+import io.modelcontextprotocol.spec.McpServerTransportProvider;
 import io.modelcontextprotocol.spec.ProtocolVersions;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -29,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import reactor.core.publisher.Mono;
 
 /**
  * What the protocol layer tells a model, checked against what the library will actually accept.
@@ -137,6 +141,44 @@ final class TmuxMcpServerTest {
             assertTrue(input.closed.await(1, TimeUnit.SECONDS), "failed startup left its input stream open");
         } finally {
             input.close();
+        }
+    }
+
+    @Test
+    void failedStartupClosesAnyAcceptedTransport(Server server) throws Exception {
+        for (boolean watching : new boolean[] {false, true}) {
+            AtomicInteger closes = new AtomicInteger();
+            IllegalStateException startupFailure = new IllegalStateException("session factory failed");
+            McpServerTransportProvider transport = new McpServerTransportProvider() {
+                @Override
+                public void setSessionFactory(McpServerSession.Factory factory) {
+                    throw startupFailure;
+                }
+
+                @Override
+                public Mono<Void> notifyClients(String method, Object params) {
+                    return Mono.empty();
+                }
+
+                @Override
+                public Mono<Void> closeGracefully() {
+                    return Mono.empty();
+                }
+
+                @Override
+                public void close() {
+                    closes.incrementAndGet();
+                }
+            };
+
+            IllegalStateException thrown = assertThrows(
+                    IllegalStateException.class,
+                    () -> TmuxMcpServer.serving(server, Safety.MUTATING, watching, transport),
+                    "watching=" + watching);
+
+            assertSame(startupFailure, thrown);
+            assertEquals(1, closes.get(), "accepted transport was not closed exactly once");
+            assertTrue(await(() -> server.clients().isEmpty()), "failed startup left a watcher attached");
         }
     }
 

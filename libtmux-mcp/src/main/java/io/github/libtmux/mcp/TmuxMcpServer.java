@@ -14,6 +14,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.jspecify.annotations.Nullable;
 
@@ -95,12 +96,22 @@ public final class TmuxMcpServer {
         }
     }
 
-    /** Serves a tmux server over a caller-supplied transport. */
+    /**
+     * Serves a tmux server over a caller-supplied transport.
+     *
+     * <p>The returned server owns the transport. Ownership transfers on entry, so failed startup
+     * closes it too.
+     */
     public static McpSyncServer serving(Server server, Safety ceiling, McpServerTransportProvider transport) {
         return serving(server, ceiling, false, transport);
     }
 
-    /** Serves a tmux server over a caller-supplied transport, optionally watching it for changes. */
+    /**
+     * Serves a tmux server over a caller-supplied transport, optionally watching it for changes.
+     *
+     * <p>The returned server owns the transport. Ownership transfers on entry, so failed startup
+     * closes it too.
+     */
     public static McpSyncServer serving(
             Server server, Safety ceiling, boolean watching, McpServerTransportProvider transport) {
         return serving(server, ceiling, watching, transport, null);
@@ -112,29 +123,43 @@ public final class TmuxMcpServer {
             boolean watching,
             McpServerTransportProvider transport,
             @Nullable SessionLifetime lifetime) {
-        Connection connection = Connection.to(server, ceiling);
-        if (watching) {
-            Watches watches = Watches.prepare(connection);
-            if (lifetime != null) {
-                lifetime.own(watches);
-            }
-            @Nullable WatchedMcpServer owned = null;
-            try {
-                McpSyncServer built = build(connection, true, transport);
-                owned = new WatchedMcpServer(built, watches);
-                watches.start(new McpNotifier(owned));
-                return owned;
-            } catch (RuntimeException | Error failure) {
-                Cleanup cleanup = new Cleanup(failure);
-                if (owned == null) {
-                    cleanup.run(watches::close);
-                } else {
-                    cleanup.run(owned::close);
+        Objects.requireNonNull(transport, "transport");
+        @Nullable Watches watches = null;
+        @Nullable McpSyncServer built = null;
+        try {
+            Connection connection = Connection.to(server, ceiling);
+            if (watching) {
+                watches = Watches.prepare(connection);
+                if (lifetime != null) {
+                    lifetime.own(watches);
                 }
-                throw failure;
             }
+            built = build(connection, watching, transport);
+            if (watches == null) {
+                return built;
+            }
+            WatchedMcpServer owned = new WatchedMcpServer(built, watches);
+            watches.start(new McpNotifier(owned));
+            return owned;
+        } catch (RuntimeException | Error failure) {
+            Cleanup cleanup = new Cleanup(failure);
+            if (lifetime == null) {
+                if (watches != null) {
+                    Watches prepared = watches;
+                    cleanup.run(prepared::close);
+                }
+                if (built == null) {
+                    cleanup.run(transport::close);
+                } else {
+                    McpSyncServer accepted = built;
+                    cleanup.run(accepted::close);
+                }
+            } else if (built != null) {
+                McpSyncServer accepted = built;
+                cleanup.run(accepted::close);
+            }
+            throw failure;
         }
-        return build(connection, false, transport);
     }
 
     private static McpSyncServer build(Connection connection, boolean watching, McpServerTransportProvider transport) {
