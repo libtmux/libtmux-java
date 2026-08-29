@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.libtmux.Pane;
+import io.github.libtmux.PaneMode;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -32,10 +33,10 @@ final class PaneModeIntegrationTest {
 
     @Test
     void eachModeReportsItselfByTmuxsOwnName(Server server) {
-        assertEquals(Optional.of("copy-mode"), enter(server, Pane::copyMode));
-        assertEquals(Optional.of("clock-mode"), enter(server, Pane::clockMode));
-        assertEquals(Optional.of("tree-mode"), enter(server, Pane::chooseTree));
-        assertEquals(Optional.of("options-mode"), enter(server, Pane::customizeMode));
+        assertEquals(Optional.of(PaneMode.COPY), enter(server, Pane::copyMode));
+        assertEquals(Optional.of(PaneMode.CLOCK), enter(server, Pane::clockMode));
+        assertEquals(Optional.of(PaneMode.TREE), enter(server, Pane::chooseTree));
+        assertEquals(Optional.of(PaneMode.OPTIONS), enter(server, Pane::customizeMode));
     }
 
     /**
@@ -79,7 +80,7 @@ final class PaneModeIntegrationTest {
         server.buffers().set("chooser-fodder", "something");
         pane.chooseBuffer();
 
-        assertEquals(Optional.of("buffer-mode"), pane.mode());
+        assertEquals(Optional.of(PaneMode.BUFFER), pane.mode());
     }
 
     @Test
@@ -115,7 +116,7 @@ final class PaneModeIntegrationTest {
 
         pane.findWindowByName("editor");
 
-        assertEquals(Optional.of("tree-mode"), pane.mode(), "the pane is in the browser");
+        assertEquals(Optional.of(PaneMode.TREE), pane.mode(), "the pane is in the browser");
         assertEquals(
                 activeBefore,
                 session.refresh().activeWindow().orElseThrow().id(),
@@ -129,7 +130,7 @@ final class PaneModeIntegrationTest {
 
         pane.findWindowByName("no-window-carries-this");
 
-        assertEquals(Optional.of("tree-mode"), pane.mode(), "tmux opens the browser either way");
+        assertEquals(Optional.of(PaneMode.TREE), pane.mode(), "tmux opens the browser either way");
     }
 
     @Test
@@ -137,11 +138,11 @@ final class PaneModeIntegrationTest {
         Pane pane = onlyPane(server);
 
         pane.findWindow("anything");
-        assertEquals(Optional.of("tree-mode"), pane.mode());
+        assertEquals(Optional.of(PaneMode.TREE), pane.mode());
         pane.exitMode();
 
         pane.findWindowByContent("anything");
-        assertEquals(Optional.of("tree-mode"), pane.mode());
+        assertEquals(Optional.of(PaneMode.TREE), pane.mode());
     }
 
     // -------------------------------------------------------------------------------- expanding
@@ -159,11 +160,11 @@ final class PaneModeIntegrationTest {
                 "a window resolves its own index, not the session's active one");
     }
 
-    private static Optional<String> enter(Server server, Consumer<Pane> mode) {
+    private static Optional<PaneMode> enter(Server server, Consumer<Pane> mode) {
         Pane pane = onlyPane(server);
         pane.exitMode();
         mode.accept(pane);
-        Optional<String> reported = pane.mode();
+        Optional<PaneMode> reported = pane.mode();
         pane.exitMode();
         return reported;
     }

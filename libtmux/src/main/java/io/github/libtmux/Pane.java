@@ -121,11 +121,12 @@ public final class Pane {
      * <p>Read live rather than from the capture, because entering a mode is something this library
      * does and a caller wants to see the result of.
      *
-     * @return tmux's own name for the mode, such as {@code copy-mode} or {@code tree-mode}
+     * @return the mode, or empty when the pane is showing its program
+     * @throws LibTmuxException if this tmux named a mode outside the supported range
      */
-    public Optional<String> mode() {
+    public Optional<PaneMode> mode() {
         String reported = expand("#{pane_mode}");
-        return reported.isEmpty() ? Optional.empty() : Optional.of(reported);
+        return reported.isEmpty() ? Optional.empty() : Optional.of(PaneMode.of(reported));
     }
 
     /** Shows a clock in this pane. */
