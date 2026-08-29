@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Applies a validated workspace as one session, cleaning it up after any failure. */
+/** Applies a validated workspace as one session and attempts to remove it after a failure. */
 final class WorkspaceApplier {
 
     private WorkspaceApplier() {}

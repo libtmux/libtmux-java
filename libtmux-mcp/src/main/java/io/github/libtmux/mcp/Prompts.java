@@ -96,8 +96,9 @@ final class Prompts {
                                 Build a tmux session for: %s
 
                                 Send it as one document to tmux_apply_workspace rather than creating windows \
-                                and panes one call at a time. One call cannot half-succeed, and a layout tmux \
-                                would refuse is refused before anything exists.
+                                and panes one call at a time. The document and layouts are validated before \
+                                creation. If a later step fails, cleanup is best effort; commands already \
+                                started cannot be undone.
 
                                 %s
                                 The commands in it are started, not waited for. To check one came up, watch its \

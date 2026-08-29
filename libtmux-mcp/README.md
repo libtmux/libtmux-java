@@ -179,6 +179,11 @@ Every wait is capped (30 s by default, 2 minutes hard) and reports the ceiling i
 actually enforced. The cap protects the agent's turn, not the connection: a tool
 call that blocks does not stop this server answering anything else.
 
+A client's request deadline is separate. The Java SDK 2.0.1 client defaults to
+20 seconds, so configure it above any longer wait you request. With that SDK,
+cancelling or timing out abandons the answer but does not stop the synchronous
+handler or undo tmux changes it already dispatched.
+
 ## Watching, instead of polling
 
 With `--watch`, this server attaches a tmux control client and asks tmux to
@@ -294,9 +299,9 @@ windows:
       - docker compose logs -f
 ```
 
-One call instead of a dozen. A call cannot half-succeed, and a layout tmux would
-refuse is refused while the description is still text — before any session exists
-to leave half-built.
+One call instead of a dozen. The document and layouts are validated before any
+session exists. If a later creation step or command fails, cleanup is best effort;
+commands already started cannot be undone.
 
 ## Embedding it
 

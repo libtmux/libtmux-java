@@ -13,8 +13,9 @@ Not tmux commands. Context, and turns.
 A model driving a terminal has two costs nobody bills it for: every line it reads
 stays in its context for the rest of the conversation, and every tool call is a
 round trip it cannot take back once it has started. Nearly every design decision
-here follows from those two, and from one more: MCP gives an agent no way to
-sleep and no way to cancel a call it is inside.
+here follows from those two, and from one more: MCP gives an agent no sleep
+primitive, and Java SDK 2.0.1 does not propagate cancellation into a synchronous
+handler after it starts.
 
 So a wait that is not a tool does not disappear. It moves into the agent's turn
 loop as a polling cycle, where it costs a call per look and has no ceiling at all.
@@ -64,9 +65,11 @@ Writing the same handlers reactively is where it goes wrong: a `Mono` that block
 pins the single reactor thread, serves nothing at all, and stretched the blocking
 call itself from 6.2 to 9.4 seconds. **This server is synchronous on purpose.**
 
-What an unbounded wait really costs is the turn: the agent picks the wrong thing
-to wait for once, and has no way to change its mind mid-call. The ceiling makes
-that mistake cheap and repeatable instead of terminal.
+A client's request deadline is separate. The Java SDK 2.0.1 client defaults to
+20 seconds, so configure it above a longer wait before requesting one. Cancelling
+or timing out abandons the answer but does not stop the synchronous handler or
+undo tmux changes it already dispatched. The server ceiling keeps that abandoned
+work bounded.
 
 ## Telling output apart from the plumbing
 
