@@ -163,7 +163,7 @@ public final class TmuxMcpServer {
     }
 
     private static McpSyncServer build(Connection connection, boolean watching, McpServerTransportProvider transport) {
-        var specification = McpServer.sync(transport)
+        var specification = McpServer.sync(new SerializedTransportProvider(transport))
                 .serverInfo("libtmux", version())
                 .instructions(Instructions.forServer(connection.ceiling(), watching))
                 .requestTimeout(REQUEST_TIMEOUT)
