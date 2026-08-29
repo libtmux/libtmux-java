@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
@@ -18,10 +19,12 @@ import io.modelcontextprotocol.client.transport.StdioClientTransport;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +42,38 @@ final class McpLauncherTest {
 
     /** Longer than any single call needs, short enough that a hung launcher fails as itself. */
     private static final int PATIENCE_SECONDS = 60;
+
+    /** Protocol failure ends the session even when the client forgets to close its stdin pipe. */
+    @Test
+    void malformedInputDoesNotLeaveTheLauncherWaitingForEndOfInput(Server server, TmuxSocketPath socket)
+            throws Exception {
+        Process launcher = new ProcessBuilder(List.of(
+                        Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                        "-classpath",
+                        System.getProperty("java.class.path"),
+                        Main.class.getName(),
+                        "--socket",
+                        socket.path().toString(),
+                        "--tmux",
+                        TMUX))
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
+        try {
+            launcher.getOutputStream().write("{not-json}\n".getBytes(StandardCharsets.UTF_8));
+            launcher.getOutputStream().flush();
+
+            assertTrue(
+                    launcher.waitFor(5, TimeUnit.SECONDS),
+                    "the protocol session ended, but the launcher was still waiting for stdin EOF");
+        } finally {
+            launcher.getOutputStream().close();
+            if (!launcher.waitFor(5, TimeUnit.SECONDS)) {
+                launcher.destroyForcibly();
+                launcher.waitFor(5, TimeUnit.SECONDS);
+            }
+        }
+    }
 
     @Test
     @Timeout(PATIENCE_SECONDS)
@@ -155,8 +190,8 @@ final class McpLauncherTest {
         try (McpSyncClient client = launch(socket.path())) {
             client.initialize();
 
-            McpSchema.ReadResourceResult read =
-                    client.readResource(McpSchema.ReadResourceRequest.builder("tmux://panes/" + pane + "/content")
+            McpSchema.ReadResourceResult read = client.readResource(
+                    McpSchema.ReadResourceRequest.builder(Resources.paneContentUri(new PaneId(pane)))
                             .build());
 
             assertEquals(1, read.contents().size());

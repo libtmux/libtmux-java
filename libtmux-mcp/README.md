@@ -29,8 +29,7 @@ stdout.
 | `--watch` | push notifications as tmux changes — see [Watching](#watching-instead-of-polling) |
 
 `LIBTMUX_SAFETY` and `LIBTMUX_WATCH` set the last two for an operator who cannot
-edit the client's launch command. `LIBTMUX_MODE=control` reuses one tmux client
-instead of starting a process per command.
+edit the client's launch command.
 
 ### Claude Code
 
@@ -188,7 +187,7 @@ once a second, and sends nothing while nothing changes — so a client subscribe
 to a pane spends nothing at all while it is idle.
 
 What arrives is `notifications/resources/updated` naming the resource that went
-stale: `tmux://panes/%1/content` when that pane produces output, `tmux://sessions`
+stale: `tmux://panes/%251/content` when pane `%1` produces output, `tmux://sessions`
 and `tmux://panes` when a window appears, closes, or is renamed.
 
 It is off by default because it is not free: watching means attaching a client,

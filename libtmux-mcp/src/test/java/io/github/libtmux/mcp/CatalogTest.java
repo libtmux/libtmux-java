@@ -110,4 +110,12 @@ final class CatalogTest {
         assertTrue(readonly.containsKey("tmux_capture_pane"));
         assertTrue(readonly.containsKey("tmux_wait_for_text"), "watching is reading, whatever it waits for");
     }
+
+    @Test
+    void consumingAChannelSignalIsNotAdvertisedAsReadOnly() {
+        assertFalse(Catalog.offered(Safety.READONLY).containsKey("tmux_wait_for_channel"));
+        ToolSpec wait =
+                Objects.requireNonNull(Catalog.offered(Safety.MUTATING).get("tmux_wait_for_channel"), "wait tool");
+        assertEquals(Safety.MUTATING, wait.safety());
+    }
 }

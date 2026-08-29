@@ -3,6 +3,7 @@ package io.github.libtmux.mcp;
 import com.fasterxml.jackson.core.JacksonException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.libtmux.Pane;
+import io.github.libtmux.PaneId;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
@@ -12,7 +13,7 @@ import java.util.function.Function;
  * The same state, addressable rather than asked for.
  *
  * <p>A tool is a verb a model has to choose. A resource is a noun a client can hold: it can attach
- * {@code tmux://panes/%1/content} to a conversation, refresh it, and show it to a person, none of
+ * {@code tmux://panes/%251/content} to a conversation, refresh it, and show it to a person, none of
  * which spends a tool call or a model's decision. Declaring only tools gives that up.
  *
  * <p>The templated ones carry the id in the URI, so a client that has listed panes once can address
@@ -31,6 +32,12 @@ final class Resources {
      */
     private static final String TEXT_MIME = "text/plain";
 
+    static final String SERVER_URI = "tmux://server";
+
+    static final String SESSIONS_URI = "tmux://sessions";
+
+    static final String PANES_URI = "tmux://panes";
+
     static final String PANE_TEMPLATE = "tmux://panes/{pane_id}";
 
     static final String PANE_CONTENT_TEMPLATE = "tmux://panes/{pane_id}/content";
@@ -39,44 +46,47 @@ final class Resources {
 
     private Resources() {}
 
+    static String sessionUri(String name) {
+        return SESSIONS_URI + "/" + Uris.segment(name);
+    }
+
+    static String paneUri(PaneId pane) {
+        return PANES_URI + "/" + Uris.segment(pane.value());
+    }
+
+    static String paneContentUri(PaneId pane) {
+        return paneUri(pane) + "/content";
+    }
+
     static List<McpServerFeatures.SyncResourceSpecification> fixed(Connection connection) {
         return List.of(
                 resource(
-                        "tmux://server",
+                        SERVER_URI,
                         "This tmux server",
                         "Which server this connection acts on, how much is on it, and which pane this "
                                 + "conversation is coming through.",
                         () -> Listings.whoami(connection.server(), connection.caller(), connection.ceiling())),
                 resource(
-                        "tmux://sessions",
+                        SESSIONS_URI,
                         "All sessions",
                         "Every session on this server, with the windows in each.",
-                        () -> Listings.sessions(connection.server())),
+                        () -> Listings.sessions(connection)),
                 resource(
-                        "tmux://panes",
+                        PANES_URI,
                         "All panes",
                         "Every pane on this server, with the id other tools take as a target.",
-                        () -> new Listings.Panes(
-                                connection.server().panes().size(),
-                                Listings.describe(connection.server().panes(), connection.caller()),
-                                null)));
+                        () -> {
+                            List<Pane> panes = connection.server().panes();
+                            return new Listings.Panes(
+                                    panes.size(), Listings.describe(panes, connection.caller()), null);
+                        }));
     }
 
     static List<McpServerFeatures.SyncResourceTemplateSpecification> templated(Connection connection) {
         return List.of(
                 jsonTemplate(SESSION_TEMPLATE, "One session", "A session and the windows in it.", values -> {
-                    var found = Targets.session(connection.server(), values.get(0));
-                    return new Listings.Sessions(
-                            1,
-                            List.of(new Listings.SessionSummary(
-                                    found.id().value(),
-                                    found.name(),
-                                    found.attached(),
-                                    found.windows().size(),
-                                    found.windows().stream()
-                                            .map(window -> window.name())
-                                            .toList())),
-                            null);
+                    var found = Listings.session(connection, values.get(0));
+                    return new Listings.Sessions(1, List.of(found), null);
                 }),
                 jsonTemplate(
                         PANE_TEMPLATE,

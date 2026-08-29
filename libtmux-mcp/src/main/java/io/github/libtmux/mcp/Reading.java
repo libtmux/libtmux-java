@@ -73,10 +73,6 @@ final class Reading {
     static Since since(Call call) {
         Pane pane = Targets.pane(call.server(), call.string("pane_id"));
         Cursor from = call.maybe("cursor").map(Cursor::decode).orElse(null);
-        if (from != null && !from.paneId().equals(pane.id().value())) {
-            throw new IllegalArgumentException("that cursor belongs to pane " + from.paneId() + ", not "
-                    + pane.id().value() + "; each pane has its own");
-        }
         Watching.Fresh fresh = Watching.since(pane, from, Trim.lineBudget(call));
         Trim.Trimmed trimmed = Trim.tail(fresh.lines(), Trim.lineBudget(call));
         return new Since(

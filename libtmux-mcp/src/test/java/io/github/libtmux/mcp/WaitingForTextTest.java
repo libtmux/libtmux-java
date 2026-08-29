@@ -121,6 +121,21 @@ final class WaitingForTextTest {
         assertTrue(String.valueOf(refused.getMessage()).contains("Omit 'regex'"), refused.getMessage());
     }
 
+    @Test
+    void aCursorFromAnotherPaneIsRejectedBeforeWaiting(Server server) {
+        String first = server.panes().get(0).id().value();
+        String second = server.sessions().get(0).windows().get(0).split().id().value();
+        String cursor = Reading.since(TestCalls.on(server, "pane_id", first)).cursor();
+
+        IllegalArgumentException refused = assertThrows(
+                IllegalArgumentException.class,
+                () -> WaitingForText.waitFor(
+                        TestCalls.on(server, "pane_id", second, "cursor", cursor, "timeout", 0.2)));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains(first), refused.getMessage());
+        assertTrue(String.valueOf(refused.getMessage()).contains(second), refused.getMessage());
+    }
+
     /** A model that sends one string where the schema says a list means the one string. */
     @Test
     void aSinglePatternSentWithoutAListIsStillUnderstood(Server server) {

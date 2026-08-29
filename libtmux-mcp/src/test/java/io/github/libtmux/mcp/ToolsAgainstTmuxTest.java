@@ -9,9 +9,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.ObjectDoesNotExist;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerConfig;
 import io.github.libtmux.WakeReason;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.ProcessTransport;
+import io.github.libtmux.transport.TmuxTransport;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -138,6 +144,52 @@ final class ToolsAgainstTmuxTest {
         assertNull(whoami.callerPane());
         assertTrue(whoami.note().contains("no pane here is special"), whoami.note());
         assertNotNull(whoami.socket());
+    }
+
+    @Test
+    void serverDiscoveryReservesTheLiveSocketForAnAmbientEndpoint() {
+        String liveSocket = "/tmp/libtmux-java-test/ambient-custom";
+        TmuxTransport reportsSocket = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return new CommandResult(0, List.of(liveSocket), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+        ServerConfig config = ServerConfig.builder().binary("/bin/false").build();
+
+        try (Server ambient = Server.using(config, reportsSocket)) {
+            Listings.Servers servers = Listings.servers(ambient);
+
+            assertTrue(
+                    servers.servers().stream().anyMatch(found -> found.socket().equals(liveSocket)));
+            assertTrue(servers.note().contains(liveSocket), servers.note());
+        }
+    }
+
+    @Test
+    void whoamiCapturesTheHierarchyOnceInsteadOfTraversingLiveHandles(Server server) {
+        AtomicInteger commands = new AtomicInteger();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport counting = new TmuxTransport() {
+                @Override
+                public CommandResult execute(CommandRequest request) {
+                    commands.incrementAndGet();
+                    return processes.execute(request);
+                }
+
+                @Override
+                public void close() {}
+            };
+            try (Server measured = Server.using(server.config(), counting)) {
+                Listings.Whoami whoami = Listings.whoami(measured, Caller.nowhere(), Safety.MUTATING);
+
+                assertEquals(1, whoami.sessions());
+                assertTrue(commands.get() <= 6, "whoami dispatched " + commands.get() + " tmux commands");
+            }
+        }
     }
 
     /** And when this process really is inside a pane, that pane is named as the one to protect. */

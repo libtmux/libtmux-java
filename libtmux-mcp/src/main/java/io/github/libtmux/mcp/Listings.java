@@ -2,20 +2,22 @@ package io.github.libtmux.mcp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.libtmux.Dimensions;
+import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
+import io.github.libtmux.SessionId;
 import io.github.libtmux.Window;
 import io.github.libtmux.jackson.FilterJson;
 import io.github.libtmux.jackson.LibTmuxModels;
 import io.github.libtmux.query.FilterExpr;
-import java.io.IOException;
-import java.nio.file.Files;
+import io.github.libtmux.snapshot.ServerSnapshot;
 import java.nio.file.Path;
-import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 import org.jspecify.annotations.Nullable;
 
@@ -91,20 +93,49 @@ final class Listings {
 
     record KnownServer(
             String socket,
-            boolean alive,
+            ServerDiscovery.State state,
             @Nullable Integer sessions,
             @Nullable String note) {}
 
-    record Servers(int count, List<KnownServer> servers, String note) {}
+    record Servers(
+            int count,
+            List<KnownServer> servers,
+            boolean truncated,
+            @Nullable String scanNote,
+            String note) {}
 
     static Sessions sessions(Server server) {
-        List<SessionSummary> summaries = server.sessions().stream()
+        return sessions(server, ignored -> false);
+    }
+
+    /** Lists sessions without treating this connection's own control clients as people. */
+    static Sessions sessions(Connection connection) {
+        return connection.withStableClients(() -> sessions(connection.server(), connection::isOurs));
+    }
+
+    static SessionSummary session(Connection connection, String name) {
+        return sessions(connection).sessions().stream()
+                .filter(session -> session.name().equals(name))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("no session named " + name));
+    }
+
+    private static Sessions sessions(Server server, Predicate<String> hiddenClient) {
+        ServerSnapshot snapshot = server.snapshot();
+        Set<SessionId> attached = new LinkedHashSet<>();
+        snapshot.clients().stream()
+                .filter(client -> !hiddenClient.test(client.name()))
+                .flatMap(client -> client.session().stream())
+                .forEach(attached::add);
+        List<SessionSummary> summaries = snapshot.sessions().stream()
                 .map(session -> new SessionSummary(
                         session.id().value(),
                         session.name(),
-                        session.attached(),
-                        session.windows().size(),
-                        session.windows().stream().map(Window::name).toList()))
+                        attached.contains(session.id()),
+                        snapshot.windowsOf(session.id()).size(),
+                        snapshot.windowsOf(session.id()).stream()
+                                .map(window -> window.name())
+                                .toList()))
                 .toList();
         return new Sessions(summaries.size(), summaries, emptiness(server, summaries.size(), "session"));
     }
@@ -202,24 +233,28 @@ final class Listings {
     }
 
     static Clients clients(Call call) {
-        Server server = call.server();
-        List<ClientSummary> summaries = server.clients().stream()
-                // A control client this server attached to watch for changes is not a person, and
-                // the whole point of this tool is answering whether a person is there.
-                .filter(client -> !call.connection().isOurs(client.name()))
-                .map(client -> new ClientSummary(
-                        client.name(),
-                        client.session().map(Session::name).orElse(null),
-                        // The pane a person at this terminal is actually looking at, which is what
-                        // "is anyone watching this" means in practice.
-                        client.attachment()
-                                .map(attachment -> attachment.activePane().id().value())
-                                .orElse(null)))
-                .toList();
-        return new Clients(
-                summaries.size(),
-                summaries,
-                summaries.isEmpty() ? "Nothing is attached, so no person is watching these panes right now." : null);
+        return call.connection().withStableClients(() -> {
+            List<ClientSummary> summaries = call.server().clients().stream()
+                    // A control client this server attached to watch for changes is not a person,
+                    // and the whole point of this tool is answering whether a person is there.
+                    .filter(client -> !call.connection().isOurs(client.name()))
+                    .map(client -> new ClientSummary(
+                            client.name(),
+                            client.session().map(Session::name).orElse(null),
+                            // The pane a person at this terminal is actually looking at, which is
+                            // what "is anyone watching this" means in practice.
+                            client.attachment()
+                                    .map(attachment ->
+                                            attachment.activePane().id().value())
+                                    .orElse(null)))
+                    .toList();
+            return new Clients(
+                    summaries.size(),
+                    summaries,
+                    summaries.isEmpty()
+                            ? "Nothing is attached, so no person is watching these panes right now."
+                            : null);
+        });
     }
 
     /**
@@ -230,34 +265,27 @@ final class Listings {
      * refuse to do that need to know which pane that is.
      */
     static Whoami whoami(Server server, Caller caller, Safety ceiling) {
-        // Asked before anything else, including on a socket no server is listening on. Every other
-        // question here needs a server to answer it, so the answer to "is there one" comes first —
-        // the tool a model is told to call first must not fail at being told there is nothing there.
-        if (!server.isAlive()) {
-            return new Whoami(
-                    server.identity().realm(),
-                    server.identity().server(),
-                    null,
-                    null,
-                    null,
-                    0,
-                    0,
-                    0,
-                    ceiling.wireName(),
-                    "No tmux server is running on the socket this was pointed at. Nothing here can act "
-                            + "until one is, and tmux_new_session will start one. Call tmux_list_servers to see "
-                            + "the servers that are running — the sessions you expected are probably on one of "
-                            + "them, and a different socket cannot see them.");
+        ServerSnapshot snapshot;
+        try {
+            snapshot = server.snapshot();
+        } catch (LibTmuxException failed) {
+            if (server.isAlive()) {
+                throw failed;
+            }
+            return absent(server, ceiling);
+        }
+        if (snapshot.serverPid().isEmpty()) {
+            return absent(server, ceiling);
         }
         return new Whoami(
                 server.identity().realm(),
                 server.identity().server(),
                 socketOf(server),
-                server.version().toString(),
+                snapshot.serverVersion().orElseThrow().toString(),
                 caller.pane().map(id -> id.value()).orElse(null),
-                server.sessions().size(),
-                server.windows().size(),
-                server.panes().size(),
+                snapshot.sessions().size(),
+                snapshot.windows().size(),
+                snapshot.panes().size(),
                 ceiling.wireName(),
                 caller.pane()
                         .map(id -> "This MCP server runs in pane " + id.value()
@@ -265,6 +293,23 @@ final class Listings {
                                 + "destroy it refuse unless 'confirm_self' is set.")
                         .orElse("This MCP server is not running inside a pane on this tmux server, "
                                 + "so no pane here is special."));
+    }
+
+    private static Whoami absent(Server server, Safety ceiling) {
+        return new Whoami(
+                server.identity().realm(),
+                server.identity().server(),
+                null,
+                null,
+                null,
+                0,
+                0,
+                0,
+                ceiling.wireName(),
+                "No tmux server is running on the socket this was pointed at. Nothing here can act "
+                        + "until one is, and tmux_new_session will start one. Call tmux_list_servers to see "
+                        + "the servers that are running — the sessions you expected are probably on one of "
+                        + "them, and a different socket cannot see them.");
     }
 
     private static @Nullable String socketOf(Server server) {
@@ -277,78 +322,34 @@ final class Listings {
         }
     }
 
-    /**
-     * Every tmux server this user has, so a model pointed at the wrong one can find the right one.
-     *
-     * <p>tmux keeps its sockets in one directory per user, so the list is what is in that directory
-     * rather than anything this server was told. A socket file outlives the server that made it, so
-     * each is asked whether it answers rather than assumed to.
-     */
-    static Servers servers(Server server, String binary) {
-        Path directory = socketDirectory();
-        List<KnownServer> found;
-        try (Stream<Path> entries = Files.list(directory)) {
-            found = entries.filter(Listings::isSocket)
-                    .sorted(Comparator.comparing(Path::toString))
-                    // A directory of sockets is small, and each probe is a process; a bound keeps a
-                    // pathological directory from turning one call into hundreds of them.
-                    .limit(32)
-                    .map(socket -> probe(socket, binary))
-                    .toList();
-        } catch (IOException e) {
-            found = List.of();
-        }
+    /** Shapes a bounded typed socket inventory for the protocol. */
+    static Servers servers(Server server) {
+        Path currentSocket = currentSocket(server);
+        ServerDiscovery.Result discovery =
+                ServerDiscovery.system().discover(server.config().binary(), currentSocket);
+        List<KnownServer> found = discovery.servers().stream()
+                .map(known -> new KnownServer(known.socket().toString(), known.state(), known.sessions(), known.note()))
+                .toList();
         return new Servers(
                 found.size(),
                 found,
+                discovery.truncated(),
+                discovery.scanNote(),
                 "Point another server at one of these with the --socket flag, or set LIBTMUX_SOCKET. "
-                        + "This one is on " + socketOf(server) + ".");
+                        + (currentSocket == null
+                                ? "This connection did not name an exact socket path."
+                                : "This connection names " + currentSocket + "."));
     }
 
-    /** A unix socket is neither a file nor a directory, which is all "other" means here. */
-    private static boolean isSocket(Path path) {
-        try {
-            return Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class)
-                    .isOther();
-        } catch (IOException e) {
-            return false;
-        }
-    }
-
-    private static KnownServer probe(Path socket, String binary) {
-        Server candidate = null;
-        try {
-            candidate = Server.open(ServerConfig.builder()
-                    .binary(binary)
-                    .endpoint(ServerEndpoint.socketPath(socket))
-                    .build());
-            List<Session> sessions = candidate.sessions();
-            return new KnownServer(socket.toString(), true, sessions.size(), null);
-        } catch (RuntimeException e) {
-            return new KnownServer(socket.toString(), false, null, "not answering; the socket file is left over");
-        } finally {
-            if (candidate != null) {
-                candidate.close();
+    private static @Nullable Path currentSocket(Server server) {
+        String live = socketOf(server);
+        if (live != null && !live.isBlank()) {
+            try {
+                return Path.of(live);
+            } catch (RuntimeException ignored) {
+                // Fall back to an explicitly configured path when tmux reported unusable text.
             }
         }
-    }
-
-    /** tmux puts a user's sockets under {@code TMUX_TMPDIR}, falling back to {@code /tmp}. */
-    private static Path socketDirectory() {
-        String configured = System.getenv("TMUX_TMPDIR");
-        Path root = Path.of(configured == null || configured.isEmpty() ? "/tmp" : configured);
-        return root.resolve("tmux-" + uid());
-    }
-
-    private static String uid() {
-        try {
-            Process process = new ProcessBuilder("id", "-u").start();
-            try (var reader = process.inputReader()) {
-                String line = reader.readLine();
-                return line == null ? "0" : line.trim();
-            }
-        } catch (IOException e) {
-            return "0";
-        }
+        return server.config().endpoint() instanceof ServerEndpoint.SocketPath socketPath ? socketPath.path() : null;
     }
 }

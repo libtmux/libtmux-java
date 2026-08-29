@@ -63,12 +63,13 @@ final class Catalog {
         tools.add(ToolSpec.of(
                 "tmux_list_servers",
                 "List tmux servers",
-                "Lists every tmux server this user has running, by socket. Use it when the sessions you "
-                        + "expected are not on this server: tmux keeps entirely separate servers per socket, and "
-                        + "they cannot see each other.",
+                "Inspects a bounded set of this user's tmux sockets and reports whether each is running, "
+                        + "unreachable, timed out, or could not be probed. Use it when the sessions you expected "
+                        + "are not on this server: separate sockets cannot see each other. A truncated answer says "
+                        + "the scan cap left directory entries uninspected.",
                 Safety.READONLY,
                 List.of(),
-                call -> Listings.servers(call.server(), call.server().config().binary())));
+                call -> Listings.servers(call.server())));
 
         tools.add(ToolSpec.of(
                 "tmux_list_sessions",
@@ -76,7 +77,7 @@ final class Catalog {
                 "Lists sessions on this server with the windows in each.",
                 Safety.READONLY,
                 List.of(),
-                call -> Listings.sessions(call.server())));
+                call -> Listings.sessions(call.connection())));
 
         tools.add(ToolSpec.of(
                 "tmux_list_windows",
@@ -221,11 +222,12 @@ final class Catalog {
         tools.add(ToolSpec.of(
                 "tmux_wait_for_channel",
                 "Wait on a tmux channel",
-                "Blocks until something signals a tmux channel. This is the only wait that infers nothing "
+                "Consumes the next signal on a tmux channel, blocking until one exists. This is the only wait "
+                        + "that infers nothing "
                         + "from the screen: compose a command as 'mycommand; tmux wait-for -S mychannel' with "
                         + "tmux_send_keys, then wait here. The answer says why the wait ended, because tmux "
                         + "reports a server that died under a waiter as a successful wake.",
-                Safety.READONLY,
+                Safety.MUTATING,
                 List.of(
                         required("channel", "The channel name, which everything on this server shares."),
                         seconds("timeout", "Seconds to wait before giving up.", 30),

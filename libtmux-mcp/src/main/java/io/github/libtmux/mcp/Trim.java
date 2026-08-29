@@ -1,5 +1,6 @@
 package io.github.libtmux.mcp;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -67,6 +68,16 @@ final class Trim {
             kept = kept.subList(start, kept.size());
         }
         return new Trimmed(List.copyOf(kept), dropped);
+    }
+
+    /** Adds new lines while retaining only the bounded tail and a cumulative drop count. */
+    static Trimmed append(Trimmed retained, List<String> fresh, int limit) {
+        List<String> combined = new ArrayList<>(retained.lines().size() + fresh.size());
+        combined.addAll(retained.lines());
+        combined.addAll(fresh);
+        Trimmed next = tail(combined, limit);
+        long dropped = (long) retained.dropped() + next.dropped();
+        return new Trimmed(next.lines(), (int) Math.min(Integer.MAX_VALUE, dropped));
     }
 
     /** The line budget a caller asked for, or the default when it asked for nothing. */

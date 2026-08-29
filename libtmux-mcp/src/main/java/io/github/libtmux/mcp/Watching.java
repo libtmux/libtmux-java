@@ -71,6 +71,11 @@ final class Watching {
         if (from == null) {
             return from(pane);
         }
+        String paneId = pane.id().value();
+        if (!paneId.equals(from.paneId())) {
+            throw new IllegalArgumentException(
+                    "that cursor belongs to pane " + from.paneId() + ", not " + paneId + "; each pane has its own");
+        }
         Look look = look(pane, budget + SLACK_LINES);
         Fresh answer = resolve(from, look);
         if (answer != null) {
