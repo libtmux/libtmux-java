@@ -212,8 +212,12 @@ final class WatchesTest {
 
         try (Watches watching = Watches.start(Connection.to(server, Safety.MUTATING), heard)) {
             server.killServer();
+            // tmux answers a socket whose server is still exiting with "server exited unexpectedly",
+            // and leaves the socket file behind either way, so the replacement is retried rather
+            // than assumed. What the watcher does once one exists is the subject here.
+            assertTrue(await(() -> restarted(server)), "no replacement server could be started");
             Pane reborn =
-                    server.newSession("reborn").windows().getFirst().panes().getFirst();
+                    server.sessions().getFirst().windows().getFirst().panes().getFirst();
             String content = Resources.paneContentUri(reborn.id());
             reborn.sendLine("echo after-restart");
 
@@ -263,6 +267,15 @@ final class WatchesTest {
                 assertThrows(IllegalStateException.class, () -> Watches.start(connection, new Heard()));
 
         assertTrue(String.valueOf(refused.getMessage()).contains("session"), refused.getMessage());
+    }
+
+    private static boolean restarted(Server server) {
+        try {
+            server.newSession("reborn");
+            return true;
+        } catch (RuntimeException stillExiting) {
+            return false;
+        }
     }
 
     private static boolean await(BooleanSupplier condition) throws InterruptedException {
