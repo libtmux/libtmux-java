@@ -13,6 +13,7 @@ import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
+import io.github.libtmux.transport.TmuxTimeoutException;
 import io.github.libtmux.transport.TmuxTransport;
 import io.github.libtmux.transport.TmuxTransportException;
 import java.io.IOException;
@@ -180,6 +181,42 @@ final class ServerTest {
                     assertThrows(
                             TmuxTransportException.class,
                             () -> server.waitFor("channel", java.time.Duration.ofSeconds(1))));
+        }
+    }
+
+    @Test
+    void aWaitWithSignalCapacityPreservesAPredispatchTimeout(@TempDir Path directory) throws IOException {
+        TmuxTimeoutException failure =
+                new TmuxTimeoutException("waiting admission timed out", DispatchOutcome.NOT_DISPATCHED, null);
+        java.util.concurrent.atomic.AtomicBoolean waiting = new java.util.concurrent.atomic.AtomicBoolean();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                if (request.argv().contains("wait-for")) {
+                    throw failure;
+                }
+                return new CommandResult(1, List.of(), List.of("no server running"));
+            }
+
+            @Override
+            public CommandResult executeWaiting(CommandRequest request) {
+                waiting.set(true);
+                throw failure;
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            assertEquals(WakeReason.SERVER_GONE, server.waitFor("self-signalled", java.time.Duration.ofSeconds(1)));
+            assertFalse(waiting.get(), "an ordinary wait consumed reserved signal capacity");
+            assertSame(
+                    failure,
+                    assertThrows(
+                            TmuxTimeoutException.class,
+                            () -> server.waitForWithSignalCapacity("channel", java.time.Duration.ofSeconds(1))));
+            assertTrue(waiting.get(), "wait-for used ordinary transport admission");
         }
     }
 

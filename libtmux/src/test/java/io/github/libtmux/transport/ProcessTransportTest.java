@@ -543,6 +543,123 @@ final class ProcessTransportTest {
     }
 
     @Test
+    void waitingRequestsReserveOneProcessForOrdinaryWork() throws Exception {
+        int bound = 4;
+        List<GatedInputStream> blocked = java.util.stream.IntStream.range(0, bound - 1)
+                .mapToObj(ignored -> new GatedInputStream())
+                .toList();
+        AtomicInteger starts = new AtomicInteger();
+        ProcessTransport.ProcessStarter starter = command -> {
+            int index = starts.getAndIncrement();
+            return index < blocked.size() ? new StubProcess(blocked.get(index)) : new ProcessBuilder(command).start();
+        };
+        ProcessTransport transport = new ProcessTransport(bound, 1_024, starter, System::nanoTime);
+        ExecutorService callers = Executors.newFixedThreadPool(bound - 1);
+        List<Future<CommandResult>> waiting = new ArrayList<>();
+        try {
+            for (int index = 0; index < bound - 1; index++) {
+                waiting.add(callers.submit(() -> transport.executeWaiting(shell("ignored", GENEROUS))));
+            }
+            for (GatedInputStream output : blocked) {
+                assertTrue(output.readStarted.await(5, TimeUnit.SECONDS), "a waiting request never started");
+            }
+
+            TmuxTransportException refused = assertThrows(
+                    TmuxTransportException.class,
+                    () -> transport.executeWaiting(shell("echo should-not-start", Duration.ofMillis(50))));
+
+            assertEquals(TmuxTransportException.class, refused.getClass(), "a full wait lane queued to its timeout");
+            assertEquals("waiting capacity is full; retry after another wait ends", refused.getMessage());
+            assertEquals(DispatchOutcome.NOT_DISPATCHED, refused.outcome());
+            assertEquals(bound - 1, starts.get(), "a fourth waiting process crossed the reserved boundary");
+            assertEquals(
+                    List.of("ordinary"),
+                    transport
+                            .execute(shell("printf ordinary", Duration.ofSeconds(2)))
+                            .stdout(),
+                    "ordinary work could not use the reserved process");
+        } finally {
+            blocked.forEach(GatedInputStream::release);
+            transport.close();
+            callers.shutdownNow();
+            assertTrue(callers.awaitTermination(5, TimeUnit.SECONDS), "waiting callers did not stop");
+            assertTrue(waiting.stream().allMatch(Future::isDone), "a waiting call remained incomplete");
+        }
+    }
+
+    @Test
+    void aSingleProcessTransportRefusesAWaitBeforeDispatch() {
+        AtomicInteger starts = new AtomicInteger();
+        ProcessTransport.ProcessStarter starter = command -> {
+            starts.incrementAndGet();
+            return new ProcessBuilder(command).start();
+        };
+        try (ProcessTransport transport = new ProcessTransport(1, 1_024, starter, System::nanoTime)) {
+            TmuxTransportException refused = assertThrows(
+                    TmuxTransportException.class,
+                    () -> transport.executeWaiting(shell("echo should-not-start", Duration.ofSeconds(1))));
+
+            assertEquals(DispatchOutcome.NOT_DISPATCHED, refused.outcome());
+            assertEquals(0, starts.get(), "the impossible waiting request was dispatched");
+        }
+    }
+
+    @Test
+    void aWaitingCallAdmittedBeforeCloseKeepsItsDispatchCertainty() throws Exception {
+        int bound = 2;
+        List<GatedInputStream> blocked = List.of(new GatedInputStream(), new GatedInputStream());
+        AtomicInteger starts = new AtomicInteger();
+        ProcessTransport.ProcessStarter starter = command -> {
+            int index = starts.getAndIncrement();
+            return new StubProcess(blocked.get(index));
+        };
+        ProcessTransport transport = new ProcessTransport(bound, 1_024, starter, System::nanoTime);
+        ExecutorService callers = Executors.newFixedThreadPool(4);
+        List<Future<CommandResult>> occupying = new ArrayList<>();
+        Future<CommandResult> waiting = null;
+        Thread waitingThread = null;
+        Future<?> closing = null;
+        try {
+            for (int index = 0; index < bound; index++) {
+                occupying.add(callers.submit(() -> transport.execute(shell("ignored", GENEROUS))));
+            }
+            for (GatedInputStream output : blocked) {
+                assertTrue(output.readStarted.await(5, TimeUnit.SECONDS), "an occupying request never started");
+            }
+            FutureTask<CommandResult> admitted =
+                    new FutureTask<>(() -> transport.executeWaiting(shell("never-started", GENEROUS)));
+            Thread admittedCaller = Thread.ofVirtual().start(admitted);
+            waiting = admitted;
+            waitingThread = admittedCaller;
+            assertTrue(
+                    awaitTimedWait(admitted, admittedCaller),
+                    "the admitted waiting call never blocked on ordinary admission");
+
+            closing = callers.submit(transport::close);
+            assertTrue(awaitClosed(transport), "close never barred new requests");
+            blocked.forEach(GatedInputStream::release);
+
+            ExecutionException ended = assertThrows(ExecutionException.class, () -> admitted.get(5, TimeUnit.SECONDS));
+            TmuxTransportException failure = assertInstanceOf(TmuxTransportException.class, ended.getCause());
+            assertEquals(DispatchOutcome.NOT_DISPATCHED, failure.outcome());
+            assertEquals(bound, starts.get(), "the blocked waiting call reached the process starter");
+            closing.get(5, TimeUnit.SECONDS);
+        } finally {
+            blocked.forEach(GatedInputStream::release);
+            transport.close();
+            callers.shutdownNow();
+            assertTrue(callers.awaitTermination(5, TimeUnit.SECONDS), "transport callers did not stop");
+            if (waitingThread != null) {
+                waitingThread.join(TimeUnit.SECONDS.toMillis(10));
+                assertFalse(waitingThread.isAlive(), "the admitted waiting caller did not stop");
+            }
+            assertTrue(occupying.stream().allMatch(Future::isDone), "an occupying call remained incomplete");
+            assertTrue(waiting == null || waiting.isDone(), "the admitted waiting call remained incomplete");
+            assertTrue(closing == null || closing.isDone(), "transport close remained incomplete");
+        }
+    }
+
+    @Test
     void interruptedReclamationReturnsItsAdmissionPermit() throws Exception {
         GatedInputStream stdout = new GatedInputStream();
         StubProcess firstProcess = new StubProcess(stdout);
@@ -683,6 +800,17 @@ final class ProcessTransportTest {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (System.nanoTime() < deadline) {
             if (request.isDone() || caller.getState() == Thread.State.TIMED_WAITING) {
+                return true;
+            }
+            Thread.sleep(1);
+        }
+        return false;
+    }
+
+    private static boolean awaitTimedWait(Future<?> request, Thread caller) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (!request.isDone() && System.nanoTime() < deadline) {
+            if (caller.getState() == Thread.State.TIMED_WAITING) {
                 return true;
             }
             Thread.sleep(1);

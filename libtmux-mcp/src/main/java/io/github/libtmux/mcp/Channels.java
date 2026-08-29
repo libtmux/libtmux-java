@@ -39,7 +39,7 @@ final class Channels {
             call.server().drain(channel);
         }
         long started = System.nanoTime();
-        WakeReason wake = call.server().waitFor(channel, timeout);
+        WakeReason wake = call.server().waitForWithSignalCapacity(channel, timeout);
         double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
         return new Woke(
                 channel, wake.name(), Math.round(seconds * 100) / 100.0, Waits.asSeconds(timeout), note(wake, drained));

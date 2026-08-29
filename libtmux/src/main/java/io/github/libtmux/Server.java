@@ -11,6 +11,7 @@ import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.snapshot.WindowState;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
 import java.nio.file.Path;
@@ -399,9 +400,36 @@ public final class Server implements AutoCloseable {
      * @return why the wait ended, which is never simply "successfully"
      */
     public WakeReason waitFor(String channel, Duration timeout) {
+        return waitFor(channel, timeout, false);
+    }
+
+    /**
+     * Waits while preserving process capacity for a call through this server that signals the
+     * channel.
+     *
+     * <p>Use this when the waiter and its release share a bounded transport. A wait released outside
+     * that transport should use {@link #waitFor}; reserving capacity for it only rejects useful
+     * concurrency.
+     *
+     * @throws io.github.libtmux.transport.TmuxTransportException if the wait could not be
+     *     dispatched
+     */
+    public WakeReason waitForWithSignalCapacity(String channel, Duration timeout) {
+        return waitFor(channel, timeout, true);
+    }
+
+    private WakeReason waitFor(String channel, Duration timeout, boolean reserveSignalCapacity) {
         try {
-            cmd(List.of("wait-for", channel), timeout);
+            CommandRequest request = request(List.of("wait-for", channel), timeout);
+            if (reserveSignalCapacity) {
+                transport.executeWaiting(request);
+            } else {
+                transport.execute(request);
+            }
         } catch (io.github.libtmux.transport.TmuxTimeoutException e) {
+            if (reserveSignalCapacity && e.outcome() == DispatchOutcome.NOT_DISPATCHED) {
+                throw e;
+            }
             // The transport killed the waiting client at the deadline; nothing signalled it.
             return isAlive() ? WakeReason.TIMED_OUT : WakeReason.SERVER_GONE;
         }
@@ -532,13 +560,17 @@ public final class Server implements AutoCloseable {
 
     /** Runs one tmux command against this server, overriding the configured deadline. */
     public CommandResult cmd(List<String> argv, Duration timeout) {
+        return transport.execute(request(argv, timeout));
+    }
+
+    private CommandRequest request(List<String> argv, Duration timeout) {
         if (closed.get()) {
             throw new IllegalStateException("server is closed");
         }
         List<String> endpoint = config.endpointCommand();
         List<String> command = new ArrayList<>(endpoint.size());
         command.addAll(endpoint);
-        return transport.execute(new CommandRequest(command, argv, timeout));
+        return new CommandRequest(command, argv, timeout);
     }
 
     /**

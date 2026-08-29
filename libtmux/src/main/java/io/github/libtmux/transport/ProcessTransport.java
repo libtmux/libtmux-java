@@ -38,6 +38,11 @@ import org.jspecify.annotations.Nullable;
  * caller can start a child whose pipes nobody is reading, and a child whose pipe fills stops
  * instead of exiting.
  *
+ * <p>A request declared as waiting also takes one of all but one admission permits. The remaining
+ * process stays available for the ordinary request that observes or releases those waits, without
+ * increasing the total process or pump bound. An additional waiter is refused before dispatch, so
+ * its caller knows it was never registered.
+ *
  * <p>The caller itself may be a virtual thread: on JDK 21 {@code Process.waitFor} takes a
  * {@link ReentrantLock}, so blocking there releases the carrier. The drains may not be, for two
  * independent reasons. A process pipe read is monitor-locked, and — more decisively — a library
@@ -57,6 +62,7 @@ public final class ProcessTransport implements TmuxTransport {
     private static final ProcessStarter SYSTEM_STARTER = command -> new ProcessBuilder(command).start();
 
     private final Semaphore admission;
+    private final @Nullable Semaphore waitingAdmission;
     private final ThreadPoolExecutor pumps;
     private final int maxOutputBytes;
     private final ProcessStarter starter;
@@ -79,6 +85,7 @@ public final class ProcessTransport implements TmuxTransport {
 
     /**
      * @param maxConcurrentProcesses how many tmux processes may run at once
+     *     ({@code executeWaiting} requires at least two)
      */
     public ProcessTransport(int maxConcurrentProcesses) {
         this(maxConcurrentProcesses, DEFAULT_MAX_OUTPUT_BYTES);
@@ -100,6 +107,7 @@ public final class ProcessTransport implements TmuxTransport {
             throw new IllegalArgumentException("maxOutputBytes is not positive");
         }
         this.admission = new Semaphore(maxConcurrentProcesses);
+        this.waitingAdmission = maxConcurrentProcesses == 1 ? null : new Semaphore(maxConcurrentProcesses - 1);
         this.pumps = (ThreadPoolExecutor) Executors.newFixedThreadPool(2 * maxConcurrentProcesses, factory());
         this.maxOutputBytes = maxOutputBytes;
         this.starter = Objects.requireNonNull(starter, "starter");
@@ -108,16 +116,39 @@ public final class ProcessTransport implements TmuxTransport {
 
     @Override
     public CommandResult execute(CommandRequest request) {
+        return execute(request, false);
+    }
+
+    @Override
+    public CommandResult executeWaiting(CommandRequest request) {
+        return execute(request, true);
+    }
+
+    private CommandResult execute(CommandRequest request, boolean waiting) {
         requireOpen();
         requireDispatchable(request.argv());
+        @Nullable Semaphore waitingPermit = waiting ? waitingAdmission : null;
+        if (waiting && waitingPermit == null) {
+            throw new TmuxTransportException(
+                    "transport capacity leaves no process for ordinary work", DispatchOutcome.NOT_DISPATCHED, null);
+        }
         long deadline = deadlineAfter(request.timeout());
-        admit(deadline);
+        if (waitingPermit != null) {
+            admitWaiting(waitingPermit);
+        }
+        try {
+            admit(admission, deadline, "admission timed out");
+        } catch (RuntimeException | Error failure) {
+            release(waitingPermit);
+            throw failure;
+        }
         RunningProcess process;
         try {
             process = launch(request, deadline);
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | Error failure) {
             admission.release();
-            throw e;
+            release(waitingPermit);
+            throw failure;
         }
         Drains drains = null;
         try {
@@ -131,6 +162,7 @@ public final class ProcessTransport implements TmuxTransport {
             // cancelled FutureTask reports itself done while its worker is still inside the read.
             if (drains == null || drains.reclaimed()) {
                 admission.release();
+                release(waitingPermit);
             }
         }
     }
@@ -230,22 +262,35 @@ public final class ProcessTransport implements TmuxTransport {
         }
     }
 
-    private void admit(long deadline) {
+    private void admit(Semaphore permits, long deadline, String timeoutMessage) {
         long remaining = remainingNanos(deadline);
         if (remaining == 0) {
-            throw admissionTimeout();
+            throw admissionTimeout(timeoutMessage);
         }
         try {
-            if (!admission.tryAcquire(remaining, TimeUnit.NANOSECONDS)) {
-                throw admissionTimeout();
+            if (!permits.tryAcquire(remaining, TimeUnit.NANOSECONDS)) {
+                throw admissionTimeout(timeoutMessage);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new TmuxTransportException("interrupted before dispatch", DispatchOutcome.NOT_DISPATCHED, e);
         }
         if (remainingNanos(deadline) == 0) {
-            admission.release();
-            throw admissionTimeout();
+            permits.release();
+            throw admissionTimeout(timeoutMessage);
+        }
+    }
+
+    private static void admitWaiting(Semaphore permits) {
+        if (!permits.tryAcquire()) {
+            throw new TmuxTransportException(
+                    "waiting capacity is full; retry after another wait ends", DispatchOutcome.NOT_DISPATCHED, null);
+        }
+    }
+
+    private static void release(@Nullable Semaphore permit) {
+        if (permit != null) {
+            permit.release();
         }
     }
 
@@ -254,10 +299,11 @@ public final class ProcessTransport implements TmuxTransport {
         gate.lock();
         try {
             if (closed) {
-                throw new IllegalStateException("transport is closed");
+                throw new TmuxTransportException(
+                        "transport closed before dispatch", DispatchOutcome.NOT_DISPATCHED, null);
             }
             if (remainingNanos(deadline) == 0) {
-                throw admissionTimeout();
+                throw admissionTimeout("admission timed out");
             }
             launching++;
         } finally {
@@ -360,8 +406,8 @@ public final class ProcessTransport implements TmuxTransport {
         return Math.max(0, deadline - nanoTime.getAsLong());
     }
 
-    private static TmuxTimeoutException admissionTimeout() {
-        return new TmuxTimeoutException("admission timed out", DispatchOutcome.NOT_DISPATCHED, null);
+    private static TmuxTimeoutException admissionTimeout(String message) {
+        return new TmuxTimeoutException(message, DispatchOutcome.NOT_DISPATCHED, null);
     }
 
     // --------------------------------------------------------------------------- destruction
