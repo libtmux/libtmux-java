@@ -10,9 +10,11 @@ import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.ObjectDoesNotExist;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.nio.file.Files;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -151,6 +153,7 @@ final class OperationsIntegrationTest {
     void aHandleCannotMutateAReplacementServerThatReusedItsId(Server server) {
         Session stale = session(server);
         server.killServer();
+        awaitSocketReleased(server);
 
         try (Server replacement = Server.open(server.config())) {
             try {
@@ -164,6 +167,28 @@ final class OperationsIntegrationTest {
                 assertEquals("replacement", replacement.sessions().get(0).name());
             } finally {
                 replacement.killServer();
+            }
+        }
+    }
+
+    /**
+     * Waits for the killed server to let go of its socket.
+     *
+     * <p>tmux unlinks the socket as it exits, and a client reaching one whose server is still
+     * exiting is answered {@code server exited unexpectedly} rather than {@code no server running}
+     * — from 3.3a onwards. A replacement on the same path has to be started after that, or the
+     * test measures the teardown rather than the thing it is about.
+     */
+    private static void awaitSocketReleased(Server server) {
+        if (!(server.config().endpoint() instanceof ServerEndpoint.SocketPath socket)) {
+            return;
+        }
+        for (int attempt = 0; attempt < 200 && Files.exists(socket.path()); attempt++) {
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
             }
         }
     }
