@@ -1,7 +1,6 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -131,15 +130,15 @@ final class FilteringIntegrationTest {
         FilterExpr<Window> expression =
                 Window_.name().startsWith("edit").and(Window_.active().isTrue());
 
-        String rendered = expression.toString();
+        String rendered = expression.describe();
 
         assertTrue(rendered.contains("window_name"), "a lambda could not say this: " + rendered);
         assertTrue(rendered.contains("window_active"), rendered);
     }
 
     /**
-     * A caller's accessor may carry a canonical field's name and answer a different question, so
-     * lowering it by that name would change the answer and not just where it was computed.
+     * A caller's accessor may carry a built-in field's name and answer a different question, so
+     * local evaluation must use the accessor rather than infer meaning from the name.
      */
     @Test
     void aCallerBuiltFieldIsAnsweredHereRatherThanByTmux(Server server) {
@@ -147,7 +146,6 @@ final class FilteringIntegrationTest {
         Fields.TextField<Pane> prefixed =
                 Fields.text("pane_current_command", (Pane pane) -> "shell-" + pane.currentCommand());
 
-        assertFalse(prefixed.ref().provenance().lowerable());
         assertEquals(
                 1,
                 server.panes().stream().filter(prefixed.is("shell-" + running)).count());
@@ -156,6 +154,6 @@ final class FilteringIntegrationTest {
                 server.panes().stream()
                         .filter(Pane_.command().is("shell-" + running))
                         .count(),
-                "the canonical field of the same name answers differently over these rows");
+                "the built-in field of the same name answers differently over these rows");
     }
 }

@@ -28,6 +28,40 @@ public enum Operator {
         return symbol;
     }
 
+    void requireOperand(FieldKind kind, Object operand) {
+        Objects.requireNonNull(kind, "kind");
+        if (!supports(kind)) {
+            throw new IllegalArgumentException(name() + " does not support " + kind + " fields");
+        }
+        boolean valid =
+                switch (this) {
+                    case MATCHES -> operand instanceof Pattern;
+                    case IN ->
+                        operand instanceof Collection<?> values
+                                && values.stream().allMatch(value -> scalar(kind, value));
+                    default -> scalar(kind, operand);
+                };
+        if (!valid) {
+            throw new IllegalArgumentException(name() + " has an invalid operand for a " + kind + " field");
+        }
+    }
+
+    private boolean supports(FieldKind kind) {
+        return switch (this) {
+            case EQUALS, NOT_EQUALS -> true;
+            case CONTAINS, STARTS_WITH, ENDS_WITH, MATCHES, IN -> kind == FieldKind.TEXT;
+            case LESS_THAN, AT_MOST, GREATER_THAN, AT_LEAST -> kind == FieldKind.NUMBER;
+        };
+    }
+
+    private static boolean scalar(FieldKind kind, Object operand) {
+        return switch (kind) {
+            case TEXT -> operand instanceof String;
+            case NUMBER -> operand instanceof Integer;
+            case FLAG -> operand instanceof Boolean;
+        };
+    }
+
     @SuppressWarnings("unchecked")
     boolean matches(Object actual, Object operand) {
         return switch (this) {

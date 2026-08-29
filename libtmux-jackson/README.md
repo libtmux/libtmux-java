@@ -24,7 +24,8 @@ dependencies {
 ## Write one
 
 ```java
-String json = FilterJson.writeString(Pane_.command().startsWith("nvim"), "pane");
+String json = FilterJson.writeString(
+        Pane_.command().startsWith("nvim"), LibTmuxModels.pane());
 
 json.contains("libtmux.filter/1");        // → true
 json.contains("pane_current_command");    // → true
@@ -33,7 +34,8 @@ json.contains("pane_current_command");    // → true
 ## Read one back
 
 ```java
-String json = FilterJson.writeString(Pane_.command().startsWith("nvim"), "pane");
+String json = FilterJson.writeString(
+        Pane_.command().startsWith("nvim"), LibTmuxModels.pane());
 
 FilterExpr<Pane> restored = FilterJson.readString(json, LibTmuxModels.pane());
 
@@ -46,7 +48,7 @@ It is a `Predicate`, so it drops straight into a stream over a capture you alrea
 hold — reading it from JSON changes nothing about how it is applied:
 
 ```java
-String json = FilterJson.writeString(Pane_.active().isTrue(), "pane");
+String json = FilterJson.writeString(Pane_.active().isTrue(), LibTmuxModels.pane());
 FilterExpr<Pane> active = FilterJson.readString(json, LibTmuxModels.pane());
 
 server.panes().stream().filter(active).toList().size();   // → 1
@@ -71,32 +73,34 @@ The document those calls produce:
 
 **Field and operator ids are tmux's own format names.** `pane_current_command`,
 not `command`; `session_name`, not `name`. Java class names and record component
-names are deliberately *not* wire identifiers. That is what lets the same document
-mean the same thing to every port of libtmux — and to a model, which is how
-[`libtmux-mcp`](../libtmux-mcp/) accepts filters.
+names are deliberately *not* wire identifiers. The exception is `matches`: its
+pattern syntax and numeric flags are those of `java.util.regex.Pattern`, so a
+non-Java consumer must reproduce those semantics or reject that operator.
+[`libtmux-mcp`](../libtmux-mcp/) accepts these documents directly.
 
 ## What it refuses, and why
 
-**A field built from a lambda cannot be written.** Only expressions built from a
-metamodel have wire identity:
+**An undeclared field cannot be written.** Only the exact handles declared by the
+supplied model have wire identity:
 
 <!-- snippet: throws: SchemaException -->
 ```java
 FilterExpr<Session> mine = Fields.text("session_name", (Session s) -> s.name().toLowerCase())
         .is("demo");
 
-FilterJson.writeString(mine, "session");
+FilterJson.writeString(mine, LibTmuxModels.session());
 ```
 
-That field has a caller-chosen name and an accessor nobody else can resolve.
-Writing it would produce a document that *looks* like a filter on
-`#{session_name}` and answers a different question. Refusing it is what makes this
-a format rather than a hope.
+That field has the name of a declared field and a different accessor. Writing it
+would produce a document that *looks* like a filter on `#{session_name}` and
+answers a different question. Refusing it is what makes this a format rather than
+a hope.
 
-**Reading is validated against a model.** A document claiming `pane` cannot be
-read as a `FilterExpr<Window>`. Unknown schema versions, models, fields,
-relations, operators and node shapes all fail closed, with a `SchemaException`
-naming what was wrong.
+**Writing and reading are validated against a model.** A document claiming `pane`
+cannot be read as a `FilterExpr<Window>`, and an expression cannot borrow the name
+of a field or relation its model did not declare. Unknown schema versions, models,
+fields, relations, operators, properties and node shapes all fail closed, with a
+`SchemaException` naming what was wrong.
 
 ## The schema
 

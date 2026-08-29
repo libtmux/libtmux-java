@@ -1,9 +1,10 @@
 /**
  * Writing a filter expression down and reading it back.
  *
- * <p>Only expressions built from a metamodel can be written. A field built from a lambda has a
- * caller-chosen name and an accessor nobody else can resolve, so it has no wire identity; refusing
- * it is the difference between a format and a hope.
+ * <p>Only exact field and relation handles declared by the supplied model can be written. A handle
+ * may borrow a declared name while carrying a different accessor; refusing it is the difference
+ * between a format and a hope.
+ * Caller-owned models use namespaced ids so they cannot impersonate libtmux's built-in models.
  *
  * <p>The wire format carries its own schema version and stable model, field and operator ids. Java
  * class names and record component names are deliberately not wire identifiers, so the AST can be

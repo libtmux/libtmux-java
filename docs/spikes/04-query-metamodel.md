@@ -2,11 +2,11 @@
 
 ## Status
 
-Complete. The pushdown architecture gate, the JSON form, and the
-handle-generation decision are recorded below.
-
-Settled: the expression semantics, the compile-time safety argument, the edge
-parser, the JSON form, the field model, and how the typed handles get written.
+Historical evidence. The expression semantics and pushdown measurements remain
+useful, but the provenance and wire-authority design below was superseded.
+Current code uses opaque identity-based handles and consumer-owned exact-handle
+catalogs; JSON writing requires a `FilterModel`, and caller-owned model ids are
+namespaced. See the [filtering guide](../guide/filtering.md) for the supported API.
 
 ## What is settled
 

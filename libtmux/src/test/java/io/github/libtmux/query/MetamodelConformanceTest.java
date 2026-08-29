@@ -2,6 +2,10 @@ package io.github.libtmux.query;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.libtmux.Client_;
+import io.github.libtmux.Pane_;
+import io.github.libtmux.Session_;
+import io.github.libtmux.Window_;
 import io.github.libtmux.query.Model.Pane;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -13,37 +17,28 @@ final class MetamodelConformanceTest {
     void theHandWrittenMetamodelsConform() {
         MetamodelConformance.assertConformant(Model.Pane_.class, Set.of("command", "index", "active"), false);
         MetamodelConformance.assertConformant(Model.Window_.class, Set.of("name"), false);
-    }
-
-    /** A metamodel that bypasses canonical minting is the drift a generator would have prevented. */
-    static final class Drifted {
-        static Fields.TextField<Pane> command() {
-            // The mistake: a plain builder, so the field is derived and silently not pushdown-eligible.
-            return Fields.text("command", Pane::command);
-        }
-
-        private Drifted() {}
+        MetamodelConformance.assertConformant(
+                Pane_.class, Set.of("pane_id", "pane_current_command", "pane_index", "pane_active"), false);
+        MetamodelConformance.assertConformant(
+                Window_.class,
+                Set.of("window_id", "window_name", "window_index", "window_active", "window_linked"),
+                false);
+        MetamodelConformance.assertConformant(
+                Session_.class, Set.of("session_id", "session_name", "session_attached"), false);
+        MetamodelConformance.assertConformant(Client_.class, Set.of("client_name"), false);
     }
 
     /** Two handles, one identifier — the other mistake handwriting invites. */
-    static final class Duplicated extends EntityMetamodel {
+    static final class Duplicated {
         static Fields.TextField<Pane> command() {
-            return text("command", Pane::command);
+            return Fields.text("command", Pane::command);
         }
 
         static Fields.TextField<Pane> alias() {
-            return text("command", Pane::command);
+            return Fields.text("command", Pane::command);
         }
 
         private Duplicated() {}
-    }
-
-    @Test
-    void theGuardRejectsANonCanonicalHandle() {
-        assertThrows(
-                AssertionError.class,
-                () -> MetamodelConformance.assertConformant(Drifted.class, Set.of("command"), false),
-                "a derived field must not pass as a metamodel handle");
     }
 
     @Test

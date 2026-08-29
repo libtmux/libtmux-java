@@ -2,6 +2,7 @@ package io.github.libtmux.query;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -9,9 +10,8 @@ import java.util.regex.Pattern;
 /**
  * Typed field handles.
  *
- * <p>Fields built here are {@linkplain FieldProvenance.Derived derived}: the caller supplied the
- * accessor, so no backend may assume the name describes what it reads. Canonical fields are minted by
- * {@link EntityMetamodel}.
+ * <p>A caller supplies each accessor, so no backend may trust the name without matching this exact
+ * handle against a model it owns.
  *
  * <p>Each kind exposes only the operators its type supports, so {@code Pane_.index().startsWith(..)}
  * is a compile error rather than a runtime class cast. This is the half of the metamodel that has to
@@ -21,24 +21,24 @@ public final class Fields {
 
     private Fields() {}
 
-    public static <T> TextField<T> text(String name, Function<T, String> accessor) {
-        return new TextField<>(FieldRef.derived(name, FieldKind.TEXT, accessor));
+    public static <T> TextField<T> text(String id, Function<T, String> accessor) {
+        return new TextField<>(new FieldRef<>(id, FieldKind.TEXT, accessor));
     }
 
-    public static <T> NumberField<T> number(String name, Function<T, Integer> accessor) {
-        return new NumberField<>(FieldRef.derived(name, FieldKind.NUMBER, accessor));
+    public static <T> NumberField<T> number(String id, Function<T, Integer> accessor) {
+        return new NumberField<>(new FieldRef<>(id, FieldKind.NUMBER, accessor));
     }
 
-    public static <T> FlagField<T> flag(String name, Function<T, Boolean> accessor) {
-        return new FlagField<>(FieldRef.derived(name, FieldKind.FLAG, accessor));
+    public static <T> FlagField<T> flag(String id, Function<T, Boolean> accessor) {
+        return new FlagField<>(new FieldRef<>(id, FieldKind.FLAG, accessor));
     }
 
-    public static <T, R> ToManyRef<T, R> toMany(String name, Function<T, List<R>> navigate) {
-        return new ToManyRef<>(name, navigate);
+    public static <T, R> ToManyRef<T, R> toMany(String id, Function<T, List<R>> navigate) {
+        return new ToManyRef<>(id, navigate);
     }
 
-    public static <T, R> ToOneRef<T, R> toOne(String name, Function<T, Optional<R>> navigate) {
-        return new ToOneRef<>(name, navigate);
+    public static <T, R> ToOneRef<T, R> toOne(String id, Function<T, Optional<R>> navigate) {
+        return new ToOneRef<>(id, navigate);
     }
 
     /** String-valued field. */
@@ -80,6 +80,10 @@ public final class Fields {
             return new FilterExpr.Compare<>(ref, Operator.EQUALS, value);
         }
 
+        public FilterExpr<T> isNot(int value) {
+            return new FilterExpr.Compare<>(ref, Operator.NOT_EQUALS, value);
+        }
+
         public FilterExpr<T> lessThan(int value) {
             return new FilterExpr.Compare<>(ref, Operator.LESS_THAN, value);
         }
@@ -100,36 +104,76 @@ public final class Fields {
     /** Boolean-valued field. */
     public record FlagField<T>(FieldRef<T, Boolean> ref) {
 
+        public FilterExpr<T> is(boolean value) {
+            return new FilterExpr.Compare<>(ref, Operator.EQUALS, value);
+        }
+
+        public FilterExpr<T> isNot(boolean value) {
+            return new FilterExpr.Compare<>(ref, Operator.NOT_EQUALS, value);
+        }
+
         public FilterExpr<T> isTrue() {
-            return new FilterExpr.Compare<>(ref, Operator.EQUALS, true);
+            return is(true);
         }
 
         public FilterExpr<T> isFalse() {
-            return new FilterExpr.Compare<>(ref, Operator.EQUALS, false);
+            return is(false);
         }
     }
 
     /** To-many relation. Quantifiers are the only way in, so an unquantified relation cannot compile. */
-    public record ToManyRef<T, R>(String name, Function<T, List<R>> navigate) {
+    public static final class ToManyRef<T, R> {
 
-        public FilterExpr<T> any(FilterExpr<R> predicate) {
-            return new FilterExpr.ToMany<>(name, navigate, FilterExpr.Quantifier.ANY, predicate);
+        private final String id;
+        private final Function<T, List<R>> navigate;
+
+        private ToManyRef(String id, Function<T, List<R>> navigate) {
+            this.id = FieldRef.requireId(id);
+            this.navigate = Objects.requireNonNull(navigate, "navigate");
         }
 
-        public FilterExpr<T> all(FilterExpr<R> predicate) {
-            return new FilterExpr.ToMany<>(name, navigate, FilterExpr.Quantifier.ALL, predicate);
+        public String id() {
+            return id;
         }
 
-        public FilterExpr<T> none(FilterExpr<R> predicate) {
-            return new FilterExpr.ToMany<>(name, navigate, FilterExpr.Quantifier.NONE, predicate);
+        public Function<T, List<R>> navigate() {
+            return navigate;
+        }
+
+        public FilterExpr.ToMany<T, R> any(FilterExpr<R> predicate) {
+            return new FilterExpr.ToMany<>(this, FilterExpr.Quantifier.ANY, predicate);
+        }
+
+        public FilterExpr.ToMany<T, R> all(FilterExpr<R> predicate) {
+            return new FilterExpr.ToMany<>(this, FilterExpr.Quantifier.ALL, predicate);
+        }
+
+        public FilterExpr.ToMany<T, R> none(FilterExpr<R> predicate) {
+            return new FilterExpr.ToMany<>(this, FilterExpr.Quantifier.NONE, predicate);
         }
     }
 
     /** To-one relation. */
-    public record ToOneRef<T, R>(String name, Function<T, Optional<R>> navigate) {
+    public static final class ToOneRef<T, R> {
 
-        public FilterExpr<T> is(FilterExpr<R> predicate) {
-            return new FilterExpr.ToOne<>(name, navigate, predicate);
+        private final String id;
+        private final Function<T, Optional<R>> navigate;
+
+        private ToOneRef(String id, Function<T, Optional<R>> navigate) {
+            this.id = FieldRef.requireId(id);
+            this.navigate = Objects.requireNonNull(navigate, "navigate");
+        }
+
+        public String id() {
+            return id;
+        }
+
+        public Function<T, Optional<R>> navigate() {
+            return navigate;
+        }
+
+        public FilterExpr.ToOne<T, R> is(FilterExpr<R> predicate) {
+            return new FilterExpr.ToOne<>(this, predicate);
         }
     }
 }

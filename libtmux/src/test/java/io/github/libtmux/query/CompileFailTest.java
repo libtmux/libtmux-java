@@ -84,50 +84,6 @@ final class CompileFailTest {
                 "a pane quantifier must not accept a window predicate");
     }
 
-    // -------------------------------------------------------------------------------------------
-    // Canonical provenance must be unforgeable, which is only observable from another package.
-    // -------------------------------------------------------------------------------------------
-
-    @Test
-    @Timeout(120)
-    void anOutsiderCanBuildADerivedField() {
-        assertTrue(
-                compilesOutside("Object f = io.github.libtmux.query.Fields.text(\"command\", (String s) -> s);"),
-                "the control must compile, or every rejection below proves nothing");
-    }
-
-    @Test
-    @Timeout(120)
-    void anOutsiderCannotMintCanonicalProvenance() {
-        assertFalse(
-                compilesOutside("Object p = io.github.libtmux.query.FieldProvenance.Canonical.INSTANCE;"),
-                "the canonical instance must not be reachable from outside the package");
-        assertFalse(
-                compilesOutside("Object p = new io.github.libtmux.query.FieldProvenance.Canonical();"),
-                "the canonical constructor must be private");
-    }
-
-    @Test
-    @Timeout(120)
-    void anOutsiderCannotMintACanonicalField() {
-        assertFalse(
-                compilesOutside(
-                        "Object f = io.github.libtmux.query.FieldRef.canonical(\"c\", io.github.libtmux.query.FieldKind.TEXT,"
-                                + " (String s) -> s);"),
-                "canonical field minting must be package-private");
-    }
-
-    @Test
-    @Timeout(120)
-    void anOutsiderCannotImplementTheProvenanceInterface() {
-        assertFalse(
-                compilesOutside("class Forged implements io.github.libtmux.query.FieldProvenance {"
-                        + " public boolean lowerable() { return true; } }"),
-                "FieldProvenance is sealed, so no third implementation exists");
-    }
-
-    // -------------------------------------------------------------------------------------------
-
     /** Compiles one statement against the test classpath and reports whether javac accepted it. */
     private static boolean compiles(String statement) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
@@ -194,19 +150,6 @@ final class CompileFailTest {
         } catch (IOException e) {
             throw new UncheckedIOException("could not remove the probe's class files", e);
         }
-    }
-
-    /** Same probe, but from a package that has no privileged access to {@code io.github.libtmux.query}. */
-    private static boolean compilesOutside(String body) {
-        return compileSource("outsider", """
-                package outsider;
-
-                final class CompileProbe {
-                    void probe() {
-                        %s
-                    }
-                }
-                """.formatted(body));
     }
 
     private static final class InMemorySource extends SimpleJavaFileObject {

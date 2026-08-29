@@ -17,35 +17,40 @@ import io.github.libtmux.Window_;
  */
 public final class LibTmuxModels {
 
-    private static final FilterModel<Pane> PANE = FilterModel.<Pane>named("pane")
+    private static final FilterModel<Pane> PANE = FilterModel.<Pane>builtIn("pane")
             .field(Pane_.id())
             .field(Pane_.command())
             .field(Pane_.index())
             .field(Pane_.active())
             .build();
 
-    private static final FilterModel<Window> WINDOW = FilterModel.<Window>named("window")
+    private static final FilterModel<Window> WINDOW = FilterModel.<Window>builtIn("window")
             .field(Window_.id())
             .field(Window_.name())
             .field(Window_.index())
             .field(Window_.active())
             .field(Window_.linked())
             .toMany(Window_.panes(), PANE)
+            .toOne(Window_.session(), LibTmuxModels::sessionModel)
             .build();
 
-    private static final FilterModel<Session> SESSION = FilterModel.<Session>named("session")
+    private static final FilterModel<Session> SESSION = FilterModel.<Session>builtIn("session")
             .field(Session_.id())
             .field(Session_.name())
             .field(Session_.attached())
             .toMany(Session_.windows(), WINDOW)
             .build();
 
-    private static final FilterModel<Client> CLIENT = FilterModel.<Client>named("client")
+    private static final FilterModel<Client> CLIENT = FilterModel.<Client>builtIn("client")
             .field(Client_.name())
             .toOne(Client_.session(), SESSION)
             .build();
 
     private LibTmuxModels() {}
+
+    private static FilterModel<Session> sessionModel() {
+        return SESSION;
+    }
 
     /** The model documents name {@code pane}. */
     public static FilterModel<Pane> pane() {
