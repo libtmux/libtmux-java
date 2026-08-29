@@ -174,24 +174,27 @@ public final class Pane {
      * told nothing more specific.
      */
     public void findWindow(String match) {
-        Objects.requireNonNull(match, "match");
-        server.run(snapshot, List.of("find-window", "-t", state.id().value(), match));
-    }
-
-    /** Narrows the window browser by name alone. See {@link #findWindow} for what it does not do. */
-    public void findWindowByName(String match) {
-        Objects.requireNonNull(match, "match");
-        server.run(snapshot, List.of("find-window", "-N", "-t", state.id().value(), match));
+        findWindow(FindSpec.builder().matching(match).build());
     }
 
     /**
-     * Narrows the window browser by what the windows are showing.
+     * Puts this pane into the window browser, narrowed as described.
      *
-     * <p>See {@link #findWindow} for what it does not do.
+     * <pre>{@code
+     * pane.findWindow(f -> f.matching("build").inName());
+     * }</pre>
+     *
+     * @param configure receives a builder that looks everywhere tmux looks by default
      */
-    public void findWindowByContent(String match) {
-        Objects.requireNonNull(match, "match");
-        server.run(snapshot, List.of("find-window", "-C", "-t", state.id().value(), match));
+    public void findWindow(Consumer<FindSpec.Builder> configure) {
+        FindSpec.Builder builder = FindSpec.builder();
+        configure.accept(builder);
+        findWindow(builder.build());
+    }
+
+    /** Puts this pane into the window browser, narrowed by a spec that may be reused. */
+    public void findWindow(FindSpec spec) {
+        server.run(snapshot, spec.argv(state.id().value()));
     }
 
     /**

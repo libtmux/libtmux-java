@@ -114,7 +114,7 @@ final class PaneModeIntegrationTest {
         var activeBefore = session.refresh().activeWindow().orElseThrow().id();
         Pane pane = onlyPane(server);
 
-        pane.findWindowByName("editor");
+        pane.findWindow(f -> f.matching("editor").inName());
 
         assertEquals(Optional.of(PaneMode.TREE), pane.mode(), "the pane is in the browser");
         assertEquals(
@@ -128,20 +128,26 @@ final class PaneModeIntegrationTest {
     void aMatchThatFoundNothingIsNotReported(Server server) {
         Pane pane = onlyPane(server);
 
-        pane.findWindowByName("no-window-carries-this");
+        pane.findWindow(f -> f.matching("no-window-carries-this").inName());
 
         assertEquals(Optional.of(PaneMode.TREE), pane.mode(), "tmux opens the browser either way");
     }
 
     @Test
-    void aWindowCanBeSoughtByNameOrByContentOrByBoth(Server server) {
+    void aWindowCanBeSoughtInAnyFieldAndAnyWay(Server server) {
         Pane pane = onlyPane(server);
 
         pane.findWindow("anything");
         assertEquals(Optional.of(PaneMode.TREE), pane.mode());
         pane.exitMode();
 
-        pane.findWindowByContent("anything");
+        pane.findWindow(f -> f.matching("anything").inContent());
+        assertEquals(Optional.of(PaneMode.TREE), pane.mode());
+        pane.exitMode();
+
+        // Title, case-insensitivity and regex are what the three named methods could not reach.
+        pane.findWindow(
+                f -> f.matching("^ANY").inTitle().inName().ignoringCase().asRegex());
         assertEquals(Optional.of(PaneMode.TREE), pane.mode());
     }
 

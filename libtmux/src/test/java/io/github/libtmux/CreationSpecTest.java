@@ -219,4 +219,43 @@ final class CreationSpecTest {
                 window.argv("$2", FORMAT, V37B)
                         .get(window.argv("$2", FORMAT, V37B).indexOf("-t") + 1));
     }
+
+    // ------------------------------------------------------------------------------ finding
+
+    /** tmux looks in every field when told nothing, so saying so would narrow rather than widen. */
+    @Test
+    void aFindNamesNoFieldWhenItWantsThemAll() {
+        assertEquals(
+                List.of("find-window", "-t", "%1", "build"),
+                FindSpec.builder().matching("build").build().argv("%1"));
+    }
+
+    @Test
+    void namingAFieldNarrowsToTheOnesNamed() {
+        assertEquals(
+                List.of("find-window", "-N", "-t", "%1", "build"),
+                FindSpec.builder().matching("build").inName().build().argv("%1"));
+        assertEquals(
+                List.of("find-window", "-N", "-T", "-t", "%1", "build"),
+                FindSpec.builder().matching("build").inName().inTitle().build().argv("%1"));
+    }
+
+    @Test
+    void howAMatchIsReadIsSeparateFromWhereItIsLookedFor() {
+        assertEquals(
+                List.of("find-window", "-C", "-i", "-r", "-Z", "-t", "%1", "^err"),
+                FindSpec.builder()
+                        .matching("^err")
+                        .inContent()
+                        .ignoringCase()
+                        .asRegex()
+                        .zooming()
+                        .build()
+                        .argv("%1"));
+    }
+
+    @Test
+    void aFindWithNothingToMatchIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> FindSpec.builder().build());
+    }
 }
