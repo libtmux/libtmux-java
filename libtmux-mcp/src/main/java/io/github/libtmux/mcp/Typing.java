@@ -1,11 +1,8 @@
 package io.github.libtmux.mcp;
 
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
-import io.github.libtmux.TmuxVersion;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -16,8 +13,6 @@ import org.jspecify.annotations.Nullable;
  * typing one here sends it and learns nothing.
  */
 final class Typing {
-
-    private static final TmuxVersion SAFE_PASTE_CLEANUP = new TmuxVersion(3, 4, "");
 
     private Typing() {}
 
@@ -70,36 +65,16 @@ final class Typing {
      * delivered as one block with no key names looked up in it, so a line containing {@code Enter}
      * or a bracket arrives as those characters.
      *
-     * <p>The buffer is named for this call and deleted afterwards, so nothing is left in the paste
-     * history a person shares with the model.
+     * <p>The buffer tmux needs travels with the paste that consumes it, so a disconnected client
+     * cannot leave the text in the paste history a person shares with the model.
      */
     static Pasted pasteText(Call call) {
-        TmuxVersion running = call.server().version();
-        if (!running.atLeast(SAFE_PASTE_CLEANUP)) {
-            throw new LibTmuxException("tmux_paste_text requires tmux 3.4, but this server runs " + running
-                    + "; older releases cannot safely clean up a failed paste");
-        }
         Pane pane = Targets.pane(call.server(), call.string("pane_id"));
         String text = call.string("text");
         boolean enter = call.flag("enter", false);
-        String buffer = "libtmux-mcp-paste-" + UUID.randomUUID();
-        try {
-            // tmux turns the line feeds in a buffer into carriage returns as it pastes, so a
-            // trailing newline is what submits the text — there is no flag that means "and Enter".
-            call.server().buffers().set(buffer, enter ? text + "\n" : text);
-            // -d removes the buffer as part of the paste, so nothing is left in the paste history a
-            // person shares with the model even if this call is the last thing that runs.
-            call.server()
-                    .run(List.of(
-                            "paste-buffer", "-d", "-b", buffer, "-t", pane.id().value()));
-        } catch (RuntimeException e) {
-            try {
-                call.server().buffers().delete(buffer);
-            } catch (RuntimeException ignored) {
-                // Already gone, or the server is; neither changes what the caller is told.
-            }
-            throw e;
-        }
+        // tmux turns the line feeds in a buffer into carriage returns as it pastes, so a trailing
+        // newline is what submits the text — there is no flag that means "and Enter".
+        pane.paste(enter ? text + "\n" : text);
         return new Pasted(
                 pane.id().value(),
                 text.length(),

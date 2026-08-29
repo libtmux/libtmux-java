@@ -16,11 +16,10 @@ import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -57,13 +56,13 @@ final class TypingTest {
     void pastedTextArrivesWithoutClaimingAUsersBuffer(Server server) {
         assumeTrue(server.version().atLeast(SAFE_PASTE_CLEANUP));
         String pane = server.panes().get(0).id().value();
-        server.buffers().set("libtmux-mcp-paste", "user-owned");
+        server.buffers().set("libtmux-paste", "user-owned");
 
         Typing.Pasted pasted = Typing.pasteText(TestCalls.on(server, "pane_id", pane, "text", "Enter [C-c] done"));
 
         assertEquals(16, pasted.characters());
         assertTrue(String.valueOf(pasted.note()).contains("pass 'enter'"), String.valueOf(pasted.note()));
-        assertEquals("user-owned", server.buffers().show("libtmux-mcp-paste"));
+        assertEquals("user-owned", server.buffers().show("libtmux-paste"));
         assertNoOwnedBuffers(server);
     }
 
@@ -71,68 +70,68 @@ final class TypingTest {
     void pasteRefusesUnsafeCleanupBeforeCreatingABuffer(Server server) {
         assumeFalse(server.version().atLeast(SAFE_PASTE_CLEANUP));
         String pane = server.panes().get(0).id().value();
-        server.buffers().set("libtmux-mcp-paste", "user-owned");
+        server.buffers().set("libtmux-paste", "user-owned");
 
         LibTmuxException refused = assertThrows(
                 LibTmuxException.class,
                 () -> Typing.pasteText(TestCalls.on(server, "pane_id", pane, "text", "must-not-be-buffered")));
 
         assertTrue(String.valueOf(refused.getMessage()).contains("requires tmux 3.4"), refused.getMessage());
-        assertEquals("user-owned", server.buffers().show("libtmux-mcp-paste"));
+        assertEquals("user-owned", server.buffers().show("libtmux-paste"));
         assertNoOwnedBuffers(server);
     }
 
+    /** A client that goes away mid-paste is the case that decides whether the text can outlive it. */
     @Test
-    void failedPasteDeletesOnlyItsOwnedBuffer(Server server) throws Exception {
+    void aDisconnectDuringAPasteLeavesNothingOnTheServer(Server server) {
         assumeTrue(server.version().atLeast(SAFE_PASTE_CLEANUP));
         String pane = server.panes().get(0).id().value();
-        server.buffers().set("libtmux-mcp-paste", "user-owned");
         try (ProcessTransport processes = new ProcessTransport()) {
-            TmuxTransport failingPaste = new TmuxTransport() {
+            AtomicReference<Server> pasting = new AtomicReference<>();
+            TmuxTransport disconnecting = new TmuxTransport() {
                 @Override
                 public CommandResult execute(CommandRequest request) {
-                    if (request.argv().get(0).equals("paste-buffer")) {
-                        return new CommandResult(1, List.of(), List.of("forced paste failure"));
+                    CommandResult result = processes.execute(request);
+                    if (String.join(" ", request.argv()).contains("set-buffer")) {
+                        pasting.get().close();
                     }
-                    return processes.execute(request);
+                    return result;
                 }
 
                 @Override
                 public void close() {}
             };
-            try (Server measured = Server.using(server.config(), failingPaste)) {
-                assertThrows(
-                        LibTmuxException.class,
-                        () -> Typing.pasteText(TestCalls.on(measured, "pane_id", pane, "text", "created-first")));
+            Server cut = Server.using(server.config(), disconnecting);
+            pasting.set(cut);
+            try {
+                Typing.pasteText(TestCalls.on(cut, "pane_id", pane, "text", "secret-text"));
+            } catch (RuntimeException expected) {
+                // The disconnect is what this arranges; surviving it is not what is being asserted.
             }
         }
 
-        assertEquals("user-owned", server.buffers().show("libtmux-mcp-paste"));
         assertNoOwnedBuffers(server);
+        assertTrue(
+                String.join("\n", server.cmd("capture-pane", "-p", "-t", pane).stdout())
+                        .contains("secret-text"));
     }
 
     @Test
-    void concurrentPastesDoNotShareTheirServerGlobalBuffer(Server server) throws Exception {
+    void eachConcurrentPasteReachesOnlyItsOwnPane(Server server) throws Exception {
         assumeTrue(server.version().atLeast(SAFE_PASTE_CLEANUP));
         String firstPane = server.panes().get(0).id().value();
         String secondPane = server.panes().get(0).split().id().value();
-        Map<String, String> contentsByBuffer = new ConcurrentHashMap<>();
-        Map<String, String> bufferByTarget = new ConcurrentHashMap<>();
-        CountDownLatch bothBuffersSet = new CountDownLatch(2);
+        CountDownLatch bothPending = new CountDownLatch(2);
         try (ProcessTransport processes = new ProcessTransport()) {
             TmuxTransport interleaving = new TmuxTransport() {
                 @Override
                 public CommandResult execute(CommandRequest request) {
-                    CommandResult result = processes.execute(request);
-                    if (request.argv().get(0).equals("set-buffer")) {
-                        contentsByBuffer.put(
-                                request.argv().get(2), request.argv().get(3));
-                        bothBuffersSet.countDown();
-                        await(bothBuffersSet);
-                    } else if (request.argv().get(0).equals("paste-buffer")) {
-                        bufferByTarget.put(request.argv().get(5), request.argv().get(3));
+                    if (String.join(" ", request.argv()).contains("paste-buffer")) {
+                        // Hold both pastes open at once, so a shared buffer name would collide.
+                        bothPending.countDown();
+                        await(bothPending);
                     }
-                    return result;
+                    return processes.execute(request);
                 }
 
                 @Override
@@ -150,14 +149,18 @@ final class TypingTest {
             }
         }
 
-        assertEquals("first-paste-marker", contentsByBuffer.get(bufferByTarget.get(firstPane)));
-        assertEquals("second-paste-marker", contentsByBuffer.get(bufferByTarget.get(secondPane)));
+        assertTrue(captureOf(server, firstPane).contains("first-paste-marker"));
+        assertTrue(captureOf(server, secondPane).contains("second-paste-marker"));
         assertNoOwnedBuffers(server);
+    }
+
+    private static String captureOf(Server server, String pane) {
+        return String.join("\n", server.cmd("capture-pane", "-p", "-t", pane).stdout());
     }
 
     private static void assertNoOwnedBuffers(Server server) {
         assertTrue(server.buffers().list().stream()
-                .noneMatch(buffer -> buffer.name().startsWith("libtmux-mcp-paste-")));
+                .noneMatch(buffer -> buffer.name().startsWith("libtmux-paste-")));
     }
 
     private static void await(CountDownLatch latch) {
