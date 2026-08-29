@@ -79,6 +79,26 @@ final class ControlWriterTest {
     }
 
     @Test
+    void failureCleanupRunsBeforeTheWriterCanCloseProcessInput() throws Exception {
+        BlockingWriter output = new BlockingWriter();
+        AtomicReference<Boolean> closedBeforeCleanup = new AtomicReference<>();
+        ControlWriter writer = writer(output, 1, ignored -> {
+            try {
+                closedBeforeCleanup.set(output.closed.await(200, TimeUnit.MILLISECONDS));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                closedBeforeCleanup.set(true);
+            }
+        });
+        writer.start();
+
+        assertThrows(TmuxTransportException.class, () -> writer.exchange("active", Duration.ofMillis(100)));
+
+        writer.join(1_000);
+        assertFalse(closedBeforeCleanup.get(), "the writer closed process input before failure cleanup began");
+    }
+
+    @Test
     void closeDistinguishesPickedFromQueuedRequests() throws Exception {
         BlockingWriter output = new BlockingWriter();
         ControlWriter writer = writer(output, 1, ignored -> {});
@@ -205,6 +225,7 @@ final class ControlWriterTest {
 
         final CountDownLatch entered = new CountDownLatch(1);
         final CountDownLatch release = new CountDownLatch(1);
+        final CountDownLatch closed = new CountDownLatch(1);
 
         @Override
         public void write(char[] data, int offset, int length) throws IOException {
@@ -222,6 +243,7 @@ final class ControlWriterTest {
 
         @Override
         public void close() {
+            closed.countDown();
             release.countDown();
         }
     }

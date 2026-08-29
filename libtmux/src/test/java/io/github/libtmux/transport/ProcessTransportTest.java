@@ -39,9 +39,8 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * The contract every caller depends on, driven with an ordinary child rather than tmux.
  *
- * <p>Nothing here is about tmux specifically: it is about owning a child process honestly. A call
- * either produces an exact result, or it fails saying how certain it is that the command ran. No
- * child ever outlives the call that started it.
+ * <p>The transport owns its direct process and the descendants visible when cleanup starts. A call
+ * either produces an exact result, or it fails saying how certain it is that the command ran.
  */
 final class ProcessTransportTest {
 
@@ -221,6 +220,70 @@ final class ProcessTransportTest {
             assertTrue(
                     Duration.ofNanos(System.nanoTime() - started).compareTo(Duration.ofSeconds(2)) < 0,
                     "overflow was not acted on promptly");
+        }
+    }
+
+    @Test
+    void aPipeCloseFailureCannotBeReportedAsSuccess() {
+        StubProcess process = new StubProcess(new FailingCloseInputStream());
+        process.finish();
+
+        try (ProcessTransport transport = new ProcessTransport(1, 1_024, command -> process, System::nanoTime)) {
+            TmuxTransportException failure =
+                    assertThrows(TmuxTransportException.class, () -> transport.execute(shell("ignored", GENEROUS)));
+
+            assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
+        }
+    }
+
+    @Test
+    void outputOverflowReclaimsDescendantsBeforeTheRootCanDisappear(@TempDir Path directory) throws Exception {
+        Path descendantPid = directory.resolve("descendant.pid");
+        String script = "(trap '' HUP TERM; echo \"$BASHPID\" > \"$1.tmp\"; "
+                + "mv \"$1.tmp\" \"$1\"; exec sleep 30) </dev/null >/dev/null 2>&1 & "
+                + "while [ ! -f \"$1\" ]; do :; done; "
+                + "while :; do printf 1234567890; done";
+        long descendant = -1;
+        CommandRequest request = new CommandRequest(
+                List.of("/bin/bash"), List.of("-c", script, "probe", descendantPid.toString()), GENEROUS);
+
+        try (ProcessTransport transport = new ProcessTransport(1, 1_024)) {
+            assertThrows(TmuxTransportException.class, () -> transport.execute(request));
+            assertTrue(awaitFile(descendantPid), "the overflowing process never started its descendant");
+            descendant = Long.parseLong(Files.readString(descendantPid).trim());
+
+            assertTrue(awaitDead(descendant), "output overflow orphaned a descendant of the killed process");
+        } finally {
+            if (descendant > 0) {
+                ProcessHandle.of(descendant).ifPresent(ProcessHandle::destroyForcibly);
+            }
+        }
+    }
+
+    /** A tmux command may start its durable server only after cleanup has begun. */
+    @Test
+    void cleanupDoesNotAdoptADescendantSpawnedAfterItsOwnershipSnapshot(@TempDir Path directory) throws Exception {
+        Path descendantPid = directory.resolve("detached.pid");
+        String script = "trap '(trap \"\" HUP TERM; echo \"$BASHPID\" > \"$1.tmp\"; "
+                + "mv \"$1.tmp\" \"$1\"; exec sleep 30) </dev/null >/dev/null 2>&1 & "
+                + "while :; do :; done' TERM; "
+                + "while :; do sleep 30; done";
+        CommandRequest request = new CommandRequest(
+                List.of("/bin/bash"), List.of("-c", script, "probe", descendantPid.toString()), Duration.ofMillis(250));
+        long descendant = -1;
+
+        try (ProcessTransport transport = new ProcessTransport()) {
+            assertThrows(TmuxTransportException.class, () -> transport.execute(request));
+            assertTrue(awaitFile(descendantPid), "the cleanup-time descendant never started");
+            descendant = Long.parseLong(Files.readString(descendantPid).trim());
+
+            assertTrue(
+                    ProcessHandle.of(descendant).map(ProcessHandle::isAlive).orElse(false),
+                    "cleanup adopted a descendant created after its ownership snapshot");
+        } finally {
+            if (descendant > 0) {
+                ProcessHandle.of(descendant).ifPresent(ProcessHandle::destroyForcibly);
+            }
         }
     }
 
@@ -516,12 +579,24 @@ final class ProcessTransportTest {
 
     // ---------------------------------------------------------------------------- process hygiene
 
+    @Test
+    void anIdleTransportStartsNoPumpThreads() {
+        long before = pumpThreads();
+        ProcessTransport transport = new ProcessTransport(2);
+
+        try {
+            assertEquals(before, pumpThreads(), "an idle transport does not need process-pipe workers");
+        } finally {
+            transport.close();
+        }
+    }
+
     /**
      * The probe proves itself before it is trusted: a gate that cannot observe a live child would
      * report every leak as clean.
      */
     @Test
-    void noChildOutlivesTheCallThatStartedIt() throws Exception {
+    void aTimedOutCallReclaimsItsObservableProcessTree() throws Exception {
         String marker = "libtmux-probe-" + UUID.randomUUID();
 
         Process control = new ProcessBuilder("/bin/sh", "-c", "sleep 30 # " + marker).start();
@@ -565,6 +640,20 @@ final class ProcessTransportTest {
         return ProcessHandle.allProcesses()
                 .filter(handle -> handle.info().commandLine().orElse("").contains(marker))
                 .findAny();
+    }
+
+    private static long pumpThreads() {
+        return Thread.getAllStackTraces().keySet().stream()
+                .filter(thread -> thread.getName().startsWith("libtmux-pump-"))
+                .count();
+    }
+
+    private static boolean awaitDead(long pid) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false) && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        return !ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false);
     }
 
     private static boolean awaitFile(Path file) throws InterruptedException {
@@ -629,6 +718,18 @@ final class ProcessTransportTest {
 
         void release() {
             released.countDown();
+        }
+    }
+
+    private static final class FailingCloseInputStream extends ByteArrayInputStream {
+
+        FailingCloseInputStream() {
+            super(new byte[0]);
+        }
+
+        @Override
+        public void close() throws IOException {
+            throw new IOException("pipe close failed");
         }
     }
 

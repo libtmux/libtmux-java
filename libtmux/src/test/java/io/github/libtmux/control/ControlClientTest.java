@@ -80,6 +80,22 @@ final class ControlClientTest {
         assertFalse(ControlClient.isCommandGroup(List.of("display-message", "-p", "trailing\\;")));
     }
 
+    @Test
+    void aRejectedCommandGroupDoesNotDiscloseItsArguments(@TempDir Path directory) throws Exception {
+        String secret = "pane-secret;";
+        ServerConfig config = fakeTmux(directory, """
+                printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                while IFS= read -r request; do :; done
+                """);
+
+        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+            IllegalArgumentException failure =
+                    assertThrows(IllegalArgumentException.class, () -> client.send(List.of("display-message", secret)));
+
+            assertFalse(String.valueOf(failure.getMessage()).contains(secret));
+        }
+    }
+
     /**
      * The process carrier reaches tmux's argv parser and this one does not, so the backslash that
      * parser would consume is consumed here instead. Passing it on would deliver a different
@@ -260,6 +276,36 @@ final class ControlClientTest {
         }
     }
 
+    @Test
+    void aWriterFailureReclaimsDescendantsBeforeKillingTheControlProcess(@TempDir Path directory) throws Exception {
+        Path childFile = directory.resolve("child-pid");
+        Path ready = directory.resolve("stdin-closed");
+        ServerConfig config = fakeTmux(directory, """
+                printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                sh -c 'trap "" HUP TERM; exec sleep 30' </dev/null >/dev/null 2>&1 &
+                printf '%s\n' "$!" > "${0%/*}/child-pid"
+                exec 0<&-
+                : > "${0%/*}/stdin-closed"
+                while :; do sleep 30; done
+                """);
+        long child = -1;
+        try {
+            try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+                assertTrue(awaitFile(childFile), "the fake control client never started its descendant");
+                assertTrue(awaitFile(ready), "the fake control client never closed its request pipe");
+                child = Long.parseLong(Files.readString(childFile).trim());
+
+                assertThrows(TmuxTransportException.class, () -> client.send("list-windows"));
+
+                assertTrue(awaitDead(child), "the failed control client orphaned its descendant");
+            }
+        } finally {
+            if (child > 0) {
+                ProcessHandle.of(child).ifPresent(ProcessHandle::destroyForcibly);
+            }
+        }
+    }
+
     private static ServerConfig fakeTmux(Path directory, String body) throws Exception {
         Path fakeTmux = directory.resolve("tmux");
         Files.writeString(fakeTmux, "#!/bin/sh\n" + body);
@@ -273,6 +319,14 @@ final class ControlClientTest {
             Thread.sleep(10);
         }
         return Files.exists(file);
+    }
+
+    private static boolean awaitDead(long pid) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false) && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        return !ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false);
     }
 
     private record InterruptedFailure(TmuxTransportException failure, boolean interrupted) {}

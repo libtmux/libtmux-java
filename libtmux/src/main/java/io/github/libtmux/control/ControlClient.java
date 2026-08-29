@@ -5,6 +5,7 @@ import io.github.libtmux.PaneId;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.batch.OperationOutcome;
+import io.github.libtmux.internal.ProcessTree;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTimeoutException;
 import io.github.libtmux.transport.TmuxTransportException;
@@ -45,6 +46,7 @@ public final class ControlClient implements AutoCloseable {
     private static final long EXIT_MILLIS = 5_000;
 
     private final Process process;
+    private final ProcessTree processTree;
     private final InputStream standardOutput;
     private final InputStream standardError;
     private final ControlWriter writer;
@@ -59,11 +61,12 @@ public final class ControlClient implements AutoCloseable {
 
     private ControlClient(Process process) {
         this.process = process;
+        this.processTree = new ProcessTree(process);
         this.standardOutput = process.getInputStream();
         this.standardError = process.getErrorStream();
         BufferedWriter requests =
                 new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
-        this.writer = new ControlWriter(requests, ControlWriter.DEFAULT_CAPACITY, ignored -> terminate());
+        this.writer = new ControlWriter(requests, ControlWriter.DEFAULT_CAPACITY, this::terminate);
         this.reader = new Thread(this::read, "libtmux-control");
         this.reader.setDaemon(false);
         this.errorReader = new Thread(this::drainErrors, "libtmux-control-stderr");
@@ -113,15 +116,17 @@ public final class ControlClient implements AutoCloseable {
         try {
             reply = client.writer.await(attached);
         } catch (TmuxTimeoutException e) {
-            client.close();
+            client.closeAfterFailure(e);
             throw e;
         } catch (TmuxTransportException e) {
-            client.close();
+            client.closeAfterFailure(e);
             throw new LibTmuxException("could not attach the control client", e);
         }
         if (reply.outcome() != OperationOutcome.COMPLETE) {
-            client.close();
-            throw new LibTmuxException("the control client did not become ready: " + reply.lines());
+            LibTmuxException failure =
+                    new LibTmuxException("the control client did not become ready: " + reply.lines());
+            client.closeAfterFailure(failure);
+            throw failure;
         }
         client.writer.start();
         return client;
@@ -158,8 +163,7 @@ public final class ControlClient implements AutoCloseable {
         if (isCommandGroup(argv)) {
             // Refused before anything is written, so the stream stays in step and the caller can
             // send the commands one at a time — which is what this carrier is for.
-            throw new IllegalArgumentException(
-                    "a control-mode request is one command, and this argv is several: " + argv);
+            throw new IllegalArgumentException("a control-mode request must contain one command");
         }
         if (closed.get() || failed) {
             throw new IllegalStateException("control client is not usable");
@@ -227,21 +231,20 @@ public final class ControlClient implements AutoCloseable {
     /** Ends the client, rejecting queued requests and resolving picked requests as uncertain. */
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) {
+        boolean closeOwner = closed.compareAndSet(false, true);
+        if (closeOwner) {
+            processTree.captureDescendants();
+            writer.close();
+            closeSubscriptions();
+        }
+        boolean reclaimed = processTree.terminate();
+        if (!closeOwner) {
+            if (!reclaimed) {
+                throw new IllegalStateException("control process tree was not reclaimed");
+            }
             return;
         }
-        List<ProcessHandle> descendants = process.descendants().toList();
-        writer.close();
-        closeSubscriptions();
         AtomicBoolean interrupted = new AtomicBoolean(Thread.interrupted());
-        stop(descendants, interrupted);
-        process.destroy();
-        if (!awaitExit(process, EXIT_MILLIS, interrupted)) {
-            process.destroyForcibly();
-            awaitExit(process, EXIT_MILLIS, interrupted);
-        }
-        close(standardOutput);
-        close(standardError);
         if (!Thread.currentThread().equals(reader)) {
             join(reader, EXIT_MILLIS, interrupted);
         }
@@ -251,6 +254,17 @@ public final class ControlClient implements AutoCloseable {
         join(writer, EXIT_MILLIS, interrupted);
         if (interrupted.get()) {
             Thread.currentThread().interrupt();
+        }
+        if (!reclaimed) {
+            throw new IllegalStateException("control process tree was not reclaimed");
+        }
+    }
+
+    private void closeAfterFailure(RuntimeException failure) {
+        try {
+            close();
+        } catch (RuntimeException cleanup) {
+            failure.addSuppressed(cleanup);
         }
     }
 
@@ -306,7 +320,6 @@ public final class ControlClient implements AutoCloseable {
             // The client ended. Everything still waiting is resolved below.
         } finally {
             writer.readerEnded();
-            terminate();
         }
     }
 
@@ -332,11 +345,12 @@ public final class ControlClient implements AutoCloseable {
         writer.complete(outcome, block);
     }
 
-    private void terminate() {
+    private void terminate(TmuxTransportException failure) {
         failed = true;
         closeSubscriptions();
-        process.destroyForcibly();
-        close(standardError);
+        if (!processTree.terminate()) {
+            failure.addSuppressed(new IllegalStateException("control process tree was not reclaimed"));
+        }
     }
 
     private void publish(String line) {
@@ -380,55 +394,6 @@ public final class ControlClient implements AutoCloseable {
 
     private void announce(ControlEvent event) {
         offer(eventSubscriptions, event);
-    }
-
-    private static boolean awaitExit(Process process, long millis, AtomicBoolean interrupted) {
-        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
-        while (process.isAlive()) {
-            long left = deadline - System.nanoTime();
-            if (left <= 0) {
-                return false;
-            }
-            try {
-                process.waitFor(Math.max(1, TimeUnit.NANOSECONDS.toMillis(left)), TimeUnit.MILLISECONDS);
-            } catch (InterruptedException e) {
-                interrupted.set(true);
-            }
-        }
-        return true;
-    }
-
-    private static void stop(List<ProcessHandle> descendants, AtomicBoolean interrupted) {
-        descendants.forEach(ProcessHandle::destroy);
-        if (awaitExit(descendants, 500, interrupted)) {
-            return;
-        }
-        descendants.stream().filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly);
-        awaitExit(descendants, 500, interrupted);
-    }
-
-    private static boolean awaitExit(List<ProcessHandle> processes, long millis, AtomicBoolean interrupted) {
-        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
-        while (processes.stream().anyMatch(ProcessHandle::isAlive)) {
-            long left = deadline - System.nanoTime();
-            if (left <= 0) {
-                return false;
-            }
-            try {
-                Thread.sleep(Math.max(1, Math.min(10, TimeUnit.NANOSECONDS.toMillis(left))));
-            } catch (InterruptedException e) {
-                interrupted.set(true);
-            }
-        }
-        return true;
-    }
-
-    private static void close(InputStream stream) {
-        try {
-            stream.close();
-        } catch (IOException ignored) {
-            // Closing is best effort; process termination is the ownership boundary.
-        }
     }
 
     private static void join(Thread thread, long millis, AtomicBoolean interrupted) {

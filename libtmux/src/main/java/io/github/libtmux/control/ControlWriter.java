@@ -88,6 +88,9 @@ final class ControlWriter {
     }
 
     void join(long timeoutMillis) throws InterruptedException {
+        if (Thread.currentThread().equals(thread)) {
+            return;
+        }
         if (thread.getState() == Thread.State.NEW) {
             closeOutput();
             return;
@@ -214,12 +217,12 @@ final class ControlWriter {
         if (dispatched != null) {
             dispatched.claimFailure();
         }
-        thread.interrupt();
         try {
             if (notifyFailure) {
                 failed.accept(activeFailure);
             }
         } finally {
+            thread.interrupt();
             for (Request request : queuedRequests) {
                 request.cancel(notDispatched("control client closed before dispatch", null));
             }
