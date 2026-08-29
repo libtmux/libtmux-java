@@ -99,9 +99,10 @@ final class ToolsAgainstTmuxTest {
     void refusingToEndAContainerNamesWhatCanBeEnded(Server server) {
         String mine = server.panes().get(0).id().value();
         String other = server.sessions().get(0).windows().get(0).split().id().value();
+        String session = server.sessions().get(0).id().value();
 
         IllegalStateException refused = assertThrows(
-                IllegalStateException.class, () -> Shaping.kill(TestCalls.asCaller(server, mine, "target", "libtmux")));
+                IllegalStateException.class, () -> Shaping.kill(TestCalls.asCaller(server, mine, "target", session)));
 
         String message = String.valueOf(refused.getMessage());
         assertTrue(message.contains(other), "the pane that could go is named: " + message);
@@ -289,6 +290,42 @@ final class ToolsAgainstTmuxTest {
 
         assertEquals("pane", ended.kind());
         assertEquals(1, server.panes().size());
+    }
+
+    @Test
+    void aSessionNamedServerIsKilledByItsListedIdWithoutEndingTheServer(Server server) {
+        var namedServer = server.newSession("server");
+
+        Shaping.Ended ended =
+                Shaping.kill(TestCalls.on(server, "target", namedServer.id().value()));
+
+        assertEquals("session", ended.kind());
+        assertTrue(server.isAlive(), "a session name must not become a request to kill the server");
+        assertTrue(server.sessions().stream().noneMatch(session -> session.id().equals(namedServer.id())));
+    }
+
+    @Test
+    void sessionTargetsUseTheirListedIdsEvenWhenTheNameLooksLikeAWindowId(Server server) {
+        var ambiguous = server.newSession(server.windows().get(0).id().value());
+
+        Shaping.Changed renamed =
+                Shaping.rename(TestCalls.on(server, "target", ambiguous.id().value(), "name", "renamed-safely"));
+        Shaping.Ended ended =
+                Shaping.kill(TestCalls.on(server, "target", ambiguous.id().value()));
+
+        assertEquals("session", renamed.kind());
+        assertEquals("renamed-safely", renamed.what());
+        assertEquals("session", ended.kind());
+        assertTrue(server.isAlive());
+        assertEquals(1, server.sessions().size());
+    }
+
+    @Test
+    void theServerTargetMeansTheWholeServer(Server server) {
+        Shaping.Ended ended = Shaping.kill(TestCalls.on(server, "target", "server"));
+
+        assertEquals("server", ended.kind());
+        assertEquals(false, server.isAlive());
     }
 
     // ---------------------------------------------------------------- making things

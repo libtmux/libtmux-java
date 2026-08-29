@@ -67,7 +67,7 @@ final class Settings {
             Map<String, String> global = readEnvironment(call.server(), null);
             return new Environment("(global)", global.size(), global);
         }
-        var session = Targets.session(call.server(), name);
+        var session = Targets.sessionNamed(call.server(), name);
         Map<String, String> variables = readEnvironment(call.server(), session.name());
         return new Environment(session.name(), variables.size(), variables);
     }
@@ -88,7 +88,8 @@ final class Settings {
         return switch (scope) {
             case "global" -> server.globalOptions();
             case "server" -> server.options();
-            case "session" -> Targets.session(server, required(target, scope)).options();
+            case "session" ->
+                Targets.sessionNamed(server, required(target, scope)).options();
             case "window" -> Targets.window(server, required(target, scope)).options();
             case "pane" -> Targets.pane(server, required(target, scope)).options();
             default ->
@@ -100,7 +101,8 @@ final class Settings {
     private static Hooks hooksFor(Server server, String scope, @Nullable String target) {
         return switch (scope) {
             case "global", "server" -> server.hooks();
-            case "session" -> Targets.session(server, required(target, scope)).hooks();
+            case "session" ->
+                Targets.sessionNamed(server, required(target, scope)).hooks();
             case "window" -> Targets.window(server, required(target, scope)).hooks();
             case "pane" -> Targets.pane(server, required(target, scope)).hooks();
             default ->

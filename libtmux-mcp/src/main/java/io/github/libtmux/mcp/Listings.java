@@ -145,7 +145,7 @@ final class Listings {
         Stream<Window> windows = server.windows().stream();
         String session = call.maybe("session").orElse(null);
         if (session != null) {
-            Session wanted = Targets.session(server, session);
+            Session wanted = Targets.sessionNamed(server, session);
             windows = wanted.windows().stream();
         }
         List<WindowSummary> summaries = windows.map(window -> new WindowSummary(

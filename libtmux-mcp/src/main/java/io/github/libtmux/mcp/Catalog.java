@@ -364,11 +364,11 @@ final class Catalog {
         tools.add(ToolSpec.of(
                 "tmux_rename",
                 "Rename a window or session",
-                "Renames a window given its @id, or a session given its name.",
+                "Renames a window or session given its stable id.",
                 Safety.MUTATING,
                 DESTRUCTIVE,
                 List.of(
-                        required("target", "A window id such as @1, or a session name."),
+                        required("target", "A window id such as @1, or a session id such as $1."),
                         required("name", "The new name.")),
                 Shaping::rename));
 
@@ -479,8 +479,8 @@ final class Catalog {
                 List.of(
                         required(
                                 "target",
-                                "A pane id such as %1, a window id such as @1, a session name, or the word "
-                                        + "'server' to end every session on it."),
+                                "A pane id such as %1, a window id such as @1, a session id such as $1, or the "
+                                        + "word 'server' to end the whole server."),
                         flag(
                                 "confirm_self",
                                 "Go ahead even though the target holds the pane this MCP server runs in.",
