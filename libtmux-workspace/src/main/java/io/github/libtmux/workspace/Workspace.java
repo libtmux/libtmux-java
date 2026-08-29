@@ -15,6 +15,9 @@ public record Workspace(String sessionName, List<WindowSpec> windows) {
         if (sessionName.isEmpty()) {
             throw new IllegalArgumentException("the workspace has no session name");
         }
+        if (sessionName.indexOf('.') >= 0 || sessionName.indexOf(':') >= 0) {
+            throw new IllegalArgumentException("workspace session names cannot contain '.' or ':': " + sessionName);
+        }
         if (windows.isEmpty()) {
             throw new IllegalArgumentException("the workspace has no windows");
         }
