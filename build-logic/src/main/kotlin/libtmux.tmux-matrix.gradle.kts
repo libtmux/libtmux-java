@@ -8,7 +8,7 @@
 // Declared so the source-set accessors resolve; the module already has it via the library plugin.
 plugins { java }
 
-val lanes = listOf("3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b")
+val lanes = listOf("3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.7c")
 
 val matrix = providers.gradleProperty("libtmuxMatrix")
 

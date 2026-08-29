@@ -285,7 +285,7 @@ bug. See [the Scala guide](docs/guide/scala.md).
 
 JDK 21 or newer.
 
-tmux 3.2a through 3.7b. That range is not a claim: the whole real-tmux suite runs
+tmux 3.2a through 3.7c. That range is not a claim: the whole real-tmux suite runs
 against every one of those releases, and each lane checks it really ran the tmux
 it is named after.
 

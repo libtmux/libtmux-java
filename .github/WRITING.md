@@ -28,7 +28,7 @@ Four things near the top are compatibility claims, and they move together:
   exported identifiers without a deprecation period, pin an exact version, not
   recommended for production. `CHANGELOG.md` and the `Status` section say the
   same thing in the same words.
-- **The requirements are JDK 21 or newer, and tmux 3.2a through 3.7b.** The tmux
+- **The requirements are JDK 21 or newer, and tmux 3.2a through 3.7c.** The tmux
   range is not a claim — the matrix runs every lane of it — so it may not drift
   from `workflows/tmux-matrix.yml`.
 - **Coordinates are group `io.github.libtmux`, imported through
@@ -104,7 +104,7 @@ Order it capability, then consequence, then compatibility:
 
 > 0.0.1-alpha.7 adds streaming capture, and rejects `windowId` at pane scope
 > rather than ignoring it. Pass `scope: window` to read at window scope. JDK 21
-> and tmux 3.2a through 3.7b are unchanged.
+> and tmux 3.2a through 3.7c are unchanged.
 
 The title is plain — the version, optionally preceded by `libtmux for Java`.
 Never "we are excited to announce"; state what shipped.
