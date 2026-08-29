@@ -205,19 +205,20 @@ Safety.MUTATING.allows(Safety.DESTRUCTIVE);   // → false
 Safety.ofWireName("destructive");             // → DESTRUCTIVE
 ```
 
-The ceiling filters the tool catalog and supplies protocol hints; it does not
-confine effects. `MUTATING` includes `tmux_run`, key input, and pasted text, so
-it can run programs or delete data in a pane. Use a separate OS account, socket
-permissions, or a container when effects must be contained.
+The ceiling filters the tool catalog; it does not confine effects. `MUTATING`
+includes `tmux_run`, key input, and pasted text, so it can run programs or
+delete data in a pane. Use a separate OS account, socket permissions, or a
+container when effects must be contained.
 
 A tool above the ceiling is **not listed at all**, rather than listed and
 refused. A model cannot be tempted by a tool it never saw, and an error it can do
 nothing about is wasted context. The server's instructions say plainly what is
 missing and why, so a model does not spend a turn looking for it.
 
-Every tool also carries MCP's own annotations — `readOnlyHint`, `destructiveHint`,
-`idempotentHint` — derived from its tier rather than stated per tool, so a tool
-that kills a session cannot describe itself as read-only by forgetting to.
+Every tool carries MCP's own effect hints — `readOnlyHint`, `destructiveHint`,
+`idempotentHint`, and `openWorldHint` — independently of the ceiling. A command
+tool can stay at the `MUTATING` ceiling while truthfully warning that its update
+may be destructive.
 
 ## Resources, prompts, completion
 

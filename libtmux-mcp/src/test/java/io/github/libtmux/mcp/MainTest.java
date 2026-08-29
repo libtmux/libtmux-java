@@ -98,7 +98,7 @@ final class MainTest {
         assertEquals(Safety.DESTRUCTIVE, Main.safety(List.of("--socket-name", "work", "--safety", "destructive")));
     }
 
-    /** Left unsaid, a server reads and changes tmux but cannot destroy anything. */
+    /** Left unsaid, a server offers changes but not the dedicated kill tool. */
     @Test
     void theCeilingLeftUnsaidStopsShortOfDestroying() {
         assertEquals(Safety.MUTATING, Main.safety(List.of("--socket-name", "work")));

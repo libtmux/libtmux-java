@@ -3,25 +3,24 @@ package io.github.libtmux.mcp;
 import java.util.Locale;
 
 /**
- * How much damage a tool can do, and how much a server is willing to offer.
+ * Which classes of tool a server is willing to offer.
  *
- * <p>The same scale answers both questions, so a launcher configured at {@link #READONLY} serves
- * exactly the tools whose safety is {@code READONLY}. A tool above the configured ceiling is not
- * listed at all rather than listed and refused: a model cannot be tempted by a tool it never saw,
- * and an error it can do nothing about is wasted context.
+ * <p>This is an availability ceiling, not an effect annotation. {@link #MUTATING} includes commands
+ * and pane input whose effects may be destructive; their MCP annotations say so independently. A
+ * tool above the configured ceiling is not listed at all rather than listed and refused.
  *
  * <p>The names are the ones every port of libtmux uses, so an operator who has configured one has
  * configured all of them.
  */
 public enum Safety {
 
-    /** Reads state. Running it twice tells you the same thing and changes nothing. */
+    /** Offers only tools that read state. */
     READONLY(0),
 
-    /** Changes state a user could undo: sends keys, creates windows, sets options. */
+    /** Also offers tools that change state, run commands, or send input. */
     MUTATING(1),
 
-    /** Destroys something that does not come back: kills a pane, a session, or the server. */
+    /** Also offers dedicated tools that end a pane, session, or server. */
     DESTRUCTIVE(2);
 
     /**

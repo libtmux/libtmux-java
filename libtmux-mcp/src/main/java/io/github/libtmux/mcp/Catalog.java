@@ -7,6 +7,8 @@ import static io.github.libtmux.mcp.Argument.paneId;
 import static io.github.libtmux.mcp.Argument.required;
 import static io.github.libtmux.mcp.Argument.seconds;
 import static io.github.libtmux.mcp.Argument.strings;
+import static io.github.libtmux.mcp.ToolSpec.Effect.DESTRUCTIVE;
+import static io.github.libtmux.mcp.ToolSpec.Effect.READ_ONLY;
 
 import io.github.libtmux.jackson.FilterJson;
 import io.github.libtmux.jackson.LibTmuxModels;
@@ -57,6 +59,7 @@ final class Catalog {
                         + "the only way to learn which pane belongs to this conversation, and that pane is the "
                         + "one never to kill or type into.",
                 Safety.READONLY,
+                READ_ONLY,
                 List.of(),
                 call -> Listings.whoami(call.server(), call.caller(), call.ceiling())));
 
@@ -68,6 +71,7 @@ final class Catalog {
                         + "are not on this server: separate sockets cannot see each other. A truncated answer says "
                         + "the scan cap left directory entries uninspected.",
                 Safety.READONLY,
+                READ_ONLY,
                 List.of(),
                 call -> Listings.servers(call.server())));
 
@@ -76,6 +80,7 @@ final class Catalog {
                 "List sessions",
                 "Lists sessions on this server with the windows in each.",
                 Safety.READONLY,
+                READ_ONLY,
                 List.of(),
                 call -> Listings.sessions(call.connection())));
 
@@ -84,6 +89,7 @@ final class Catalog {
                 "List windows",
                 "Lists windows with the id other tools take, optionally only those in one session.",
                 Safety.READONLY,
+                READ_ONLY,
                 List.of(optional("session", "Only windows in this session. Omit for every window on the server.")),
                 Listings::windows));
 
@@ -94,6 +100,7 @@ final class Catalog {
                         + "where. Optionally narrowed by a filter document. This reads metadata, not screen "
                         + "contents: to find a pane by what it is showing, use tmux_search_panes.",
                 Safety.READONLY,
+                READ_ONLY,
                 List.of(new Argument(
                         "filter",
                         "object",
@@ -114,6 +121,7 @@ final class Catalog {
                 "Lists the terminals attached to this server. Use it to find out whether a person is "
                         + "watching a session before changing what it is showing.",
                 Safety.READONLY,
+                READ_ONLY,
                 List.of(),
                 Listings::clients));
     }
@@ -128,6 +136,7 @@ final class Catalog {
                         + "pane again, pass that cursor to tmux_capture_since instead of calling this repeatedly "
                         + "— this returns the whole screen every time.",
                 Safety.READONLY,
+                READ_ONLY,
                 List.of(
                         paneId(),
                         flag("history", "Include the pane's scrollback, not only the visible screen.", false),
@@ -142,6 +151,7 @@ final class Catalog {
                         + "costs the few lines it added, not the nine screens already read. Omit the cursor to "
                         + "start from what the pane shows now.",
                 Safety.READONLY,
+                READ_ONLY,
                 List.of(
                         paneId(),
                         optional("cursor", "The cursor from a previous call on this pane. Omit to start here."),
@@ -155,6 +165,7 @@ final class Catalog {
                         + "answer \"which pane has the server in it\". Searches the visible screen, not "
                         + "scrollback, so text that has scrolled away is not found.",
                 Safety.READONLY,
+                READ_ONLY,
                 List.of(
                         required("pattern", "The text to look for."),
                         flag("regex", "Treat the pattern as a regular expression rather than plain text.", false),
@@ -176,6 +187,7 @@ final class Catalog {
                         + "command runs in a subshell of the pane's shell, so it sees that shell's environment "
                         + "but a 'cd' or an export in it does not outlive the call — and neither does an 'exit'.",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(
                         paneId(),
                         required("command", "The shell command, run in the pane's own interactive shell."),
@@ -203,6 +215,7 @@ final class Catalog {
                         + "there is one: without it a run that fails is waited on until the deadline. If you "
                         + "wrote the command, use tmux_run instead.",
                 Safety.READONLY,
+                READ_ONLY,
                 List.of(
                         paneId(),
                         strings(
@@ -228,6 +241,7 @@ final class Catalog {
                         + "tmux_send_keys, then wait here. The answer says why the wait ended, because tmux "
                         + "reports a server that died under a waiter as a successful wake.",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(
                         required("channel", "The channel name, which everything on this server shares."),
                         seconds("timeout", "Seconds to wait before giving up.", 30),
@@ -244,6 +258,7 @@ final class Catalog {
                 "Wakes whatever is waiting on a tmux channel. A signal sent when nothing is waiting is "
                         + "remembered and satisfies the next wait.",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(required("channel", "The channel name.")),
                 Channels::signal));
 
@@ -253,6 +268,7 @@ final class Catalog {
                 "Consumes a signal already waiting on a channel, so a leftover one cannot satisfy a wait "
                         + "that has not happened yet.",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(required("channel", "The channel name.")),
                 Channels::drain));
     }
@@ -267,6 +283,7 @@ final class Catalog {
                         + "'Up' for the previous command. This is for controlling a program, not for running "
                         + "commands: a command you wrote belongs in tmux_run, which waits for it.",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(
                         paneId(),
                         strings("keys", "The keys, as tmux names them, for example [\"C-c\"] or [\"y\", \"Enter\"]."),
@@ -280,6 +297,7 @@ final class Catalog {
                         + "anything that spells a key name arrive as the characters they are. Use it for an "
                         + "editor, a REPL, or a here-document.",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(
                         paneId(),
                         required("text", "The text to paste."),
@@ -295,6 +313,7 @@ final class Catalog {
                 "Create a session",
                 "Creates a detached session and returns its first pane's id.",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(
                         required("name", "The session name."),
                         optional("path", "The directory its first pane starts in."),
@@ -306,6 +325,7 @@ final class Catalog {
                 "Create a window",
                 "Creates a window in a session without switching to it, and returns its first pane's id.",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(
                         required("session", "The session to create it in."),
                         optional("name", "The window name. Omit to let tmux name it after what runs in it."),
@@ -319,6 +339,7 @@ final class Catalog {
                 "Splits a pane in two and returns the id of the new one. The direction says where the new "
                         + "pane goes.",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(
                         paneId(),
                         optional("direction", "Where the new pane goes: below, above, left or right."),
@@ -335,6 +356,7 @@ final class Catalog {
                         + "description tmux would refuse is refused before anything is half-built. Example:\n"
                         + Workspaces.example(),
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(required("workspace", "The YAML document describing the session.")),
                 Workspaces::apply));
 
@@ -343,6 +365,7 @@ final class Catalog {
                 "Rename a window or session",
                 "Renames a window given its @id, or a session given its name.",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(
                         required("target", "A window id such as @1, or a session name."),
                         required("name", "The new name.")),
@@ -355,6 +378,7 @@ final class Catalog {
                         + "sees. Not needed to read or act on something: every other tool takes an id and works "
                         + "whether or not the target is active.",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(required("target", "A pane id such as %1, or a window id such as @1.")),
                 Shaping::select));
 
@@ -363,6 +387,7 @@ final class Catalog {
                 "Rearrange a window's panes",
                 "Applies one of tmux's layouts to a window: " + String.join(", ", Shaping.layoutNames()) + ".",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(required("window_id", "The window id, such as @1."), required("layout", "The layout name.")),
                 Shaping::selectLayout));
 
@@ -373,6 +398,7 @@ final class Catalog {
                         + "give up what it takes, so the size that results may not be the one asked for — the "
                         + "answer says what it actually became.",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(
                         paneId(),
                         number("width", "Width in cells. Omit to leave it.", 0),
@@ -389,6 +415,7 @@ final class Catalog {
                 "Reads a set of tmux options. tmux keeps four sets and lets a lower one override the one "
                         + "above, so say which scope you mean: global, server, session, window or pane.",
                 Safety.READONLY,
+                READ_ONLY,
                 List.of(
                         optional("scope", "global, server, session, window or pane. Defaults to global."),
                         optional("target", "Which session, window or pane, when the scope is one of those."),
@@ -405,6 +432,7 @@ final class Catalog {
                         + "not overridden it, including panes a person is using, so prefer the narrowest scope "
                         + "that does what you need.",
                 Safety.MUTATING,
+                DESTRUCTIVE,
                 List.of(
                         required("name", "The option name."),
                         required("value", "The value to set."),
@@ -418,6 +446,7 @@ final class Catalog {
                 "Reads the hooks set in a scope. Read-only: a hook set over MCP would be gone when this "
                         + "server restarts, so one that should last belongs in a tmux config file.",
                 Safety.READONLY,
+                READ_ONLY,
                 List.of(
                         optional("scope", "global, server, session, window or pane. Defaults to global."),
                         optional("target", "Which session, window or pane, when the scope is one of those.")),
@@ -429,6 +458,7 @@ final class Catalog {
                 "Reads the environment tmux passes to programs it starts, globally or for one session. This "
                         + "is what a new pane will inherit, not what a running program currently has.",
                 Safety.READONLY,
+                READ_ONLY,
                 List.of(optional("session", "The session to read. Omit for the global environment.")),
                 Settings::environment));
     }
@@ -444,6 +474,7 @@ final class Catalog {
                         + "conversation is running through unless confirm_self is set — call tmux_whoami to see "
                         + "which pane that is.",
                 Safety.DESTRUCTIVE,
+                DESTRUCTIVE,
                 List.of(
                         required(
                                 "target",

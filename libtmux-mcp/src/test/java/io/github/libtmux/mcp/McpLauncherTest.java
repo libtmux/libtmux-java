@@ -241,6 +241,7 @@ final class McpLauncherTest {
 
             assertEquals(true, reading.annotations().readOnlyHint(), "reading a pane changes nothing");
             assertEquals(false, running.annotations().readOnlyHint(), "running a command does");
+            assertEquals(true, running.annotations().destructiveHint(), "a shell command may delete data");
         }
     }
 
