@@ -295,7 +295,8 @@ final class Catalog {
                 "Paste text into a pane",
                 "Puts text into a pane as a paste rather than as keystrokes, so brackets, newlines and "
                         + "anything that spells a key name arrive as the characters they are. Use it for an "
-                        + "editor, a REPL, or a here-document.",
+                        + "editor, a REPL, or a here-document. Requires tmux 3.4 or newer so a failed paste "
+                        + "can remove only its own temporary buffer.",
                 Safety.MUTATING,
                 DESTRUCTIVE,
                 List.of(

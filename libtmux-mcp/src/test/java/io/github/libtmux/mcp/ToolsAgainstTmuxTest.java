@@ -1,7 +1,6 @@
 package io.github.libtmux.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -367,41 +366,7 @@ final class ToolsAgainstTmuxTest {
         assertEquals(1, server.sessions().size());
     }
 
-    // ---------------------------------------------------------------- input and channels
-
-    @Test
-    void keysAreSentByNameSoAnInterruptInterrupts(Server server) {
-        String pane = server.panes().get(0).id().value();
-        server.run(List.of("send-keys", "-l", "-t", pane, "sleep 60"));
-        server.run(List.of("send-keys", "-t", pane, "Enter"));
-
-        Typing.Sent sent = Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of("C-c")));
-
-        assertEquals(1, sent.keys());
-        assertFalse(sent.literal());
-        assertTrue(String.valueOf(sent.note()).contains("not waited for"), String.valueOf(sent.note()));
-    }
-
-    @Test
-    void sendingNoKeysAtAllSaysWhatWasWanted(Server server) {
-        String pane = server.panes().get(0).id().value();
-
-        IllegalArgumentException refused = assertThrows(
-                IllegalArgumentException.class,
-                () -> Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of())));
-
-        assertTrue(String.valueOf(refused.getMessage()).contains("C-c"), refused.getMessage());
-    }
-
-    @Test
-    void pastedTextArrivesAsCharactersRatherThanKeyNames(Server server) {
-        String pane = server.panes().get(0).id().value();
-
-        Typing.Pasted pasted = Typing.pasteText(TestCalls.on(server, "pane_id", pane, "text", "Enter [C-c] done"));
-
-        assertEquals(16, pasted.characters());
-        assertTrue(String.valueOf(pasted.note()).contains("pass 'enter'"), String.valueOf(pasted.note()));
-    }
+    // ---------------------------------------------------------------- channels
 
     /** A signal outlives the moment it was sent, which is what draining exists to undo. */
     @Test

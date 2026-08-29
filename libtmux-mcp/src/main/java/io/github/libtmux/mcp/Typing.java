@@ -1,8 +1,11 @@
 package io.github.libtmux.mcp;
 
+import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
+import io.github.libtmux.TmuxVersion;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -13,6 +16,8 @@ import org.jspecify.annotations.Nullable;
  * typing one here sends it and learns nothing.
  */
 final class Typing {
+
+    private static final TmuxVersion SAFE_PASTE_CLEANUP = new TmuxVersion(3, 4, "");
 
     private Typing() {}
 
@@ -69,10 +74,15 @@ final class Typing {
      * history a person shares with the model.
      */
     static Pasted pasteText(Call call) {
+        TmuxVersion running = call.server().version();
+        if (!running.atLeast(SAFE_PASTE_CLEANUP)) {
+            throw new LibTmuxException("tmux_paste_text requires tmux 3.4, but this server runs " + running
+                    + "; older releases cannot safely clean up a failed paste");
+        }
         Pane pane = Targets.pane(call.server(), call.string("pane_id"));
         String text = call.string("text");
         boolean enter = call.flag("enter", false);
-        String buffer = "libtmux-mcp-paste";
+        String buffer = "libtmux-mcp-paste-" + UUID.randomUUID();
         try {
             // tmux turns the line feeds in a buffer into carriage returns as it pastes, so a
             // trailing newline is what submits the text — there is no flag that means "and Enter".
