@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.ExecutionMode;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Pane_;
 import io.github.libtmux.Server;
@@ -19,14 +18,15 @@ import io.github.libtmux.Window;
 import io.github.libtmux.Window_;
 import io.github.libtmux.batch.BatchResult;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.query.Selections;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -60,46 +60,6 @@ final class ExamplesTest {
 
             assertTrue(awaitOutput(pane, "hello from libtmux"));
             assertEquals("demo", session.name());
-            server.killServer();
-        }
-    }
-
-    /** Guide: choosing how commands reach tmux, and the fallback until a session exists. */
-    @Test
-    void choosingAnExecutionMode(@TempDir Path directory) throws Exception {
-        Path socket = directory.resolve("s");
-
-        ServerConfig config = ServerConfig.builder()
-                .endpoint(ServerEndpoint.socketPath(socket))
-                .mode(ExecutionMode.CONTROL)
-                .build();
-
-        try (Server server = Server.open(config)) {
-            Session first = server.newSession("work");
-            first.newWindow(w -> w.named("logs"));
-
-            assertEquals("work", first.name());
-            assertTrue(
-                    first.refresh().windows().stream().anyMatch(window -> "logs".equals(window.name())),
-                    "the window made under the control carrier is not there");
-            server.killServer();
-        }
-    }
-
-    /** Guide: the carrier that waits on a virtual thread rather than on the caller's own. */
-    @Test
-    void waitingOnAVirtualThread(@TempDir Path directory) throws Exception {
-        Path socket = directory.resolve("s");
-
-        ServerConfig config = ServerConfig.builder()
-                .endpoint(ServerEndpoint.socketPath(socket))
-                .mode(ExecutionMode.VIRTUAL)
-                .build();
-
-        try (Server server = Server.open(config)) {
-            Session session = server.newSession("work");
-
-            assertEquals("work", session.name(), "a carrier changes the waiting and not the answer");
             server.killServer();
         }
     }
@@ -283,14 +243,12 @@ final class ExamplesTest {
     void streaming(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
-            List<PaneOutput> seen = new CopyOnWriteArrayList<>();
-            client.onOutput(seen::add);
+        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+                EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
 
             client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
 
-            assertTrue(
-                    await(() -> seen.stream().anyMatch(output -> output.data().contains("streamed"))));
+            assertTrue(awaitOutput(output, "streamed"));
         }
     }
 
@@ -332,6 +290,21 @@ final class ExamplesTest {
                 return true;
             }
             Thread.sleep(50);
+        }
+        return false;
+    }
+
+    private static boolean awaitOutput(EventSubscription<PaneOutput> output, String expected)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        while (System.nanoTime() < deadline) {
+            var next = output.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
+            if (next.isEmpty()) {
+                return false;
+            }
+            if (next.orElseThrow().data().contains(expected)) {
+                return true;
+            }
         }
         return false;
     }

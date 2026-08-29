@@ -11,7 +11,7 @@ import org.jspecify.annotations.Nullable;
  * opposite recovery, and a caller that cannot tell them apart has to treat every failure as the
  * dangerous one.
  */
-public final class TmuxTransportException extends LibTmuxException {
+public class TmuxTransportException extends LibTmuxException {
 
     private static final long serialVersionUID = 1L;
 

@@ -6,10 +6,11 @@ import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.control.ControlEvent;
+import io.github.libtmux.control.EventSubscription;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
@@ -42,15 +43,12 @@ public final class WatchWhatChanges {
                 .endpoint(ServerEndpoint.socketPath(socket))
                 .build();
 
-        List<ControlEvent> seen = new CopyOnWriteArrayList<>();
+        List<ControlEvent> seen = new ArrayList<>();
         try (Server server = Server.open(config)) {
             Session session = server.sessions().get(0);
 
-            try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
-                client.onEvent(event -> {
-                    seen.add(event);
-                    onChange.accept(event);
-                });
+            try (ControlClient client = ControlClient.attach(server.config(), session.id());
+                    EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
 
                 // Every window's name, reported whenever one of them changes. The comparison happens
                 // inside tmux; this client is idle until something is different.
@@ -60,7 +58,18 @@ public final class WatchWhatChanges {
 
                 long deadline = System.nanoTime() + watchFor.toNanos();
                 while (System.nanoTime() < deadline && !sawTheNewWindow(seen)) {
-                    Thread.onSpinWait();
+                    try {
+                        var next = events.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
+                        if (next.isEmpty()) {
+                            break;
+                        }
+                        ControlEvent arrived = next.orElseThrow();
+                        seen.add(arrived);
+                        onChange.accept(arrived);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
                 }
             }
         }

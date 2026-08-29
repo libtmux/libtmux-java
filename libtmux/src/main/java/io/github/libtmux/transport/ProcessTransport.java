@@ -1,12 +1,15 @@
 package io.github.libtmux.transport;
 
+import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Duration;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -22,6 +25,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -45,37 +50,61 @@ import org.jspecify.annotations.Nullable;
 public final class ProcessTransport implements TmuxTransport {
 
     private static final int DEFAULT_BOUND = 4;
+    private static final int DEFAULT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
     private static final long GRACEFUL_MILLIS = 250;
     private static final long FORCIBLE_MILLIS = 5_000;
-    private static final long DRAIN_FLOOR_MILLIS = 5_000;
     private static final long RECLAIM_MILLIS = 5_000;
     private static final long TERMINATION_SECONDS = 60;
-    private static final Duration QUIESCE = Duration.ofSeconds(30);
+    private static final ProcessStarter SYSTEM_STARTER = command -> new ProcessBuilder(command).start();
 
     private final Semaphore admission;
     private final ThreadPoolExecutor pumps;
+    private final int maxOutputBytes;
+    private final ProcessStarter starter;
+    private final LongSupplier nanoTime;
     private final Set<Process> live = ConcurrentHashMap.newKeySet();
     private final Set<Process> killedByClose = ConcurrentHashMap.newKeySet();
 
     private final ReentrantLock gate = new ReentrantLock();
     private final Condition quiesced = gate.newCondition();
+    private final Condition closeCompleted = gate.newCondition();
     private boolean closed;
+    private boolean closeComplete;
+    private @Nullable ResourceNotReclaimed closeFailure;
     private int launching;
 
     /** A transport allowing four concurrent tmux processes. */
     public ProcessTransport() {
-        this(DEFAULT_BOUND);
+        this(DEFAULT_BOUND, DEFAULT_MAX_OUTPUT_BYTES);
     }
 
     /**
      * @param maxConcurrentProcesses how many tmux processes may run at once
      */
     public ProcessTransport(int maxConcurrentProcesses) {
+        this(maxConcurrentProcesses, DEFAULT_MAX_OUTPUT_BYTES);
+    }
+
+    /**
+     * @param maxConcurrentProcesses how many tmux processes may run at once
+     * @param maxOutputBytes maximum bytes accepted from each output channel of one process
+     */
+    public ProcessTransport(int maxConcurrentProcesses, int maxOutputBytes) {
+        this(maxConcurrentProcesses, maxOutputBytes, SYSTEM_STARTER, System::nanoTime);
+    }
+
+    ProcessTransport(int maxConcurrentProcesses, int maxOutputBytes, ProcessStarter starter, LongSupplier nanoTime) {
         if (maxConcurrentProcesses < 1) {
             throw new IllegalArgumentException("maxConcurrentProcesses is not positive");
         }
+        if (maxOutputBytes < 1) {
+            throw new IllegalArgumentException("maxOutputBytes is not positive");
+        }
         this.admission = new Semaphore(maxConcurrentProcesses);
         this.pumps = (ThreadPoolExecutor) Executors.newFixedThreadPool(2 * maxConcurrentProcesses, factory());
+        this.maxOutputBytes = maxOutputBytes;
+        this.starter = Objects.requireNonNull(starter, "starter");
+        this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
         this.pumps.prestartAllCoreThreads();
     }
 
@@ -83,11 +112,11 @@ public final class ProcessTransport implements TmuxTransport {
     public CommandResult execute(CommandRequest request) {
         requireOpen();
         requireDispatchable(request.argv());
-        long deadline = System.nanoTime() + request.timeout().toNanos();
+        long deadline = deadlineAfter(request.timeout());
         admit(deadline);
         Process process;
         try {
-            process = launch(request);
+            process = launch(request, deadline);
         } catch (RuntimeException e) {
             admission.release();
             throw e;
@@ -110,38 +139,75 @@ public final class ProcessTransport implements TmuxTransport {
 
     @Override
     public void close() {
+        AtomicBoolean interrupted = new AtomicBoolean(Thread.interrupted());
+        boolean closeOwner;
+        @Nullable ResourceNotReclaimed observedFailure;
         gate.lock();
         try {
             if (closed) {
-                return;
+                awaitWhile(closeCompleted, () -> !closeComplete, interrupted);
+                closeOwner = false;
+                observedFailure = closeFailure;
+            } else {
+                closed = true;
+                awaitWhile(quiesced, () -> launching > 0, interrupted);
+                closeOwner = true;
+                observedFailure = null;
             }
-            closed = true;
-            long remaining = QUIESCE.toNanos();
-            while (launching > 0 && remaining > 0) {
-                remaining = quiesced.awaitNanos(remaining);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         } finally {
             gate.unlock();
         }
-        AtomicBoolean interrupted = new AtomicBoolean();
+
+        if (!closeOwner) {
+            restoreInterrupt(interrupted);
+            if (observedFailure != null) {
+                throw observedFailure;
+            }
+            return;
+        }
+
+        @Nullable ResourceNotReclaimed failure;
+        try {
+            failure = closeResources(interrupted);
+        } catch (RuntimeException e) {
+            failure = recordFailure(null, "unexpected failure while closing transport", e);
+        }
+        gate.lock();
+        try {
+            closeFailure = failure;
+            closeComplete = true;
+            closeCompleted.signalAll();
+        } finally {
+            gate.unlock();
+        }
+        restoreInterrupt(interrupted);
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    private @Nullable ResourceNotReclaimed closeResources(AtomicBoolean interrupted) {
+        @Nullable ResourceNotReclaimed failure = null;
         for (Process process : live) {
             // Published before the kill, so the caller parked in waitFor can tell our signal from tmux's.
             killedByClose.add(process);
-            destroyAndAwait(process, interrupted);
-        }
-        pumps.shutdownNow();
-        try {
-            if (!pumps.awaitTermination(TERMINATION_SECONDS, TimeUnit.SECONDS)) {
-                throw new ResourceNotReclaimed("pump workers did not terminate");
+            try {
+                if (!destroyAndAwait(process, interrupted)) {
+                    failure = recordFailure(failure, "tmux survived forcible destruction", null);
+                }
+            } catch (RuntimeException e) {
+                failure = recordFailure(failure, "could not destroy tmux", e);
             }
-        } catch (InterruptedException e) {
-            interrupted.set(true);
         }
-        if (interrupted.get()) {
-            Thread.currentThread().interrupt();
+        try {
+            pumps.shutdownNow();
+        } catch (RuntimeException e) {
+            failure = recordFailure(failure, "could not stop pump workers", e);
         }
+        if (!awaitTermination(pumps, TERMINATION_SECONDS, interrupted)) {
+            failure = recordFailure(failure, "pump workers did not terminate", null);
+        }
+        return failure;
     }
 
     // ---------------------------------------------------------------------------- admission
@@ -167,29 +233,40 @@ public final class ProcessTransport implements TmuxTransport {
     }
 
     private void admit(long deadline) {
+        long remaining = remainingNanos(deadline);
+        if (remaining == 0) {
+            throw admissionTimeout();
+        }
         try {
-            if (!admission.tryAcquire(deadline - System.nanoTime(), TimeUnit.NANOSECONDS)) {
-                throw new TmuxTransportException("admission timed out", DispatchOutcome.NOT_DISPATCHED, null);
+            if (!admission.tryAcquire(remaining, TimeUnit.NANOSECONDS)) {
+                throw admissionTimeout();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new TmuxTransportException("interrupted before dispatch", DispatchOutcome.NOT_DISPATCHED, e);
         }
+        if (remainingNanos(deadline) == 0) {
+            admission.release();
+            throw admissionTimeout();
+        }
     }
 
     /** Starts and registers the child atomically with respect to {@link #close()}. */
-    private Process launch(CommandRequest request) {
+    private Process launch(CommandRequest request, long deadline) {
         gate.lock();
         try {
             if (closed) {
                 throw new IllegalStateException("transport is closed");
+            }
+            if (remainingNanos(deadline) == 0) {
+                throw admissionTimeout();
             }
             launching++;
         } finally {
             gate.unlock();
         }
         try {
-            Process process = new ProcessBuilder(request.commandLine()).start();
+            Process process = starter.start(request.commandLine());
             live.add(process);
             return process;
         } catch (IOException e) {
@@ -210,27 +287,20 @@ public final class ProcessTransport implements TmuxTransport {
 
     private Drains submit(Process process) {
         CountDownLatch finished = new CountDownLatch(2);
+        CompletableFuture<Throwable> failure = new CompletableFuture<>();
         try {
             return new Drains(
-                    pumps.submit(new Pump(process.getInputStream(), finished)),
-                    pumps.submit(new Pump(process.getErrorStream(), finished)),
-                    finished);
+                    pumps.submit(new Pump(process.getInputStream(), process, maxOutputBytes, finished, failure)),
+                    pumps.submit(new Pump(process.getErrorStream(), process, maxOutputBytes, finished, failure)),
+                    finished,
+                    failure);
         } catch (RejectedExecutionException e) {
             throw terminate(process, "transport closed before draining", e);
         }
     }
 
     private CommandResult complete(Process process, Drains drains, long deadline) {
-        boolean exited;
-        try {
-            exited = process.waitFor(remaining(deadline), TimeUnit.MILLISECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw terminate(process, "interrupted while awaiting tmux", e);
-        }
-        if (!exited) {
-            throw terminate(process, "tmux exceeded its deadline", null);
-        }
+        awaitExitOrFailure(process, drains, deadline);
         if (killedByClose.contains(process)) {
             // This exit status is ours, not tmux's; returning it would read as tmux dying on a signal.
             throw new TmuxTransportException("transport closed while tmux was running", DispatchOutcome.UNKNOWN, null);
@@ -240,34 +310,76 @@ public final class ProcessTransport implements TmuxTransport {
         return new CommandResult(process.exitValue(), OutputDecoder.stdoutLines(out), OutputDecoder.stderrLines(err));
     }
 
+    private void awaitExitOrFailure(Process process, Drains drains, long deadline) {
+        try {
+            CompletableFuture.anyOf(process.onExit(), drains.failure())
+                    .get(remainingNanos(deadline), TimeUnit.NANOSECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw terminate(process, "interrupted while awaiting tmux", e);
+        } catch (TimeoutException e) {
+            throw timeout(process, "tmux exceeded its deadline", e);
+        } catch (ExecutionException e) {
+            throw terminate(process, "could not await tmux", e.getCause());
+        }
+        Throwable failure = drains.failure().getNow(null);
+        if (failure != null) {
+            String message =
+                    failure instanceof OutputLimitExceeded exceeded ? exceeded.description() : "could not drain tmux";
+            throw terminate(process, message, failure);
+        }
+    }
+
     private byte[] collect(Future<byte[]> drain, Process process, long deadline) {
         try {
-            return drain.get(Math.max(DRAIN_FLOOR_MILLIS, remaining(deadline)), TimeUnit.MILLISECONDS);
+            return drain.get(remainingNanos(deadline), TimeUnit.NANOSECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw terminate(process, "interrupted while draining tmux", e);
         } catch (TimeoutException e) {
-            throw terminate(process, "draining tmux exceeded its deadline", e);
+            throw timeout(process, "draining tmux exceeded its deadline", e);
         } catch (ExecutionException e) {
-            throw terminate(process, "could not drain tmux", e.getCause());
+            Throwable cause = e.getCause();
+            String message =
+                    cause instanceof OutputLimitExceeded exceeded ? exceeded.description() : "could not drain tmux";
+            throw terminate(process, message, cause);
         }
     }
 
-    private static long remaining(long deadline) {
-        return Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()));
+    private long deadlineAfter(Duration timeout) {
+        long timeoutNanos;
+        try {
+            timeoutNanos = timeout.toNanos();
+        } catch (ArithmeticException e) {
+            timeoutNanos = Long.MAX_VALUE;
+        }
+        return nanoTime.getAsLong() + timeoutNanos;
+    }
+
+    private long remainingNanos(long deadline) {
+        return Math.max(0, deadline - nanoTime.getAsLong());
+    }
+
+    private static TmuxTimeoutException admissionTimeout() {
+        return new TmuxTimeoutException("admission timed out", DispatchOutcome.NOT_DISPATCHED, null);
     }
 
     // --------------------------------------------------------------------------- destruction
 
     /** Drains are deliberately not cancelled: killing the child is what actually ends the read. */
     private TmuxTransportException terminate(Process process, String message, @Nullable Throwable cause) {
+        return reclaim(process, new TmuxTransportException(message, DispatchOutcome.UNKNOWN, cause));
+    }
+
+    private TmuxTimeoutException timeout(Process process, String message, @Nullable Throwable cause) {
+        return reclaim(process, new TmuxTimeoutException(message, cause));
+    }
+
+    private <T extends TmuxTransportException> T reclaim(Process process, T failure) {
         AtomicBoolean interrupted = new AtomicBoolean(Thread.interrupted());
-        TmuxTransportException failure = new TmuxTransportException(message, DispatchOutcome.UNKNOWN, cause);
         if (!destroyAndAwait(process, interrupted)) {
             failure.addSuppressed(new ResourceNotReclaimed("tmux survived forcible destruction"));
         }
-        closeQuietly(process.getInputStream(), failure);
-        closeQuietly(process.getErrorStream(), failure);
         if (interrupted.get()) {
             Thread.currentThread().interrupt();
         }
@@ -280,26 +392,123 @@ public final class ProcessTransport implements TmuxTransport {
      * request's own cleanup then drops the last handle to it.
      */
     private static boolean destroyAndAwait(Process process, AtomicBoolean interrupted) {
+        List<ProcessHandle> descendants = descendants(process);
         process.destroy();
-        if (awaitExit(process, GRACEFUL_MILLIS, interrupted)) {
+        destroy(descendants, false);
+        if (awaitExit(process, descendants, GRACEFUL_MILLIS, interrupted)) {
             return true;
         }
+        descendants = union(descendants, descendants(process));
         process.destroyForcibly();
-        return awaitExit(process, FORCIBLE_MILLIS, interrupted);
+        destroy(descendants, true);
+        return awaitExit(process, descendants, FORCIBLE_MILLIS, interrupted);
     }
 
-    private static boolean awaitExit(Process process, long millis, AtomicBoolean interrupted) {
+    private static boolean awaitExit(
+            Process process, List<ProcessHandle> descendants, long millis, AtomicBoolean interrupted) {
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
-        while (true) {
+        while (process.isAlive()) {
             long left = deadline - System.nanoTime();
             if (left <= 0) {
-                return !process.isAlive();
+                return false;
             }
             try {
-                return process.waitFor(Math.max(1, TimeUnit.NANOSECONDS.toMillis(left)), TimeUnit.MILLISECONDS);
+                process.waitFor(Math.max(1, TimeUnit.NANOSECONDS.toMillis(left)), TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
                 interrupted.set(true);
             }
+        }
+        for (ProcessHandle descendant : descendants) {
+            while (descendant.isAlive()) {
+                long left = deadline - System.nanoTime();
+                if (left <= 0) {
+                    return false;
+                }
+                try {
+                    descendant.onExit().get(left, TimeUnit.NANOSECONDS);
+                } catch (InterruptedException e) {
+                    interrupted.set(true);
+                } catch (ExecutionException e) {
+                    return !descendant.isAlive();
+                } catch (TimeoutException e) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static List<ProcessHandle> descendants(Process process) {
+        try {
+            return process.descendants().toList();
+        } catch (UnsupportedOperationException | SecurityException e) {
+            return List.of();
+        }
+    }
+
+    private static List<ProcessHandle> union(List<ProcessHandle> first, List<ProcessHandle> second) {
+        Set<ProcessHandle> all = ConcurrentHashMap.newKeySet();
+        all.addAll(first);
+        all.addAll(second);
+        return List.copyOf(all);
+    }
+
+    private static void destroy(List<ProcessHandle> descendants, boolean forcibly) {
+        for (int index = descendants.size() - 1; index >= 0; index--) {
+            ProcessHandle descendant = descendants.get(index);
+            try {
+                if (forcibly) {
+                    descendant.destroyForcibly();
+                } else {
+                    descendant.destroy();
+                }
+            } catch (RuntimeException e) {
+                // The bounded wait below decides whether reclamation actually succeeded.
+            }
+        }
+    }
+
+    private static void awaitWhile(Condition condition, BooleanSupplier waiting, AtomicBoolean interrupted) {
+        while (waiting.getAsBoolean()) {
+            try {
+                condition.await();
+            } catch (InterruptedException e) {
+                interrupted.set(true);
+            }
+        }
+    }
+
+    private static boolean awaitTermination(ThreadPoolExecutor executor, long seconds, AtomicBoolean interrupted) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
+        while (true) {
+            long left = deadline - System.nanoTime();
+            if (left <= 0) {
+                return executor.isTerminated();
+            }
+            try {
+                return executor.awaitTermination(left, TimeUnit.NANOSECONDS);
+            } catch (InterruptedException e) {
+                interrupted.set(true);
+            }
+        }
+    }
+
+    private static ResourceNotReclaimed recordFailure(
+            @Nullable ResourceNotReclaimed failure, String message, @Nullable Throwable cause) {
+        ResourceNotReclaimed recorded = new ResourceNotReclaimed(message);
+        if (cause != null) {
+            recorded.addSuppressed(cause);
+        }
+        if (failure == null) {
+            return recorded;
+        }
+        failure.addSuppressed(recorded);
+        return failure;
+    }
+
+    private static void restoreInterrupt(AtomicBoolean interrupted) {
+        if (interrupted.get()) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -323,25 +532,85 @@ public final class ProcessTransport implements TmuxTransport {
         };
     }
 
-    private record Drains(Future<byte[]> stdout, Future<byte[]> stderr, CountDownLatch finished) {
+    private record Drains(
+            Future<byte[]> stdout,
+            Future<byte[]> stderr,
+            CountDownLatch finished,
+            CompletableFuture<Throwable> failure) {
         boolean reclaimed() {
+            boolean interrupted = Thread.interrupted();
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(RECLAIM_MILLIS);
             try {
-                return finished.await(RECLAIM_MILLIS, TimeUnit.MILLISECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return finished.getCount() == 0;
+                while (finished.getCount() > 0) {
+                    long left = deadline - System.nanoTime();
+                    if (left <= 0) {
+                        return false;
+                    }
+                    try {
+                        if (finished.await(left, TimeUnit.NANOSECONDS)) {
+                            return true;
+                        }
+                    } catch (InterruptedException e) {
+                        interrupted = true;
+                    }
+                }
+                return true;
+            } finally {
+                if (interrupted) {
+                    Thread.currentThread().interrupt();
+                }
             }
         }
     }
 
-    private record Pump(InputStream source, CountDownLatch finished) implements Callable<byte[]> {
+    @FunctionalInterface
+    interface ProcessStarter {
+        Process start(List<String> command) throws IOException;
+    }
+
+    private record Pump(
+            InputStream source,
+            Process process,
+            int limit,
+            CountDownLatch finished,
+            CompletableFuture<Throwable> failure)
+            implements Callable<byte[]> {
         @Override
         public byte[] call() throws IOException {
-            try {
-                return source.readAllBytes();
+            try (source) {
+                ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(limit, 8_192));
+                byte[] buffer = new byte[8_192];
+                int total = 0;
+                int read;
+                while ((read = source.read(buffer)) >= 0) {
+                    if (read > limit - total) {
+                        process.destroy();
+                        throw new OutputLimitExceeded(limit);
+                    }
+                    output.write(buffer, 0, read);
+                    total += read;
+                }
+                return output.toByteArray();
+            } catch (IOException | RuntimeException e) {
+                failure.complete(e);
+                throw e;
             } finally {
                 finished.countDown();
             }
+        }
+    }
+
+    private static final class OutputLimitExceeded extends IOException {
+        private static final long serialVersionUID = 1L;
+        private final int limit;
+
+        OutputLimitExceeded(int limit) {
+            super("tmux output exceeded the " + limit + " byte channel limit");
+            this.limit = limit;
+        }
+
+        String description() {
+            return "tmux output exceeded the " + limit + " byte channel limit";
         }
     }
 

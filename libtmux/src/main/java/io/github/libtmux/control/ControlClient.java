@@ -5,22 +5,22 @@ import io.github.libtmux.PaneId;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.batch.OperationOutcome;
-import java.io.BufferedReader;
+import io.github.libtmux.transport.DispatchOutcome;
+import io.github.libtmux.transport.TmuxTimeoutException;
+import io.github.libtmux.transport.TmuxTransportException;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * A tmux client that stays attached and answers one command at a time.
@@ -30,12 +30,14 @@ import java.util.function.Consumer;
  * the request number that produced it, so a failure discards nothing behind it and attribution is
  * tmux's own.
  *
- * <p>Replies arrive in request order, so a request waiting for its reply is matched by position. A
- * caller that gives up waiting leaves its request in place rather than removing it, because
- * removing it would match the next reply to the wrong request.
+ * <p>Replies arrive in request order, so the writer sends one request at a time and matches its
+ * reply by position. A deadline before the writer picks a request writes nothing; a deadline after
+ * that point ends the client because the next reply could no longer be attributed safely.
  *
- * <p>The reader is a platform thread. A library does not own the virtual-thread scheduler, and a
- * reader that cannot be scheduled is a client that stops answering.
+ * <p>The reader and writer are platform threads. A library does not own the virtual-thread
+ * scheduler, and either one unable to run stops the client from making progress. The reader only
+ * resolves replies and fills bounded subscription buffers; subscriber code runs on the thread that
+ * pulls a value.
  */
 public final class ControlClient implements AutoCloseable {
 
@@ -43,19 +45,30 @@ public final class ControlClient implements AutoCloseable {
     private static final long EXIT_MILLIS = 5_000;
 
     private final Process process;
-    private final BufferedWriter requests;
+    private final InputStream standardOutput;
+    private final InputStream standardError;
+    private final ControlWriter writer;
     private final Thread reader;
-    private final Queue<Pending> awaiting = new ConcurrentLinkedQueue<>();
-    private final List<Consumer<PaneOutput>> listeners = new CopyOnWriteArrayList<>();
-    private final List<Consumer<ControlEvent>> events = new CopyOnWriteArrayList<>();
-    private final ReentrantLock sending = new ReentrantLock();
-    private volatile boolean closed;
+    private final Thread errorReader;
+    private final ControlProtocol protocol = new ControlProtocol();
+    private final List<EventSubscription<PaneOutput>> outputSubscriptions = new CopyOnWriteArrayList<>();
+    private final List<EventSubscription<ControlEvent>> eventSubscriptions = new CopyOnWriteArrayList<>();
+    private final AtomicBoolean closed = new AtomicBoolean();
+    private volatile boolean failed;
+    private volatile boolean subscriptionsClosed;
 
     private ControlClient(Process process) {
         this.process = process;
-        this.requests = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
+        this.standardOutput = process.getInputStream();
+        this.standardError = process.getErrorStream();
+        BufferedWriter requests =
+                new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
+        this.writer = new ControlWriter(requests, ControlWriter.DEFAULT_CAPACITY, ignored -> terminate());
         this.reader = new Thread(this::read, "libtmux-control");
         this.reader.setDaemon(false);
+        this.errorReader = new Thread(this::drainErrors, "libtmux-control-stderr");
+        this.errorReader.setDaemon(false);
+        this.errorReader.start();
     }
 
     /**
@@ -68,6 +81,21 @@ public final class ControlClient implements AutoCloseable {
      * @param session the session to attach to
      */
     public static ControlClient attach(ServerConfig config, SessionId session) {
+        return attach(config, session, DEFAULT_TIMEOUT);
+    }
+
+    /**
+     * Attaches a control client and waits up to the supplied deadline for its opening reply.
+     *
+     * @param config which tmux and which server
+     * @param session the session to attach to
+     * @param timeout how long to wait for the client to become ready
+     */
+    public static ControlClient attach(ServerConfig config, SessionId session, Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout");
+        if (timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("timeout is not positive");
+        }
         List<String> command = new ArrayList<>(config.endpointCommand());
         command.addAll(List.of("-C", "attach-session", "-t", session.value()));
         Process process;
@@ -79,13 +107,23 @@ public final class ControlClient implements AutoCloseable {
         ControlClient client = new ControlClient(process);
         // Attaching produces a reply of its own. It is awaited like any other, which is also what
         // proves the client is up before the first command is written.
-        Pending attached = new Pending();
-        client.awaiting.add(attached);
+        ControlWriter.Request attached = client.writer.expectInitial(timeout);
         client.reader.start();
-        if (!attached.await(DEFAULT_TIMEOUT)) {
+        ControlReply reply;
+        try {
+            reply = client.writer.await(attached);
+        } catch (TmuxTimeoutException e) {
             client.close();
-            throw new LibTmuxException("the control client did not become ready");
+            throw e;
+        } catch (TmuxTransportException e) {
+            client.close();
+            throw new LibTmuxException("could not attach the control client", e);
         }
+        if (reply.outcome() != OperationOutcome.COMPLETE) {
+            client.close();
+            throw new LibTmuxException("the control client did not become ready: " + reply.lines());
+        }
+        client.writer.start();
         return client;
     }
 
@@ -104,12 +142,18 @@ public final class ControlClient implements AutoCloseable {
      *
      * @param argv the command, its arguments already separate elements
      * @param timeout how long to wait for tmux to answer
-     * @return the reply, whose outcome is {@code UNKNOWN} if no answer arrived in time or the client
-     *     ended before answering
+     * @return tmux's reply
+     * @throws TmuxTransportException if the request cannot complete; its {@link
+     *     TmuxTransportException#outcome() outcome} is {@link DispatchOutcome#NOT_DISPATCHED} until
+     *     the writer picks the request and {@link DispatchOutcome#UNKNOWN} afterwards
      */
     public ControlReply send(List<String> argv, Duration timeout) {
         if (argv.isEmpty()) {
             throw new IllegalArgumentException("a command has no words");
+        }
+        Objects.requireNonNull(timeout, "timeout");
+        if (timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("timeout is not positive");
         }
         if (isCommandGroup(argv)) {
             // Refused before anything is written, so the stream stays in step and the caller can
@@ -117,24 +161,10 @@ public final class ControlClient implements AutoCloseable {
             throw new IllegalArgumentException(
                     "a control-mode request is one command, and this argv is several: " + argv);
         }
-        if (closed) {
-            throw new IllegalStateException("control client is closed");
+        if (closed.get() || failed) {
+            throw new IllegalStateException("control client is not usable");
         }
-        Pending pending = new Pending();
-        sending.lock();
-        try {
-            // Enqueued and written under one lock, so the queue order is the write order.
-            awaiting.add(pending);
-            requests.write(line(argv));
-            requests.newLine();
-            requests.flush();
-        } catch (IOException e) {
-            throw new LibTmuxException("could not write to the control client", e);
-        } finally {
-            sending.unlock();
-        }
-        pending.await(timeout);
-        return new ControlReply(pending.outcome, pending.lines);
+        return writer.exchange(line(argv), timeout);
     }
 
     /**
@@ -145,28 +175,31 @@ public final class ControlClient implements AutoCloseable {
      * to send commands to", which are the same exception until this is asked.
      */
     public boolean isAlive() {
-        return process.isAlive();
+        return !closed.get() && !failed && process.isAlive();
     }
 
     /**
      * Subscribes to terminal output tmux pushes.
      *
-     * <p>Listeners run on the reader thread, which is also the only thread that resolves replies, so
-     * a slow listener delays every answer. One that throws does not end it: the failure goes to the
-     * thread's uncaught-exception handler and the remaining listeners are still told.
+     * @param capacity how many values this subscriber can retain before its oldest value is dropped
+     * @return a pull subscription owned by the caller
+     * @throws IllegalArgumentException if {@code capacity} is not positive
+     * @throws IllegalStateException if the client has ended
      */
-    public void onOutput(Consumer<PaneOutput> listener) {
-        listeners.add(listener);
+    public EventSubscription<PaneOutput> subscribeOutput(int capacity) {
+        return subscribe(outputSubscriptions, capacity);
     }
 
     /**
-     * Subscribes to everything else tmux volunteers: windows appearing, sessions renamed, layouts
-     * moving, and the values of any {@link #watch} registered here.
+     * Subscribes to state changes tmux volunteers.
      *
-     * <p>Same threading contract as {@link #onOutput}.
+     * @param capacity how many values this subscriber can retain before its oldest value is dropped
+     * @return a pull subscription owned by the caller
+     * @throws IllegalArgumentException if {@code capacity} is not positive
+     * @throws IllegalStateException if the client has ended
      */
-    public void onEvent(Consumer<ControlEvent> listener) {
-        events.add(listener);
+    public EventSubscription<ControlEvent> subscribeEvents(int capacity) {
+        return subscribe(eventSubscriptions, capacity);
     }
 
     /**
@@ -191,29 +224,34 @@ public final class ControlClient implements AutoCloseable {
         return send("refresh-client", "-B", name);
     }
 
-    /** Ends the client. Every request still waiting is resolved as {@code UNKNOWN}. */
+    /** Ends the client, rejecting queued requests and resolving picked requests as uncertain. */
     @Override
     public void close() {
-        if (closed) {
+        if (!closed.compareAndSet(false, true)) {
             return;
         }
-        closed = true;
-        try {
-            requests.close();
-        } catch (IOException e) {
-            // Closing the request stream is how the client is asked to exit; a failure here means
-            // it is already gone.
+        List<ProcessHandle> descendants = process.descendants().toList();
+        writer.close();
+        closeSubscriptions();
+        AtomicBoolean interrupted = new AtomicBoolean(Thread.interrupted());
+        stop(descendants, interrupted);
+        process.destroy();
+        if (!awaitExit(process, EXIT_MILLIS, interrupted)) {
+            process.destroyForcibly();
+            awaitExit(process, EXIT_MILLIS, interrupted);
         }
-        try {
-            if (!process.waitFor(EXIT_MILLIS, TimeUnit.MILLISECONDS)) {
-                process.destroyForcibly();
-                process.waitFor(EXIT_MILLIS, TimeUnit.MILLISECONDS);
-            }
-            reader.join(EXIT_MILLIS);
-        } catch (InterruptedException e) {
+        close(standardOutput);
+        close(standardError);
+        if (!Thread.currentThread().equals(reader)) {
+            join(reader, EXIT_MILLIS, interrupted);
+        }
+        if (!Thread.currentThread().equals(errorReader)) {
+            join(errorReader, EXIT_MILLIS, interrupted);
+        }
+        join(writer, EXIT_MILLIS, interrupted);
+        if (interrupted.get()) {
             Thread.currentThread().interrupt();
         }
-        release();
     }
 
     // -------------------------------------------------------------------------------- protocol
@@ -250,62 +288,55 @@ public final class ControlClient implements AutoCloseable {
      * disagree about what the argument was.
      */
     static String line(List<String> argv) {
-        StringBuilder text = new StringBuilder();
-        for (String argument : argv) {
-            if (text.length() > 0) {
-                text.append(' ');
-            }
-            String literal = argument.endsWith("\\;") ? argument.substring(0, argument.length() - 2) + ';' : argument;
-            text.append('\'').append(literal.replace("'", "'\\''")).append('\'');
-        }
-        return text.toString();
+        return ControlProtocol.line(argv);
     }
 
     private void read() {
-        List<String> block = new ArrayList<>();
-        boolean inBlock = false;
-        try (var lines = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
+        try (var lines = new ControlLineReader(standardOutput, ControlProtocol.DEFAULT_MAX_REPLY_BYTES)) {
+            ControlLineReader.Line line;
             while ((line = lines.readLine()) != null) {
-                if (line.startsWith("%begin")) {
-                    inBlock = true;
-                    block = new ArrayList<>();
-                } else if (line.startsWith("%end")) {
-                    inBlock = false;
-                    complete(OperationOutcome.COMPLETE, block);
-                } else if (line.startsWith("%error")) {
-                    inBlock = false;
-                    complete(OperationOutcome.FAILED, block);
-                } else if (inBlock) {
-                    block.add(line);
-                } else if (line.startsWith("%output ")) {
-                    publish(line);
-                } else if (line.startsWith("%")) {
-                    // Everything else tmux volunteers about its own state. A snapshot is still how
-                    // state is read; this only says when reading it again would be worth the trouble.
-                    ControlEvent.parse(line).ifPresent(this::announce);
+                ControlProtocol.Result result = protocol.accept(line.text(), line.encodedBytes());
+                if (result instanceof ControlProtocol.Reply reply) {
+                    complete(reply.outcome(), reply.lines());
+                } else if (result instanceof ControlProtocol.Notification notification) {
+                    handleNotification(notification.line());
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | ControlProtocol.LimitExceeded e) {
             // The client ended. Everything still waiting is resolved below.
         } finally {
-            release();
+            writer.readerEnded();
+            terminate();
+        }
+    }
+
+    private void drainErrors() {
+        try (standardError) {
+            standardError.transferTo(OutputStream.nullOutputStream());
+        } catch (IOException e) {
+            // Closing or ending the client closes this channel too.
+        }
+    }
+
+    private void handleNotification(String line) {
+        if (line.startsWith("%output ")) {
+            publish(line);
+        } else if (line.startsWith("%")) {
+            // Everything else tmux volunteers about its own state. A snapshot is still how state
+            // is read; this only says when reading it again would be worth the trouble.
+            ControlEvent.parse(line).ifPresent(this::announce);
         }
     }
 
     private void complete(OperationOutcome outcome, List<String> block) {
-        Pending pending = awaiting.poll();
-        if (pending != null) {
-            pending.settle(outcome, block);
-        }
+        writer.complete(outcome, block);
     }
 
-    /** A request with no reply is not a failure; it is an unanswered question. */
-    private void release() {
-        Pending pending;
-        while ((pending = awaiting.poll()) != null) {
-            pending.settle(OperationOutcome.UNKNOWN, List.of());
-        }
+    private void terminate() {
+        failed = true;
+        closeSubscriptions();
+        process.destroyForcibly();
+        close(standardError);
     }
 
     private void publish(String line) {
@@ -315,25 +346,120 @@ public final class ControlClient implements AutoCloseable {
         }
         PaneOutput output = new PaneOutput(
                 new PaneId(line.substring("%output ".length(), paneEnd)), unescape(line.substring(paneEnd + 1)));
-        tell(listeners, output);
+        offer(outputSubscriptions, output);
+    }
+
+    private <T> EventSubscription<T> subscribe(List<EventSubscription<T>> subscriptions, int capacity) {
+        if (subscriptionsClosed) {
+            throw new IllegalStateException("control client has ended");
+        }
+        EventSubscription<T> subscription = new EventSubscription<>(capacity, subscriptions::remove);
+        subscriptions.add(subscription);
+        if (subscriptionsClosed) {
+            subscription.close();
+            throw new IllegalStateException("control client has ended");
+        }
+        return subscription;
+    }
+
+    private static <T> void offer(List<EventSubscription<T>> subscriptions, T value) {
+        for (EventSubscription<T> subscription : subscriptions) {
+            subscription.offer(value);
+        }
+    }
+
+    private void closeSubscriptions() {
+        subscriptionsClosed = true;
+        for (EventSubscription<PaneOutput> subscription : outputSubscriptions) {
+            subscription.close();
+        }
+        for (EventSubscription<ControlEvent> subscription : eventSubscriptions) {
+            subscription.close();
+        }
     }
 
     private void announce(ControlEvent event) {
-        tell(events, event);
+        offer(eventSubscriptions, event);
     }
 
-    /**
-     * This thread also resolves every reply, so one listener's failure must not end it. Reported
-     * rather than swallowed, and through the thread's own handler rather than a logger, because a
-     * dependency-free core has nowhere else to say it.
-     */
-    private static <T> void tell(List<Consumer<T>> listeners, T value) {
-        for (Consumer<T> listener : listeners) {
+    private static boolean awaitExit(Process process, long millis, AtomicBoolean interrupted) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
+        while (process.isAlive()) {
+            long left = deadline - System.nanoTime();
+            if (left <= 0) {
+                return false;
+            }
             try {
-                listener.accept(value);
-            } catch (RuntimeException e) {
-                Thread current = Thread.currentThread();
-                current.getUncaughtExceptionHandler().uncaughtException(current, e);
+                process.waitFor(Math.max(1, TimeUnit.NANOSECONDS.toMillis(left)), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                interrupted.set(true);
+            }
+        }
+        return true;
+    }
+
+    private static void stop(List<ProcessHandle> descendants, AtomicBoolean interrupted) {
+        descendants.forEach(ProcessHandle::destroy);
+        if (awaitExit(descendants, 500, interrupted)) {
+            return;
+        }
+        descendants.stream().filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly);
+        awaitExit(descendants, 500, interrupted);
+    }
+
+    private static boolean awaitExit(List<ProcessHandle> processes, long millis, AtomicBoolean interrupted) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
+        while (processes.stream().anyMatch(ProcessHandle::isAlive)) {
+            long left = deadline - System.nanoTime();
+            if (left <= 0) {
+                return false;
+            }
+            try {
+                Thread.sleep(Math.max(1, Math.min(10, TimeUnit.NANOSECONDS.toMillis(left))));
+            } catch (InterruptedException e) {
+                interrupted.set(true);
+            }
+        }
+        return true;
+    }
+
+    private static void close(InputStream stream) {
+        try {
+            stream.close();
+        } catch (IOException ignored) {
+            // Closing is best effort; process termination is the ownership boundary.
+        }
+    }
+
+    private static void join(Thread thread, long millis, AtomicBoolean interrupted) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
+        while (thread.isAlive()) {
+            long left = deadline - System.nanoTime();
+            if (left <= 0) {
+                return;
+            }
+            try {
+                thread.join(Math.max(1, TimeUnit.NANOSECONDS.toMillis(left)));
+            } catch (InterruptedException e) {
+                interrupted.set(true);
+            }
+        }
+    }
+
+    private static void join(ControlWriter writer, long millis, AtomicBoolean interrupted) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
+        while (true) {
+            long left = deadline - System.nanoTime();
+            if (left <= 0) {
+                return;
+            }
+            try {
+                writer.join(Math.max(1, TimeUnit.NANOSECONDS.toMillis(left)));
+                return;
+            } catch (InterruptedException e) {
+                interrupted.set(true);
+            } catch (IllegalStateException e) {
+                return;
             }
         }
     }
@@ -358,27 +484,5 @@ public final class ControlClient implements AutoCloseable {
             text.append(character);
         }
         return text.toString();
-    }
-
-    private static final class Pending {
-
-        private final CountDownLatch answered = new CountDownLatch(1);
-        private volatile OperationOutcome outcome = OperationOutcome.UNKNOWN;
-        private volatile List<String> lines = List.of();
-
-        void settle(OperationOutcome outcome, List<String> lines) {
-            this.outcome = outcome;
-            this.lines = List.copyOf(lines);
-            answered.countDown();
-        }
-
-        boolean await(Duration timeout) {
-            try {
-                return answered.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
-        }
     }
 }

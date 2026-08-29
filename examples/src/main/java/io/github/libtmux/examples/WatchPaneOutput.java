@@ -5,11 +5,12 @@ import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
@@ -38,22 +39,30 @@ public final class WatchPaneOutput {
                 .endpoint(ServerEndpoint.socketPath(socket))
                 .build();
 
-        List<PaneOutput> seen = new CopyOnWriteArrayList<>();
+        List<PaneOutput> seen = new ArrayList<>();
         try (Server server = Server.open(config)) {
             Session session = server.sessions().get(0);
 
             // Attaching is what makes tmux push %output at all. A client that never attaches hears
             // about command replies and nothing else.
-            try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
-                client.onOutput(output -> {
-                    seen.add(output);
-                    onOutput.accept(output);
-                });
+            try (ControlClient client = ControlClient.attach(server.config(), session.id());
+                    EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
                 client.send("send-keys", "-t", session.name(), "echo watched", "Enter");
 
                 long deadline = System.nanoTime() + watchFor.toNanos();
                 while (System.nanoTime() < deadline && seen.isEmpty()) {
-                    Thread.onSpinWait();
+                    try {
+                        var next = output.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
+                        if (next.isEmpty()) {
+                            break;
+                        }
+                        PaneOutput arrived = next.orElseThrow();
+                        seen.add(arrived);
+                        onOutput.accept(arrived);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
                 }
             }
         }

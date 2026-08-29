@@ -10,17 +10,22 @@ import io.github.libtmux.Session;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.control.ControlReply;
+import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.transport.DispatchOutcome;
+import io.github.libtmux.transport.TmuxTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BooleanSupplier;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -150,41 +155,54 @@ final class ControlModeIntegrationTest {
 
     @Test
     void terminalOutputArrivesWithoutBeingAsked(Server server) throws Exception {
-        try (ControlClient client = attach(server)) {
-            List<PaneOutput> seen = new CopyOnWriteArrayList<>();
-            client.onOutput(seen::add);
+        try (ControlClient client = attach(server);
+                EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
 
             client.send("send-keys", "-t", "libtmux", "echo control-mode-saw-this", "Enter");
 
             assertTrue(
-                    await(() -> seen.stream().anyMatch(output -> output.data().contains("control-mode-saw-this"))),
+                    awaitOutput(output, "control-mode-saw-this"),
                     "attaching is what makes tmux push output, and it did not arrive");
         }
     }
 
-    /**
-     * Listeners run on the reader thread, which is also the only thread that resolves replies. A
-     * listener that threw would end it, and the client would then answer nothing at all — every
-     * later request timing out for a reason belonging to somebody else's callback.
-     */
     @Test
-    void aListenerThatThrowsDoesNotTakeTheClientDownWithIt(Server server) throws Exception {
-        try (ControlClient client = attach(server)) {
-            List<PaneOutput> seen = new CopyOnWriteArrayList<>();
-            client.onOutput(output -> {
-                throw new IllegalStateException("this listener is broken");
-            });
-            client.onOutput(seen::add);
+    void anIdleSubscriberDoesNotDelayAnotherSubscriberOrReplies(Server server) throws Exception {
+        try (ControlClient client = attach(server);
+                EventSubscription<PaneOutput> idle = client.subscribeOutput(1);
+                EventSubscription<PaneOutput> active = client.subscribeOutput(32)) {
+            assertFalse(idle.isClosed());
 
-            client.send("send-keys", "-t", "libtmux", "echo listener-survived-this", "Enter");
+            client.send("send-keys", "-t", "libtmux", "echo active-subscriber-saw-this", "Enter");
 
             assertTrue(
-                    await(() -> seen.stream().anyMatch(output -> output.data().contains("listener-survived-this"))),
-                    "a listener registered after the broken one still has to be told");
+                    awaitOutput(active, "active-subscriber-saw-this"),
+                    "the idle subscriber delayed delivery to the active one");
             assertEquals(
                     List.of("still answering"),
                     client.send("display-message", "-p", "still answering").lines(),
-                    "the reader survived, so replies still arrive");
+                    "the idle subscriber delayed command replies");
+        }
+    }
+
+    @Test
+    void aConsumerCanSendACommandFromItsOwnThread(Server server) throws Exception {
+        try (ControlClient client = attach(server);
+                EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
+            FutureTask<ControlReply> reentrant = new FutureTask<>(() -> {
+                if (!awaitOutput(output, "consumer-can-send")) {
+                    throw new IllegalStateException("the triggering output never arrived");
+                }
+                return client.send("display-message", "-p", "sent-from-consumer");
+            });
+            Thread consumer = Thread.ofVirtual().start(reentrant);
+
+            client.send("send-keys", "-t", "libtmux", "echo consumer-can-send", "Enter");
+
+            assertEquals(
+                    List.of("sent-from-consumer"),
+                    reentrant.get(10, TimeUnit.SECONDS).lines());
+            consumer.join();
         }
     }
 
@@ -204,6 +222,31 @@ final class ControlModeIntegrationTest {
         client.close();
     }
 
+    @Test
+    void closingTheClientWakesAWaitingSubscriber(Server server) throws Exception {
+        ControlClient client = attach(server);
+        EventSubscription<PaneOutput> output = client.subscribeOutput(1);
+        CountDownLatch entered = new CountDownLatch(1);
+        FutureTask<Optional<PaneOutput>> waiting = new FutureTask<>(() -> {
+            entered.countDown();
+            return output.next();
+        });
+        Thread consumer = Thread.ofVirtual().start(waiting);
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            assertThrows(TimeoutException.class, () -> waiting.get(100, TimeUnit.MILLISECONDS));
+
+            client.close();
+
+            assertEquals(Optional.empty(), waiting.get(1, TimeUnit.SECONDS));
+        } finally {
+            waiting.cancel(true);
+            output.close();
+            client.close();
+            consumer.join();
+        }
+    }
+
     /**
      * A request nobody answered is unanswered, not failed. No ordinary tmux command can produce
      * this — control mode replies as soon as it queues a command, even a blocking one — so the
@@ -215,14 +258,14 @@ final class ControlModeIntegrationTest {
         try (ControlClient client = attach(server)) {
             signal("-STOP", pid);
             try {
-                ControlReply reply =
-                        client.send(List.of("display-message", "-p", "unanswerable"), Duration.ofMillis(500));
+                TmuxTimeoutException failure = assertThrows(
+                        TmuxTimeoutException.class,
+                        () -> client.send(List.of("display-message", "-p", "unanswerable"), Duration.ofMillis(500)));
 
                 assertEquals(
-                        OperationOutcome.UNKNOWN,
-                        reply.outcome(),
+                        DispatchOutcome.UNKNOWN,
+                        failure.outcome(),
                         "tmux may well have run it; nothing came back to say so");
-                assertEquals(List.of(), reply.lines());
             } finally {
                 signal("-CONT", pid);
             }
@@ -245,12 +288,18 @@ final class ControlModeIntegrationTest {
         assertTrue(kill.waitFor(20, TimeUnit.SECONDS) && kill.exitValue() == 0, "could not " + signal + " tmux");
     }
 
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
+    private static boolean awaitOutput(EventSubscription<PaneOutput> output, String expected)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        while (System.nanoTime() < deadline) {
+            Duration remaining = Duration.ofNanos(Math.max(0L, deadline - System.nanoTime()));
+            var next = output.next(remaining);
+            if (next.isEmpty()) {
+                return false;
+            }
+            if (next.orElseThrow().data().contains(expected)) {
                 return true;
             }
-            Thread.sleep(50);
         }
         return false;
     }
