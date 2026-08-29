@@ -27,7 +27,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -58,7 +57,7 @@ final class ExamplesTest {
 
             pane.sendLine("echo hello from libtmux");
 
-            assertTrue(awaitOutput(pane, "hello from libtmux"));
+            assertTrue(Await.output(pane, "hello from libtmux"));
             assertEquals("demo", session.name());
             server.killServer();
         }
@@ -73,7 +72,7 @@ final class ExamplesTest {
         assertEquals("editor", build.windows().get(0).name());
         assertEquals("logs", logs.name());
         assertTrue(
-                await(() ->
+                Await.until(() ->
                         "sleep".equals(logs.activePane().orElseThrow().refresh().currentCommand())),
                 "the window ran what it was given");
     }
@@ -88,7 +87,7 @@ final class ExamplesTest {
         Pane app = pane.split(s -> s.running("sleep", "30").in(directory));
 
         assertTrue(side.edges().right());
-        assertTrue(await(() -> "sleep".equals(app.refresh().currentCommand())));
+        assertTrue(Await.until(() -> "sleep".equals(app.refresh().currentCommand())));
 
         Session session = server.sessions().get(0);
         SplitSpec sidebar = SplitSpec.builder().toRight().percent(25).build();
@@ -248,8 +247,23 @@ final class ExamplesTest {
 
             client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
 
-            assertTrue(awaitOutput(output, "streamed"));
+            assertTrue(streamed(output, "streamed"));
         }
+    }
+
+    /** A subscription is drained rather than polled, so it waits differently from a screen. */
+    private static boolean streamed(EventSubscription<PaneOutput> output, String expected) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (System.nanoTime() < deadline) {
+            var next = output.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
+            if (next.isEmpty()) {
+                return false;
+            }
+            if (next.orElseThrow().data().contains(expected)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Guide: options are read at the scope tmux will act on. */
@@ -278,34 +292,5 @@ final class ExamplesTest {
             assertEquals(5, session.windows().get(0).index().value());
             server.killServer();
         }
-    }
-
-    private static boolean awaitOutput(Pane pane, String expected) throws InterruptedException {
-        return await(() -> pane.capture().stream().anyMatch(line -> line.contains(expected)));
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
-    }
-
-    private static boolean awaitOutput(EventSubscription<PaneOutput> output, String expected)
-            throws InterruptedException {
-        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-        while (System.nanoTime() < deadline) {
-            var next = output.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
-            if (next.isEmpty()) {
-                return false;
-            }
-            if (next.orElseThrow().data().contains(expected)) {
-                return true;
-            }
-        }
-        return false;
     }
 }

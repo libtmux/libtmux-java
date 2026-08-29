@@ -17,7 +17,6 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -89,7 +88,7 @@ final class EnvironmentIntegrationTest {
         Pane pane = window.split(
                 s -> s.running("sh", "-c", "printf '%s\\n%s\\n' \"$TMUX\" \"$TMUX_PANE\" > " + report + "; sleep 30"));
 
-        assertTrue(await(() -> lines(report).size() >= 2), "the pane never reported its environment");
+        assertTrue(Await.until(() -> lines(report).size() >= 2), "the pane never reported its environment");
 
         Map<String, String> exported = new HashMap<>();
         exported.put("TMUX", lines(report).get(0));
@@ -106,15 +105,5 @@ final class EnvironmentIntegrationTest {
         } catch (IOException e) {
             return List.of();
         }
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

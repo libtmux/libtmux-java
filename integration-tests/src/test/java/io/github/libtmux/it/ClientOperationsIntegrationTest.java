@@ -15,7 +15,6 @@ import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,12 +40,12 @@ final class ClientOperationsIntegrationTest {
 
         try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
-            assertTrue(await(() -> appeared(server, before).isPresent()), "no client ever attached");
+            assertTrue(Await.until(() -> appeared(server, before).isPresent()), "no client ever attached");
             Client client = appeared(server, before).orElseThrow();
 
             client.detach();
 
-            assertTrue(await(() -> appeared(server, before).isEmpty()), "the client is still attached");
+            assertTrue(Await.until(() -> appeared(server, before).isEmpty()), "the client is still attached");
             assertTrue(server.isAlive(), "detaching is not killing");
             assertTrue(
                     server.sessions().stream().anyMatch(seen -> seen.id().equals(session.id())),
@@ -61,13 +60,13 @@ final class ClientOperationsIntegrationTest {
 
         try (ControlClient attached = ControlClient.attach(server.config(), first.id())) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
-            assertTrue(await(() -> !server.clients().isEmpty()));
+            assertTrue(Await.until(() -> !server.clients().isEmpty()));
             Client client = server.clients().get(0);
 
             client.switchTo(second);
 
             assertTrue(
-                    await(() -> server.clients().stream()
+                    Await.until(() -> server.clients().stream()
                             .findFirst()
                             .flatMap(Client::fetchAttachment)
                             .map(seen -> seen.session().id().equals(second.id()))
@@ -82,7 +81,7 @@ final class ClientOperationsIntegrationTest {
 
         try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
-            assertTrue(await(() -> !server.clients().isEmpty()));
+            assertTrue(Await.until(() -> !server.clients().isEmpty()));
             Client client = server.clients().get(0);
 
             client.redraw();
@@ -99,12 +98,12 @@ final class ClientOperationsIntegrationTest {
                 ControlClient two = ControlClient.attach(server.config(), session.id())) {
             assertTrue(one.send("display-message", "-p", "ready").succeeded());
             assertTrue(two.send("display-message", "-p", "ready").succeeded());
-            assertTrue(await(() -> server.clients().size() >= 2), "two clients never attached");
+            assertTrue(Await.until(() -> server.clients().size() >= 2), "two clients never attached");
             Client survivor = server.clients().get(0);
 
             survivor.detachOthers();
 
-            assertTrue(await(() -> server.clients().size() == 1), "the others are still attached");
+            assertTrue(Await.until(() -> server.clients().size() == 1), "the others are still attached");
             assertEquals(survivor.name(), server.clients().get(0).name(), "and the survivor is the one that asked");
         }
     }
@@ -122,7 +121,7 @@ final class ClientOperationsIntegrationTest {
 
         try (ControlClient attached = ControlClient.attach(server.config(), watched.id())) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
-            assertTrue(await(() -> !server.attachedSessions().isEmpty()), "no session ever became attached");
+            assertTrue(Await.until(() -> !server.attachedSessions().isEmpty()), "no session ever became attached");
 
             List<SessionId> listed =
                     server.attachedSessions().stream().map(Session::id).toList();
@@ -166,15 +165,5 @@ final class ClientOperationsIntegrationTest {
         return server.clients().stream()
                 .filter(client -> !before.contains(client.name()))
                 .findFirst();
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

@@ -71,7 +71,7 @@ final class OperationsIntegrationTest {
 
         pane.sendLine("echo libtmux-was-here");
 
-        assertTrue(awaitOutput(pane, "libtmux-was-here"), "the pane never showed the command's output");
+        assertTrue(Await.output(pane, "libtmux-was-here"), "the pane never showed the command's output");
     }
 
     @Test
@@ -81,16 +81,16 @@ final class OperationsIntegrationTest {
         // The shell has to have read the definition before the name is used. Without this the same
         // failure reports that Enter was pressed when the line was typed before anything was reading.
         pane.sendLine("echo defined-the-function");
-        assertTrue(awaitOutput(pane, "defined-the-function"), "the shell never read the definition");
+        assertTrue(Await.output(pane, "defined-the-function"), "the shell never read the definition");
         // Clearing is what makes the marker below unambiguous, so it too has to have happened.
         pane.sendLine("clear");
         pane.sendLine("echo cleared-the-screen");
-        assertTrue(awaitOutput(pane, "cleared-the-screen"), "the shell never reached the clear");
+        assertTrue(Await.output(pane, "cleared-the-screen"), "the shell never reached the clear");
 
         pane.sendLine("Enter");
         assertDoesNotThrow(() -> pane.sendLine("-R"), "a line is not a send-keys option");
 
-        assertTrue(awaitOutput(pane, "literal-enter-command"), "Enter was pressed instead of typed");
+        assertTrue(Await.output(pane, "literal-enter-command"), "Enter was pressed instead of typed");
     }
 
     @Test
@@ -194,20 +194,5 @@ final class OperationsIntegrationTest {
                 return;
             }
         }
-    }
-
-    private static boolean awaitOutput(Pane pane, String expected) {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (pane.capture().stream().anyMatch(line -> line.contains(expected))) {
-                return true;
-            }
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
-        }
-        return false;
     }
 }

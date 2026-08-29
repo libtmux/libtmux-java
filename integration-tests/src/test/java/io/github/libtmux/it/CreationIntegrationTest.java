@@ -19,7 +19,6 @@ import io.github.libtmux.WindowSpec;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -46,7 +45,7 @@ final class CreationIntegrationTest {
         assertEquals("logs", logs.name());
         Pane pane = logs.activePane().orElseThrow();
         assertTrue(
-                await(() -> "sleep".equals(pane.refresh().currentCommand())),
+                Await.until(() -> "sleep".equals(pane.refresh().currentCommand())),
                 "the window's first pane never reported the command");
     }
 
@@ -138,7 +137,7 @@ final class CreationIntegrationTest {
             Pane pane = window.activePane().orElseThrow();
 
             assertTrue(
-                    await(() -> real.equals(pane.refresh().currentPath())),
+                    Await.until(() -> real.equals(pane.refresh().currentPath())),
                     "the window did not start where it was told");
         } else {
             assertThrows(
@@ -159,7 +158,7 @@ final class CreationIntegrationTest {
                 .env("LIBTMUX_W", "carried")
                 .running("sh", "-c", "printf '%s' \"$LIBTMUX_W\" > " + written + "; sleep 30"));
 
-        assertTrue(await(() -> Files.exists(written)), "the command never ran");
+        assertTrue(Await.until(() -> Files.exists(written)), "the command never ran");
         assertEquals("carried", Files.readString(written));
     }
 
@@ -173,7 +172,7 @@ final class CreationIntegrationTest {
         assertEquals("built", built.name());
         assertEquals("editor", built.windows().get(0).name());
         Pane pane = built.activePane().orElseThrow();
-        assertTrue(await(() -> "sleep".equals(pane.refresh().currentCommand())));
+        assertTrue(Await.until(() -> "sleep".equals(pane.refresh().currentCommand())));
     }
 
     /** 3.2a accepts {@code -x}/{@code -y} for a detached session and gives it the default size. */
@@ -237,15 +236,5 @@ final class CreationIntegrationTest {
         assertNotEquals(first.id(), second.id(), "tmux numbered them apart");
         assertEquals("main", first.windows().get(0).name());
         assertEquals("main", second.windows().get(0).name());
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

@@ -11,7 +11,6 @@ import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -68,7 +67,7 @@ final class ServerScriptingIntegrationTest {
 
         server.runShell("touch " + touched);
 
-        assertTrue(await(() -> Files.exists(touched)), "the command never ran");
+        assertTrue(Await.until(() -> Files.exists(touched)), "the command never ran");
     }
 
     @Test
@@ -113,15 +112,5 @@ final class ServerScriptingIntegrationTest {
         assertTrue(commands.stream().anyMatch(line -> line.startsWith("new-session")), "new-session is not among them");
         assertTrue(
                 commands.stream().anyMatch(line -> line.startsWith("split-window")), "split-window is not among them");
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

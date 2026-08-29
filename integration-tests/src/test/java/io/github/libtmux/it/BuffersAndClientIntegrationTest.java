@@ -21,7 +21,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -129,7 +128,7 @@ final class BuffersAndClientIntegrationTest {
         pane.pasteBuffer("typed");
 
         assertTrue(
-                await(() -> pane.capture().stream().anyMatch(line -> line.contains("pasted-this"))),
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("pasted-this"))),
                 "the buffer never reached the pane");
     }
 
@@ -150,7 +149,7 @@ final class BuffersAndClientIntegrationTest {
         pane.paste("echo pasted-text\n");
 
         assertTrue(
-                await(() -> pane.capture().stream().anyMatch(line -> line.contains("pasted-text"))),
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("pasted-text"))),
                 "the text never reached the pane");
         assertEquals(
                 List.of("belongs-to-the-user"),
@@ -170,7 +169,7 @@ final class BuffersAndClientIntegrationTest {
         pane.paste("printf 'a;b \"c\" d\\n'\n");
 
         assertTrue(
-                await(() -> pane.capture().stream().anyMatch(line -> line.contains("a;b \"c\" d"))),
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("a;b \"c\" d"))),
                 "the text did not arrive as written");
         assertThrows(IllegalArgumentException.class, () -> pane.paste("has\0nul"), "NUL is not typeable");
     }
@@ -186,7 +185,7 @@ final class BuffersAndClientIntegrationTest {
         pane.paste("y".repeat(20_000) + "END-OF-A-LARGE-PASTE");
 
         assertTrue(
-                await(() -> pane.capture().stream().anyMatch(line -> line.contains("END-OF-A-LARGE-PASTE"))),
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("END-OF-A-LARGE-PASTE"))),
                 "text larger than a tmux command never arrived");
     }
 
@@ -229,7 +228,7 @@ final class BuffersAndClientIntegrationTest {
     void anAttachedClientReportsWhatItIsLookingAt(Server server) throws Exception {
         Session session = server.sessions().get(0);
         try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
-            assertTrue(await(() -> !server.clients().isEmpty()), "the control client never appeared as a client");
+            assertTrue(Await.until(() -> !server.clients().isEmpty()), "the control client never appeared as a client");
 
             Client client = server.clients().get(0);
             ClientAttachment looking = client.attachment().orElseThrow();
@@ -249,7 +248,7 @@ final class BuffersAndClientIntegrationTest {
         Session session = server.sessions().get(0);
         try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
-            assertTrue(await(() -> !server.clients().isEmpty()));
+            assertTrue(Await.until(() -> !server.clients().isEmpty()));
             Client client = server.clients().get(0);
             String before = client.attachment().orElseThrow().activeWindow().name();
 
@@ -274,11 +273,11 @@ final class BuffersAndClientIntegrationTest {
         Client client;
         try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
-            assertTrue(await(() -> appeared(server, before).isPresent()), "no client ever attached");
+            assertTrue(Await.until(() -> appeared(server, before).isPresent()), "no client ever attached");
             client = appeared(server, before).orElseThrow();
         }
 
-        assertTrue(await(() -> client.refresh().isEmpty()), "the client outlived the connection that made it");
+        assertTrue(Await.until(() -> client.refresh().isEmpty()), "the client outlived the connection that made it");
         assertEquals(Optional.empty(), client.fetchAttachment());
     }
 
@@ -287,15 +286,5 @@ final class BuffersAndClientIntegrationTest {
         return server.clients().stream()
                 .filter(client -> !before.contains(client.name()))
                 .findFirst();
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

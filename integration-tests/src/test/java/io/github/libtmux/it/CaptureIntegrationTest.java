@@ -12,7 +12,6 @@ import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.UnsupportedTmuxVersion;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -41,7 +40,7 @@ final class CaptureIntegrationTest {
                 .split(s ->
                         s.running("sh", "-c", "for i in 1 2 3 4 5 6 7 8 9 10 11 12; do echo line-$i; done; sleep 60"));
         assertTrue(
-                await(() ->
+                Await.until(() ->
                         pane.capture(c -> c.fromStartOfHistory()).stream().anyMatch(line -> line.contains("line-12"))),
                 "the pane never printed what it was told to");
         return pane;
@@ -110,7 +109,7 @@ final class CaptureIntegrationTest {
         Session session = server.sessions().get(0);
         Pane pane = session.windows().get(0).split(s -> s.running("sh", "-c", "printf 'padded   \\n'; sleep 60"));
         assertTrue(
-                await(() -> pane.capture().stream().anyMatch(line -> line.contains("padded"))),
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("padded"))),
                 "the pane never printed the padded line");
 
         String plain = lineWith(pane.capture(), "padded");
@@ -178,15 +177,5 @@ final class CaptureIntegrationTest {
         }
 
         assertEquals(before, pane.capture().size(), "the pane changed under a refused read");
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

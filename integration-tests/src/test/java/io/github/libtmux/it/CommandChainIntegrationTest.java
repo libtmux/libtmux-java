@@ -12,7 +12,6 @@ import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.batch.OperationResult;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -43,7 +42,8 @@ final class CommandChainIntegrationTest {
 
         List<Pane> panes = built.panes();
         assertTrue(
-                await(() -> panes.get(1).capture().stream().anyMatch(line -> line.contains("chained-landed-here"))),
+                Await.until(
+                        () -> panes.get(1).capture().stream().anyMatch(line -> line.contains("chained-landed-here"))),
                 "the keys went to the pane the split produced, not to the one the chain started from");
     }
 
@@ -64,7 +64,7 @@ final class CommandChainIntegrationTest {
         // The shell has to have read the definition before the name is used. A chain is one
         // invocation, so without this the name is typed before anything is reading for it.
         assertTrue(
-                await(() -> pane.capture().stream().anyMatch(line -> line.contains("defined-the-function"))),
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("defined-the-function"))),
                 "the shell never read the definition");
 
         BatchResult result = server.chain()
@@ -76,10 +76,10 @@ final class CommandChainIntegrationTest {
 
         assertTrue(result.succeeded(), result.toString());
         assertTrue(
-                await(() -> pane.capture().stream().anyMatch(line -> line.contains("literal-chain-enter"))),
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("literal-chain-enter"))),
                 "Enter was pressed instead of typed");
         assertTrue(
-                await(() -> pane.capture().stream().anyMatch(line -> line.contains("literal-chain-semicolon"))),
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("literal-chain-semicolon"))),
                 "a trailing semicolon became a command-group separator");
     }
 
@@ -138,15 +138,5 @@ final class CommandChainIntegrationTest {
                 .run();
 
         assertTrue(result.succeeded(), result.toString());
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }
