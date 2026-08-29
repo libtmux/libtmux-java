@@ -44,6 +44,28 @@ final class McpLauncherTest {
     /** Longer than any single call needs, short enough that a hung launcher fails as itself. */
     private static final int PATIENCE_SECONDS = 60;
 
+    @Test
+    void failedWatchStartupDoesNotLeaveTheLauncherAlive(Server server, TmuxSocketPath socket) throws Exception {
+        assertTrue(server.cmd("set-option", "-g", "exit-empty", "off").succeeded());
+        server.sessions().getFirst().kill();
+        assertTrue(server.sessions().isEmpty(), "the fixture still had a session for the watcher to attach to");
+
+        Process launcher =
+                rawLauncher(socket.path(), ProcessBuilder.Redirect.DISCARD, ProcessBuilder.Redirect.PIPE, "--watch");
+        try {
+            assertTrue(
+                    launcher.waitFor(5, TimeUnit.SECONDS),
+                    "watch startup failed, but the launcher stayed alive on its tmux transport threads");
+            assertTrue(launcher.exitValue() != 0, "failed watch startup reported success");
+            String diagnostic = new String(launcher.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(
+                    diagnostic.contains("tmux list-windows failed: no current target"),
+                    "the launcher failed for the wrong reason: " + diagnostic);
+        } finally {
+            stop(launcher);
+        }
+    }
+
     /** Protocol failure ends the session even when the client forgets to close its stdin pipe. */
     @Test
     void malformedInputDoesNotLeaveTheLauncherWaitingForEndOfInput(Server server, TmuxSocketPath socket)
@@ -457,18 +479,27 @@ final class McpLauncherTest {
                 .build();
     }
 
-    private static Process rawLauncher(Path socket, ProcessBuilder.Redirect output) throws IOException {
-        return new ProcessBuilder(List.of(
-                        Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                        "-classpath",
-                        System.getProperty("java.class.path"),
-                        Main.class.getName(),
-                        "--socket",
-                        socket.toString(),
-                        "--tmux",
-                        TMUX))
+    private static Process rawLauncher(Path socket, ProcessBuilder.Redirect output, String... extra)
+            throws IOException {
+        return rawLauncher(socket, output, ProcessBuilder.Redirect.DISCARD, extra);
+    }
+
+    private static Process rawLauncher(
+            Path socket, ProcessBuilder.Redirect output, ProcessBuilder.Redirect error, String... extra)
+            throws IOException {
+        List<String> args = new java.util.ArrayList<>(List.of(
+                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-classpath",
+                System.getProperty("java.class.path"),
+                Main.class.getName(),
+                "--socket",
+                socket.toString(),
+                "--tmux",
+                TMUX));
+        args.addAll(List.of(extra));
+        return new ProcessBuilder(args)
                 .redirectOutput(output)
-                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(error)
                 .start();
     }
 

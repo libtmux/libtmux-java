@@ -54,24 +54,25 @@ public final class Main {
             System.exit(2);
             return;
         }
-        // The server outlives this call: the MCP transport reads stdin until the client closes it.
-        Server server = Server.open(config);
-        Runtime.getRuntime().addShutdownHook(new Thread(server::close, "libtmux-mcp-shutdown"));
-        System.err.println("libtmux-mcp: serving " + server.identity() + " at safety " + ceiling.wireName() + " ("
-                + Catalog.offered(ceiling).size() + " tools)");
+        // The server outlives setup: the MCP transport reads stdin until the client closes it.
+        // Lexical ownership also releases its process transport when protocol startup fails.
+        try (Server server = Server.open(config)) {
+            Runtime.getRuntime().addShutdownHook(new Thread(server::close, "libtmux-mcp-shutdown"));
+            System.err.println("libtmux-mcp: serving " + server.identity() + " at safety " + ceiling.wireName() + " ("
+                    + Catalog.offered(ceiling).size() + " tools)");
 
-        // A client that disconnects closes this end. Without noticing that, the process outlives the
-        // client that launched it, and an MCP client leaves one behind every time it restarts.
-        CountDownLatch disconnected = new CountDownLatch(1);
-        var mcp = TmuxMcpServer.overStdio(server, System.in, ceiling, watching, disconnected::countDown);
-        Runtime.getRuntime().addShutdownHook(new Thread(mcp::close, "libtmux-mcp-protocol-shutdown"));
-        try {
-            disconnected.await();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            // A client that disconnects closes this end. Without noticing that, the process outlives
+            // the client that launched it, and an MCP client leaves one behind every time it restarts.
+            CountDownLatch disconnected = new CountDownLatch(1);
+            var mcp = TmuxMcpServer.overStdio(server, System.in, ceiling, watching, disconnected::countDown);
+            Runtime.getRuntime().addShutdownHook(new Thread(mcp::close, "libtmux-mcp-protocol-shutdown"));
+            try {
+                disconnected.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            mcp.closeGracefully();
         }
-        mcp.closeGracefully();
-        server.close();
         System.exit(0);
     }
 
