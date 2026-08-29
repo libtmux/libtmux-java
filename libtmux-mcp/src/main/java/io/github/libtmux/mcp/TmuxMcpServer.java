@@ -12,7 +12,6 @@ import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpServerTransportProvider;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -33,14 +32,6 @@ import org.jspecify.annotations.Nullable;
  * and serves nothing at all until it lets go.
  */
 public final class TmuxMcpServer {
-
-    /**
-     * How long the SDK waits for a client to answer something this server asked it.
-     *
-     * <p>Not a bound on a tool call: those bound themselves. Generous because the wait tools may
-     * legitimately hold a request open to the wait ceiling.
-     */
-    private static final Duration REQUEST_TIMEOUT = Duration.ofMinutes(5);
 
     private TmuxMcpServer() {}
 
@@ -166,7 +157,6 @@ public final class TmuxMcpServer {
         var specification = McpServer.sync(new SerializedTransportProvider(transport))
                 .serverInfo("libtmux", version())
                 .instructions(Instructions.forServer(connection.ceiling(), watching))
-                .requestTimeout(REQUEST_TIMEOUT)
                 .capabilities(McpSchema.ServerCapabilities.builder()
                         .tools(true)
                         // Subscription is offered only when something is actually watching tmux.
