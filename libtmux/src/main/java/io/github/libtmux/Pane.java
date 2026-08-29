@@ -340,7 +340,8 @@ public final class Pane {
      * }</pre>
      *
      * @param format a tmux format, usually of the shape {@code #{name}}
-     * @return the expansion, empty when the format expanded to nothing
+     * @return the expansion, whole when it spans lines and empty when the format expanded to
+     *     nothing
      */
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
@@ -348,7 +349,7 @@ public final class Pane {
                         snapshot,
                         List.of("display-message", "-p", "-t", state.id().value(), format))
                 .stdout();
-        return reported.isEmpty() ? "" : reported.get(0);
+        return String.join("\n", reported);
     }
 
     /**

@@ -243,12 +243,13 @@ public final class Server implements AutoCloseable {
      * {@code #{version}} that belong to no session in particular.
      *
      * @param format a tmux format, usually of the shape {@code #{name}}
-     * @return the expansion, empty when the format expanded to nothing
+     * @return the expansion, whole when it spans lines and empty when the format expanded to
+     *     nothing
      */
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
         List<String> reported = run(List.of("display-message", "-p", format)).stdout();
-        return reported.isEmpty() ? "" : reported.get(0);
+        return String.join("\n", reported);
     }
 
     /**

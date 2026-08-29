@@ -36,6 +36,18 @@ final class ServerScriptingIntegrationTest {
 
     // -------------------------------------------------------------------------------- expanding
 
+    /**
+     * A format may expand to several lines — a loop over windows does, and so does any option whose
+     * value carries a newline — so taking the first would report a fragment as the whole answer.
+     */
+    @Test
+    void anExpansionSpanningLinesComesBackWhole(Server server) {
+        server.globalOptions().set("@multi", "first\nsecond");
+
+        assertEquals("first\nsecond", server.expand("#{@multi}"));
+        assertEquals("first\nsecond", server.sessions().get(0).expand("#{@multi}"), "every scope answers the same way");
+    }
+
     @Test
     void theServerExpandsFormatsThatBelongToNoSession(Server server) {
         assertEquals(server.version().toString(), server.expand("#{version}"));

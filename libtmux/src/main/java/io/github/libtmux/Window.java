@@ -154,14 +154,15 @@ public final class Window {
      * <p>The same escape hatch {@link Pane#expand} gives, resolved against this window.
      *
      * @param format a tmux format, usually of the shape {@code #{name}}
-     * @return the expansion, empty when the format expanded to nothing
+     * @return the expansion, whole when it spans lines and empty when the format expanded to
+     *     nothing
      */
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
         List<String> reported = server.run(
                         snapshot, state.context(), List.of("display-message", "-p", "-t", linkTarget(), format))
                 .stdout();
-        return reported.isEmpty() ? "" : reported.get(0);
+        return String.join("\n", reported);
     }
 
     /**
