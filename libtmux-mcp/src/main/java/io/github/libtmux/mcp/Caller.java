@@ -5,7 +5,6 @@ import io.github.libtmux.Server;
 import io.github.libtmux.TmuxEnvironment;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
@@ -67,9 +66,8 @@ final class Caller {
     /** tmux is asked which socket it is on, rather than the endpoint being reassembled from flags. */
     private static @Nullable Path socketOf(Server server) {
         try {
-            List<String> reported =
-                    server.cmd("display-message", "-p", "#{socket_path}").stdout();
-            return reported.isEmpty() ? null : Path.of(reported.get(0));
+            String reported = server.expand("#{socket_path}");
+            return reported.isEmpty() ? null : Path.of(reported);
         } catch (RuntimeException e) {
             return null;
         }

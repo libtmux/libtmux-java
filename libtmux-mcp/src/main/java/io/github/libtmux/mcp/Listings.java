@@ -314,9 +314,8 @@ final class Listings {
 
     private static @Nullable String socketOf(Server server) {
         try {
-            List<String> reported =
-                    server.cmd("display-message", "-p", "#{socket_path}").stdout();
-            return reported.isEmpty() ? null : reported.get(0);
+            String reported = server.expand("#{socket_path}");
+            return reported.isEmpty() ? null : reported;
         } catch (RuntimeException e) {
             return null;
         }
