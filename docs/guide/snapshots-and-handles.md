@@ -21,6 +21,12 @@ That is deliberate. tmux offers no transaction across separate listings, so a
 traversal that re-queried could observe a hierarchy that never existed — a window
 in one listing and its panes from after it closed.
 
+A capture costs two tmux commands: one asks which server this is, and one runs the
+four listings as a group fenced against that answer. Because tmux runs a group
+inside the server, the rows cannot come from two of them, and a server replaced
+under the capture is refused rather than half-read. What that costs is measured in
+[`docs/benchmarks/operations.md`](../benchmarks/operations.md).
+
 `refresh()` is how to look again. `server.snapshot()` is the strict form: it
 raises when a listing failed, where the list accessors answer with an empty list.
 Use `isAlive()` or `raiseIfDead()` to tell an empty server from an absent one.

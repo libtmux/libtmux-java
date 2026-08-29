@@ -1,5 +1,11 @@
 # Query expressions and the typed metamodel
 
+> **Superseded in part.** `EntityMetamodel` and `FieldProvenance` no longer exist:
+> handles are opaque values minted through `Fields`, with no base class and no
+> global provenance bit. The decision this note is actually about — no generator,
+> because the metamodel is small explicit domain code guarded by a reflective
+> conformance test — still stands, and `MetamodelConformanceTest` is that guard.
+
 ## Status
 
 Historical evidence. The expression semantics and pushdown measurements remain
