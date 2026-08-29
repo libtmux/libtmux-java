@@ -22,7 +22,7 @@ import org.jspecify.annotations.Nullable;
  * of 60 attempts; batched into one invocation, none of 60 did, because tmux does not process pane
  * output between two commands of the same invocation.
  */
-final class Watching {
+final class Screen {
 
     /**
      * How far back a look reaches beyond what the caller asked for.
@@ -34,7 +34,7 @@ final class Watching {
      */
     private static final int SLACK_LINES = 256;
 
-    private Watching() {}
+    private Screen() {}
 
     /**
      * @param lines what the caller has not seen

@@ -75,7 +75,7 @@ final class RunningCommands {
         String endMark = nonce + "-e";
         String channel = "ch_" + nonce;
 
-        Cursor before = Watching.from(pane).cursor();
+        Cursor before = Screen.from(pane).cursor();
         String typed = payload(server, command, nonce, startMark, endMark, channel, suppressHistory);
         // Never make the shell wait for Java cleanup: a transport can report UNKNOWN after tmux
         // accepted this line, and that failure must not strand the pane at private plumbing.
@@ -85,8 +85,7 @@ final class RunningCommands {
         WakeReason wake = server.waitFor(channel, timeout);
         double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
 
-        Watching.Fresh fresh =
-                wake == WakeReason.SERVER_GONE ? null : Watching.since(pane, before, Trim.lineBudget(call));
+        Screen.Fresh fresh = wake == WakeReason.SERVER_GONE ? null : Screen.since(pane, before, Trim.lineBudget(call));
         Framed framed = fresh == null ? new Framed(List.of(), false, null) : frame(fresh.lines(), startMark, endMark);
         Integer status = wake == WakeReason.SIGNALLED ? framed.status() : null;
         Trim.Trimmed trimmed = Trim.tail(framed.lines(), Trim.lineBudget(call));

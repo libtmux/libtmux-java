@@ -102,7 +102,7 @@ final class Resources {
                         TEXT_MIME,
                         values -> {
                             Pane pane = Targets.pane(connection.server(), values.get(0));
-                            return String.join("\n", Watching.withoutTrailingBlanks(pane.capture()));
+                            return String.join("\n", Screen.withoutTrailingBlanks(pane.capture()));
                         }));
     }
 

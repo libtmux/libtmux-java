@@ -55,7 +55,7 @@ final class WaitingForText {
         int budget = Trim.lineBudget(call);
         Cursor cursor = call.maybe("cursor")
                 .map(Cursor::decode)
-                .orElseGet(() -> Watching.from(pane).cursor());
+                .orElseGet(() -> Screen.from(pane).cursor());
         Trim.Trimmed retained = new Trim.Trimmed(List.of(), 0);
         long started = System.nanoTime();
         long deadline = started + timeout.toNanos();
@@ -65,7 +65,7 @@ final class WaitingForText {
         String hitLine = null;
 
         while (true) {
-            Watching.Fresh fresh = Watching.since(pane, cursor, budget);
+            Screen.Fresh fresh = Screen.since(pane, cursor, budget);
             cursor = fresh.cursor();
             retained = Trim.append(retained, fresh.lines(), budget);
 
