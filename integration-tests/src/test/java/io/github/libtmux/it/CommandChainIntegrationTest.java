@@ -85,6 +85,10 @@ final class CommandChainIntegrationTest {
                 IllegalArgumentException.class,
                 () -> server.chain().newWindow("safe").arrange("not-a-real-layout"),
                 "the check has to happen while building the chain, not when running it");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> server.chain().newWindow("safe").arrange("0000,80x24,0,0,1"),
+                "a serialized layout with the wrong checksum is just as unsafe");
 
         assertEquals(1, server.windows().size(), "and nothing was dispatched");
     }

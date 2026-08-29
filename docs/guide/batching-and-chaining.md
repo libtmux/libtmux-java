@@ -2,8 +2,7 @@
 
 Every snippet here is executed by `ExamplesTest`.
 
-Both put several commands into one tmux invocation. They are not
-[execution modes](execution-modes.md) — they work under any carrier.
+Both put several commands into one tmux invocation.
 
 ## A batch: several commands, each with its own outcome
 
@@ -45,11 +44,3 @@ split — with no round trip to learn either id.
 
 That is the difference from a batch: a batch is several commands that happen to
 travel together, a chain is several commands that depend on each other.
-
-## Under control mode
-
-Both work unchanged. A group is carried by a process even when the server is in
-`CONTROL`, because control mode frames a reply per command and a group would
-desynchronise the stream. Nothing marks the difference at the call site — see
-[execution modes](execution-modes.md) for why that routing is the library's job
-rather than yours.

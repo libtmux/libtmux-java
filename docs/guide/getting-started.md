@@ -36,9 +36,8 @@ session.name();                            // → demo
 window.name();                             // → build
 ```
 
-By default each command is one tmux process. One switch makes them share a
-persistent client instead — see [execution modes](execution-modes.md), which has
-the measured difference and says what else is worth reading.
+Each command runs through one tmux process. Use a batch or chain when several
+commands should share an invocation.
 
 `Server.open` owns the transport it creates and closes it. `Server.using` borrows
 one you own and never closes it, so several servers can share a transport.
@@ -204,17 +203,20 @@ just created.
 A control client stays attached and pushes terminal output as it happens:
 
 ```java
-try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
-    List<PaneOutput> seen = new CopyOnWriteArrayList<>();
-    client.onOutput(seen::add);
+try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
 
     client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
+
+    PaneOutput arrived = output.next(Duration.ofSeconds(5)).orElseThrow();
+    arrived.data().contains("streamed");  // → true
 }
 ```
 
 Control-mode requests are independent: a failure discards nothing behind it, and
 every reply carries the request that produced it. Attaching is what makes tmux
-push output at all.
+push output at all. The bounded subscription reports overflow through
+`droppedCount()` and never runs caller code on the reply reader.
 
 ## Pinning tmux's configuration
 
@@ -236,7 +238,6 @@ pinned.configFile().isPresent();           // → true
 
 | you want to                       | read                                          |
 | --------------------------------- | --------------------------------------------- |
-| make every command cost less      | [execution modes](execution-modes.md)         |
 | select things without lambdas     | [filtering](filtering.md)                     |
 | read and write tmux's settings    | [options and hooks](options-and-hooks.md)     |
 | send several commands at once     | [batching and chaining](batching-and-chaining.md) |

@@ -140,20 +140,20 @@ re-expands on its own one-second timer and reports **only when the value differs
 
 That is a change detector inside the server. With `--watch`, this server turns
 those into MCP `notifications/resources/updated`, so a client holding
-`tmux://panes/%1/content` refreshes when there is a reason to and never otherwise.
+`tmux://panes/%251/content` refreshes when pane `%1` changes and never otherwise.
 
 The same mechanism is available to any Java caller:
 
 <!-- snippet: compile-only: a watch reports a format when its value changes -->
 ```java
-try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
-    client.onEvent(event -> {
-        event.subscription();   // which watch this came from
-        event.paneId();         // which pane, when the watch is over panes
-        event.value();          // what the format expanded to
-    });
-
+try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
     client.watch("names", "@*", "#{window_name}");
+
+    ControlEvent event = events.next(Duration.ofSeconds(2)).orElseThrow();
+    event.subscription();   // which watch this came from
+    event.windowId();        // which window, when the watch is over windows
+    event.value();           // what the format expanded to
 }
 ```
 
@@ -223,6 +223,5 @@ recovery: `no pane %9 on this server; call tmux_list_panes for the 3 that exist`
 
 - [`libtmux-mcp` README](../../libtmux-mcp/README.md) — running it, and the tool list
 - [Filtering](filtering.md) — the expression model a `filter` argument carries
-- [Execution modes](execution-modes.md) — how commands reach tmux underneath
 - [Watching output as it happens](streaming.md) — the control client directly
 - [Control-mode subscriptions](../spikes/23-control-subscriptions.md) — what was measured

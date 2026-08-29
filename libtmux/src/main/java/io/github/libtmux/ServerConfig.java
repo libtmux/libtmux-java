@@ -27,14 +27,12 @@ public final class ServerConfig {
     private final ServerEndpoint endpoint;
     private final @Nullable Path configFile;
     private final Duration defaultTimeout;
-    private final ExecutionMode mode;
 
-    private ServerConfig(Builder builder, ExecutionMode mode) {
+    private ServerConfig(Builder builder) {
         this.binary = builder.binary;
         this.endpoint = builder.endpoint;
         this.configFile = builder.configFile;
         this.defaultTimeout = builder.defaultTimeout;
-        this.mode = mode;
     }
 
     /** A builder holding the documented defaults. */
@@ -63,18 +61,6 @@ public final class ServerConfig {
     }
 
     /**
-     * How commands reach tmux. Changes the carrying, never the meaning.
-     *
-     * <p>Decided rather than merely requested: a config that named no mode reports the one
-     * {@code -Dlibtmux.mode} or {@code LIBTMUX_MODE} chose for it, so this is what
-     * {@link Server#open} will build. A server handed a transport by {@link Server#using} is
-     * carried by that transport whatever this says.
-     */
-    public ExecutionMode mode() {
-        return mode;
-    }
-
-    /**
      * The argv prefix every command on this server begins with: the binary, the server selection,
      * and the config file if one was pinned.
      */
@@ -96,7 +82,6 @@ public final class ServerConfig {
         builder.endpoint = endpoint;
         builder.configFile = configFile;
         builder.defaultTimeout = defaultTimeout;
-        builder.mode = mode;
         return builder;
     }
 
@@ -107,9 +92,6 @@ public final class ServerConfig {
         private ServerEndpoint endpoint = ServerEndpoint.defaultSocket();
         private @Nullable Path configFile;
         private Duration defaultTimeout = DEFAULT_TIMEOUT;
-        // Null until something names a mode, which is what lets an unset one fall to the ambient
-        // choice: a default of DIRECT here could not be told apart from a caller asking for DIRECT.
-        private @Nullable ExecutionMode mode;
 
         private Builder() {}
 
@@ -131,17 +113,6 @@ public final class ServerConfig {
             return this;
         }
 
-        /**
-         * Chooses how commands reach tmux, and settles it: an ambient choice cannot override this.
-         *
-         * <p>Left unsaid, the mode comes from {@link ExecutionMode#of} and falls back to
-         * {@link ExecutionMode#DIRECT}, which is what the tmux binary itself does.
-         */
-        public Builder mode(ExecutionMode mode) {
-            this.mode = Objects.requireNonNull(mode, "mode");
-            return this;
-        }
-
         /** Sets the deadline a request gets when the caller does not supply one. */
         public Builder defaultTimeout(Duration defaultTimeout) {
             this.defaultTimeout = Objects.requireNonNull(defaultTimeout, "defaultTimeout");
@@ -151,11 +122,7 @@ public final class ServerConfig {
         /**
          * Builds an immutable config, rejecting choices that could only fail later.
          *
-         * <p>Reads {@code -Dlibtmux.mode} and {@code LIBTMUX_MODE} when nothing named a mode, so
-         * the config carries a decided one from here on and nothing downstream consults them again.
-         *
-         * @throws IllegalArgumentException if a choice would only fail later, including a property
-         *     or variable naming something that is not a mode
+         * @throws IllegalArgumentException if a choice would only fail later
          */
         public ServerConfig build() {
             if (binary.isEmpty()) {
@@ -164,10 +131,7 @@ public final class ServerConfig {
             if (defaultTimeout.isZero() || defaultTimeout.isNegative()) {
                 throw new IllegalArgumentException("defaultTimeout is not positive");
             }
-            ExecutionMode chosen = mode != null
-                    ? mode
-                    : ExecutionMode.of(System.getProperties(), System.getenv()).orElse(ExecutionMode.DIRECT);
-            return new ServerConfig(this, chosen);
+            return new ServerConfig(this);
         }
     }
 }

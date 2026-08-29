@@ -35,12 +35,12 @@ public final class Client {
      * <p>Detaching is not killing: the session outlives the client, which is the reason tmux exists.
      */
     public void detach() {
-        server.run(List.of("detach-client", "-t", state.name()));
+        server.run(snapshot, List.of("detach-client", "-t", state.name()));
     }
 
     /** Detaches every other client, leaving this one attached. */
     public void detachOthers() {
-        server.run(List.of("detach-client", "-a", "-t", state.name()));
+        server.run(snapshot, List.of("detach-client", "-a", "-t", state.name()));
     }
 
     /**
@@ -51,7 +51,9 @@ public final class Client {
      */
     public void switchTo(Session session) {
         Objects.requireNonNull(session, "session");
+        server.requireSameIncarnation(snapshot, session.server(), session.snapshot());
         server.run(
+                snapshot,
                 List.of("switch-client", "-c", state.name(), "-t", session.id().value()));
     }
 
@@ -62,12 +64,16 @@ public final class Client {
      * {@code refresh-client}, and it changes the terminal rather than this handle.
      */
     public void redraw() {
-        server.run(List.of("refresh-client", "-t", state.name()));
+        server.run(snapshot, List.of("refresh-client", "-t", state.name()));
     }
 
     /** The server this client is connected to. */
     public Server server() {
         return server;
+    }
+
+    ServerSnapshot snapshot() {
+        return snapshot;
     }
 
     /** The session this client was attached to when captured. A pure read of the capture. */
@@ -99,7 +105,7 @@ public final class Client {
 
     /** Takes a new capture and returns this client as it is now, or empty if it has gone. */
     public Optional<Client> refresh() {
-        ServerSnapshot fresh = server.snapshot();
+        ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.clients().stream()
                 .filter(client -> client.name().equals(state.name()))
                 .findFirst()
@@ -109,13 +115,13 @@ public final class Client {
     @Override
     public boolean equals(Object other) {
         return other instanceof Client that
-                && server.identity().equals(that.server.identity())
+                && server.identity(snapshot).equals(that.server.identity(that.snapshot))
                 && state.name().equals(that.state.name());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(server.identity(), state.name());
+        return Objects.hash(server.identity(snapshot), state.name());
     }
 
     @Override

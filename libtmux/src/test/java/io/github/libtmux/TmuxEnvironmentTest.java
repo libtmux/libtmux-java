@@ -73,6 +73,10 @@ final class TmuxEnvironmentTest {
         assertTrue(TmuxEnvironment.of(Map.of("TMUX", "nonsense")).isEmpty());
         assertTrue(TmuxEnvironment.of(Map.of("TMUX", "/tmp/s,notapid,0")).isEmpty());
         assertTrue(TmuxEnvironment.of(Map.of("TMUX", "/tmp/s,1,")).isEmpty());
+        assertTrue(TmuxEnvironment.of(Map.of("TMUX", "/tmp/s,1,abc")).isEmpty());
+        assertTrue(TmuxEnvironment.of(Map.of("TMUX", "/tmp/s,1,0", "TMUX_PANE", "%x"))
+                .isEmpty());
+        assertTrue(TmuxEnvironment.of(Map.of("TMUX", "bad\0path,1,0")).isEmpty());
     }
 
     /** A process can inherit TMUX without TMUX_PANE, and still knows which server it is on. */

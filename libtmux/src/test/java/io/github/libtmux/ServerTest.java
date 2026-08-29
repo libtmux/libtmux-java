@@ -5,12 +5,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTransport;
+import io.github.libtmux.transport.TmuxTransportException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -154,6 +158,57 @@ final class ServerTest {
         assertThrows(IllegalStateException.class, () -> server.cmd("list-sessions"));
     }
 
+    @Test
+    void aWaitPropagatesTransportFailuresThatAreNotItsDeadline(@TempDir Path directory) throws IOException {
+        TmuxTransportException failure = new TmuxTransportException("pipe failed", DispatchOutcome.UNKNOWN, null);
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                if (request.argv().contains("wait-for")) {
+                    throw failure;
+                }
+                return new CommandResult(0, List.of("4242"), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            assertSame(
+                    failure,
+                    assertThrows(
+                            TmuxTransportException.class,
+                            () -> server.waitFor("channel", java.time.Duration.ofSeconds(1))));
+        }
+    }
+
+    @Test
+    void malformedOrInconsistentListingsRespectStrictAndLenientBoundaries(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        for (String sessionRow : List.of(
+                String.join(separator, "$0", "alpha", "maybe", "0"),
+                String.join(separator, "$0", "alpha", "1", "not-a-number"),
+                String.join(separator, "$0", "alpha", "1", "1"))) {
+            try (Server server = Server.using(config(directory), new SnapshotTransport(sessionRow))) {
+                LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
+
+                assertTrue(failure.getCause() instanceof IllegalArgumentException, failure.toString());
+                assertEquals(List.of(), server.sessions(), "lenient listings collapse hydration failures to empty");
+            }
+        }
+    }
+
+    @Test
+    void moreThanOneAttachedClientStillMeansTheSessionIsAttached(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        String sessionRow = String.join(separator, "$0", "alpha", "2", "0");
+
+        try (Server server = Server.using(config(directory), new SnapshotTransport(sessionRow))) {
+            assertTrue(server.snapshot().sessions().get(0).attached());
+        }
+    }
+
     // -------------------------------------------------------------------------------- builders
 
     @Test
@@ -266,5 +321,22 @@ final class ServerTest {
         public void close() {
             closes.incrementAndGet();
         }
+    }
+
+    private record SnapshotTransport(String sessionRow) implements TmuxTransport {
+
+        @Override
+        public CommandResult execute(CommandRequest request) {
+            return switch (request.argv().get(0)) {
+                case "list-sessions" -> new CommandResult(0, List.of(sessionRow), List.of());
+                case "display-message" ->
+                    new CommandResult(
+                            0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.6")), List.of());
+                default -> new CommandResult(0, List.of(), List.of());
+            };
+        }
+
+        @Override
+        public void close() {}
     }
 }

@@ -53,6 +53,10 @@ public final class Session {
         return server;
     }
 
+    ServerSnapshot snapshot() {
+        return snapshot;
+    }
+
     /** The window tmux had active in this session. A pure read of the capture. */
     public Optional<Window> activeWindow() {
         return windows().stream().filter(Window::active).findFirst();
@@ -65,17 +69,27 @@ public final class Session {
 
     /** Makes a window of this session the active one. */
     public void selectWindow(Window window) {
-        server.run(List.of("select-window", "-t", window.id().value()));
+        Objects.requireNonNull(window, "window");
+        server.requireSameIncarnation(snapshot, window.server(), window.snapshot());
+        if (!state.id().equals(window.context().session())) {
+            throw new IllegalArgumentException("window does not belong to session " + state.id());
+        }
+        server.run(
+                snapshot,
+                List.of(
+                        "select-window",
+                        "-t",
+                        state.id().value() + ":" + window.index().value()));
     }
 
     /** Moves to the next window in this session, wrapping at the end. */
     public void nextWindow() {
-        server.run(List.of("next-window", "-t", state.id().value()));
+        server.run(snapshot, List.of("next-window", "-t", state.id().value()));
     }
 
     /** Moves to the previous window in this session, wrapping at the start. */
     public void previousWindow() {
-        server.run(List.of("previous-window", "-t", state.id().value()));
+        server.run(snapshot, List.of("previous-window", "-t", state.id().value()));
     }
 
     /**
@@ -85,22 +99,22 @@ public final class Session {
      *     silently staying put
      */
     public void lastWindow() {
-        server.run(List.of("last-window", "-t", state.id().value()));
+        server.run(snapshot, List.of("last-window", "-t", state.id().value()));
     }
 
     /** Detaches every client attached to this session, leaving the session running. */
     public void detachClients() {
-        server.run(List.of("detach-client", "-s", state.id().value()));
+        server.run(snapshot, List.of("detach-client", "-s", state.id().value()));
     }
 
     /** This session's own options. */
     public Options options() {
-        return Options.session(server, state.id());
+        return Options.session(server, snapshot, state.id());
     }
 
     /** This session's own hooks. */
     public Hooks hooks() {
-        return Hooks.session(server, state.id());
+        return Hooks.session(server, snapshot, state.id());
     }
 
     /** This session's windows, in tmux's order. A pure read of the capture. */
@@ -147,9 +161,10 @@ public final class Session {
      * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
      */
     public Window newWindow(WindowSpec spec) {
-        List<String> reported = server.run(spec.argv(state.id().value(), CREATED.template(), server.version()))
+        List<String> reported = server.run(
+                        snapshot, spec.argv(state.id().value(), CREATED.template(), server.version()))
                 .stdout();
-        ServerSnapshot fresh = server.snapshot();
+        ServerSnapshot fresh = server.refresh(snapshot);
         if (reported.isEmpty()) {
             // Only reuseExisting gets here: tmux selects the window it already had and reports
             // nothing, so the answer has to come from a lookup. See docs/spikes/14.
@@ -181,6 +196,7 @@ public final class Session {
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
         List<String> reported = server.run(
+                        snapshot,
                         List.of("display-message", "-p", "-t", state.id().value(), format))
                 .stdout();
         return reported.isEmpty() ? "" : reported.get(0);
@@ -188,13 +204,13 @@ public final class Session {
 
     /** Renames this session and returns a handle on it as it is now. */
     public Session rename(String name) {
-        server.run(List.of("rename-session", "-t", state.id().value(), name));
+        server.run(snapshot, List.of("rename-session", "-t", state.id().value(), name));
         return refresh();
     }
 
     /** Ends this session. Every window in it goes with it. */
     public void kill() {
-        server.run(List.of("kill-session", "-t", state.id().value()));
+        server.run(snapshot, List.of("kill-session", "-t", state.id().value()));
     }
 
     /**
@@ -203,7 +219,7 @@ public final class Session {
      * @throws ObjectDoesNotExist if the session is gone
      */
     public Session refresh() {
-        ServerSnapshot fresh = server.snapshot();
+        ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.session(state.id())
                 .map(session -> new Session(server, fresh, session))
                 .orElseThrow(() -> new ObjectDoesNotExist("session " + state.id() + " no longer exists"));
@@ -212,13 +228,13 @@ public final class Session {
     @Override
     public boolean equals(Object other) {
         return other instanceof Session that
-                && server.identity().equals(that.server.identity())
+                && server.identity(snapshot).equals(that.server.identity(that.snapshot))
                 && state.id().equals(that.state.id());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(server.identity(), state.id());
+        return Objects.hash(server.identity(snapshot), state.id());
     }
 
     @Override

@@ -16,7 +16,6 @@ Nothing about this is a convention you have to remember:
 | --- | --- | --- |
 | `libtmux*/` | yes | one artifact each, named for its directory |
 | `integration-tests/` | no | the real-tmux suite, which spans artifacts |
-| `benchmarks/` | no | the carrier measurements |
 | `examples/` | no | whole runnable programs, run by its own suite |
 | [`docs-tests/`](../docs-tests/) | no | compiles and runs every snippet in the docs |
 | `scripts/` | no | what the build does not do |
@@ -87,19 +86,6 @@ $ ./scripts/reap-stale-servers.sh
 A unix socket path cannot exceed about 104 bytes, and tmux reports a longer one
 as `error connecting to … (File name too long)`. That rules out sockets under a
 build directory or a deep scratch path, and it is why the roots above are short.
-
-`ExecutionMode` chooses how a command travels, and the suite can be run under
-any of them:
-
-```console
-$ LIBTMUX_MODE=control ./gradlew check
-```
-
-A failure that appears only under one carrier is a real finding — the library
-claims the answer does not depend on the carrier, and
-`ExecutionModeConformanceTest` is where that claim is gated. Confirm it against
-a clean `/tmp` first: the failure modes of cross-port debris and of a genuine
-carrier defect look alike.
 
 Against every supported tmux release:
 

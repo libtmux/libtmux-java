@@ -130,6 +130,27 @@ final class OperationsIntegrationTest {
                 "tmux reports the missing target, and a silent no-op would hide it");
     }
 
+    @Test
+    void aHandleCannotMutateAReplacementServerThatReusedItsId(Server server) {
+        Session stale = session(server);
+        server.killServer();
+
+        try (Server replacement = Server.open(server.config())) {
+            try {
+                Session current = replacement.newSession("replacement");
+                assertEquals(stale.id(), current.id(), "the replacement did not reuse the id this test exercises");
+                assertNotEquals(
+                        stale, current, "equal numeric ids from different server processes are not one session");
+
+                assertThrows(ObjectDoesNotExist.class, () -> stale.rename("corrupted"));
+
+                assertEquals("replacement", replacement.sessions().get(0).name());
+            } finally {
+                replacement.killServer();
+            }
+        }
+    }
+
     private static boolean awaitOutput(Pane pane, String expected) {
         for (int attempt = 0; attempt < 100; attempt++) {
             if (pane.capture().stream().anyMatch(line -> line.contains(expected))) {

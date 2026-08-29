@@ -15,7 +15,12 @@ final class TargetIds {
      */
     static void require(String value, char sigil, String kind) {
         Objects.requireNonNull(value, "value");
-        if (value.length() < 2 || value.charAt(0) != sigil) {
+        boolean valid = value.length() >= 2 && value.charAt(0) == sigil;
+        for (int index = 1; valid && index < value.length(); index++) {
+            char digit = value.charAt(index);
+            valid = digit >= '0' && digit <= '9';
+        }
+        if (!valid) {
             throw new IllegalArgumentException(
                     "not a " + kind + " id, expected " + sigil + " followed by digits: " + value);
         }

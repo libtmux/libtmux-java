@@ -159,32 +159,11 @@ In a real pane those two variables are already set, so `TmuxEnvironment.current(
 takes nothing and returns empty when there is no pane to describe. This README is
 not running inside one, so the example supplies them.
 
-## Three switches
+## Avoid unnecessary round trips
 
-| to stop                                     | write                          | which costs                    |
-| ------------------------------------------- | ------------------------------ | ------------------------------ |
-| paying for a process per command            | `.mode(ExecutionMode.CONTROL)` | one tmux client, then reused   |
-| waiting on the thread you were handed       | `.mode(ExecutionMode.VIRTUAL)` | a virtual thread per command   |
-| round-tripping to learn what you just made  | `server.chain()`               | one request, however many steps |
-
-```java
-ServerConfig config = ServerConfig.builder()
-        .endpoint(ServerEndpoint.socketPath(socket))
-        .mode(ExecutionMode.CONTROL)
-        .build();
-```
-
-A carrier can also be chosen from outside the program that uses one, so trying
-another costs nothing:
-
-```console
-$ LIBTMUX_MODE=control java -jar app.jar
-```
-
-A carrier and a grouping are separate choices that compose, and neither changes
-what a call returns: the same filter answers identically under each. What that
-costs is measured in [the benchmark](docs/benchmarks/modes.md), which shows the
-identical answers next to the different prices.
+`server.batch()` sends independent commands in one invocation. `server.chain()`
+does the same for dependent commands, letting tmux carry the current target from
+one step to the next. Both retain an outcome for every operation.
 
 ## What it is like to use
 
@@ -238,7 +217,7 @@ README, and each is [on Maven Central](https://central.sonatype.com/namespace/io
 
 Not published, and part of how the library is built:
 [`examples/`](examples/) · [`integration-tests/`](integration-tests/) ·
-[`docs-tests/`](docs-tests/) · [`benchmarks/`](benchmarks/) ·
+[`docs-tests/`](docs-tests/) ·
 [`scripts/`](scripts/) · `build-logic/`
 
 A directory is a published artifact exactly when it appears above, and
@@ -317,7 +296,6 @@ $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds
 ## Documentation
 
 - [Getting started](docs/guide/getting-started.md)
-- [Execution modes](docs/guide/execution-modes.md) — and the [measured comparison](docs/benchmarks/modes.md)
 - [Filtering](docs/guide/filtering.md)
 - [Options and hooks](docs/guide/options-and-hooks.md)
 - [Batching and chaining](docs/guide/batching-and-chaining.md)

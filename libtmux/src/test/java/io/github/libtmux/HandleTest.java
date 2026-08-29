@@ -1,11 +1,14 @@
 package io.github.libtmux;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.format.RowFormat;
+import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.TmuxTransport;
@@ -127,7 +130,7 @@ final class HandleTest {
                     List.of(new PaneId("%1"), new PaneId("%2")),
                     inAlpha.panes().stream().map(Pane::id).toList());
             assertEquals(
-                    List.of(new PaneId("%3")),
+                    List.of(new PaneId("%1"), new PaneId("%2")),
                     inBeta.panes().stream().map(Pane::id).toList());
         }
     }
@@ -149,6 +152,71 @@ final class HandleTest {
         }
     }
 
+    @Test
+    void operationsRejectHandlesFromAnotherServerBeforeDispatch() {
+        CountingTransport localTransport = new CountingTransport("alpha");
+        try (Server local = Server.using(config(ServerEndpoint.namedSocket("fixture")), localTransport);
+                Server foreign = canned(ServerEndpoint.namedSocket("elsewhere"))) {
+            Session localSession = local.sessions().get(0);
+            Window localWindow = localSession.windows().get(0);
+            Pane localPane = localWindow.panes().get(0);
+            Client localClient = local.clients().get(0);
+            Session foreignSession = foreign.sessions().get(0);
+            Window foreignWindow = foreignSession.windows().get(0);
+            Pane foreignPane = foreignWindow.panes().get(0);
+            int captured = localTransport.calls.get();
+
+            assertAll(
+                    () -> assertThrows(IllegalArgumentException.class, () -> localSession.selectWindow(foreignWindow)),
+                    () -> assertThrows(IllegalArgumentException.class, () -> localWindow.linkTo(foreignSession)),
+                    () -> assertThrows(IllegalArgumentException.class, () -> localWindow.moveTo(foreignSession)),
+                    () -> assertThrows(IllegalArgumentException.class, () -> localPane.swapWith(foreignPane)),
+                    () -> assertThrows(IllegalArgumentException.class, () -> localPane.joinTo(foreignWindow)),
+                    () -> assertThrows(IllegalArgumentException.class, () -> localClient.switchTo(foreignSession)));
+            assertEquals(captured, localTransport.calls.get(), "a refused handle must never reach tmux");
+        }
+    }
+
+    @Test
+    void selectingAWindowIsScopedToTheReceivingSession() {
+        CountingTransport transport = new CountingTransport("alpha");
+        try (Server server = Server.using(config(ServerEndpoint.namedSocket("fixture")), transport)) {
+            Session alpha = server.sessions().get(0);
+            Session beta = server.sessions().get(1);
+            Window linkedIntoAlpha = alpha.windows().get(0);
+            Window onlyInBeta = beta.windows().get(1);
+
+            assertThrows(IllegalArgumentException.class, () -> alpha.selectWindow(onlyInBeta));
+
+            alpha.selectWindow(linkedIntoAlpha);
+            assertEquals(CommandStrings.stringify(List.of("select-window", "-t", "$0:0")), last(transport));
+        }
+    }
+
+    @Test
+    void linkSpecificOperationsKeepTheCapturedSessionAndIndex() {
+        CountingTransport transport = new CountingTransport("alpha");
+        try (Server server = Server.using(config(ServerEndpoint.namedSocket("fixture")), transport)) {
+            Session alpha = server.sessions().get(0);
+            Session beta = server.sessions().get(1);
+            Window secondLink = beta.windows().get(0);
+
+            secondLink.select();
+            assertEquals(CommandStrings.stringify(List.of("select-window", "-t", "$1:3")), last(transport));
+
+            secondLink.expand("#{window_index}");
+            assertEquals(
+                    CommandStrings.stringify(List.of("display-message", "-p", "-t", "$1:3", "#{window_index}")),
+                    last(transport));
+
+            secondLink.unlink();
+            assertEquals(CommandStrings.stringify(List.of("unlink-window", "-t", "$1:3")), last(transport));
+
+            secondLink.moveTo(alpha);
+            assertEquals(CommandStrings.stringify(List.of("move-window", "-s", "$1:3", "-t", "$0")), last(transport));
+        }
+    }
+
     // ------------------------------------------------------------------------------- fixtures
 
     private static ServerConfig config(ServerEndpoint endpoint) {
@@ -167,6 +235,10 @@ final class HandleTest {
         return Server.using(config(endpoint), new CountingTransport("alpha"));
     }
 
+    private static String last(CountingTransport transport) {
+        return transport.requests.get(transport.requests.size() - 1).argv().get(3);
+    }
+
     /**
      * Answers the four listings from fixed rows, and counts what it was asked. A window linked into
      * two sessions is the shape that matters, so it is what the rows describe.
@@ -174,6 +246,7 @@ final class HandleTest {
     private static final class CountingTransport implements TmuxTransport {
 
         private final AtomicInteger calls = new AtomicInteger();
+        private final List<CommandRequest> requests = new ArrayList<>();
         private final String firstSessionName;
 
         CountingTransport(String firstSessionName) {
@@ -183,6 +256,7 @@ final class HandleTest {
         @Override
         public CommandResult execute(CommandRequest request) {
             calls.incrementAndGet();
+            requests.add(request);
             String command = request.argv().get(0);
             return new CommandResult(0, rows(command), List.of());
         }
@@ -192,11 +266,12 @@ final class HandleTest {
             switch (command) {
                 case "list-sessions" -> {
                     rows.add(row("$0", firstSessionName, "1", "1"));
-                    rows.add(row("$1", "beta", "0", "1"));
+                    rows.add(row("$1", "beta", "0", "2"));
                 }
                 case "list-windows" -> {
                     rows.add(row("$0", "@7", "0", "editor", "1", "2", "1", "80", "24", "layout"));
                     rows.add(row("$1", "@7", "3", "editor", "0", "2", "1", "80", "24", "layout"));
+                    rows.add(row("$1", "@8", "4", "logs", "1", "1", "0", "80", "24", "layout"));
                 }
                 case "list-panes" -> {
                     rows.add(row(
@@ -205,13 +280,18 @@ final class HandleTest {
                     rows.add(row(
                             "$0", "@7", "0", "%2", "1", "0", "zsh", "80", "24", "t", "/tmp", "12", "1", "1", "1", "1"));
                     rows.add(row(
-                            "$1", "@7", "3", "%3", "0", "1", "nvim", "80", "24", "t", "/tmp", "13", "1", "1", "1",
+                            "$1", "@7", "3", "%1", "0", "1", "nvim", "80", "24", "t", "/tmp", "11", "1", "1", "1",
+                            "1"));
+                    rows.add(row(
+                            "$1", "@7", "3", "%2", "1", "0", "zsh", "80", "24", "t", "/tmp", "12", "1", "1", "1", "1"));
+                    rows.add(row(
+                            "$1", "@8", "4", "%3", "0", "1", "tail", "80", "24", "t", "/tmp", "13", "1", "1", "1",
                             "1"));
                 }
                 case "list-clients" -> rows.add(row("/dev/pts/3", "$0"));
                 // Reported as 3.6 so the snapshot uses the format without pane_floating_flag,
                 // which is what these fixed rows describe.
-                case "display-message" -> rows.add("3.6");
+                case "display-message" -> rows.add(row("4242", "3.6"));
                 default -> {
                     // Any other command is an operation, not a listing.
                 }

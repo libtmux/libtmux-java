@@ -79,7 +79,7 @@ makes it decidable:
   points at `tmux_list_servers`.
 ```
 
-Name identifiers literally: `Pane.capture`, `LIBTMUX_MODE`, `--rerun-tasks`,
+Name identifiers literally: `Pane.capture`, `LIBTMUX_WATCH`, `--rerun-tasks`,
 `tmux://panes/{pane}`. Lead with a concrete verb — add, fix, remove, reject,
 `now`, `no longer`.
 
@@ -354,8 +354,8 @@ has nothing but the string:
   "JDK 21" both appear upstream — this project writes **JDK 21**.
 - A **pane**, **window**, **session**, and **server** are what tmux calls them.
   Do not introduce a synonym for one.
-- Write the identifier, not a description of it: `LIBTMUX_MODE=control`, not
-  "the mode environment variable"; `--rerun-tasks`, not "the rerun flag";
+- Write the identifier, not a description of it: `LIBTMUX_WATCH=true`, not
+  "the watch environment variable"; `--rerun-tasks`, not "the rerun flag";
   `/tmp/libtmux-java-test/`, not "the test socket directory".
 
 Treat AI slop as review-hostile noise. The goal is information density:

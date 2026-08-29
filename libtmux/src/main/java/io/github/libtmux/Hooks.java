@@ -1,10 +1,13 @@
 package io.github.libtmux;
 
+import io.github.libtmux.snapshot.ServerSnapshot;
+import io.github.libtmux.transport.CommandResult;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The tmux hooks at one scope.
@@ -23,27 +26,29 @@ import java.util.Map;
 public final class Hooks {
 
     private final Server server;
+    private final @Nullable ServerSnapshot snapshot;
     private final List<String> scope;
 
-    private Hooks(Server server, List<String> scope) {
+    private Hooks(Server server, @Nullable ServerSnapshot snapshot, List<String> scope) {
         this.server = server;
+        this.snapshot = snapshot;
         this.scope = scope;
     }
 
     static Hooks global(Server server) {
-        return new Hooks(server, List.of("-g"));
+        return new Hooks(server, null, List.of("-g"));
     }
 
-    static Hooks session(Server server, SessionId session) {
-        return new Hooks(server, List.of("-t", session.value()));
+    static Hooks session(Server server, ServerSnapshot snapshot, SessionId session) {
+        return new Hooks(server, snapshot, List.of("-t", session.value()));
     }
 
-    static Hooks window(Server server, WindowId window) {
-        return new Hooks(server, List.of("-w", "-t", window.value()));
+    static Hooks window(Server server, ServerSnapshot snapshot, WindowId window) {
+        return new Hooks(server, snapshot, List.of("-w", "-t", window.value()));
     }
 
-    static Hooks pane(Server server, PaneId pane) {
-        return new Hooks(server, List.of("-p", "-t", pane.value()));
+    static Hooks pane(Server server, ServerSnapshot snapshot, PaneId pane) {
+        return new Hooks(server, snapshot, List.of("-p", "-t", pane.value()));
     }
 
     /**
@@ -53,17 +58,17 @@ public final class Hooks {
      * command joins the first.
      */
     public void set(String event, String command) {
-        server.run(argv("set-hook", List.of(event, command)));
+        run(argv("set-hook", List.of(event, command)));
     }
 
     /** Binds another command to an event, after whatever is already bound to it. */
     public void append(String event, String command) {
-        server.run(argv("set-hook", List.of("-a", event, command)));
+        run(argv("set-hook", List.of("-a", event, command)));
     }
 
     /** Removes everything bound to an event at this scope. */
     public void unset(String event) {
-        server.run(argv("set-hook", List.of("-u", event)));
+        run(argv("set-hook", List.of("-u", event)));
     }
 
     /**
@@ -73,7 +78,7 @@ public final class Hooks {
      * and binds nothing.
      */
     public void run(String event) {
-        server.run(argv("set-hook", List.of("-R", event)));
+        run(argv("set-hook", List.of("-R", event)));
     }
 
     /**
@@ -85,7 +90,7 @@ public final class Hooks {
      */
     public Map<String, List<String>> all() {
         Map<String, List<String>> hooks = new LinkedHashMap<>();
-        for (String line : server.run(argv("show-hooks", List.of())).stdout()) {
+        for (String line : run(argv("show-hooks", List.of())).stdout()) {
             int split = line.indexOf(' ');
             if (split <= 0) {
                 continue;
@@ -97,6 +102,10 @@ public final class Hooks {
         }
         hooks.replaceAll((event, commands) -> List.copyOf(commands));
         return Collections.unmodifiableMap(hooks);
+    }
+
+    private CommandResult run(List<String> argv) {
+        return snapshot == null ? server.run(argv) : server.run(snapshot, argv);
     }
 
     private List<String> argv(String command, List<String> tail) {
