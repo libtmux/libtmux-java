@@ -7,15 +7,18 @@ import io.modelcontextprotocol.spec.McpServerTransportProvider;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 /** Makes every way a protocol session can end converge on one callback. */
 final class SessionLifetime implements Runnable {
 
     private final Runnable ended;
+    private final ArrayDeque<AutoCloseable> owned = new ArrayDeque<>();
     private final AtomicBoolean signalled = new AtomicBoolean();
 
     SessionLifetime(Runnable ended) {
@@ -30,22 +33,90 @@ final class SessionLifetime implements Runnable {
         return new ObservedProvider(provider, this);
     }
 
+    /** Closes a session-scoped resource now or when the first end signal arrives. */
+    void own(AutoCloseable resource) {
+        Objects.requireNonNull(resource, "resource");
+        synchronized (owned) {
+            if (!signalled.get()) {
+                owned.addLast(resource);
+                return;
+            }
+        }
+        close(resource);
+    }
+
     @Override
     public void run() {
         if (signalled.compareAndSet(false, true)) {
+            @Nullable Throwable failure = finish(null);
+            if (failure instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            if (failure instanceof Error error) {
+                throw error;
+            }
+            if (failure != null) {
+                throw new IllegalStateException("could not close protocol session", failure);
+            }
+        }
+    }
+
+    void endAfter(Throwable failure) {
+        if (signalled.compareAndSet(false, true)) {
+            finish(failure);
+        }
+    }
+
+    private @Nullable Throwable finish(@Nullable Throwable failure) {
+        try {
             ended.run();
+        } catch (RuntimeException | Error callbackFailure) {
+            failure = suppress(failure, callbackFailure);
+        }
+        AutoCloseable resource;
+        while ((resource = takeOwned()) != null) {
+            try {
+                resource.close();
+            } catch (Exception | Error closeFailure) {
+                failure = suppress(failure, closeFailure);
+            }
+        }
+        return failure;
+    }
+
+    private @Nullable AutoCloseable takeOwned() {
+        synchronized (owned) {
+            return owned.pollLast();
+        }
+    }
+
+    private Mono<Void> endWith(Mono<Void> closing) {
+        return closing.onErrorResume(failure -> {
+                    endAfter(failure);
+                    return Mono.error(failure);
+                })
+                .then(Mono.fromRunnable(this));
+    }
+
+    private static void close(AutoCloseable resource) {
+        try {
+            resource.close();
+        } catch (RuntimeException | Error failure) {
+            throw failure;
+        } catch (Exception failure) {
+            throw new IllegalStateException("could not close protocol session resource", failure);
         }
     }
 
     @SuppressWarnings("ReferenceEquality")
-    private void runAfter(Throwable failure) {
-        try {
-            run();
-        } catch (RuntimeException | Error callbackFailure) {
-            if (callbackFailure != failure) {
-                failure.addSuppressed(callbackFailure);
-            }
+    static Throwable suppress(@Nullable Throwable primary, Throwable secondary) {
+        if (primary == null) {
+            return secondary;
         }
+        if (secondary != primary) {
+            primary.addSuppressed(secondary);
+        }
+        return primary;
     }
 
     private record ObservedProvider(McpServerTransportProvider delegate, SessionLifetime lifetime)
@@ -68,7 +139,7 @@ final class SessionLifetime implements Runnable {
 
         @Override
         public Mono<Void> closeGracefully() {
-            return delegate.closeGracefully().doFinally(ignored -> lifetime.run());
+            return lifetime.endWith(delegate.closeGracefully());
         }
 
         @Override
@@ -76,7 +147,7 @@ final class SessionLifetime implements Runnable {
             try {
                 delegate.close();
             } catch (RuntimeException | Error failure) {
-                lifetime.runAfter(failure);
+                lifetime.endAfter(failure);
                 throw failure;
             }
             lifetime.run();
@@ -103,7 +174,7 @@ final class SessionLifetime implements Runnable {
 
         @Override
         public Mono<Void> closeGracefully() {
-            return delegate.closeGracefully().doFinally(ignored -> lifetime.run());
+            return lifetime.endWith(delegate.closeGracefully());
         }
 
         @Override
@@ -111,7 +182,7 @@ final class SessionLifetime implements Runnable {
             try {
                 delegate.close();
             } catch (RuntimeException | Error failure) {
-                lifetime.runAfter(failure);
+                lifetime.endAfter(failure);
                 throw failure;
             }
             lifetime.run();
@@ -153,7 +224,7 @@ final class SessionLifetime implements Runnable {
             attempt(delegate::flush);
             if (delegate instanceof PrintStream stream && stream.checkError()) {
                 IOException failure = new IOException("protocol output is no longer writable");
-                lifetime.runAfter(failure);
+                lifetime.endAfter(failure);
                 throw failure;
             }
         }
@@ -163,7 +234,7 @@ final class SessionLifetime implements Runnable {
             try {
                 delegate.close();
             } catch (IOException | RuntimeException | Error failure) {
-                lifetime.runAfter(failure);
+                lifetime.endAfter(failure);
                 throw failure;
             }
             lifetime.run();
@@ -173,7 +244,7 @@ final class SessionLifetime implements Runnable {
             try {
                 action.run();
             } catch (IOException | RuntimeException | Error failure) {
-                lifetime.runAfter(failure);
+                lifetime.endAfter(failure);
                 throw failure;
             }
         }

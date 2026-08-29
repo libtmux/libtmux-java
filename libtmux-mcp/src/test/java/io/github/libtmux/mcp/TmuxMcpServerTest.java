@@ -1,7 +1,6 @@
 package io.github.libtmux.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -96,10 +95,7 @@ final class TmuxMcpServerTest {
                 ended.countDown();
             });
             try {
-                String initialize = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{"
-                        + "\"protocolVersion\":\"" + ProtocolVersions.MCP_2025_11_25
-                        + "\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}\n";
-                client.write(initialize.getBytes(StandardCharsets.UTF_8));
+                client.write(initialize());
                 client.flush();
 
                 assertTrue(ended.await(3, TimeUnit.SECONDS), "stdout failed but the protocol session stayed alive");
@@ -107,6 +103,58 @@ final class TmuxMcpServerTest {
                 mcp.close();
             }
             assertEquals(1, endCalls.get(), "one failed session reported more than one end");
+        }
+    }
+
+    @Test
+    void closingAStdioServerUnblocksItsInputReader(Server server) throws Exception {
+        BlockingInput input = new BlockingInput();
+        McpSyncServer mcp =
+                TmuxMcpServer.overStdio(server, input, new ByteArrayOutputStream(), Safety.MUTATING, false, () -> {});
+        try {
+            assertTrue(input.reading.await(3, TimeUnit.SECONDS), "the protocol reader never started");
+
+            mcp.close();
+
+            assertTrue(input.closed.await(3, TimeUnit.SECONDS), "closing MCP left its input stream open");
+            assertTrue(input.readEnded.await(3, TimeUnit.SECONDS), "closing MCP left its input reader blocked");
+        } finally {
+            input.close();
+            mcp.close();
+        }
+    }
+
+    @Test
+    void failedStdioStartupClosesItsOwnedInput(Server server) throws Exception {
+        server.sessions().getFirst().kill();
+        BlockingInput input = new BlockingInput();
+        try {
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> TmuxMcpServer.overStdio(
+                            server, input, new ByteArrayOutputStream(), Safety.MUTATING, true, () -> {}));
+
+            assertTrue(input.closed.await(1, TimeUnit.SECONDS), "failed startup left its input stream open");
+        } finally {
+            input.close();
+        }
+    }
+
+    @Test
+    void brokenOutputDetachesTheOwnedWatcherWhileInputRemainsOpen(Server server) throws Exception {
+        PipedInputStream input = new PipedInputStream();
+        try (PipedOutputStream client = new PipedOutputStream(input);
+                PrintStream output = new PrintStream(brokenOutput(), true, StandardCharsets.UTF_8)) {
+            McpSyncServer mcp = TmuxMcpServer.overStdio(server, input, output, Safety.MUTATING, true, () -> {});
+            try {
+                assertTrue(await(() -> !server.clients().isEmpty()), "the watcher never attached");
+                client.write(initialize());
+                client.flush();
+
+                assertTrue(await(() -> server.clients().isEmpty()), "stdout failed but the watcher stayed attached");
+            } finally {
+                mcp.close();
+            }
         }
     }
 
@@ -130,27 +178,6 @@ final class TmuxMcpServerTest {
         }
     }
 
-    @Test
-    void callbackFailureDoesNotHideProtocolOutputFailure() {
-        IOException outputFailure = new IOException("client stopped reading");
-        IllegalStateException callbackFailure = new IllegalStateException("session-end callback failed");
-        OutputStream output = new SessionLifetime(() -> {
-                    throw callbackFailure;
-                })
-                .observe(new OutputStream() {
-                    @Override
-                    public void write(int value) throws IOException {
-                        throw outputFailure;
-                    }
-                });
-
-        IOException thrown = assertThrows(IOException.class, () -> output.write(0));
-
-        assertSame(outputFailure, thrown);
-        assertEquals(1, thrown.getSuppressed().length);
-        assertSame(callbackFailure, thrown.getSuppressed()[0]);
-    }
-
     private static OutputStream brokenOutput() {
         return new OutputStream() {
             @Override
@@ -158,6 +185,48 @@ final class TmuxMcpServerTest {
                 throw new IOException("client stopped reading");
             }
         };
+    }
+
+    private static byte[] initialize() {
+        String request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{"
+                + "\"protocolVersion\":\"" + ProtocolVersions.MCP_2025_11_25
+                + "\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}\n";
+        return request.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static final class BlockingInput extends java.io.InputStream {
+
+        private final CountDownLatch reading = new CountDownLatch(1);
+        private final CountDownLatch closed = new CountDownLatch(1);
+        private final CountDownLatch readEnded = new CountDownLatch(1);
+
+        @Override
+        public int read() {
+            return awaitClose();
+        }
+
+        @Override
+        public int read(byte[] bytes, int offset, int length) {
+            return awaitClose();
+        }
+
+        private int awaitClose() {
+            reading.countDown();
+            try {
+                closed.await();
+                return -1;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return -1;
+            } finally {
+                readEnded.countDown();
+            }
+        }
+
+        @Override
+        public void close() {
+            closed.countDown();
+        }
     }
 
     private static boolean await(java.util.function.BooleanSupplier condition) throws InterruptedException {

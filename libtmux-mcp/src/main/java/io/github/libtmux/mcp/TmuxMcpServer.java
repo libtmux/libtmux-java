@@ -66,6 +66,9 @@ public final class TmuxMcpServer {
      * <p>Taking the stream lets a launcher notice end of input for itself. A client that disconnects
      * closes this end, and a server that did not notice would outlive it.
      *
+     * <p>The returned server owns and closes the input when startup fails, either protocol stream
+     * disconnects, or the server closes.
+     *
      * @param watching whether to attach a control client and push notifications as tmux changes
      */
     public static McpSyncServer overStdio(Server server, InputStream in, Safety ceiling, boolean watching) {
@@ -80,9 +83,16 @@ public final class TmuxMcpServer {
     static McpSyncServer overStdio(
             Server server, InputStream in, OutputStream out, Safety ceiling, boolean watching, Runnable onSessionEnd) {
         SessionLifetime lifetime = new SessionLifetime(onSessionEnd);
-        var provider = new StdioServerTransportProvider(
-                new JacksonMcpJsonMapper(new ObjectMapper()), in, lifetime.observe(out));
-        return serving(server, ceiling, watching, lifetime.observe(provider));
+        lifetime.own(in);
+        try {
+            var provider = new StdioServerTransportProvider(
+                    new JacksonMcpJsonMapper(new ObjectMapper()), in, lifetime.observe(out));
+            lifetime.own(provider::close);
+            return serving(server, ceiling, watching, lifetime.observe(provider), lifetime);
+        } catch (RuntimeException | Error failure) {
+            lifetime.endAfter(failure);
+            throw failure;
+        }
     }
 
     /** Serves a tmux server over a caller-supplied transport. */
@@ -93,22 +103,38 @@ public final class TmuxMcpServer {
     /** Serves a tmux server over a caller-supplied transport, optionally watching it for changes. */
     public static McpSyncServer serving(
             Server server, Safety ceiling, boolean watching, McpServerTransportProvider transport) {
+        return serving(server, ceiling, watching, transport, null);
+    }
+
+    private static McpSyncServer serving(
+            Server server,
+            Safety ceiling,
+            boolean watching,
+            McpServerTransportProvider transport,
+            @Nullable SessionLifetime lifetime) {
         Connection connection = Connection.to(server, ceiling);
         if (watching) {
             Watches watches = Watches.prepare(connection);
+            if (lifetime != null) {
+                lifetime.own(watches);
+            }
             @Nullable WatchedMcpServer owned = null;
             try {
                 McpSyncServer built = build(connection, true, transport);
                 owned = new WatchedMcpServer(built, watches);
                 watches.start(new McpNotifier(owned));
                 return owned;
-            } catch (RuntimeException | Error e) {
-                if (owned == null) {
-                    watches.close();
-                } else {
-                    owned.close();
+            } catch (RuntimeException | Error failure) {
+                try {
+                    if (owned == null) {
+                        watches.close();
+                    } else {
+                        owned.close();
+                    }
+                } catch (RuntimeException | Error cleanupFailure) {
+                    SessionLifetime.suppress(failure, cleanupFailure);
                 }
-                throw e;
+                throw failure;
             }
         }
         return build(connection, false, transport);
