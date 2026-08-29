@@ -81,10 +81,7 @@ final class RunningCommands {
         Cursor before = Watching.from(pane).cursor();
         String typed =
                 payload(server, pane, command, nonce, startMark, endMark, statusOption, channel, suppressHistory);
-        // Literal, so a command that happens to spell a key name — "Enter", "C-c" — is typed rather
-        // than pressed. Enter is a separate send because it is the one keypress that is meant.
-        server.run(List.of("send-keys", "-l", "-t", pane.id().value(), typed));
-        server.run(List.of("send-keys", "-t", pane.id().value(), "Enter"));
+        pane.sendLine(typed);
 
         long started = System.nanoTime();
         WakeReason wake = server.waitFor(channel, timeout);

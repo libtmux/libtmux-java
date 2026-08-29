@@ -10,6 +10,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.ObjectDoesNotExist;
 import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.ProcessTransport;
+import io.github.libtmux.transport.TmuxTransport;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -189,5 +196,53 @@ final class RunningCommandsTest {
         assertFalse(
                 server.panes().get(0).options().all().keySet().stream().anyMatch(name -> name.startsWith("@st_")),
                 "the exit status is read and then cleared away");
+    }
+
+    @Test
+    void concurrentRunsDoNotMergeTheirCommandLines(Server server) throws Exception {
+        String pane = server.panes().get(0).id().value();
+        CountDownLatch bothLinesSent = new CountDownLatch(2);
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport interleaving = new TmuxTransport() {
+                @Override
+                public CommandResult execute(CommandRequest request) {
+                    CommandResult result = processes.execute(request);
+                    if (request.argv().get(0).equals("send-keys")
+                            && request.argv().contains("-l")) {
+                        bothLinesSent.countDown();
+                        await(bothLinesSent);
+                    }
+                    return result;
+                }
+
+                @Override
+                public void close() {}
+            };
+            try (Server measured = Server.using(server.config(), interleaving);
+                    var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+                var first = calls.submit(() -> RunningCommands.run(TestCalls.on(
+                        measured, "pane_id", pane, "command", "printf 'first-run-marker\\n'", "timeout", 2)));
+                var second = calls.submit(() -> RunningCommands.run(TestCalls.on(
+                        measured, "pane_id", pane, "command", "printf 'second-run-marker\\n'", "timeout", 2)));
+
+                assertEquals(
+                        java.util.List.of("first-run-marker"),
+                        first.get(10, TimeUnit.SECONDS).output());
+                assertEquals(
+                        java.util.List.of("second-run-marker"),
+                        second.get(10, TimeUnit.SECONDS).output());
+            }
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("timed out arranging concurrent command delivery");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while arranging concurrent command delivery", e);
+        }
     }
 }
