@@ -48,6 +48,32 @@ final class CommandChainIntegrationTest {
     }
 
     @Test
+    void aLineThatIsAKeyNameStaysLiteralInsideAChain(Server server) throws Exception {
+        BatchResult result = server.chain()
+                .newWindow("literal-line")
+                .sendLine("Enter() { printf 'literal-chain-%s\\n' enter; }")
+                .sendLine("clear")
+                .sendLine("Enter")
+                .sendLine("-R")
+                .sendLine("printf 'literal-chain-%s\\n' semicolon;")
+                .run();
+
+        assertTrue(result.succeeded(), result.toString());
+        Pane pane = server.windows().stream()
+                .filter(window -> window.name().equals("literal-line"))
+                .findFirst()
+                .orElseThrow()
+                .panes()
+                .get(0);
+        assertTrue(
+                await(() -> pane.capture().stream().anyMatch(line -> line.contains("literal-chain-enter"))),
+                "Enter was pressed instead of typed");
+        assertTrue(
+                await(() -> pane.capture().stream().anyMatch(line -> line.contains("literal-chain-semicolon"))),
+                "a trailing semicolon became a command-group separator");
+    }
+
+    @Test
     void theWholeChainIsOneInvocation(Server server) {
         BatchResult result = server.chain()
                 .newWindow("one")

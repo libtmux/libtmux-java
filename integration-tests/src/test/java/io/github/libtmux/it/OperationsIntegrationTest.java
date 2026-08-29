@@ -1,5 +1,6 @@
 package io.github.libtmux.it;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -69,6 +70,18 @@ final class OperationsIntegrationTest {
         pane.sendLine("echo libtmux-was-here");
 
         assertTrue(awaitOutput(pane, "libtmux-was-here"), "the pane never showed the command's output");
+    }
+
+    @Test
+    void aLineThatIsAKeyNameIsTypedLiterally(Server server) {
+        Pane pane = session(server).windows().get(0).panes().get(0);
+        pane.sendLine("Enter() { printf 'literal-%s-command\\n' enter; }");
+        pane.sendLine("clear");
+
+        pane.sendLine("Enter");
+        assertDoesNotThrow(() -> pane.sendLine("-R"), "a line is not a send-keys option");
+
+        assertTrue(awaitOutput(pane, "literal-enter-command"), "Enter was pressed instead of typed");
     }
 
     @Test

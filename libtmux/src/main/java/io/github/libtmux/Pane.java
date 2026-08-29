@@ -303,7 +303,8 @@ public final class Pane {
 
     /** Sends a line to this pane and presses Enter, which is how a command gets run. */
     public void sendLine(String command) {
-        server.run(snapshot, List.of("send-keys", "-t", state.id().value(), command, "Enter"));
+        Objects.requireNonNull(command, "command");
+        server.run(snapshot, List.of("send-keys", "-l", "-t", state.id().value(), "--", command + "\r"));
     }
 
     /**
