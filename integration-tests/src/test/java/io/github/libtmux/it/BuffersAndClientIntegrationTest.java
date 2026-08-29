@@ -1,7 +1,6 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -12,6 +11,8 @@ import io.github.libtmux.ObjectDoesNotExist;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
+import io.github.libtmux.TmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersion;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
@@ -29,6 +30,8 @@ import org.junit.jupiter.api.io.TempDir;
 @ExtendWith(TmuxExtension.class)
 final class BuffersAndClientIntegrationTest {
 
+    private static final TmuxVersion EXACT_NAMED_DELETE = new TmuxVersion(3, 4, "");
+
     // -------------------------------------------------------------------------------- buffers
 
     @Test
@@ -40,6 +43,15 @@ final class BuffersAndClientIntegrationTest {
                 server.buffers().list().stream()
                         .anyMatch(buffer -> buffer.name().equals("mine")),
                 "the buffer is in the listing");
+    }
+
+    @Test
+    void aTrailingSemicolonIsPartOfTheBufferName(Server server) {
+        server.buffers().set("literal;", "not a command separator;");
+
+        assertEquals("not a command separator;", server.buffers().show("literal;"));
+        assertTrue(server.buffers().list().stream()
+                .anyMatch(buffer -> buffer.name().equals("literal;")));
     }
 
     @Test
@@ -66,24 +78,46 @@ final class BuffersAndClientIntegrationTest {
 
     @Test
     void deletingRemovesItFromTheListing(Server server) {
-        server.buffers().set("doomed", "x");
+        server.buffers().set("doomed;", "x");
 
-        server.buffers().delete("doomed");
+        if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
+            assertThrows(UnsupportedTmuxVersion.class, () -> server.buffers().delete("doomed;"));
+            assertEquals("x", server.buffers().show("doomed;"), "refusal leaves the buffer untouched");
+            return;
+        }
 
-        assertFalse(server.buffers().list().stream()
-                .anyMatch(buffer -> buffer.name().equals("doomed")));
+        server.buffers().delete("doomed;");
+
+        assertEquals(List.of(), server.buffers().list());
+    }
+
+    @Test
+    void deletingAnAbsentBufferDoesNotDeleteTheTopBuffer(Server server) {
+        server.buffers().set("belongs-to-the-user", "keep me");
+
+        if (server.version().atLeast(EXACT_NAMED_DELETE)) {
+            assertThrows(ObjectDoesNotExist.class, () -> server.buffers().delete("never-set;"));
+        } else {
+            assertThrows(UnsupportedTmuxVersion.class, () -> server.buffers().delete("never-set;"));
+        }
+
+        assertEquals("keep me", server.buffers().show("belongs-to-the-user"));
+        assertEquals(
+                List.of("belongs-to-the-user"),
+                server.buffers().list().stream().map(BufferInfo::name).toList(),
+                "only the user's buffer remains");
     }
 
     @Test
     void aBufferSurvivesAFileRoundTrip(Server server, @TempDir Path directory) throws Exception {
-        Path file = directory.resolve("buffer.txt");
-        server.buffers().set("saved", "written to disk");
+        Path file = directory.resolve("buffer;");
+        server.buffers().set("saved;", "written to disk");
 
-        server.buffers().save("saved", file);
-        server.buffers().load("reloaded", file);
+        server.buffers().save("saved;", file);
+        server.buffers().load("reloaded;", file);
 
         assertEquals("written to disk", Files.readString(file).stripTrailing());
-        assertEquals("written to disk", server.buffers().show("reloaded"));
+        assertEquals("written to disk", server.buffers().show("reloaded;"));
     }
 
     @Test
