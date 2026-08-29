@@ -59,7 +59,7 @@ final class McpLauncherTest {
             assertTrue(launcher.exitValue() != 0, "failed watch startup reported success");
             String diagnostic = new String(launcher.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
             assertTrue(
-                    diagnostic.contains("tmux list-windows failed: no current target"),
+                    diagnostic.contains("watching requires a tmux session to attach to"),
                     "the launcher failed for the wrong reason: " + diagnostic);
         } finally {
             stop(launcher);

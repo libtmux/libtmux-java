@@ -264,6 +264,41 @@ final class ServerTest {
     }
 
     @Test
+    void snapshotKeepsTheIdentityOfALiveServerWithNoSessions(@TempDir Path directory) throws IOException {
+        AtomicInteger impossibleListings = new AtomicInteger();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return switch (request.argv().getFirst()) {
+                    case "display-message" ->
+                        new CommandResult(
+                                0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.2a")), List.of());
+                    case "list-sessions" -> new CommandResult(0, List.of(), List.of());
+                    default -> {
+                        impossibleListings.incrementAndGet();
+                        yield new CommandResult(1, List.of(), List.of("no current target"));
+                    }
+                };
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            var snapshot = server.snapshot();
+
+            assertEquals(4242L, snapshot.serverPid().orElseThrow());
+            assertEquals(TmuxVersion.parse("3.2a"), snapshot.serverVersion().orElseThrow());
+            assertTrue(snapshot.sessions().isEmpty());
+            assertTrue(snapshot.windows().isEmpty());
+            assertTrue(snapshot.panes().isEmpty());
+            assertTrue(snapshot.clients().isEmpty());
+            assertEquals(0, impossibleListings.get(), "tmux cannot list children without a current target");
+        }
+    }
+
+    @Test
     void snapshotRetriesAChangedIncarnationAndKeepsOnlyTheSecondCapture(@TempDir Path directory) throws IOException {
         String separator = RowFormat.of("field").separator();
         try (Server server = Server.using(

@@ -574,7 +574,8 @@ public final class Server implements AutoCloseable {
     }
 
     /**
-     * Captures the whole hierarchy in four listings, retrying once if the server is replaced.
+     * Captures the whole hierarchy in at most four listings, retrying once if the server is
+     * replaced.
      *
      * <p>One server-wide listing per kind of object, so ordering and membership stay tmux's decision
      * rather than being re-derived from another listing's rows.
@@ -632,6 +633,10 @@ public final class Server implements AutoCloseable {
                     row.get(1),
                     positiveCount(row.get(2), "session_attached"),
                     Integer.parseInt(row.get(3))));
+        }
+        if (sessions.isEmpty()) {
+            return ServerSnapshot.of(
+                    Instant.now(), process.pid(), process.version(), sessions, List.of(), List.of(), List.of());
         }
         List<WindowState> windows = new ArrayList<>();
         for (List<String> row : rows(WINDOWS, "list-windows", "-a")) {
