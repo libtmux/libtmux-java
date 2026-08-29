@@ -49,9 +49,25 @@ final class CommandChainIntegrationTest {
 
     @Test
     void aLineThatIsAKeyNameStaysLiteralInsideAChain(Server server) throws Exception {
-        BatchResult result = server.chain()
+        assertTrue(server.chain()
                 .newWindow("literal-line")
                 .sendLine("Enter() { printf 'literal-chain-%s\\n' enter; }")
+                .sendLine("echo defined-the-function")
+                .run()
+                .succeeded());
+        Pane pane = server.windows().stream()
+                .filter(window -> window.name().equals("literal-line"))
+                .findFirst()
+                .orElseThrow()
+                .panes()
+                .get(0);
+        // The shell has to have read the definition before the name is used. A chain is one
+        // invocation, so without this the name is typed before anything is reading for it.
+        assertTrue(
+                await(() -> pane.capture().stream().anyMatch(line -> line.contains("defined-the-function"))),
+                "the shell never read the definition");
+
+        BatchResult result = server.chain()
                 .sendLine("clear")
                 .sendLine("Enter")
                 .sendLine("-R")
@@ -59,12 +75,6 @@ final class CommandChainIntegrationTest {
                 .run();
 
         assertTrue(result.succeeded(), result.toString());
-        Pane pane = server.windows().stream()
-                .filter(window -> window.name().equals("literal-line"))
-                .findFirst()
-                .orElseThrow()
-                .panes()
-                .get(0);
         assertTrue(
                 await(() -> pane.capture().stream().anyMatch(line -> line.contains("literal-chain-enter"))),
                 "Enter was pressed instead of typed");
