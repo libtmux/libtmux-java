@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
 final class GroupedTmux {
 
     private static final Pattern QUOTED = Pattern.compile("'([^']*)'");
-    private static final Pattern FENCED_PID = Pattern.compile("#\\{==:#\\{pid},(\\d+)}");
+    private static final Pattern FENCED = Pattern.compile("#\\{==:#\\{(pid|version)},([^}]+)}");
 
     private GroupedTmux() {}
 
@@ -30,14 +30,29 @@ final class GroupedTmux {
      * @param command answers one command, as tmux would
      */
     static CommandResult execute(CommandRequest request, long livePid, Function<List<String>, CommandResult> command) {
+        return execute(request, livePid, "3.6", command);
+    }
+
+    /**
+     * Answers one request, running any group it carries.
+     *
+     * @param livePid the server this double is pretending to be
+     * @param liveVersion the tmux that server is pretending to be
+     * @param command answers one command, as tmux would
+     */
+    static CommandResult execute(
+            CommandRequest request, long livePid, String liveVersion, Function<List<String>, CommandResult> command) {
         List<String> argv = request.commands().get(0);
         if (!argv.get(0).equals("if-shell")) {
             return command.apply(argv);
         }
-        Matcher fence = FENCED_PID.matcher(argv.get(2));
         String stale = argv.get(argv.size() - 1);
-        if (fence.find() && Long.parseLong(fence.group(1)) != livePid) {
-            return new CommandResult(1, List.of(), List.of("unknown command: " + stale));
+        Matcher fence = FENCED.matcher(argv.get(2));
+        while (fence.find()) {
+            String live = fence.group(1).equals("pid") ? Long.toString(livePid) : liveVersion;
+            if (!fence.group(2).equals(live)) {
+                return new CommandResult(1, List.of(), List.of("unknown command: " + stale));
+            }
         }
         return group(argv.get(argv.size() - 2), command);
     }

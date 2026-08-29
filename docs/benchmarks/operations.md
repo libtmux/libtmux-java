@@ -10,9 +10,11 @@ The same 20 windows, asked for three ways. This is the whole of the answer to pe
 
 | strategy | wall clock | commands dispatched |
 | --- | --- | --- |
-| `one-at-a-time` | 818 ms | 64 |
-| `batch` | 94 ms | 5 |
-| `chain` | 92 ms | 5 |
+| `one-at-a-time` | 1115 ms | 64 |
+| `batch` | 148 ms | 5 |
+| `chain` | 96 ms | 5 |
+
+Every row pays the same four commands for the handle it starts from and the count it ends with, so the ratio between them understates what grouping saves: the work itself is 60 commands against one.
 
 ## Reading the hierarchy
 
@@ -20,8 +22,8 @@ The same 20 windows, asked for three ways. This is the whole of the answer to pe
 
 | read | wall clock | commands dispatched |
 | --- | --- | --- |
-| `traversal` | 232 ms | 40 |
-| `snapshot` | 192 ms | 40 |
+| `traversal` | 294 ms | 40 |
+| `snapshot` | 290 ms | 40 |
 
 ## What the staleness guard costs
 
@@ -29,8 +31,8 @@ A handle fences every command it sends behind `if-shell -F`, so that a handle ca
 
 | command | wall clock | commands dispatched |
 | --- | --- | --- |
-| `unguarded` | 90 ms | 22 |
-| `guarded` | 92 ms | 22 |
+| `unguarded` | 167 ms | 22 |
+| `guarded` | 114 ms | 22 |
 
 The guard rides inside the one command it fences, so it costs no further process. What it adds is bytes, against the 16384 a tmux command may carry.
 
@@ -40,8 +42,8 @@ A listed value is escaped for display, and how it is escaped changes between rel
 
 | read | wall clock | commands dispatched |
 | --- | --- | --- |
-| `one option` | 59 ms | 20 |
-| `all()` | 213 ms | 40 |
-| `effective()` | 189 ms | 40 |
+| `one option` | 107 ms | 20 |
+| `all()` | 317 ms | 40 |
+| `effective()` | 281 ms | 40 |
 
 That is the cost: one option is one command, and a listing is two whatever its size, until it outgrows what one command may carry.

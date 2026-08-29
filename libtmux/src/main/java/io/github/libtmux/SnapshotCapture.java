@@ -24,10 +24,10 @@ import java.util.Optional;
  * <p>One server-wide listing per kind of object, so ordering and membership stay tmux's decision
  * rather than being re-derived from another listing's rows.
  *
- * <p>Two commands: who the server is, then the listings as one group fenced against that answer.
- * tmux runs a group in the server, so rows cannot come from two of them, and a replacement is
- * refused by the fence before a listing runs rather than detected afterwards. Retrying is
- * {@link Server#snapshot()}'s decision, not this one's.
+ * <p>Two commands: who the server is, then the listings as one group fenced against both halves of
+ * that answer, its pid and its version. tmux runs a group in the server, so rows cannot come from
+ * two of them, and a server that is not the one probed is refused before a listing runs rather than
+ * detected afterwards. Retrying is {@link Server#snapshot()}'s decision, not this one's.
  */
 final class SnapshotCapture {
 
@@ -129,17 +129,11 @@ final class SnapshotCapture {
         return Optional.of(new ServerProcess(pid, TmuxVersion.parse(row.text("version"))));
     }
 
-    /**
-     * The whole hierarchy in one invocation, fenced against the identity just read.
-     *
-     * <p>tmux runs a group in the server, so the four listings cannot come from two servers and
-     * there is nothing to sample afterwards: either the fence matched and every row is that
-     * server's, or it did not and there is no capture.
-     */
+    /** The whole hierarchy in one invocation, fenced against the identity just read. */
     private ServerSnapshot capture(ServerProcess process) {
         boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
         RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
-        Batch listings = server.batch(process.pid());
+        Batch listings = server.batch(process.pid(), process.version());
         listings.add(listing(SESSIONS, "list-sessions"));
         listings.add(listing(WINDOWS, "list-windows", "-a"));
         listings.add(listing(paneFormat, "list-panes", "-a"));

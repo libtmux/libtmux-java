@@ -183,16 +183,8 @@ final class OperationsIntegrationTest {
      * test measures the teardown rather than the thing it is about.
      */
     private static void awaitSocketReleased(Server server) {
-        if (!(server.config().endpoint() instanceof ServerEndpoint.SocketPath socket)) {
-            return;
-        }
-        for (int attempt = 0; attempt < 200 && Files.exists(socket.path()); attempt++) {
-            try {
-                Thread.sleep(10);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
+        if (server.config().endpoint() instanceof ServerEndpoint.SocketPath socket) {
+            Await.until(() -> !Files.exists(socket.path()));
         }
     }
 }

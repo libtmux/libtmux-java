@@ -276,7 +276,7 @@ final class ServerTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 requests.incrementAndGet();
-                return GroupedTmux.execute(request, 4242L, argv -> switch (argv.getFirst()) {
+                return GroupedTmux.execute(request, 4242L, "3.2a", argv -> switch (argv.getFirst()) {
                     case "display-message" ->
                         new CommandResult(
                                 0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.2a")), List.of());
@@ -300,6 +300,33 @@ final class ServerTest {
             assertTrue(snapshot.panes().isEmpty());
             assertTrue(snapshot.clients().isEmpty());
             assertEquals(2, requests.get(), "tmux refused the rest of the group, which cost no further request");
+        }
+    }
+
+    /**
+     * A pid is reusable, so the fence carries the version too: a different tmux that landed on the
+     * pid just probed would otherwise answer as the server the rows are read from.
+     */
+    @Test
+    void snapshotRefusesAServerThatReusedThePidUnderADifferentTmux(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return GroupedTmux.execute(request, 4242L, "3.7", argv -> switch (argv.get(0)) {
+                    // Probed as 3.6; the server answering the listings is a 3.7 on that pid.
+                    case "display-message" ->
+                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6")), List.of());
+                    default -> new CommandResult(0, List.of(), List.of());
+                });
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            assertThrows(LibTmuxException.class, server::snapshot);
         }
     }
 

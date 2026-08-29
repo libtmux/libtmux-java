@@ -625,12 +625,18 @@ public final class Server implements AutoCloseable {
     Batch batch(ServerSnapshot snapshot) {
         long pid = snapshot.serverPid()
                 .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
-        return batch(pid);
+        return new Batch(commands -> guarded(pid, CommandStrings.group(commands), ""));
     }
 
-    /** As {@link #batch(ServerSnapshot)}, fenced against a server identity read separately. */
-    Batch batch(long pid) {
-        return new Batch(commands -> guarded(pid, CommandStrings.group(commands), ""));
+    /**
+     * As {@link #batch(ServerSnapshot)}, fenced against a whole identity read separately.
+     *
+     * <p>Both halves, because a pid alone is reusable: a different tmux landing on the one just
+     * probed would answer as if it were the server the rows are being read from.
+     */
+    Batch batch(long pid, TmuxVersion version) {
+        String fence = "#{&&:#{==:#{pid}," + pid + "},#{==:#{version}," + version + "}}";
+        return new Batch(commands -> guarded(pid, fence, CommandStrings.group(commands), ""));
     }
 
     CommandResult run(ServerSnapshot snapshot, List<String> argv) {
@@ -674,9 +680,12 @@ public final class Server implements AutoCloseable {
     }
 
     private CommandResult guarded(long pid, String command, String input) {
+        return guarded(pid, "#{==:#{pid}," + pid + "}", command, input);
+    }
+
+    private CommandResult guarded(long pid, String fence, String command, String input) {
         String stale = "libtmux-stale-handle-" + pid;
-        CommandResult result = cmd(
-                List.of("if-shell", "-F", "#{==:#{pid}," + pid + "}", command, stale), config.defaultTimeout(), input);
+        CommandResult result = cmd(List.of("if-shell", "-F", fence, command, stale), config.defaultTimeout(), input);
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
             throw new ObjectDoesNotExist("the tmux server this handle belonged to has ended");
         }

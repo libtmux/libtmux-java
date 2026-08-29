@@ -286,6 +286,9 @@ final class OperationBenchmark {
                 .append(" windows, asked for three ways. This is the whole of the answer to ")
                 .append("per-command process cost, so it leads.\n\n");
         table(out, "strategy", grouping);
+        out.append("\nEvery row pays the same four commands for the handle it starts from and the ")
+                .append("count it ends with, so the ratio between them understates what grouping ")
+                .append("saves: the work itself is 60 commands against one.\n");
 
         out.append("\n## Reading the hierarchy\n\n")
                 .append("`windows()` is lenient and `snapshot()` is strict; both read who the ")
