@@ -288,8 +288,9 @@ final class OperationBenchmark {
         table(out, "strategy", grouping);
 
         out.append("\n## Reading the hierarchy\n\n")
-                .append("`windows()` is lenient and `snapshot()` is strict; both capture the whole ")
-                .append("server, and the strict one samples process identity either side of it.\n\n");
+                .append("`windows()` is lenient and `snapshot()` is strict; both read who the ")
+                .append("server is, then run the four listings as one group fenced against that ")
+                .append("answer. Two commands, whatever the hierarchy holds.\n\n");
         table(out, "read", reading);
 
         out.append("\n## What the staleness guard costs\n\n")

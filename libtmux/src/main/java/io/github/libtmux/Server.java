@@ -623,7 +623,14 @@ public final class Server implements AutoCloseable {
 
     /** A batch whose every command is refused once this handle's server has been replaced. */
     Batch batch(ServerSnapshot snapshot) {
-        return new Batch(commands -> guarded(snapshot, CommandStrings.group(commands)));
+        long pid = snapshot.serverPid()
+                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
+        return batch(pid);
+    }
+
+    /** As {@link #batch(ServerSnapshot)}, fenced against a server identity read separately. */
+    Batch batch(long pid) {
+        return new Batch(commands -> guarded(pid, CommandStrings.group(commands), ""));
     }
 
     CommandResult run(ServerSnapshot snapshot, List<String> argv) {
@@ -663,6 +670,10 @@ public final class Server implements AutoCloseable {
     private CommandResult guarded(ServerSnapshot snapshot, String command, String input) {
         long pid = snapshot.serverPid()
                 .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
+        return guarded(pid, command, input);
+    }
+
+    private CommandResult guarded(long pid, String command, String input) {
         String stale = "libtmux-stale-handle-" + pid;
         CommandResult result = cmd(
                 List.of("if-shell", "-F", "#{==:#{pid}," + pid + "}", command, stale), config.defaultTimeout(), input);

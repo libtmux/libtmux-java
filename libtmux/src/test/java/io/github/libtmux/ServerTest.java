@@ -271,20 +271,19 @@ final class ServerTest {
 
     @Test
     void snapshotKeepsTheIdentityOfALiveServerWithNoSessions(@TempDir Path directory) throws IOException {
-        AtomicInteger impossibleListings = new AtomicInteger();
+        AtomicInteger requests = new AtomicInteger();
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                return switch (request.commands().get(0).getFirst()) {
+                requests.incrementAndGet();
+                return GroupedTmux.execute(request, 4242L, argv -> switch (argv.getFirst()) {
                     case "display-message" ->
                         new CommandResult(
                                 0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.2a")), List.of());
                     case "list-sessions" -> new CommandResult(0, List.of(), List.of());
-                    default -> {
-                        impossibleListings.incrementAndGet();
-                        yield new CommandResult(1, List.of(), List.of("no current target"));
-                    }
-                };
+                    // tmux has no current target to list children against, and says so.
+                    default -> new CommandResult(1, List.of(), List.of("no current target"));
+                });
             }
 
             @Override
@@ -300,10 +299,11 @@ final class ServerTest {
             assertTrue(snapshot.windows().isEmpty());
             assertTrue(snapshot.panes().isEmpty());
             assertTrue(snapshot.clients().isEmpty());
-            assertEquals(0, impossibleListings.get(), "tmux cannot list children without a current target");
+            assertEquals(2, requests.get(), "tmux refused the rest of the group, which cost no further request");
         }
     }
 
+    /** The fence refuses a replaced server before a listing runs, so there is no first capture. */
     @Test
     void snapshotRetriesAChangedIncarnationAndKeepsOnlyTheSecondCapture(@TempDir Path directory) throws IOException {
         String separator = RowFormat.of("field").separator();
@@ -311,9 +311,7 @@ final class ServerTest {
                 config(directory),
                 new SnapshotRaceTransport(
                         List.of("4242", "4343", "4343", "4343"),
-                        List.of(
-                                String.join(separator, "$0", "old", "0", "0"),
-                                String.join(separator, "$1", "new", "0", "0"))))) {
+                        List.of(String.join(separator, "$1", "new", "0", "0"))))) {
             var snapshot = server.snapshot();
 
             assertEquals(4343L, snapshot.serverPid().orElseThrow());
@@ -495,13 +493,13 @@ final class ServerTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
-            return switch (request.commands().get(0).get(0)) {
+            return GroupedTmux.execute(request, 4242L, argv -> switch (argv.get(0)) {
                 case "list-sessions" -> new CommandResult(0, List.of(sessionRow), List.of());
                 case "display-message" ->
                     new CommandResult(
                             0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.6")), List.of());
                 default -> new CommandResult(0, List.of(), List.of());
-            };
+            });
         }
 
         @Override
@@ -520,14 +518,29 @@ final class ServerTest {
             this.sessionRows = sessionRows;
         }
 
+        /**
+         * Identities come in pairs: what a capture's probe is told, then what the server has become
+         * by the time its listings run. A capture is two requests, so the pair is the whole race.
+         */
         @Override
         public CommandResult execute(CommandRequest request) {
-            return switch (request.commands().get(0).get(0)) {
-                case "display-message" -> identity(identities.get(identityReads.getAndIncrement()));
+            if (request.commands().get(0).get(0).equals("display-message")) {
+                return identity(at(2 * identityReads.getAndIncrement()));
+            }
+            String live = at(2 * (identityReads.get() - 1) + 1);
+            if (live.isEmpty()) {
+                return new CommandResult(1, List.of(), List.of("no server running on /tmp/s"));
+            }
+            return GroupedTmux.execute(request, Long.parseLong(live), argv -> switch (argv.get(0)) {
                 case "list-sessions" ->
                     new CommandResult(0, List.of(sessionRows.get(sessionReads.getAndIncrement())), List.of());
                 default -> new CommandResult(0, List.of(), List.of());
-            };
+            });
+        }
+
+        /** Clamped, so a server that has gone stays gone however often it is asked about. */
+        private String at(int index) {
+            return identities.get(Math.min(index, identities.size() - 1));
         }
 
         private static CommandResult identity(String pid) {
@@ -556,10 +569,14 @@ final class ServerTest {
             this.failure = failure;
         }
 
+        /**
+         * The server is still the one the probe named while its listings run, so the fence passes
+         * and the capture fails for the reason under test rather than for the replacement.
+         */
         @Override
         public CommandResult execute(CommandRequest request) {
             boolean firstCapture = identityReads.get() == 1;
-            return switch (request.commands().get(0).get(0)) {
+            return GroupedTmux.execute(request, firstCapture ? 4242L : 4343L, argv -> switch (argv.get(0)) {
                 case "display-message" ->
                     identityReads.getAndIncrement() == 0
                             ? identity("4242", failure == CaptureFailure.PANE_SHAPE ? "3.7" : "3.6")
@@ -590,7 +607,7 @@ final class ServerTest {
                                     : List.of(),
                             List.of());
                 default -> new CommandResult(0, List.of(), List.of());
-            };
+            });
         }
 
         private static CommandResult identity(String pid, String version) {

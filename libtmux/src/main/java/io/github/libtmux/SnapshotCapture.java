@@ -1,5 +1,8 @@
 package io.github.libtmux;
 
+import io.github.libtmux.batch.Batch;
+import io.github.libtmux.batch.OperationOutcome;
+import io.github.libtmux.batch.OperationResult;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.snapshot.ClientState;
 import io.github.libtmux.snapshot.PaneState;
@@ -21,9 +24,10 @@ import java.util.Optional;
  * <p>One server-wide listing per kind of object, so ordering and membership stay tmux's decision
  * rather than being re-derived from another listing's rows.
  *
- * <p>The server's process identity is read before and after, and a capture that spanned a
- * replacement is discarded rather than returned: rows from two servers form a graph that never
- * existed. Retrying is {@link Server#snapshot()}'s decision, not this one's.
+ * <p>Two commands: who the server is, then the listings as one group fenced against that answer.
+ * tmux runs a group in the server, so rows cannot come from two of them, and a replacement is
+ * refused by the fence before a listing runs rather than detected afterwards. Retrying is
+ * {@link Server#snapshot()}'s decision, not this one's.
  */
 final class SnapshotCapture {
 
@@ -84,9 +88,11 @@ final class SnapshotCapture {
             return Optional.of(ServerSnapshot.of(Instant.now(), List.of(), List.of(), List.of(), List.of()));
         }
         ServerProcess process = observed.orElseThrow();
-        ServerSnapshot captured;
         try {
-            captured = capture(process);
+            return Optional.of(capture(process));
+        } catch (ObjectDoesNotExist replaced) {
+            // The fence answered: this is no longer the server the identity came from.
+            return Optional.empty();
         } catch (RuntimeException failure) {
             Optional<ServerProcess> current;
             try {
@@ -100,10 +106,6 @@ final class SnapshotCapture {
             }
             return Optional.empty();
         }
-        if (!Optional.of(process).equals(process())) {
-            return Optional.empty();
-        }
-        return Optional.of(captured);
     }
 
     /** Reads process identity and version together so neither can come from a different server. */
@@ -127,9 +129,25 @@ final class SnapshotCapture {
         return Optional.of(new ServerProcess(pid, TmuxVersion.parse(row.text("version"))));
     }
 
+    /**
+     * The whole hierarchy in one invocation, fenced against the identity just read.
+     *
+     * <p>tmux runs a group in the server, so the four listings cannot come from two servers and
+     * there is nothing to sample afterwards: either the fence matched and every row is that
+     * server's, or it did not and there is no capture.
+     */
     private ServerSnapshot capture(ServerProcess process) {
+        boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
+        RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
+        Batch listings = server.batch(process.pid());
+        listings.add(listing(SESSIONS, "list-sessions"));
+        listings.add(listing(WINDOWS, "list-windows", "-a"));
+        listings.add(listing(paneFormat, "list-panes", "-a"));
+        listings.add(listing(CLIENTS, "list-clients"));
+        List<OperationResult> answered = listings.run().operations();
+
         List<SessionState> sessions = new ArrayList<>();
-        for (RowFormat.Row row : rows(SESSIONS, "list-sessions")) {
+        for (RowFormat.Row row : rows(SESSIONS, answered.get(0), "list-sessions")) {
             sessions.add(new SessionState(
                     new SessionId(row.text("session_id")),
                     row.text("session_name"),
@@ -137,11 +155,13 @@ final class SnapshotCapture {
                     row.number("session_windows")));
         }
         if (sessions.isEmpty()) {
+            // A server with no sessions has no current target, so tmux refuses the rest of the
+            // group. An empty sessions listing is the whole hierarchy, so there is nothing to read.
             return ServerSnapshot.of(
                     Instant.now(), process.pid(), process.version(), sessions, List.of(), List.of(), List.of());
         }
         List<WindowState> windows = new ArrayList<>();
-        for (RowFormat.Row row : rows(WINDOWS, "list-windows", "-a")) {
+        for (RowFormat.Row row : rows(WINDOWS, answered.get(1), "list-windows")) {
             windows.add(new WindowState(
                     context(row),
                     row.text("window_name"),
@@ -151,9 +171,8 @@ final class SnapshotCapture {
                     new Dimensions(row.number("window_width"), row.number("window_height")),
                     row.text("window_layout")));
         }
-        boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
         List<PaneState> panes = new ArrayList<>();
-        for (RowFormat.Row row : rows(floatingKnown ? PANES_WITH_FLOATING : PANES, "list-panes", "-a")) {
+        for (RowFormat.Row row : rows(paneFormat, answered.get(2), "list-panes")) {
             panes.add(new PaneState(
                     context(row),
                     new PaneId(row.text("pane_id")),
@@ -172,7 +191,7 @@ final class SnapshotCapture {
                     floatingKnown ? Optional.of(row.flag(FLOATING)) : Optional.empty()));
         }
         List<ClientState> clients = new ArrayList<>();
-        for (RowFormat.Row row : rows(CLIENTS, "list-clients")) {
+        for (RowFormat.Row row : rows(CLIENTS, answered.get(3), "list-clients")) {
             String session = row.text("session_id");
             clients.add(new ClientState(
                     row.text("client_name"),
@@ -181,25 +200,20 @@ final class SnapshotCapture {
         return ServerSnapshot.of(Instant.now(), process.pid(), process.version(), sessions, windows, panes, clients);
     }
 
-    /**
-     * Runs one listing and reads its rows.
-     *
-     * <p>An empty server is not a failure: {@code list-sessions} reports "no server running" as a
-     * nonzero exit, and a capture of nothing is still a capture.
-     */
-    private List<RowFormat.Row> rows(RowFormat format, String... command) {
+    private static List<String> listing(RowFormat format, String... command) {
         List<String> argv = new ArrayList<>(command.length + 2);
         argv.addAll(List.of(command));
         argv.add("-F");
         argv.add(format.template());
-        CommandResult result = server.cmd(argv);
-        if (!result.succeeded()) {
-            if (result.stderr().stream().anyMatch(line -> line.contains("no server running"))) {
-                return List.of();
-            }
-            throw new LibTmuxException("tmux " + command[0] + " failed: " + String.join("; ", result.stderr()));
+        return argv;
+    }
+
+    /** Reads one listing's rows, insisting tmux actually ran it. */
+    private static List<RowFormat.Row> rows(RowFormat format, OperationResult operation, String command) {
+        if (operation.outcome() != OperationOutcome.COMPLETE) {
+            throw new LibTmuxException("tmux " + command + " failed: " + String.join("; ", operation.stderr()));
         }
-        return format.rows(result.stdout());
+        return format.rows(operation.stdout());
     }
 
     private static WindowContext context(RowFormat.Row row) {
