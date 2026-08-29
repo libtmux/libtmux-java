@@ -32,9 +32,6 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Server implements AutoCloseable {
 
-    /** Long enough for a pending signal to come straight back, short enough not to be a wait. */
-    private static final Duration DRAIN_TIMEOUT = Duration.ofMillis(250);
-
     private final ServerConfig config;
     private final TmuxTransport transport;
     private final boolean owned;
@@ -332,43 +329,12 @@ public final class Server implements AutoCloseable {
         return result.succeeded() ? result.stdout() : List.of();
     }
 
-    /**
-     * Waits for something to signal a channel.
-     *
-     * <p>tmux's own {@code wait-for} has two traps, and this exists to close both.
-     *
-     * <p>It exits successfully when the server dies under the waiter, which is indistinguishable
-     * from a real signal, so the server is checked afterwards rather than believed.
-     *
-     * <p>A signal sent when nobody is waiting is remembered, and satisfies the next wait whenever
-     * that happens — possibly in a later run of a different program. A channel carrying a stale
-     * signal therefore wakes a waiter that nothing actually signalled. Use {@link #drain} first when
-     * the channel's history is not yours.
-     *
-     * @param channel the channel name, which is shared by everything on this server
-     * @param timeout how long to wait
-     * @return why the wait ended, which is never simply "successfully"
-     */
-    public WakeReason waitFor(String channel, Duration timeout) {
-        return waitFor(channel, timeout, false);
+    /** One of this server's wait-for channels, which is where a signal is sent and waited for. */
+    public Channel channel(String name) {
+        return new Channel(this, name);
     }
 
-    /**
-     * Waits while preserving process capacity for a call through this server that signals the
-     * channel.
-     *
-     * <p>Use this when the waiter and its release share a bounded transport. A wait released outside
-     * that transport should use {@link #waitFor}; reserving capacity for it only rejects useful
-     * concurrency.
-     *
-     * @throws io.github.libtmux.transport.TmuxTransportException if the wait could not be
-     *     dispatched
-     */
-    public WakeReason waitForWithSignalCapacity(String channel, Duration timeout) {
-        return waitFor(channel, timeout, true);
-    }
-
-    private WakeReason waitFor(String channel, Duration timeout, boolean reserveSignalCapacity) {
+    WakeReason awaitChannel(String channel, Duration timeout, boolean reserveSignalCapacity) {
         try {
             CommandRequest request = request(List.of("wait-for", channel), timeout);
             if (reserveSignalCapacity) {
@@ -384,20 +350,6 @@ public final class Server implements AutoCloseable {
             return isAlive() ? WakeReason.TIMED_OUT : WakeReason.SERVER_GONE;
         }
         return isAlive() ? WakeReason.SIGNALLED : WakeReason.SERVER_GONE;
-    }
-
-    /** Signals a channel, waking one waiter, or being remembered until something waits. */
-    public void signal(String channel) {
-        run(List.of("wait-for", "-S", channel));
-    }
-
-    /**
-     * Consumes a signal already waiting on a channel, so a stale one cannot satisfy a later wait.
-     *
-     * @return whether a signal was there to consume
-     */
-    public boolean drain(String channel) {
-        return waitFor(channel, DRAIN_TIMEOUT) == WakeReason.SIGNALLED;
     }
 
     /** The server's paste buffers, which every session shares. */

@@ -186,7 +186,7 @@ final class ServerTest {
                     failure,
                     assertThrows(
                             TmuxTransportException.class,
-                            () -> server.waitFor("channel", java.time.Duration.ofSeconds(1))));
+                            () -> server.channel("channel").await(java.time.Duration.ofSeconds(1))));
         }
     }
 
@@ -215,13 +215,14 @@ final class ServerTest {
         };
 
         try (Server server = Server.using(config(directory), transport)) {
-            assertEquals(WakeReason.SERVER_GONE, server.waitFor("self-signalled", java.time.Duration.ofSeconds(1)));
+            assertEquals(
+                    WakeReason.SERVER_GONE, server.channel("self-signalled").await(java.time.Duration.ofSeconds(1)));
             assertFalse(waiting.get(), "an ordinary wait consumed reserved signal capacity");
             assertSame(
                     failure,
                     assertThrows(
                             TmuxTimeoutException.class,
-                            () -> server.waitForWithSignalCapacity("channel", java.time.Duration.ofSeconds(1))));
+                            () -> server.channel("channel").awaitReservingCapacity(java.time.Duration.ofSeconds(1))));
             assertTrue(waiting.get(), "wait-for used ordinary transport admission");
         }
     }

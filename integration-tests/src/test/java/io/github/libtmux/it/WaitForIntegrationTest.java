@@ -30,9 +30,10 @@ final class WaitForIntegrationTest {
     void aSignalWakesAWaiter(Server server) throws Exception {
         ExecutorService signaller = Executors.newSingleThreadExecutor();
         try {
-            Future<WakeReason> waiting = signaller.submit(() -> server.waitFor("woken", Duration.ofSeconds(20)));
+            Future<WakeReason> waiting =
+                    signaller.submit(() -> server.channel("woken").await(Duration.ofSeconds(20)));
             Thread.sleep(300);
-            server.signal("woken");
+            server.channel("woken").signal();
 
             assertEquals(WakeReason.SIGNALLED, waiting.get(30, TimeUnit.SECONDS));
         } finally {
@@ -42,7 +43,7 @@ final class WaitForIntegrationTest {
 
     @Test
     void nothingSignallingIsATimeoutRatherThanAWake(Server server) {
-        assertEquals(WakeReason.TIMED_OUT, server.waitFor("never-signalled", SHORT));
+        assertEquals(WakeReason.TIMED_OUT, server.channel("never-signalled").await(SHORT));
     }
 
     /**
@@ -51,23 +52,23 @@ final class WaitForIntegrationTest {
      */
     @Test
     void aStaleSignalIsConsumedByDrainingRatherThanSatisfyingTheNextWait(Server server) {
-        server.signal("stale");
+        server.channel("stale").signal();
 
-        assertTrue(server.drain("stale"), "the buffered signal was there");
-        assertFalse(server.drain("stale"), "and only one of it");
+        assertTrue(server.channel("stale").drain(), "the buffered signal was there");
+        assertFalse(server.channel("stale").drain(), "and only one of it");
         assertEquals(
                 WakeReason.TIMED_OUT,
-                server.waitFor("stale", SHORT),
+                server.channel("stale").await(SHORT),
                 "after draining, a wait waits rather than returning on somebody else's signal");
     }
 
     @Test
     void anUndrainedStaleSignalWouldHaveSatisfiedTheWait(Server server) {
-        server.signal("undrained");
+        server.channel("undrained").signal();
 
         assertEquals(
                 WakeReason.SIGNALLED,
-                server.waitFor("undrained", SHORT),
+                server.channel("undrained").await(SHORT),
                 "this is the trap: nothing signalled during the wait, and it woke anyway");
     }
 
@@ -79,7 +80,8 @@ final class WaitForIntegrationTest {
     void aServerDyingUnderTheWaiterIsNotAWake(Server server) throws Exception {
         ExecutorService killer = Executors.newSingleThreadExecutor();
         try {
-            Future<WakeReason> waiting = killer.submit(() -> server.waitFor("doomed", Duration.ofSeconds(20)));
+            Future<WakeReason> waiting =
+                    killer.submit(() -> server.channel("doomed").await(Duration.ofSeconds(20)));
             Thread.sleep(500);
             server.killServer();
 

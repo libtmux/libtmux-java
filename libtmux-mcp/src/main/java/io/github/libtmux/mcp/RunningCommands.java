@@ -82,7 +82,7 @@ final class RunningCommands {
         pane.sendLine(typed);
 
         long started = System.nanoTime();
-        WakeReason wake = server.waitFor(channel, timeout);
+        WakeReason wake = server.channel(channel).await(timeout);
         double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
 
         Screen.Fresh fresh = wake == WakeReason.SERVER_GONE ? null : Screen.since(pane, before, Trim.lineBudget(call));
