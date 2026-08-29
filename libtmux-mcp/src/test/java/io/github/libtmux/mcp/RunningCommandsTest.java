@@ -12,11 +12,14 @@ import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
+import io.github.libtmux.transport.TmuxTransportException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -93,6 +96,28 @@ final class RunningCommandsTest {
                 "no part of the plumbing may reach the model: " + ran.output());
     }
 
+    @Test
+    void exitStatusSurvivesWhenTheStartMarkerRolledOutOfHistory(Server server) {
+        server.run(java.util.List.of("set-option", "-g", "history-limit", "10"));
+        server.run(java.util.List.of("new-window", "-d", "-n", "shallow"));
+        String pane = server.panes().stream()
+                .filter(candidate -> candidate.window().name().equals("shallow"))
+                .findFirst()
+                .orElseThrow()
+                .id()
+                .value();
+
+        RunningCommands.Ran ran =
+                RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "seq 1 80; exit 7"));
+
+        assertEquals("SIGNALLED", ran.outcome());
+        assertEquals(7, ran.exitStatus());
+        assertFalse(ran.framed(), "the old start marker must actually have rolled away");
+        assertTrue(
+                ran.output().stream().noneMatch(line -> line.matches(".*lt[0-9a-f]{10}-[se].*")),
+                "no surviving marker may leak into output: " + ran.output());
+    }
+
     /**
      * A command still running at the deadline is not a failure to report as one. What it printed so
      * far is worth having, and the note has to say what to do next.
@@ -110,6 +135,48 @@ final class RunningCommandsTest {
         assertNotNull(ran.note());
         assertTrue(String.valueOf(ran.note()).contains("still running"), String.valueOf(ran.note()));
         assertTrue(ran.seconds() < 20, "it must return at its deadline, not at the command's end");
+    }
+
+    @Test
+    void aTimedOutCommandLeavesNoStatusWhenItEventuallyFinishes(Server server) throws Exception {
+        String pane = server.panes().get(0).id().value();
+        RunningCommands.Ran ran =
+                RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "sleep 1", "timeout", 0.1));
+        server.panes().get(0).sendLine("printf 'timeout-cleanup-%s\\n' finished");
+
+        assertEquals("TIMED_OUT", ran.outcome());
+        assertTrue(
+                await(() -> server.panes().get(0).capture().stream()
+                        .anyMatch(line -> line.contains("timeout-cleanup-finished"))),
+                "the timed-out command never released the pane's shell");
+        assertFalse(
+                server.panes().get(0).options().all().keySet().stream().anyMatch(name -> name.startsWith("@st_")),
+                "the eventual exit status was left on the pane");
+    }
+
+    @Test
+    void uncertainCommandDeliveryDoesNotLeaveThePaneBlocked(Server server) throws Exception {
+        String pane = server.panes().get(0).id().value();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport uncertain = borrowing(request -> {
+                CommandResult result = processes.execute(request);
+                if (request.argv().stream().anyMatch(argument -> argument.contains("ch_lt"))) {
+                    throw new TmuxTransportException("simulated failure after delivery", DispatchOutcome.UNKNOWN, null);
+                }
+                return result;
+            });
+            try (Server measured = Server.using(server.config(), uncertain)) {
+                assertThrows(
+                        TmuxTransportException.class,
+                        () -> RunningCommands.run(TestCalls.on(measured, "pane_id", pane, "command", "true")));
+                server.panes().get(0).sendLine("printf 'uncertain-cleanup-%s\\n' finished");
+
+                assertTrue(
+                        await(() -> server.panes().get(0).capture().stream()
+                                .anyMatch(line -> line.contains("uncertain-cleanup-finished"))),
+                        "an ambiguously delivered command left the pane's shell waiting for cleanup");
+            }
+        }
     }
 
     @Test
@@ -188,36 +255,19 @@ final class RunningCommandsTest {
     }
 
     @Test
-    void aStatusOptionIsNotLeftBehindOnThePane(Server server) {
-        String pane = server.panes().get(0).id().value();
-
-        RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "true"));
-
-        assertFalse(
-                server.panes().get(0).options().all().keySet().stream().anyMatch(name -> name.startsWith("@st_")),
-                "the exit status is read and then cleared away");
-    }
-
-    @Test
     void concurrentRunsDoNotMergeTheirCommandLines(Server server) throws Exception {
         String pane = server.panes().get(0).id().value();
         CountDownLatch bothLinesSent = new CountDownLatch(2);
         try (ProcessTransport processes = new ProcessTransport()) {
-            TmuxTransport interleaving = new TmuxTransport() {
-                @Override
-                public CommandResult execute(CommandRequest request) {
-                    CommandResult result = processes.execute(request);
-                    if (request.argv().get(0).equals("send-keys")
-                            && request.argv().contains("-l")) {
-                        bothLinesSent.countDown();
-                        await(bothLinesSent);
-                    }
-                    return result;
+            TmuxTransport interleaving = borrowing(request -> {
+                CommandResult result = processes.execute(request);
+                String argv = String.join("\0", request.argv());
+                if (argv.contains("send-keys") && argv.contains("ch_lt")) {
+                    bothLinesSent.countDown();
+                    await(bothLinesSent);
                 }
-
-                @Override
-                public void close() {}
-            };
+                return result;
+            });
             try (Server measured = Server.using(server.config(), interleaving);
                     var calls = Executors.newVirtualThreadPerTaskExecutor()) {
                 var first = calls.submit(() -> RunningCommands.run(TestCalls.on(
@@ -244,5 +294,28 @@ final class RunningCommandsTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("interrupted while arranging concurrent command delivery", e);
         }
+    }
+
+    private static boolean await(BooleanSupplier condition) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            if (condition.getAsBoolean()) {
+                return true;
+            }
+            Thread.sleep(20);
+        }
+        return condition.getAsBoolean();
+    }
+
+    private static TmuxTransport borrowing(java.util.function.Function<CommandRequest, CommandResult> execute) {
+        return new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return execute.apply(request);
+            }
+
+            @Override
+            public void close() {}
+        };
     }
 }
