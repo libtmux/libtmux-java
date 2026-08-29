@@ -111,6 +111,26 @@ final class TmuxMcpServerTest {
     }
 
     @Test
+    void oversizedStdioInputEndsTheSessionBeforeNewline(Server server) throws Exception {
+        CountDownLatch ended = new CountDownLatch(1);
+        PipedInputStream input = new PipedInputStream();
+        SessionLifetime lifetime = new SessionLifetime(ended::countDown);
+        try (PipedOutputStream client = new PipedOutputStream(input)) {
+            var transport = new StdioServerTransportProvider(
+                    new JacksonMcpJsonMapper(new ObjectMapper()), input, new ByteArrayOutputStream(), 64);
+            McpSyncServer mcp = TmuxMcpServer.serving(server, Safety.MUTATING, lifetime.observe(transport));
+            try {
+                client.write("x".repeat(65).getBytes(StandardCharsets.UTF_8));
+                client.flush();
+
+                assertTrue(ended.await(3, TimeUnit.SECONDS), "oversized input kept buffering without a newline");
+            } finally {
+                mcp.close();
+            }
+        }
+    }
+
+    @Test
     void callbackFailureDoesNotHideProtocolOutputFailure() {
         IOException outputFailure = new IOException("client stopped reading");
         IllegalStateException callbackFailure = new IllegalStateException("session-end callback failed");
