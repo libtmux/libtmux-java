@@ -323,8 +323,12 @@ final class RunningCommandsTest {
         }
     }
 
+    /**
+     * Generous, because these cases wait on a pane's shell and a matrix lane shares its machine
+     * with every other lane. The budget is only ever spent when something is already wrong.
+     */
     private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
         while (System.nanoTime() < deadline) {
             if (condition.getAsBoolean()) {
                 return true;
