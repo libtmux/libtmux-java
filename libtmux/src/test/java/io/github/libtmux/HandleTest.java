@@ -16,8 +16,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -262,8 +260,6 @@ final class HandleTest {
      */
     private static final class CountingTransport implements TmuxTransport {
 
-        private static final Pattern QUOTED = Pattern.compile("'([^']*)'");
-
         private final AtomicInteger calls = new AtomicInteger();
         private final List<CommandRequest> requests = new ArrayList<>();
         private final String firstSessionName;
@@ -276,33 +272,7 @@ final class HandleTest {
         public CommandResult execute(CommandRequest request) {
             calls.incrementAndGet();
             requests.add(request);
-            List<String> argv = request.commands().get(0);
-            if (argv.get(0).equals("if-shell")) {
-                // A capture arrives as one fenced group, so answer it the way tmux runs one.
-                return new CommandResult(0, group(argv.get(argv.size() - 2)), List.of());
-            }
-            return new CommandResult(0, rows(argv.get(0)), List.of());
-        }
-
-        /** Runs a quoted command group: a listing answers with rows, a marker with itself. */
-        private List<String> group(String commands) {
-            List<String> answered = new ArrayList<>();
-            for (String one : commands.split(" ; ", -1)) {
-                List<String> words = new ArrayList<>();
-                Matcher word = QUOTED.matcher(one);
-                while (word.find()) {
-                    words.add(word.group(1));
-                }
-                if (words.isEmpty()) {
-                    continue;
-                }
-                if (words.get(0).equals("display-message")) {
-                    answered.add(words.get(words.size() - 1));
-                } else {
-                    answered.addAll(rows(words.get(0)));
-                }
-            }
-            return answered;
+            return GroupedTmux.execute(request, 4242L, argv -> new CommandResult(0, rows(argv.get(0)), List.of()));
         }
 
         private List<String> rows(String command) {
