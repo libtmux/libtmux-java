@@ -157,6 +157,12 @@ final class ServerTest {
         server.close();
 
         assertThrows(IllegalStateException.class, () -> server.cmd("list-sessions"));
+        assertThrows(IllegalStateException.class, server::snapshot);
+        assertThrows(IllegalStateException.class, server::sessions);
+        assertThrows(IllegalStateException.class, server::windows);
+        assertThrows(IllegalStateException.class, server::panes);
+        assertThrows(IllegalStateException.class, server::clients);
+        assertThrows(IllegalStateException.class, server::attachedSessions);
     }
 
     @Test

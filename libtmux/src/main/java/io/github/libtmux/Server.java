@@ -564,13 +564,17 @@ public final class Server implements AutoCloseable {
     }
 
     private CommandRequest request(List<String> argv, Duration timeout) {
-        if (closed.get()) {
-            throw new IllegalStateException("server is closed");
-        }
+        requireOpen();
         List<String> endpoint = config.endpointCommand();
         List<String> command = new ArrayList<>(endpoint.size());
         command.addAll(endpoint);
         return new CommandRequest(command, argv, timeout);
+    }
+
+    private void requireOpen() {
+        if (closed.get()) {
+            throw new IllegalStateException("server is closed");
+        }
     }
 
     /**
@@ -586,6 +590,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if a listing fails or the listings cannot form one valid snapshot
      */
     public ServerSnapshot snapshot() {
+        requireOpen();
         try {
             return hydrateSnapshot()
                     .or(this::hydrateSnapshot)
