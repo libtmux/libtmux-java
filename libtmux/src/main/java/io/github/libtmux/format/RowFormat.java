@@ -58,6 +58,70 @@ public final class RowFormat {
         return fields.size();
     }
 
+    /** One row's values, addressed by the field name that asked for them. */
+    public final class Row {
+
+        private final List<String> values;
+
+        private Row(List<String> values) {
+            this.values = values;
+        }
+
+        /** The field's value as tmux printed it. */
+        public String text(String field) {
+            return values.get(indexOf(field));
+        }
+
+        /**
+         * The field as a whole number.
+         *
+         * @throws TmuxFormatException if tmux did not print one
+         */
+        public int number(String field) {
+            String value = text(field);
+            try {
+                return Integer.parseInt(value);
+            } catch (NumberFormatException e) {
+                throw new TmuxFormatException(field + " was not a number", e);
+            }
+        }
+
+        /**
+         * The field as a whole count.
+         *
+         * @throws TmuxFormatException if tmux did not print one
+         */
+        public long count(String field) {
+            String value = text(field);
+            try {
+                return Long.parseLong(value);
+            } catch (NumberFormatException e) {
+                throw new TmuxFormatException(field + " was not a count", e);
+            }
+        }
+
+        /**
+         * The field as one of tmux's flags, which it prints as 0 or 1.
+         *
+         * @throws TmuxFormatException if tmux printed anything else
+         */
+        public boolean flag(String field) {
+            return switch (text(field)) {
+                case "0" -> false;
+                case "1" -> true;
+                default -> throw new TmuxFormatException(field + " was neither 0 nor 1");
+            };
+        }
+
+        private int indexOf(String field) {
+            int index = fields.indexOf(field);
+            if (index < 0) {
+                throw new IllegalArgumentException(field + " is not a field of this format");
+            }
+            return index;
+        }
+    }
+
     /**
      * Reads a whole listing back into rows.
      *
@@ -70,8 +134,8 @@ public final class RowFormat {
      * @throws TmuxFormatException if the listing ends mid-row, or a row does not have exactly the
      *     expected number of fields
      */
-    public List<List<String>> rows(List<String> lines) {
-        List<List<String>> rows = new ArrayList<>();
+    public List<Row> rows(List<String> lines) {
+        List<Row> rows = new ArrayList<>();
         StringBuilder pending = new StringBuilder();
         int separators = 0;
         boolean open = false;
@@ -83,7 +147,7 @@ public final class RowFormat {
             open = true;
             separators += occurrences(line);
             if (separators >= fields.size() - 1) {
-                rows.add(split(pending.toString()));
+                rows.add(new Row(split(pending.toString())));
                 pending.setLength(0);
                 separators = 0;
                 open = false;

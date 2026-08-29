@@ -1,14 +1,9 @@
 package io.github.libtmux;
 
 import io.github.libtmux.batch.Batch;
-import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.internal.CommandStrings;
-import io.github.libtmux.snapshot.ClientState;
-import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
-import io.github.libtmux.snapshot.SessionState;
 import io.github.libtmux.snapshot.WindowContext;
-import io.github.libtmux.snapshot.WindowState;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
@@ -18,10 +13,8 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -39,53 +32,6 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Server implements AutoCloseable {
 
-    private static final RowFormat SESSIONS =
-            RowFormat.of("session_id", "session_name", "session_attached", "session_windows");
-    private static final RowFormat WINDOWS = RowFormat.of(
-            "session_id",
-            "window_id",
-            "window_index",
-            "window_name",
-            "window_active",
-            "window_panes",
-            "window_linked",
-            "window_width",
-            "window_height",
-            "window_layout");
-    private static final String[] PANE_FIELDS = {
-        "session_id",
-        "window_id",
-        "window_index",
-        "pane_id",
-        "pane_index",
-        "pane_active",
-        "pane_current_command",
-        "pane_width",
-        "pane_height",
-        "pane_title",
-        "pane_current_path",
-        "pane_pid",
-        "pane_at_top",
-        "pane_at_bottom",
-        "pane_at_left",
-        "pane_at_right"
-    };
-
-    private static final RowFormat PANES = RowFormat.of(PANE_FIELDS);
-    /** tmux gained pane_floating_flag in 3.7; before that the format expands to nothing. */
-    private static final TmuxVersion FLOATING_SINCE = new TmuxVersion(3, 7, "");
-
-    private static final RowFormat PANES_WITH_FLOATING = RowFormat.of(withFloating());
-
-    private static String[] withFloating() {
-        String[] fields = Arrays.copyOf(PANE_FIELDS, PANE_FIELDS.length + 1);
-        fields[PANE_FIELDS.length] = "pane_floating_flag";
-        return fields;
-    }
-
-    private static final RowFormat CLIENTS = RowFormat.of("client_name", "session_id");
-    private static final RowFormat PROCESS = RowFormat.of("pid", "version");
-
     /** Long enough for a pending signal to come straight back, short enough not to be a wait. */
     private static final Duration DRAIN_TIMEOUT = Duration.ofMillis(250);
 
@@ -95,12 +41,14 @@ public final class Server implements AutoCloseable {
     private final AtomicBoolean closed = new AtomicBoolean();
 
     private final ServerIdentity identity;
+    private final SnapshotCapture capture;
 
     private Server(ServerConfig config, TmuxTransport transport, boolean owned) {
         this.config = config;
         this.transport = transport;
         this.owned = owned;
         this.identity = ServerIdentity.of(transport.realm(), config.endpoint());
+        this.capture = new SnapshotCapture(this);
     }
 
     /**
@@ -488,8 +436,8 @@ public final class Server implements AutoCloseable {
      * started by a different build than the one this client is invoking.
      */
     public TmuxVersion version() {
-        return process()
-                .map(ServerProcess::version)
+        return capture.process()
+                .map(SnapshotCapture.ServerProcess::version)
                 .orElseThrow(() -> new LibTmuxException("no tmux server is answering on this endpoint"));
     }
 
@@ -599,138 +547,14 @@ public final class Server implements AutoCloseable {
     public ServerSnapshot snapshot() {
         requireOpen();
         try {
-            return hydrateSnapshot()
-                    .or(this::hydrateSnapshot)
+            return capture.attempt()
+                    .or(capture::attempt)
                     .orElseThrow(() -> new LibTmuxException("tmux server changed during snapshot capture"));
         } catch (LibTmuxException e) {
             throw e;
         } catch (RuntimeException e) {
             throw new LibTmuxException("could not hydrate tmux snapshot: " + e.getMessage(), e);
         }
-    }
-
-    private Optional<ServerSnapshot> hydrateSnapshot() {
-        Optional<ServerProcess> observed = process();
-        if (observed.isEmpty()) {
-            return Optional.of(ServerSnapshot.of(Instant.now(), List.of(), List.of(), List.of(), List.of()));
-        }
-        ServerProcess process = observed.orElseThrow();
-        ServerSnapshot captured;
-        try {
-            captured = captureSnapshot(process);
-        } catch (RuntimeException failure) {
-            Optional<ServerProcess> current;
-            try {
-                current = process();
-            } catch (RuntimeException probeFailure) {
-                probeFailure.addSuppressed(failure);
-                throw probeFailure;
-            }
-            if (Optional.of(process).equals(current)) {
-                throw failure;
-            }
-            return Optional.empty();
-        }
-        if (!Optional.of(process).equals(process())) {
-            return Optional.empty();
-        }
-        return Optional.of(captured);
-    }
-
-    private ServerSnapshot captureSnapshot(ServerProcess process) {
-        List<SessionState> sessions = new ArrayList<>();
-        for (List<String> row : rows(SESSIONS, "list-sessions")) {
-            sessions.add(new SessionState(
-                    new SessionId(row.get(0)),
-                    row.get(1),
-                    positiveCount(row.get(2), "session_attached"),
-                    Integer.parseInt(row.get(3))));
-        }
-        if (sessions.isEmpty()) {
-            return ServerSnapshot.of(
-                    Instant.now(), process.pid(), process.version(), sessions, List.of(), List.of(), List.of());
-        }
-        List<WindowState> windows = new ArrayList<>();
-        for (List<String> row : rows(WINDOWS, "list-windows", "-a")) {
-            windows.add(new WindowState(
-                    context(row.get(0), row.get(2), row.get(1)),
-                    row.get(3),
-                    bit(row.get(4), "window_active"),
-                    Integer.parseInt(row.get(5)),
-                    bit(row.get(6), "window_linked"),
-                    new Dimensions(Integer.parseInt(row.get(7)), Integer.parseInt(row.get(8))),
-                    row.get(9)));
-        }
-        boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
-        RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
-        List<PaneState> panes = new ArrayList<>();
-        for (List<String> row : rows(paneFormat, "list-panes", "-a")) {
-            panes.add(new PaneState(
-                    context(row.get(0), row.get(2), row.get(1)),
-                    new PaneId(row.get(3)),
-                    Integer.parseInt(row.get(4)),
-                    bit(row.get(5), "pane_active"),
-                    row.get(6),
-                    new Dimensions(Integer.parseInt(row.get(7)), Integer.parseInt(row.get(8))),
-                    row.get(9),
-                    Path.of(row.get(10)),
-                    Long.parseLong(row.get(11)),
-                    new PaneEdges(
-                            bit(row.get(12), "pane_at_top"),
-                            bit(row.get(13), "pane_at_bottom"),
-                            bit(row.get(14), "pane_at_left"),
-                            bit(row.get(15), "pane_at_right")),
-                    floatingKnown ? Optional.of(bit(row.get(16), "pane_floating_flag")) : Optional.empty()));
-        }
-        List<ClientState> clients = new ArrayList<>();
-        for (List<String> row : rows(CLIENTS, "list-clients")) {
-            clients.add(new ClientState(
-                    row.get(0), row.get(1).isEmpty() ? Optional.empty() : Optional.of(new SessionId(row.get(1)))));
-        }
-        return ServerSnapshot.of(Instant.now(), process.pid(), process.version(), sessions, windows, panes, clients);
-    }
-
-    /** Reads process identity and version together so neither can come from a different server. */
-    private Optional<ServerProcess> process() {
-        CommandResult result = cmd("display-message", "-p", PROCESS.template());
-        if (!result.succeeded()) {
-            if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
-                return Optional.empty();
-            }
-            throw new LibTmuxException("tmux display-message failed: " + String.join("; ", result.stderr()));
-        }
-        if (result.stdout().size() != 1) {
-            throw new LibTmuxException("tmux did not report exactly one server identity row");
-        }
-        List<String> fields = PROCESS.split(result.stdout().get(0));
-        String pid = fields.get(0);
-        if (pid.isEmpty() || !pid.chars().allMatch(character -> character >= '0' && character <= '9')) {
-            throw new LibTmuxException("tmux reported a malformed server pid: " + pid);
-        }
-        return Optional.of(new ServerProcess(Long.parseLong(pid), TmuxVersion.parse(fields.get(1))));
-    }
-
-    private static boolean serverAbsent(String message) {
-        return message.contains("no server running")
-                || message.contains("server exited unexpectedly")
-                || message.contains("(No such file or directory)");
-    }
-
-    private record ServerProcess(long pid, TmuxVersion version) {}
-
-    private static boolean bit(String value, String field) {
-        return switch (value) {
-            case "0" -> false;
-            case "1" -> true;
-            default -> throw new IllegalArgumentException(field + " was neither 0 nor 1: " + value);
-        };
-    }
-
-    private static boolean positiveCount(String value, String field) {
-        if (value.isEmpty() || !value.chars().allMatch(character -> character >= '0' && character <= '9')) {
-            throw new IllegalArgumentException(field + " was not a non-negative count: " + value);
-        }
-        return Long.parseLong(value) > 0;
     }
 
     /**
@@ -880,32 +704,6 @@ public final class Server implements AutoCloseable {
         } catch (LibTmuxException e) {
             return ServerSnapshot.of(Instant.now(), List.of(), List.of(), List.of(), List.of());
         }
-    }
-
-    private static WindowContext context(String session, String index, String window) {
-        return new WindowContext(
-                new SessionId(session), new WindowIndex(Integer.parseInt(index)), new WindowId(window));
-    }
-
-    /**
-     * Runs one listing and splits its rows.
-     *
-     * <p>An empty server is not a failure: {@code list-sessions} reports "no server running" as a
-     * nonzero exit, and a capture of nothing is still a capture.
-     */
-    private List<List<String>> rows(RowFormat format, String... command) {
-        List<String> argv = new ArrayList<>(command.length + 2);
-        argv.addAll(List.of(command));
-        argv.add("-F");
-        argv.add(format.template());
-        CommandResult result = cmd(argv);
-        if (!result.succeeded()) {
-            if (result.stderr().stream().anyMatch(line -> line.contains("no server running"))) {
-                return List.of();
-            }
-            throw new LibTmuxException("tmux " + command[0] + " failed: " + String.join("; ", result.stderr()));
-        }
-        return format.rows(result.stdout());
     }
 
     /** A builder holding every configuration and ownership choice this server made. */

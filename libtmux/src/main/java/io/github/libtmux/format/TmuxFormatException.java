@@ -10,4 +10,8 @@ public final class TmuxFormatException extends LibTmuxException {
     public TmuxFormatException(String message) {
         super(message);
     }
+
+    public TmuxFormatException(String message, Throwable cause) {
+        super(message, cause);
+    }
 }
