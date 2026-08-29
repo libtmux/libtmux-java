@@ -7,11 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Teardown that survives its own process being killed.
@@ -25,6 +24,11 @@ import org.junit.jupiter.api.io.TempDir;
  * a registry the killed run never got to update. The owner's pid is in the socket path.
  */
 final class AbandonedServerTest {
+
+    private static Path testRoot() throws IOException {
+        Files.createDirectories(TmuxExtension.fixtureRoot());
+        return Files.createTempDirectory(TmuxExtension.fixtureRoot(), "reaper-");
+    }
 
     private static Path socketFor(Path root, long owner) throws IOException {
         Path directory = Files.createDirectory(root.resolve("libtmux-" + owner + "-" + System.nanoTime()));
@@ -83,29 +87,55 @@ final class AbandonedServerTest {
                 .findFirst();
     }
 
+    private static void cleanup(Path root, Path socket) throws Exception {
+        Optional<ProcessHandle> running = serverOn(socket);
+        if (running.isPresent()) {
+            ProcessHandle server = running.orElseThrow();
+            server.destroy();
+            try {
+                server.onExit().get(30, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                server.destroyForcibly();
+                server.onExit().get(30, TimeUnit.SECONDS);
+            }
+        }
+        TmuxExtension.deleteTree(root);
+    }
+
     @Test
-    void aServerWhoseOwnerIsGoneIsReaped(@TempDir Path root) throws Exception {
+    void aServerWhoseOwnerIsGoneIsReaped() throws Exception {
+        Path root = testRoot();
         Path socket = socketFor(root, deadPid());
-        startServer(socket);
-        assertTrue(alive(socket), "the fixture for this test must actually be running");
+        try {
+            startServer(socket);
+            assertTrue(alive(socket), "the fixture for this test must actually be running");
 
-        int reaped = TmuxExtension.reapAbandoned(root);
+            int reaped = TmuxExtension.reapAbandoned(root);
 
-        assertEquals(1, reaped);
-        assertFalse(alive(socket), "a server nobody owns must not outlive the sweep");
+            assertEquals(1, reaped);
+            assertFalse(alive(socket), "a server nobody owns must not outlive the sweep");
+            assertFalse(Files.exists(socket.getParent()), "the abandoned fixture directory was left behind");
+        } finally {
+            cleanup(root, socket);
+        }
     }
 
     /** Asserted on the process, so a client's own startup cost cannot hide the window. */
     @Test
-    void theSweepCountsServersThatEndedRatherThanSignalsItSent(@TempDir Path root) throws Exception {
+    void theSweepCountsServersThatEndedRatherThanSignalsItSent() throws Exception {
+        Path root = testRoot();
         Path socket = socketFor(root, deadPid());
-        startServer(socket);
-        ProcessHandle server = serverOn(socket).orElseThrow(() -> new AssertionError("no server to reap"));
+        try {
+            startServer(socket);
+            ProcessHandle server = serverOn(socket).orElseThrow(() -> new AssertionError("no server to reap"));
 
-        int reaped = TmuxExtension.reapAbandoned(root);
+            int reaped = TmuxExtension.reapAbandoned(root);
 
-        assertEquals(1, reaped);
-        assertFalse(server.isAlive(), "the sweep counted a server it had only asked to stop");
+            assertEquals(1, reaped);
+            assertFalse(server.isAlive(), "the sweep counted a server it had only asked to stop");
+        } finally {
+            cleanup(root, socket);
+        }
     }
 
     /**
@@ -114,34 +144,36 @@ final class AbandonedServerTest {
      * would kill the servers of runs that are still using them.
      */
     @Test
-    void aServerWhoseOwnerIsStillRunningIsLeftAlone(@TempDir Path root) throws Exception {
+    void aServerWhoseOwnerIsStillRunningIsLeftAlone() throws Exception {
+        Path root = testRoot();
         Path socket = socketFor(root, ProcessHandle.current().pid());
-        startServer(socket);
+        try {
+            startServer(socket);
 
-        int reaped = TmuxExtension.reapAbandoned(root);
+            int reaped = TmuxExtension.reapAbandoned(root);
 
-        assertEquals(0, reaped);
-        assertTrue(alive(socket), "this JVM is still running, so this server is still owned");
-
-        new ProcessBuilder(List.of(System.getProperty("libtmux.tmux", "tmux"), "-S", socket.toString(), "kill-server"))
-                .start()
-                .waitFor(30, TimeUnit.SECONDS);
+            assertEquals(0, reaped);
+            assertTrue(alive(socket), "this JVM is still running, so this server is still owned");
+        } finally {
+            cleanup(root, socket);
+        }
     }
 
     /** A directory under the root that names no owner is not something this sweep may judge. */
     @Test
-    void aSocketThatNamesNoOwnerIsLeftAlone(@TempDir Path root) throws Exception {
+    void aSocketThatNamesNoOwnerIsLeftAlone() throws Exception {
+        Path root = testRoot();
         Path directory = Files.createDirectory(root.resolve("not-ours"));
         Path socket = directory.resolve("s");
-        startServer(socket);
+        try {
+            startServer(socket);
 
-        int reaped = TmuxExtension.reapAbandoned(root);
+            int reaped = TmuxExtension.reapAbandoned(root);
 
-        assertEquals(0, reaped);
-        assertTrue(alive(socket));
-
-        new ProcessBuilder(List.of(System.getProperty("libtmux.tmux", "tmux"), "-S", socket.toString(), "kill-server"))
-                .start()
-                .waitFor(30, TimeUnit.SECONDS);
+            assertEquals(0, reaped);
+            assertTrue(alive(socket));
+        } finally {
+            cleanup(root, socket);
+        }
     }
 }
