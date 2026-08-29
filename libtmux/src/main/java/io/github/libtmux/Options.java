@@ -1,5 +1,8 @@
 package io.github.libtmux;
 
+import io.github.libtmux.batch.Batch;
+import io.github.libtmux.batch.OperationOutcome;
+import io.github.libtmux.batch.OperationResult;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.transport.CommandResult;
 import java.util.ArrayList;
@@ -21,6 +24,9 @@ import org.jspecify.annotations.Nullable;
  * addresses the individual entry when setting it back.
  */
 public final class Options {
+
+    /** Under the ceiling {@link Batch#length()} describes, with room for the guard around it. */
+    private static final int GROUP_BUDGET = 15_000;
 
     private final Server server;
     private final @Nullable ServerSnapshot snapshot;
@@ -60,14 +66,15 @@ public final class Options {
      * here.
      *
      * @return empty only when tmux does not know the option, which it reports as an error; an option
-     *     genuinely set to the empty string comes back as an empty value, not as absent
+     *     genuinely set to the empty string comes back as an empty value, not as absent. A value
+     *     spanning several lines comes back whole
      */
     public Optional<String> get(String name) {
         var result = cmd(argv("show-options", List.of("-A", "-v", name)));
         if (!result.succeeded()) {
             return Optional.empty();
         }
-        return Optional.of(result.stdout().isEmpty() ? "" : result.stdout().get(0));
+        return Optional.of(String.join("\n", result.stdout()));
     }
 
     /** Every option set at this scope, in tmux's order. Inherited values are not listed. */
@@ -75,18 +82,47 @@ public final class Options {
         return read(List.of());
     }
 
+    /**
+     * Names from the listing, values from {@code -v}, in one further invocation.
+     *
+     * <p>A listed value is escaped with {@code vis(3)} and wrapped in whichever quotes that release
+     * chose, and which characters it reaches changed inside the supported range — {@code a$b} prints
+     * as {@code "a\$b"} on 3.2a and {@code "a\\$b"} on 3.4. {@code -v} prints the value itself on
+     * every release, which is also what {@link #get} reads, so the two agree.
+     */
     private Map<String, String> read(List<String> flags) {
-        Map<String, String> options = new LinkedHashMap<>();
+        List<String> names = new ArrayList<>();
         for (String line : run(argv("show-options", flags)).stdout()) {
             int split = line.indexOf(' ');
-            if (split < 0) {
-                // A flag option prints its name alone when set and nothing when unset.
-                options.put(inherited(line), "");
-            } else {
-                options.put(inherited(line.substring(0, split)), unquote(line.substring(split + 1)));
-            }
+            names.add(inherited(split < 0 ? line : line.substring(0, split)));
+        }
+        if (names.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> options = new LinkedHashMap<>();
+        for (int from = 0; from < names.size(); ) {
+            int to = from;
+            // -q so an option unset between the two requests reads as empty rather than ending the batch.
+            Batch batch = snapshot == null ? server.batch() : server.batch(snapshot);
+            do {
+                batch.add(argv("show-options", List.of("-q", "-v", names.get(to++))));
+            } while (to < names.size() && batch.length() < GROUP_BUDGET);
+            record(names.subList(from, to), batch, options);
+            from = to;
         }
         return Collections.unmodifiableMap(options);
+    }
+
+    private static void record(List<String> names, Batch batch, Map<String, String> into) {
+        List<OperationResult> read = batch.run().operations();
+        for (int index = 0; index < names.size(); index++) {
+            OperationResult value = read.get(index);
+            if (value.outcome() != OperationOutcome.COMPLETE) {
+                throw new LibTmuxException(
+                        "tmux could not read option " + names.get(index) + ": " + String.join("; ", value.stderr()));
+            }
+            into.put(names.get(index), String.join("\n", value.stdout()));
+        }
     }
 
     /**
@@ -166,13 +202,5 @@ public final class Options {
         argv.addAll(scope);
         argv.addAll(tail);
         return argv;
-    }
-
-    /** tmux quotes a value that contains spaces or specials; a caller wants the value itself. */
-    private static String unquote(String value) {
-        if (value.length() < 2 || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"') {
-            return value;
-        }
-        return value.substring(1, value.length() - 1).replace("\\\"", "\"").replace("\\\\", "\\");
     }
 }

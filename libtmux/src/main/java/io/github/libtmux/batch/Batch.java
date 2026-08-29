@@ -1,6 +1,7 @@
 package io.github.libtmux.batch;
 
 import io.github.libtmux.format.Tokens;
+import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.transport.CommandResult;
 import java.util.ArrayList;
 import java.util.List;
@@ -50,6 +51,18 @@ public final class Batch {
     /** How many operations have been collected. */
     public int size() {
         return operations.size();
+    }
+
+    /**
+     * How many bytes the collected operations come to as the one command tmux parses.
+     *
+     * <p>tmux packs a command into MAX_IMSGSIZE, 16384 bytes, and refuses a longer one with
+     * {@code command too long}; measured, it takes about 16300 of them. A batch taken from a handle
+     * travels as this one string plus the guard that fences it, so it costs this and a little more.
+     * One dispatched as separate arguments costs less, since nothing there is quoted.
+     */
+    public int length() {
+        return CommandStrings.group(assemble()).length();
     }
 
     /**

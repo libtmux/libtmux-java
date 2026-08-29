@@ -796,6 +796,11 @@ public final class Server implements AutoCloseable {
         return guarded(snapshot, CommandStrings.stringify(argv));
     }
 
+    /** A batch whose every command is refused once this handle's server has been replaced. */
+    Batch batch(ServerSnapshot snapshot) {
+        return new Batch(commands -> guarded(snapshot, CommandStrings.group(commands)));
+    }
+
     CommandResult run(ServerSnapshot snapshot, List<String> argv) {
         CommandResult result = cmd(snapshot, argv);
         if (!result.succeeded()) {
