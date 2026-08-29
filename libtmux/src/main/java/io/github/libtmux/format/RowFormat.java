@@ -1,5 +1,6 @@
 package io.github.libtmux.format;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -55,6 +56,51 @@ public final class RowFormat {
     /** How many fields a row must have. */
     public int size() {
         return fields.size();
+    }
+
+    /**
+     * Reads a whole listing back into rows.
+     *
+     * <p>tmux ends a row with a newline and frames it no other way, so a listing's lines are not its
+     * rows: a value carrying a newline arrives as several. A working directory may contain one, and
+     * anything running in a pane may change into it, so this is caller-reachable rather than
+     * theoretical. A row is closed by carrying every separator, not by the line ending.
+     *
+     * @param lines the listing as tmux printed it
+     * @throws TmuxFormatException if the listing ends mid-row, or a row does not have exactly the
+     *     expected number of fields
+     */
+    public List<List<String>> rows(List<String> lines) {
+        List<List<String>> rows = new ArrayList<>();
+        StringBuilder pending = new StringBuilder();
+        int separators = 0;
+        boolean open = false;
+        for (String line : lines) {
+            if (open) {
+                pending.append('\n');
+            }
+            pending.append(line);
+            open = true;
+            separators += occurrences(line);
+            if (separators >= fields.size() - 1) {
+                rows.add(split(pending.toString()));
+                pending.setLength(0);
+                separators = 0;
+                open = false;
+            }
+        }
+        if (open) {
+            throw new TmuxFormatException("a tmux listing ended before its last row did");
+        }
+        return List.copyOf(rows);
+    }
+
+    private static int occurrences(String line) {
+        int count = 0;
+        for (int at = line.indexOf(SEPARATOR); at >= 0; at = line.indexOf(SEPARATOR, at + SEPARATOR.length())) {
+            count++;
+        }
+        return count;
     }
 
     /**

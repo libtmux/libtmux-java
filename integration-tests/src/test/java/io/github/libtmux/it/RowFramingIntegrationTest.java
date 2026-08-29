@@ -3,13 +3,18 @@ package io.github.libtmux.it;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.Session;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.format.TmuxFormatException;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * The framing decision, measured against real tmux rather than against a string in a unit test.
@@ -47,6 +52,21 @@ final class RowFramingIntegrationTest {
         String row = server.cmd("list-windows", "-a", "-F", template).stdout().get(0);
 
         assertEquals(4, row.split(separator, -1).length, "a fixed separator yields one field too many");
+    }
+
+    /**
+     * A working directory may contain a newline, and anything running in a pane may {@code cd} into
+     * one, so tmux splitting a listing into lines is not the same as splitting it into rows.
+     */
+    @Test
+    void aValueCarryingANewlineIsOneRowRatherThanTwo(Server server, @TempDir Path directory) throws Exception {
+        Path awkward = Files.createDirectory(directory.resolve("dir\nwithnl"));
+        Session session = server.newSession(spec -> spec.named("awkward").in(awkward));
+
+        Pane pane = session.activePane().orElseThrow();
+
+        assertEquals(awkward, pane.currentPath());
+        assertEquals(2, server.sessions().size(), "a listing must not come back empty because of it");
     }
 
     @Test

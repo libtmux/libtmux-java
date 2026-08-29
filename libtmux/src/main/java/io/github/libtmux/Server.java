@@ -899,7 +899,7 @@ public final class Server implements AutoCloseable {
             }
             throw new LibTmuxException("tmux " + command[0] + " failed: " + String.join("; ", result.stderr()));
         }
-        return result.stdout().stream().map(format::split).toList();
+        return format.rows(result.stdout());
     }
 
     /** A builder holding every configuration and ownership choice this server made. */
