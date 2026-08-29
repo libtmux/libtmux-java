@@ -142,7 +142,9 @@ final class RunningCommands {
         // The config file is left off: it is read when a server starts and means nothing to a command
         // sent to one already running. Everything typed here is echoed by the shell onto the pane a
         // person may be watching, so the shortest correct command line is the kindest one.
-        List<String> tmux = new ArrayList<>(List.of(server.config().binary()));
+        // A resolved path, not the name: the pane resolves a name against the user's PATH, and a
+        // client from another release than this server is dropped without delivering the signal.
+        List<String> tmux = new ArrayList<>(List.of(server.config().binaryPath()));
         tmux.addAll(server.config().endpoint().flags());
 
         String finish = Shell.quoteAll(append(tmux, "wait-for", "-S", channel));

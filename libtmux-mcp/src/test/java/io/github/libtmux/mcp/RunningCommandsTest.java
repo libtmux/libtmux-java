@@ -16,12 +16,15 @@ import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
 import io.github.libtmux.transport.TmuxTransportException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Running a command and knowing how it ended, against real tmux.
@@ -32,6 +35,30 @@ import org.junit.jupiter.api.extension.ExtendWith;
  */
 @ExtendWith(TmuxExtension.class)
 final class RunningCommandsTest {
+
+    /**
+     * The signal is sent by the pane, so it is the pane's PATH that decides which tmux sends it. A
+     * client from another release than this server is dropped without delivering it.
+     */
+    @Test
+    void thePaneSignalsWithThisServersTmuxRatherThanItsOwn(Server server, @TempDir Path decoy) throws Exception {
+        Path impostor = decoy.resolve("tmux");
+        Files.writeString(impostor, "#!/bin/sh\nexit 1\n");
+        impostor.toFile().setExecutable(true);
+        server.cmd("set-environment", "-t", "libtmux", "PATH", decoy + ":" + System.getenv("PATH"));
+        String pane = server.sessions()
+                .get(0)
+                .newWindow("decoyed")
+                .panes()
+                .get(0)
+                .id()
+                .value();
+
+        RunningCommands.Ran ran = RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "echo routed"));
+
+        assertEquals("SIGNALLED", ran.outcome(), "a tmux on the pane's PATH answered instead of this server's");
+        assertEquals(0, ran.exitStatus());
+    }
 
     @Test
     void aCommandThatSucceedsComesBackWithItsOutputAndStatus(Server server) {

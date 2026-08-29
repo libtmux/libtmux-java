@@ -1,5 +1,7 @@
 package io.github.libtmux;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -42,6 +44,34 @@ public final class ServerConfig {
 
     /** The tmux executable, resolved on {@code PATH} unless it is an absolute path. */
     public String binary() {
+        return binary;
+    }
+
+    /**
+     * The binary as a path, resolved the way this process resolves it.
+     *
+     * <p>What to write into a command a pane will run. A pane resolves a bare name against the
+     * user's {@code PATH} rather than this process's, and a tmux client built from a different
+     * release than the server it reaches is dropped rather than served. Falls back to the name when
+     * nothing on {@code PATH} matches, which leaves the caller no worse off.
+     */
+    public String binaryPath() {
+        if (binary.contains(File.separator)) {
+            return binary;
+        }
+        String search = System.getenv("PATH");
+        if (search == null) {
+            return binary;
+        }
+        for (String entry : search.split(File.pathSeparator, -1)) {
+            if (entry.isEmpty()) {
+                continue;
+            }
+            Path candidate = Path.of(entry, binary);
+            if (Files.isExecutable(candidate)) {
+                return candidate.toString();
+            }
+        }
         return binary;
     }
 
