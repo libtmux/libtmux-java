@@ -463,6 +463,10 @@ public final class Server implements AutoCloseable {
                 .orElseThrow(() -> new LibTmuxException("no tmux server is answering on this endpoint"));
     }
 
+    TmuxVersion version(ServerSnapshot snapshot) {
+        return snapshot.serverVersion().orElseGet(this::version);
+    }
+
     /** Which server this is. Every handle taken from it is scoped by this. */
     public ServerIdentity identity() {
         return identity;
@@ -538,7 +542,7 @@ public final class Server implements AutoCloseable {
     }
 
     /**
-     * Captures the whole hierarchy, in four listings whatever its size.
+     * Captures the whole hierarchy in four listings, retrying once if the server is replaced.
      *
      * <p>One server-wide listing per kind of object, so ordering and membership stay tmux's decision
      * rather than being re-derived from another listing's rows.
@@ -550,7 +554,9 @@ public final class Server implements AutoCloseable {
      */
     public ServerSnapshot snapshot() {
         try {
-            return hydrateSnapshot();
+            return hydrateSnapshot()
+                    .or(this::hydrateSnapshot)
+                    .orElseThrow(() -> new LibTmuxException("tmux server changed during snapshot capture"));
         } catch (LibTmuxException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -558,12 +564,35 @@ public final class Server implements AutoCloseable {
         }
     }
 
-    private ServerSnapshot hydrateSnapshot() {
+    private Optional<ServerSnapshot> hydrateSnapshot() {
         Optional<ServerProcess> observed = process();
         if (observed.isEmpty()) {
-            return ServerSnapshot.of(Instant.now(), List.of(), List.of(), List.of(), List.of());
+            return Optional.of(ServerSnapshot.of(Instant.now(), List.of(), List.of(), List.of(), List.of()));
         }
         ServerProcess process = observed.orElseThrow();
+        ServerSnapshot captured;
+        try {
+            captured = captureSnapshot(process);
+        } catch (RuntimeException failure) {
+            Optional<ServerProcess> current;
+            try {
+                current = process();
+            } catch (RuntimeException probeFailure) {
+                probeFailure.addSuppressed(failure);
+                throw probeFailure;
+            }
+            if (Optional.of(process).equals(current)) {
+                throw failure;
+            }
+            return Optional.empty();
+        }
+        if (!Optional.of(process).equals(process())) {
+            return Optional.empty();
+        }
+        return Optional.of(captured);
+    }
+
+    private ServerSnapshot captureSnapshot(ServerProcess process) {
         List<SessionState> sessions = new ArrayList<>();
         for (List<String> row : rows(SESSIONS, "list-sessions")) {
             sessions.add(new SessionState(
@@ -616,7 +645,10 @@ public final class Server implements AutoCloseable {
     private Optional<ServerProcess> process() {
         CommandResult result = cmd("display-message", "-p", PROCESS.template());
         if (!result.succeeded()) {
-            return Optional.empty();
+            if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
+                return Optional.empty();
+            }
+            throw new LibTmuxException("tmux display-message failed: " + String.join("; ", result.stderr()));
         }
         if (result.stdout().size() != 1) {
             throw new LibTmuxException("tmux did not report exactly one server identity row");
@@ -627,6 +659,12 @@ public final class Server implements AutoCloseable {
             throw new LibTmuxException("tmux reported a malformed server pid: " + pid);
         }
         return Optional.of(new ServerProcess(Long.parseLong(pid), TmuxVersion.parse(fields.get(1))));
+    }
+
+    private static boolean serverAbsent(String message) {
+        return message.contains("no server running")
+                || message.contains("server exited unexpectedly")
+                || message.contains("(No such file or directory)");
     }
 
     private record ServerProcess(long pid, TmuxVersion version) {}
@@ -720,6 +758,24 @@ public final class Server implements AutoCloseable {
 
     CommandResult run(ServerSnapshot snapshot, List<String> argv) {
         CommandResult result = cmd(snapshot, argv);
+        if (!result.succeeded()) {
+            throw new LibTmuxException("tmux " + argv.get(0) + " failed: " + String.join("; ", result.stderr()));
+        }
+        return result;
+    }
+
+    CommandResult run(ServerSnapshot snapshot, WindowContext expected, List<String> argv) {
+        long pid = snapshot.serverPid()
+                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
+        String target = expected.session().value() + ":" + expected.index().value();
+        String stale = "libtmux-stale-winlink-" + pid + "-" + expected.window().value();
+        String condition = "#{&&:#{==:#{pid}," + pid + "},#{==:#{window_id},"
+                + expected.window().value() + "}}";
+        CommandResult result =
+                cmd(List.of("if-shell", "-F", "-t", target, condition, CommandStrings.stringify(argv), stale));
+        if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
+            throw new ObjectDoesNotExist("window " + expected.window() + " no longer exists here");
+        }
         if (!result.succeeded()) {
             throw new LibTmuxException("tmux " + argv.get(0) + " failed: " + String.join("; ", result.stderr()));
         }

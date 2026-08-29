@@ -288,7 +288,7 @@ public final class Pane {
      * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
      */
     public List<String> capture(CaptureSpec spec) {
-        return server.run(snapshot, spec.argv(state.id().value(), server.version()))
+        return server.run(snapshot, spec.argv(state.id().value(), server.version(snapshot)))
                 .stdout();
     }
 
@@ -411,7 +411,7 @@ public final class Pane {
                 new SessionId(fields.get(0)),
                 new WindowIndex(Integer.parseInt(fields.get(2))),
                 new WindowId(fields.get(1)));
-        if (server.version().equals(BREAK_PANE_NAMING_BROKEN)) {
+        if (server.version(snapshot).equals(BREAK_PANE_NAMING_BROKEN)) {
             // 3.7 took the name and ignored it, so the caller's choice is applied afterwards.
             wanted.ifPresent(name -> server.run(snapshot, List.of("rename-window", "-t", fields.get(1), name)));
         }
@@ -455,7 +455,7 @@ public final class Pane {
      * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
      */
     public Pane split(SplitSpec spec) {
-        return created(server, snapshot, spec.argv(state.id().value(), CREATED.template(), server.version()));
+        return created(server, snapshot, spec.argv(state.id().value(), CREATED.template(), server.version(snapshot)));
     }
 
     /**

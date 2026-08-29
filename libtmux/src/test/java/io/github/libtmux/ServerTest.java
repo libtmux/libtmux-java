@@ -209,6 +209,96 @@ final class ServerTest {
         }
     }
 
+    @Test
+    void snapshotDistinguishesAnAbsentServerFromAnIdentityProbeFailure(@TempDir Path directory) throws IOException {
+        try (Server server = Server.using(config(directory), new RefusingTransport("permission denied"))) {
+            LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
+
+            assertTrue(String.valueOf(failure.getMessage()).contains("permission denied"));
+        }
+        for (String absent : List.of(
+                "no server running on /tmp/s",
+                "server exited unexpectedly",
+                "error connecting to /tmp/s (No such file or directory)")) {
+            try (Server server = Server.using(config(directory), new RefusingTransport(absent))) {
+                assertTrue(server.snapshot().sessions().isEmpty(), absent);
+            }
+        }
+    }
+
+    @Test
+    void snapshotRetriesAChangedIncarnationAndKeepsOnlyTheSecondCapture(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        try (Server server = Server.using(
+                config(directory),
+                new SnapshotRaceTransport(
+                        List.of("4242", "4343", "4343", "4343"),
+                        List.of(
+                                String.join(separator, "$0", "old", "0", "0"),
+                                String.join(separator, "$1", "new", "0", "0"))))) {
+            var snapshot = server.snapshot();
+
+            assertEquals(4343L, snapshot.serverPid().orElseThrow());
+            assertEquals(
+                    List.of("new"),
+                    snapshot.sessions().stream().map(session -> session.name()).toList());
+        }
+    }
+
+    @Test
+    void snapshotRetriesWhenTheReplacedServerMakesAListingFail(@TempDir Path directory) throws IOException {
+        try (Server server =
+                Server.using(config(directory), new ReplacementDuringCaptureTransport(CaptureFailure.LISTING))) {
+            var snapshot = server.snapshot();
+
+            assertEquals(4343L, snapshot.serverPid().orElseThrow());
+            assertEquals("new", snapshot.sessions().get(0).name());
+        }
+    }
+
+    @Test
+    void snapshotRetriesWhenTheReplacedServerChangesThePaneRowShape(@TempDir Path directory) throws IOException {
+        try (Server server =
+                Server.using(config(directory), new ReplacementDuringCaptureTransport(CaptureFailure.PANE_SHAPE))) {
+            var snapshot = server.snapshot();
+
+            assertEquals(4343L, snapshot.serverPid().orElseThrow());
+            assertEquals("new", snapshot.sessions().get(0).name());
+        }
+    }
+
+    @Test
+    void snapshotRejectsASecondReplacementDuringHydration(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        try (Server server = Server.using(
+                config(directory),
+                new SnapshotRaceTransport(
+                        List.of("4242", "4343", "4343", "4545"),
+                        List.of(
+                                String.join(separator, "$0", "old", "0", "0"),
+                                String.join(separator, "$1", "new", "0", "0"))))) {
+            LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
+
+            assertTrue(String.valueOf(failure.getMessage()).contains("changed during snapshot"));
+        }
+    }
+
+    @Test
+    void snapshotRejectsASecondDisappearanceDuringHydration(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        try (Server server = Server.using(
+                config(directory),
+                new SnapshotRaceTransport(
+                        List.of("4242", "4343", "4343", ""),
+                        List.of(
+                                String.join(separator, "$0", "old", "0", "0"),
+                                String.join(separator, "$1", "new", "0", "0"))))) {
+            LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
+
+            assertTrue(String.valueOf(failure.getMessage()).contains("changed during snapshot"));
+        }
+    }
+
     // -------------------------------------------------------------------------------- builders
 
     @Test
@@ -334,6 +424,103 @@ final class ServerTest {
                             0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.6")), List.of());
                 default -> new CommandResult(0, List.of(), List.of());
             };
+        }
+
+        @Override
+        public void close() {}
+    }
+
+    private static final class SnapshotRaceTransport implements TmuxTransport {
+
+        private final AtomicInteger identityReads = new AtomicInteger();
+        private final AtomicInteger sessionReads = new AtomicInteger();
+        private final List<String> identities;
+        private final List<String> sessionRows;
+
+        SnapshotRaceTransport(List<String> identities, List<String> sessionRows) {
+            this.identities = identities;
+            this.sessionRows = sessionRows;
+        }
+
+        @Override
+        public CommandResult execute(CommandRequest request) {
+            return switch (request.argv().get(0)) {
+                case "display-message" -> identity(identities.get(identityReads.getAndIncrement()));
+                case "list-sessions" ->
+                    new CommandResult(0, List.of(sessionRows.get(sessionReads.getAndIncrement())), List.of());
+                default -> new CommandResult(0, List.of(), List.of());
+            };
+        }
+
+        private static CommandResult identity(String pid) {
+            if (pid.isEmpty()) {
+                return new CommandResult(1, List.of(), List.of("no server running on /tmp/s"));
+            }
+            return new CommandResult(
+                    0, List.of(String.join(RowFormat.of("field").separator(), pid, "3.6")), List.of());
+        }
+
+        @Override
+        public void close() {}
+    }
+
+    private enum CaptureFailure {
+        LISTING,
+        PANE_SHAPE
+    }
+
+    private static final class ReplacementDuringCaptureTransport implements TmuxTransport {
+
+        private final AtomicInteger identityReads = new AtomicInteger();
+        private final CaptureFailure failure;
+
+        ReplacementDuringCaptureTransport(CaptureFailure failure) {
+            this.failure = failure;
+        }
+
+        @Override
+        public CommandResult execute(CommandRequest request) {
+            boolean firstCapture = identityReads.get() == 1;
+            return switch (request.argv().get(0)) {
+                case "display-message" ->
+                    identityReads.getAndIncrement() == 0
+                            ? identity("4242", failure == CaptureFailure.PANE_SHAPE ? "3.7" : "3.6")
+                            : identity("4343", "3.6");
+                case "list-sessions" -> {
+                    if (firstCapture && failure == CaptureFailure.LISTING) {
+                        yield new CommandResult(1, List.of(), List.of("server exited unexpectedly"));
+                    }
+                    yield new CommandResult(
+                            0,
+                            List.of(firstCapture ? row("$0", "old", "0", "1") : row("$1", "new", "0", "0")),
+                            List.of());
+                }
+                case "list-windows" ->
+                    new CommandResult(
+                            0,
+                            firstCapture && failure == CaptureFailure.PANE_SHAPE
+                                    ? List.of(row("$0", "@0", "0", "old", "1", "1", "0", "80", "24", "layout"))
+                                    : List.of(),
+                            List.of());
+                case "list-panes" ->
+                    new CommandResult(
+                            0,
+                            firstCapture && failure == CaptureFailure.PANE_SHAPE
+                                    ? List.of(row(
+                                            "$0", "@0", "0", "%0", "0", "1", "sh", "80", "24", "", "/tmp", "7", "1",
+                                            "1", "1", "1"))
+                                    : List.of(),
+                            List.of());
+                default -> new CommandResult(0, List.of(), List.of());
+            };
+        }
+
+        private static CommandResult identity(String pid, String version) {
+            return new CommandResult(0, List.of(row(pid, version)), List.of());
+        }
+
+        private static String row(String... fields) {
+            return String.join(RowFormat.of("field").separator(), fields);
         }
 
         @Override

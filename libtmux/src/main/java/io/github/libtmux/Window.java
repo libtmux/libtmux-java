@@ -80,7 +80,7 @@ public final class Window {
 
     /** Makes this the active window of its session. */
     public void select() {
-        server.run(snapshot, List.of("select-window", "-t", linkTarget()));
+        server.run(snapshot, state.context(), List.of("select-window", "-t", linkTarget()));
     }
 
     /** The server this window lives on. */
@@ -145,7 +145,7 @@ public final class Window {
      * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
      */
     public Pane split(SplitSpec spec) {
-        return Pane.created(server, snapshot, spec.argv(target(), Pane.createdFormat(), server.version()));
+        return Pane.created(server, snapshot, spec.argv(target(), Pane.createdFormat(), server.version(snapshot)));
     }
 
     /**
@@ -158,7 +158,8 @@ public final class Window {
      */
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
-        List<String> reported = server.run(snapshot, List.of("display-message", "-p", "-t", linkTarget(), format))
+        List<String> reported = server.run(
+                        snapshot, state.context(), List.of("display-message", "-p", "-t", linkTarget(), format))
                 .stdout();
         return reported.isEmpty() ? "" : reported.get(0);
     }
@@ -190,7 +191,7 @@ public final class Window {
      * @throws LibTmuxException if this is the window's only link, which tmux refuses to remove
      */
     public void unlink() {
-        server.run(snapshot, List.of("unlink-window", "-t", linkTarget()));
+        server.run(snapshot, state.context(), List.of("unlink-window", "-t", linkTarget()));
     }
 
     /** Moves this window into another session. */
@@ -199,6 +200,7 @@ public final class Window {
         server.requireSameIncarnation(snapshot, session.server(), session.snapshot());
         server.run(
                 snapshot,
+                state.context(),
                 List.of("move-window", "-s", linkTarget(), "-t", session.id().value()));
     }
 
@@ -214,7 +216,7 @@ public final class Window {
      */
     public void selectLayout(Layout layout) {
         Objects.requireNonNull(layout, "layout");
-        layout.requireSupported(server.version());
+        layout.requireSupported(server.version(snapshot));
         server.run(snapshot, List.of("select-layout", "-t", target(), layout.tmuxName()));
     }
 

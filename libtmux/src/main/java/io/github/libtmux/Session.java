@@ -76,6 +76,7 @@ public final class Session {
         }
         server.run(
                 snapshot,
+                window.context(),
                 List.of(
                         "select-window",
                         "-t",
@@ -162,7 +163,7 @@ public final class Session {
      */
     public Window newWindow(WindowSpec spec) {
         List<String> reported = server.run(
-                        snapshot, spec.argv(state.id().value(), CREATED.template(), server.version()))
+                        snapshot, spec.argv(state.id().value(), CREATED.template(), server.version(snapshot)))
                 .stdout();
         ServerSnapshot fresh = server.refresh(snapshot);
         if (reported.isEmpty()) {

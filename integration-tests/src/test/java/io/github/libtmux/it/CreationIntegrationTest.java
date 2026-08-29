@@ -1,11 +1,13 @@
 package io.github.libtmux.it;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Dimensions;
+import io.github.libtmux.ObjectDoesNotExist;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
@@ -99,6 +101,25 @@ final class CreationIntegrationTest {
         assertTrue(
                 session.refresh().windows().stream().noneMatch(window -> "victim".equals(window.name())),
                 "the window that held the index is gone");
+    }
+
+    @Test
+    void staleWinlinkCannotSelectItsReplacement(Server server) {
+        Session session = server.sessions().get(0);
+        Window stale = session.newWindow(w -> w.named("stale"));
+        int held = stale.index().value();
+        Window other = session.refresh().newWindow(w -> w.named("other"));
+        Window replacement = session.refresh()
+                .newWindow(w -> w.named("replacement").atIndex(held).replaceExisting());
+        other.select();
+
+        assertAll(
+                () -> assertThrows(ObjectDoesNotExist.class, stale::select),
+                () -> assertEquals(
+                        other.id(),
+                        session.refresh().activeWindow().orElseThrow().id(),
+                        "the stale handle must not select the replacement"));
+        assertNotEquals(stale.id(), replacement.id());
     }
 
     /**

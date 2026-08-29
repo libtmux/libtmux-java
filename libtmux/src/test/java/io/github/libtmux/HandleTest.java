@@ -217,6 +217,19 @@ final class HandleTest {
         }
     }
 
+    @Test
+    void aHandleUsesTheVersionCapturedWithItsIdentity() {
+        CountingTransport transport = new CountingTransport("alpha");
+        try (Server server = Server.using(config(ServerEndpoint.namedSocket("fixture")), transport)) {
+            Window window = server.windows().get(0);
+            int captured = transport.calls.get();
+
+            window.selectLayout(Layout.MAIN_HORIZONTAL_MIRRORED);
+
+            assertEquals(captured + 1, transport.calls.get(), "the operation must not probe another server version");
+        }
+    }
+
     // ------------------------------------------------------------------------------- fixtures
 
     private static ServerConfig config(ServerEndpoint endpoint) {
@@ -236,7 +249,9 @@ final class HandleTest {
     }
 
     private static String last(CountingTransport transport) {
-        return transport.requests.get(transport.requests.size() - 1).argv().get(3);
+        List<String> argv =
+                transport.requests.get(transport.requests.size() - 1).argv();
+        return argv.get(argv.size() - 2);
     }
 
     /**
