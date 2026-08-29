@@ -125,14 +125,11 @@ public final class TmuxMcpServer {
                 watches.start(new McpNotifier(owned));
                 return owned;
             } catch (RuntimeException | Error failure) {
-                try {
-                    if (owned == null) {
-                        watches.close();
-                    } else {
-                        owned.close();
-                    }
-                } catch (RuntimeException | Error cleanupFailure) {
-                    SessionLifetime.suppress(failure, cleanupFailure);
+                Cleanup cleanup = new Cleanup(failure);
+                if (owned == null) {
+                    cleanup.run(watches::close);
+                } else {
+                    cleanup.run(owned::close);
                 }
                 throw failure;
             }
@@ -189,23 +186,20 @@ public final class TmuxMcpServer {
 
         @Override
         public void closeGracefully() {
-            if (closed.compareAndSet(false, true)) {
-                try {
-                    watches.close();
-                } finally {
-                    super.closeGracefully();
-                }
-            }
+            closeBoth(() -> super.closeGracefully());
         }
 
         @Override
         public void close() {
+            closeBoth(() -> super.close());
+        }
+
+        private void closeBoth(Runnable closeServer) {
             if (closed.compareAndSet(false, true)) {
-                try {
-                    watches.close();
-                } finally {
-                    super.close();
-                }
+                Cleanup cleanup = new Cleanup();
+                cleanup.run(watches::close);
+                cleanup.run(closeServer);
+                cleanup.throwIfFailed();
             }
         }
     }

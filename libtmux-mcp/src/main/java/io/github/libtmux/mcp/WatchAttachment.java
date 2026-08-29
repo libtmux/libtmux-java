@@ -75,12 +75,14 @@ final class WatchAttachment implements AutoCloseable {
                 throw new IllegalStateException("tmux refused the pane-state watch");
             }
             return new WatchAttachment(owner, connection, session, client, output, events, name);
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | Error failure) {
+            Cleanup cleanup = new Cleanup(failure);
+            cleanup.run(client::close);
             if (name != null) {
-                connection.reveal(name);
+                String hidden = name;
+                cleanup.run(() -> connection.reveal(hidden));
             }
-            client.close();
-            throw e;
+            throw failure;
         }
     }
 
@@ -152,23 +154,24 @@ final class WatchAttachment implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        output.close();
-        events.close();
-        outputConsumer.interrupt();
-        eventConsumer.interrupt();
-        connection.changeClients(() -> {
-            try {
-                client.close();
-            } finally {
-                if (clientName != null) {
-                    connection.reveal(clientName);
-                }
+        Cleanup cleanup = new Cleanup();
+        cleanup.run(output::close);
+        cleanup.run(events::close);
+        cleanup.run(outputConsumer::interrupt);
+        cleanup.run(eventConsumer::interrupt);
+        cleanup.run(() -> connection.changeClients(() -> {
+            Cleanup clientCleanup = new Cleanup();
+            clientCleanup.run(client::close);
+            if (clientName != null) {
+                clientCleanup.run(() -> connection.reveal(clientName));
             }
-        });
+            clientCleanup.throwIfFailed();
+        }));
         if (started.get()) {
-            join(outputConsumer);
-            join(eventConsumer);
+            cleanup.run(() -> join(outputConsumer));
+            cleanup.run(() -> join(eventConsumer));
         }
+        cleanup.throwIfFailed();
     }
 
     private static void join(Thread thread) {

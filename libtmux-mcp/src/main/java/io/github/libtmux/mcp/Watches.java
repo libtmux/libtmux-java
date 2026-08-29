@@ -78,7 +78,8 @@ final class Watches implements AutoCloseable {
             watches.projection = ResourceInvalidations.project(current, connection::isOurs);
             return watches;
         } catch (RuntimeException | Error e) {
-            watches.close();
+            Cleanup cleanup = new Cleanup(e);
+            cleanup.run(watches::close);
             throw new IllegalStateException("could not start the requested tmux watcher", e);
         }
     }
@@ -103,7 +104,8 @@ final class Watches implements AutoCloseable {
             watches.start(notifier);
             return watches;
         } catch (RuntimeException | Error e) {
-            watches.close();
+            Cleanup cleanup = new Cleanup(e);
+            cleanup.run(watches::close);
             throw e;
         }
     }
@@ -298,13 +300,15 @@ final class Watches implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        signals.offer(Signal.STOP);
-        supervisor.interrupt();
-        attachments.values().forEach(WatchAttachment::close);
+        Cleanup cleanup = new Cleanup();
+        cleanup.run(() -> signals.offer(Signal.STOP));
+        cleanup.run(supervisor::interrupt);
+        attachments.values().forEach(cleanup::close);
         attachments.clear();
         if (supervisor.getState() != Thread.State.NEW && !Thread.currentThread().equals(supervisor)) {
-            join(supervisor);
+            cleanup.run(() -> join(supervisor));
         }
+        cleanup.throwIfFailed();
     }
 
     private static void join(Thread thread) {

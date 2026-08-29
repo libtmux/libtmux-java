@@ -68,20 +68,13 @@ final class SessionLifetime implements Runnable {
     }
 
     private @Nullable Throwable finish(@Nullable Throwable failure) {
-        try {
-            ended.run();
-        } catch (RuntimeException | Error callbackFailure) {
-            failure = suppress(failure, callbackFailure);
-        }
+        Cleanup cleanup = new Cleanup(failure);
+        cleanup.run(ended);
         AutoCloseable resource;
         while ((resource = takeOwned()) != null) {
-            try {
-                resource.close();
-            } catch (Exception | Error closeFailure) {
-                failure = suppress(failure, closeFailure);
-            }
+            cleanup.close(resource);
         }
-        return failure;
+        return cleanup.failure();
     }
 
     private @Nullable AutoCloseable takeOwned() {
@@ -106,17 +99,6 @@ final class SessionLifetime implements Runnable {
         } catch (Exception failure) {
             throw new IllegalStateException("could not close protocol session resource", failure);
         }
-    }
-
-    @SuppressWarnings("ReferenceEquality")
-    static Throwable suppress(@Nullable Throwable primary, Throwable secondary) {
-        if (primary == null) {
-            return secondary;
-        }
-        if (secondary != primary) {
-            primary.addSuppressed(secondary);
-        }
-        return primary;
     }
 
     private record ObservedProvider(McpServerTransportProvider delegate, SessionLifetime lifetime)
