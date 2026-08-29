@@ -187,7 +187,7 @@ final class ToolsAgainstTmuxTest {
                 Listings.Whoami whoami = Listings.whoami(measured, Caller.nowhere(), Safety.MUTATING);
 
                 assertEquals(1, whoami.sessions());
-                assertTrue(commands.get() <= 6, "whoami dispatched " + commands.get() + " tmux commands");
+                assertEquals(7, commands.get(), "one identity-fenced snapshot and one socket-path read");
             }
         }
     }
