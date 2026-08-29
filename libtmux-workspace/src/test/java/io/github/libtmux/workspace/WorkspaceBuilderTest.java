@@ -82,6 +82,14 @@ final class WorkspaceBuilderTest {
     }
 
     @Test
+    void aPaneCommandRejectsAByteNoProcessCanCarry() {
+        IllegalArgumentException refused = assertThrows(
+                IllegalArgumentException.class, () -> new PaneSpec(List.of("echo valid", "invalid\0command")));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains("command 1"), refused.getMessage());
+    }
+
+    @Test
     void aWindowWithNoPanesStatedStillGetsTheOneTmuxMakes() {
         Workspace workspace = WorkspaceBuilder.parse("""
                 session_name: bare
@@ -401,8 +409,7 @@ final class WorkspaceBuilderTest {
         Workspace workspace = new Workspace(
                 "vanishing",
                 List.of(
-                        new WindowSpec(
-                                "first", Optional.empty(), List.of(new PaneSpec(List.of("invalid\u0000command")))),
+                        new WindowSpec("first", Optional.empty(), List.of(new PaneSpec(List.of("echo never reached")))),
                         new WindowSpec("second", Optional.empty(), List.of(new PaneSpec(List.of())))));
 
         RuntimeException failure =

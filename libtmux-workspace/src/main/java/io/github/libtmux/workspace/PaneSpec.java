@@ -11,5 +11,11 @@ public record PaneSpec(List<String> commands) {
 
     public PaneSpec {
         commands = List.copyOf(commands);
+        for (int index = 0; index < commands.size(); index++) {
+            if (commands.get(index).indexOf('\0') >= 0) {
+                throw new IllegalArgumentException(
+                        "pane command " + index + " contains NUL, which no process can carry");
+            }
+        }
     }
 }
