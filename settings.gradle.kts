@@ -23,6 +23,7 @@ include("libtmux-workspace")
 include("libtmux-mcp")
 
 // Internal: exercised by the build, never released.
+include("benchmarks")
 include("docs-tests")
 include("examples")
 include("integration-tests")
