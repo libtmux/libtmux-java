@@ -17,7 +17,7 @@ import java.util.Objects;
 public final class Buffers {
 
     private static final RowFormat LISTING = RowFormat.of("buffer_name", "buffer_size");
-    private static final TmuxVersion EXACT_NAMED_DELETE = new TmuxVersion(3, 4, "");
+    static final TmuxVersion EXACT_NAMED_DELETE = new TmuxVersion(3, 4, "");
 
     private final Server server;
 
@@ -91,7 +91,7 @@ public final class Buffers {
     }
 
     /** Protects a final semicolon from tmux's command-group parser on every transport. */
-    private static String argument(String value) {
+    static String argument(String value) {
         Objects.requireNonNull(value, "value");
         return value.endsWith(";") ? value.substring(0, value.length() - 1) + "\\;" : value;
     }

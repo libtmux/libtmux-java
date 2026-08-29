@@ -24,6 +24,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -787,21 +788,41 @@ public final class Server implements AutoCloseable {
     }
 
     CommandResult cmd(ServerSnapshot snapshot, List<String> argv) {
-        long pid = snapshot.serverPid()
-                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
-        String stale = "libtmux-stale-handle-" + pid;
-        CommandResult result =
-                cmd(List.of("if-shell", "-F", "#{==:#{pid}," + pid + "}", CommandStrings.stringify(argv), stale));
-        if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
-            throw new ObjectDoesNotExist("the tmux server this handle belonged to has ended");
-        }
-        return result;
+        return guarded(snapshot, CommandStrings.stringify(argv));
     }
 
     CommandResult run(ServerSnapshot snapshot, List<String> argv) {
         CommandResult result = cmd(snapshot, argv);
         if (!result.succeeded()) {
             throw new LibTmuxException("tmux " + argv.get(0) + " failed: " + String.join("; ", result.stderr()));
+        }
+        return result;
+    }
+
+    /**
+     * Runs several commands in one invocation, so nothing of this caller's happens between them.
+     *
+     * <p>tmux carries a group to its server as one message and runs it there, so a caller that stops
+     * partway cannot leave the group half applied. That is what an operation whose second command
+     * cleans up after its first needs.
+     */
+    CommandResult runTogether(ServerSnapshot snapshot, List<List<String>> commands) {
+        CommandResult result = guarded(snapshot, CommandStrings.group(commands));
+        if (!result.succeeded()) {
+            String verbs = commands.stream().map(argv -> argv.get(0)).collect(Collectors.joining(" then "));
+            throw new LibTmuxException("tmux " + verbs + " failed: " + String.join("; ", result.stderr()));
+        }
+        return result;
+    }
+
+    /** Refuses to reach a tmux server that is not the one this handle was made against. */
+    private CommandResult guarded(ServerSnapshot snapshot, String command) {
+        long pid = snapshot.serverPid()
+                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
+        String stale = "libtmux-stale-handle-" + pid;
+        CommandResult result = cmd(List.of("if-shell", "-F", "#{==:#{pid}," + pid + "}", command, stale));
+        if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
+            throw new ObjectDoesNotExist("the tmux server this handle belonged to has ended");
         }
         return result;
     }

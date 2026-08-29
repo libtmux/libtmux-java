@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.BufferInfo;
 import io.github.libtmux.Client;
 import io.github.libtmux.ClientAttachment;
+import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.ObjectDoesNotExist;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
@@ -125,11 +126,55 @@ final class BuffersAndClientIntegrationTest {
         Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
         server.buffers().set("typed", "echo pasted-this\n");
 
-        pane.paste("typed");
+        pane.pasteBuffer("typed");
 
         assertTrue(
                 await(() -> pane.capture().stream().anyMatch(line -> line.contains("pasted-this"))),
                 "the buffer never reached the pane");
+    }
+
+    @Test
+    void pastingTextLeavesNothingInTheBufferStack(Server server) throws Exception {
+        Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
+        server.buffers().set("belongs-to-the-user", "keep me");
+
+        if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
+            assertThrows(UnsupportedTmuxVersion.class, () -> pane.paste("echo pasted-text\n"));
+            assertEquals(
+                    List.of("belongs-to-the-user"),
+                    server.buffers().list().stream().map(BufferInfo::name).toList(),
+                    "refusal creates no buffer");
+            return;
+        }
+
+        pane.paste("echo pasted-text\n");
+
+        assertTrue(
+                await(() -> pane.capture().stream().anyMatch(line -> line.contains("pasted-text"))),
+                "the text never reached the pane");
+        assertEquals(
+                List.of("belongs-to-the-user"),
+                server.buffers().list().stream().map(BufferInfo::name).toList(),
+                "the paste kept no buffer of its own");
+    }
+
+    /** The one case where the group's own cleanup cannot run, so the caller's has to. */
+    @Test
+    void aPasteThatFailsRemovesOnlyTheBufferItMade(Server server) {
+        Pane doomed = server.sessions().get(0).windows().get(0).panes().get(0).split();
+        server.buffers().set("belongs-to-the-user", "keep me");
+        server.cmd("kill-pane", "-t", doomed.id().value());
+
+        if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
+            assertThrows(UnsupportedTmuxVersion.class, () -> doomed.paste("never-arrives"));
+        } else {
+            assertThrows(LibTmuxException.class, () -> doomed.paste("never-arrives"));
+        }
+
+        assertEquals(
+                List.of("belongs-to-the-user"),
+                server.buffers().list().stream().map(BufferInfo::name).toList(),
+                "a failed paste left its own buffer behind");
     }
 
     @Test

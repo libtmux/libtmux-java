@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
@@ -486,10 +487,55 @@ public final class Pane {
     }
 
     /** Pastes a named buffer into this pane, as though it had been typed. */
-    public void paste(String bufferName) {
+    public void pasteBuffer(String name) {
+        Objects.requireNonNull(name, "name");
         server.run(
-                snapshot,
-                List.of("paste-buffer", "-b", bufferName, "-t", state.id().value()));
+                snapshot, List.of("paste-buffer", "-b", name, "-t", state.id().value()));
+    }
+
+    /**
+     * Pastes text into this pane as one block, leaving nothing behind on the server.
+     *
+     * <p>Nothing in the text is looked up as a key name, so a line containing {@code Enter} or a
+     * bracket arrives as those characters. That is what an editor, a REPL, or anything reading a
+     * here-document needs, and it is the difference from {@link #send}.
+     *
+     * <p>tmux needs a buffer to paste from, and this one travels in the same invocation as the paste
+     * that consumes it. A caller that stops in between therefore cannot leave the text in the paste
+     * history every session on the server can read.
+     *
+     * @throws UnsupportedTmuxVersion before tmux 3.4, where deleting the buffer left by a failed
+     *     paste can remove one this did not create
+     */
+    public void paste(String text) {
+        Objects.requireNonNull(text, "text");
+        TmuxVersion running = server.version(snapshot);
+        if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
+            throw new UnsupportedTmuxVersion("pasting text", Buffers.EXACT_NAMED_DELETE, running);
+        }
+        String buffer = "libtmux-paste-" + UUID.randomUUID();
+        try {
+            server.runTogether(
+                    snapshot,
+                    List.of(
+                            List.of("set-buffer", "-b", buffer, Buffers.argument(text)),
+                            // -d removes the buffer as it pastes, so the success path leaves nothing
+                            // even when this is the last thing the caller manages to run.
+                            List.of(
+                                    "paste-buffer",
+                                    "-d",
+                                    "-b",
+                                    buffer,
+                                    "-t",
+                                    state.id().value())));
+        } catch (RuntimeException failure) {
+            try {
+                server.buffers().delete(buffer);
+            } catch (RuntimeException ignored) {
+                // Already gone, or the server is; neither changes what the caller is told.
+            }
+            throw failure;
+        }
     }
 
     /** Discards this pane's scrollback. */
