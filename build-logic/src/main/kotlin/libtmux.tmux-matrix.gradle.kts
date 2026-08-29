@@ -39,5 +39,8 @@ val laneTasks =
         }
     }
 
-// The benchmark lives in its own module now, so nothing here has to exclude it and no module has
-// to remember a tag to stay fast.
+rootProject.tasks.maybeCreate("testTmuxMatrix").apply {
+    group = "verification"
+    description = "Runs every real-tmux test against every supported tmux release."
+    dependsOn(laneTasks)
+}
