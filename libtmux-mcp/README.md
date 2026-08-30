@@ -29,8 +29,7 @@ stdout.
 | `--watch` | push notifications as tmux changes — see [Watching](#watching-instead-of-polling) |
 
 `LIBTMUX_SAFETY` and `LIBTMUX_WATCH` set the last two for an operator who cannot
-edit the client's launch command. `LIBTMUX_MODE=control` reuses one tmux client
-instead of starting a process per command.
+edit the client's launch command.
 
 ### Claude Code
 
@@ -180,6 +179,11 @@ Every wait is capped (30 s by default, 2 minutes hard) and reports the ceiling i
 actually enforced. The cap protects the agent's turn, not the connection: a tool
 call that blocks does not stop this server answering anything else.
 
+A client's request deadline is separate. The Java SDK 2.0.1 client defaults to
+20 seconds, so configure it above any longer wait you request. With that SDK,
+cancelling or timing out abandons the answer but does not stop the synchronous
+handler or undo tmux changes it already dispatched.
+
 ## Watching, instead of polling
 
 With `--watch`, this server attaches a tmux control client and asks tmux to
@@ -188,7 +192,7 @@ once a second, and sends nothing while nothing changes — so a client subscribe
 to a pane spends nothing at all while it is idle.
 
 What arrives is `notifications/resources/updated` naming the resource that went
-stale: `tmux://panes/%1/content` when that pane produces output, `tmux://sessions`
+stale: `tmux://panes/%251/content` when pane `%1` produces output, `tmux://sessions`
 and `tmux://panes` when a window appears, closes, or is renamed.
 
 It is off by default because it is not free: watching means attaching a client,
@@ -206,14 +210,20 @@ Safety.MUTATING.allows(Safety.DESTRUCTIVE);   // → false
 Safety.ofWireName("destructive");             // → DESTRUCTIVE
 ```
 
+The ceiling filters the tool catalog; it does not confine effects. `MUTATING`
+includes `tmux_run`, key input, and pasted text, so it can run programs or
+delete data in a pane. Use a separate OS account, socket permissions, or a
+container when effects must be contained.
+
 A tool above the ceiling is **not listed at all**, rather than listed and
 refused. A model cannot be tempted by a tool it never saw, and an error it can do
 nothing about is wasted context. The server's instructions say plainly what is
 missing and why, so a model does not spend a turn looking for it.
 
-Every tool also carries MCP's own annotations — `readOnlyHint`, `destructiveHint`,
-`idempotentHint` — derived from its tier rather than stated per tool, so a tool
-that kills a session cannot describe itself as read-only by forgetting to.
+Every tool carries MCP's own effect hints — `readOnlyHint`, `destructiveHint`,
+`idempotentHint`, and `openWorldHint` — independently of the ceiling. A command
+tool can stay at the `MUTATING` ceiling while truthfully warning that its update
+may be destructive.
 
 ## Resources, prompts, completion
 
@@ -289,9 +299,9 @@ windows:
       - docker compose logs -f
 ```
 
-One call instead of a dozen. A call cannot half-succeed, and a layout tmux would
-refuse is refused while the description is still text — before any session exists
-to leave half-built.
+One call instead of a dozen. The document and layouts are validated before any
+session exists. If a later creation step or command fails, cleanup is best effort;
+commands already started cannot be undone.
 
 ## Embedding it
 

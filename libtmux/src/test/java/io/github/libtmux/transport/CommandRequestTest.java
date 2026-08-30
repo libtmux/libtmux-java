@@ -17,14 +17,14 @@ final class CommandRequestTest {
 
     @Test
     void theCommandLineIsTheEndpointFollowedByTheArguments() {
-        CommandRequest request = new CommandRequest(ENDPOINT, List.of("list-panes", "-a"), SECOND);
+        CommandRequest request = CommandRequest.of(ENDPOINT, List.of("list-panes", "-a"), SECOND);
 
         assertEquals(List.of("tmux", "-S", "/run/user/1000/tmux/default", "list-panes", "-a"), request.commandLine());
     }
 
     @Test
     void argumentsStaySeparateElementsSoNothingIsEverShellParsed() {
-        CommandRequest request = new CommandRequest(ENDPOINT, List.of("send-keys", "echo one; echo two"), SECOND);
+        CommandRequest request = CommandRequest.of(ENDPOINT, List.of("send-keys", "echo one; echo two"), SECOND);
 
         assertEquals(
                 "echo one; echo two",
@@ -32,29 +32,55 @@ final class CommandRequestTest {
                 "a semicolon inside one element must not become a command separator");
     }
 
+    /** tmux would otherwise take the semicolon as the end of the command and drop it from the value. */
+    @Test
+    void anArgumentEndingInASemicolonIsEscapedForTmuxsArgvParser() {
+        CommandRequest request = CommandRequest.of(ENDPOINT, List.of("rename-window", "build;"), SECOND);
+
+        assertEquals(List.of("rename-window", "build\\;"), request.commandLine().subList(3, 5));
+        assertEquals(List.of("rename-window", "build;"), request.commands().get(0), "the request keeps what was meant");
+    }
+
+    @Test
+    void severalCommandsAreSeparatedByABareSemicolon() {
+        CommandRequest request = new CommandRequest(
+                ENDPOINT, List.of(List.of("kill-window", "-t", "@1"), List.of("list-windows")), SECOND, "");
+
+        assertEquals(
+                List.of("kill-window", "-t", "@1", ";", "list-windows"),
+                request.commandLine().subList(3, 8));
+    }
+
     @Test
     void mutatingTheListsAfterConstructionCannotChangeTheRequest() {
         List<String> endpoint = new ArrayList<>(List.of("tmux"));
         List<String> argv = new ArrayList<>(List.of("list-panes"));
-        CommandRequest request = new CommandRequest(endpoint, argv, SECOND);
+        CommandRequest request = CommandRequest.of(endpoint, argv, SECOND);
 
         endpoint.add("-S");
         argv.add("-a");
 
         assertEquals(List.of("tmux"), request.endpoint());
-        assertEquals(List.of("list-panes"), request.argv());
+        assertEquals(List.of(List.of("list-panes")), request.commands());
     }
 
     @Test
     void anEndpointWithoutAnExecutableIsRejected() {
-        assertThrows(IllegalArgumentException.class, () -> new CommandRequest(List.of(), List.of("ls"), SECOND));
+        assertThrows(IllegalArgumentException.class, () -> CommandRequest.of(List.of(), List.of("ls"), SECOND));
+    }
+
+    @Test
+    void aRequestWithNothingToRunIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> CommandRequest.of(ENDPOINT, List.of(), SECOND));
+        assertThrows(IllegalArgumentException.class, () -> new CommandRequest(ENDPOINT, List.of(), SECOND, ""));
     }
 
     @Test
     void aTimeoutThatCannotElapseIsRejected() {
-        assertThrows(IllegalArgumentException.class, () -> new CommandRequest(ENDPOINT, List.of(), Duration.ZERO));
+        assertThrows(IllegalArgumentException.class, () -> CommandRequest.of(ENDPOINT, List.of("ls"), Duration.ZERO));
         assertThrows(
-                IllegalArgumentException.class, () -> new CommandRequest(ENDPOINT, List.of(), Duration.ofSeconds(-1)));
+                IllegalArgumentException.class,
+                () -> CommandRequest.of(ENDPOINT, List.of("ls"), Duration.ofSeconds(-1)));
     }
 
     /**
@@ -65,26 +91,26 @@ final class CommandRequestTest {
     @Test
     @SuppressWarnings("NullAway")
     void nullsAreProgrammerErrorsNotTmuxFailures() {
-        assertThrows(NullPointerException.class, () -> new CommandRequest(ENDPOINT, List.of(), null));
-        assertThrows(NullPointerException.class, () -> new CommandRequest(null, List.of(), SECOND));
-        assertThrows(NullPointerException.class, () -> new CommandRequest(ENDPOINT, null, SECOND));
+        assertThrows(NullPointerException.class, () -> CommandRequest.of(ENDPOINT, List.of("ls"), null));
+        assertThrows(NullPointerException.class, () -> CommandRequest.of(null, List.of("ls"), SECOND));
+        assertThrows(NullPointerException.class, () -> CommandRequest.of(ENDPOINT, null, SECOND));
     }
 
     /**
-     * argv carries pane content and socket paths, and this value reaches logs and failed
+     * A command carries pane content and socket paths, and this value reaches logs and failed
      * assertions, so its rendering exposes counts only.
      */
     @Test
     void toStringExposesNeitherSocketPathsNorPaneContent() {
         CommandRequest request =
-                new CommandRequest(ENDPOINT, List.of("send-keys", "-t", "%1", "export TOKEN=hunter2"), SECOND);
+                CommandRequest.of(ENDPOINT, List.of("send-keys", "-t", "%1", "export TOKEN=hunter2"), SECOND);
 
         String rendered = request.toString();
 
         assertFalse(rendered.contains("hunter2"), "pane content must not reach a log line: " + rendered);
         assertFalse(rendered.contains("/run/user"), "a socket path must not reach a log line: " + rendered);
         assertEquals(
-                "CommandRequest[argumentCount=4, timeout=PT1S]",
+                "CommandRequest[commandCount=1, timeout=PT1S]",
                 rendered,
                 "counts and the timeout are the whole diagnostic");
     }

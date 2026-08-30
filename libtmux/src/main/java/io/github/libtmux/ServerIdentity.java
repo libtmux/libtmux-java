@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Objects;
+import java.util.OptionalLong;
 
 /**
  * Which tmux server a handle belongs to.
@@ -21,14 +22,23 @@ public final class ServerIdentity {
 
     private final String realm;
     private final String server;
+    private final long processId;
 
-    private ServerIdentity(String realm, String server) {
+    private ServerIdentity(String realm, String server, long processId) {
         this.realm = realm;
         this.server = server;
+        this.processId = processId;
     }
 
     static ServerIdentity of(String realm, ServerEndpoint endpoint) {
-        return new ServerIdentity(Objects.requireNonNull(realm, "realm"), digest(endpoint));
+        return new ServerIdentity(Objects.requireNonNull(realm, "realm"), digest(endpoint), 0);
+    }
+
+    ServerIdentity at(long pid) {
+        if (pid < 1) {
+            throw new IllegalArgumentException("pid is not positive: " + pid);
+        }
+        return new ServerIdentity(realm, server, pid);
     }
 
     /** The execution realm the transport reaches tmux through. */
@@ -41,19 +51,27 @@ public final class ServerIdentity {
         return server;
     }
 
+    /** The live tmux process, present on an identity bound to a captured handle. */
+    public OptionalLong processId() {
+        return processId == 0 ? OptionalLong.empty() : OptionalLong.of(processId);
+    }
+
     @Override
     public boolean equals(Object other) {
-        return other instanceof ServerIdentity that && realm.equals(that.realm) && server.equals(that.server);
+        return other instanceof ServerIdentity that
+                && realm.equals(that.realm)
+                && server.equals(that.server)
+                && processId == that.processId;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(realm, server);
+        return Objects.hash(realm, server, processId);
     }
 
     @Override
     public String toString() {
-        return "ServerIdentity[" + realm + ":" + server + "]";
+        return "ServerIdentity[" + realm + ":" + server + (processId == 0 ? "" : "@" + processId) + "]";
     }
 
     private static String digest(ServerEndpoint endpoint) {

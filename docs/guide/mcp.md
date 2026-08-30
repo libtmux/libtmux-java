@@ -13,8 +13,9 @@ Not tmux commands. Context, and turns.
 A model driving a terminal has two costs nobody bills it for: every line it reads
 stays in its context for the rest of the conversation, and every tool call is a
 round trip it cannot take back once it has started. Nearly every design decision
-here follows from those two, and from one more: MCP gives an agent no way to
-sleep and no way to cancel a call it is inside.
+here follows from those two, and from one more: MCP gives an agent no sleep
+primitive, and Java SDK 2.0.1 does not propagate cancellation into a synchronous
+handler after it starts.
 
 So a wait that is not a tool does not disappear. It moves into the agent's turn
 loop as a polling cycle, where it costs a call per look and has no ceiling at all.
@@ -64,9 +65,11 @@ Writing the same handlers reactively is where it goes wrong: a `Mono` that block
 pins the single reactor thread, serves nothing at all, and stretched the blocking
 call itself from 6.2 to 9.4 seconds. **This server is synchronous on purpose.**
 
-What an unbounded wait really costs is the turn: the agent picks the wrong thing
-to wait for once, and has no way to change its mind mid-call. The ceiling makes
-that mistake cheap and repeatable instead of terminal.
+A client's request deadline is separate. The Java SDK 2.0.1 client defaults to
+20 seconds, so configure it above a longer wait before requesting one. Cancelling
+or timing out abandons the answer but does not stop the synchronous handler or
+undo tmux changes it already dispatched. The server ceiling keeps that abandoned
+work bounded.
 
 ## Telling output apart from the plumbing
 
@@ -140,20 +143,20 @@ re-expands on its own one-second timer and reports **only when the value differs
 
 That is a change detector inside the server. With `--watch`, this server turns
 those into MCP `notifications/resources/updated`, so a client holding
-`tmux://panes/%1/content` refreshes when there is a reason to and never otherwise.
+`tmux://panes/%251/content` refreshes when pane `%1` changes and never otherwise.
 
 The same mechanism is available to any Java caller:
 
 <!-- snippet: compile-only: a watch reports a format when its value changes -->
 ```java
-try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
-    client.onEvent(event -> {
-        event.subscription();   // which watch this came from
-        event.paneId();         // which pane, when the watch is over panes
-        event.value();          // what the format expanded to
-    });
-
+try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
     client.watch("names", "@*", "#{window_name}");
+
+    ControlEvent event = events.next(Duration.ofSeconds(2)).orElseThrow();
+    event.subscription();   // which watch this came from
+    event.windowId();        // which window, when the watch is over windows
+    event.value();           // what the format expanded to
 }
 ```
 
@@ -175,6 +178,13 @@ Safety.READONLY.allows(Safety.MUTATING);      // → false
 Safety.DESTRUCTIVE.allows(Safety.MUTATING);   // → true
 Safety.ofWireName("readonly");                // → READONLY
 ```
+
+The ceiling filters the tool catalog; it does not confine effects. `MUTATING`
+includes `tmux_run`, key input, and pasted text, so it can run programs or
+delete data in a pane. Use a separate OS account, socket permissions, or a
+container when effects must be contained. MCP effect hints are declared
+separately, so a tool can remain available at this ceiling while warning that
+its update may be destructive.
 
 A tool above the ceiling is never listed. A model cannot be tempted by a tool it
 never saw, and an error it can do nothing about is context spent for nothing. The
@@ -223,6 +233,5 @@ recovery: `no pane %9 on this server; call tmux_list_panes for the 3 that exist`
 
 - [`libtmux-mcp` README](../../libtmux-mcp/README.md) — running it, and the tool list
 - [Filtering](filtering.md) — the expression model a `filter` argument carries
-- [Execution modes](execution-modes.md) — how commands reach tmux underneath
 - [Watching output as it happens](streaming.md) — the control client directly
 - [Control-mode subscriptions](../spikes/23-control-subscriptions.md) — what was measured

@@ -1,7 +1,10 @@
 package io.github.libtmux.query;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -11,6 +14,8 @@ import io.github.libtmux.query.Model.Window;
 import io.github.libtmux.query.Model.Window_;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
@@ -138,6 +143,69 @@ final class FilterExprTest {
     }
 
     @Test
+    void directConstructionEnforcesTheTypedOperatorMatrix() {
+        for (Operator operator : Operator.values()) {
+            for (FieldKind kind : FieldKind.values()) {
+                Runnable construction = () -> new FilterExpr.Compare<>(field(kind), operator, operand(operator, kind));
+                if (supported(operator).contains(kind)) {
+                    assertDoesNotThrow(construction::run, operator + " should support " + kind);
+                } else {
+                    assertThrows(IllegalArgumentException.class, construction::run, operator + " must reject " + kind);
+                }
+            }
+        }
+    }
+
+    @Test
+    void inequalitySupportsEveryScalarKind() {
+        assertTrue(Pane_.command().isNot("zsh").test(NVIM));
+        assertTrue(Pane_.index().isNot(1).test(NVIM));
+        assertTrue(Pane_.active().isNot(false).test(NVIM));
+    }
+
+    @Test
+    void directConstructionRejectsOperandsThatCannotBeEvaluated() {
+        FieldRef<Pane, String> text =
+                Fields.<Pane>text("command", Pane::command).ref();
+        FieldRef<Pane, Integer> number =
+                Fields.<Pane>number("index", Pane::index).ref();
+        FieldRef<Pane, Boolean> flag = Fields.<Pane>flag("active", Pane::active).ref();
+
+        assertThrows(IllegalArgumentException.class, () -> new FilterExpr.Compare<>(text, Operator.EQUALS, 1));
+        assertThrows(IllegalArgumentException.class, () -> new FilterExpr.Compare<>(number, Operator.EQUALS, "1"));
+        assertThrows(IllegalArgumentException.class, () -> new FilterExpr.Compare<>(flag, Operator.EQUALS, 1));
+        assertThrows(IllegalArgumentException.class, () -> new FilterExpr.Compare<>(text, Operator.MATCHES, "nv"));
+        assertThrows(IllegalArgumentException.class, () -> new FilterExpr.Compare<>(text, Operator.IN, "nvim"));
+        assertThrows(
+                IllegalArgumentException.class, () -> new FilterExpr.Compare<>(text, Operator.IN, List.of("nvim", 1)));
+    }
+
+    @Test
+    void independentlyMintedHandlesHaveDistinctIdentity() {
+        Function<Pane, String> fieldAccessor = Pane::command;
+        Function<Window, List<Pane>> toManyNavigator = Window::panes;
+        Function<Window, Optional<Pane>> toOneNavigator = Window::activePane;
+
+        assertNotEquals(
+                Fields.text("command", fieldAccessor).ref(),
+                Fields.text("command", fieldAccessor).ref());
+        assertNotEquals(Fields.toMany("panes", toManyNavigator), Fields.toMany("panes", toManyNavigator));
+        assertNotEquals(Fields.toOne("activePane", toOneNavigator), Fields.toOne("activePane", toOneNavigator));
+    }
+
+    @Test
+    void relationNodesRetainTheExactHandle() {
+        Fields.ToManyRef<Window, Pane> panes = Window_.panes();
+        Fields.ToOneRef<Window, Pane> activePane = Window_.activePane();
+
+        FilterExpr.ToMany<Window, Pane> quantified = panes.any(Pane_.active().isTrue());
+        FilterExpr.ToOne<Window, Pane> traversed = activePane.is(Pane_.active().isTrue());
+
+        assertSame(panes, quantified.relation());
+        assertSame(activePane, traversed.relation());
+    }
+
+    @Test
     void cardinalityDistinguishesNoneFromSeveral() {
         assertEquals(SHELL, Selections.exactlyOne(matchingPanes(Pane_.command().is("zsh"))));
 
@@ -162,6 +230,36 @@ final class FilterExprTest {
 
     private static List<String> matching(FilterExpr<Pane> expression) {
         return PANES.stream().filter(expression).map(Pane::id).toList();
+    }
+
+    private static Object operand(Operator operator, FieldKind kind) {
+        return switch (operator) {
+            case MATCHES -> Pattern.compile("nv");
+            case IN -> List.of("nvim");
+            case LESS_THAN, AT_MOST, GREATER_THAN, AT_LEAST -> 1;
+            case EQUALS, NOT_EQUALS, CONTAINS, STARTS_WITH, ENDS_WITH ->
+                switch (kind) {
+                    case TEXT -> "nvim";
+                    case NUMBER -> 1;
+                    case FLAG -> true;
+                };
+        };
+    }
+
+    private static FieldRef<Pane, ?> field(FieldKind kind) {
+        return switch (kind) {
+            case TEXT -> Fields.<Pane>text("command", Pane::command).ref();
+            case NUMBER -> Fields.<Pane>number("index", Pane::index).ref();
+            case FLAG -> Fields.<Pane>flag("active", Pane::active).ref();
+        };
+    }
+
+    private static Set<FieldKind> supported(Operator operator) {
+        return switch (operator) {
+            case EQUALS, NOT_EQUALS -> Set.of(FieldKind.TEXT, FieldKind.NUMBER, FieldKind.FLAG);
+            case CONTAINS, STARTS_WITH, ENDS_WITH, MATCHES, IN -> Set.of(FieldKind.TEXT);
+            case LESS_THAN, AT_MOST, GREATER_THAN, AT_LEAST -> Set.of(FieldKind.NUMBER);
+        };
     }
 
     private static List<Pane> matchingPanes(FilterExpr<Pane> expression) {

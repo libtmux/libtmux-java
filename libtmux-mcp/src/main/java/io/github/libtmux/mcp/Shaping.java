@@ -53,7 +53,7 @@ final class Shaping {
     }
 
     static Made newWindow(Call call) {
-        Session session = Targets.session(call.server(), call.string("session"));
+        Session session = Targets.sessionNamed(call.server(), call.string("session"));
         Window window = session.newWindow(spec -> {
             call.maybe("name").ifPresent(spec::named);
             call.maybe("path").ifPresent(path -> spec.in(Path.of(path)));
@@ -111,7 +111,7 @@ final class Shaping {
             window.rename(name);
             return new Changed("window", target, name, null);
         }
-        Session session = Targets.session(call.server(), target);
+        Session session = Targets.sessionById(call.server(), target);
         session.rename(name);
         return new Changed("session", session.id().value(), name, null);
     }
@@ -184,7 +184,10 @@ final class Shaping {
                     "Every session on it is gone, and so is this connection's "
                             + "server. Nothing else in this conversation can act on it.");
         }
-        Session session = Targets.session(server, target);
+        if (!target.startsWith("$")) {
+            throw new IllegalArgumentException("'target' must be a pane, window or session id, or the word 'server'");
+        }
+        Session session = Targets.sessionById(server, target);
         guard(
                 call,
                 session.windows().stream()
@@ -207,8 +210,16 @@ final class Shaping {
         if (confirmed) {
             return;
         }
+        if (call.caller().uncertain()) {
+            throw new IllegalStateException(
+                    "Refused. This process is inside tmux, but could not prove whether the target "
+                            + "contains its own pane. Pass confirm_self=true only if disconnecting "
+                            + "this conversation is the actual goal.");
+        }
         Optional<PaneId> mine = call.caller().pane();
-        if (mine.isEmpty() || going.stream().noneMatch(pane -> call.caller().isSelf(pane.id()))) {
+        if (mine.isEmpty()
+                || (!"server".equals(kind)
+                        && going.stream().noneMatch(pane -> call.caller().isSelf(pane.id())))) {
             return;
         }
         List<String> others = going.stream()

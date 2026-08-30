@@ -42,7 +42,7 @@ dependencies {
 ```
 </details>
 
-Needs JDK 21 and a tmux between 3.2a and 3.7b.
+Needs JDK 21 and a tmux between 3.2a and 3.7c.
 
 ## Thirty seconds
 
@@ -138,31 +138,6 @@ silent `first()`.
 
 Full guide: **[Filtering](../docs/guide/filtering.md)**.
 
-### Three switches when it is too slow
-
-| to stop | write | which costs |
-| --- | --- | --- |
-| a process per command | `.mode(ExecutionMode.CONTROL)` | one tmux client, then reused |
-| blocking the thread you were handed | `.mode(ExecutionMode.VIRTUAL)` | a virtual thread per command |
-| round-tripping to learn what you just made | `server.chain()` | one request, however many steps |
-
-```java
-ServerConfig fast = ServerConfig.builder()
-        .endpoint(ServerEndpoint.socketPath(socket))
-        .mode(ExecutionMode.CONTROL)
-        .build();
-```
-
-Or from outside the program entirely, so trying one costs nothing:
-
-```console
-$ LIBTMUX_MODE=control java -jar app.jar
-```
-
-**A carrier changes cost, never answers.** The same filter answers identically
-under each, and [`ExecutionModeConformanceTest`](../integration-tests/src/test/java/io/github/libtmux/it/ExecutionModeConformanceTest.java)
-is where that promise is kept. Measured prices: **[the benchmark](../docs/benchmarks/modes.md)**.
-
 ### Several commands, one invocation
 
 ```java
@@ -214,7 +189,7 @@ try {
 - **`io.github.libtmux.snapshot`** — the immutable capture a traversal reads from
 - **`io.github.libtmux.transport`** — how a command travels: `TmuxTransport`,
   `CommandResult`, and dispatch certainty
-- **`io.github.libtmux.control`** — `ControlClient`, for control mode and `%output`
+- **`io.github.libtmux.control`** — `ControlClient`, for subscriptions and `%output`
 - **`io.github.libtmux.batch`** — `Batch`, `BatchResult`, per-operation outcomes
 - **`io.github.libtmux.format`** — tmux format templates and row parsing
 
@@ -222,7 +197,7 @@ try {
 
 - [Getting started](../docs/guide/getting-started.md) · [Snapshots and handles](../docs/guide/snapshots-and-handles.md)
 - [Filtering](../docs/guide/filtering.md) · [Batching and chaining](../docs/guide/batching-and-chaining.md)
-- [Execution modes](../docs/guide/execution-modes.md) · [Streaming](../docs/guide/streaming.md)
+- [Streaming](../docs/guide/streaming.md)
 - [Options and hooks](../docs/guide/options-and-hooks.md)
 - Runnable programs: [`examples/`](../examples/)
 - Testing your own code against real tmux: [`libtmux-junit5`](../libtmux-junit5/)

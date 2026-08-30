@@ -1,11 +1,6 @@
 package io.github.libtmux.transport;
 
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CoderResult;
-import java.nio.charset.CodingErrorAction;
-import java.nio.charset.StandardCharsets;
+import io.github.libtmux.internal.Utf8;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -45,45 +40,10 @@ final class OutputDecoder {
 
     /** UTF-8 with {@code backslashreplace}, then universal newlines. */
     private static String decode(byte[] bytes) {
-        CharsetDecoder decoder = StandardCharsets.UTF_8
-                .newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT);
-        ByteBuffer in = ByteBuffer.wrap(bytes);
-        // UTF-8 never decodes to more chars than it has bytes, so this buffer cannot overflow and
-        // an escape can never straddle it.
-        CharBuffer out = CharBuffer.allocate(bytes.length);
-        StringBuilder text = new StringBuilder(bytes.length);
-        // Decode runs at least once even for empty input: flush() rejects a decoder still in RESET.
-        while (true) {
-            CoderResult result = decoder.decode(in, out, true);
-            drainInto(out, text);
-            if (result.isUnderflow()) {
-                break;
-            }
-            for (int offset = 0; offset < result.length(); offset++) {
-                escape(text, in.get(in.position() + offset));
-            }
-            in.position(in.position() + result.length());
-        }
-        decoder.flush(out);
-        drainInto(out, text);
-        String decoded = text.toString();
+        String decoded = Utf8.backslashReplace(bytes);
         return decoded.indexOf('\r') < 0
                 ? decoded
                 : decoded.replace("\r\n", "\n").replace('\r', '\n');
-    }
-
-    private static void escape(StringBuilder text, byte value) {
-        text.append("\\x")
-                .append(Character.forDigit((value >> 4) & 0xf, 16))
-                .append(Character.forDigit(value & 0xf, 16));
-    }
-
-    private static void drainInto(CharBuffer out, StringBuilder text) {
-        out.flip();
-        text.append(out);
-        out.clear();
     }
 
     private static List<String> split(String text) {

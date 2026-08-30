@@ -1,7 +1,7 @@
 package io.github.libtmux.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.lang.reflect.InvocationTargetException;
@@ -18,10 +18,10 @@ import java.util.TreeSet;
  * The guard that replaces a code generator.
  *
  * <p>Hand-written metamodels are small, explicit domain code and cost nothing at build time, but they
- * can drift: a duplicated identifier, a field declared with the wrong kind, or an accessor that quietly
- * bypasses canonical minting. Those are exactly the mistakes a generator would have made impossible,
- * so they are asserted here instead — which attacks the real downside of handwriting without adding a
- * compiler plugin, an incremental-build story, or generated sources to debug.
+ * can drift: a duplicated identifier or a field declared with the wrong kind. Those are exactly the
+ * mistakes a generator would have made impossible, so they are asserted here instead — which attacks
+ * the real downside of handwriting without adding a compiler plugin, an incremental-build story, or
+ * generated sources to debug.
  *
  * <p>Reflection is deliberate. A hand-maintained list of expected handles would drift in the same way
  * the metamodel does, so the check reads what the class actually declares.
@@ -31,7 +31,7 @@ public final class MetamodelConformance {
     private MetamodelConformance() {}
 
     /** One declared handle: the method that exposes it and what it turned out to be. */
-    public record Handle(String method, String fieldId, FieldKind kind, boolean canonical, int arity) {}
+    public record Handle(String method, String fieldId, FieldKind kind) {}
 
     /**
      * Asserts the metamodel is internally consistent and covers exactly {@code expectedFieldIds}.
@@ -60,17 +60,14 @@ public final class MetamodelConformance {
                 fail("scalar handle " + method.getName() + " must be a bare static, not take arguments");
             }
             FieldRef<?, ?> ref = refOf(metamodel, method, returned);
-            scalars.add(new Handle(
-                    method.getName(), ref.id(), ref.kind(), ref.provenance().lowerable(), 0));
+            assertSame(
+                    ref, refOf(metamodel, method, returned), "scalar handle " + method.getName() + " must be stable");
+            scalars.add(new Handle(method.getName(), ref.id(), ref.kind()));
             assertEquals(
                     expected,
                     ref.kind(),
                     "handle " + method.getName() + " returns a " + returned.getSimpleName()
                             + " but its field is kinded " + ref.kind());
-            assertTrue(
-                    ref.provenance().lowerable(),
-                    "handle " + method.getName() + " is not canonical; it must be minted through "
-                            + "EntityMetamodel or no backend may trust its name");
         }
 
         Map<String, String> byId = new LinkedHashMap<>();
@@ -98,6 +95,10 @@ public final class MetamodelConformance {
                         relation.getParameterCount(),
                         "relation handle " + relation.getName()
                                 + " should be a bare static when the entity holds its relation");
+                assertSame(
+                        invoke(metamodel, relation),
+                        invoke(metamodel, relation),
+                        "relation handle " + relation.getName() + " must be stable");
             }
         }
     }
@@ -118,11 +119,20 @@ public final class MetamodelConformance {
 
     private static FieldRef<?, ?> refOf(Class<?> metamodel, Method method, Class<?> returned) {
         try {
-            method.setAccessible(true);
-            Object handle = method.invoke(null);
+            Object handle = invoke(metamodel, method);
             Method ref = returned.getMethod("ref");
             return (FieldRef<?, ?>) ref.invoke(handle);
         } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+            throw new IllegalStateException(
+                    "could not read handle " + metamodel.getSimpleName() + "." + method.getName(), e);
+        }
+    }
+
+    private static Object invoke(Class<?> metamodel, Method method) {
+        try {
+            method.setAccessible(true);
+            return method.invoke(null);
+        } catch (IllegalAccessException | InvocationTargetException e) {
             throw new IllegalStateException(
                     "could not read handle " + metamodel.getSimpleName() + "." + method.getName(), e);
         }

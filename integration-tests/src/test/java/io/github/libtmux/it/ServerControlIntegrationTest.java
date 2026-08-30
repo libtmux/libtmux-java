@@ -11,7 +11,6 @@ import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.UnsupportedTmuxVersion;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.junit5.TmuxExtension;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -41,7 +40,8 @@ final class ServerControlIntegrationTest {
         server.ifShell("true", "rename-window then-ran");
 
         assertTrue(
-                await(() -> "then-ran".equals(session.refresh().windows().get(0).name())),
+                Await.until(() ->
+                        "then-ran".equals(session.refresh().windows().get(0).name())),
                 "the guarded command never ran");
     }
 
@@ -52,7 +52,8 @@ final class ServerControlIntegrationTest {
         server.ifShell("false", "rename-window then-ran", "rename-window else-ran");
 
         assertTrue(
-                await(() -> "else-ran".equals(session.refresh().windows().get(0).name())),
+                Await.until(() ->
+                        "else-ran".equals(session.refresh().windows().get(0).name())),
                 "the other command never ran");
     }
 
@@ -101,7 +102,7 @@ final class ServerControlIntegrationTest {
 
         try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
-            assertTrue(await(() -> !server.clients().isEmpty()), "no client ever attached");
+            assertTrue(Await.until(() -> !server.clients().isEmpty()), "no client ever attached");
 
             assertTrue(!server.messages().isEmpty(), "with a client attached the log is readable after all");
         }
@@ -138,15 +139,5 @@ final class ServerControlIntegrationTest {
                 "3.2a".equals(lane),
                 !server.version().atLeast(PROMPT_HISTORY_SINCE),
                 "lane " + lane + " disagrees with the version rule");
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

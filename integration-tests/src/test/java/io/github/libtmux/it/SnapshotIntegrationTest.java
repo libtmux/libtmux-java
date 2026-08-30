@@ -14,14 +14,46 @@ import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.SessionState;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.snapshot.WindowState;
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.ProcessTransport;
+import io.github.libtmux.transport.TmuxTransport;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 /** Capturing a real hierarchy, including the shape that a window-id-keyed model gets wrong. */
 @ExtendWith(TmuxExtension.class)
 final class SnapshotIntegrationTest {
+
+    /**
+     * Every command is a tmux process, so what a capture costs is how many it takes. One asks who
+     * the server is; one runs the four listings as a group, fenced against that answer.
+     */
+    @Test
+    void aCaptureCostsTwoCommands(Server server) {
+        AtomicInteger commands = new AtomicInteger();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport counting = new TmuxTransport() {
+                @Override
+                public CommandResult execute(CommandRequest request) {
+                    commands.incrementAndGet();
+                    return processes.execute(request);
+                }
+
+                @Override
+                public void close() {}
+            };
+            try (Server measured = Server.using(server.config(), counting)) {
+                ServerSnapshot captured = measured.snapshot();
+
+                assertEquals(1, captured.sessions().size());
+                assertEquals(2, commands.get(), "one identity read, then the listings as one group");
+            }
+        }
+    }
 
     @Test
     void aCaptureSeesWhatTmuxReports(Server server) {

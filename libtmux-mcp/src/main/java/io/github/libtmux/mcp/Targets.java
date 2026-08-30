@@ -5,6 +5,7 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
+import io.github.libtmux.SessionId;
 import io.github.libtmux.Session_;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowId;
@@ -16,9 +17,10 @@ import java.util.List;
  * <p>Every failure here names the tool that produces a working target. A model that reads "no pane
  * %9" can guess; one that reads "call tmux_list_panes for the ids that exist" cannot get stuck.
  *
- * <p>Targets are ids, never positions. A model works from a listing it read some turns ago, and
- * indexes move as neighbours come and go, so a positional target would quietly act on a pane that
- * was not the one it meant.
+ * <p>Object targets are ids, never positions. A model works from a listing it read some turns ago,
+ * and indexes move as neighbours come and go, so a positional target would quietly act on a pane
+ * that was not the one it meant. Session names are resolved only where an argument explicitly asks
+ * for one.
  */
 final class Targets {
 
@@ -44,13 +46,23 @@ final class Targets {
                         + " on this server; call tmux_list_windows for the " + windows.size() + " that exist"));
     }
 
-    static Session session(Server server, String name) {
+    static Session sessionNamed(Server server, String name) {
         List<Session> sessions = server.sessions();
         return sessions.stream()
                 .filter(Session_.name().is(name))
                 .findFirst()
                 .orElseThrow(() -> new ObjectDoesNotExist("no session named '" + name + "'; this server has "
                         + sessions.stream().map(Session::name).toList()));
+    }
+
+    static Session sessionById(Server server, String id) {
+        SessionId wanted = new SessionId(id);
+        List<Session> sessions = server.sessions();
+        return sessions.stream()
+                .filter(session -> session.id().equals(wanted))
+                .findFirst()
+                .orElseThrow(() -> new ObjectDoesNotExist("no session " + id
+                        + " on this server; call tmux_list_sessions for the " + sessions.size() + " that exist"));
     }
 
     /**

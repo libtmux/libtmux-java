@@ -12,7 +12,6 @@ import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.batch.OperationResult;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -43,8 +42,45 @@ final class CommandChainIntegrationTest {
 
         List<Pane> panes = built.panes();
         assertTrue(
-                await(() -> panes.get(1).capture().stream().anyMatch(line -> line.contains("chained-landed-here"))),
+                Await.until(
+                        () -> panes.get(1).capture().stream().anyMatch(line -> line.contains("chained-landed-here"))),
                 "the keys went to the pane the split produced, not to the one the chain started from");
+    }
+
+    @Test
+    void aLineThatIsAKeyNameStaysLiteralInsideAChain(Server server) throws Exception {
+        assertTrue(server.chain()
+                .newWindow("literal-line")
+                .sendLine("Enter() { printf 'literal-chain-%s\\n' enter; }")
+                .sendLine("echo defined-the-function")
+                .run()
+                .succeeded());
+        Pane pane = server.windows().stream()
+                .filter(window -> window.name().equals("literal-line"))
+                .findFirst()
+                .orElseThrow()
+                .panes()
+                .get(0);
+        // The shell has to have read the definition before the name is used. A chain is one
+        // invocation, so without this the name is typed before anything is reading for it.
+        assertTrue(
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("defined-the-function"))),
+                "the shell never read the definition");
+
+        BatchResult result = server.chain()
+                .sendLine("clear")
+                .sendLine("Enter")
+                .sendLine("-R")
+                .sendLine("printf 'literal-chain-%s\\n' semicolon;")
+                .run();
+
+        assertTrue(result.succeeded(), result.toString());
+        assertTrue(
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("literal-chain-enter"))),
+                "Enter was pressed instead of typed");
+        assertTrue(
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("literal-chain-semicolon"))),
+                "a trailing semicolon became a command-group separator");
     }
 
     @Test
@@ -85,6 +121,10 @@ final class CommandChainIntegrationTest {
                 IllegalArgumentException.class,
                 () -> server.chain().newWindow("safe").arrange("not-a-real-layout"),
                 "the check has to happen while building the chain, not when running it");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> server.chain().newWindow("safe").arrange("0000,80x24,0,0,1"),
+                "a serialized layout with the wrong checksum is just as unsafe");
 
         assertEquals(1, server.windows().size(), "and nothing was dispatched");
     }
@@ -98,15 +138,5 @@ final class CommandChainIntegrationTest {
                 .run();
 
         assertTrue(result.succeeded(), result.toString());
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

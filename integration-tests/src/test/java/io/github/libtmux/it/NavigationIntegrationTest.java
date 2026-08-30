@@ -14,7 +14,6 @@ import io.github.libtmux.Window;
 import io.github.libtmux.WindowId;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.junit5.TmuxExtension;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -89,11 +88,11 @@ final class NavigationIntegrationTest {
         Session session = server.sessions().get(0);
         try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
-            assertTrue(await(() -> !server.clients().isEmpty()));
+            assertTrue(Await.until(() -> !server.clients().isEmpty()));
 
             session.detachClients();
 
-            assertTrue(await(() -> server.clients().isEmpty()), "the client went");
+            assertTrue(Await.until(() -> server.clients().isEmpty()), "the client went");
             assertTrue(server.hasSession(session.name()), "and the session stayed");
         }
     }
@@ -130,15 +129,5 @@ final class NavigationIntegrationTest {
         Pane pane = server.panes().get(0);
 
         assertThrows(IllegalArgumentException.class, () -> pane.resize(Direction.UP, 0));
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

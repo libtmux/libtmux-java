@@ -11,7 +11,6 @@ import io.github.libtmux.junit5.TmuxExtension;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -65,7 +64,8 @@ final class PaneProcessIntegrationTest {
         pane.respawn();
 
         assertTrue(
-                await(() -> pane.refresh().pid() != before), "the pane kept process " + before + " through a respawn");
+                Await.until(() -> pane.refresh().pid() != before),
+                "the pane kept process " + before + " through a respawn");
         assertEquals(pane.id(), pane.refresh().id(), "and it is still the same pane");
     }
 
@@ -76,7 +76,7 @@ final class PaneProcessIntegrationTest {
         pane.respawn("sleep", "30");
 
         assertTrue(
-                await(() -> "sleep".equals(pane.refresh().currentCommand())),
+                Await.until(() -> "sleep".equals(pane.refresh().currentCommand())),
                 "the pane never reported the command it was respawned with");
     }
 
@@ -104,7 +104,7 @@ final class PaneProcessIntegrationTest {
         pane.pipeTo("cat > " + captured);
         pane.sendLine("echo piped-marker");
 
-        assertTrue(await(() -> contains(captured, "piped-marker")), "nothing reached the pipe");
+        assertTrue(Await.until(() -> contains(captured, "piped-marker")), "nothing reached the pipe");
     }
 
     @Test
@@ -114,7 +114,7 @@ final class PaneProcessIntegrationTest {
 
         pane.pipeTo("cat > " + captured);
         pane.sendLine("echo before-stop");
-        assertTrue(await(() -> contains(captured, "before-stop")), "the pipe never started");
+        assertTrue(Await.until(() -> contains(captured, "before-stop")), "the pipe never started");
 
         pane.stopPiping();
         pane.sendLine("echo after-stop");
@@ -140,7 +140,7 @@ final class PaneProcessIntegrationTest {
         pane.pipeTo("cat > " + second);
         pane.sendLine("echo only-once");
 
-        assertTrue(await(() -> contains(second, "only-once")), "the second pipe never received anything");
+        assertTrue(Await.until(() -> contains(second, "only-once")), "the second pipe never received anything");
         assertTrue(!contains(first, "only-once"), "tmux keeps one pipe per pane, not a list");
         assertNotEquals(first, second);
     }
@@ -157,15 +157,5 @@ final class PaneProcessIntegrationTest {
         } catch (IOException e) {
             return false;
         }
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.Client;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Pane_;
 import io.github.libtmux.Session;
@@ -12,7 +13,12 @@ import io.github.libtmux.Window;
 import io.github.libtmux.Window_;
 import io.github.libtmux.query.Fields;
 import io.github.libtmux.query.FilterExpr;
+import io.github.libtmux.query.Operator;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
@@ -31,7 +37,7 @@ final class FilterJsonTest {
         FilterExpr<Pane> original = Pane_.command().startsWith("nv");
 
         FilterExpr<Pane> restored =
-                FilterJson.readString(FilterJson.writeString(original, "pane"), LibTmuxModels.pane());
+                FilterJson.readString(FilterJson.writeString(original, LibTmuxModels.pane()), LibTmuxModels.pane());
 
         assertEquals(original.describe(), restored.describe());
     }
@@ -50,25 +56,60 @@ final class FilterJsonTest {
 
         for (FilterExpr<Pane> original : panes) {
             FilterExpr<Pane> restored =
-                    FilterJson.readString(FilterJson.writeString(original, "pane"), LibTmuxModels.pane());
+                    FilterJson.readString(FilterJson.writeString(original, LibTmuxModels.pane()), LibTmuxModels.pane());
             assertEquals(original.describe(), restored.describe(), "round trip changed " + original.describe());
         }
     }
 
     @Test
+    void comparisonOperandsAreImmutableAndRoundTripByValue() {
+        List<String> mutable = new ArrayList<>(List.of("zsh"));
+        FilterExpr.Compare<Pane, String> membership =
+                new FilterExpr.Compare<>(Pane_.command().ref(), Operator.IN, mutable);
+        mutable.add("bash");
+
+        assertEquals(List.of("zsh"), membership.operand());
+        assertEquals(
+                membership,
+                FilterJson.readString(FilterJson.writeString(membership, LibTmuxModels.pane()), LibTmuxModels.pane()));
+
+        FilterExpr.Compare<Pane, String> setMembership =
+                new FilterExpr.Compare<>(Pane_.command().ref(), Operator.IN, Set.of("zsh", "bash"));
+        assertEquals(
+                setMembership,
+                FilterJson.readString(
+                        FilterJson.writeString(setMembership, LibTmuxModels.pane()), LibTmuxModels.pane()));
+
+        FilterExpr<Pane> regex = Pane_.command().matches(Pattern.compile("^z", Pattern.CASE_INSENSITIVE));
+        assertEquals(
+                regex,
+                FilterJson.readString(FilterJson.writeString(regex, LibTmuxModels.pane()), LibTmuxModels.pane()));
+    }
+
+    @Test
     void bothRelationKindsSurviveTheRoundTrip() {
         FilterExpr<Window> quantified = Window_.panes().none(Pane_.active().isTrue());
+        FilterExpr<Window> parent = Window_.session().is(Session_.name().is("build"));
         FilterExpr<Session> nested =
                 Session_.windows().any(Window_.panes().all(Pane_.index().atMost(3)));
 
         assertEquals(
                 quantified.describe(),
-                FilterJson.readString(FilterJson.writeString(quantified, "window"), LibTmuxModels.window())
+                FilterJson.readString(
+                                FilterJson.writeString(quantified, LibTmuxModels.window()), LibTmuxModels.window())
+                        .describe());
+        assertEquals(
+                parent.describe(),
+                FilterJson.readString(FilterJson.writeString(parent, LibTmuxModels.window()), LibTmuxModels.window())
                         .describe());
         assertEquals(
                 nested.describe(),
-                FilterJson.readString(FilterJson.writeString(nested, "session"), LibTmuxModels.session())
+                FilterJson.readString(FilterJson.writeString(nested, LibTmuxModels.session()), LibTmuxModels.session())
                         .describe());
+
+        String json = FilterJson.writeString(nested, LibTmuxModels.session());
+        FilterExpr<Session> restored = FilterJson.readString(json, LibTmuxModels.session());
+        assertEquals(json, FilterJson.writeString(restored, LibTmuxModels.session()));
     }
 
     /**
@@ -80,7 +121,8 @@ final class FilterJsonTest {
         FilterExpr<Editor> original =
                 Editor_.NAME.startsWith("nv").and(Editor_.RANK.atLeast(2)).or(Editor_.PINNED.isTrue());
 
-        FilterExpr<Editor> restored = FilterJson.readString(FilterJson.writeString(original, "editor"), Editor_.MODEL);
+        FilterExpr<Editor> restored =
+                FilterJson.readString(FilterJson.writeString(original, Editor_.MODEL), Editor_.MODEL);
 
         List<Editor> values = List.of(
                 new Editor("nvim", 3, false),
@@ -101,12 +143,12 @@ final class FilterJsonTest {
     record Editor(String name, int rank, boolean pinned) {}
 
     /** A metamodel small enough to reason about, minted the way a generated one is. */
-    static final class Editor_ extends io.github.libtmux.query.EntityMetamodel {
-        static final Fields.TextField<Editor> NAME = text("name", Editor::name);
-        static final Fields.NumberField<Editor> RANK = number("rank", Editor::rank);
-        static final Fields.FlagField<Editor> PINNED = flag("pinned", Editor::pinned);
+    static final class Editor_ {
+        static final Fields.TextField<Editor> NAME = Fields.text("name", Editor::name);
+        static final Fields.NumberField<Editor> RANK = Fields.number("rank", Editor::rank);
+        static final Fields.FlagField<Editor> PINNED = Fields.flag("pinned", Editor::pinned);
 
-        static final FilterModel<Editor> MODEL = FilterModel.<Editor>named("editor")
+        static final FilterModel<Editor> MODEL = FilterModel.named("example/editor", Editor.class)
                 .field(NAME)
                 .field(RANK)
                 .field(PINNED)
@@ -117,7 +159,7 @@ final class FilterJsonTest {
 
     @Test
     void theDocumentNamesItsSchemaAndModel() {
-        String json = FilterJson.writeString(Pane_.active().isTrue(), "pane");
+        String json = FilterJson.writeString(Pane_.active().isTrue(), LibTmuxModels.pane());
 
         assertTrue(json.contains("\"schema\":\"libtmux.filter/1\""), json);
         assertTrue(json.contains("\"model\":\"pane\""), json);
@@ -126,20 +168,112 @@ final class FilterJsonTest {
 
     // ---------------------------------------------------------------------------- failing closed
 
-    /** The point of the format: a filter built from a lambda has no identity anyone else can resolve. */
+    /** The point of the format: only fields declared by the supplied model have wire identity. */
     @Test
-    void anExpressionBuiltFromALambdaCannotBeWritten() {
+    void anUndeclaredFieldCannotBeWritten() {
         FilterExpr<Pane> local =
                 Fields.<Pane>text("whatever", pane -> pane.currentCommand()).is("zsh");
 
-        SchemaException refused = assertThrows(SchemaException.class, () -> FilterJson.writeString(local, "pane"));
+        SchemaException refused =
+                assertThrows(SchemaException.class, () -> FilterJson.writeString(local, LibTmuxModels.pane()));
 
-        assertTrue(String.valueOf(refused.getMessage()).contains("lambda"), "the message must say why");
+        assertTrue(
+                String.valueOf(refused.getMessage()).contains("model 'pane'"), "the message must name the authority");
+    }
+
+    @Test
+    void aSameIdFieldFromAnotherMetamodelCannotBeWritten() {
+        FilterExpr<Pane> forged = ForgedPane_.COMMAND.is("forged-zsh");
+
+        assertThrows(SchemaException.class, () -> FilterJson.writeString(forged, LibTmuxModels.pane()));
+    }
+
+    @Test
+    void aNestedFieldOutsideTheModelGraphCannotBeWritten() {
+        FilterExpr<Window> forged = Window_.panes().any(ForgedPane_.COMMAND.is("forged-zsh"));
+
+        assertThrows(SchemaException.class, () -> FilterJson.writeString(forged, LibTmuxModels.window()));
+    }
+
+    @Test
+    void aSameIdRelationWithAnotherNavigatorCannotBeWritten() {
+        FilterExpr<Window> forged = Fields.<Window, Pane>toMany("panes", ignored -> List.of())
+                .any(Pane_.active().isTrue());
+
+        assertThrows(SchemaException.class, () -> FilterJson.writeString(forged, LibTmuxModels.window()));
+    }
+
+    @Test
+    void aDifferentRelationHandleCannotBorrowTheDeclaredNavigator() {
+        Function<Window, List<Pane>> navigate = Window::panes;
+        var declared = Fields.<Window, Pane>toMany("panes", navigate);
+        var forged = Fields.<Window, Pane>toMany("panes", navigate);
+        FilterModel<Window> model = FilterModel.<Window>named("example/window")
+                .toMany(declared, LibTmuxModels.pane())
+                .build();
+
+        assertThrows(
+                SchemaException.class,
+                () -> FilterJson.writeString(forged.any(Pane_.active().isTrue()), model));
+    }
+
+    @Test
+    void aSameIdToOneRelationWithAnotherNavigatorCannotBeWritten() {
+        FilterExpr<Client> forged = Fields.<Client, Session>toOne("session", ignored -> Optional.empty())
+                .is(Session_.attached().isTrue());
+
+        assertThrows(SchemaException.class, () -> FilterJson.writeString(forged, LibTmuxModels.client()));
+    }
+
+    @Test
+    void customModelsCannotClaimBuiltInIds() {
+        for (String id : List.of("pane", "window", "session", "client")) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> FilterModel.<Pane>named(id).field(Pane_.command()).build(),
+                    id);
+        }
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> FilterModel.<Editor>named("editor").field(Editor_.NAME).build(),
+                "custom model ids must name their owner");
+    }
+
+    @Test
+    void blankAndDuplicateModelMembersAreRefused() {
+        var children = Fields.<Editor, Editor>toMany("children", ignored -> List.of());
+        var parent = Fields.<Editor, Editor>toOne("children", ignored -> Optional.empty());
+
+        assertThrows(IllegalArgumentException.class, () -> FilterModel.<Editor>named(" "));
+        assertThrows(IllegalArgumentException.class, () -> Fields.<Editor>text(" ", Editor::name));
+        assertThrows(IllegalArgumentException.class, () -> Fields.<Editor, Editor>toMany(" ", ignored -> List.of()));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> FilterModel.<Editor>named("example/editor")
+                        .field(Editor_.NAME)
+                        .field(Editor_.NAME));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> FilterModel.<Editor>named("example/editor")
+                        .toMany(children, Editor_.MODEL)
+                        .toMany(children, Editor_.MODEL));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> FilterModel.<Editor>named("example/editor")
+                        .toMany(children, Editor_.MODEL)
+                        .toOne(parent, Editor_.MODEL));
+    }
+
+    static final class ForgedPane_ {
+        static final Fields.TextField<Pane> COMMAND =
+                Fields.text("pane_current_command", pane -> "forged-" + pane.currentCommand());
+
+        private ForgedPane_() {}
     }
 
     @Test
     void anUnknownSchemaVersionIsRefused() {
-        String json = FilterJson.writeString(Pane_.active().isTrue(), "pane")
+        String json = FilterJson.writeString(Pane_.active().isTrue(), LibTmuxModels.pane())
                 .replace("libtmux.filter/1", "libtmux.filter/99");
 
         assertThrows(SchemaException.class, () -> FilterJson.readString(json, LibTmuxModels.pane()));
@@ -147,7 +281,7 @@ final class FilterJsonTest {
 
     @Test
     void aDocumentForAnotherModelIsRefused() {
-        String json = FilterJson.writeString(Pane_.active().isTrue(), "pane");
+        String json = FilterJson.writeString(Pane_.active().isTrue(), LibTmuxModels.pane());
 
         assertThrows(
                 SchemaException.class,
@@ -188,6 +322,16 @@ final class FilterJsonTest {
     }
 
     @Test
+    void anOperatorIncompatibleWithItsFieldIsRefused() {
+        assertThrows(
+                SchemaException.class,
+                () -> FilterJson.readString(
+                        "{\"schema\":\"libtmux.filter/1\",\"model\":\"pane\",\"expr\":"
+                                + "{\"node\":\"compare\",\"field\":\"pane_index\",\"op\":\"contains\",\"value\":2}}",
+                        LibTmuxModels.pane()));
+    }
+
+    @Test
     void aStructurallyBrokenDocumentIsRefused() {
         assertThrows(SchemaException.class, () -> FilterJson.readString("not json at all", LibTmuxModels.pane()));
         assertThrows(SchemaException.class, () -> FilterJson.readString("[]", LibTmuxModels.pane()));
@@ -195,6 +339,60 @@ final class FilterJsonTest {
                 SchemaException.class,
                 () -> FilterJson.readString(
                         "{\"schema\":\"libtmux.filter/1\",\"model\":\"pane\"}", LibTmuxModels.pane()));
+    }
+
+    @Test
+    void blankTrailingAndInvalidRegexDocumentsAreRefusedUniformly() {
+        String valid = FilterJson.writeString(Pane_.active().isTrue(), LibTmuxModels.pane());
+        assertThrows(SchemaException.class, () -> FilterJson.readString("", LibTmuxModels.pane()));
+        assertThrows(SchemaException.class, () -> FilterJson.readString(valid + valid, LibTmuxModels.pane()));
+        assertThrows(
+                SchemaException.class,
+                () -> FilterJson.readString(
+                        "{\"schema\":\"libtmux.filter/1\",\"model\":\"pane\",\"expr\":"
+                                + "{\"node\":\"compare\",\"field\":\"pane_current_command\",\"op\":\"matches\","
+                                + "\"value\":{\"pattern\":\"[\",\"flags\":0}}}",
+                        LibTmuxModels.pane()));
+        assertThrows(
+                SchemaException.class,
+                () -> FilterJson.readString(
+                        "{\"schema\":\"libtmux.filter/1\",\"model\":\"pane\",\"expr\":"
+                                + "{\"node\":\"compare\",\"field\":\"pane_current_command\",\"op\":\"matches\","
+                                + "\"value\":{\"pattern\":\"x\",\"flags\":2147483647}}}",
+                        LibTmuxModels.pane()));
+    }
+
+    @Test
+    void unknownDocumentAndNodePropertiesAreRefused() {
+        List<String> documents = List.of(
+                "{\"schema\":\"libtmux.filter/1\",\"model\":\"pane\",\"extra\":true,\"expr\":"
+                        + "{\"node\":\"compare\",\"field\":\"pane_active\",\"op\":\"equals\",\"value\":true}}",
+                "{\"schema\":\"libtmux.filter/1\",\"model\":\"pane\",\"expr\":"
+                        + "{\"node\":\"compare\",\"field\":\"pane_active\",\"op\":\"equals\",\"value\":true,\"extra\":true}}",
+                "{\"schema\":\"libtmux.filter/1\",\"model\":\"pane\",\"expr\":"
+                        + "{\"node\":\"compare\",\"field\":\"pane_current_command\",\"op\":\"matches\","
+                        + "\"value\":{\"pattern\":\"nv\",\"flags\":0,\"extra\":true}}}");
+
+        for (String document : documents) {
+            assertThrows(SchemaException.class, () -> FilterJson.readString(document, LibTmuxModels.pane()));
+        }
+    }
+
+    @Test
+    void duplicatePropertiesAndNonTextRegexPatternsAreRefused() {
+        assertThrows(
+                SchemaException.class,
+                () -> FilterJson.readString(
+                        "{\"schema\":\"libtmux.filter/1\",\"schema\":\"libtmux.filter/1\",\"model\":\"pane\",\"expr\":"
+                                + "{\"node\":\"compare\",\"field\":\"pane_active\",\"op\":\"equals\",\"value\":true}}",
+                        LibTmuxModels.pane()));
+        assertThrows(
+                SchemaException.class,
+                () -> FilterJson.readString(
+                        "{\"schema\":\"libtmux.filter/1\",\"model\":\"pane\",\"expr\":"
+                                + "{\"node\":\"compare\",\"field\":\"pane_current_command\",\"op\":\"matches\","
+                                + "\"value\":{\"pattern\":1}}}",
+                        LibTmuxModels.pane()));
     }
 
     @Test

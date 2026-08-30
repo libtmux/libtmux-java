@@ -11,8 +11,10 @@ import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpServerTransportProvider;
 import java.io.InputStream;
-import java.time.Duration;
+import java.io.OutputStream;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -30,14 +32,6 @@ import org.jspecify.annotations.Nullable;
  * and serves nothing at all until it lets go.
  */
 public final class TmuxMcpServer {
-
-    /**
-     * How long the SDK waits for a client to answer something this server asked it.
-     *
-     * <p>Not a bound on a tool call: those bound themselves. Generous because the wait tools may
-     * legitimately hold a request open to the wait ceiling.
-     */
-    private static final Duration REQUEST_TIMEOUT = Duration.ofMinutes(5);
 
     private TmuxMcpServer() {}
 
@@ -64,35 +58,111 @@ public final class TmuxMcpServer {
      * <p>Taking the stream lets a launcher notice end of input for itself. A client that disconnects
      * closes this end, and a server that did not notice would outlive it.
      *
+     * <p>The returned server owns and closes the input when startup fails, either protocol stream
+     * disconnects, or the server closes.
+     *
      * @param watching whether to attach a control client and push notifications as tmux changes
      */
     public static McpSyncServer overStdio(Server server, InputStream in, Safety ceiling, boolean watching) {
-        return serving(
-                server,
-                ceiling,
-                watching,
-                new StdioServerTransportProvider(new JacksonMcpJsonMapper(new ObjectMapper()), in, System.out));
+        return overStdio(server, in, ceiling, watching, () -> {});
     }
 
-    /** Serves a tmux server over a caller-supplied transport. */
+    static McpSyncServer overStdio(
+            Server server, InputStream in, Safety ceiling, boolean watching, Runnable onSessionEnd) {
+        return overStdio(server, in, System.out, ceiling, watching, onSessionEnd);
+    }
+
+    static McpSyncServer overStdio(
+            Server server, InputStream in, OutputStream out, Safety ceiling, boolean watching, Runnable onSessionEnd) {
+        SessionLifetime lifetime = new SessionLifetime(onSessionEnd);
+        lifetime.own(in);
+        try {
+            var provider = new StdioServerTransportProvider(
+                    new JacksonMcpJsonMapper(new ObjectMapper()), in, lifetime.observe(out));
+            lifetime.own(provider::close);
+            return serving(server, ceiling, watching, lifetime.observe(provider), lifetime);
+        } catch (RuntimeException | Error failure) {
+            lifetime.endAfter(failure);
+            throw failure;
+        }
+    }
+
+    /**
+     * Serves a tmux server over a caller-supplied transport.
+     *
+     * <p>The returned server owns the transport. Ownership transfers on entry, so failed startup
+     * closes it too.
+     */
     public static McpSyncServer serving(Server server, Safety ceiling, McpServerTransportProvider transport) {
         return serving(server, ceiling, false, transport);
     }
 
-    /** Serves a tmux server over a caller-supplied transport, optionally watching it for changes. */
+    /**
+     * Serves a tmux server over a caller-supplied transport, optionally watching it for changes.
+     *
+     * <p>The returned server owns the transport. Ownership transfers on entry, so failed startup
+     * closes it too.
+     */
     public static McpSyncServer serving(
             Server server, Safety ceiling, boolean watching, McpServerTransportProvider transport) {
-        Connection connection = Connection.to(server, ceiling);
-        var specification = McpServer.sync(transport)
+        return serving(server, ceiling, watching, transport, null);
+    }
+
+    private static McpSyncServer serving(
+            Server server,
+            Safety ceiling,
+            boolean watching,
+            McpServerTransportProvider transport,
+            @Nullable SessionLifetime lifetime) {
+        Objects.requireNonNull(transport, "transport");
+        @Nullable Watches watches = null;
+        @Nullable McpSyncServer built = null;
+        try {
+            Connection connection = Connection.to(server, ceiling);
+            if (watching) {
+                watches = Watches.prepare(connection);
+                if (lifetime != null) {
+                    lifetime.own(watches);
+                }
+            }
+            built = build(connection, watching, transport);
+            if (watches == null) {
+                return built;
+            }
+            WatchedMcpServer owned = new WatchedMcpServer(built, watches);
+            watches.start(new McpNotifier(owned));
+            return owned;
+        } catch (RuntimeException | Error failure) {
+            Cleanup cleanup = new Cleanup(failure);
+            if (lifetime == null) {
+                if (watches != null) {
+                    Watches prepared = watches;
+                    cleanup.run(prepared::close);
+                }
+                if (built == null) {
+                    cleanup.run(transport::close);
+                } else {
+                    McpSyncServer accepted = built;
+                    cleanup.run(accepted::close);
+                }
+            } else if (built != null) {
+                McpSyncServer accepted = built;
+                cleanup.run(accepted::close);
+            }
+            throw failure;
+        }
+    }
+
+    private static McpSyncServer build(Connection connection, boolean watching, McpServerTransportProvider transport) {
+        var specification = McpServer.sync(new SerializedTransportProvider(transport))
                 .serverInfo("libtmux", version())
-                .instructions(Instructions.forServer(ceiling, watching))
-                .requestTimeout(REQUEST_TIMEOUT)
+                .instructions(Instructions.forServer(connection.ceiling(), watching))
                 .capabilities(McpSchema.ServerCapabilities.builder()
                         .tools(true)
                         // Subscription is offered only when something is actually watching tmux.
                         // Advertising it otherwise invites a client to subscribe and wait forever for
                         // an update nothing will ever send.
-                        .resources(watching, true)
+                        .resources(watching, false)
                         .prompts(false)
                         .completions()
                         .logging()
@@ -102,29 +172,51 @@ public final class TmuxMcpServer {
                 .prompts(Prompts.all())
                 .completions(Completions.all(connection));
 
-        for (ToolSpec tool : Catalog.offered(ceiling).values()) {
+        for (ToolSpec tool : Catalog.offered(connection.ceiling()).values()) {
             specification = specification.toolCall(
                     tool.describe(), (exchange, request) -> answer(connection, tool, exchange, request));
         }
-        McpSyncServer mcp = specification.build();
-        if (watching) {
-            // Started after the server exists, because a notification has nowhere to go before that.
-            Watches.Notifier notifier = new Watches.Notifier() {
-                @Override
-                public void updated(String uri) {
-                    mcp.notifyResourcesUpdated(new McpSchema.ResourcesUpdatedNotification(uri));
-                }
+        return specification.build();
+    }
 
-                @Override
-                public void listChanged() {
-                    mcp.notifyResourcesListChanged();
-                }
-            };
-            Watches.start(connection, notifier)
-                    .ifPresent(watches ->
-                            Runtime.getRuntime().addShutdownHook(new Thread(watches::close, "libtmux-mcp-watches")));
+    /** Sends watcher output only after the owned MCP server exists. */
+    private record McpNotifier(McpSyncServer target) implements Watches.Notifier {
+
+        @Override
+        public void updated(String uri) {
+            target.notifyResourcesUpdated(new McpSchema.ResourcesUpdatedNotification(uri));
         }
-        return mcp;
+    }
+
+    /** Couples the watcher lifecycle to the MCP server lifecycle for embedded callers. */
+    private static final class WatchedMcpServer extends McpSyncServer {
+
+        private final Watches watches;
+        private final AtomicBoolean closed = new AtomicBoolean();
+
+        WatchedMcpServer(McpSyncServer delegate, Watches watches) {
+            super(delegate.getAsyncServer());
+            this.watches = watches;
+        }
+
+        @Override
+        public void closeGracefully() {
+            closeBoth(() -> super.closeGracefully());
+        }
+
+        @Override
+        public void close() {
+            closeBoth(() -> super.close());
+        }
+
+        private void closeBoth(Runnable closeServer) {
+            if (closed.compareAndSet(false, true)) {
+                Cleanup cleanup = new Cleanup();
+                cleanup.run(watches::close);
+                cleanup.run(closeServer);
+                cleanup.throwIfFailed();
+            }
+        }
     }
 
     /**

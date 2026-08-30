@@ -2,18 +2,7 @@ package io.github.libtmux.mcp;
 
 import java.time.Duration;
 
-/**
- * How long a wait may last.
- *
- * <p>Every wait is bounded, and an over-large request is clamped rather than refused. The bound
- * protects the agent's turn, not the connection: a tool call that blocks forever gives a model no
- * way to change its mind, because MCP has no way to cancel a call it is inside. A ceiling makes
- * choosing the wrong thing to wait for cheap and repeatable instead of terminal.
- *
- * <p>The connection itself is never at risk. Measured against this SDK, one tool call blocking for
- * six seconds served twenty interleaved calls in the same window, because the SDK runs a synchronous
- * handler on {@code Schedulers.boundedElastic} rather than on the thread reading the transport.
- */
+/** Bounds a wait because SDK 2.0.1 does not cancel a running synchronous handler. */
 final class Waits {
 
     /** What a caller gets when it names no timeout: long enough for a test run, short enough to retry. */

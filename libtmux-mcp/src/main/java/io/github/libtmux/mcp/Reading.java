@@ -49,7 +49,7 @@ final class Reading {
     /** What a pane shows now, newest last, with a cursor for watching it from here. */
     static Captured capture(Call call) {
         Pane pane = Targets.pane(call.server(), call.string("pane_id"));
-        Watching.Fresh look = Watching.everything(pane, call.flag("history", false));
+        Screen.Fresh look = Screen.everything(pane, call.flag("history", false));
         Trim.Trimmed trimmed = Trim.tail(look.lines(), Trim.lineBudget(call));
         return new Captured(
                 pane.id().value(),
@@ -73,11 +73,7 @@ final class Reading {
     static Since since(Call call) {
         Pane pane = Targets.pane(call.server(), call.string("pane_id"));
         Cursor from = call.maybe("cursor").map(Cursor::decode).orElse(null);
-        if (from != null && !from.paneId().equals(pane.id().value())) {
-            throw new IllegalArgumentException("that cursor belongs to pane " + from.paneId() + ", not "
-                    + pane.id().value() + "; each pane has its own");
-        }
-        Watching.Fresh fresh = Watching.since(pane, from, Trim.lineBudget(call));
+        Screen.Fresh fresh = Screen.since(pane, from, Trim.lineBudget(call));
         Trim.Trimmed trimmed = Trim.tail(fresh.lines(), Trim.lineBudget(call));
         return new Since(
                 pane.id().value(),
@@ -90,7 +86,7 @@ final class Reading {
                 note(fresh, trimmed, from));
     }
 
-    private static @Nullable String note(Watching.Fresh fresh, Trim.Trimmed trimmed, @Nullable Cursor from) {
+    private static @Nullable String note(Screen.Fresh fresh, Trim.Trimmed trimmed, @Nullable Cursor from) {
         if (!fresh.continuous()) {
             return "The lines already delivered are no longer where the cursor left them: the pane was "
                     + "cleared, or its output has outrun the history tmux keeps. What is here is what the "
@@ -123,7 +119,7 @@ final class Reading {
         List<Hit> hits = new ArrayList<>();
         for (Pane pane : panes) {
             int kept = 0;
-            for (String line : Watching.withoutTrailingBlanks(pane.capture())) {
+            for (String line : Screen.withoutTrailingBlanks(pane.capture())) {
                 if (kept >= perPane) {
                     break;
                 }

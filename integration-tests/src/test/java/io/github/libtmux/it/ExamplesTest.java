@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.ExecutionMode;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Pane_;
 import io.github.libtmux.Server;
@@ -19,15 +18,15 @@ import io.github.libtmux.Window;
 import io.github.libtmux.Window_;
 import io.github.libtmux.batch.BatchResult;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.query.Selections;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -58,48 +57,8 @@ final class ExamplesTest {
 
             pane.sendLine("echo hello from libtmux");
 
-            assertTrue(awaitOutput(pane, "hello from libtmux"));
+            assertTrue(Await.output(pane, "hello from libtmux"));
             assertEquals("demo", session.name());
-            server.killServer();
-        }
-    }
-
-    /** Guide: choosing how commands reach tmux, and the fallback until a session exists. */
-    @Test
-    void choosingAnExecutionMode(@TempDir Path directory) throws Exception {
-        Path socket = directory.resolve("s");
-
-        ServerConfig config = ServerConfig.builder()
-                .endpoint(ServerEndpoint.socketPath(socket))
-                .mode(ExecutionMode.CONTROL)
-                .build();
-
-        try (Server server = Server.open(config)) {
-            Session first = server.newSession("work");
-            first.newWindow(w -> w.named("logs"));
-
-            assertEquals("work", first.name());
-            assertTrue(
-                    first.refresh().windows().stream().anyMatch(window -> "logs".equals(window.name())),
-                    "the window made under the control carrier is not there");
-            server.killServer();
-        }
-    }
-
-    /** Guide: the carrier that waits on a virtual thread rather than on the caller's own. */
-    @Test
-    void waitingOnAVirtualThread(@TempDir Path directory) throws Exception {
-        Path socket = directory.resolve("s");
-
-        ServerConfig config = ServerConfig.builder()
-                .endpoint(ServerEndpoint.socketPath(socket))
-                .mode(ExecutionMode.VIRTUAL)
-                .build();
-
-        try (Server server = Server.open(config)) {
-            Session session = server.newSession("work");
-
-            assertEquals("work", session.name(), "a carrier changes the waiting and not the answer");
             server.killServer();
         }
     }
@@ -113,7 +72,7 @@ final class ExamplesTest {
         assertEquals("editor", build.windows().get(0).name());
         assertEquals("logs", logs.name());
         assertTrue(
-                await(() ->
+                Await.until(() ->
                         "sleep".equals(logs.activePane().orElseThrow().refresh().currentCommand())),
                 "the window ran what it was given");
     }
@@ -128,7 +87,7 @@ final class ExamplesTest {
         Pane app = pane.split(s -> s.running("sleep", "30").in(directory));
 
         assertTrue(side.edges().right());
-        assertTrue(await(() -> "sleep".equals(app.refresh().currentCommand())));
+        assertTrue(Await.until(() -> "sleep".equals(app.refresh().currentCommand())));
 
         Session session = server.sessions().get(0);
         SplitSpec sidebar = SplitSpec.builder().toRight().percent(25).build();
@@ -283,15 +242,28 @@ final class ExamplesTest {
     void streaming(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
-            List<PaneOutput> seen = new CopyOnWriteArrayList<>();
-            client.onOutput(seen::add);
+        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+                EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
 
             client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
 
-            assertTrue(
-                    await(() -> seen.stream().anyMatch(output -> output.data().contains("streamed"))));
+            assertTrue(streamed(output, "streamed"));
         }
+    }
+
+    /** A subscription is drained rather than polled, so it waits differently from a screen. */
+    private static boolean streamed(EventSubscription<PaneOutput> output, String expected) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (System.nanoTime() < deadline) {
+            var next = output.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
+            if (next.isEmpty()) {
+                return false;
+            }
+            if (next.orElseThrow().data().contains(expected)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Guide: options are read at the scope tmux will act on. */
@@ -320,19 +292,5 @@ final class ExamplesTest {
             assertEquals(5, session.windows().get(0).index().value());
             server.killServer();
         }
-    }
-
-    private static boolean awaitOutput(Pane pane, String expected) throws InterruptedException {
-        return await(() -> pane.capture().stream().anyMatch(line -> line.contains(expected)));
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

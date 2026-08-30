@@ -46,6 +46,13 @@ final class TargetIdTest {
     }
 
     @Test
+    void anIdSuffixContainsDigitsOnly() {
+        assertThrows(IllegalArgumentException.class, () -> new SessionId("$abc"));
+        assertThrows(IllegalArgumentException.class, () -> new WindowId("@-1"));
+        assertThrows(IllegalArgumentException.class, () -> new PaneId("%1x"));
+    }
+
+    @Test
     void twoIdsOfDifferentKindsCannotCompareEqual() {
         assertNotEquals(new SessionId("$1").value(), new WindowId("@1").value());
         assertEquals(new PaneId("%2"), new PaneId("%2"));

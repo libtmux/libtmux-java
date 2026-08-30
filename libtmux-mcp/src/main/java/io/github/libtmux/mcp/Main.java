@@ -3,9 +3,6 @@ package io.github.libtmux.mcp;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
-import java.io.FilterInputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -57,51 +54,26 @@ public final class Main {
             System.exit(2);
             return;
         }
-        // The server outlives this call: the MCP transport reads stdin until the client closes it.
-        Server server = Server.open(config);
-        Runtime.getRuntime().addShutdownHook(new Thread(server::close, "libtmux-mcp-shutdown"));
-        System.err.println("libtmux-mcp: serving " + server.identity() + " at safety " + ceiling.wireName() + " ("
-                + Catalog.offered(ceiling).size() + " tools)");
+        // The server outlives setup: the MCP transport reads stdin until the client closes it.
+        // Lexical ownership also releases its process transport when protocol startup fails.
+        try (Server server = Server.open(config)) {
+            Runtime.getRuntime().addShutdownHook(new Thread(server::close, "libtmux-mcp-shutdown"));
+            System.err.println("libtmux-mcp: serving " + server.identity() + " at safety " + ceiling.wireName() + " ("
+                    + Catalog.offered(ceiling).size() + " tools)");
 
-        // A client that disconnects closes this end. Without noticing that, the process outlives the
-        // client that launched it, and an MCP client leaves one behind every time it restarts.
-        CountDownLatch disconnected = new CountDownLatch(1);
-        TmuxMcpServer.overStdio(server, new EndOfInputAware(System.in, disconnected::countDown), ceiling, watching);
-        try {
-            disconnected.await();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        server.close();
-        System.exit(0);
-    }
-
-    /** Wraps an input stream so end of input can be noticed by whoever is waiting for it. */
-    private static final class EndOfInputAware extends FilterInputStream {
-
-        private final Runnable onEnd;
-
-        EndOfInputAware(InputStream in, Runnable onEnd) {
-            super(in);
-            this.onEnd = onEnd;
-        }
-
-        @Override
-        public int read() throws IOException {
-            return ended(super.read());
-        }
-
-        @Override
-        public int read(byte[] buffer, int offset, int length) throws IOException {
-            return ended(super.read(buffer, offset, length));
-        }
-
-        private int ended(int result) {
-            if (result < 0) {
-                onEnd.run();
+            // A client that disconnects closes this end. Without noticing that, the process outlives
+            // the client that launched it, and an MCP client leaves one behind every time it restarts.
+            CountDownLatch disconnected = new CountDownLatch(1);
+            var mcp = TmuxMcpServer.overStdio(server, System.in, ceiling, watching, disconnected::countDown);
+            Runtime.getRuntime().addShutdownHook(new Thread(mcp::close, "libtmux-mcp-protocol-shutdown"));
+            try {
+                disconnected.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
-            return result;
+            mcp.closeGracefully();
         }
+        System.exit(0);
     }
 
     static ServerConfig configure(List<String> args) {

@@ -1,17 +1,19 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.BufferInfo;
 import io.github.libtmux.Client;
 import io.github.libtmux.ClientAttachment;
+import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.ObjectDoesNotExist;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
+import io.github.libtmux.TmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersion;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
@@ -19,7 +21,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +29,8 @@ import org.junit.jupiter.api.io.TempDir;
 /** The server's paste buffers, and what an attached client is looking at. */
 @ExtendWith(TmuxExtension.class)
 final class BuffersAndClientIntegrationTest {
+
+    private static final TmuxVersion EXACT_NAMED_DELETE = new TmuxVersion(3, 4, "");
 
     // -------------------------------------------------------------------------------- buffers
 
@@ -40,6 +43,15 @@ final class BuffersAndClientIntegrationTest {
                 server.buffers().list().stream()
                         .anyMatch(buffer -> buffer.name().equals("mine")),
                 "the buffer is in the listing");
+    }
+
+    @Test
+    void aTrailingSemicolonIsPartOfTheBufferName(Server server) {
+        server.buffers().set("literal;", "not a command separator;");
+
+        assertEquals("not a command separator;", server.buffers().show("literal;"));
+        assertTrue(server.buffers().list().stream()
+                .anyMatch(buffer -> buffer.name().equals("literal;")));
     }
 
     @Test
@@ -66,24 +78,46 @@ final class BuffersAndClientIntegrationTest {
 
     @Test
     void deletingRemovesItFromTheListing(Server server) {
-        server.buffers().set("doomed", "x");
+        server.buffers().set("doomed;", "x");
 
-        server.buffers().delete("doomed");
+        if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
+            assertThrows(UnsupportedTmuxVersion.class, () -> server.buffers().delete("doomed;"));
+            assertEquals("x", server.buffers().show("doomed;"), "refusal leaves the buffer untouched");
+            return;
+        }
 
-        assertFalse(server.buffers().list().stream()
-                .anyMatch(buffer -> buffer.name().equals("doomed")));
+        server.buffers().delete("doomed;");
+
+        assertEquals(List.of(), server.buffers().list());
+    }
+
+    @Test
+    void deletingAnAbsentBufferDoesNotDeleteTheTopBuffer(Server server) {
+        server.buffers().set("belongs-to-the-user", "keep me");
+
+        if (server.version().atLeast(EXACT_NAMED_DELETE)) {
+            assertThrows(ObjectDoesNotExist.class, () -> server.buffers().delete("never-set;"));
+        } else {
+            assertThrows(UnsupportedTmuxVersion.class, () -> server.buffers().delete("never-set;"));
+        }
+
+        assertEquals("keep me", server.buffers().show("belongs-to-the-user"));
+        assertEquals(
+                List.of("belongs-to-the-user"),
+                server.buffers().list().stream().map(BufferInfo::name).toList(),
+                "only the user's buffer remains");
     }
 
     @Test
     void aBufferSurvivesAFileRoundTrip(Server server, @TempDir Path directory) throws Exception {
-        Path file = directory.resolve("buffer.txt");
-        server.buffers().set("saved", "written to disk");
+        Path file = directory.resolve("buffer;");
+        server.buffers().set("saved;", "written to disk");
 
-        server.buffers().save("saved", file);
-        server.buffers().load("reloaded", file);
+        server.buffers().save("saved;", file);
+        server.buffers().load("reloaded;", file);
 
         assertEquals("written to disk", Files.readString(file).stripTrailing());
-        assertEquals("written to disk", server.buffers().show("reloaded"));
+        assertEquals("written to disk", server.buffers().show("reloaded;"));
     }
 
     @Test
@@ -91,11 +125,94 @@ final class BuffersAndClientIntegrationTest {
         Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
         server.buffers().set("typed", "echo pasted-this\n");
 
-        pane.paste("typed");
+        pane.pasteBuffer("typed");
 
         assertTrue(
-                await(() -> pane.capture().stream().anyMatch(line -> line.contains("pasted-this"))),
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("pasted-this"))),
                 "the buffer never reached the pane");
+    }
+
+    @Test
+    void pastingTextLeavesNothingInTheBufferStack(Server server) throws Exception {
+        Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
+        server.buffers().set("belongs-to-the-user", "keep me");
+
+        if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
+            assertThrows(UnsupportedTmuxVersion.class, () -> pane.paste("echo pasted-text\n"));
+            assertEquals(
+                    List.of("belongs-to-the-user"),
+                    server.buffers().list().stream().map(BufferInfo::name).toList(),
+                    "refusal creates no buffer");
+            return;
+        }
+
+        pane.paste("echo pasted-text\n");
+
+        assertTrue(
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("pasted-text"))),
+                "the text never reached the pane");
+        assertEquals(
+                List.of("belongs-to-the-user"),
+                server.buffers().list().stream().map(BufferInfo::name).toList(),
+                "the paste kept no buffer of its own");
+    }
+
+    @Test
+    void pastedTextReachesThePaneExactly(Server server) throws Exception {
+        Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
+        if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
+            return;
+        }
+
+        // A semicolon ends a tmux command and a quote ends a quoted argument, so text carrying both
+        // is what shows the text never reaches tmux's parser.
+        pane.paste("printf 'a;b \"c\" d\\n'\n");
+
+        assertTrue(
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("a;b \"c\" d"))),
+                "the text did not arrive as written");
+        assertThrows(IllegalArgumentException.class, () -> pane.paste("has\0nul"), "NUL is not typeable");
+    }
+
+    /** tmux refuses a command whose packed argv exceeds MAX_IMSGSIZE, which is 16384 bytes. */
+    @Test
+    void pastedTextIsNotBoundedByTheSizeOfACommand(Server server) throws Exception {
+        if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
+            return;
+        }
+        Pane pane = server.sessions()
+                .get(0)
+                .windows()
+                .get(0)
+                .panes()
+                .get(0)
+                .split(s -> s.running("sh", "-c", "stty -icanon -echo; printf 'reader-ready\\n'; cat"));
+        assertTrue(Await.output(pane, "reader-ready"), "the paste reader never started");
+
+        pane.paste("y".repeat(20_000) + "END-OF-A-LARGE-PASTE");
+
+        assertTrue(
+                Await.until(() -> pane.capture().stream().anyMatch(line -> line.contains("END-OF-A-LARGE-PASTE"))),
+                "text larger than a tmux command never arrived");
+    }
+
+    /** The one case where the group's own cleanup cannot run, so the caller's has to. */
+    @Test
+    void aPasteThatFailsRemovesOnlyTheBufferItMade(Server server) {
+        Pane doomed = server.sessions().get(0).windows().get(0).panes().get(0).split();
+        server.buffers().set("belongs-to-the-user", "keep me");
+        server.cmd("kill-pane", "-t", doomed.id().value());
+
+        if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
+            assertThrows(UnsupportedTmuxVersion.class, () -> doomed.paste("never-arrives"));
+        } else {
+            assertThrows(LibTmuxException.class, () -> doomed.paste("never-arrives"));
+        }
+
+        assertEquals(
+                List.of("belongs-to-the-user"),
+                server.buffers().list().stream().map(BufferInfo::name).toList(),
+                "a failed paste left its own buffer behind");
     }
 
     @Test
@@ -118,7 +235,7 @@ final class BuffersAndClientIntegrationTest {
     void anAttachedClientReportsWhatItIsLookingAt(Server server) throws Exception {
         Session session = server.sessions().get(0);
         try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
-            assertTrue(await(() -> !server.clients().isEmpty()), "the control client never appeared as a client");
+            assertTrue(Await.until(() -> !server.clients().isEmpty()), "the control client never appeared as a client");
 
             Client client = server.clients().get(0);
             ClientAttachment looking = client.attachment().orElseThrow();
@@ -138,7 +255,7 @@ final class BuffersAndClientIntegrationTest {
         Session session = server.sessions().get(0);
         try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
-            assertTrue(await(() -> !server.clients().isEmpty()));
+            assertTrue(Await.until(() -> !server.clients().isEmpty()));
             Client client = server.clients().get(0);
             String before = client.attachment().orElseThrow().activeWindow().name();
 
@@ -163,11 +280,11 @@ final class BuffersAndClientIntegrationTest {
         Client client;
         try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
-            assertTrue(await(() -> appeared(server, before).isPresent()), "no client ever attached");
+            assertTrue(Await.until(() -> appeared(server, before).isPresent()), "no client ever attached");
             client = appeared(server, before).orElseThrow();
         }
 
-        assertTrue(await(() -> client.refresh().isEmpty()), "the client outlived the connection that made it");
+        assertTrue(Await.until(() -> client.refresh().isEmpty()), "the client outlived the connection that made it");
         assertEquals(Optional.empty(), client.fetchAttachment());
     }
 
@@ -176,15 +293,5 @@ final class BuffersAndClientIntegrationTest {
         return server.clients().stream()
                 .filter(client -> !before.contains(client.name()))
                 .findFirst();
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

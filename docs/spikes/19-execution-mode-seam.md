@@ -1,5 +1,13 @@
 # Where an execution mode would plug in
 
+> **Superseded.** There is no execution mode to plug in. The carriers this note
+> designed a seam for were removed: `VIRTUAL` did not free the carrier it claimed
+> to, and `CONTROL` routed by command name, which a user's `command-alias` can
+> defeat. Measured later, `if-shell` answers with its own reply block plus one for
+> whichever branch ran, so a control client cannot even know how many replies a
+> request will produce. What survives is the observation that the entity layer is
+> carrier-agnostic — which is why `Server.using` still takes a transport.
+
 ## Verdict
 
 The seam is one method, and the entity layer is already mode-agnostic. Making

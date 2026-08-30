@@ -8,7 +8,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Optional;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -21,30 +21,30 @@ import org.jspecify.annotations.Nullable;
  *
  * <h2>How completion is known</h2>
  *
- * <p>The command is followed by two things the shell runs after it: one that records the exit
- * status in a pane option, and one that signals a private tmux channel. Waiting is then tmux's own
- * {@code wait-for}, which blocks server-side and returns on the signal itself — nothing is inferred
- * from what the screen looks like.
+ * <p>The command is followed by two things the shell runs after it: an end marker carrying the exit
+ * status, and a signal on a private tmux channel. Waiting is then tmux's own {@code wait-for}, which
+ * blocks server-side and returns on the signal itself — completion is not inferred from what the
+ * screen looks like.
  *
  * <h2>How the output is separated from the plumbing</h2>
  *
  * <p>The shell echoes everything typed at it, so the plumbing appears on screen alongside the
  * output. It is cut out by framing: the command is bracketed by two lines that print a random
- * nonce, and only lines strictly between them are returned. The echo of the whole payload
- * <em>contains</em> the nonce, but no echo is ever <em>equal</em> to it, so exact-equality matching
- * separates the two — including when the echo wraps across several rows, which is the case that
- * defeats matching the plumbing by its shape.
+ * nonce, and only lines strictly between them are returned. The echo of the whole payload contains
+ * the nonce, but never as a complete start marker or an end marker followed only by a numeric
+ * status. Matching those forms separates the two even when the echo wraps across several rows.
  */
 final class RunningCommands {
 
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final Set<String> POSIX_SHELLS = Set.of("sh", "ash", "bash", "dash", "ksh", "mksh", "pdksh", "zsh");
 
     private RunningCommands() {}
 
     /**
      * @param paneId the pane it ran in
      * @param outcome why the wait ended, which is never simply "successfully"
-     * @param exitStatus the command's status, absent when it had not finished
+     * @param exitStatus the command's status, absent when it had not finished or its marker was lost
      * @param output what the command printed, plumbing removed
      * @param truncated whether older output was dropped to fit the budget
      * @param linesDropped how many lines that cost
@@ -68,6 +68,7 @@ final class RunningCommands {
     static Ran run(Call call) {
         Server server = call.server();
         Pane pane = Targets.pane(server, call.string("pane_id"));
+        requirePosixShell(pane);
         String command = call.string("command");
         Duration timeout = Waits.requested(call);
         boolean suppressHistory = call.flag("suppress_history", true);
@@ -76,24 +77,18 @@ final class RunningCommands {
         String startMark = nonce + "-s";
         String endMark = nonce + "-e";
         String channel = "ch_" + nonce;
-        String statusOption = "@st_" + nonce;
 
-        Cursor before = Watching.from(pane).cursor();
-        String typed =
-                payload(server, pane, command, nonce, startMark, endMark, statusOption, channel, suppressHistory);
-        // Literal, so a command that happens to spell a key name — "Enter", "C-c" — is typed rather
-        // than pressed. Enter is a separate send because it is the one keypress that is meant.
-        server.run(List.of("send-keys", "-l", "-t", pane.id().value(), typed));
-        server.run(List.of("send-keys", "-t", pane.id().value(), "Enter"));
+        Cursor before = Screen.from(pane).cursor();
+        String typed = payload(server, command, nonce, startMark, endMark, channel, suppressHistory);
+        pane.sendLine(typed);
 
         long started = System.nanoTime();
-        WakeReason wake = server.waitFor(channel, timeout);
+        WakeReason wake = server.channel(channel).await(timeout);
         double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
 
-        Integer status = wake == WakeReason.SIGNALLED ? readStatus(pane, statusOption) : null;
-        Watching.Fresh fresh =
-                wake == WakeReason.SERVER_GONE ? null : Watching.since(pane, before, Trim.lineBudget(call));
-        Framed framed = fresh == null ? new Framed(List.of(), false) : frame(fresh.lines(), startMark, endMark);
+        Screen.Fresh fresh = wake == WakeReason.SERVER_GONE ? null : Screen.since(pane, before, Trim.lineBudget(call));
+        Framed framed = fresh == null ? new Framed(List.of(), false, null) : frame(fresh.lines(), startMark, endMark);
+        Integer status = wake == WakeReason.SIGNALLED ? framed.status() : null;
         Trim.Trimmed trimmed = Trim.tail(framed.lines(), Trim.lineBudget(call));
 
         return new Ran(
@@ -138,31 +133,26 @@ final class RunningCommands {
      */
     private static String payload(
             Server server,
-            Pane pane,
             String command,
             String nonce,
             String startMark,
             String endMark,
-            String statusOption,
             String channel,
             boolean suppressHistory) {
         // The config file is left off: it is read when a server starts and means nothing to a command
         // sent to one already running. Everything typed here is echoed by the shell onto the pane a
         // person may be watching, so the shortest correct command line is the kindest one.
-        List<String> tmux = new ArrayList<>(List.of(server.config().binary()));
+        // A resolved path, not the name: the pane resolves a name against the user's PATH, and a
+        // client from another release than this server is dropped without delivering the signal.
+        List<String> tmux = new ArrayList<>(List.of(server.config().binaryPath()));
         tmux.addAll(server.config().endpoint().flags());
 
-        // One tmux invocation carrying two commands rather than two invocations. tmux ends a command
-        // at a bare ';' argument, and halving the invocations halves what the shell echoes back.
-        String finish =
-                Shell.quoteAll(append(tmux, "set-option", "-p", "-t", pane.id().value(), statusOption))
-                        + " \"$" + nonce + "\" " + Shell.quote(";") + " "
-                        + Shell.quoteAll(List.of("wait-for", "-S", channel));
+        String finish = Shell.quoteAll(append(tmux, "wait-for", "-S", channel));
 
         // The status is held in a shell variable named for the nonce, so nothing this types can
         // collide with a variable the person using the pane already had.
-        return (suppressHistory ? " " : "") + "echo " + startMark + "; ( " + command + " ); " + nonce + "=$?; echo "
-                + endMark + "; " + finish;
+        return (suppressHistory ? " " : "") + "echo " + startMark + "; ( eval " + Shell.quote(command) + " ); " + nonce
+                + "=$?; echo " + endMark + ":\"$" + nonce + "\"; " + finish;
     }
 
     private static List<String> append(List<String> base, String... more) {
@@ -171,56 +161,75 @@ final class RunningCommands {
         return argv;
     }
 
-    private static @Nullable Integer readStatus(Pane pane, String option) {
-        Optional<String> recorded = pane.options().get(option);
-        try {
-            return recorded.map(String::trim).map(Integer::parseInt).orElse(null);
-        } catch (NumberFormatException e) {
-            return null;
-        } finally {
-            try {
-                pane.options().unset(option);
-            } catch (RuntimeException e) {
-                // A leftover pane option costs nothing and is gone with the pane; failing the call
-                // over tidying up would throw away the answer the caller came for.
-            }
-        }
-    }
-
     /** @param exact whether both markers were found, so what is returned is only the command's output */
-    private record Framed(List<String> lines, boolean exact) {}
+    private record Framed(
+            List<String> lines, boolean exact, @Nullable Integer status) {}
 
     /**
      * Keeps what lies strictly between the two marker lines.
      *
-     * <p>Matched by equality after trimming, never by containment: the echo of the payload holds
-     * both markers as substrings and must not be mistaken for either.
+     * <p>Matched as complete marker forms after trimming, never by containment: the echo of the
+     * payload holds both markers as substrings and must not be mistaken for either.
      */
     private static Framed frame(List<String> lines, String startMark, String endMark) {
         int start = -1;
-        int end = -1;
         for (int index = 0; index < lines.size(); index++) {
-            String line = lines.get(index).trim();
-            if (start < 0 && line.equals(startMark)) {
+            if (lines.get(index).trim().equals(startMark)) {
                 start = index;
-            } else if (start >= 0 && line.equals(endMark)) {
-                end = index;
                 break;
+            }
+        }
+
+        int end = -1;
+        Integer status = null;
+        String endPrefix = endMark + ":";
+        for (int index = start < 0 ? 0 : start + 1; index < lines.size(); index++) {
+            String line = lines.get(index).trim();
+            if (!line.startsWith(endPrefix)) {
+                continue;
+            }
+            try {
+                int candidate = Integer.parseInt(line.substring(endPrefix.length()));
+                end = index;
+                status = candidate;
+                if (start >= 0) {
+                    break;
+                }
+            } catch (NumberFormatException ignored) {
+                // A wrapped echo can begin with the prefix; only the numeric marker is plumbing.
             }
         }
         if (start < 0) {
             // The frame is gone: output outgrew the history, or the command cleared the screen.
             // Everything that is not obviously plumbing is better than nothing.
             return new Framed(
-                    lines.stream().filter(line -> !line.contains(startMark)).toList(), false);
+                    lines.stream()
+                            .filter(line -> !line.contains(startMark) && !line.contains(endMark))
+                            .toList(),
+                    false,
+                    status);
         }
         int last = end < 0 ? lines.size() : end;
-        return new Framed(List.copyOf(lines.subList(start + 1, last)), end >= 0);
+        return new Framed(List.copyOf(lines.subList(start + 1, last)), end >= 0, status);
     }
 
     private static byte[] bytes() {
-        byte[] value = new byte[5];
+        byte[] value = new byte[16];
         RANDOM.nextBytes(value);
         return value;
+    }
+
+    private static void requirePosixShell(Pane pane) {
+        String current = pane.expand("#{pane_current_command}");
+        int slash = current.lastIndexOf('/');
+        String name = slash < 0 ? current : current.substring(slash + 1);
+        if (name.startsWith("-")) {
+            name = name.substring(1);
+        }
+        if (!POSIX_SHELLS.contains(name)) {
+            throw new IllegalStateException(
+                    "tmux_run requires a POSIX-compatible shell in the target pane; " + "it is running '" + name
+                            + "'. Use tmux_send_keys when typing into another program is intentional");
+        }
     }
 }

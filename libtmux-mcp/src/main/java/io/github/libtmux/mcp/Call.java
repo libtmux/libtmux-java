@@ -27,7 +27,7 @@ record Call(Connection connection, Map<String, Object> arguments, Progress progr
         return connection.ceiling();
     }
 
-    /** Reports how a slow tool is going, so a client can show it and a person can cancel it. */
+    /** Reports how a slow tool is going while the client is still listening. */
     interface Progress {
 
         /** A no-op for callers outside the protocol, which is every test that exercises a tool. */

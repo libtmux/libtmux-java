@@ -1,5 +1,12 @@
 # Immutable hierarchy hydration
 
+> **Superseded in part.** The shape below still holds: one server-wide listing per
+> entity kind, and membership left to tmux. What changed is the cost. The four
+> listings now travel as one command group fenced against a process identity read
+> first, so a capture is two commands rather than six, and a server replaced under
+> one is refused before a listing runs rather than detected by a second probe
+> afterwards.
+
 ## Verdict
 
 Capture one server-wide listing per entity kind — sessions, windows, panes,

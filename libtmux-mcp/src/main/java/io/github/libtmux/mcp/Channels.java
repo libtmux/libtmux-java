@@ -36,10 +36,10 @@ final class Channels {
         Duration timeout = Waits.requested(call);
         boolean drained = call.flag("drain_first", false);
         if (drained) {
-            call.server().drain(channel);
+            call.server().channel(channel).drain();
         }
         long started = System.nanoTime();
-        WakeReason wake = call.server().waitFor(channel, timeout);
+        WakeReason wake = call.server().channel(channel).awaitReservingCapacity(timeout);
         double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
         return new Woke(
                 channel, wake.name(), Math.round(seconds * 100) / 100.0, Waits.asSeconds(timeout), note(wake, drained));
@@ -67,7 +67,7 @@ final class Channels {
 
     static Signalled signal(Call call) {
         String channel = call.string("channel");
-        call.server().signal(channel);
+        call.server().channel(channel).signal();
         return new Signalled(
                 channel,
                 "Signalled. If nothing was waiting, tmux remembers it and the next wait on this channel "
@@ -76,7 +76,7 @@ final class Channels {
 
     static Drained drain(Call call) {
         String channel = call.string("channel");
-        boolean had = call.server().drain(channel);
+        boolean had = call.server().channel(channel).drain();
         return new Drained(
                 channel,
                 had,

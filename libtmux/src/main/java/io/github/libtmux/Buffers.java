@@ -1,6 +1,7 @@
 package io.github.libtmux;
 
 import io.github.libtmux.format.RowFormat;
+import io.github.libtmux.transport.CommandResult;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.List;
 public final class Buffers {
 
     private static final RowFormat LISTING = RowFormat.of("buffer_name", "buffer_size");
+    static final TmuxVersion EXACT_NAMED_DELETE = new TmuxVersion(3, 4, "");
 
     private final Server server;
 
@@ -55,9 +57,25 @@ public final class Buffers {
         return String.join("\n", result.stdout());
     }
 
-    /** Removes a buffer. */
+    /**
+     * Removes a buffer by its exact name.
+     *
+     * @throws ObjectDoesNotExist if the server has no buffer by that name
+     * @throws UnsupportedTmuxVersion before tmux 3.4, whose named deletion silently removes the top
+     *     buffer when the name is absent
+     */
     public void delete(String name) {
-        server.run(List.of("delete-buffer", "-b", name));
+        TmuxVersion running = server.version();
+        if (!running.atLeast(EXACT_NAMED_DELETE)) {
+            throw new UnsupportedTmuxVersion("deleting a buffer by exact name", EXACT_NAMED_DELETE, running);
+        }
+        CommandResult result = server.cmd(List.of("delete-buffer", "-b", name));
+        if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.equals("unknown buffer: " + name))) {
+            throw new ObjectDoesNotExist("no buffer named '" + name + "'");
+        }
+        if (!result.succeeded()) {
+            throw new LibTmuxException("tmux delete-buffer failed: " + String.join("; ", result.stderr()));
+        }
     }
 
     /** Writes a buffer's contents to a file. */

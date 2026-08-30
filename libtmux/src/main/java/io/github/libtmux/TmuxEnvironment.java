@@ -72,22 +72,25 @@ public final class TmuxEnvironment {
         if (lastComma < 0 || firstOfPair < 0) {
             return Optional.empty();
         }
-        long pid;
-        try {
-            pid = Long.parseLong(tmux.substring(firstOfPair + 1, lastComma));
-        } catch (NumberFormatException e) {
-            return Optional.empty();
-        }
+        String socketField = tmux.substring(0, firstOfPair);
         String sessionField = tmux.substring(lastComma + 1);
-        if (sessionField.isEmpty()) {
+        if (socketField.isEmpty() || sessionField.isEmpty()) {
             return Optional.empty();
         }
-        // tmux writes the session number bare, while every id elsewhere carries its sigil. Without
-        // this the id would never equal one read back from a listing.
-        SessionId session = new SessionId(sessionField.startsWith("$") ? sessionField : "$" + sessionField);
-        String paneField = environment.get("TMUX_PANE");
-        PaneId pane = paneField == null || paneField.isEmpty() ? null : new PaneId(paneField);
-        return Optional.of(new TmuxEnvironment(Path.of(tmux.substring(0, firstOfPair)), pid, session, pane));
+        try {
+            long pid = Long.parseLong(tmux.substring(firstOfPair + 1, lastComma));
+            if (pid <= 0) {
+                return Optional.empty();
+            }
+            // tmux writes the session number bare, while every id elsewhere carries its sigil.
+            // Without this the id would never equal one read back from a listing.
+            SessionId session = new SessionId(sessionField.startsWith("$") ? sessionField : "$" + sessionField);
+            String paneField = environment.get("TMUX_PANE");
+            PaneId pane = paneField == null || paneField.isEmpty() ? null : new PaneId(paneField);
+            return Optional.of(new TmuxEnvironment(Path.of(socketField), pid, session, pane));
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
     }
 
     /** The socket the server is listening on. */

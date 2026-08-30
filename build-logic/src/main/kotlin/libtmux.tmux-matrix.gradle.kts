@@ -8,7 +8,7 @@
 // Declared so the source-set accessors resolve; the module already has it via the library plugin.
 plugins { java }
 
-val lanes = listOf("3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b")
+val lanes = listOf("3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.7c")
 
 val matrix = providers.gradleProperty("libtmuxMatrix")
 
@@ -39,5 +39,8 @@ val laneTasks =
         }
     }
 
-// The benchmark lives in its own module now, so nothing here has to exclude it and no module has
-// to remember a tag to stay fast.
+rootProject.tasks.maybeCreate("testTmuxMatrix").apply {
+    group = "verification"
+    description = "Runs every real-tmux test against every supported tmux release."
+    dependsOn(laneTasks)
+}

@@ -28,7 +28,7 @@ Four things near the top are compatibility claims, and they move together:
   exported identifiers without a deprecation period, pin an exact version, not
   recommended for production. `CHANGELOG.md` and the `Status` section say the
   same thing in the same words.
-- **The requirements are JDK 21 or newer, and tmux 3.2a through 3.7b.** The tmux
+- **The requirements are JDK 21 or newer, and tmux 3.2a through 3.7c.** The tmux
   range is not a claim — the matrix runs every lane of it — so it may not drift
   from `workflows/tmux-matrix.yml`.
 - **Coordinates are group `io.github.libtmux`, imported through
@@ -79,7 +79,7 @@ makes it decidable:
   points at `tmux_list_servers`.
 ```
 
-Name identifiers literally: `Pane.capture`, `LIBTMUX_MODE`, `--rerun-tasks`,
+Name identifiers literally: `Pane.capture`, `LIBTMUX_WATCH`, `--rerun-tasks`,
 `tmux://panes/{pane}`. Lead with a concrete verb — add, fix, remove, reject,
 `now`, `no longer`.
 
@@ -104,7 +104,7 @@ Order it capability, then consequence, then compatibility:
 
 > 0.0.1-alpha.7 adds streaming capture, and rejects `windowId` at pane scope
 > rather than ignoring it. Pass `scope: window` to read at window scope. JDK 21
-> and tmux 3.2a through 3.7b are unchanged.
+> and tmux 3.2a through 3.7c are unchanged.
 
 The title is plain — the version, optionally preceded by `libtmux for Java`.
 Never "we are excited to announce"; state what shipped.
@@ -354,8 +354,8 @@ has nothing but the string:
   "JDK 21" both appear upstream — this project writes **JDK 21**.
 - A **pane**, **window**, **session**, and **server** are what tmux calls them.
   Do not introduce a synonym for one.
-- Write the identifier, not a description of it: `LIBTMUX_MODE=control`, not
-  "the mode environment variable"; `--rerun-tasks`, not "the rerun flag";
+- Write the identifier, not a description of it: `LIBTMUX_WATCH=true`, not
+  "the watch environment variable"; `--rerun-tasks`, not "the rerun flag";
   `/tmp/libtmux-java-test/`, not "the test socket directory".
 
 Treat AI slop as review-hostile noise. The goal is information density:

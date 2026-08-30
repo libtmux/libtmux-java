@@ -5,12 +5,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.DispatchOutcome;
+import io.github.libtmux.transport.TmuxTimeoutException;
 import io.github.libtmux.transport.TmuxTransport;
+import io.github.libtmux.transport.TmuxTransportException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -152,6 +157,250 @@ final class ServerTest {
         server.close();
 
         assertThrows(IllegalStateException.class, () -> server.cmd("list-sessions"));
+        assertThrows(IllegalStateException.class, server::snapshot);
+        assertThrows(IllegalStateException.class, server::sessions);
+        assertThrows(IllegalStateException.class, server::windows);
+        assertThrows(IllegalStateException.class, server::panes);
+        assertThrows(IllegalStateException.class, server::clients);
+        assertThrows(IllegalStateException.class, server::attachedSessions);
+    }
+
+    @Test
+    void aWaitPropagatesTransportFailuresThatAreNotItsDeadline(@TempDir Path directory) throws IOException {
+        TmuxTransportException failure = new TmuxTransportException("pipe failed", DispatchOutcome.UNKNOWN, null);
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                if (request.commands().get(0).contains("wait-for")) {
+                    throw failure;
+                }
+                return new CommandResult(0, List.of("4242"), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            assertSame(
+                    failure,
+                    assertThrows(
+                            TmuxTransportException.class,
+                            () -> server.channel("channel").await(java.time.Duration.ofSeconds(1))));
+        }
+    }
+
+    @Test
+    void aWaitWithSignalCapacityPreservesAPredispatchTimeout(@TempDir Path directory) throws IOException {
+        TmuxTimeoutException failure =
+                new TmuxTimeoutException("waiting admission timed out", DispatchOutcome.NOT_DISPATCHED, null);
+        java.util.concurrent.atomic.AtomicBoolean waiting = new java.util.concurrent.atomic.AtomicBoolean();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                if (request.commands().get(0).contains("wait-for")) {
+                    throw failure;
+                }
+                return new CommandResult(1, List.of(), List.of("no server running"));
+            }
+
+            @Override
+            public CommandResult executeWaiting(CommandRequest request) {
+                waiting.set(true);
+                throw failure;
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            assertEquals(
+                    WakeReason.SERVER_GONE, server.channel("self-signalled").await(java.time.Duration.ofSeconds(1)));
+            assertFalse(waiting.get(), "an ordinary wait consumed reserved signal capacity");
+            assertSame(
+                    failure,
+                    assertThrows(
+                            TmuxTimeoutException.class,
+                            () -> server.channel("channel").awaitReservingCapacity(java.time.Duration.ofSeconds(1))));
+            assertTrue(waiting.get(), "wait-for used ordinary transport admission");
+        }
+    }
+
+    @Test
+    void malformedOrInconsistentListingsRespectStrictAndLenientBoundaries(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        for (String sessionRow : List.of(
+                String.join(separator, "$0", "alpha", "maybe", "0"),
+                String.join(separator, "$0", "alpha", "1", "not-a-number"),
+                String.join(separator, "$0", "alpha", "1", "1"))) {
+            try (Server server = Server.using(config(directory), new SnapshotTransport(sessionRow))) {
+                LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
+
+                assertTrue(failure.getCause() instanceof IllegalArgumentException, failure.toString());
+                assertEquals(List.of(), server.sessions(), "lenient listings collapse hydration failures to empty");
+            }
+        }
+    }
+
+    @Test
+    void moreThanOneAttachedClientStillMeansTheSessionIsAttached(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        String sessionRow = String.join(separator, "$0", "alpha", "2", "0");
+
+        try (Server server = Server.using(config(directory), new SnapshotTransport(sessionRow))) {
+            assertTrue(server.snapshot().sessions().get(0).attached());
+        }
+    }
+
+    @Test
+    void snapshotDistinguishesAnAbsentServerFromAnIdentityProbeFailure(@TempDir Path directory) throws IOException {
+        try (Server server = Server.using(config(directory), new RefusingTransport("permission denied"))) {
+            LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
+
+            assertTrue(String.valueOf(failure.getMessage()).contains("permission denied"));
+        }
+        for (String absent : List.of(
+                "no server running on /tmp/s",
+                "server exited unexpectedly",
+                "error connecting to /tmp/s (No such file or directory)")) {
+            try (Server server = Server.using(config(directory), new RefusingTransport(absent))) {
+                assertTrue(server.snapshot().sessions().isEmpty(), absent);
+            }
+        }
+    }
+
+    @Test
+    void snapshotKeepsTheIdentityOfALiveServerWithNoSessions(@TempDir Path directory) throws IOException {
+        AtomicInteger requests = new AtomicInteger();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                requests.incrementAndGet();
+                return GroupedTmux.execute(request, 4242L, "3.2a", argv -> switch (argv.getFirst()) {
+                    case "display-message" ->
+                        new CommandResult(
+                                0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.2a")), List.of());
+                    case "list-sessions" -> new CommandResult(0, List.of(), List.of());
+                    // tmux has no current target to list children against, and says so.
+                    default -> new CommandResult(1, List.of(), List.of("no current target"));
+                });
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            var snapshot = server.snapshot();
+
+            assertEquals(4242L, snapshot.serverPid().orElseThrow());
+            assertEquals(TmuxVersion.parse("3.2a"), snapshot.serverVersion().orElseThrow());
+            assertTrue(snapshot.sessions().isEmpty());
+            assertTrue(snapshot.windows().isEmpty());
+            assertTrue(snapshot.panes().isEmpty());
+            assertTrue(snapshot.clients().isEmpty());
+            assertEquals(2, requests.get(), "tmux refused the rest of the group, which cost no further request");
+        }
+    }
+
+    /**
+     * A pid is reusable, so the fence carries the version too: a different tmux that landed on the
+     * pid just probed would otherwise answer as the server the rows are read from.
+     */
+    @Test
+    void snapshotRefusesAServerThatReusedThePidUnderADifferentTmux(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return GroupedTmux.execute(request, 4242L, "3.7", argv -> switch (argv.get(0)) {
+                    // Probed as 3.6; the server answering the listings is a 3.7 on that pid.
+                    case "display-message" ->
+                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6")), List.of());
+                    default -> new CommandResult(0, List.of(), List.of());
+                });
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            assertThrows(LibTmuxException.class, server::snapshot);
+        }
+    }
+
+    /** The fence refuses a replaced server before a listing runs, so there is no first capture. */
+    @Test
+    void snapshotRetriesAChangedIncarnationAndKeepsOnlyTheSecondCapture(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        try (Server server = Server.using(
+                config(directory),
+                new SnapshotRaceTransport(
+                        List.of("4242", "4343", "4343", "4343"),
+                        List.of(String.join(separator, "$1", "new", "0", "0"))))) {
+            var snapshot = server.snapshot();
+
+            assertEquals(4343L, snapshot.serverPid().orElseThrow());
+            assertEquals(
+                    List.of("new"),
+                    snapshot.sessions().stream().map(session -> session.name()).toList());
+        }
+    }
+
+    @Test
+    void snapshotRetriesWhenTheReplacedServerMakesAListingFail(@TempDir Path directory) throws IOException {
+        try (Server server =
+                Server.using(config(directory), new ReplacementDuringCaptureTransport(CaptureFailure.LISTING))) {
+            var snapshot = server.snapshot();
+
+            assertEquals(4343L, snapshot.serverPid().orElseThrow());
+            assertEquals("new", snapshot.sessions().get(0).name());
+        }
+    }
+
+    @Test
+    void snapshotRetriesWhenTheReplacedServerChangesThePaneRowShape(@TempDir Path directory) throws IOException {
+        try (Server server =
+                Server.using(config(directory), new ReplacementDuringCaptureTransport(CaptureFailure.PANE_SHAPE))) {
+            var snapshot = server.snapshot();
+
+            assertEquals(4343L, snapshot.serverPid().orElseThrow());
+            assertEquals("new", snapshot.sessions().get(0).name());
+        }
+    }
+
+    @Test
+    void snapshotRejectsASecondReplacementDuringHydration(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        try (Server server = Server.using(
+                config(directory),
+                new SnapshotRaceTransport(
+                        List.of("4242", "4343", "4343", "4545"),
+                        List.of(
+                                String.join(separator, "$0", "old", "0", "0"),
+                                String.join(separator, "$1", "new", "0", "0"))))) {
+            LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
+
+            assertTrue(String.valueOf(failure.getMessage()).contains("changed during snapshot"));
+        }
+    }
+
+    @Test
+    void snapshotRejectsASecondDisappearanceDuringHydration(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        try (Server server = Server.using(
+                config(directory),
+                new SnapshotRaceTransport(
+                        List.of("4242", "4343", "4343", ""),
+                        List.of(
+                                String.join(separator, "$0", "old", "0", "0"),
+                                String.join(separator, "$1", "new", "0", "0"))))) {
+            LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
+
+            assertTrue(String.valueOf(failure.getMessage()).contains("changed during snapshot"));
+        }
     }
 
     // -------------------------------------------------------------------------------- builders
@@ -241,7 +490,7 @@ final class ServerTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
-            return request.argv().contains("kill-server")
+            return request.commands().get(0).contains("kill-server")
                     ? new CommandResult(1, List.of(), List.of("permission denied"))
                     : new CommandResult(0, List.of("4242"), List.of());
         }
@@ -266,5 +515,138 @@ final class ServerTest {
         public void close() {
             closes.incrementAndGet();
         }
+    }
+
+    private record SnapshotTransport(String sessionRow) implements TmuxTransport {
+
+        @Override
+        public CommandResult execute(CommandRequest request) {
+            return GroupedTmux.execute(request, 4242L, argv -> switch (argv.get(0)) {
+                case "list-sessions" -> new CommandResult(0, List.of(sessionRow), List.of());
+                case "display-message" ->
+                    new CommandResult(
+                            0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.6")), List.of());
+                default -> new CommandResult(0, List.of(), List.of());
+            });
+        }
+
+        @Override
+        public void close() {}
+    }
+
+    private static final class SnapshotRaceTransport implements TmuxTransport {
+
+        private final AtomicInteger identityReads = new AtomicInteger();
+        private final AtomicInteger sessionReads = new AtomicInteger();
+        private final List<String> identities;
+        private final List<String> sessionRows;
+
+        SnapshotRaceTransport(List<String> identities, List<String> sessionRows) {
+            this.identities = identities;
+            this.sessionRows = sessionRows;
+        }
+
+        /**
+         * Identities come in pairs: what a capture's probe is told, then what the server has become
+         * by the time its listings run. A capture is two requests, so the pair is the whole race.
+         */
+        @Override
+        public CommandResult execute(CommandRequest request) {
+            if (request.commands().get(0).get(0).equals("display-message")) {
+                return identity(at(2 * identityReads.getAndIncrement()));
+            }
+            String live = at(2 * (identityReads.get() - 1) + 1);
+            if (live.isEmpty()) {
+                return new CommandResult(1, List.of(), List.of("no server running on /tmp/s"));
+            }
+            return GroupedTmux.execute(request, Long.parseLong(live), argv -> switch (argv.get(0)) {
+                case "list-sessions" ->
+                    new CommandResult(0, List.of(sessionRows.get(sessionReads.getAndIncrement())), List.of());
+                default -> new CommandResult(0, List.of(), List.of());
+            });
+        }
+
+        /** Clamped, so a server that has gone stays gone however often it is asked about. */
+        private String at(int index) {
+            return identities.get(Math.min(index, identities.size() - 1));
+        }
+
+        private static CommandResult identity(String pid) {
+            if (pid.isEmpty()) {
+                return new CommandResult(1, List.of(), List.of("no server running on /tmp/s"));
+            }
+            return new CommandResult(
+                    0, List.of(String.join(RowFormat.of("field").separator(), pid, "3.6")), List.of());
+        }
+
+        @Override
+        public void close() {}
+    }
+
+    private enum CaptureFailure {
+        LISTING,
+        PANE_SHAPE
+    }
+
+    private static final class ReplacementDuringCaptureTransport implements TmuxTransport {
+
+        private final AtomicInteger identityReads = new AtomicInteger();
+        private final CaptureFailure failure;
+
+        ReplacementDuringCaptureTransport(CaptureFailure failure) {
+            this.failure = failure;
+        }
+
+        /**
+         * The server is still the one the probe named while its listings run, so the fence passes
+         * and the capture fails for the reason under test rather than for the replacement.
+         */
+        @Override
+        public CommandResult execute(CommandRequest request) {
+            boolean firstCapture = identityReads.get() == 1;
+            return GroupedTmux.execute(request, firstCapture ? 4242L : 4343L, argv -> switch (argv.get(0)) {
+                case "display-message" ->
+                    identityReads.getAndIncrement() == 0
+                            ? identity("4242", failure == CaptureFailure.PANE_SHAPE ? "3.7" : "3.6")
+                            : identity("4343", "3.6");
+                case "list-sessions" -> {
+                    if (firstCapture && failure == CaptureFailure.LISTING) {
+                        yield new CommandResult(1, List.of(), List.of("server exited unexpectedly"));
+                    }
+                    yield new CommandResult(
+                            0,
+                            List.of(firstCapture ? row("$0", "old", "0", "1") : row("$1", "new", "0", "0")),
+                            List.of());
+                }
+                case "list-windows" ->
+                    new CommandResult(
+                            0,
+                            firstCapture && failure == CaptureFailure.PANE_SHAPE
+                                    ? List.of(row("$0", "@0", "0", "old", "1", "1", "0", "80", "24", "layout"))
+                                    : List.of(),
+                            List.of());
+                case "list-panes" ->
+                    new CommandResult(
+                            0,
+                            firstCapture && failure == CaptureFailure.PANE_SHAPE
+                                    ? List.of(row(
+                                            "$0", "@0", "0", "%0", "0", "1", "sh", "80", "24", "", "/tmp", "7", "1",
+                                            "1", "1", "1"))
+                                    : List.of(),
+                            List.of());
+                default -> new CommandResult(0, List.of(), List.of());
+            });
+        }
+
+        private static CommandResult identity(String pid, String version) {
+            return new CommandResult(0, List.of(row(pid, version)), List.of());
+        }
+
+        private static String row(String... fields) {
+            return String.join(RowFormat.of("field").separator(), fields);
+        }
+
+        @Override
+        public void close() {}
     }
 }

@@ -24,7 +24,7 @@ public final class Tokens {
         return PROCESS;
     }
 
-    private static String generate() {
+    static String generate() {
         byte[] token = new byte[16];
         new SecureRandom().nextBytes(token);
         return HexFormat.of().formatHex(token);

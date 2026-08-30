@@ -49,43 +49,16 @@ final class ServerSnapshotTest {
                         new WindowState(IN_ALPHA, "editor", true, 2, true, SIZE, "layout"),
                         new WindowState(IN_BETA, "editor", false, 2, true, SIZE, "layout")),
                 List.of(
-                        new PaneState(
-                                IN_ALPHA,
-                                new PaneId("%1"),
-                                0,
-                                true,
-                                "nvim",
-                                SIZE,
-                                "t",
-                                PATH,
-                                1L,
-                                EDGES,
-                                Optional.of(false)),
-                        new PaneState(
-                                IN_ALPHA,
-                                new PaneId("%2"),
-                                1,
-                                false,
-                                "zsh",
-                                SIZE,
-                                "t",
-                                PATH,
-                                1L,
-                                EDGES,
-                                Optional.of(false)),
-                        new PaneState(
-                                IN_BETA,
-                                new PaneId("%1"),
-                                0,
-                                true,
-                                "nvim",
-                                SIZE,
-                                "t",
-                                PATH,
-                                1L,
-                                EDGES,
-                                Optional.of(false))),
+                        pane(IN_ALPHA, "%1", 0, true, "nvim"),
+                        pane(IN_ALPHA, "%2", 1, false, "zsh"),
+                        pane(IN_BETA, "%1", 0, true, "nvim"),
+                        pane(IN_BETA, "%2", 1, false, "zsh")),
                 List.of(new ClientState("/dev/pts/3", Optional.of(ALPHA))));
+    }
+
+    private static PaneState pane(WindowContext context, String id, int index, boolean active, String command) {
+        return new PaneState(
+                context, new PaneId(id), index, active, command, SIZE, "t", PATH, 1L, EDGES, Optional.of(false));
     }
 
     @Test
@@ -111,7 +84,7 @@ final class ServerSnapshotTest {
         assertEquals(
                 List.of(new PaneId("%1"), new PaneId("%2")),
                 snapshot.panesOf(IN_ALPHA).stream().map(PaneState::id).toList());
-        assertEquals(1, snapshot.panesOf(IN_BETA).size(), "the other link has its own panes");
+        assertEquals(2, snapshot.panesOf(IN_BETA).size(), "tmux lists each pane under each link");
     }
 
     @Test
@@ -164,6 +137,79 @@ final class ServerSnapshotTest {
     }
 
     @Test
+    void duplicateHierarchyKeysAreRejected() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ServerSnapshot.of(
+                        WHEN,
+                        List.of(
+                                new SessionState(ALPHA, "alpha", false, 0),
+                                new SessionState(ALPHA, "duplicate", false, 0)),
+                        List.of(),
+                        List.of(),
+                        List.of()));
+
+        WindowState duplicate = new WindowState(IN_ALPHA, "editor", true, 0, false, SIZE, "layout");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ServerSnapshot.of(
+                        WHEN,
+                        List.of(new SessionState(ALPHA, "alpha", false, 2)),
+                        List.of(duplicate, duplicate),
+                        List.of(),
+                        List.of()));
+
+        PaneState repeated = pane(IN_ALPHA, "%1", 0, true, "nvim");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ServerSnapshot.of(
+                        WHEN,
+                        List.of(new SessionState(ALPHA, "alpha", false, 1)),
+                        List.of(new WindowState(IN_ALPHA, "editor", true, 2, false, SIZE, "layout")),
+                        List.of(repeated, repeated),
+                        List.of()));
+    }
+
+    @Test
+    void duplicateLogicalSlotsAndPaneOwnershipAreRejected() {
+        WindowContext alternateWindow = new WindowContext(ALPHA, new WindowIndex(0), new WindowId("@8"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ServerSnapshot.of(
+                        WHEN,
+                        List.of(new SessionState(ALPHA, "alpha", false, 2)),
+                        List.of(
+                                new WindowState(IN_ALPHA, "one", false, 0, false, SIZE, "layout"),
+                                new WindowState(alternateWindow, "two", false, 0, false, SIZE, "layout")),
+                        List.of(),
+                        List.of()),
+                "one session index cannot name two windows");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ServerSnapshot.of(
+                        WHEN,
+                        List.of(new SessionState(ALPHA, "alpha", false, 1)),
+                        List.of(new WindowState(IN_ALPHA, "one", false, 2, false, SIZE, "layout")),
+                        List.of(pane(IN_ALPHA, "%1", 0, true, "nvim"), pane(IN_ALPHA, "%2", 0, false, "zsh")),
+                        List.of()),
+                "one window index cannot name two panes");
+
+        WindowContext secondWindow = new WindowContext(ALPHA, new WindowIndex(1), new WindowId("@8"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ServerSnapshot.of(
+                        WHEN,
+                        List.of(new SessionState(ALPHA, "alpha", false, 2)),
+                        List.of(
+                                new WindowState(IN_ALPHA, "one", false, 1, false, SIZE, "layout"),
+                                new WindowState(secondWindow, "two", false, 1, false, SIZE, "layout")),
+                        List.of(pane(IN_ALPHA, "%1", 0, true, "nvim"), pane(secondWindow, "%1", 0, true, "nvim")),
+                        List.of()),
+                "one global pane id cannot belong to two underlying windows");
+    }
+
+    @Test
     void aPaneWhoseWindowWasNeverCapturedIsARejectedCapture() {
         WindowContext orphan = new WindowContext(new SessionId("$5"), new WindowIndex(0), new WindowId("@5"));
 
@@ -187,6 +233,62 @@ final class ServerSnapshotTest {
                                 Optional.empty())),
                         List.of()),
                 "a pane under no captured window means the listings disagreed");
+    }
+
+    @Test
+    void aPaneNeedsItsExactWindowRatherThanAnyWindowInTheSession() {
+        WindowContext orphan = new WindowContext(ALPHA, new WindowIndex(9), new WindowId("@9"));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ServerSnapshot.of(
+                        WHEN,
+                        List.of(new SessionState(ALPHA, "alpha", true, 1)),
+                        List.of(new WindowState(IN_ALPHA, "editor", true, 0, false, SIZE, "layout")),
+                        List.of(new PaneState(
+                                orphan,
+                                new PaneId("%9"),
+                                0,
+                                true,
+                                "zsh",
+                                SIZE,
+                                "t",
+                                PATH,
+                                1L,
+                                EDGES,
+                                Optional.empty())),
+                        List.of()));
+    }
+
+    @Test
+    void declaredChildCountsMustMatchTheCapturedHierarchy() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ServerSnapshot.of(
+                        WHEN, List.of(new SessionState(ALPHA, "alpha", true, 1)), List.of(), List.of(), List.of()),
+                "a session cannot claim a window absent from the listing");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ServerSnapshot.of(
+                        WHEN,
+                        List.of(new SessionState(ALPHA, "alpha", true, 1)),
+                        List.of(new WindowState(IN_ALPHA, "editor", true, 1, false, SIZE, "layout")),
+                        List.of(),
+                        List.of()),
+                "a window cannot claim a pane absent from the listing");
+    }
+
+    @Test
+    void anAttachedClientNeedsItsCapturedSession() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ServerSnapshot.of(
+                        WHEN,
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(new ClientState("/dev/pts/3", Optional.of(ALPHA)))));
     }
 
     @Test

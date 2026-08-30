@@ -1,6 +1,6 @@
 name: tmux matrix
 
-# The README claims tmux 3.2a through 3.7b, and says that range is not a claim because the suite runs
+# The README claims tmux 3.2a through 3.7c, and says that range is not a claim because the suite runs
 # against every one of them. This is where that stops depending on someone running it locally.
 
 on:
@@ -32,7 +32,7 @@ jobs:
       matrix:
         # Must match the lanes in build-logic/src/main/kotlin/libtmux.tmux-matrix.gradle.kts, which
         # is the source of truth. The agree step below fails if they drift apart.
-        tmux: ['3.2a', '3.3a', '3.4', '3.5', '3.6', '3.7', '3.7a', '3.7b']
+        tmux: ['3.2a', '3.3a', '3.4', '3.5', '3.6', '3.7', '3.7a', '3.7b', '3.7c']
     steps:
       - uses: actions/checkout@v7
 

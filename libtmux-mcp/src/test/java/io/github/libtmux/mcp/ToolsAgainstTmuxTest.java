@@ -1,7 +1,6 @@
 package io.github.libtmux.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -9,9 +8,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.ObjectDoesNotExist;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerConfig;
 import io.github.libtmux.WakeReason;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.ProcessTransport;
+import io.github.libtmux.transport.TmuxTransport;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -94,9 +100,10 @@ final class ToolsAgainstTmuxTest {
     void refusingToEndAContainerNamesWhatCanBeEnded(Server server) {
         String mine = server.panes().get(0).id().value();
         String other = server.sessions().get(0).windows().get(0).split().id().value();
+        String session = server.sessions().get(0).id().value();
 
         IllegalStateException refused = assertThrows(
-                IllegalStateException.class, () -> Shaping.kill(TestCalls.asCaller(server, mine, "target", "libtmux")));
+                IllegalStateException.class, () -> Shaping.kill(TestCalls.asCaller(server, mine, "target", session)));
 
         String message = String.valueOf(refused.getMessage());
         assertTrue(message.contains(other), "the pane that could go is named: " + message);
@@ -138,6 +145,52 @@ final class ToolsAgainstTmuxTest {
         assertNull(whoami.callerPane());
         assertTrue(whoami.note().contains("no pane here is special"), whoami.note());
         assertNotNull(whoami.socket());
+    }
+
+    @Test
+    void serverDiscoveryReservesTheLiveSocketForAnAmbientEndpoint() {
+        String liveSocket = "/tmp/libtmux-java-test/ambient-custom";
+        TmuxTransport reportsSocket = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return new CommandResult(0, List.of(liveSocket), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+        ServerConfig config = ServerConfig.builder().binary("/bin/false").build();
+
+        try (Server ambient = Server.using(config, reportsSocket)) {
+            Listings.Servers servers = Listings.servers(ambient);
+
+            assertTrue(
+                    servers.servers().stream().anyMatch(found -> found.socket().equals(liveSocket)));
+            assertTrue(servers.note().contains(liveSocket), servers.note());
+        }
+    }
+
+    @Test
+    void whoamiCapturesTheHierarchyOnceInsteadOfTraversingLiveHandles(Server server) {
+        AtomicInteger commands = new AtomicInteger();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport counting = new TmuxTransport() {
+                @Override
+                public CommandResult execute(CommandRequest request) {
+                    commands.incrementAndGet();
+                    return processes.execute(request);
+                }
+
+                @Override
+                public void close() {}
+            };
+            try (Server measured = Server.using(server.config(), counting)) {
+                Listings.Whoami whoami = Listings.whoami(measured, Caller.nowhere(), Safety.MUTATING);
+
+                assertEquals(1, whoami.sessions());
+                assertEquals(3, commands.get(), "one identity read, the listings as one group, one socket path");
+            }
+        }
     }
 
     /** And when this process really is inside a pane, that pane is named as the one to protect. */
@@ -215,6 +268,21 @@ final class ToolsAgainstTmuxTest {
         assertEquals(1, server.panes().size());
     }
 
+    @Test
+    void uncertainCallerIdentityRefusesServerKill(Server server) {
+        String pane = server.panes().get(0).id().value();
+        Map<String, String> uncertain = Map.of(
+                "TMUX", "/tmp/libtmux-java-test/missing-socket," + server.expand("#{pid}") + ",0", "TMUX_PANE", pane);
+
+        IllegalStateException refused = assertThrows(
+                IllegalStateException.class,
+                () -> Shaping.kill(TestCalls.withEnvironment(server, uncertain, "target", "server")));
+
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("could not prove"), message);
+        assertTrue(server.isAlive(), "uncertainty must not disable the destructive guard");
+    }
+
     /** The window holding the caller's pane is as fatal as the pane itself. */
     @Test
     void killingAWindowHoldingTheCallersPaneIsRefusedToo(Server server) {
@@ -238,6 +306,42 @@ final class ToolsAgainstTmuxTest {
 
         assertEquals("pane", ended.kind());
         assertEquals(1, server.panes().size());
+    }
+
+    @Test
+    void aSessionNamedServerIsKilledByItsListedIdWithoutEndingTheServer(Server server) {
+        var namedServer = server.newSession("server");
+
+        Shaping.Ended ended =
+                Shaping.kill(TestCalls.on(server, "target", namedServer.id().value()));
+
+        assertEquals("session", ended.kind());
+        assertTrue(server.isAlive(), "a session name must not become a request to kill the server");
+        assertTrue(server.sessions().stream().noneMatch(session -> session.id().equals(namedServer.id())));
+    }
+
+    @Test
+    void sessionTargetsUseTheirListedIdsEvenWhenTheNameLooksLikeAWindowId(Server server) {
+        var ambiguous = server.newSession(server.windows().get(0).id().value());
+
+        Shaping.Changed renamed =
+                Shaping.rename(TestCalls.on(server, "target", ambiguous.id().value(), "name", "renamed-safely"));
+        Shaping.Ended ended =
+                Shaping.kill(TestCalls.on(server, "target", ambiguous.id().value()));
+
+        assertEquals("session", renamed.kind());
+        assertEquals("renamed-safely", renamed.what());
+        assertEquals("session", ended.kind());
+        assertTrue(server.isAlive());
+        assertEquals(1, server.sessions().size());
+    }
+
+    @Test
+    void theServerTargetMeansTheWholeServer(Server server) {
+        Shaping.Ended ended = Shaping.kill(TestCalls.on(server, "target", "server"));
+
+        assertEquals("server", ended.kind());
+        assertEquals(false, server.isAlive());
     }
 
     // ---------------------------------------------------------------- making things
@@ -315,41 +419,7 @@ final class ToolsAgainstTmuxTest {
         assertEquals(1, server.sessions().size());
     }
 
-    // ---------------------------------------------------------------- input and channels
-
-    @Test
-    void keysAreSentByNameSoAnInterruptInterrupts(Server server) {
-        String pane = server.panes().get(0).id().value();
-        server.run(List.of("send-keys", "-l", "-t", pane, "sleep 60"));
-        server.run(List.of("send-keys", "-t", pane, "Enter"));
-
-        Typing.Sent sent = Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of("C-c")));
-
-        assertEquals(1, sent.keys());
-        assertFalse(sent.literal());
-        assertTrue(String.valueOf(sent.note()).contains("not waited for"), String.valueOf(sent.note()));
-    }
-
-    @Test
-    void sendingNoKeysAtAllSaysWhatWasWanted(Server server) {
-        String pane = server.panes().get(0).id().value();
-
-        IllegalArgumentException refused = assertThrows(
-                IllegalArgumentException.class,
-                () -> Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of())));
-
-        assertTrue(String.valueOf(refused.getMessage()).contains("C-c"), refused.getMessage());
-    }
-
-    @Test
-    void pastedTextArrivesAsCharactersRatherThanKeyNames(Server server) {
-        String pane = server.panes().get(0).id().value();
-
-        Typing.Pasted pasted = Typing.pasteText(TestCalls.on(server, "pane_id", pane, "text", "Enter [C-c] done"));
-
-        assertEquals(16, pasted.characters());
-        assertTrue(String.valueOf(pasted.note()).contains("pass 'enter'"), String.valueOf(pasted.note()));
-    }
+    // ---------------------------------------------------------------- channels
 
     /** A signal outlives the moment it was sent, which is what draining exists to undo. */
     @Test

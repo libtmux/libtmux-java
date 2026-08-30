@@ -80,7 +80,7 @@
       "type": "object",
       "required": ["pattern"],
       "additionalProperties": false,
-      "description": "Used only with the matches operator. Flags are java.util.regex flag bits.",
+      "description": "Used only with the matches operator. Pattern syntax and flags follow java.util.regex.Pattern.",
       "properties": {
         "pattern": { "type": "string" },
         "flags": { "type": "integer", "default": 0 }

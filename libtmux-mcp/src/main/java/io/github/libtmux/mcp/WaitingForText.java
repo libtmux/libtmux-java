@@ -2,7 +2,6 @@ package io.github.libtmux.mcp;
 
 import io.github.libtmux.Pane;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -56,8 +55,8 @@ final class WaitingForText {
         int budget = Trim.lineBudget(call);
         Cursor cursor = call.maybe("cursor")
                 .map(Cursor::decode)
-                .orElseGet(() -> Watching.from(pane).cursor());
-        List<String> seen = new ArrayList<>();
+                .orElseGet(() -> Screen.from(pane).cursor());
+        Trim.Trimmed retained = new Trim.Trimmed(List.of(), 0);
         long started = System.nanoTime();
         long deadline = started + timeout.toNanos();
 
@@ -66,9 +65,9 @@ final class WaitingForText {
         String hitLine = null;
 
         while (true) {
-            Watching.Fresh fresh = Watching.since(pane, cursor, budget);
+            Screen.Fresh fresh = Screen.since(pane, cursor, budget);
             cursor = fresh.cursor();
-            seen.addAll(fresh.lines());
+            retained = Trim.append(retained, fresh.lines(), budget);
 
             // Failure first: a build that has already printed "error:" is not going to print
             // "Listening on", and the wait that notices is the one that returns in seconds.
@@ -110,15 +109,14 @@ final class WaitingForText {
             outcome = "SERVER_GONE";
         }
         double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
-        Trim.Trimmed trimmed = Trim.tail(seen, Trim.lineBudget(call));
         return new Waited(
                 pane.id().value(),
                 outcome,
                 hit == null ? null : hit.source(),
                 hitLine,
-                trimmed.lines(),
-                trimmed.truncated(),
-                trimmed.dropped(),
+                retained.lines(),
+                retained.truncated(),
+                retained.dropped(),
                 cursor.encode(),
                 Math.round(seconds * 100) / 100.0,
                 Waits.asSeconds(timeout),

@@ -16,7 +16,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -104,7 +103,7 @@ final class SplitIntegrationTest {
                         .env("LIBTMUX_PROBE", "carried")
                         .running("sh", "-c", "printf '%s' \"$LIBTMUX_PROBE\" > seen; sleep 30"));
 
-        assertTrue(await(() -> Files.exists(written)), "the command never ran in the directory it was given");
+        assertTrue(Await.until(() -> Files.exists(written)), "the command never ran in the directory it was given");
         assertEquals("carried", read(written), "the pane did not inherit the variable");
     }
 
@@ -113,7 +112,7 @@ final class SplitIntegrationTest {
         Pane created = onlyPane(server).split(s -> s.running("sleep", "30"));
 
         assertTrue(
-                await(() -> "sleep".equals(created.refresh().currentCommand())),
+                Await.until(() -> "sleep".equals(created.refresh().currentCommand())),
                 "the pane never reported the command it was started with");
     }
 
@@ -195,7 +194,7 @@ final class SplitIntegrationTest {
             Pane created = original.split(s -> s.keepOnExit().running("true"));
 
             assertTrue(
-                    await(() -> created.window().panes().size() == 2),
+                    Await.until(() -> created.window().panes().size() == 2),
                     "the pane closed even though it was asked to stay");
         } else {
             assertThrows(UnsupportedTmuxVersion.class, () -> original.split(s -> s.keepOnExit()));
@@ -257,15 +256,5 @@ final class SplitIntegrationTest {
         } catch (IOException e) {
             throw new AssertionError("could not read " + file, e);
         }
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

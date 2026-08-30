@@ -1,31 +1,23 @@
 package io.github.libtmux;
 
 import io.github.libtmux.batch.Batch;
-import io.github.libtmux.format.RowFormat;
-import io.github.libtmux.snapshot.ClientState;
-import io.github.libtmux.snapshot.PaneState;
+import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.snapshot.ServerSnapshot;
-import io.github.libtmux.snapshot.SessionState;
 import io.github.libtmux.snapshot.WindowContext;
-import io.github.libtmux.snapshot.WindowState;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
-import io.github.libtmux.transport.ControlTransport;
+import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
-import io.github.libtmux.transport.VirtualThreadTransport;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -40,71 +32,20 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Server implements AutoCloseable {
 
-    private static final RowFormat SESSIONS =
-            RowFormat.of("session_id", "session_name", "session_attached", "session_windows");
-    private static final RowFormat WINDOWS = RowFormat.of(
-            "session_id",
-            "window_id",
-            "window_index",
-            "window_name",
-            "window_active",
-            "window_panes",
-            "window_linked",
-            "window_width",
-            "window_height",
-            "window_layout");
-    private static final String[] PANE_FIELDS = {
-        "session_id",
-        "window_id",
-        "window_index",
-        "pane_id",
-        "pane_index",
-        "pane_active",
-        "pane_current_command",
-        "pane_width",
-        "pane_height",
-        "pane_title",
-        "pane_current_path",
-        "pane_pid",
-        "pane_at_top",
-        "pane_at_bottom",
-        "pane_at_left",
-        "pane_at_right"
-    };
-
-    private static final RowFormat PANES = RowFormat.of(PANE_FIELDS);
-    /** tmux gained pane_floating_flag in 3.7; before that the format expands to nothing. */
-    private static final TmuxVersion FLOATING_SINCE = new TmuxVersion(3, 7, "");
-
-    private static final RowFormat PANES_WITH_FLOATING = RowFormat.of(withFloating());
-
-    private static String[] withFloating() {
-        String[] fields = Arrays.copyOf(PANE_FIELDS, PANE_FIELDS.length + 1);
-        fields[PANE_FIELDS.length] = "pane_floating_flag";
-        return fields;
-    }
-
-    private static final RowFormat CLIENTS = RowFormat.of("client_name", "session_id");
-
-    /** Long enough for a pending signal to come straight back, short enough not to be a wait. */
-    private static final Duration DRAIN_TIMEOUT = Duration.ofMillis(250);
-
     private final ServerConfig config;
     private final TmuxTransport transport;
     private final boolean owned;
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    /** Carriers made for a per-call override. Owned here, since here is what made them. */
-    private final Map<ExecutionMode, TmuxTransport> overrides = new ConcurrentHashMap<>();
-
     private final ServerIdentity identity;
-    private volatile @Nullable TmuxVersion version;
+    private final SnapshotCapture capture;
 
     private Server(ServerConfig config, TmuxTransport transport, boolean owned) {
         this.config = config;
         this.transport = transport;
         this.owned = owned;
         this.identity = ServerIdentity.of(transport.realm(), config.endpoint());
+        this.capture = new SnapshotCapture(this);
     }
 
     /**
@@ -219,7 +160,7 @@ public final class Server implements AutoCloseable {
      * single exit status cannot say which command failed or which never ran.
      */
     public Batch batch() {
-        return new Batch(argv -> cmd(argv, config.defaultTimeout()));
+        return new Batch(commands -> transport.execute(request(commands, config.defaultTimeout(), "")));
     }
 
     /**
@@ -247,12 +188,13 @@ public final class Server implements AutoCloseable {
      * {@code #{version}} that belong to no session in particular.
      *
      * @param format a tmux format, usually of the shape {@code #{name}}
-     * @return the expansion, empty when the format expanded to nothing
+     * @return the expansion, whole when it spans lines and empty when the format expanded to
+     *     nothing
      */
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
         List<String> reported = run(List.of("display-message", "-p", format)).stdout();
-        return reported.isEmpty() ? "" : reported.get(0);
+        return String.join("\n", reported);
     }
 
     /**
@@ -387,45 +329,27 @@ public final class Server implements AutoCloseable {
         return result.succeeded() ? result.stdout() : List.of();
     }
 
-    /**
-     * Waits for something to signal a channel.
-     *
-     * <p>tmux's own {@code wait-for} has two traps, and this exists to close both.
-     *
-     * <p>It exits successfully when the server dies under the waiter, which is indistinguishable
-     * from a real signal, so the server is checked afterwards rather than believed.
-     *
-     * <p>A signal sent when nobody is waiting is remembered, and satisfies the next wait whenever
-     * that happens — possibly in a later run of a different program. A channel carrying a stale
-     * signal therefore wakes a waiter that nothing actually signalled. Use {@link #drain} first when
-     * the channel's history is not yours.
-     *
-     * @param channel the channel name, which is shared by everything on this server
-     * @param timeout how long to wait
-     * @return why the wait ended, which is never simply "successfully"
-     */
-    public WakeReason waitFor(String channel, Duration timeout) {
+    /** One of this server's wait-for channels, which is where a signal is sent and waited for. */
+    public Channel channel(String name) {
+        return new Channel(this, name);
+    }
+
+    WakeReason awaitChannel(String channel, Duration timeout, boolean reserveSignalCapacity) {
         try {
-            cmd(List.of("wait-for", channel), timeout);
-        } catch (io.github.libtmux.transport.TmuxTransportException e) {
+            CommandRequest request = request(List.of("wait-for", channel), timeout);
+            if (reserveSignalCapacity) {
+                transport.executeWaiting(request);
+            } else {
+                transport.execute(request);
+            }
+        } catch (io.github.libtmux.transport.TmuxTimeoutException e) {
+            if (reserveSignalCapacity && e.outcome() == DispatchOutcome.NOT_DISPATCHED) {
+                throw e;
+            }
             // The transport killed the waiting client at the deadline; nothing signalled it.
             return isAlive() ? WakeReason.TIMED_OUT : WakeReason.SERVER_GONE;
         }
         return isAlive() ? WakeReason.SIGNALLED : WakeReason.SERVER_GONE;
-    }
-
-    /** Signals a channel, waking one waiter, or being remembered until something waits. */
-    public void signal(String channel) {
-        run(List.of("wait-for", "-S", channel));
-    }
-
-    /**
-     * Consumes a signal already waiting on a channel, so a stale one cannot satisfy a later wait.
-     *
-     * @return whether a signal was there to consume
-     */
-    public boolean drain(String channel) {
-        return waitFor(channel, DRAIN_TIMEOUT) == WakeReason.SIGNALLED;
     }
 
     /** The server's paste buffers, which every session shares. */
@@ -464,14 +388,13 @@ public final class Server implements AutoCloseable {
      * started by a different build than the one this client is invoking.
      */
     public TmuxVersion version() {
-        TmuxVersion known = version;
-        if (known == null) {
-            // One tmux build serves a server for its whole life, so this is asked once.
-            known = TmuxVersion.parse(
-                    run(List.of("display-message", "-p", "#{version}")).stdout().get(0));
-            version = known;
-        }
-        return known;
+        return capture.process()
+                .map(SnapshotCapture.ServerProcess::version)
+                .orElseThrow(() -> new LibTmuxException("no tmux server is answering on this endpoint"));
+    }
+
+    TmuxVersion version(ServerSnapshot snapshot) {
+        return snapshot.serverVersion().orElseGet(this::version);
     }
 
     /** Which server this is. Every handle taken from it is scoped by this. */
@@ -479,24 +402,30 @@ public final class Server implements AutoCloseable {
         return identity;
     }
 
+    void requireSameServer(Server other) {
+        Objects.requireNonNull(other, "other");
+        if (!identity.equals(other.identity)) {
+            throw new IllegalArgumentException("handles belong to different tmux servers");
+        }
+    }
+
+    void requireSameIncarnation(ServerSnapshot snapshot, Server other, ServerSnapshot otherSnapshot) {
+        requireSameServer(other);
+        if (!identity(snapshot).equals(other.identity(otherSnapshot))) {
+            throw new IllegalArgumentException("handles belong to different tmux server incarnations");
+        }
+    }
+
+    ServerIdentity identity(ServerSnapshot snapshot) {
+        return snapshot.serverPid().isPresent()
+                ? identity.at(snapshot.serverPid().orElseThrow())
+                : identity;
+    }
+
     /** A server over a transport it owns and closes. */
     public static Server open(ServerConfig config) {
         Objects.requireNonNull(config, "config");
-        return new Server(config, carrierFor(config), true);
-    }
-
-    /**
-     * Builds the carrier the config asked for.
-     *
-     * <p>A mode is a transport choice and nothing more, which is why this is the only place the
-     * enum is consulted. See {@code docs/spikes/19} for why nothing above here has to care.
-     */
-    private static TmuxTransport carrierFor(ServerConfig config) {
-        return switch (config.mode()) {
-            case DIRECT -> new ProcessTransport();
-            case CONTROL -> new ControlTransport(config, new ProcessTransport());
-            case VIRTUAL -> new VirtualThreadTransport(new ProcessTransport());
-        };
+        return new Server(config, new ProcessTransport(), true);
     }
 
     /** A server over a transport the caller owns. Closing this server never closes it. */
@@ -531,63 +460,33 @@ public final class Server implements AutoCloseable {
         return cmd(argv, config.defaultTimeout());
     }
 
-    /**
-     * Runs one tmux command against this server, carried the way this call asks rather than the way
-     * the config asks.
-     *
-     * <p>Precedence, highest first:
-     *
-     * <ol>
-     *   <li>this argument
-     *   <li>{@link ServerConfig.Builder#mode}
-     *   <li>{@link ExecutionMode#DIRECT}
-     * </ol>
-     *
-     * <p>Rarely worth reaching for. Nothing a handle returns depends on which carrier answered — see
-     * {@code docs/spikes/19} — so this changes cost and nothing else, and the one case where the
-     * carrier affects correctness routes itself. It exists for the caller who has measured a reason.
-     *
-     * <p>A carrier created for an override belongs to this server and is closed with it.
-     */
-    public CommandResult cmd(List<String> argv, Duration timeout, ExecutionMode mode) {
-        Objects.requireNonNull(mode, "mode");
-        if (closed.get()) {
-            throw new IllegalStateException("server is closed");
-        }
-        return carrierFor(mode).execute(new CommandRequest(config.endpointCommand(), argv, timeout));
-    }
-
-    /**
-     * The carrier for one mode, made once and kept.
-     *
-     * <p>The configured mode reuses the transport this server was built with, owned or borrowed as
-     * it always was. Any other mode gets a carrier of its own, which this server owns however the
-     * first one was obtained: it made it, so it closes it.
-     */
-    private TmuxTransport carrierFor(ExecutionMode mode) {
-        if (mode == config.mode()) {
-            return transport;
-        }
-        return overrides.computeIfAbsent(mode, wanted -> switch (wanted) {
-            case DIRECT -> new ProcessTransport();
-            case CONTROL -> new ControlTransport(config, new ProcessTransport());
-            case VIRTUAL -> new VirtualThreadTransport(new ProcessTransport());
-        });
-    }
-
     /** Runs one tmux command against this server, overriding the configured deadline. */
     public CommandResult cmd(List<String> argv, Duration timeout) {
+        return cmd(argv, timeout, "");
+    }
+
+    private CommandResult cmd(List<String> argv, Duration timeout, String input) {
+        return transport.execute(request(List.of(argv), timeout, input));
+    }
+
+    private CommandRequest request(List<String> argv, Duration timeout) {
+        return request(List.of(argv), timeout, "");
+    }
+
+    private CommandRequest request(List<List<String>> commands, Duration timeout, String input) {
+        requireOpen();
+        return new CommandRequest(config.endpointCommand(), commands, timeout, input);
+    }
+
+    private void requireOpen() {
         if (closed.get()) {
             throw new IllegalStateException("server is closed");
         }
-        List<String> endpoint = config.endpointCommand();
-        List<String> command = new ArrayList<>(endpoint.size());
-        command.addAll(endpoint);
-        return transport.execute(new CommandRequest(command, argv, timeout));
     }
 
     /**
-     * Captures the whole hierarchy, in four listings whatever its size.
+     * Captures the whole hierarchy in at most four listings, retrying once if the server is
+     * replaced.
      *
      * <p>One server-wide listing per kind of object, so ordering and membership stay tmux's decision
      * rather than being re-derived from another listing's rows.
@@ -595,52 +494,19 @@ public final class Server implements AutoCloseable {
      * <p>Strict, unlike the lenient list accessors: a capture that failed raises instead of
      * returning an apparently valid empty graph, because a caller cannot tell those apart.
      *
-     * @throws LibTmuxException if any listing failed
+     * @throws LibTmuxException if a listing fails or the listings cannot form one valid snapshot
      */
     public ServerSnapshot snapshot() {
-        List<SessionState> sessions = new ArrayList<>();
-        for (List<String> row : rows(SESSIONS, "list-sessions")) {
-            sessions.add(new SessionState(
-                    new SessionId(row.get(0)), row.get(1), "1".equals(row.get(2)), Integer.parseInt(row.get(3))));
+        requireOpen();
+        try {
+            return capture.attempt()
+                    .or(capture::attempt)
+                    .orElseThrow(() -> new LibTmuxException("tmux server changed during snapshot capture"));
+        } catch (LibTmuxException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new LibTmuxException("could not hydrate tmux snapshot: " + e.getMessage(), e);
         }
-        List<WindowState> windows = new ArrayList<>();
-        for (List<String> row : rows(WINDOWS, "list-windows", "-a")) {
-            windows.add(new WindowState(
-                    context(row.get(0), row.get(2), row.get(1)),
-                    row.get(3),
-                    "1".equals(row.get(4)),
-                    Integer.parseInt(row.get(5)),
-                    "1".equals(row.get(6)),
-                    new Dimensions(Integer.parseInt(row.get(7)), Integer.parseInt(row.get(8))),
-                    row.get(9)));
-        }
-        boolean floatingKnown = version().atLeast(FLOATING_SINCE);
-        RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
-        List<PaneState> panes = new ArrayList<>();
-        for (List<String> row : rows(paneFormat, "list-panes", "-a")) {
-            panes.add(new PaneState(
-                    context(row.get(0), row.get(2), row.get(1)),
-                    new PaneId(row.get(3)),
-                    Integer.parseInt(row.get(4)),
-                    "1".equals(row.get(5)),
-                    row.get(6),
-                    new Dimensions(Integer.parseInt(row.get(7)), Integer.parseInt(row.get(8))),
-                    row.get(9),
-                    Path.of(row.get(10)),
-                    Long.parseLong(row.get(11)),
-                    new PaneEdges(
-                            "1".equals(row.get(12)),
-                            "1".equals(row.get(13)),
-                            "1".equals(row.get(14)),
-                            "1".equals(row.get(15))),
-                    floatingKnown ? Optional.of("1".equals(row.get(16))) : Optional.empty()));
-        }
-        List<ClientState> clients = new ArrayList<>();
-        for (List<String> row : rows(CLIENTS, "list-clients")) {
-            clients.add(new ClientState(
-                    row.get(0), row.get(1).isEmpty() ? Optional.empty() : Optional.of(new SessionId(row.get(1)))));
-        }
-        return ServerSnapshot.of(Instant.now(), sessions, windows, panes, clients);
     }
 
     /**
@@ -703,38 +569,113 @@ public final class Server implements AutoCloseable {
         return result;
     }
 
+    CommandResult cmd(ServerSnapshot snapshot, List<String> argv) {
+        return guarded(snapshot, CommandStrings.stringify(argv));
+    }
+
+    /** A batch whose every command is refused once this handle's server has been replaced. */
+    Batch batch(ServerSnapshot snapshot) {
+        long pid = snapshot.serverPid()
+                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
+        return new Batch(commands -> guarded(pid, CommandStrings.group(commands), ""));
+    }
+
+    /**
+     * As {@link #batch(ServerSnapshot)}, fenced against a whole identity read separately.
+     *
+     * <p>Both halves, because a pid alone is reusable: a different tmux landing on the one just
+     * probed would answer as if it were the server the rows are being read from.
+     */
+    Batch batch(long pid, TmuxVersion version) {
+        String fence = "#{&&:#{==:#{pid}," + pid + "},#{==:#{version}," + version + "}}";
+        return new Batch(commands -> guarded(pid, fence, CommandStrings.group(commands), ""));
+    }
+
+    CommandResult run(ServerSnapshot snapshot, List<String> argv) {
+        CommandResult result = cmd(snapshot, argv);
+        if (!result.succeeded()) {
+            throw new LibTmuxException("tmux " + argv.get(0) + " failed: " + String.join("; ", result.stderr()));
+        }
+        return result;
+    }
+
+    /**
+     * Runs several commands in one invocation, so nothing of this caller's happens between them.
+     *
+     * <p>tmux carries a group to its server as one message and runs it there, so a caller that stops
+     * partway cannot leave the group half applied. That is what an operation whose second command
+     * cleans up after its first needs.
+     */
+    CommandResult runTogether(ServerSnapshot snapshot, List<List<String>> commands) {
+        return runTogether(snapshot, "", commands);
+    }
+
+    /** As {@link #runTogether}, with {@code input} on tmux's standard input for the group to read. */
+    CommandResult runTogether(ServerSnapshot snapshot, String input, List<List<String>> commands) {
+        CommandResult result = guarded(snapshot, CommandStrings.group(commands), input);
+        if (!result.succeeded()) {
+            String verbs = commands.stream().map(argv -> argv.get(0)).collect(Collectors.joining(" then "));
+            throw new LibTmuxException("tmux " + verbs + " failed: " + String.join("; ", result.stderr()));
+        }
+        return result;
+    }
+
+    /** Refuses to reach a tmux server that is not the one this handle was made against. */
+    private CommandResult guarded(ServerSnapshot snapshot, String command) {
+        return guarded(snapshot, command, "");
+    }
+
+    private CommandResult guarded(ServerSnapshot snapshot, String command, String input) {
+        long pid = snapshot.serverPid()
+                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
+        return guarded(pid, command, input);
+    }
+
+    private CommandResult guarded(long pid, String command, String input) {
+        return guarded(pid, "#{==:#{pid}," + pid + "}", command, input);
+    }
+
+    private CommandResult guarded(long pid, String fence, String command, String input) {
+        String stale = "libtmux-stale-handle-" + pid;
+        CommandResult result = cmd(List.of("if-shell", "-F", fence, command, stale), config.defaultTimeout(), input);
+        if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
+            throw new ObjectDoesNotExist("the tmux server this handle belonged to has ended");
+        }
+        return result;
+    }
+
+    CommandResult run(ServerSnapshot snapshot, WindowContext expected, List<String> argv) {
+        long pid = snapshot.serverPid()
+                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
+        String target = expected.session().value() + ":" + expected.index().value();
+        String stale = "libtmux-stale-winlink-" + pid + "-" + expected.window().value();
+        String condition = "#{&&:#{==:#{pid}," + pid + "},#{==:#{window_id},"
+                + expected.window().value() + "}}";
+        CommandResult result =
+                cmd(List.of("if-shell", "-F", "-t", target, condition, CommandStrings.stringify(argv), stale));
+        if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
+            throw new ObjectDoesNotExist("window " + expected.window() + " no longer exists here");
+        }
+        if (!result.succeeded()) {
+            throw new LibTmuxException("tmux " + argv.get(0) + " failed: " + String.join("; ", result.stderr()));
+        }
+        return result;
+    }
+
+    ServerSnapshot refresh(ServerSnapshot previous) {
+        ServerSnapshot fresh = snapshot();
+        if (!identity(previous).equals(identity(fresh))) {
+            throw new ObjectDoesNotExist("the tmux server this handle belonged to has ended");
+        }
+        return fresh;
+    }
+
     private ServerSnapshot lenient() {
         try {
             return snapshot();
         } catch (LibTmuxException e) {
             return ServerSnapshot.of(Instant.now(), List.of(), List.of(), List.of(), List.of());
         }
-    }
-
-    private static WindowContext context(String session, String index, String window) {
-        return new WindowContext(
-                new SessionId(session), new WindowIndex(Integer.parseInt(index)), new WindowId(window));
-    }
-
-    /**
-     * Runs one listing and splits its rows.
-     *
-     * <p>An empty server is not a failure: {@code list-sessions} reports "no server running" as a
-     * nonzero exit, and a capture of nothing is still a capture.
-     */
-    private List<List<String>> rows(RowFormat format, String... command) {
-        List<String> argv = new ArrayList<>(command.length + 2);
-        argv.addAll(List.of(command));
-        argv.add("-F");
-        argv.add(format.template());
-        CommandResult result = cmd(argv);
-        if (!result.succeeded()) {
-            if (result.stderr().stream().anyMatch(line -> line.contains("no server running"))) {
-                return List.of();
-            }
-            throw new LibTmuxException("tmux " + command[0] + " failed: " + String.join("; ", result.stderr()));
-        }
-        return result.stdout().stream().map(format::split).toList();
     }
 
     /** A builder holding every configuration and ownership choice this server made. */
@@ -749,10 +690,6 @@ public final class Server implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        // A carrier made for an override is this server's however the first one was obtained, so it
-        // is closed either way. Borrowing a transport says nothing about the ones made afterwards.
-        overrides.values().forEach(TmuxTransport::close);
-        overrides.clear();
         if (owned) {
             transport.close();
         }

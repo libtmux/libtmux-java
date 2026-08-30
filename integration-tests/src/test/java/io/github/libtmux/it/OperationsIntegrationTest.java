@@ -1,5 +1,6 @@
 package io.github.libtmux.it;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -9,9 +10,11 @@ import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.ObjectDoesNotExist;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.nio.file.Files;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -68,7 +71,26 @@ final class OperationsIntegrationTest {
 
         pane.sendLine("echo libtmux-was-here");
 
-        assertTrue(awaitOutput(pane, "libtmux-was-here"), "the pane never showed the command's output");
+        assertTrue(Await.output(pane, "libtmux-was-here"), "the pane never showed the command's output");
+    }
+
+    @Test
+    void aLineThatIsAKeyNameIsTypedLiterally(Server server) {
+        Pane pane = session(server).windows().get(0).panes().get(0);
+        pane.sendLine("Enter() { printf 'literal-%s-command\\n' enter; }");
+        // The shell has to have read the definition before the name is used. Without this the same
+        // failure reports that Enter was pressed when the line was typed before anything was reading.
+        pane.sendLine("echo defined-the-function");
+        assertTrue(Await.output(pane, "defined-the-function"), "the shell never read the definition");
+        // Clearing is what makes the marker below unambiguous, so it too has to have happened.
+        pane.sendLine("clear");
+        pane.sendLine("echo cleared-the-screen");
+        assertTrue(Await.output(pane, "cleared-the-screen"), "the shell never reached the clear");
+
+        pane.sendLine("Enter");
+        assertDoesNotThrow(() -> pane.sendLine("-R"), "a line is not a send-keys option");
+
+        assertTrue(Await.output(pane, "literal-enter-command"), "Enter was pressed instead of typed");
     }
 
     @Test
@@ -130,18 +152,39 @@ final class OperationsIntegrationTest {
                 "tmux reports the missing target, and a silent no-op would hide it");
     }
 
-    private static boolean awaitOutput(Pane pane, String expected) {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (pane.capture().stream().anyMatch(line -> line.contains(expected))) {
-                return true;
-            }
+    @Test
+    void aHandleCannotMutateAReplacementServerThatReusedItsId(Server server) {
+        Session stale = session(server);
+        server.killServer();
+        awaitSocketReleased(server);
+
+        try (Server replacement = Server.open(server.config())) {
             try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
+                Session current = replacement.newSession("replacement");
+                assertEquals(stale.id(), current.id(), "the replacement did not reuse the id this test exercises");
+                assertNotEquals(
+                        stale, current, "equal numeric ids from different server processes are not one session");
+
+                assertThrows(ObjectDoesNotExist.class, () -> stale.rename("corrupted"));
+
+                assertEquals("replacement", replacement.sessions().get(0).name());
+            } finally {
+                replacement.killServer();
             }
         }
-        return false;
+    }
+
+    /**
+     * Waits for the killed server to let go of its socket.
+     *
+     * <p>tmux unlinks the socket as it exits, and a client reaching one whose server is still
+     * exiting is answered {@code server exited unexpectedly} rather than {@code no server running}
+     * — from 3.3a onwards. A replacement on the same path has to be started after that, or the
+     * test measures the teardown rather than the thing it is about.
+     */
+    private static void awaitSocketReleased(Server server) {
+        if (server.config().endpoint() instanceof ServerEndpoint.SocketPath socket) {
+            Await.until(() -> !Files.exists(socket.path()));
+        }
     }
 }

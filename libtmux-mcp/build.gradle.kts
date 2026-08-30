@@ -12,22 +12,31 @@ application {
     applicationName = "libtmux-mcp"
 }
 
+// What the launcher runs with and the library does not publish. The SDK logs through SLF4J, and a
+// launcher speaking a protocol on stdout should not greet its client with provider warnings on
+// stderr; an application embedding this module picks its own provider and must not inherit one.
+val launcherRuntime = configurations.register("launcherRuntime")
+
+configurations.runtimeClasspath { extendsFrom(launcherRuntime.get()) }
+
 dependencies {
     api(project(":libtmux"))
-    implementation(libs.mcp.core)
+
+    // On this module's own signature: serving() takes a transport provider and every entry point
+    // returns the SDK's server, so compiling against this module means compiling against the SDK.
+    api(libs.mcp.core)
+
     implementation(libs.mcp.json.jackson2)
     implementation(libs.jackson.databind)
 
     // A model sends a filter as the versioned JSON document, which is what this module reads it
-    // from. api rather than implementation: the filter type appears on the catalog's own signature.
-    api(project(":libtmux-jackson"))
+    // from. Every use of it is inside a package-private type, so it is not part of the API.
+    implementation(project(":libtmux-jackson"))
 
     // A whole session described in one document, which is what tmux_apply_workspace takes.
     implementation(project(":libtmux-workspace"))
 
-    // The SDK logs through SLF4J. A launcher speaking a protocol on stdout should not greet its
-    // client with warnings about missing logging providers on stderr either.
-    runtimeOnly(libs.slf4j.nop)
+    add(launcherRuntime.name, libs.slf4j.nop)
 
     testImplementation(project(":libtmux-junit5"))
 }

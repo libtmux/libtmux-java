@@ -1,16 +1,16 @@
 package io.github.libtmux.it;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.control.ControlEvent;
+import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.junit5.TmuxExtension;
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.BooleanSupplier;
+import java.time.Duration;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -27,34 +27,33 @@ final class ControlWatchIntegrationTest {
     @Test
     void aWindowAppearingIsAnnouncedWithoutAnythingAsking(Server server) throws Exception {
         Session session = server.sessions().get(0);
-        List<ControlEvent> seen = new CopyOnWriteArrayList<>();
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
-            client.onEvent(seen::add);
+        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+                EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
 
             session.newWindow("appeared");
 
             assertTrue(
-                    await(() -> seen.stream().anyMatch(event -> event.kind().equals("window-add"))),
-                    "tmux tells an attached control client about a new window: " + kinds(seen));
+                    awaitEvent(events, event -> event.kind().equals("window-add")),
+                    "tmux did not tell the attached control client about the new window");
         }
     }
 
     @Test
     void aRenameIsAnnouncedWithTheNameItWasGiven(Server server) throws Exception {
         Session session = server.sessions().get(0);
-        List<ControlEvent> seen = new CopyOnWriteArrayList<>();
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
-            client.onEvent(seen::add);
+        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+                EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
 
             session.windows().get(0).rename("renamed-now");
 
             assertTrue(
-                    await(() -> seen.stream()
-                            .anyMatch(event -> event.kind().equals("window-renamed")
-                                    && event.fields().contains("renamed-now"))),
-                    String.valueOf(kinds(seen)));
+                    awaitEvent(
+                            events,
+                            event -> event.kind().equals("window-renamed")
+                                    && event.fields().contains("renamed-now")),
+                    "tmux did not report the renamed window");
         }
     }
 
@@ -65,18 +64,19 @@ final class ControlWatchIntegrationTest {
     @Test
     void aWatchedFormatIsReportedWhenItsValueChanges(Server server) throws Exception {
         Session session = server.sessions().get(0);
-        List<ControlEvent> seen = new CopyOnWriteArrayList<>();
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
-            client.onEvent(seen::add);
+        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+                EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
             client.watch("windows", "", "#{session_windows}");
 
-            assertTrue(await(() -> valuesOf(seen, "windows").contains("1")), "the first value is reported once");
+            assertTrue(
+                    awaitEvent(events, event -> hasSubscriptionValue(event, "windows", "1")),
+                    "the first value is reported once");
             session.newWindow("another");
 
             assertTrue(
-                    await(() -> valuesOf(seen, "windows").contains("2")),
-                    "and the change is reported without being asked for: " + valuesOf(seen, "windows"));
+                    awaitEvent(events, event -> hasSubscriptionValue(event, "windows", "2")),
+                    "the change is reported without being asked for");
         }
     }
 
@@ -84,64 +84,75 @@ final class ControlWatchIntegrationTest {
     @Test
     void aWatchOverEveryWindowNamesTheWindowEachValueIsFor(Server server) throws Exception {
         Session session = server.sessions().get(0);
-        List<ControlEvent> seen = new CopyOnWriteArrayList<>();
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
-            client.onEvent(seen::add);
+        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+                EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
             client.watch("names", "@*", "#{window_name}");
             var made = session.newWindow("distinctly-named");
 
             assertTrue(
-                    await(() -> seen.stream()
-                            .anyMatch(event ->
+                    awaitEvent(
+                            events,
+                            event ->
                                     event.subscription().filter("names"::equals).isPresent()
                                             && event.value()
                                                     .filter("distinctly-named"::equals)
                                                     .isPresent()
                                             && event.windowId()
                                                     .filter(made.id().value()::equals)
-                                                    .isPresent())),
-                    "each value carries its own target: " + seen);
+                                                    .isPresent()),
+                    "the watched value did not carry its target window");
         }
     }
 
     @Test
     void aWatchThatIsRemovedStopsBeingReported(Server server) throws Exception {
         Session session = server.sessions().get(0);
-        List<ControlEvent> seen = new CopyOnWriteArrayList<>();
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
-            client.onEvent(seen::add);
+        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+                EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
             client.watch("windows", "", "#{session_windows}");
-            assertTrue(await(() -> !valuesOf(seen, "windows").isEmpty()));
+            assertTrue(awaitEvent(
+                    events,
+                    event -> event.subscription().filter("windows"::equals).isPresent()));
 
             client.unwatch("windows");
-            seen.clear();
+            while (events.next(Duration.ZERO).isPresent()) {}
             session.newWindow("after-unwatching");
-            Thread.sleep(2500);
 
-            assertEquals(List.of(), valuesOf(seen, "windows"), "nothing is reported for a watch that was removed");
+            assertFalse(
+                    awaitEvent(
+                            events,
+                            event -> event.subscription()
+                                    .filter("windows"::equals)
+                                    .isPresent(),
+                            Duration.ofMillis(2500)),
+                    "nothing is reported for a watch that was removed");
         }
     }
 
-    private static List<String> valuesOf(List<ControlEvent> events, String name) {
-        return events.stream()
-                .filter(event -> event.subscription().filter(name::equals).isPresent())
-                .flatMap(event -> event.value().stream())
-                .toList();
+    private static boolean hasSubscriptionValue(ControlEvent event, String name, String value) {
+        return event.subscription().filter(name::equals).isPresent()
+                && event.value().filter(value::equals).isPresent();
     }
 
-    private static List<String> kinds(List<ControlEvent> events) {
-        return events.stream().map(ControlEvent::kind).distinct().toList();
+    private static boolean awaitEvent(EventSubscription<ControlEvent> events, Predicate<ControlEvent> match)
+            throws InterruptedException {
+        return awaitEvent(events, match, Duration.ofSeconds(10));
     }
 
-    /** tmux checks a subscription about once a second, so waiting has to outlast that. */
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
+    private static boolean awaitEvent(
+            EventSubscription<ControlEvent> events, Predicate<ControlEvent> match, Duration timeout)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            var event = events.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
+            if (event.isEmpty()) {
+                return false;
+            }
+            if (match.test(event.orElseThrow())) {
                 return true;
             }
-            Thread.sleep(100);
         }
         return false;
     }

@@ -12,13 +12,28 @@ public interface TmuxTransport extends AutoCloseable {
     /**
      * Runs the request to completion.
      *
-     * @param request what to run and how long to wait
+     * <p>An implementation writes {@link CommandRequest#input()} to tmux's standard input and
+     * closes it. A command that reads standard input and is given none reads end of file, which
+     * tmux reports as success over an empty result rather than as a failure.
+     *
+     * @param request what to run, what it reads, and how long to wait
      * @return the exit status and both channels; a nonzero exit is a result, not a failure
      * @throws TmuxTransportException if the command could not be run to completion, carrying how
      *     certain it is that tmux applied it
      * @throws IllegalStateException if this transport is closed
      */
     CommandResult execute(CommandRequest request);
+
+    /**
+     * Runs a request expected to remain blocked until another request through this transport
+     * releases it.
+     *
+     * <p>The default shares ordinary admission. A transport with bounded concurrency may override
+     * this to keep release and observation requests from queuing behind every waiter.
+     */
+    default CommandResult executeWaiting(CommandRequest request) {
+        return execute(request);
+    }
 
     /**
      * Names the execution realm this transport reaches tmux through.

@@ -3,6 +3,7 @@ package io.github.libtmux;
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.batch.BatchResult;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * A sequence of tmux commands where each one acts on what the last one made.
@@ -50,7 +51,7 @@ public final class CommandChain {
 
     /** Types a line into the current pane and presses Enter, which is how a command gets run. */
     public CommandChain sendLine(String command) {
-        return then("send-keys", command, "Enter");
+        return then("send-keys", "-l", "--", Objects.requireNonNull(command, "command") + "\r");
     }
 
     /**

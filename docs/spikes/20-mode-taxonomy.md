@@ -1,5 +1,12 @@
 # Two modes, not five, and no per-call override
 
+> **Superseded.** `ExecutionMode` is gone, and with it the taxonomy below. One
+> carrier remains, and the round trips this note wanted modes to collapse are
+> collapsed by `batch()` and `chain()` instead — measured in
+> [`docs/benchmarks/operations.md`](../benchmarks/operations.md). The reasoning
+> about which commands a control client cannot carry still reads true; it was the
+> switch, not the analysis, that did not survive.
+
 ## Verdict
 
 `ExecutionMode` has `DIRECT` and `CONTROL`. Batching, chaining and virtual

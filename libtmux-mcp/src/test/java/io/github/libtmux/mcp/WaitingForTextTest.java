@@ -43,6 +43,8 @@ final class WaitingForTextTest {
     void textAlreadyOnScreenDoesNotSatisfyTheWait(Server server) {
         String pane = server.panes().get(0).id().value();
         RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "echo already-ready", "timeout", 15));
+        // The wait has to start from a screen that already says it, or this is not that case.
+        assertTrue(onScreen(server, pane, "already-ready"), "the output never reached the screen");
 
         WaitingForText.Waited waited = WaitingForText.waitFor(
                 TestCalls.on(server, "pane_id", pane, "patterns", List.of("already-ready"), "timeout", 2));
@@ -121,6 +123,21 @@ final class WaitingForTextTest {
         assertTrue(String.valueOf(refused.getMessage()).contains("Omit 'regex'"), refused.getMessage());
     }
 
+    @Test
+    void aCursorFromAnotherPaneIsRejectedBeforeWaiting(Server server) {
+        String first = server.panes().get(0).id().value();
+        String second = server.sessions().get(0).windows().get(0).split().id().value();
+        String cursor = Reading.since(TestCalls.on(server, "pane_id", first)).cursor();
+
+        IllegalArgumentException refused = assertThrows(
+                IllegalArgumentException.class,
+                () -> WaitingForText.waitFor(
+                        TestCalls.on(server, "pane_id", second, "cursor", cursor, "timeout", 0.2)));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains(first), refused.getMessage());
+        assertTrue(String.valueOf(refused.getMessage()).contains(second), refused.getMessage());
+    }
+
     /** A model that sends one string where the schema says a list means the one string. */
     @Test
     void aSinglePatternSentWithoutAListIsStillUnderstood(Server server) {
@@ -142,6 +159,22 @@ final class WaitingForTextTest {
 
         assertEquals("TIMED_OUT", waited.outcome());
         assertTrue(waited.effectiveTimeout() <= Waits.CEILING.toSeconds());
+    }
+
+    private static boolean onScreen(Server server, String pane, String text) {
+        for (int attempt = 0; attempt < 100; attempt++) {
+            if (String.join("\n", server.cmd("capture-pane", "-p", "-t", pane).stdout())
+                    .contains(text)) {
+                return true;
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return false;
     }
 
     /** Sent without waiting, which is what makes this the tool for output nobody here authored. */

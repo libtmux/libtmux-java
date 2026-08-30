@@ -51,11 +51,42 @@ final class CatalogTest {
             assertEquals(
                     tool.safety() == Safety.READONLY,
                     annotations.readOnlyHint(),
-                    tool.name() + " disagrees with its own safety about being read-only");
+                    tool.name() + " disagrees with its ceiling about being read-only");
             assertEquals(
-                    tool.safety() == Safety.DESTRUCTIVE,
+                    tool.effect() == ToolSpec.Effect.DESTRUCTIVE,
                     annotations.destructiveHint(),
-                    tool.name() + " disagrees with its own safety about being destructive");
+                    tool.name() + " disagrees with its declared effect about being destructive");
+        }
+    }
+
+    @Test
+    void toolsThatCanReplaceOrRemoveStateDeclareTheirFullEffect() {
+        for (String name : List.of(
+                "tmux_run",
+                "tmux_wait_for_channel",
+                "tmux_signal_channel",
+                "tmux_drain_channel",
+                "tmux_send_keys",
+                "tmux_paste_text",
+                "tmux_new_session",
+                "tmux_new_window",
+                "tmux_split_pane",
+                "tmux_apply_workspace",
+                "tmux_rename",
+                "tmux_select",
+                "tmux_select_layout",
+                "tmux_resize_pane",
+                "tmux_set_option",
+                "tmux_kill")) {
+            ToolSpec tool =
+                    Objects.requireNonNull(Catalog.offered(Safety.DESTRUCTIVE).get(name), name);
+            McpSchema.ToolAnnotations annotations =
+                    Objects.requireNonNull(tool.describe().annotations(), name);
+
+            assertEquals(false, annotations.readOnlyHint(), name);
+            assertEquals(true, annotations.destructiveHint(), name);
+            assertEquals(false, annotations.idempotentHint(), name);
+            assertEquals(true, annotations.openWorldHint(), name);
         }
     }
 
@@ -109,5 +140,13 @@ final class CatalogTest {
         assertTrue(readonly.containsKey("tmux_list_panes"));
         assertTrue(readonly.containsKey("tmux_capture_pane"));
         assertTrue(readonly.containsKey("tmux_wait_for_text"), "watching is reading, whatever it waits for");
+    }
+
+    @Test
+    void consumingAChannelSignalIsNotAdvertisedAsReadOnly() {
+        assertFalse(Catalog.offered(Safety.READONLY).containsKey("tmux_wait_for_channel"));
+        ToolSpec wait =
+                Objects.requireNonNull(Catalog.offered(Safety.MUTATING).get("tmux_wait_for_channel"), "wait tool");
+        assertEquals(Safety.MUTATING, wait.safety());
     }
 }

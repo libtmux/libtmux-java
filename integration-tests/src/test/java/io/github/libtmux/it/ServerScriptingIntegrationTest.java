@@ -11,7 +11,6 @@ import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -36,6 +35,18 @@ final class ServerScriptingIntegrationTest {
 
     // -------------------------------------------------------------------------------- expanding
 
+    /**
+     * A format may expand to several lines — a loop over windows does, and so does any option whose
+     * value carries a newline — so taking the first would report a fragment as the whole answer.
+     */
+    @Test
+    void anExpansionSpanningLinesComesBackWhole(Server server) {
+        server.globalOptions().set("@multi", "first\nsecond");
+
+        assertEquals("first\nsecond", server.expand("#{@multi}"));
+        assertEquals("first\nsecond", server.sessions().get(0).expand("#{@multi}"), "every scope answers the same way");
+    }
+
     @Test
     void theServerExpandsFormatsThatBelongToNoSession(Server server) {
         assertEquals(server.version().toString(), server.expand("#{version}"));
@@ -56,7 +67,7 @@ final class ServerScriptingIntegrationTest {
 
         server.runShell("touch " + touched);
 
-        assertTrue(await(() -> Files.exists(touched)), "the command never ran");
+        assertTrue(Await.until(() -> Files.exists(touched)), "the command never ran");
     }
 
     @Test
@@ -101,15 +112,5 @@ final class ServerScriptingIntegrationTest {
         assertTrue(commands.stream().anyMatch(line -> line.startsWith("new-session")), "new-session is not among them");
         assertTrue(
                 commands.stream().anyMatch(line -> line.startsWith("split-window")), "split-window is not among them");
-    }
-
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
     }
 }

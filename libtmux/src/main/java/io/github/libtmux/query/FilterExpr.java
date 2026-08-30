@@ -1,10 +1,11 @@
 package io.github.libtmux.query;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
-import java.util.function.Function;
+import java.util.Objects;
 import java.util.function.Predicate;
+import java.util.regex.Pattern;
 
 /**
  * A filter that is both runnable and readable.
@@ -128,6 +129,15 @@ public sealed interface FilterExpr<T> extends Predicate<T> {
     /** One scalar field compared to one operand. */
     record Compare<T, V>(FieldRef<T, V> field, Operator operator, Object operand) implements FilterExpr<T> {
 
+        public Compare {
+            Objects.requireNonNull(field, "field");
+            Objects.requireNonNull(operator, "operator");
+            operator.requireOperand(field.kind(), operand);
+            if (operand instanceof Collection<?> values) {
+                operand = List.copyOf(values);
+            }
+        }
+
         @Override
         public boolean test(T value) {
             return operator.matches(field.accessor().apply(value), operand);
@@ -135,7 +145,29 @@ public sealed interface FilterExpr<T> extends Predicate<T> {
 
         @Override
         public String describe() {
-            return field.name() + " " + operator.symbol() + " " + operand;
+            return field.id() + " " + operator.symbol() + " " + operand;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof Compare<?, ?> that
+                    && field.equals(that.field)
+                    && operator == that.operator
+                    && operandEquals(operand, that.operand);
+        }
+
+        @Override
+        public int hashCode() {
+            return operand instanceof Pattern pattern
+                    ? Objects.hash(field, operator, pattern.pattern(), pattern.flags())
+                    : Objects.hash(field, operator, operand);
+        }
+
+        private static boolean operandEquals(Object left, Object right) {
+            if (left instanceof Pattern first && right instanceof Pattern second) {
+                return first.flags() == second.flags() && first.pattern().equals(second.pattern());
+            }
+            return left.equals(right);
         }
     }
 
@@ -145,12 +177,18 @@ public sealed interface FilterExpr<T> extends Predicate<T> {
      * <p>{@code ALL} over an empty relation is true. That is the standard vacuous reading and it is
      * the one tmux users expect: a session with no windows does not fail "all windows are zoomed".
      */
-    record ToMany<T, R>(String relation, Function<T, List<R>> navigate, Quantifier quantifier, FilterExpr<R> predicate)
+    record ToMany<T, R>(Fields.ToManyRef<T, R> relation, Quantifier quantifier, FilterExpr<R> predicate)
             implements FilterExpr<T> {
+
+        public ToMany {
+            Objects.requireNonNull(relation, "relation");
+            Objects.requireNonNull(quantifier, "quantifier");
+            Objects.requireNonNull(predicate, "predicate");
+        }
 
         @Override
         public boolean test(T value) {
-            List<R> related = navigate.apply(value);
+            List<R> related = relation.navigate().apply(value);
             return switch (quantifier) {
                 case ANY -> related.stream().anyMatch(predicate);
                 case ALL -> related.stream().allMatch(predicate);
@@ -160,22 +198,26 @@ public sealed interface FilterExpr<T> extends Predicate<T> {
 
         @Override
         public String describe() {
-            return relation + " " + quantifier.name().toLowerCase(Locale.ROOT) + " (" + predicate.describe() + ")";
+            return relation.id() + " " + quantifier.name().toLowerCase(Locale.ROOT) + " (" + predicate.describe() + ")";
         }
     }
 
     /** A to-one relation. An absent target does not satisfy the filter. */
-    record ToOne<T, R>(String relation, Function<T, Optional<R>> navigate, FilterExpr<R> predicate)
-            implements FilterExpr<T> {
+    record ToOne<T, R>(Fields.ToOneRef<T, R> relation, FilterExpr<R> predicate) implements FilterExpr<T> {
+
+        public ToOne {
+            Objects.requireNonNull(relation, "relation");
+            Objects.requireNonNull(predicate, "predicate");
+        }
 
         @Override
         public boolean test(T value) {
-            return navigate.apply(value).filter(predicate).isPresent();
+            return relation.navigate().apply(value).filter(predicate).isPresent();
         }
 
         @Override
         public String describe() {
-            return relation + " is (" + predicate.describe() + ")";
+            return relation.id() + " is (" + predicate.describe() + ")";
         }
     }
 

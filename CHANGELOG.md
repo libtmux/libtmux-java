@@ -12,6 +12,127 @@ production.
 
 ## Unreleased
 
+### Added
+
+- **`Pane.findWindow` searches by name, title, or content, with
+  case-insensitive and regular-expression matching.** Build a `FindSpec` or
+  configure one inline. (#6)
+- **`Batch.length()` reports the exact UTF-8 byte length of the encoded
+  command.** Use it to dispatch before tmux's command-size limit is reached.
+  (#6)
+- **`Pane.paste(String)` sends literal text without leaving a server buffer.**
+  Text no longer shares tmux's command-size limit; this API requires tmux 3.4.
+  (#6)
+
+### Changed
+
+- **`Pane.findWindowByName` and `Pane.findWindowByContent` are removed.** Use
+  `findWindow` with `inName()` or `inContent()`. (#6)
+- **`Server.waitFor`, `waitForWithSignalCapacity`, `signal`, and `drain` move
+  to `Server.channel(name)`.** Use `await`, `awaitReservingCapacity`,
+  `signal`, and `drain` on the returned `Channel`. (#6)
+- **`Pane.mode()` returns `PaneMode` rather than text.** Compare against enum
+  values such as `PaneMode.TREE`; `modeOrNull()` changes with it. (#6)
+- **The supported tmux range now includes 3.7c.** The compatibility matrix runs
+  that lane. (#6)
+- **`Server.snapshot()` captures the hierarchy in one fenced command group.**
+  Watchers start fewer tmux processes, and a replacement server is rejected
+  before its rows are read. (#6)
+- **`CommandRequest` carries command groups and optional input rather than one
+  flat argv.** Use `CommandRequest.of` for one command and `commands()` where
+  `argv()` was read; `ControlClient.isCommandGroup` is removed. (#6)
+- **`Pane.paste(String bufferName)` is now `Pane.pasteBuffer(String name)`.**
+  `Pane.paste(String)` now means literal text. (#6)
+- **`ControlClient.onOutput` and `onEvent` are replaced by bounded pull
+  subscriptions.** Use `subscribeOutput` or `subscribeEvents`, close the
+  returned `EventSubscription`, and inspect `droppedCount()`. (#6)
+- **Filter expressions are immutable, model-bound wire values.** Build fields
+  and relations through `Fields` or generated handles, and pass the matching
+  `FilterModel` to `FilterJson.write*`; `EntityMetamodel`, `FieldProvenance`,
+  and `FieldRef.name()` are removed. (#6)
+- **`ProcessTransport` now bounds concurrency, input writes, output, deadlines,
+  and cleanup.** Configure its limits through the constructors; timeouts
+  surface as `TmuxTimeoutException` with dispatch certainty. A deadline or
+  cancellation during input terminates the child instead of blocking. (#6)
+- **`Buffers.delete` now requires tmux 3.4 and reports a missing name.** tmux
+  3.2a and 3.3a can delete the top buffer when the named buffer is absent, so
+  the library refuses that unsafe operation. (#6)
+
+### Fixed
+
+- **Destructive MCP tools fail closed when caller-pane identity cannot be
+  proven.** Uncertain socket, server, or pane identity now requires explicit
+  self-confirmation instead of bypassing the guard. (#6)
+- **MCP pane cursors are authenticated and bound to daemon and pane identity.**
+  Reads preserve continuity across bounded history compaction when it can be
+  proven, and pane capture uses identity-fenced batches with strict outcome
+  checks. (#6)
+- **`RowFormat` uses an explicit record terminator.** Multiline final fields
+  and single-field rows no longer depend on physical line boundaries. (#6)
+- **`tmux_run` requires a POSIX shell and uses a 128-bit completion marker.**
+  It refuses another foreground program instead of sending shell framing that
+  program cannot interpret. (#6)
+- **Hierarchy listings preserve values containing newlines.** A pane working
+  directory containing a newline no longer empties session, window, and pane
+  listings. (#6)
+- **`Options.all`, `Options.effective`, and `Options.get` return complete
+  stored values.** Escape-sensitive and multiline strings are no longer
+  altered or truncated. (#6)
+- **`Server.expand`, `Session.expand`, `Window.expand`, and `Pane.expand`
+  preserve multiline results.** They no longer return only the first line.
+  (#6)
+- **Names, options, sent keys, shell commands, and batch operations preserve a
+  trailing semicolon.** The semicolon remains data rather than ending the tmux
+  command. (#6)
+- **`Pane.sendLine`, command-chain input, and `tmux_run` deliver text plus
+  Enter as one literal operation.** Option-shaped input remains data, and
+  concurrent calls cannot interleave their input. (#6)
+- **`tmux_paste_text` no longer leaves pasted text on the server when a client
+  disconnects during the call.** (#6)
+- **`tmux_run` keeps caller shell syntax isolated from completion framing, uses
+  the server's resolved tmux binary, and keeps completion state off pane
+  options.** A command accepted before an indeterminate send failure still
+  executes. (#6)
+- **Serialized MCP sends obey their queue and byte bounds across cancellation
+  and shutdown.** A send cancelled after promotion is skipped before delegate
+  delivery, later sends keep order, and close settles every admitted caller.
+  (#6)
+- **`libtmux-mcp` publishes the dependencies its API exposes.** Consumers now
+  receive `mcp-core`; the artifact no longer selects an SLF4J provider or
+  exports `libtmux-jackson`. (#6)
+- **Handles refuse a replacement tmux server that reused an identifier.**
+  Linked-window operations also retain the exact session and index they came
+  from. (#6)
+- **Workspace input is validated before session creation.** Unsupported
+  layouts, unsafe names, malformed topology, and uncertain creation replies
+  leave tmux untouched or roll back the exact staging session. (#6)
+- **MCP watching stays consistent across concurrent output, new sessions,
+  dropped events, outages, and server restarts.** Notifications are serialized
+  and bounded, and watcher clients remain hidden from listings. (#6)
+- **The MCP launcher exits when its protocol session ends.** Oversized or
+  malformed input and output failures no longer leave the process waiting on
+  stdin. (#6)
+- **MCP tools now advertise non-additive effects as destructive.** Clients can
+  request confirmation for commands, input, and settings even when the safety
+  ceiling permits those tools. (#6)
+- **MCP rename and kill tools resolve destructive targets unambiguously.**
+  Session operations use stable identifiers; only arguments explicitly naming
+  a session by name use names. (#6)
+- **Snapshot-backed accessors reject a closed `Server`.** They no longer turn
+  use after close into an empty hierarchy. (#6)
+- **A live server with no sessions captures as an empty snapshot.** Child
+  listings are not attempted when tmux has no current target. (#6)
+- **`TmuxExtension` proves abandoned servers exited before deleting their
+  directories.** Successful recovery also removes the abandoned directory.
+  (#6)
+
+### Removed
+
+- **`ExecutionMode`, `ControlTransport`, `VirtualThreadTransport`,
+  `LIBTMUX_MODE`, and their benchmark surface are removed.** `Server` uses
+  process execution; use `ControlClient` for event streams and batches or
+  command chains to reduce round trips. (#6)
+
 ## 0.0.1-alpha.7 — 2026-08-22
 
 ### Documented

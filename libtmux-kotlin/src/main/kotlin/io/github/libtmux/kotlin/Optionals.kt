@@ -4,6 +4,7 @@ import io.github.libtmux.Client
 import io.github.libtmux.ClientAttachment
 import io.github.libtmux.Options
 import io.github.libtmux.Pane
+import io.github.libtmux.PaneMode
 import io.github.libtmux.Session
 import io.github.libtmux.Window
 
@@ -27,8 +28,8 @@ public fun Session.activePaneOrNull(): Pane? = activePane().orElse(null)
 /** Whether the pane floats, or null on a tmux older than 3.7, which does not report it. */
 public fun Pane.floatingOrNull(): Boolean? = floating().orElse(null)
 
-/** The pane's copy or view mode, or null when it is in none. */
-public fun Pane.modeOrNull(): String? = mode().orElse(null)
+/** The mode the pane is in, or null when it is showing its program. */
+public fun Pane.modeOrNull(): PaneMode? = mode().orElse(null)
 
 /** The session this client is attached to, or null when it is attached to none. */
 public fun Client.sessionOrNull(): Session? = session().orElse(null)

@@ -74,26 +74,29 @@ This snippet is exercised by `FilterJsonTest` rather than `ExamplesTest`, since
 the core suite does not depend on Jackson:
 
 ```java
-String json = FilterJson.writeString(Pane_.command().startsWith("nv"), "pane");
+String json = FilterJson.writeString(
+        Pane_.command().startsWith("nv"), LibTmuxModels.pane());
 FilterExpr<Pane> restored = FilterJson.readString(json, LibTmuxModels.pane());
 
 restored.describe();                 // → pane_current_command starts-with nv
 ```
 
-Only expressions built from a metamodel can be written. A field built from a
-lambda has a caller-chosen name and an accessor nobody else can resolve, so it
-has no wire identity, and refusing it is what makes this a format rather than a
-hope.
+Only exact handles declared by the supplied model can be written. A field may
+borrow a declared name while carrying a different accessor, so the name alone
+has no wire identity. Refusing it is what makes this a format rather than a hope.
 
-Reading is validated against a model: a document claiming `pane` cannot be read
-as a `FilterExpr<Window>`. Unknown schema versions, models, fields, relations,
-operators and node shapes all fail closed.
+Writing and reading are validated against a model: a document claiming `pane`
+cannot be read as a `FilterExpr<Window>`, and an expression cannot borrow a field
+or relation name its model did not declare. Unknown schema versions, models,
+fields, relations, operators, properties and node shapes all fail closed.
 
 ## Who the wire form is actually for
 
 Field and operator identifiers are tmux's own format names — `pane_current_command`,
-not anything Java calls a field. So the document means the same thing to every
-port of libtmux, and to a caller that is not a Java program at all.
+not anything Java calls a field. That makes most of the document independent of
+Java names. The `matches` operand is the exception: its syntax and numeric flags
+are those of `java.util.regex.Pattern`. A non-Java consumer must reproduce those
+semantics or reject that operator.
 
 `libtmux-mcp` is the worked example. Its `tmux_list_panes` tool takes an optional
 `filter`, which is one of these documents:

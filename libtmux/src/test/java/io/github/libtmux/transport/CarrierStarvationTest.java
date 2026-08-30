@@ -42,7 +42,7 @@ final class CarrierStarvationTest {
             + FLOOD_BYTES + " /dev/zero | tr '\\0' b >&2; wait";
 
     private static CommandRequest flood() {
-        return new CommandRequest(List.of("/bin/sh"), List.of("-c", FLOOD), DEADLINE);
+        return CommandRequest.of(List.of("/bin/sh"), List.of("-c", FLOOD), DEADLINE);
     }
 
     @Test

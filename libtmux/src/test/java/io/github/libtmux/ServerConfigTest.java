@@ -3,13 +3,10 @@ package io.github.libtmux;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
-import java.util.function.Supplier;
-import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 /** What a server needs to know before it runs anything. */
@@ -94,44 +91,6 @@ final class ServerConfigTest {
     }
 
     @Test
-    void aCarrierNamedInCodeBeatsOneNamedOutsideIt() {
-        ExecutionMode chosen = withProperty(
-                "CONTROL",
-                () -> ServerConfig.builder().mode(ExecutionMode.DIRECT).build().mode());
-
-        assertEquals(ExecutionMode.DIRECT, chosen, "code that names a carrier has said more than an ambient setting");
-    }
-
-    @Test
-    void aPropertyChoosesTheCarrierWhenNothingInCodeDoes() {
-        ExecutionMode chosen =
-                withProperty("CONTROL", () -> ServerConfig.builder().build().mode());
-
-        assertEquals(ExecutionMode.CONTROL, chosen);
-    }
-
-    @Test
-    void theCarrierIsDirectWhenNothingChoosesOne() {
-        assumeTrue(System.getenv(ExecutionMode.VARIABLE) == null, "this shell has already chosen a carrier");
-
-        ExecutionMode chosen =
-                withProperty(null, () -> ServerConfig.builder().build().mode());
-
-        assertEquals(ExecutionMode.DIRECT, chosen);
-    }
-
-    @Test
-    void copyingAConfigKeepsTheCarrierItAlreadyResolved() {
-        ServerConfig ambient =
-                withProperty("CONTROL", () -> ServerConfig.builder().build());
-
-        assertEquals(
-                ExecutionMode.CONTROL,
-                ambient.toBuilder().build().mode(),
-                "a copy that re-read the property would differ from what it copied");
-    }
-
-    @Test
     void invalidChoicesAreRejectedWhileTheyCanStillBeFixed() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -145,24 +104,5 @@ final class ServerConfigTest {
                 () -> ServerConfig.builder()
                         .defaultTimeout(Duration.ofSeconds(-1))
                         .build());
-    }
-
-    /** Runs the body with the mode property set as asked, and puts back whatever was there before. */
-    private static <T> T withProperty(@Nullable String value, Supplier<T> body) {
-        String previous = System.getProperty(ExecutionMode.PROPERTY);
-        if (value == null) {
-            System.clearProperty(ExecutionMode.PROPERTY);
-        } else {
-            System.setProperty(ExecutionMode.PROPERTY, value);
-        }
-        try {
-            return body.get();
-        } finally {
-            if (previous == null) {
-                System.clearProperty(ExecutionMode.PROPERTY);
-            } else {
-                System.setProperty(ExecutionMode.PROPERTY, previous);
-            }
-        }
     }
 }

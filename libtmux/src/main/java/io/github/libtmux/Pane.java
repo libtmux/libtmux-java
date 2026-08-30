@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.batch.Batch;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
@@ -9,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
@@ -100,7 +102,8 @@ public final class Pane {
         if (cells < 1) {
             throw new IllegalArgumentException("cells is not positive: " + cells);
         }
-        server.run(List.of("resize-pane", "-t", state.id().value(), direction.flag(), Integer.toString(cells)));
+        server.run(
+                snapshot, List.of("resize-pane", "-t", state.id().value(), direction.flag(), Integer.toString(cells)));
     }
 
     /** Which sides of its window the pane touches. */
@@ -110,7 +113,7 @@ public final class Pane {
 
     /** Puts this pane into copy mode, where its scrollback can be navigated. */
     public void copyMode() {
-        server.run(List.of("copy-mode", "-t", state.id().value()));
+        server.run(snapshot, List.of("copy-mode", "-t", state.id().value()));
     }
 
     /**
@@ -119,26 +122,27 @@ public final class Pane {
      * <p>Read live rather than from the capture, because entering a mode is something this library
      * does and a caller wants to see the result of.
      *
-     * @return tmux's own name for the mode, such as {@code copy-mode} or {@code tree-mode}
+     * @return the mode, or empty when the pane is showing its program
+     * @throws LibTmuxException if this tmux named a mode outside the supported range
      */
-    public Optional<String> mode() {
+    public Optional<PaneMode> mode() {
         String reported = expand("#{pane_mode}");
-        return reported.isEmpty() ? Optional.empty() : Optional.of(reported);
+        return reported.isEmpty() ? Optional.empty() : Optional.of(PaneMode.of(reported));
     }
 
     /** Shows a clock in this pane. */
     public void clockMode() {
-        server.run(List.of("clock-mode", "-t", state.id().value()));
+        server.run(snapshot, List.of("clock-mode", "-t", state.id().value()));
     }
 
     /** Puts this pane into the session and window browser. */
     public void chooseTree() {
-        server.run(List.of("choose-tree", "-t", state.id().value()));
+        server.run(snapshot, List.of("choose-tree", "-t", state.id().value()));
     }
 
     /** Puts this pane into the option browser. */
     public void customizeMode() {
-        server.run(List.of("customize-mode", "-t", state.id().value()));
+        server.run(snapshot, List.of("customize-mode", "-t", state.id().value()));
     }
 
     /**
@@ -149,12 +153,12 @@ public final class Pane {
      * a caller tells the two apart.
      */
     public void chooseBuffer() {
-        server.run(List.of("choose-buffer", "-t", state.id().value()));
+        server.run(snapshot, List.of("choose-buffer", "-t", state.id().value()));
     }
 
     /** Puts this pane into the client browser, or leaves it alone when no client is attached. */
     public void chooseClient() {
-        server.run(List.of("choose-client", "-t", state.id().value()));
+        server.run(snapshot, List.of("choose-client", "-t", state.id().value()));
     }
 
     /**
@@ -171,24 +175,27 @@ public final class Pane {
      * told nothing more specific.
      */
     public void findWindow(String match) {
-        Objects.requireNonNull(match, "match");
-        server.run(List.of("find-window", "-t", state.id().value(), match));
-    }
-
-    /** Narrows the window browser by name alone. See {@link #findWindow} for what it does not do. */
-    public void findWindowByName(String match) {
-        Objects.requireNonNull(match, "match");
-        server.run(List.of("find-window", "-N", "-t", state.id().value(), match));
+        findWindow(FindSpec.builder().matching(match).build());
     }
 
     /**
-     * Narrows the window browser by what the windows are showing.
+     * Puts this pane into the window browser, narrowed as described.
      *
-     * <p>See {@link #findWindow} for what it does not do.
+     * <pre>{@code
+     * pane.findWindow(f -> f.matching("build").inName());
+     * }</pre>
+     *
+     * @param configure receives a builder that looks everywhere tmux looks by default
      */
-    public void findWindowByContent(String match) {
-        Objects.requireNonNull(match, "match");
-        server.run(List.of("find-window", "-C", "-t", state.id().value(), match));
+    public void findWindow(Consumer<FindSpec.Builder> configure) {
+        FindSpec.Builder builder = FindSpec.builder();
+        configure.accept(builder);
+        findWindow(builder.build());
+    }
+
+    /** Puts this pane into the window browser, narrowed by a spec that may be reused. */
+    public void findWindow(FindSpec spec) {
+        server.run(snapshot, spec.argv(state.id().value()));
     }
 
     /**
@@ -199,12 +206,12 @@ public final class Pane {
      * not the one exposed here.
      */
     public void exitMode() {
-        server.run(List.of("copy-mode", "-q", "-t", state.id().value()));
+        server.run(snapshot, List.of("copy-mode", "-q", "-t", state.id().value()));
     }
 
     /** Makes this the active pane of its window. */
     public void select() {
-        server.run(List.of("select-pane", "-t", state.id().value()));
+        server.run(snapshot, List.of("select-pane", "-t", state.id().value()));
     }
 
     /**
@@ -215,25 +222,36 @@ public final class Pane {
      */
     public Pane retitle(String title) {
         Objects.requireNonNull(title, "title");
-        server.run(List.of("select-pane", "-t", state.id().value(), "-T", title));
+        server.run(snapshot, List.of("select-pane", "-t", state.id().value(), "-T", title));
         return refresh();
     }
 
     /** Resizes this pane. */
     public void resizeTo(Dimensions size) {
-        server.run(List.of(
-                "resize-pane",
-                "-t",
-                state.id().value(),
-                "-x",
-                Integer.toString(size.width()),
-                "-y",
-                Integer.toString(size.height())));
+        server.run(
+                snapshot,
+                List.of(
+                        "resize-pane",
+                        "-t",
+                        state.id().value(),
+                        "-x",
+                        Integer.toString(size.width()),
+                        "-y",
+                        Integer.toString(size.height())));
     }
 
     /** The server this pane lives on. */
     public Server server() {
         return server;
+    }
+
+    /** Collects commands fenced to the server incarnation that produced this pane. */
+    public Batch batch() {
+        return server.batch(snapshot);
+    }
+
+    ServerSnapshot snapshot() {
+        return snapshot;
     }
 
     /** The window link this pane was reached through. A pure read of the capture. */
@@ -245,12 +263,12 @@ public final class Pane {
 
     /** This pane's own hooks. */
     public Hooks hooks() {
-        return Hooks.pane(server, state.id());
+        return Hooks.pane(server, snapshot, state.id());
     }
 
     /** This pane's own options. */
     public Options options() {
-        return Options.pane(server, state.id());
+        return Options.pane(server, snapshot, state.id());
     }
 
     /** This pane's visible content, one element per line. */
@@ -281,7 +299,8 @@ public final class Pane {
      * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
      */
     public List<String> capture(CaptureSpec spec) {
-        return server.run(spec.argv(state.id().value(), server.version())).stdout();
+        return server.run(snapshot, spec.argv(state.id().value(), server.version(snapshot)))
+                .stdout();
     }
 
     /**
@@ -290,12 +309,13 @@ public final class Pane {
      * <p>Separate from {@link #sendLine} rather than a boolean, so a call site says which it means.
      */
     public void send(String keys) {
-        server.run(List.of("send-keys", "-t", state.id().value(), keys));
+        server.run(snapshot, List.of("send-keys", "-t", state.id().value(), keys));
     }
 
     /** Sends a line to this pane and presses Enter, which is how a command gets run. */
     public void sendLine(String command) {
-        server.run(List.of("send-keys", "-t", state.id().value(), command, "Enter"));
+        Objects.requireNonNull(command, "command");
+        server.run(snapshot, List.of("send-keys", "-l", "-t", state.id().value(), "--", command + "\r"));
     }
 
     /**
@@ -330,14 +350,16 @@ public final class Pane {
      * }</pre>
      *
      * @param format a tmux format, usually of the shape {@code #{name}}
-     * @return the expansion, empty when the format expanded to nothing
+     * @return the expansion, whole when it spans lines and empty when the format expanded to
+     *     nothing
      */
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
         List<String> reported = server.run(
+                        snapshot,
                         List.of("display-message", "-p", "-t", state.id().value(), format))
                 .stdout();
-        return reported.isEmpty() ? "" : reported.get(0);
+        return String.join("\n", reported);
     }
 
     /**
@@ -348,7 +370,7 @@ public final class Pane {
      * of the call.
      */
     public void respawn() {
-        server.run(List.of("respawn-pane", "-k", "-t", state.id().value()));
+        server.run(snapshot, List.of("respawn-pane", "-k", "-t", state.id().value()));
     }
 
     /**
@@ -363,7 +385,7 @@ public final class Pane {
         List<String> argv =
                 new ArrayList<>(List.of("respawn-pane", "-k", "-t", state.id().value()));
         argv.addAll(List.of(command));
-        server.run(argv);
+        server.run(snapshot, argv);
     }
 
     /**
@@ -375,12 +397,12 @@ public final class Pane {
      */
     public void pipeTo(String shellCommand) {
         Objects.requireNonNull(shellCommand, "shellCommand");
-        server.run(List.of("pipe-pane", "-O", "-t", state.id().value(), shellCommand));
+        server.run(snapshot, List.of("pipe-pane", "-O", "-t", state.id().value(), shellCommand));
     }
 
     /** Stops sending this pane's output anywhere. Doing so twice is not an error. */
     public void stopPiping() {
-        server.run(List.of("pipe-pane", "-t", state.id().value()));
+        server.run(snapshot, List.of("pipe-pane", "-t", state.id().value()));
     }
 
     /** Moves this pane into a window of its own with the given name. */
@@ -396,16 +418,17 @@ public final class Pane {
     private Window breakNamed(Optional<String> wanted, String supplied) {
         List<String> argv = new ArrayList<>(List.of("break-pane", "-d", "-n", supplied));
         argv.addAll(List.of("-s", state.id().value(), "-P", "-F", BROKEN_OUT.template()));
-        List<String> fields = BROKEN_OUT.split(server.run(argv).stdout().get(0));
+        List<String> fields =
+                BROKEN_OUT.split(server.run(snapshot, argv).stdout().get(0));
         WindowContext created = new WindowContext(
                 new SessionId(fields.get(0)),
                 new WindowIndex(Integer.parseInt(fields.get(2))),
                 new WindowId(fields.get(1)));
-        if (server.version().equals(BREAK_PANE_NAMING_BROKEN)) {
+        if (server.version(snapshot).equals(BREAK_PANE_NAMING_BROKEN)) {
             // 3.7 took the name and ignored it, so the caller's choice is applied afterwards.
-            wanted.ifPresent(name -> server.run(List.of("rename-window", "-t", fields.get(1), name)));
+            wanted.ifPresent(name -> server.run(snapshot, List.of("rename-window", "-t", fields.get(1), name)));
         }
-        ServerSnapshot fresh = server.snapshot();
+        ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.window(created)
                 .map(window -> new Window(server, fresh, window))
                 .orElseThrow(() -> new ObjectDoesNotExist("the window just broken out is already gone"));
@@ -445,7 +468,7 @@ public final class Pane {
      * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
      */
     public Pane split(SplitSpec spec) {
-        return created(server, spec.argv(state.id().value(), CREATED.template(), server.version()));
+        return created(server, snapshot, spec.argv(state.id().value(), CREATED.template(), server.version(snapshot)));
     }
 
     /**
@@ -455,13 +478,13 @@ public final class Pane {
      * pane a fresh listing happens to put last — two splits racing would otherwise be
      * indistinguishable.
      */
-    static Pane created(Server server, List<String> argv) {
-        List<String> reported = server.run(argv).stdout();
+    static Pane created(Server server, ServerSnapshot previous, List<String> argv) {
+        List<String> reported = server.run(previous, argv).stdout();
         if (reported.isEmpty()) {
             throw new LibTmuxException("tmux created a pane without reporting which");
         }
         PaneId id = new PaneId(CREATED.split(reported.get(0)).get(0));
-        ServerSnapshot fresh = server.snapshot();
+        ServerSnapshot fresh = server.refresh(previous);
         return fresh.panes().stream()
                 .filter(pane -> pane.id().equals(id))
                 .findFirst()
@@ -475,30 +498,92 @@ public final class Pane {
     }
 
     /** Pastes a named buffer into this pane, as though it had been typed. */
-    public void paste(String bufferName) {
-        server.run(List.of("paste-buffer", "-b", bufferName, "-t", state.id().value()));
+    public void pasteBuffer(String name) {
+        Objects.requireNonNull(name, "name");
+        server.run(
+                snapshot, List.of("paste-buffer", "-b", name, "-t", state.id().value()));
+    }
+
+    /**
+     * Pastes text into this pane as one block, leaving nothing behind on the server.
+     *
+     * <p>Nothing in the text is looked up as a key name, so a line containing {@code Enter} or a
+     * bracket arrives as those characters. That is what an editor, a REPL, or anything reading a
+     * here-document needs, and it is the difference from {@link #send}.
+     *
+     * <p>tmux needs a buffer to paste from, and this one travels in the same invocation as the paste
+     * that consumes it. A caller that stops in between therefore cannot leave the text in the paste
+     * history every session on the server can read.
+     *
+     * <p>The text goes to tmux on standard input rather than as an argument, so it is not bounded by
+     * the size of a tmux command and never reaches tmux's parser.
+     *
+     * @throws IllegalArgumentException if the text contains NUL, which a terminal cannot receive and
+     *     {@link #send} refuses too
+     * @throws UnsupportedTmuxVersion before tmux 3.4, where deleting the buffer left by a failed
+     *     paste can remove one this did not create
+     */
+    public void paste(String text) {
+        Objects.requireNonNull(text, "text");
+        if (text.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("pasted text cannot contain NUL");
+        }
+        TmuxVersion running = server.version(snapshot);
+        if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
+            throw new UnsupportedTmuxVersion("pasting text", Buffers.EXACT_NAMED_DELETE, running);
+        }
+        String buffer = "libtmux-paste-" + UUID.randomUUID();
+        try {
+            server.runTogether(
+                    snapshot,
+                    text,
+                    List.of(
+                            List.of("load-buffer", "-b", buffer, "-"),
+                            // -d removes the buffer as it pastes, so the success path leaves nothing
+                            // even when this is the last thing the caller manages to run.
+                            List.of(
+                                    "paste-buffer",
+                                    "-d",
+                                    "-b",
+                                    buffer,
+                                    "-t",
+                                    state.id().value())));
+        } catch (RuntimeException failure) {
+            try {
+                server.buffers().delete(buffer);
+            } catch (RuntimeException ignored) {
+                // Already gone, or the server is; neither changes what the caller is told.
+            }
+            throw failure;
+        }
     }
 
     /** Discards this pane's scrollback. */
     public void clearHistory() {
-        server.run(List.of("clear-history", "-t", state.id().value()));
+        server.run(snapshot, List.of("clear-history", "-t", state.id().value()));
     }
 
     /** Swaps this pane's position with another's. */
     public void swapWith(Pane other) {
+        Objects.requireNonNull(other, "other");
+        server.requireSameIncarnation(snapshot, other.server(), other.snapshot());
         server.run(
+                snapshot,
                 List.of("swap-pane", "-s", state.id().value(), "-t", other.id().value()));
     }
 
     /** Moves this pane into another window, splitting it. */
     public void joinTo(Window window) {
+        Objects.requireNonNull(window, "window");
+        server.requireSameIncarnation(snapshot, window.server(), window.snapshot());
         server.run(
+                snapshot,
                 List.of("join-pane", "-s", state.id().value(), "-t", window.id().value()));
     }
 
     /** Closes this pane. */
     public void kill() {
-        server.run(List.of("kill-pane", "-t", state.id().value()));
+        server.run(snapshot, List.of("kill-pane", "-t", state.id().value()));
     }
 
     /**
@@ -507,7 +592,7 @@ public final class Pane {
      * @throws ObjectDoesNotExist if the pane is gone
      */
     public Pane refresh() {
-        ServerSnapshot fresh = server.snapshot();
+        ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.panes().stream()
                 .filter(pane -> pane.id().equals(state.id()))
                 .findFirst()
@@ -518,13 +603,13 @@ public final class Pane {
     @Override
     public boolean equals(Object other) {
         return other instanceof Pane that
-                && server.identity().equals(that.server.identity())
+                && server.identity(snapshot).equals(that.server.identity(that.snapshot))
                 && state.id().equals(that.state.id());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(server.identity(), state.id());
+        return Objects.hash(server.identity(snapshot), state.id());
     }
 
     @Override

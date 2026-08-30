@@ -1,7 +1,9 @@
 package io.github.libtmux.mcp;
 
+import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.batch.BatchResult;
+import io.github.libtmux.batch.OperationResult;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -22,7 +24,7 @@ import org.jspecify.annotations.Nullable;
  * of 60 attempts; batched into one invocation, none of 60 did, because tmux does not process pane
  * output between two commands of the same invocation.
  */
-final class Watching {
+final class Screen {
 
     /**
      * How far back a look reaches beyond what the caller asked for.
@@ -34,7 +36,7 @@ final class Watching {
      */
     private static final int SLACK_LINES = 256;
 
-    private Watching() {}
+    private Screen() {}
 
     /**
      * @param lines what the caller has not seen
@@ -62,7 +64,7 @@ final class Watching {
         // finished line, so watching on from here cannot trip over a half-written one.
         return new Fresh(
                 withoutTrailingBlanks(look.lines()),
-                Cursor.of(pane.id().value(), look.firstAbsolute(), look.complete()),
+                Cursor.of(look.serverPid(), pane.id().value(), look.complete()),
                 true);
     }
 
@@ -70,6 +72,11 @@ final class Watching {
     static Fresh since(Pane pane, @Nullable Cursor from, int budget) {
         if (from == null) {
             return from(pane);
+        }
+        String paneId = pane.id().value();
+        if (!paneId.equals(from.paneId())) {
+            throw new IllegalArgumentException(
+                    "that cursor belongs to pane " + from.paneId() + ", not " + paneId + "; each pane has its own");
         }
         Look look = look(pane, budget + SLACK_LINES);
         Fresh answer = resolve(from, look);
@@ -88,40 +95,57 @@ final class Watching {
      * @return the answer, or null when the cursor's line is older than this look reached
      */
     private static @Nullable Fresh resolve(Cursor from, Look look) {
-        // Where the last delivered line sits in what was captured. Both numbers come from the same
-        // invocation, so this cannot be off by however far the pane scrolled meanwhile.
-        int anchor = from.absolute() - 1 - look.firstAbsolute();
-        if (anchor < 0 && !look.reachedStartOfHistory()) {
-            return null;
+        if (from.serverPid() != look.serverPid()) {
+            throw new IllegalArgumentException(
+                    "that cursor belongs to an earlier tmux server; omit 'cursor' to start again");
         }
         List<String> written = look.complete();
-        // Wherever this ends up, every finished line is now delivered — so the cursor says the same
-        // thing on every path, and only what is handed back differs.
-        Cursor now = Cursor.of(from.paneId(), look.firstAbsolute(), written);
-
-        // A cursor at the very beginning has no line before it to check against, so there is nothing
-        // it could fail to follow on from.
-        boolean continuous = from.absolute() == 0
-                || (anchor >= 0
-                        && anchor < written.size()
-                        && Cursor.digest(written.get(anchor)).equals(from.anchor()));
-        if (!continuous) {
+        Cursor now = Cursor.of(look.serverPid(), from.paneId(), written);
+        if (from.anchors().isEmpty()) {
+            if (!look.reachedStartOfHistory()) {
+                return null;
+            }
+            return new Fresh(List.copyOf(written), now, true);
+        }
+        int after = uniqueAnchorEnd(written, from.anchors());
+        if (after < 0 && !look.reachedStartOfHistory()) {
+            return null;
+        }
+        if (after < 0) {
             return new Fresh(List.copyOf(written), now, false);
         }
-        int after = from.absolute() - look.firstAbsolute();
-        List<String> fresh =
-                after < written.size() ? List.copyOf(written.subList(Math.max(after, 0), written.size())) : List.of();
+        List<String> fresh = after < written.size() ? List.copyOf(written.subList(after, written.size())) : List.of();
         return new Fresh(fresh, now, true);
+    }
+
+    /** Returns the end of one unambiguous context match, or -1. */
+    private static int uniqueAnchorEnd(List<String> lines, List<String> anchors) {
+        int match = -1;
+        for (int start = 0; start + anchors.size() <= lines.size(); start++) {
+            boolean same = true;
+            for (int offset = 0; offset < anchors.size(); offset++) {
+                if (!Cursor.digest(lines.get(start + offset)).equals(anchors.get(offset))) {
+                    same = false;
+                    break;
+                }
+            }
+            if (same) {
+                if (match >= 0) {
+                    return -1;
+                }
+                match = start + anchors.size();
+            }
+        }
+        return match;
     }
 
     /**
      * One capture and the pane's own position, from one tmux invocation.
      *
-     * @param firstAbsolute how many lines the pane had written above the first line captured
      * @param finished how many of the captured lines the terminal's cursor has moved past
      * @param reachedStartOfHistory whether the capture began at the oldest line tmux still holds
      */
-    private record Look(List<String> lines, int firstAbsolute, int finished, boolean reachedStartOfHistory) {
+    private record Look(List<String> lines, int finished, boolean reachedStartOfHistory, long serverPid) {
 
         /**
          * The lines that are finished being written.
@@ -141,28 +165,42 @@ final class Watching {
         // Everything tmux keeps, when asked for more than it could have.
         boolean everything = lookback >= Integer.MAX_VALUE;
         String start = everything ? "-" : lookback <= 0 ? "0" : String.valueOf(-lookback);
-        BatchResult read = pane.server()
-                .batch()
+        BatchResult read = pane.batch()
                 .add("capture-pane", "-p", "-t", id, "-S", start)
-                .add("display-message", "-p", "-t", id, "#{history_size} #{cursor_y}")
+                .add("display-message", "-p", "-t", id, "#{pid} #{history_size} #{cursor_y}")
                 .run();
-        List<String> lines = read.operations().get(0).stdout();
-        int[] position = numbers(read.operations().get(1).stdout());
-        int history = position[0];
+        if (read.operations().size() != 2 || read.operations().stream().anyMatch(operation -> !operation.succeeded())) {
+            throw new LibTmuxException("could not read pane content and position as one batch");
+        }
+        OperationResult capture = read.operations().get(0);
+        OperationResult position = read.operations().get(1);
+        long[] numbers = numbers(position.stdout());
+        long serverPid = numbers[0];
+        int history = Math.toIntExact(numbers[1]);
+        int cursorY = Math.toIntExact(numbers[2]);
         int first = everything || lookback > history ? 0 : lookback <= 0 ? history : history - lookback;
         // The cursor's row is the first unfinished line, and it sits that far below the history.
-        return new Look(lines, first, history + position[1] - first, first == 0);
+        return new Look(capture.stdout(), history + cursorY - first, first == 0, serverPid);
     }
 
-    private static int[] numbers(List<String> stdout) {
-        String[] words = stdout.isEmpty() ? new String[0] : stdout.get(0).trim().split("\\s+");
-        int[] read = new int[2];
+    private static long[] numbers(List<String> stdout) {
+        if (stdout.size() != 1) {
+            throw new LibTmuxException("tmux returned no unambiguous pane position");
+        }
+        String[] words = stdout.get(0).trim().split("\\s+", -1);
+        if (words.length != 3) {
+            throw new LibTmuxException("tmux returned a malformed pane position");
+        }
+        long[] read = new long[3];
         for (int index = 0; index < read.length; index++) {
             try {
-                read[index] = index < words.length ? Integer.parseInt(words[index]) : 0;
+                read[index] = Long.parseLong(words[index]);
             } catch (NumberFormatException e) {
-                read[index] = 0;
+                throw new LibTmuxException("tmux returned a nonnumeric pane position", e);
             }
+        }
+        if (read[0] <= 0 || read[1] < 0 || read[2] < 0) {
+            throw new LibTmuxException("tmux returned an invalid pane position");
         }
         return read;
     }

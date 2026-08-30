@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
@@ -17,11 +18,14 @@ import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.ProtocolVersions;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +43,67 @@ final class McpLauncherTest {
 
     /** Longer than any single call needs, short enough that a hung launcher fails as itself. */
     private static final int PATIENCE_SECONDS = 60;
+
+    @Test
+    void failedWatchStartupDoesNotLeaveTheLauncherAlive(Server server, TmuxSocketPath socket) throws Exception {
+        assertTrue(server.cmd("set-option", "-g", "exit-empty", "off").succeeded());
+        server.sessions().getFirst().kill();
+        assertTrue(server.sessions().isEmpty(), "the fixture still had a session for the watcher to attach to");
+
+        Process launcher =
+                rawLauncher(socket.path(), ProcessBuilder.Redirect.DISCARD, ProcessBuilder.Redirect.PIPE, "--watch");
+        try {
+            assertTrue(
+                    launcher.waitFor(5, TimeUnit.SECONDS),
+                    "watch startup failed, but the launcher stayed alive on its tmux transport threads");
+            assertTrue(launcher.exitValue() != 0, "failed watch startup reported success");
+            String diagnostic = new String(launcher.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(
+                    diagnostic.contains("watching requires a tmux session to attach to"),
+                    "the launcher failed for the wrong reason: " + diagnostic);
+        } finally {
+            stop(launcher);
+        }
+    }
+
+    /** Protocol failure ends the session even when the client forgets to close its stdin pipe. */
+    @Test
+    void malformedInputDoesNotLeaveTheLauncherWaitingForEndOfInput(Server server, TmuxSocketPath socket)
+            throws Exception {
+        Process launcher = rawLauncher(socket.path(), ProcessBuilder.Redirect.DISCARD);
+        try {
+            launcher.getOutputStream().write("{not-json}\n".getBytes(StandardCharsets.UTF_8));
+            launcher.getOutputStream().flush();
+
+            assertTrue(
+                    launcher.waitFor(5, TimeUnit.SECONDS),
+                    "the protocol session ended, but the launcher was still waiting for stdin EOF");
+        } finally {
+            stop(launcher);
+        }
+    }
+
+    /** Broken stdout is also a disconnect, even if the client leaves stdin open. */
+    @Test
+    void brokenOutputDoesNotLeaveTheLauncherWaitingForEndOfInput(Server server, TmuxSocketPath socket)
+            throws Exception {
+        Process launcher = rawLauncher(socket.path(), ProcessBuilder.Redirect.PIPE);
+        try {
+            launcher.getInputStream().close();
+            String initialize = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{"
+                    + "\"protocolVersion\":\"" + ProtocolVersions.MCP_2025_11_25
+                    + "\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}\n";
+            launcher.getOutputStream().write(initialize.getBytes(StandardCharsets.UTF_8));
+            launcher.getOutputStream().flush();
+
+            assertTrue(
+                    launcher.waitFor(5, TimeUnit.SECONDS),
+                    "stdout failed, but the launcher was still waiting for stdin EOF");
+            assertEquals(0, launcher.exitValue());
+        } finally {
+            stop(launcher);
+        }
+    }
 
     @Test
     @Timeout(PATIENCE_SECONDS)
@@ -155,8 +220,8 @@ final class McpLauncherTest {
         try (McpSyncClient client = launch(socket.path())) {
             client.initialize();
 
-            McpSchema.ReadResourceResult read =
-                    client.readResource(McpSchema.ReadResourceRequest.builder("tmux://panes/" + pane + "/content")
+            McpSchema.ReadResourceResult read = client.readResource(
+                    McpSchema.ReadResourceRequest.builder(Resources.paneContentUri(new PaneId(pane)))
                             .build());
 
             assertEquals(1, read.contents().size());
@@ -206,6 +271,7 @@ final class McpLauncherTest {
 
             assertEquals(true, reading.annotations().readOnlyHint(), "reading a pane changes nothing");
             assertEquals(false, running.annotations().readOnlyHint(), "running a command does");
+            assertEquals(true, running.annotations().destructiveHint(), "a shell command may delete data");
         }
     }
 
@@ -233,7 +299,13 @@ final class McpLauncherTest {
     @Test
     @Timeout(PATIENCE_SECONDS)
     void aCommandRunsAndItsExitStatusComesBack(Server server, TmuxSocketPath socket) {
-        String pane = server.panes().get(0).id().value();
+        String pane = server.sessions()
+                .get(0)
+                .newWindow(window -> window.named("runner").running("/bin/sh"))
+                .panes()
+                .get(0)
+                .id()
+                .value();
 
         try (McpSyncClient client = launch(socket.path())) {
             client.initialize();
@@ -411,6 +483,38 @@ final class McpLauncherTest {
                 .build();
         return McpClient.sync(new StdioClientTransport(launcher, new JacksonMcpJsonMapper(new ObjectMapper())))
                 .build();
+    }
+
+    private static Process rawLauncher(Path socket, ProcessBuilder.Redirect output, String... extra)
+            throws IOException {
+        return rawLauncher(socket, output, ProcessBuilder.Redirect.DISCARD, extra);
+    }
+
+    private static Process rawLauncher(
+            Path socket, ProcessBuilder.Redirect output, ProcessBuilder.Redirect error, String... extra)
+            throws IOException {
+        List<String> args = new java.util.ArrayList<>(List.of(
+                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-classpath",
+                System.getProperty("java.class.path"),
+                Main.class.getName(),
+                "--socket",
+                socket.toString(),
+                "--tmux",
+                TMUX));
+        args.addAll(List.of(extra));
+        return new ProcessBuilder(args)
+                .redirectOutput(output)
+                .redirectError(error)
+                .start();
+    }
+
+    private static void stop(Process launcher) throws InterruptedException, IOException {
+        launcher.getOutputStream().close();
+        if (!launcher.waitFor(5, TimeUnit.SECONDS)) {
+            launcher.destroyForcibly();
+            launcher.waitFor(5, TimeUnit.SECONDS);
+        }
     }
 
     private static Server openNamed(String name, Path directory) throws IOException {

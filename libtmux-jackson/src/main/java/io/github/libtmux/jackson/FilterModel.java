@@ -5,24 +5,23 @@ import io.github.libtmux.query.Fields;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Objects;
 import java.util.Set;
-import java.util.function.Function;
+import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 
 /**
  * What a document's field and relation ids mean.
  *
- * <p>An expression carries accessors and navigators — plain functions — which no document can hold.
- * Reading one back therefore needs somewhere to look those up, and that is this. It is also what
- * makes a document typed: a document claiming model {@code pane} cannot be read as a
- * {@code FilterExpr<Session>}, because the ids simply are not there.
+ * <p>Expressions carry executable field and relation handles, while documents carry only their ids.
+ * This model binds those forms and gives each nested relation its target model.
  *
  * @param <T> the entity this model describes
  */
 public final class FilterModel<T> {
+
+    private static final Set<String> BUILT_IN_IDS = Set.of("pane", "window", "session", "client");
 
     private final String id;
     private final Map<String, FieldRef<T, ?>> fields;
@@ -36,9 +35,31 @@ public final class FilterModel<T> {
         this.toOne = Collections.unmodifiableMap(new LinkedHashMap<>(builder.toOne));
     }
 
-    /** Starts a model with the id documents will name it by. */
+    /** Starts a caller-owned model. Its id must identify the caller's namespace. */
     public static <T> Builder<T> named(String id) {
-        return new Builder<>(id);
+        String checked = requireId(id);
+        if (BUILT_IN_IDS.contains(checked)) {
+            throw new IllegalArgumentException("model id '" + checked + "' is reserved by libtmux");
+        }
+        if (!isNamespaced(checked)) {
+            throw new IllegalArgumentException(
+                    "custom model id '" + checked + "' must be namespaced, for example 'example/editor'");
+        }
+        return new Builder<>(checked);
+    }
+
+    /** Starts a caller-owned model without requiring a generic type witness. */
+    public static <T> Builder<T> named(String id, Class<T> entityType) {
+        Objects.requireNonNull(entityType, "entityType");
+        return named(id);
+    }
+
+    static <T> Builder<T> builtIn(String id) {
+        String checked = requireId(id);
+        if (!BUILT_IN_IDS.contains(checked)) {
+            throw new IllegalArgumentException("unknown libtmux model id '" + checked + "'");
+        }
+        return new Builder<>(checked);
     }
 
     /** The id documents name this model by. */
@@ -46,18 +67,12 @@ public final class FilterModel<T> {
         return id;
     }
 
-    /**
-     * Every field a document may compare on, in the order the model declared them.
-     *
-     * <p>Public because the useful thing to say about a field nobody recognises is which ones exist.
-     * A caller writing a document by hand — or a model being told why its last one was refused —
-     * cannot otherwise find out without reading this file.
-     */
+    /** Every field a document may compare on, in declaration order. */
     public Set<String> fieldNames() {
         return fields.keySet();
     }
 
-    /** Every relation a document may navigate, in the order the model declared them. */
+    /** Every relation a document may navigate. */
     public Set<String> relationNames() {
         Set<String> names = new LinkedHashSet<>(toOne.keySet());
         names.addAll(toMany.keySet());
@@ -88,11 +103,22 @@ public final class FilterModel<T> {
         return found;
     }
 
-    /** A relation's navigator paired with the model its far side is described by. */
+    /** A relation handle paired with the model its far side is described by. */
     record Relation<T, R>(
-            @Nullable Function<T, List<R>> toMany, @Nullable Function<T, Optional<R>> toOne, FilterModel<R> target) {}
+            Fields.@Nullable ToManyRef<T, R> toMany,
+            Fields.@Nullable ToOneRef<T, R> toOne,
+            Supplier<? extends FilterModel<R>> targetModel) {
 
-    /** Collects the ids a document may name. */
+        Relation {
+            Objects.requireNonNull(targetModel, "targetModel");
+        }
+
+        FilterModel<R> target() {
+            return Objects.requireNonNull(targetModel.get(), "relation target model");
+        }
+    }
+
+    /** Collects the exact handles and unique ids a document may name. */
     public static final class Builder<T> {
 
         private final String id;
@@ -121,24 +147,66 @@ public final class FilterModel<T> {
 
         /** Declares a to-many relation and the model describing what it reaches. */
         public <R> Builder<T> toMany(Fields.ToManyRef<T, R> relation, FilterModel<R> target) {
-            toMany.put(relation.name(), new Relation<>(relation.navigate(), null, target));
+            Objects.requireNonNull(target, "target");
+            return toMany(relation, () -> target);
+        }
+
+        /** Declares a to-many relation whose target closes a recursive model graph. */
+        public <R> Builder<T> toMany(Fields.ToManyRef<T, R> relation, Supplier<? extends FilterModel<R>> target) {
+            Objects.requireNonNull(relation, "relation");
+            requireAvailable(relation.id());
+            toMany.put(relation.id(), new Relation<>(relation, null, target));
             return this;
         }
 
         /** Declares a to-one relation and the model describing what it reaches. */
         public <R> Builder<T> toOne(Fields.ToOneRef<T, R> relation, FilterModel<R> target) {
-            toOne.put(relation.name(), new Relation<>(null, relation.navigate(), target));
+            Objects.requireNonNull(target, "target");
+            return toOne(relation, () -> target);
+        }
+
+        /** Declares a to-one relation whose target closes a recursive model graph. */
+        public <R> Builder<T> toOne(Fields.ToOneRef<T, R> relation, Supplier<? extends FilterModel<R>> target) {
+            Objects.requireNonNull(relation, "relation");
+            requireAvailable(relation.id());
+            toOne.put(relation.id(), new Relation<>(null, relation, target));
             return this;
         }
 
         private Builder<T> add(FieldRef<T, ?> ref) {
+            Objects.requireNonNull(ref, "field");
+            requireAvailable(ref.id());
             fields.put(ref.id(), ref);
             return this;
+        }
+
+        private void requireAvailable(String member) {
+            if (fields.containsKey(member) || toMany.containsKey(member) || toOne.containsKey(member)) {
+                throw new IllegalArgumentException("model '" + id + "' already declares '" + member + "'");
+            }
         }
 
         /** Builds the model. */
         public FilterModel<T> build() {
             return new FilterModel<>(this);
         }
+    }
+
+    private static String requireId(String id) {
+        Objects.requireNonNull(id, "id");
+        if (id.isBlank() || id.chars().anyMatch(Character::isWhitespace)) {
+            throw new IllegalArgumentException("model id must not be blank or contain whitespace");
+        }
+        return id;
+    }
+
+    private static boolean isNamespaced(String id) {
+        for (char separator : new char[] {'/', '.', ':'}) {
+            int position = id.indexOf(separator);
+            if (position > 0 && position < id.length() - 1) {
+                return true;
+            }
+        }
+        return false;
     }
 }

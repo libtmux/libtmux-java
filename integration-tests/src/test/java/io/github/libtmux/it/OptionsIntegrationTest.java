@@ -10,11 +10,15 @@ import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Options and hooks, at each of the scopes tmux actually keeps them.
@@ -137,12 +141,59 @@ final class OptionsIntegrationTest {
                 "an array option keeps the subscript that addresses it");
     }
 
+    /**
+     * tmux escapes a listed value with {@code vis(3)} and changes its mind about which characters
+     * that reaches across the supported range, so a listing reports the value itself rather than
+     * whatever spelling this release chose for it.
+     */
     @Test
-    void aValueWithSpacesSurvivesTheRoundTrip(Server server) {
-        server.globalOptions().set("status-left", "[#S] and a space");
+    void aListedValueIsTheValueRatherThanTmuxsSpellingOfIt(Server server) {
+        Map<String, String> written = new LinkedHashMap<>();
+        written.put("@spaces", "[#S] and a space");
+        written.put("@backslash", "back\\slash");
+        written.put("@newline", "first\nsecond");
+        written.put("@tab", "a\tb");
+        written.put("@dquote", "has \"quotes\"");
+        written.put("@empty", "");
+        written.put("@tilde", "~");
 
-        assertEquals(Optional.of("[#S] and a space"), server.globalOptions().get("status-left"));
-        assertEquals("[#S] and a space", server.globalOptions().all().get("status-left"), "tmux quotes it, we do not");
+        written.forEach(server.globalOptions()::set);
+
+        Map<String, String> listed = server.globalOptions().all();
+        written.forEach((name, value) -> {
+            assertEquals(Optional.of(value), server.globalOptions().get(name), name);
+            assertEquals(value, listed.get(name), name + " listed");
+        });
+    }
+
+    /**
+     * tmux packs a command into 16384 bytes and refuses a longer one, so a scope with enough
+     * options cannot be read in one, and a listing that quietly stopped early would be worse than
+     * one that failed.
+     */
+    @Test
+    void aScopeWithMoreOptionsThanOneCommandCanCarryIsStillListedWhole(Server server, @TempDir Path directory)
+            throws Exception {
+        // A handle's scope is the tighter case: its batch travels inside the staleness guard.
+        Session session = server.sessions().get(0);
+        StringBuilder script = new StringBuilder();
+        for (int index = 0; index < 400; index++) {
+            script.append("set-option -t ")
+                    .append(session.id().value())
+                    .append(" @filler")
+                    .append(index)
+                    .append(" value")
+                    .append(index)
+                    .append('\n');
+        }
+        Path config = directory.resolve("options.conf");
+        Files.writeString(config, script);
+        server.sourceFile(config);
+
+        Map<String, String> all = session.options().all();
+
+        assertEquals("value399", all.get("@filler399"));
+        assertEquals("value0", all.get("@filler0"));
     }
 
     @Test

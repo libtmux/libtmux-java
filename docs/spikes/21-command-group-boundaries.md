@@ -1,5 +1,13 @@
 # Where one tmux command ends and the next begins
 
+> **Superseded in part.** tmux's rule, measured here, still holds and is still
+> the reason this matters. What changed is who applies it: the escape was a
+> caller obligation that only `Buffers` met, so every other path carrying caller
+> text silently lost a trailing semicolon. `CommandRequest` now holds commands
+> literally and each carrier encodes for its own parser, which is why
+> `ControlClient.isCommandGroup` no longer exists. The "What changed" section
+> below describes the design this replaced.
+
 ## Verdict
 
 The carriers disagreed about it, which makes it the first real breach of the

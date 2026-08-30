@@ -80,12 +80,16 @@ public final class Window {
 
     /** Makes this the active window of its session. */
     public void select() {
-        server.run(List.of("select-window", "-t", target()));
+        server.run(snapshot, state.context(), List.of("select-window", "-t", linkTarget()));
     }
 
     /** The server this window lives on. */
     public Server server() {
         return server;
+    }
+
+    ServerSnapshot snapshot() {
+        return snapshot;
     }
 
     /** The session this link belongs to. A pure read of the capture. */
@@ -97,12 +101,12 @@ public final class Window {
 
     /** This window's own hooks, which every link to it shares. */
     public Hooks hooks() {
-        return Hooks.window(server, id());
+        return Hooks.window(server, snapshot, id());
     }
 
     /** This window's own options, which every link to it shares. */
     public Options options() {
-        return Options.window(server, id());
+        return Options.window(server, snapshot, id());
     }
 
     /** This link's panes, in tmux's order. A pure read of the capture. */
@@ -141,7 +145,7 @@ public final class Window {
      * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
      */
     public Pane split(SplitSpec spec) {
-        return Pane.created(server, spec.argv(target(), Pane.createdFormat(), server.version()));
+        return Pane.created(server, snapshot, spec.argv(target(), Pane.createdFormat(), server.version(snapshot)));
     }
 
     /**
@@ -150,13 +154,15 @@ public final class Window {
      * <p>The same escape hatch {@link Pane#expand} gives, resolved against this window.
      *
      * @param format a tmux format, usually of the shape {@code #{name}}
-     * @return the expansion, empty when the format expanded to nothing
+     * @return the expansion, whole when it spans lines and empty when the format expanded to
+     *     nothing
      */
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
-        List<String> reported = server.run(List.of("display-message", "-p", "-t", target(), format))
+        List<String> reported = server.run(
+                        snapshot, state.context(), List.of("display-message", "-p", "-t", linkTarget(), format))
                 .stdout();
-        return reported.isEmpty() ? "" : reported.get(0);
+        return String.join("\n", reported);
     }
 
     /**
@@ -167,13 +173,17 @@ public final class Window {
      * both. Unlike a session name, a window name is never rewritten.
      */
     public Window rename(String name) {
-        server.run(List.of("rename-window", "-t", target(), name));
+        server.run(snapshot, List.of("rename-window", "-t", target(), name));
         return refresh();
     }
 
     /** Links this window into another session, so one window sits in both. */
     public void linkTo(Session session) {
-        server.run(List.of("link-window", "-s", target(), "-t", session.id().value()));
+        Objects.requireNonNull(session, "session");
+        server.requireSameIncarnation(snapshot, session.server(), session.snapshot());
+        server.run(
+                snapshot,
+                List.of("link-window", "-s", target(), "-t", session.id().value()));
     }
 
     /**
@@ -182,17 +192,22 @@ public final class Window {
      * @throws LibTmuxException if this is the window's only link, which tmux refuses to remove
      */
     public void unlink() {
-        server.run(List.of("unlink-window", "-t", target()));
+        server.run(snapshot, state.context(), List.of("unlink-window", "-t", linkTarget()));
     }
 
     /** Moves this window into another session. */
     public void moveTo(Session session) {
-        server.run(List.of("move-window", "-s", target(), "-t", session.id().value()));
+        Objects.requireNonNull(session, "session");
+        server.requireSameIncarnation(snapshot, session.server(), session.snapshot());
+        server.run(
+                snapshot,
+                state.context(),
+                List.of("move-window", "-s", linkTarget(), "-t", session.id().value()));
     }
 
     /** Rotates the panes within this window. */
     public void rotate() {
-        server.run(List.of("rotate-window", "-t", target()));
+        server.run(snapshot, List.of("rotate-window", "-t", target()));
     }
 
     /**
@@ -202,16 +217,13 @@ public final class Window {
      */
     public void selectLayout(Layout layout) {
         Objects.requireNonNull(layout, "layout");
-        TmuxVersion running = server.version();
-        if (!running.atLeast(layout.since())) {
-            throw new UnsupportedTmuxVersion("the " + layout + " layout", layout.since(), running);
-        }
-        server.run(List.of("select-layout", "-t", target(), layout.tmuxName()));
+        layout.requireSupported(server.version(snapshot));
+        server.run(snapshot, List.of("select-layout", "-t", target(), layout.tmuxName()));
     }
 
     /** Moves to the next built-in layout, as tmux's own binding does. */
     public void nextLayout() {
-        server.run(List.of("next-layout", "-t", target()));
+        server.run(snapshot, List.of("next-layout", "-t", target()));
     }
 
     /**
@@ -226,40 +238,12 @@ public final class Window {
      */
     public void applyLayout(String layout) {
         Objects.requireNonNull(layout, "layout");
-        if (!isTmuxLayout(layout)) {
-            throw new IllegalArgumentException("not a layout tmux wrote: " + layout);
-        }
-        server.run(List.of("select-layout", "-t", target(), layout));
-    }
-
-    /**
-     * Whether a string carries the checksum tmux puts on a layout it wrote.
-     *
-     * <p>tmux prefixes the arrangement with four hex digits and a comma, summing the rest with a
-     * rotate-and-add over 16 bits. Recomputing it is the whole check: a string that passes is one
-     * tmux produced, and 3.3a is safe to hand it to.
-     */
-    private static boolean isTmuxLayout(String layout) {
-        if (layout.length() < 6 || layout.charAt(4) != ',') {
-            return false;
-        }
-        int declared;
-        try {
-            declared = Integer.parseInt(layout.substring(0, 4), 16);
-        } catch (NumberFormatException notHex) {
-            return false;
-        }
-        int checksum = 0;
-        for (int i = 5; i < layout.length(); i++) {
-            checksum = ((checksum >> 1) + ((checksum & 1) << 15)) & 0xffff;
-            checksum = (checksum + layout.charAt(i)) & 0xffff;
-        }
-        return checksum == declared;
+        server.run(snapshot, List.of("select-layout", "-t", target(), Layouts.requireSerialized(layout)));
     }
 
     /** Kills what is running in this window and starts it again. */
     public void respawn() {
-        server.run(List.of("respawn-window", "-k", "-t", target()));
+        server.run(snapshot, List.of("respawn-window", "-k", "-t", target()));
     }
 
     /**
@@ -269,12 +253,12 @@ public final class Window {
      * reports that it has no current client.
      */
     public void displayPopup(String shellCommand) {
-        server.run(List.of("display-popup", "-E", "-t", target(), shellCommand));
+        server.run(snapshot, List.of("display-popup", "-E", "-t", target(), shellCommand));
     }
 
     /** Closes this window. */
     public void kill() {
-        server.run(List.of("kill-window", "-t", target()));
+        server.run(snapshot, List.of("kill-window", "-t", target()));
     }
 
     /**
@@ -283,7 +267,7 @@ public final class Window {
      * @throws ObjectDoesNotExist if this window is no longer linked here
      */
     public Window refresh() {
-        ServerSnapshot fresh = server.snapshot();
+        ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.window(state.context())
                 .map(window -> new Window(server, fresh, window))
                 .orElseThrow(() -> new ObjectDoesNotExist("window " + id() + " no longer exists here"));
@@ -294,16 +278,21 @@ public final class Window {
         return state.context().window().value();
     }
 
+    /** Addresses this exact link, even when its underlying window appears twice in one session. */
+    private String linkTarget() {
+        return state.context().session().value() + ":" + state.context().index().value();
+    }
+
     @Override
     public boolean equals(Object other) {
         return other instanceof Window that
-                && server.identity().equals(that.server.identity())
+                && server.identity(snapshot).equals(that.server.identity(that.snapshot))
                 && state.context().equals(that.state.context());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(server.identity(), state.context());
+        return Objects.hash(server.identity(snapshot), state.context());
     }
 
     @Override

@@ -18,14 +18,17 @@ dependencies {
     testImplementation(project(":libtmux-workspace"))
 }
 
-// The snippets are compiled against this module's own test classpath, which the compiler has to be
-// told about explicitly: it runs in-process and does not inherit Gradle's.
+// The snippets are compiled against the compile classpath, which the compiler has to be told about
+// explicitly: it runs in-process and does not inherit Gradle's. Compile rather than runtime because
+// that is what a consumer gets from a published POM — api dependencies and nothing more — so a
+// snippet needing an implementation dependency to compile fails here rather than for a reader.
+// Running one still uses the test JVM's classpath, which is what a consumer's runtime has.
 //
 // Every document this reads is an input. Without that, editing a README leaves the task up to date
 // and the check silently stops happening — which was true here until a deliberately broken snippet
 // failed to fail.
 tasks.withType<Test>().configureEach {
-    val classpath = sourceSets.test.get().runtimeClasspath
+    val classpath = sourceSets.test.get().compileClasspath
     val root = rootProject.layout.projectDirectory
     val documents =
         rootProject.fileTree(root) {

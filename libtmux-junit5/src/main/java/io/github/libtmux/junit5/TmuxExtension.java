@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -47,6 +48,8 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
 
     private static final ExtensionContext.Namespace NAMESPACE = ExtensionContext.Namespace.create(TmuxExtension.class);
     private static final String KEY = "fixture";
+
+    private static final Path FIXTURE_ROOT = Path.of("/tmp/libtmux-java-test");
 
     /**
      * The directory a fixture is made in names the JVM that made it, which is the only durable record
@@ -85,22 +88,28 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
         }
     }
 
+    static Path fixtureRoot() {
+        return FIXTURE_ROOT;
+    }
+
     /**
      * Ends every tmux server under {@code root} whose owning JVM is gone, and answers how many
      * ended. Runs while other runs are using the same root, so it may only touch abandoned servers.
      */
     static int reapAbandoned(Path root) {
         Path resolved = root.toAbsolutePath().normalize();
-        List<ProcessHandle> abandoned = ProcessHandle.allProcesses()
-                .filter(handle -> abandonedServer(handle, resolved))
+        List<AbandonedServer> abandoned = ProcessHandle.allProcesses()
+                .map(handle -> abandonedServer(handle, resolved))
+                .flatMap(Optional::stream)
                 .toList();
 
         // Asked together, waited for afterwards, so one slow server does not serialise the rest.
-        abandoned.forEach(ProcessHandle::destroy);
+        abandoned.stream().map(AbandonedServer::process).forEach(ProcessHandle::destroy);
 
         int reaped = 0;
-        for (ProcessHandle handle : abandoned) {
-            if (ended(handle)) {
+        for (AbandonedServer server : abandoned) {
+            if (ended(server.process())) {
+                deleteTree(server.directory());
                 reaped++;
             }
         }
@@ -124,38 +133,59 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
     }
 
     /** Matched on the executable too: a shell whose command line mentions the socket is not a server. */
-    private static boolean abandonedServer(ProcessHandle handle, Path root) {
+    private static Optional<AbandonedServer> abandonedServer(ProcessHandle handle, Path root) {
         ProcessHandle.Info info = handle.info();
         if (!info.command()
                 .map(command -> Path.of(command).getFileName())
                 .map(Path::toString)
                 .filter("tmux"::equals)
                 .isPresent()) {
-            return false;
+            return Optional.empty();
         }
         String[] argv = info.arguments().orElse(NO_ARGUMENTS);
         for (int index = 0; index + 1 < argv.length; index++) {
             if ("-S".equals(argv[index])) {
-                return ownerIsGone(Path.of(argv[index + 1]).toAbsolutePath().normalize(), root);
+                return abandonedDirectory(
+                                Path.of(argv[index + 1]).toAbsolutePath().normalize(), root)
+                        .map(directory -> new AbandonedServer(handle, directory));
             }
         }
-        return false;
+        return Optional.empty();
     }
 
     private static final String[] NO_ARGUMENTS = {};
 
     /** A reused pid can only spare an abandoned server, never condemn a live one. */
-    private static boolean ownerIsGone(Path socket, Path root) {
+    private static Optional<Path> abandonedDirectory(Path socket, Path root) {
         Path directory = socket.getParent();
         if (directory == null || !socket.startsWith(root)) {
-            return false;
+            return Optional.empty();
         }
         Matcher named = OWNER.matcher(directory.getFileName().toString());
         if (!named.matches()) {
             // Something else's socket, or one from before this scheme. Not this sweep's to judge.
-            return false;
+            return Optional.empty();
         }
-        return ProcessHandle.of(Long.parseLong(named.group(1))).isEmpty();
+        return ProcessHandle.of(Long.parseLong(named.group(1))).isEmpty() ? Optional.of(directory) : Optional.empty();
+    }
+
+    private record AbandonedServer(ProcessHandle process, Path directory) {}
+
+    static void deleteTree(Path root) {
+        if (!Files.exists(root)) {
+            return;
+        }
+        try (Stream<Path> paths = Files.walk(root)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException e) {
+                    // Best effort; a fixture directory is the operating system's to reclaim.
+                }
+            });
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not remove a tmux fixture directory", e);
+        }
     }
 
     @Override
@@ -214,10 +244,12 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
             try {
                 // Once per JVM, before this run makes its first server: whatever a killed run left
                 // behind is holding a pty and answering to a name this one might choose.
+                Path fixtureRoot = fixtureRoot();
+                Files.createDirectories(fixtureRoot);
                 if (SWEPT.compareAndSet(false, true)) {
-                    reapAbandoned(Path.of(System.getProperty("java.io.tmpdir")));
+                    reapAbandoned(fixtureRoot);
                 }
-                Path root = Files.createTempDirectory(PREFIX);
+                Path root = Files.createTempDirectory(fixtureRoot, PREFIX);
                 directory = root;
                 Path config = root.resolve("tmux.conf");
                 Files.writeString(config, "");
@@ -299,15 +331,19 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
         }
 
         /** Exit is proved by asking, not assumed from a kill that may have raced. */
-        private static boolean awaitExit(Server server) {
-            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(EXIT_MILLIS);
+        static boolean awaitExit(Server server) {
+            return awaitExit(server, EXIT_MILLIS);
+        }
+
+        static boolean awaitExit(Server server, long timeoutMillis) {
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
             while (System.nanoTime() < deadline) {
                 try {
                     if (!server.cmd(List.of("list-sessions"), PROBE).succeeded()) {
                         return true;
                     }
                 } catch (RuntimeException e) {
-                    return true;
+                    return false;
                 }
                 try {
                     Thread.sleep(25);
@@ -317,23 +353,6 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
                 }
             }
             return false;
-        }
-
-        private static void deleteTree(Path root) {
-            if (!Files.exists(root)) {
-                return;
-            }
-            try (Stream<Path> paths = Files.walk(root)) {
-                paths.sorted(Comparator.reverseOrder()).forEach(path -> {
-                    try {
-                        Files.deleteIfExists(path);
-                    } catch (IOException e) {
-                        // Best effort; a fixture directory is the operating system's to reclaim.
-                    }
-                });
-            } catch (IOException e) {
-                throw new UncheckedIOException("could not remove a tmux fixture directory", e);
-            }
         }
     }
 }

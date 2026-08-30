@@ -87,9 +87,9 @@ final class Instructions {
                         + "keys, no creating or killing. Ask the operator to raise LIBTMUX_SAFETY if a change "
                         + "is genuinely needed.\n";
             case MUTATING ->
-                "\nSAFETY\nThis server can read and change tmux but cannot destroy: killing a "
-                        + "pane, window, session or server is not offered. Ask the operator to set "
-                        + "LIBTMUX_SAFETY=destructive if something really has to be ended.\n";
+                "\nSAFETY\nThis server can read and change tmux, but tmux_kill is not offered. "
+                        + "Commands and pane input can still end processes or delete data. Ask the operator to set "
+                        + "LIBTMUX_SAFETY=destructive only when the dedicated kill tool is needed.\n";
             case DESTRUCTIVE ->
                 "\nSAFETY\nEverything is offered, including tmux_kill, which ends processes "
                         + "and cannot be undone. It refuses to end the pane this conversation runs through "
