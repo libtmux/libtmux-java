@@ -180,7 +180,7 @@ final class Catalog {
         tools.add(ToolSpec.of(
                 "tmux_run",
                 "Run a command and wait for it",
-                "Runs a shell command in a pane, waits for it to finish, and returns its output and exit "
+                "Runs a shell command in a pane with a POSIX-compatible shell, waits for it to finish, and returns its output and exit "
                         + "status in one call. Use this whenever you wrote the command yourself. Do not send a "
                         + "command and then poll tmux_capture_pane to guess whether it finished: that costs a "
                         + "call per look and still cannot tell a finished command from a stalled one. The "

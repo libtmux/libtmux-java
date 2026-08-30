@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -36,6 +37,7 @@ import org.jspecify.annotations.Nullable;
 final class RunningCommands {
 
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final Set<String> POSIX_SHELLS = Set.of("sh", "ash", "bash", "dash", "ksh", "mksh", "pdksh", "zsh");
 
     private RunningCommands() {}
 
@@ -66,6 +68,7 @@ final class RunningCommands {
     static Ran run(Call call) {
         Server server = call.server();
         Pane pane = Targets.pane(server, call.string("pane_id"));
+        requirePosixShell(pane);
         String command = call.string("command");
         Duration timeout = Waits.requested(call);
         boolean suppressHistory = call.flag("suppress_history", true);
@@ -211,8 +214,22 @@ final class RunningCommands {
     }
 
     private static byte[] bytes() {
-        byte[] value = new byte[5];
+        byte[] value = new byte[16];
         RANDOM.nextBytes(value);
         return value;
+    }
+
+    private static void requirePosixShell(Pane pane) {
+        String current = pane.expand("#{pane_current_command}");
+        int slash = current.lastIndexOf('/');
+        String name = slash < 0 ? current : current.substring(slash + 1);
+        if (name.startsWith("-")) {
+            name = name.substring(1);
+        }
+        if (!POSIX_SHELLS.contains(name)) {
+            throw new IllegalStateException(
+                    "tmux_run requires a POSIX-compatible shell in the target pane; " + "it is running '" + name
+                            + "'. Use tmux_send_keys when typing into another program is intentional");
+        }
     }
 }

@@ -72,6 +72,33 @@ final class RunningCommandsTest {
         assertTrue(ran.framed(), "the plumbing was cut out exactly");
     }
 
+    @Test
+    void aPaneNotRunningAPosixShellIsRefused(Server server) {
+        server.cmd("new-window", "-d", "-n", "not-a-shell", "cat");
+        String pane = server.panes().stream()
+                .filter(candidate -> candidate.window().name().equals("not-a-shell"))
+                .findFirst()
+                .orElseThrow()
+                .id()
+                .value();
+
+        IllegalStateException refused = assertThrows(
+                IllegalStateException.class,
+                () -> RunningCommands.run(
+                        TestCalls.on(server, "pane_id", pane, "command", "echo must-not-be-typed", "timeout", 0.1)));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains("POSIX-compatible shell"), refused.getMessage());
+        assertTrue(
+                server.panes().stream()
+                        .filter(candidate -> candidate.id().value().equals(pane))
+                        .findFirst()
+                        .orElseThrow()
+                        .capture()
+                        .stream()
+                        .noneMatch(line -> line.contains("must-not-be-typed")),
+                "the rejected payload must not reach the foreground program");
+    }
+
     /**
      * The reason this tool exists rather than send-then-look: a failure is a number, not something to
      * infer from what the screen says.
@@ -141,7 +168,7 @@ final class RunningCommandsTest {
         assertEquals(7, ran.exitStatus());
         assertFalse(ran.framed(), "the old start marker must actually have rolled away");
         assertTrue(
-                ran.output().stream().noneMatch(line -> line.matches(".*lt[0-9a-f]{10}-[se].*")),
+                ran.output().stream().noneMatch(line -> line.matches(".*lt[0-9a-f]{32}-[se].*")),
                 "no surviving marker may leak into output: " + ran.output());
     }
 
