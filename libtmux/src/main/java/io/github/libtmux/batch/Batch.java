@@ -3,6 +3,7 @@ package io.github.libtmux.batch;
 import io.github.libtmux.format.Tokens;
 import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.transport.CommandResult;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
@@ -62,7 +63,7 @@ public final class Batch {
      * One dispatched as separate arguments costs less, since nothing there is quoted.
      */
     public int length() {
-        return CommandStrings.group(assemble()).length();
+        return CommandStrings.group(assemble()).getBytes(StandardCharsets.UTF_8).length;
     }
 
     /**

@@ -20,6 +20,8 @@ public final class RowFormat {
 
     private static final String SEPARATOR = Tokens.perProcess();
 
+    private static final String TERMINATOR = Tokens.generate();
+
     private static final Pattern SPLITTER = Pattern.compile(Pattern.quote(SEPARATOR));
 
     private final List<String> fields;
@@ -28,7 +30,8 @@ public final class RowFormat {
     private RowFormat(List<String> fields) {
         this.fields = fields;
         this.template = String.join(
-                SEPARATOR, fields.stream().map(field -> "#{" + field + "}").toList());
+                        SEPARATOR, fields.stream().map(field -> "#{" + field + "}").toList())
+                + TERMINATOR;
     }
 
     /**
@@ -51,6 +54,10 @@ public final class RowFormat {
     /** The token this process separates fields with. */
     public String separator() {
         return SEPARATOR;
+    }
+
+    String terminator() {
+        return TERMINATOR;
     }
 
     /** How many fields a row must have. */
@@ -135,9 +142,11 @@ public final class RowFormat {
      *     expected number of fields
      */
     public List<Row> rows(List<String> lines) {
+        if (lines.stream().noneMatch(line -> line.endsWith(TERMINATOR))) {
+            return lines.stream().map(line -> new Row(split(line))).toList();
+        }
         List<Row> rows = new ArrayList<>();
         StringBuilder pending = new StringBuilder();
-        int separators = 0;
         boolean open = false;
         for (String line : lines) {
             if (open) {
@@ -145,11 +154,10 @@ public final class RowFormat {
             }
             pending.append(line);
             open = true;
-            separators += occurrences(line);
-            if (separators >= fields.size() - 1) {
-                rows.add(new Row(split(pending.toString())));
+            if (line.endsWith(TERMINATOR)) {
+                int end = pending.length() - TERMINATOR.length();
+                rows.add(new Row(split(pending.substring(0, end))));
                 pending.setLength(0);
-                separators = 0;
                 open = false;
             }
         }
@@ -159,14 +167,6 @@ public final class RowFormat {
         return List.copyOf(rows);
     }
 
-    private static int occurrences(String line) {
-        int count = 0;
-        for (int at = line.indexOf(SEPARATOR); at >= 0; at = line.indexOf(SEPARATOR, at + SEPARATOR.length())) {
-            count++;
-        }
-        return count;
-    }
-
     /**
      * Reads one row back into its fields.
      *
@@ -174,6 +174,9 @@ public final class RowFormat {
      *     which is the only chance to notice that something shifted
      */
     public List<String> split(String row) {
+        if (row.endsWith(TERMINATOR)) {
+            row = row.substring(0, row.length() - TERMINATOR.length());
+        }
         List<String> values = List.of(SPLITTER.split(row, -1));
         if (values.size() != fields.size()) {
             // Counts only: a row carries names and pane content, and this message reaches logs.

@@ -28,7 +28,7 @@ final class RowFormatTest {
         String separator = WINDOWS.separator();
 
         assertEquals(
-                List.of("#{session_id}", "#{window_id}", "#{window_name}"),
+                List.of("#{session_id}", "#{window_id}", "#{window_name}" + WINDOWS.terminator()),
                 List.of(template.split(Pattern.quote(separator), -1)));
     }
 
@@ -87,5 +87,28 @@ final class RowFormatTest {
     @Test
     void aFormatNeedsAtLeastOneField() {
         assertThrows(IllegalArgumentException.class, RowFormat::of);
+    }
+
+    @Test
+    void aMultilineFinalFieldStaysInItsRow() {
+        RowFormat format = RowFormat.of("id", "value");
+
+        List<RowFormat.Row> rows = format.rows(List.of(
+                "$0" + format.separator() + "first",
+                "second" + format.terminator()));
+
+        assertEquals(1, rows.size());
+        assertEquals("$0", rows.get(0).text("id"));
+        assertEquals("first\nsecond", rows.get(0).text("value"));
+    }
+
+    @Test
+    void aMultilineSingleFieldStaysInItsRow() {
+        RowFormat format = RowFormat.of("value");
+
+        List<RowFormat.Row> rows = format.rows(List.of("first", "second" + format.terminator()));
+
+        assertEquals(1, rows.size());
+        assertEquals("first\nsecond", rows.get(0).text("value"));
     }
 }
