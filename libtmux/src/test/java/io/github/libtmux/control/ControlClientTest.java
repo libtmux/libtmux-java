@@ -17,9 +17,11 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -99,6 +101,35 @@ final class ControlClientTest {
             assertFalse(client.isAlive(), "a missing reply leaves command attribution uncertain");
             assertTrue(events.isClosed(), "a subscriber cannot wait forever on an unusable client");
             assertThrows(IllegalStateException.class, () -> client.send("list-panes"));
+        }
+    }
+
+    @Test
+    void closingTheClientWakesAWaitingSubscriber(@TempDir Path directory) throws Exception {
+        ServerConfig config = fakeTmux(directory, """
+                printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                IFS= read -r never
+                """);
+        ControlClient client = ControlClient.attach(config, new SessionId("$0"));
+        EventSubscription<PaneOutput> output = client.subscribeOutput(1);
+        CountDownLatch entered = new CountDownLatch(1);
+        FutureTask<Optional<PaneOutput>> waiting = new FutureTask<>(() -> {
+            entered.countDown();
+            return output.next();
+        });
+        Thread consumer = Thread.ofVirtual().start(waiting);
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            assertThrows(TimeoutException.class, () -> waiting.get(100, TimeUnit.MILLISECONDS));
+
+            client.close();
+
+            assertEquals(Optional.empty(), waiting.get(1, TimeUnit.SECONDS));
+        } finally {
+            waiting.cancel(true);
+            output.close();
+            client.close();
+            consumer.join();
         }
     }
 

@@ -18,14 +18,11 @@ import io.github.libtmux.transport.TmuxTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -213,32 +210,6 @@ final class ControlModeIntegrationTest {
 
         client.close();
         client.close();
-    }
-
-    @Test
-    void closingTheClientWakesAWaitingSubscriber(Server server) throws Exception {
-        ControlClient client = attach(server);
-        assertTrue(client.send("display-message", "-p", "attached").succeeded());
-        EventSubscription<PaneOutput> output = client.subscribeOutput(1);
-        CountDownLatch entered = new CountDownLatch(1);
-        FutureTask<Optional<PaneOutput>> waiting = new FutureTask<>(() -> {
-            entered.countDown();
-            return output.next();
-        });
-        Thread consumer = Thread.ofVirtual().start(waiting);
-        try {
-            assertTrue(entered.await(5, TimeUnit.SECONDS));
-            assertThrows(TimeoutException.class, () -> waiting.get(100, TimeUnit.MILLISECONDS));
-
-            client.close();
-
-            assertEquals(Optional.empty(), waiting.get(1, TimeUnit.SECONDS));
-        } finally {
-            waiting.cancel(true);
-            output.close();
-            client.close();
-            consumer.join();
-        }
     }
 
     /**
