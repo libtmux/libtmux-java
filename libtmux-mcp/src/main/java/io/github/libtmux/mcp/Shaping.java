@@ -210,8 +210,16 @@ final class Shaping {
         if (confirmed) {
             return;
         }
+        if (call.caller().uncertain()) {
+            throw new IllegalStateException(
+                    "Refused. This process is inside tmux, but could not prove whether the target "
+                            + "contains its own pane. Pass confirm_self=true only if disconnecting "
+                            + "this conversation is the actual goal.");
+        }
         Optional<PaneId> mine = call.caller().pane();
-        if (mine.isEmpty() || going.stream().noneMatch(pane -> call.caller().isSelf(pane.id()))) {
+        if (mine.isEmpty()
+                || (!"server".equals(kind)
+                        && going.stream().noneMatch(pane -> call.caller().isSelf(pane.id())))) {
             return;
         }
         List<String> others = going.stream()

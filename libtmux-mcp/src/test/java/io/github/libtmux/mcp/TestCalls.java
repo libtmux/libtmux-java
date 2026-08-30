@@ -29,13 +29,28 @@ final class TestCalls {
     static Call asCaller(Server server, String paneId, Object... pairs) {
         Call plain = on(server, pairs);
         Map<String, String> environment = Map.of(
-                "TMUX", socket(server) + ",1," + server.sessions().get(0).id().value(), "TMUX_PANE", paneId);
+                "TMUX",
+                socket(server) + "," + server.expand("#{pid}") + ","
+                        + server.sessions().get(0).id().value(),
+                "TMUX_PANE",
+                paneId);
+        return withEnvironment(server, environment, plain.arguments());
+    }
+
+    /** A call carrying an explicit process environment, including malformed caller identities. */
+    static Call withEnvironment(Server server, Map<String, String> environment, Object... pairs) {
+        Call plain = on(server, pairs);
+        return withEnvironment(server, environment, plain.arguments());
+    }
+
+    private static Call withEnvironment(
+            Server server, Map<String, String> environment, Map<String, Object> arguments) {
         Connection connection = new Connection(
                 server,
                 Caller.of(server, environment),
                 Safety.DESTRUCTIVE,
                 java.util.concurrent.ConcurrentHashMap.newKeySet());
-        return new Call(connection, plain.arguments(), Call.Progress.SILENT);
+        return new Call(connection, arguments, Call.Progress.SILENT);
     }
 
     private static String socket(Server server) {

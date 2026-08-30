@@ -16,17 +16,27 @@ import org.jspecify.annotations.Nullable;
  * different from every other: typing into it types into the conversation, and killing it kills the
  * thing the model is talking through.
  *
- * <p>The socket is checked as well as the pane, because a pane id is only unique within one server
- * and this process may have been pointed at a different one. Unprovable means not the caller's: a
- * wrong "yes" disarms a guard, while a wrong "no" only declines to help.
+ * <p>The socket and server process are checked as well as the pane, because a pane id is only unique
+ * within one server. Destructive tools refuse when that relationship cannot be proved.
  */
 final class Caller {
 
-    private static final Caller NOWHERE = new Caller(null);
+    private enum Relation {
+        OUTSIDE,
+        DIFFERENT_SERVER,
+        SELF,
+        UNKNOWN
+    }
 
+    private static final Caller NOWHERE = new Caller(Relation.OUTSIDE, null);
+    private static final Caller DIFFERENT = new Caller(Relation.DIFFERENT_SERVER, null);
+    private static final Caller UNKNOWN = new Caller(Relation.UNKNOWN, null);
+
+    private final Relation relation;
     private final @Nullable PaneId pane;
 
-    private Caller(@Nullable PaneId pane) {
+    private Caller(Relation relation, @Nullable PaneId pane) {
+        this.relation = relation;
         this.pane = pane;
     }
 
@@ -36,16 +46,46 @@ final class Caller {
     }
 
     static Caller of(Server server, Map<String, String> environment) {
+        String raw = environment.get("TMUX");
+        if (raw == null || raw.isEmpty()) {
+            return NOWHERE;
+        }
         Optional<TmuxEnvironment> inside = TmuxEnvironment.of(environment);
         if (inside.isEmpty()) {
-            return NOWHERE;
+            return UNKNOWN;
         }
         TmuxEnvironment here = inside.get();
         Optional<PaneId> pane = here.pane();
-        if (pane.isEmpty() || !sameFile(here.socket(), socketOf(server))) {
-            return NOWHERE;
+        if (pane.isEmpty()) {
+            return UNKNOWN;
         }
-        return new Caller(pane.get());
+        Long serverPid = pidOf(server);
+        if (serverPid == null) {
+            return UNKNOWN;
+        }
+        if (serverPid != here.serverPid()) {
+            return DIFFERENT;
+        }
+        return switch (sameFile(here.socket(), socketOf(server))) {
+            case SAME -> new Caller(Relation.SELF, pane.get());
+            case DIFFERENT -> DIFFERENT;
+            case UNKNOWN -> UNKNOWN;
+        };
+    }
+
+    private enum FileRelation {
+        SAME,
+        DIFFERENT,
+        UNKNOWN
+    }
+
+    private static @Nullable Long pidOf(Server server) {
+        try {
+            long pid = Long.parseLong(server.expand("#{pid}"));
+            return pid > 0 ? pid : null;
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** For a server that is known not to be the one this process runs in. */
@@ -63,6 +103,11 @@ final class Caller {
         return target.equals(pane);
     }
 
+    /** Whether the process is inside tmux but its relation to this server is unprovable. */
+    boolean uncertain() {
+        return relation == Relation.UNKNOWN;
+    }
+
     /** tmux is asked which socket it is on, rather than the endpoint being reassembled from flags. */
     private static @Nullable Path socketOf(Server server) {
         try {
@@ -77,14 +122,16 @@ final class Caller {
      * Compared by what the filesystem says rather than by text, so a socket reached through a
      * symlink or a relative path is still the same socket.
      */
-    private static boolean sameFile(Path left, @Nullable Path right) {
+    private static FileRelation sameFile(Path left, @Nullable Path right) {
         if (right == null) {
-            return false;
+            return FileRelation.UNKNOWN;
         }
         try {
-            return left.toRealPath().equals(right.toRealPath());
+            return left.toRealPath().equals(right.toRealPath())
+                    ? FileRelation.SAME
+                    : FileRelation.DIFFERENT;
         } catch (IOException | RuntimeException e) {
-            return false;
+            return FileRelation.UNKNOWN;
         }
     }
 }

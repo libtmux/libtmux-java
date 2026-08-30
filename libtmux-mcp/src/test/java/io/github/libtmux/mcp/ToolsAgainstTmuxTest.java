@@ -16,6 +16,7 @@ import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -265,6 +266,23 @@ final class ToolsAgainstTmuxTest {
         Shaping.kill(TestCalls.asCaller(server, pane, "target", pane, "confirm_self", true));
 
         assertEquals(1, server.panes().size());
+    }
+
+    @Test
+    void uncertainCallerIdentityRefusesServerKill(Server server) {
+        String pane = server.panes().get(0).id().value();
+        Map<String, String> uncertain = Map.of(
+                "TMUX", "/tmp/libtmux-java-test/missing-socket," + server.expand("#{pid}") + ",0",
+                "TMUX_PANE", pane);
+
+        IllegalStateException refused = assertThrows(
+                IllegalStateException.class,
+                () -> Shaping.kill(TestCalls.withEnvironment(
+                        server, uncertain, "target", "server")));
+
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("could not prove"), message);
+        assertTrue(server.isAlive(), "uncertainty must not disable the destructive guard");
     }
 
     /** The window holding the caller's pane is as fatal as the pane itself. */
