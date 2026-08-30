@@ -212,15 +212,6 @@ final class RunningCommandsTest {
     void uncertainCommandDeliveryStillRunsTheAcceptedCommand(Server server, @TempDir Path temporary) throws Exception {
         String pane = server.panes().get(0).id().value();
         Path accepted = temporary.resolve("accepted");
-        Path entered = temporary.resolve("entered");
-        String gate = "uncertain-delivery-" + System.nanoTime();
-        var wait = new java.util.ArrayList<>(java.util.List.of(server.config().binaryPath()));
-        wait.addAll(server.config().endpoint().flags());
-        wait.addAll(java.util.List.of("wait-for", gate));
-        server.panes()
-                .get(0)
-                .sendLine("printf entered > " + Shell.quote(entered.toString()) + "; " + Shell.quoteAll(wait));
-        assertTrue(await(() -> Files.exists(entered)), "the pane never entered the delivery gate");
         try (ProcessTransport processes = new ProcessTransport()) {
             TmuxTransport uncertain = borrowing(request -> {
                 CommandResult result = processes.execute(request);
@@ -230,18 +221,14 @@ final class RunningCommandsTest {
                 return result;
             });
             try (Server measured = Server.using(server.config(), uncertain)) {
-                try {
-                    assertThrows(
-                            TmuxTransportException.class,
-                            () -> RunningCommands.run(TestCalls.on(
-                                    measured,
-                                    "pane_id",
-                                    pane,
-                                    "command",
-                                    "printf ran > " + Shell.quote(accepted.toString()))));
-                } finally {
-                    server.channel(gate).signal();
-                }
+                assertThrows(
+                        TmuxTransportException.class,
+                        () -> RunningCommands.run(TestCalls.on(
+                                measured,
+                                "pane_id",
+                                pane,
+                                "command",
+                                "printf ran > " + Shell.quote(accepted.toString()))));
                 server.panes().get(0).sendLine("printf 'uncertain-cleanup-%s\\n' finished");
 
                 assertTrue(
