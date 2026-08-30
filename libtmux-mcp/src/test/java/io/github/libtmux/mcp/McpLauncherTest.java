@@ -299,7 +299,13 @@ final class McpLauncherTest {
     @Test
     @Timeout(PATIENCE_SECONDS)
     void aCommandRunsAndItsExitStatusComesBack(Server server, TmuxSocketPath socket) {
-        String pane = server.panes().get(0).id().value();
+        String pane = server.sessions()
+                .get(0)
+                .newWindow(window -> window.named("runner").running("/bin/sh"))
+                .panes()
+                .get(0)
+                .id()
+                .value();
 
         try (McpSyncClient client = launch(socket.path())) {
             client.initialize();
