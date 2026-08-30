@@ -2,6 +2,7 @@ package io.github.libtmux.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 import io.modelcontextprotocol.json.TypeRef;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -118,6 +119,31 @@ final class SerializedTransportProviderTest {
     }
 
     @Test
+    void cancellingAPromotedSendBeforeItStartsRemovesIt() {
+        PausingTransport delegate = new PausingTransport();
+        McpServerTransport transport = SerializedTransportProvider.serialize(delegate);
+        AtomicReference<Disposable> promoted = new AtomicReference<>();
+        McpSchema.JSONRPCNotification firstMessage = notification("first");
+        McpSchema.JSONRPCNotification cancelledMessage = notification("cancelled");
+        McpSchema.JSONRPCNotification thirdMessage = notification("third");
+        Disposable first = transport
+                .sendMessage(firstMessage)
+                .subscribe(ignored -> {}, failure -> {}, () -> promoted.get().dispose());
+        promoted.set(transport.sendMessage(cancelledMessage).subscribe());
+        Disposable third = transport.sendMessage(thirdMessage).subscribe();
+
+        delegate.succeed(0);
+
+        assertEquals(2, delegate.started(), "cancellation did not release the next queued send");
+        assertSame(thirdMessage, delegate.message(1), "the cancelled promoted send reached the delegate");
+        delegate.succeed(1);
+
+        first.dispose();
+        third.dispose();
+        transport.close();
+    }
+
+    @Test
     void closeFailsEveryAdmittedSendAndRefusesAnother() {
         PausingTransport delegate = new PausingTransport();
         McpServerTransport transport = SerializedTransportProvider.serialize(delegate);
@@ -153,6 +179,7 @@ final class SerializedTransportProviderTest {
     private static final class PausingTransport implements McpServerTransport {
 
         private final List<Sinks.One<Void>> completions = new ArrayList<>();
+        private final List<McpSchema.JSONRPCMessage> messages = new ArrayList<>();
         private final AtomicInteger closed = new AtomicInteger();
 
         @Override
@@ -160,12 +187,17 @@ final class SerializedTransportProviderTest {
             return Mono.defer(() -> {
                 Sinks.One<Void> completion = Sinks.one();
                 completions.add(completion);
+                messages.add(message);
                 return completion.asMono();
             });
         }
 
         int started() {
             return completions.size();
+        }
+
+        McpSchema.JSONRPCMessage message(int index) {
+            return messages.get(index);
         }
 
         void succeed(int index) {

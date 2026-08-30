@@ -117,11 +117,21 @@ final class SerializedTransportProvider implements McpServerTransportProvider {
         }
 
         private void cancel(PendingSend cancelled) {
+            @Nullable PendingSend next = null;
             synchronized (sends) {
                 cancelled.cancelled = true;
                 if (pending.remove(cancelled)) {
                     release(cancelled);
+                } else if (active == cancelled && !cancelled.started) {
+                    active = null;
+                    release(cancelled);
+                    if (!pending.isEmpty()) {
+                        next = takeNext();
+                    }
                 }
+            }
+            if (next != null) {
+                start(next);
             }
         }
 
@@ -137,6 +147,7 @@ final class SerializedTransportProvider implements McpServerTransportProvider {
                     if (closed || active != next) {
                         return;
                     }
+                    next.started = true;
                     delegate.sendMessage(next.message)
                             .subscribe(ignored -> {}, failure -> finish(next, failure), () -> finish(next, null));
                 }
@@ -233,6 +244,7 @@ final class SerializedTransportProvider implements McpServerTransportProvider {
             private final MonoSink<Void> sink;
             private final long bytes;
             private boolean cancelled;
+            private boolean started;
 
             PendingSend(McpSchema.JSONRPCMessage message, MonoSink<Void> sink, long bytes) {
                 this.message = message;
