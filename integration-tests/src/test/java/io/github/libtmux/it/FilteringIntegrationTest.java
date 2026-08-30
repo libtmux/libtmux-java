@@ -142,18 +142,15 @@ final class FilteringIntegrationTest {
      */
     @Test
     void aCallerBuiltFieldIsAnsweredHereRatherThanByTmux(Server server) {
-        String running = server.panes().get(0).currentCommand();
+        List<Pane> panes = server.panes();
+        String running = panes.get(0).currentCommand();
         Fields.TextField<Pane> prefixed =
                 Fields.text("pane_current_command", (Pane pane) -> "shell-" + pane.currentCommand());
 
-        assertEquals(
-                1,
-                server.panes().stream().filter(prefixed.is("shell-" + running)).count());
+        assertEquals(1, panes.stream().filter(prefixed.is("shell-" + running)).count());
         assertEquals(
                 0,
-                server.panes().stream()
-                        .filter(Pane_.command().is("shell-" + running))
-                        .count(),
+                panes.stream().filter(Pane_.command().is("shell-" + running)).count(),
                 "the built-in field of the same name answers differently over these rows");
     }
 }
