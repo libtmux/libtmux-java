@@ -17,8 +17,9 @@ production.
 - **`Pane.findWindow` searches by name, title, or content, with
   case-insensitive and regular-expression matching.** Build a `FindSpec` or
   configure one inline. (#6)
-- **`Batch.length()` reports the encoded command size.** Use it to dispatch
-  before tmux's command-size limit is reached. (#6)
+- **`Batch.length()` reports the exact UTF-8 byte length of the encoded
+  command.** Use it to dispatch before tmux's command-size limit is reached.
+  (#6)
 - **`Pane.paste(String)` sends literal text without leaving a server buffer.**
   Text no longer shares tmux's command-size limit; this API requires tmux 3.4.
   (#6)
@@ -59,6 +60,18 @@ production.
 
 ### Fixed
 
+- **Destructive MCP tools fail closed when caller-pane identity cannot be
+  proven.** Uncertain socket, server, or pane identity now requires explicit
+  self-confirmation instead of bypassing the guard. (#6)
+- **MCP pane cursors are authenticated and bound to daemon and pane identity.**
+  Reads preserve continuity across bounded history compaction when it can be
+  proven, and pane capture uses identity-fenced batches with strict outcome
+  checks. (#6)
+- **`RowFormat` uses an explicit record terminator.** Multiline final fields
+  and single-field rows no longer depend on physical line boundaries. (#6)
+- **`tmux_run` requires a POSIX shell and uses a 128-bit completion marker.**
+  It refuses another foreground program instead of sending shell framing that
+  program cannot interpret. (#6)
 - **Hierarchy listings preserve values containing newlines.** A pane working
   directory containing a newline no longer empties session, window, and pane
   listings. (#6)
