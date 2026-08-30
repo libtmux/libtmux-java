@@ -43,8 +43,7 @@ final class TestCalls {
         return withEnvironment(server, environment, plain.arguments());
     }
 
-    private static Call withEnvironment(
-            Server server, Map<String, String> environment, Map<String, Object> arguments) {
+    private static Call withEnvironment(Server server, Map<String, String> environment, Map<String, Object> arguments) {
         Connection connection = new Connection(
                 server,
                 Caller.of(server, environment),

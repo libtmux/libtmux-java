@@ -169,8 +169,7 @@ final class Screen {
                 .add("capture-pane", "-p", "-t", id, "-S", start)
                 .add("display-message", "-p", "-t", id, "#{pid} #{history_size} #{cursor_y}")
                 .run();
-        if (read.operations().size() != 2
-                || read.operations().stream().anyMatch(operation -> !operation.succeeded())) {
+        if (read.operations().size() != 2 || read.operations().stream().anyMatch(operation -> !operation.succeeded())) {
             throw new LibTmuxException("could not read pane content and position as one batch");
         }
         OperationResult capture = read.operations().get(0);

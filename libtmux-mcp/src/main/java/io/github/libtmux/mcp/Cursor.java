@@ -35,7 +35,9 @@ record Cursor(long serverPid, String paneId, List<String> anchors) {
         return new Cursor(
                 serverPid,
                 paneId,
-                written.subList(first, written.size()).stream().map(Cursor::digest).toList());
+                written.subList(first, written.size()).stream()
+                        .map(Cursor::digest)
+                        .toList());
     }
 
     String encode() {
@@ -72,8 +74,7 @@ record Cursor(long serverPid, String paneId, List<String> anchors) {
 
     static String digest(String line) {
         try {
-            byte[] whole = MessageDigest.getInstance("SHA-256")
-                    .digest(line.getBytes(StandardCharsets.UTF_8));
+            byte[] whole = MessageDigest.getInstance("SHA-256").digest(line.getBytes(StandardCharsets.UTF_8));
             return ENCODER.encodeToString(Arrays.copyOf(whole, DIGEST_BYTES));
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("SHA-256 is unavailable", e);

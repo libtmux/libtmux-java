@@ -208,9 +208,8 @@ final class ReadingTest {
 
     @Test
     void aStructurallyValidForgedCursorIsRefused() {
-        String forged = Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString("1|%1|0|0".getBytes(StandardCharsets.UTF_8));
+        String forged =
+                Base64.getUrlEncoder().withoutPadding().encodeToString("1|%1|0|0".getBytes(StandardCharsets.UTF_8));
 
         assertThrows(IllegalArgumentException.class, () -> Cursor.decode(forged));
     }
@@ -228,7 +227,9 @@ final class ReadingTest {
         Reading.Since fresh = Reading.since(TestCalls.on(server, "pane_id", pane, "cursor", cursor));
 
         assertTrue(fresh.continuous(), "the anchor still exists after tmux compacts older history");
-        assertTrue(fresh.content().stream().anyMatch(line -> line.contains("after-015")), fresh.content().toString());
+        assertTrue(
+                fresh.content().stream().anyMatch(line -> line.contains("after-015")),
+                fresh.content().toString());
         assertTrue(
                 fresh.content().stream().noneMatch(line -> line.contains("before-030")),
                 "the anchor itself was already delivered: " + fresh.content());
@@ -239,12 +240,13 @@ final class ReadingTest {
         String oldPane = server.panes().get(0).id().value();
         String cursor = Reading.since(TestCalls.on(server, "pane_id", oldPane)).cursor();
         server.killServer();
-        Pane replacement = server.newSession("replacement").windows().get(0).panes().get(0);
+        Pane replacement =
+                server.newSession("replacement").windows().get(0).panes().get(0);
 
         IllegalArgumentException refused = assertThrows(
                 IllegalArgumentException.class,
-                () -> Reading.since(TestCalls.on(
-                        server, "pane_id", replacement.id().value(), "cursor", cursor)));
+                () -> Reading.since(
+                        TestCalls.on(server, "pane_id", replacement.id().value(), "cursor", cursor)));
 
         assertTrue(String.valueOf(refused.getMessage()).contains("start again"), refused.getMessage());
     }

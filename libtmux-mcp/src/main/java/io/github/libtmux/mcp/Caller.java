@@ -127,9 +127,7 @@ final class Caller {
             return FileRelation.UNKNOWN;
         }
         try {
-            return left.toRealPath().equals(right.toRealPath())
-                    ? FileRelation.SAME
-                    : FileRelation.DIFFERENT;
+            return left.toRealPath().equals(right.toRealPath()) ? FileRelation.SAME : FileRelation.DIFFERENT;
         } catch (IOException | RuntimeException e) {
             return FileRelation.UNKNOWN;
         }

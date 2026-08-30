@@ -30,7 +30,8 @@ public final class RowFormat {
     private RowFormat(List<String> fields) {
         this.fields = fields;
         this.template = String.join(
-                        SEPARATOR, fields.stream().map(field -> "#{" + field + "}").toList())
+                        SEPARATOR,
+                        fields.stream().map(field -> "#{" + field + "}").toList())
                 + TERMINATOR;
     }
 

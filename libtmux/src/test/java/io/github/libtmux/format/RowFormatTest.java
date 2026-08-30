@@ -93,9 +93,8 @@ final class RowFormatTest {
     void aMultilineFinalFieldStaysInItsRow() {
         RowFormat format = RowFormat.of("id", "value");
 
-        List<RowFormat.Row> rows = format.rows(List.of(
-                "$0" + format.separator() + "first",
-                "second" + format.terminator()));
+        List<RowFormat.Row> rows =
+                format.rows(List.of("$0" + format.separator() + "first", "second" + format.terminator()));
 
         assertEquals(1, rows.size());
         assertEquals("$0", rows.get(0).text("id"));

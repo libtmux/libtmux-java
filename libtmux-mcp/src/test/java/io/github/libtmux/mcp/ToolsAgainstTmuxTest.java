@@ -272,13 +272,11 @@ final class ToolsAgainstTmuxTest {
     void uncertainCallerIdentityRefusesServerKill(Server server) {
         String pane = server.panes().get(0).id().value();
         Map<String, String> uncertain = Map.of(
-                "TMUX", "/tmp/libtmux-java-test/missing-socket," + server.expand("#{pid}") + ",0",
-                "TMUX_PANE", pane);
+                "TMUX", "/tmp/libtmux-java-test/missing-socket," + server.expand("#{pid}") + ",0", "TMUX_PANE", pane);
 
         IllegalStateException refused = assertThrows(
                 IllegalStateException.class,
-                () -> Shaping.kill(TestCalls.withEnvironment(
-                        server, uncertain, "target", "server")));
+                () -> Shaping.kill(TestCalls.withEnvironment(server, uncertain, "target", "server")));
 
         String message = String.valueOf(refused.getMessage());
         assertTrue(message.contains("could not prove"), message);
