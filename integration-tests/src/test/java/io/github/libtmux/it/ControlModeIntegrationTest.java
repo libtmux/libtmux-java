@@ -218,6 +218,7 @@ final class ControlModeIntegrationTest {
     @Test
     void closingTheClientWakesAWaitingSubscriber(Server server) throws Exception {
         ControlClient client = attach(server);
+        assertTrue(client.send("display-message", "-p", "attached").succeeded());
         EventSubscription<PaneOutput> output = client.subscribeOutput(1);
         CountDownLatch entered = new CountDownLatch(1);
         FutureTask<Optional<PaneOutput>> waiting = new FutureTask<>(() -> {
