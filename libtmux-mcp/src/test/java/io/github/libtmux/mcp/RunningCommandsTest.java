@@ -250,10 +250,18 @@ final class RunningCommandsTest {
     void aCommandCannotChangeThePanesShellAndCannotEndIt(Server server) {
         String pane = server.panes().get(0).id().value();
 
-        RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "mine=set; cd /"));
+        RunningCommands.Ran exited =
+                RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "mine=set; cd /; exit 3"));
+        RunningCommands.Ran commented = RunningCommands.run(
+                TestCalls.on(server, "pane_id", pane, "command", "echo comment-safe # comment", "timeout", 1));
+        RunningCommands.Ran parenthesis =
+                RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", ": ); exit 7; #", "timeout", 1));
         RunningCommands.Ran after =
                 RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "echo \"[$mine]\""));
 
+        assertEquals(3, exited.exitStatus(), "exit reports from the isolated command");
+        assertEquals(java.util.List.of("comment-safe"), commented.output(), "a comment cannot hide the framing");
+        assertEquals("SIGNALLED", parenthesis.outcome(), "a closing parenthesis cannot escape the command");
         assertEquals(java.util.List.of("[]"), after.output(), "the assignment did not escape its subshell");
         assertEquals(1, server.panes().size(), "and exiting inside it did not take the pane with it");
     }

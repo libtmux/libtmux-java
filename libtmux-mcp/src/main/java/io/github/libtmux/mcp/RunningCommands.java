@@ -3,6 +3,12 @@ package io.github.libtmux.mcp;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.WakeReason;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -75,32 +81,38 @@ final class RunningCommands {
         String endMark = nonce + "-e";
         String channel = "ch_" + nonce;
 
-        Cursor before = Screen.from(pane).cursor();
-        String typed = payload(server, command, nonce, startMark, endMark, channel, suppressHistory);
-        // Never make the shell wait for Java cleanup: a transport can report UNKNOWN after tmux
-        // accepted this line, and that failure must not strand the pane at private plumbing.
-        pane.sendLine(typed);
+        try (StagedCommand staged = StagedCommand.create(command)) {
+            Cursor before = Screen.from(pane).cursor();
+            String typed = payload(server, staged.path(), nonce, startMark, endMark, channel, suppressHistory);
+            // Never make the shell wait for Java cleanup: a transport can report UNKNOWN after tmux
+            // accepted this line, and that failure must not strand the pane at private plumbing.
+            pane.sendLine(typed);
 
-        long started = System.nanoTime();
-        WakeReason wake = server.channel(channel).await(timeout);
-        double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
+            long started = System.nanoTime();
+            WakeReason wake = server.channel(channel).await(timeout);
+            double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
 
-        Screen.Fresh fresh = wake == WakeReason.SERVER_GONE ? null : Screen.since(pane, before, Trim.lineBudget(call));
-        Framed framed = fresh == null ? new Framed(List.of(), false, null) : frame(fresh.lines(), startMark, endMark);
-        Integer status = wake == WakeReason.SIGNALLED ? framed.status() : null;
-        Trim.Trimmed trimmed = Trim.tail(framed.lines(), Trim.lineBudget(call));
+            Screen.Fresh fresh =
+                    wake == WakeReason.SERVER_GONE ? null : Screen.since(pane, before, Trim.lineBudget(call));
+            Framed framed =
+                    fresh == null ? new Framed(List.of(), false, null) : frame(fresh.lines(), startMark, endMark);
+            Integer status = wake == WakeReason.SIGNALLED ? framed.status() : null;
+            Trim.Trimmed trimmed = Trim.tail(framed.lines(), Trim.lineBudget(call));
 
-        return new Ran(
-                pane.id().value(),
-                wake.name(),
-                status,
-                trimmed.lines(),
-                trimmed.truncated(),
-                trimmed.dropped(),
-                framed.exact(),
-                Math.round(seconds * 100) / 100.0,
-                Waits.asSeconds(timeout),
-                note(wake, framed));
+            return new Ran(
+                    pane.id().value(),
+                    wake.name(),
+                    status,
+                    trimmed.lines(),
+                    trimmed.truncated(),
+                    trimmed.dropped(),
+                    framed.exact(),
+                    Math.round(seconds * 100) / 100.0,
+                    Waits.asSeconds(timeout),
+                    note(wake, framed));
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not stage the pane command", e);
+        }
     }
 
     private static @Nullable String note(WakeReason wake, Framed framed) {
@@ -132,7 +144,7 @@ final class RunningCommands {
      */
     private static String payload(
             Server server,
-            String command,
+            Path command,
             String nonce,
             String startMark,
             String endMark,
@@ -150,8 +162,8 @@ final class RunningCommands {
 
         // The status is held in a shell variable named for the nonce, so nothing this types can
         // collide with a variable the person using the pane already had.
-        return (suppressHistory ? " " : "") + "echo " + startMark + "; ( " + command + " ); " + nonce + "=$?; echo "
-                + endMark + ":\"$" + nonce + "\"; " + finish;
+        return (suppressHistory ? " " : "") + "echo " + startMark + "; ( . " + Shell.quote(command.toString()) + " ); "
+                + nonce + "=$?; echo " + endMark + ":\"$" + nonce + "\"; " + finish;
     }
 
     private static List<String> append(List<String> base, String... more) {
@@ -216,5 +228,31 @@ final class RunningCommands {
         byte[] value = new byte[5];
         RANDOM.nextBytes(value);
         return value;
+    }
+
+    private record StagedCommand(Path path) implements AutoCloseable {
+
+        private static StagedCommand create(String command) throws IOException {
+            Path path = Files.createTempFile(
+                    "libtmux-java-command-",
+                    ".sh",
+                    PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+            try {
+                Files.writeString(path, command, StandardCharsets.UTF_8);
+                return new StagedCommand(path);
+            } catch (IOException failure) {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException cleanup) {
+                    failure.addSuppressed(cleanup);
+                }
+                throw failure;
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            Files.deleteIfExists(path);
+        }
     }
 }
