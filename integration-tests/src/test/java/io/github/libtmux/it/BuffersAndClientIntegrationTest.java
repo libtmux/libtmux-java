@@ -177,10 +177,17 @@ final class BuffersAndClientIntegrationTest {
     /** tmux refuses a command whose packed argv exceeds MAX_IMSGSIZE, which is 16384 bytes. */
     @Test
     void pastedTextIsNotBoundedByTheSizeOfACommand(Server server) throws Exception {
-        Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
         if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
             return;
         }
+        Pane pane = server.sessions()
+                .get(0)
+                .windows()
+                .get(0)
+                .panes()
+                .get(0)
+                .split(s -> s.running("sh", "-c", "stty -icanon -echo; printf 'reader-ready\\n'; cat"));
+        assertTrue(Await.output(pane, "reader-ready"), "the paste reader never started");
 
         pane.paste("y".repeat(20_000) + "END-OF-A-LARGE-PASTE");
 
