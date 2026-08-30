@@ -6,9 +6,17 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.LibTmuxException;
+import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.ProcessTransport;
+import io.github.libtmux.transport.TmuxTransport;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -196,6 +204,72 @@ final class ReadingTest {
                 () -> Reading.since(TestCalls.on(server, "pane_id", pane, "cursor", "not-a-cursor")));
 
         assertTrue(String.valueOf(refused.getMessage()).contains("omit 'cursor'"), refused.getMessage());
+    }
+
+    @Test
+    void aStructurallyValidForgedCursorIsRefused() {
+        String forged = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString("1|%1|0|0".getBytes(StandardCharsets.UTF_8));
+
+        assertThrows(IllegalArgumentException.class, () -> Cursor.decode(forged));
+    }
+
+    @Test
+    void historyCompactionKeepsAReachableCursorContinuous(Server server) {
+        server.globalOptions().set("history-limit", "40");
+        var window = server.sessions().get(0).newWindow("rolling-history");
+        String pane = window.panes().get(0).id().value();
+        server.cmd("resize-window", "-t", window.id().value(), "-x", "80", "-y", "5");
+        run(server, pane, "for i in $(seq 1 30); do printf 'before-%03d\\n' $i; done");
+        String cursor = settled(server, pane);
+
+        run(server, pane, "for i in $(seq 1 15); do printf 'after-%03d\\n' $i; done");
+        Reading.Since fresh = Reading.since(TestCalls.on(server, "pane_id", pane, "cursor", cursor));
+
+        assertTrue(fresh.continuous(), "the anchor still exists after tmux compacts older history");
+        assertTrue(fresh.content().stream().anyMatch(line -> line.contains("after-015")), fresh.content().toString());
+        assertTrue(
+                fresh.content().stream().noneMatch(line -> line.contains("before-030")),
+                "the anchor itself was already delivered: " + fresh.content());
+    }
+
+    @Test
+    void aCursorCannotCrossAReplacementServer(Server server) {
+        String oldPane = server.panes().get(0).id().value();
+        String cursor = Reading.since(TestCalls.on(server, "pane_id", oldPane)).cursor();
+        server.killServer();
+        Pane replacement = server.newSession("replacement").windows().get(0).panes().get(0);
+
+        IllegalArgumentException refused = assertThrows(
+                IllegalArgumentException.class,
+                () -> Reading.since(TestCalls.on(
+                        server, "pane_id", replacement.id().value(), "cursor", cursor)));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains("start again"), refused.getMessage());
+    }
+
+    @Test
+    void aFailedScreenBatchIsNotAnEmptyCapture(Server server) {
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport failing = new TmuxTransport() {
+                @Override
+                public CommandResult execute(CommandRequest request) {
+                    if (request.commandLine().stream().anyMatch(word -> word.contains("capture-pane"))) {
+                        return new CommandResult(1, List.of(), List.of("simulated screen failure"));
+                    }
+                    return processes.execute(request);
+                }
+
+                @Override
+                public void close() {}
+            };
+            try (Server measured = Server.using(server.config(), failing)) {
+                Pane pane = measured.panes().get(0);
+
+                assertThrows(LibTmuxException.class, () -> Screen.from(pane));
+            }
+        }
     }
 
     @Test

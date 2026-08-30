@@ -1,83 +1,103 @@
 package io.github.libtmux.mcp;
 
-import io.github.libtmux.Pane;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
-/**
- * A place in a pane's output that a caller has already read up to.
- *
- * <p>Watching a pane means asking repeatedly, and asking repeatedly is what makes an agent expensive:
- * the tenth look at a build log re-reads the nine screens it already paid for. A cursor turns that
- * into "what is new", which is almost always nothing or a few lines.
- *
- * <p>Opaque on purpose. What it holds is this server's business and may change; a caller that parsed
- * it would break, and a caller that invents one gets told to start again rather than handed the
- * wrong lines.
- *
- * @param paneId the pane this position belongs to, so a cursor cannot be used on another
- * @param absolute how many lines had ever been above the bottom of the screen when it was taken
- * @param anchor a digest of the last line already delivered, which is how loss is noticed
- */
-record Cursor(String paneId, int absolute, String anchor) {
+/** An authenticated trailing-line context for one pane and server process. */
+record Cursor(long serverPid, String paneId, List<String> anchors) {
 
-    private static final String VERSION = "1";
-
+    private static final String VERSION = "2";
+    private static final int CONTEXT_LINES = 8;
+    private static final int DIGEST_BYTES = 16;
     private static final Base64.Encoder ENCODER = Base64.getUrlEncoder().withoutPadding();
+    private static final byte[] SECRET = secret();
 
-    /** Where a pane is now: everything down to its last written line has been seen. */
-    static Cursor at(Pane pane, int history, List<String> seen) {
-        return of(pane.id().value(), history, seen);
+    Cursor {
+        if (serverPid <= 0 || paneId.isEmpty() || anchors.size() > CONTEXT_LINES) {
+            throw new IllegalArgumentException("invalid cursor state");
+        }
+        anchors = List.copyOf(anchors);
+        if (anchors.stream().anyMatch(anchor -> !anchor.matches("[A-Za-z0-9_-]{22}"))) {
+            throw new IllegalArgumentException("invalid cursor anchor");
+        }
     }
 
-    /**
-     * A cursor one past the last of {@code written}.
-     *
-     * @param firstAbsolute how many lines the pane had written above {@code written}'s first line
-     * @param written the pane's lines, trailing blanks already removed
-     */
-    static Cursor of(String paneId, int firstAbsolute, List<String> written) {
-        String last = written.isEmpty() ? "" : written.get(written.size() - 1);
-        return new Cursor(paneId, firstAbsolute + written.size(), digest(last));
+    /** Records up to the last eight finished lines, without retaining their contents. */
+    static Cursor of(long serverPid, String paneId, List<String> written) {
+        int first = Math.max(0, written.size() - CONTEXT_LINES);
+        return new Cursor(
+                serverPid,
+                paneId,
+                written.subList(first, written.size()).stream().map(Cursor::digest).toList());
     }
 
     String encode() {
-        return ENCODER.encodeToString(
-                (VERSION + "|" + paneId + "|" + absolute + "|" + anchor).getBytes(StandardCharsets.UTF_8));
+        byte[] payload = (VERSION + "|" + serverPid + "|" + paneId + "|" + String.join(",", anchors))
+                .getBytes(StandardCharsets.UTF_8);
+        return ENCODER.encodeToString(payload) + "." + ENCODER.encodeToString(mac(payload));
     }
 
-    /**
-     * Reads a cursor a caller sent back.
-     *
-     * @throws IllegalArgumentException naming the recovery, because a caller holding an unreadable
-     *     cursor can always start again by asking without one
-     */
+    /** Reads a cursor issued by this process, or tells the caller to start again. */
     static Cursor decode(String encoded) {
-        String plain;
         try {
-            plain = new String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8);
+            String[] token = encoded.split("\\.", -1);
+            if (token.length != 2) {
+                throw unreadable();
+            }
+            byte[] payload = Base64.getUrlDecoder().decode(token[0]);
+            byte[] signature = Base64.getUrlDecoder().decode(token[1]);
+            if (!MessageDigest.isEqual(mac(payload), signature)) {
+                throw unreadable();
+            }
+            String[] parts = new String(payload, StandardCharsets.UTF_8).split("\\|", -1);
+            if (parts.length != 4 || !VERSION.equals(parts[0])) {
+                throw unreadable();
+            }
+            List<String> anchors = parts[3].isEmpty() ? List.of() : List.of(parts[3].split(",", -1));
+            return new Cursor(Long.parseLong(parts[1]), parts[2], anchors);
         } catch (IllegalArgumentException e) {
+            if (e.getMessage() != null && e.getMessage().startsWith("that cursor")) {
+                throw e;
+            }
             throw unreadable();
         }
-        String[] parts = plain.split("\\|", -1);
-        if (parts.length != 4 || !VERSION.equals(parts[0])) {
-            throw unreadable();
-        }
+    }
+
+    static String digest(String line) {
         try {
-            return new Cursor(parts[1], Integer.parseInt(parts[2]), parts[3]);
-        } catch (NumberFormatException e) {
-            throw unreadable();
+            byte[] whole = MessageDigest.getInstance("SHA-256")
+                    .digest(line.getBytes(StandardCharsets.UTF_8));
+            return ENCODER.encodeToString(Arrays.copyOf(whole, DIGEST_BYTES));
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
         }
+    }
+
+    private static byte[] mac(byte[] payload) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(SECRET, "HmacSHA256"));
+            return mac.doFinal(payload);
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("HMAC-SHA256 is unavailable", e);
+        }
+    }
+
+    private static byte[] secret() {
+        byte[] secret = new byte[32];
+        new SecureRandom().nextBytes(secret);
+        return secret;
     }
 
     private static IllegalArgumentException unreadable() {
         return new IllegalArgumentException(
                 "that cursor is not one this server issued; omit 'cursor' to start from what the pane shows now");
-    }
-
-    /** Short enough to keep a cursor small, wide enough that a neighbouring line will not collide. */
-    static String digest(String line) {
-        return Integer.toHexString(line.hashCode());
     }
 }

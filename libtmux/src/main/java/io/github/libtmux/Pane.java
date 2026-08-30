@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.batch.Batch;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
@@ -242,6 +243,11 @@ public final class Pane {
     /** The server this pane lives on. */
     public Server server() {
         return server;
+    }
+
+    /** Collects commands fenced to the server incarnation that produced this pane. */
+    public Batch batch() {
+        return server.batch(snapshot);
     }
 
     ServerSnapshot snapshot() {
