@@ -288,10 +288,10 @@ final class RunningCommandsTest {
 
         RunningCommands.Ran exited =
                 RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "mine=set; cd /; exit 3"));
-        RunningCommands.Ran commented = RunningCommands.run(
-                TestCalls.on(server, "pane_id", pane, "command", "echo comment-safe # comment", "timeout", 1));
+        RunningCommands.Ran commented =
+                RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "echo comment-safe # comment"));
         RunningCommands.Ran parenthesis =
-                RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", ": ); exit 7; #", "timeout", 1));
+                RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", ": ); exit 7; #"));
         RunningCommands.Ran after =
                 RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "echo \"[$mine]\""));
 
@@ -341,17 +341,17 @@ final class RunningCommandsTest {
             });
             try (Server measured = Server.using(server.config(), interleaving);
                     var calls = Executors.newVirtualThreadPerTaskExecutor()) {
-                var first = calls.submit(() -> RunningCommands.run(TestCalls.on(
-                        measured, "pane_id", pane, "command", "printf 'first-run-marker\\n'", "timeout", 2)));
-                var second = calls.submit(() -> RunningCommands.run(TestCalls.on(
-                        measured, "pane_id", pane, "command", "printf 'second-run-marker\\n'", "timeout", 2)));
+                var first = calls.submit(() -> RunningCommands.run(
+                        TestCalls.on(measured, "pane_id", pane, "command", "printf 'first-run-marker\\n'")));
+                var second = calls.submit(() -> RunningCommands.run(
+                        TestCalls.on(measured, "pane_id", pane, "command", "printf 'second-run-marker\\n'")));
 
                 assertEquals(
                         java.util.List.of("first-run-marker"),
-                        first.get(10, TimeUnit.SECONDS).output());
+                        first.get(Waits.DEFAULT.toSeconds(), TimeUnit.SECONDS).output());
                 assertEquals(
                         java.util.List.of("second-run-marker"),
-                        second.get(10, TimeUnit.SECONDS).output());
+                        second.get(Waits.DEFAULT.toSeconds(), TimeUnit.SECONDS).output());
             }
         }
     }
