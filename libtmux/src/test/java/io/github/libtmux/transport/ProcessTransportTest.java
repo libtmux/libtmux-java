@@ -33,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -159,6 +160,37 @@ final class ProcessTransportTest {
                     DispatchOutcome.UNKNOWN,
                     failure.outcome(),
                     "tmux may already have applied the command before it hung");
+        }
+    }
+
+    @Test
+    void blockedStandardInputObeysTheDeadlineAndReturnsItsPermit() throws Exception {
+        AtomicReference<Process> child = new AtomicReference<>();
+        ProcessTransport.ProcessStarter starter = command -> {
+            Process started = new ProcessBuilder(command).start();
+            child.set(started);
+            return started;
+        };
+        ProcessTransport transport = new ProcessTransport(1, 1_024, starter, System::nanoTime);
+        FutureTask<CommandResult> request = new FutureTask<>(() -> transport.execute(CommandRequest.of(
+                List.of("/bin/sh"), List.of("-c", "sleep 30"), Duration.ofMillis(250), "x".repeat(1_048_576))));
+        Thread caller = Thread.ofVirtual().start(request);
+
+        try {
+            ExecutionException ended = assertThrows(ExecutionException.class, () -> request.get(5, TimeUnit.SECONDS));
+            TmuxTimeoutException failure = assertInstanceOf(TmuxTimeoutException.class, ended.getCause());
+            assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
+            assertFalse(child.get().isAlive(), "the child survived its input deadline");
+            assertEquals(
+                    List.of("reclaimed"),
+                    transport
+                            .execute(shell("echo reclaimed", Duration.ofSeconds(2)))
+                            .stdout(),
+                    "blocked input permanently consumed the only permit");
+        } finally {
+            transport.close();
+            caller.join(TimeUnit.SECONDS.toMillis(10));
+            assertFalse(caller.isAlive(), "the blocked input caller did not stop");
         }
     }
 

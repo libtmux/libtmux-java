@@ -35,10 +35,10 @@ import org.jspecify.annotations.Nullable;
 /**
  * The default transport: one child process per call, drained by a bounded pool of platform threads.
  *
- * <p>A caller takes one admission permit before launching, and the pool holds exactly two workers
- * per permit, so holding a permit means both drains are already free. Without that coupling a
- * caller can start a child whose pipes nobody is reading, and a child whose pipe fills stops
- * instead of exiting.
+ * <p>A caller takes one admission permit before launching, and the pool holds exactly three workers
+ * per permit, so holding a permit means both drains and the input pump are already free. Without
+ * that coupling a caller can start a child whose pipes nobody is reading, or block forever writing
+ * to one that stopped reading.
  *
  * <p>A request declared as waiting also takes one of all but one admission permits. The remaining
  * process stays available for the ordinary request that observes or releases those waits, without
@@ -110,7 +110,7 @@ public final class ProcessTransport implements TmuxTransport {
         }
         this.admission = new Semaphore(maxConcurrentProcesses);
         this.waitingAdmission = maxConcurrentProcesses == 1 ? null : new Semaphore(maxConcurrentProcesses - 1);
-        this.pumps = (ThreadPoolExecutor) Executors.newFixedThreadPool(2 * maxConcurrentProcesses, factory());
+        this.pumps = (ThreadPoolExecutor) Executors.newFixedThreadPool(3 * maxConcurrentProcesses, factory());
         this.maxOutputBytes = maxOutputBytes;
         this.starter = Objects.requireNonNull(starter, "starter");
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
@@ -152,17 +152,16 @@ public final class ProcessTransport implements TmuxTransport {
             release(waitingPermit);
             throw failure;
         }
-        Drains drains = null;
+        Pumps runningPumps = null;
         try {
-            drains = submit(process);
-            supplyInput(process, request.input());
-            return complete(process, drains, deadline);
+            runningPumps = submit(process, request.input());
+            return complete(process, runningPumps, deadline);
         } finally {
             live.remove(process);
             killedByClose.remove(process);
-            // A permit asserts that two workers are free, so it goes back only once they are. A
+            // A permit asserts that three workers are free, so it goes back only once they are. A
             // cancelled FutureTask reports itself done while its worker is still inside the read.
-            if (drains == null || drains.reclaimed()) {
+            if (runningPumps == null || runningPumps.reclaimed()) {
                 admission.release();
                 release(waitingPermit);
             }
@@ -334,13 +333,14 @@ public final class ProcessTransport implements TmuxTransport {
 
     // ------------------------------------------------------------------------------ draining
 
-    private Drains submit(RunningProcess process) {
-        CountDownLatch finished = new CountDownLatch(2);
+    private Pumps submit(RunningProcess process, String input) {
+        CountDownLatch finished = new CountDownLatch(3);
         CompletableFuture<Throwable> failure = new CompletableFuture<>();
         try {
-            return new Drains(
+            return new Pumps(
                     pumps.submit(new Pump(process.process().getInputStream(), maxOutputBytes, finished, failure)),
                     pumps.submit(new Pump(process.process().getErrorStream(), maxOutputBytes, finished, failure)),
+                    pumps.submit(new InputPump(process.process().getOutputStream(), input, finished)),
                     finished,
                     failure);
         } catch (RejectedExecutionException e) {
@@ -348,21 +348,21 @@ public final class ProcessTransport implements TmuxTransport {
         }
     }
 
-    private CommandResult complete(RunningProcess process, Drains drains, long deadline) {
-        awaitExitOrFailure(process, drains, deadline);
+    private CommandResult complete(RunningProcess process, Pumps runningPumps, long deadline) {
+        awaitExitOrFailure(process, runningPumps, deadline);
         if (killedByClose.contains(process)) {
             // This exit status is ours, not tmux's; returning it would read as tmux dying on a signal.
             throw new TmuxTransportException("transport closed while tmux was running", DispatchOutcome.UNKNOWN, null);
         }
-        byte[] out = collect(drains.stdout(), process, deadline);
-        byte[] err = collect(drains.stderr(), process, deadline);
+        byte[] out = collect(runningPumps.stdout(), process, deadline);
+        byte[] err = collect(runningPumps.stderr(), process, deadline);
         return new CommandResult(
                 process.process().exitValue(), OutputDecoder.stdoutLines(out), OutputDecoder.stderrLines(err));
     }
 
-    private void awaitExitOrFailure(RunningProcess process, Drains drains, long deadline) {
+    private void awaitExitOrFailure(RunningProcess process, Pumps runningPumps, long deadline) {
         try {
-            CompletableFuture.anyOf(process.process().onExit(), drains.failure())
+            CompletableFuture.anyOf(process.process().onExit(), runningPumps.failure())
                     .get(remainingNanos(deadline), TimeUnit.NANOSECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -372,7 +372,7 @@ public final class ProcessTransport implements TmuxTransport {
         } catch (ExecutionException e) {
             throw terminate(process, "could not await tmux", e.getCause());
         }
-        Throwable failure = drains.failure().getNow(null);
+        Throwable failure = runningPumps.failure().getNow(null);
         if (failure != null) {
             String message =
                     failure instanceof OutputLimitExceeded exceeded ? exceeded.description() : "could not drain tmux";
@@ -416,7 +416,7 @@ public final class ProcessTransport implements TmuxTransport {
 
     // --------------------------------------------------------------------------- destruction
 
-    /** Drains are deliberately not cancelled: killing the child is what actually ends the read. */
+    /** Pumps are deliberately not cancelled: killing the child is what actually ends pipe I/O. */
     private TmuxTransportException terminate(RunningProcess process, String message, @Nullable Throwable cause) {
         return reclaim(process, new TmuxTransportException(message, DispatchOutcome.UNKNOWN, cause));
     }
@@ -476,26 +476,6 @@ public final class ProcessTransport implements TmuxTransport {
         }
     }
 
-    /**
-     * Writes what the command reads, then closes its standard input.
-     *
-     * <p>After the drains are running rather than before: tmux replies while it reads, and an
-     * input large enough to fill the pipe would otherwise wait on a stdout nobody is draining.
-     */
-    private static void supplyInput(RunningProcess process, String input) {
-        OutputStream stdin = process.process().getOutputStream();
-        try {
-            if (!input.isEmpty()) {
-                stdin.write(input.getBytes(StandardCharsets.UTF_8));
-                stdin.flush();
-            }
-        } catch (IOException stoppedReading) {
-            // What tmux made of it is in its exit status and stderr, which say more than this.
-        } finally {
-            closeQuietly(stdin, null);
-        }
-    }
-
     private static void closeQuietly(Closeable stream, @Nullable TmuxTransportException failure) {
         try {
             stream.close();
@@ -516,9 +496,10 @@ public final class ProcessTransport implements TmuxTransport {
         };
     }
 
-    private record Drains(
+    private record Pumps(
             Future<byte[]> stdout,
             Future<byte[]> stderr,
+            Future<?> stdin,
             CountDownLatch finished,
             CompletableFuture<Throwable> failure) {
         boolean reclaimed() {
@@ -577,6 +558,23 @@ public final class ProcessTransport implements TmuxTransport {
                 failure.complete(e);
                 throw e;
             } finally {
+                finished.countDown();
+            }
+        }
+    }
+
+    private record InputPump(OutputStream target, String input, CountDownLatch finished) implements Runnable {
+        @Override
+        public void run() {
+            try {
+                if (!input.isEmpty()) {
+                    target.write(input.getBytes(StandardCharsets.UTF_8));
+                    target.flush();
+                }
+            } catch (IOException stoppedReading) {
+                // The exit status and stderr say what the child made of incomplete input.
+            } finally {
+                closeQuietly(target, null);
                 finished.countDown();
             }
         }
