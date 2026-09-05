@@ -25,6 +25,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
@@ -32,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -177,6 +179,119 @@ final class RunningCommandsTest {
                 assertCompleted(collided, 6);
             }
         }
+    }
+
+    @Test
+    void aSynchronizedCommandIsRefusedBeforeTyping(Server server) {
+        Pane source = server.panes().getFirst();
+        Pane peer = source.split();
+        source.window().setSynchronizePanes(true);
+        String marker = "synchronized-run-marker";
+
+        IllegalStateException refused = assertThrows(
+                IllegalStateException.class,
+                () -> RunningCommands.run(TestCalls.on(
+                        server,
+                        "pane_id",
+                        source.id().value(),
+                        "command",
+                        "printf '" + marker + "\\n'")));
+
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("run_shell_command"), message);
+        assertTrue(message.contains("one"), message);
+        assertFalse(capture(server, source.id().value()).contains(marker));
+        assertFalse(capture(server, peer.id().value()).contains(marker));
+    }
+
+    @Test
+    void aModalEffectiveCommandRecipientIsRefusedBeforeBaselineOrTyping(Server server) {
+        Pane source = server.panes().getFirst();
+        Pane modal = source.split();
+        source.window().setSynchronizePanes(true);
+        modal.copyMode();
+
+        assertRefusedBeforeRunWork(server, source, "modal-must-not-run", modal.id().value());
+    }
+
+    @Test
+    void aDeadCommandPaneIsRefusedBeforeBaselineOrTyping(Server server) throws Exception {
+        Pane source = server.panes().getFirst();
+        source.split();
+        source.options().set("remain-on-exit", "on");
+        source.sendLine("exit");
+        assertTrue(await(() -> "1".equals(source.expand("#{pane_dead}"))), "the pane did not become dead");
+
+        assertRefusedBeforeRunWork(server, source, "dead-must-not-run", "dead", source.id().value());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(RunTransition.class)
+    void stateTransitionAfterSetupRefusesRun(RunTransition transition, Server server) throws Exception {
+        Pane source = server.panes().getFirst();
+        prepare(transition, source);
+        AtomicInteger listings = new AtomicInteger();
+        CopyOnWriteArrayList<CommandRequest> requests = new CopyOnWriteArrayList<>();
+
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport changing = borrowing(request -> {
+                requests.add(request);
+                if (request.commands().stream().anyMatch(RunningCommandsTest::isCohortListing)
+                        && listings.incrementAndGet() == 2) {
+                    apply(transition, server, source);
+                }
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), changing)) {
+                assertThrows(
+                        RuntimeException.class,
+                        () -> RunningCommands.run(TestCalls.on(
+                                measured,
+                                "pane_id",
+                                source.id().value(),
+                                "command",
+                                "echo transition-must-not-run")));
+            } finally {
+                restore(transition, server, source);
+            }
+        }
+
+        assertEquals(2, listings.get(), "the run must attempt both authoritative preflights");
+        assertEquals(0, commandCount(requests, "send-keys"));
+        assertEquals(0, commandCount(requests, "wait-for"));
+        assertTrue(server.buffers().list().stream().noneMatch(buffer -> buffer.name().startsWith("libtmux-run-")));
+        assertTrue(server.panes().stream()
+                .flatMap(pane -> pane.options().all().keySet().stream())
+                .noneMatch(name -> name.startsWith("@st_")));
+    }
+
+    @Test
+    void successfulRunUsesExactlyTwoPreflights(Server server) {
+        String pane = server.panes().getFirst().id().value();
+        CopyOnWriteArrayList<CommandRequest> requests = new CopyOnWriteArrayList<>();
+
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport recording = borrowing(request -> {
+                requests.add(request);
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), recording)) {
+                RunningCommands.Ran ran = RunningCommands.run(
+                        TestCalls.on(measured, "pane_id", pane, "command", "true"));
+                assertCompleted(ran, 0);
+            }
+        }
+
+        List<Integer> preflights = requestIndexes(requests, RunningCommandsTest::isCohortListing);
+        List<Integer> discoveries = requestIndexes(requests, RunningCommandsTest::isSocketDiscovery);
+        List<Integer> sends = requestIndexes(requests, request -> hasCommand(request, "send-keys"));
+        assertEquals(2, preflights.size());
+        assertEquals(1, discoveries.size());
+        assertEquals(1, sends.size());
+        assertTrue(preflights.get(0) < discoveries.getFirst());
+        assertTrue(discoveries.getFirst() < preflights.get(1));
+        assertEquals(preflights.get(1) + 1, sends.getFirst(), "a tmux query followed the final preflight");
+        assertEquals(1, directCommandCount(requests, "wait-for"));
     }
 
     @Test
@@ -547,5 +662,149 @@ final class RunningCommandsTest {
                 .flatMap(argument -> NONCE.matcher(argument).results())
                 .map(MatchResult::group)
                 .findFirst();
+    }
+
+    private static String capture(Server server, String paneId) {
+        return String.join("\n", server.cmd("capture-pane", "-p", "-t", paneId).stdout());
+    }
+
+    private static void assertRefusedBeforeRunWork(
+            Server server, Pane source, String marker, String... expectedMessageParts) {
+        CopyOnWriteArrayList<CommandRequest> requests = new CopyOnWriteArrayList<>();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport recording = borrowing(request -> {
+                requests.add(request);
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), recording)) {
+                IllegalStateException refused = assertThrows(
+                        IllegalStateException.class,
+                        () -> RunningCommands.run(TestCalls.on(
+                                measured, "pane_id", source.id().value(), "command", "echo " + marker)));
+                String message = String.valueOf(refused.getMessage());
+                assertTrue(message.contains("run_shell_command"), message);
+                for (String part : expectedMessageParts) {
+                    assertTrue(message.contains(part), message);
+                }
+            }
+        }
+        assertNoRunWork(requests);
+    }
+
+    private static void assertNoRunWork(List<CommandRequest> requests) {
+        assertEquals(0, commandCount(requests, "capture-pane"));
+        assertEquals(0, commandCount(requests, "send-keys"));
+        assertEquals(0, commandCount(requests, "wait-for"));
+    }
+
+    private static int commandCount(List<CommandRequest> requests, String name) {
+        return Math.toIntExact(requests.stream().filter(request -> hasCommand(request, name)).count());
+    }
+
+    private static int directCommandCount(List<CommandRequest> requests, String name) {
+        return Math.toIntExact(requests.stream()
+                .filter(request -> request.commands().stream()
+                        .anyMatch(command -> command.getFirst().equals(name)))
+                .count());
+    }
+
+    private static List<Integer> requestIndexes(
+            List<CommandRequest> requests, java.util.function.Predicate<CommandRequest> predicate) {
+        return java.util.stream.IntStream.range(0, requests.size())
+                .filter(index -> predicate.test(requests.get(index)))
+                .boxed()
+                .toList();
+    }
+
+    private static boolean hasCommand(CommandRequest request, String name) {
+        return request.commands().stream().anyMatch(command -> command.getFirst().equals(name)
+                || command.stream().anyMatch(argument -> argument.contains("'" + name + "'")));
+    }
+
+    private static boolean isCohortListing(CommandRequest request) {
+        return request.commands().stream().anyMatch(RunningCommandsTest::isCohortListing);
+    }
+
+    private static boolean isCohortListing(List<String> command) {
+        if (!command.getFirst().equals("list-panes") || !command.contains("-t") || !command.contains("-F")) {
+            return false;
+        }
+        String format = command.get(command.indexOf("-F") + 1);
+        return List.of(
+                        "pane_id",
+                        "pane_synchronized",
+                        "pane_in_mode",
+                        "pane_dead",
+                        "pane_current_command")
+                .stream()
+                .allMatch(format::contains);
+    }
+
+    private static boolean isSocketDiscovery(CommandRequest request) {
+        return request.commands().stream().anyMatch(command -> command.equals(
+                List.of("display-message", "-p", "#{socket_path}")));
+    }
+
+    private static void prepare(RunTransition transition, Pane source) {
+        switch (transition) {
+            case MODE -> {}
+            case DEAD, NON_SHELL -> source.options().set("remain-on-exit", "on");
+            case PLURAL -> {
+                source.split();
+                source.window().setSynchronizePanes(true);
+                source.options().set("synchronize-panes", "off");
+            }
+            case DISAPPEAR -> source.split();
+        }
+    }
+
+    private static void apply(RunTransition transition, Server server, Pane source) {
+        switch (transition) {
+            case MODE -> source.copyMode();
+            case DEAD -> {
+                source.sendLine("exit");
+                awaitUnchecked(() -> "1".equals(source.expand("#{pane_dead}")));
+            }
+            case PLURAL -> source.options().set("synchronize-panes", "on");
+            case NON_SHELL -> {
+                source.sendLine("exec cat");
+                awaitUnchecked(() -> "cat".equals(source.expand("#{pane_current_command}")));
+            }
+            case DISAPPEAR -> server.cmd("kill-pane", "-t", source.id().value());
+        }
+    }
+
+    private static void restore(RunTransition transition, Server server, Pane source) {
+        switch (transition) {
+            case MODE -> server.cmd("send-keys", "-t", source.id().value(), "-X", "cancel");
+            case DEAD, NON_SHELL -> {
+                server.cmd("respawn-pane", "-k", "-t", source.id().value());
+                source.options().unset("remain-on-exit");
+            }
+            case PLURAL -> {
+                source.window().setSynchronizePanes(false);
+                source.options().unset("synchronize-panes");
+            }
+            case DISAPPEAR -> {}
+        }
+    }
+
+    private enum RunTransition {
+        MODE,
+        DEAD,
+        PLURAL,
+        NON_SHELL,
+        DISAPPEAR
+    }
+
+    private static void awaitUnchecked(BooleanSupplier condition) {
+        try {
+            if (!await(condition)) {
+                throw new IllegalStateException("timed out arranging run transition");
+            }
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while arranging run transition", failure);
+        }
     }
 }

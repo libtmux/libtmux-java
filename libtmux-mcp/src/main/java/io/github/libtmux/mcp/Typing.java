@@ -1,7 +1,6 @@
 package io.github.libtmux.mcp;
 
 import io.github.libtmux.Pane;
-import java.util.Comparator;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 
@@ -48,7 +47,13 @@ final class Typing {
     }
 
     static Sent sendKeys(Pane pane, List<String> keys, boolean literal) {
-        List<String> resolved = resolvedPaneIds(pane);
+        PaneInputCohort.Resolution cohort = PaneInputCohort.resolve(pane);
+        return sendKeys(pane, keys, literal, cohort);
+    }
+
+    static Sent sendKeys(
+            Pane pane, List<String> keys, boolean literal, PaneInputCohort.Resolution cohort) {
+        List<String> resolved = cohort.requireKeyRecipients("send_keys");
         pane.sendKeys(keys, literal);
         return new Sent(
                 pane.id().value(),
@@ -56,21 +61,6 @@ final class Typing {
                 literal,
                 resolved,
                 "Sent, not waited for. Call capture_since or wait_for_text on this pane to see " + "what it did.");
-    }
-
-    private static List<String> resolvedPaneIds(Pane pane) {
-        boolean synchronizedPanes = pane.window()
-                .options()
-                .get("synchronize-panes")
-                .map(value -> value.equals("on") || value.equals("1"))
-                .orElse(false);
-        if (!synchronizedPanes) {
-            return List.of(pane.id().value());
-        }
-        return pane.window().panes().stream()
-                .map(candidate -> candidate.id().value())
-                .sorted(Comparator.naturalOrder())
-                .toList();
     }
 
     /**
@@ -87,6 +77,7 @@ final class Typing {
         Pane pane = Targets.pane(call.server(), call.string("pane_id"));
         String text = call.string("text");
         boolean enter = call.flag("enter", false);
+        PaneInputCohort.resolve(pane).requirePasteTarget("paste_text");
         // tmux turns the line feeds in a buffer into carriage returns as it pastes, so a trailing
         // newline is what submits the text — there is no flag that means "and Enter".
         pane.paste(enter ? text + "\n" : text);

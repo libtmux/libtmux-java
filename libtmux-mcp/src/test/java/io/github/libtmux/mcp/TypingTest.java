@@ -17,11 +17,13 @@ import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -57,6 +59,146 @@ final class TypingTest {
     }
 
     @Test
+    void synchronizedKeysReachOnlyTheEffectiveOnCohort(Server server) throws Exception {
+        var source = server.panes().getFirst();
+        var effective = source.split(SplitSpec.builder().build());
+        var disabled = source.split(SplitSpec.builder().build());
+        source.window().setSynchronizePanes(true);
+        disabled.options().set("synchronize-panes", "off");
+        String marker = "effective-cohort-marker";
+
+        Typing.Sent sent = sendKeys(server, source.id().value(), marker);
+
+        assertEquals(sorted(source.id().value(), effective.id().value()), sent.resolvedPaneIds());
+        assertTrue(await(() -> captureOf(server, source.id().value()).contains(marker)));
+        assertTrue(await(() -> captureOf(server, effective.id().value()).contains(marker)));
+        assertFalse(captureOf(server, disabled.id().value()).contains(marker));
+    }
+
+    @Test
+    void sourceOffIgnoresATruePeer(Server server) throws Exception {
+        var source = server.panes().getFirst();
+        var peer = source.split(SplitSpec.builder().build());
+        source.window().setSynchronizePanes(true);
+        source.options().set("synchronize-panes", "off");
+        String marker = "source-off-marker";
+
+        Typing.Sent sent = sendKeys(server, source.id().value(), marker);
+
+        assertEquals(List.of(source.id().value()), sent.resolvedPaneIds());
+        assertTrue(await(() -> captureOf(server, source.id().value()).contains(marker)));
+        assertFalse(captureOf(server, peer.id().value()).contains(marker));
+    }
+
+    @Test
+    void modalRecipientRefusesBeforeDelivery(Server server) {
+        var source = server.panes().getFirst();
+        var modal = source.split(SplitSpec.builder().build());
+        source.window().setSynchronizePanes(true);
+        modal.copyMode();
+        assertTrue(modal.mode().isPresent(), "the refusal fixture did not enter a mode");
+        String marker = "modal-refusal-marker";
+
+        assertKeyRefused(server, source.id().value(), modal.id().value(), marker);
+    }
+
+    @Test
+    void modalPaneOutsideTheEffectiveCohortDoesNotBlockKeys(Server server) throws Exception {
+        var source = server.panes().getFirst();
+        var recipient = source.split(SplitSpec.builder().build());
+        var modal = source.split(SplitSpec.builder().build());
+        source.window().setSynchronizePanes(true);
+        modal.options().set("synchronize-panes", "off");
+        modal.copyMode();
+        String marker = "outside-modal-marker";
+
+        Typing.Sent sent = sendKeys(server, source.id().value(), marker);
+
+        assertEquals(sorted(source.id().value(), recipient.id().value()), sent.resolvedPaneIds());
+        assertTrue(await(() -> captureOf(server, source.id().value()).contains(marker)));
+        assertTrue(await(() -> captureOf(server, recipient.id().value()).contains(marker)));
+        assertFalse(captureOf(server, modal.id().value()).contains(marker));
+    }
+
+    @Test
+    void deadEffectiveRecipientRefusesBeforeDelivery(Server server) throws Exception {
+        var source = server.panes().getFirst();
+        var dead = source.split(SplitSpec.builder().build());
+        dead.options().set("remain-on-exit", "on");
+        dead.sendLine("exit");
+        assertTrue(await(() -> "1".equals(dead.expand("#{pane_dead}"))), "the pane did not become dead");
+        source.window().setSynchronizePanes(true);
+        String marker = "dead-refusal-marker";
+
+        assertKeyRefused(server, source.id().value(), dead.id().value(), marker);
+    }
+
+    @Test
+    void batchResolvesAndGuardsEveryOperationFresh(Server server) throws Exception {
+        var first = server.panes().getFirst();
+        var firstPeer = first.split(SplitSpec.builder().build());
+        first.window().setSynchronizePanes(true);
+        var second = server.sessions().getFirst().newWindow("batch-modal").panes().getFirst();
+        var modal = second.split(SplitSpec.builder().build());
+        second.window().setSynchronizePanes(true);
+        modal.copyMode();
+
+        Map<String, Object> batch = map(Operations.sendKeysBatch(TestCalls.on(
+                server,
+                "operations",
+                List.of(
+                        send(first.id().value(), "batch-first-marker"),
+                        send(second.id().value(), "batch-modal-marker"),
+                        send("%999999", "batch-missing-marker")),
+                "onError",
+                "continue")));
+        List<Map<String, Object>> rows = rows(batch);
+
+        assertEquals(3, batch.get("completed"));
+        assertEquals(true, rows.get(0).get("success"));
+        assertEquals(sorted(first.id().value(), firstPeer.id().value()), rows.get(0).get("resolved_pane_ids"));
+        assertEquals(false, rows.get(1).get("success"));
+        assertEquals(sorted(second.id().value(), modal.id().value()), rows.get(1).get("resolved_pane_ids"));
+        assertEquals(false, rows.get(2).get("success"));
+        assertEquals(List.of(), rows.get(2).get("resolved_pane_ids"));
+        assertTrue(await(() -> captureOf(server, first.id().value()).contains("batch-first-marker")));
+        assertTrue(await(() -> captureOf(server, firstPeer.id().value()).contains("batch-first-marker")));
+        assertFalse(captureOf(server, second.id().value()).contains("batch-modal-marker"));
+        assertFalse(captureOf(server, modal.id().value()).contains("batch-modal-marker"));
+
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport failing = new TmuxTransport() {
+                @Override
+                public CommandResult execute(CommandRequest request) {
+                    boolean sending = request.commands().stream().anyMatch(command -> command.getFirst()
+                                    .equals("send-keys")
+                            || command.stream().anyMatch(argument -> argument.contains("'send-keys'")));
+                    if (sending) {
+                        throw new IllegalStateException("dispatch refused by fixture");
+                    }
+                    return processes.execute(request);
+                }
+
+                @Override
+                public void close() {}
+            };
+            try (Server measured = Server.using(server.config(), failing)) {
+                List<Map<String, Object>> failed = rows(map(Operations.sendKeysBatch(TestCalls.on(
+                        measured,
+                        "operations",
+                        List.of(send(first.id().value(), "dispatch-failure-marker")),
+                        "onError",
+                        "continue"))));
+                assertEquals(false, failed.getFirst().get("success"));
+                assertTrue(String.valueOf(failed.getFirst().get("error")).contains("dispatch refused by fixture"));
+                assertEquals(
+                        sorted(first.id().value(), firstPeer.id().value()),
+                        failed.getFirst().get("resolved_pane_ids"));
+            }
+        }
+    }
+
+    @Test
     void sendingNoKeysAtAllSaysWhatWasWanted(Server server) {
         String pane = server.panes().get(0).id().value();
 
@@ -78,6 +220,42 @@ final class TypingTest {
         assertEquals(16, pasted.characters());
         assertTrue(String.valueOf(pasted.note()).contains("pass 'enter'"), String.valueOf(pasted.note()));
         assertEquals("user-owned", server.buffers().show("libtmux-paste"));
+        assertNoOwnedBuffers(server);
+    }
+
+    @Test
+    void pasteChecksOnlyItsTargetAndDoesNotFanOut(Server server) throws Exception {
+        assumeTrue(server.version().atLeast(SAFE_PASTE_CLEANUP));
+        var source = server.panes().getFirst();
+        var modal = source.split(SplitSpec.builder().build());
+        source.window().setSynchronizePanes(true);
+        modal.copyMode();
+        String marker = "target-only-paste-marker";
+
+        Typing.Pasted pasted = Typing.pasteText(TestCalls.on(
+                server, "pane_id", source.id().value(), "text", marker));
+
+        assertEquals(source.id().value(), pasted.paneId());
+        assertTrue(await(() -> captureOf(server, source.id().value()).contains(marker)));
+        assertFalse(captureOf(server, modal.id().value()).contains(marker));
+        assertNoOwnedBuffers(server);
+    }
+
+    @Test
+    void pasteRefusesAModalTargetBeforeCreatingABuffer(Server server) {
+        var pane = server.panes().getFirst();
+        pane.copyMode();
+        String marker = "modal-paste-marker";
+
+        IllegalStateException refused = assertThrows(
+                IllegalStateException.class,
+                () -> Typing.pasteText(TestCalls.on(
+                        server, "pane_id", pane.id().value(), "text", marker)));
+
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("paste_text"), message);
+        assertTrue(message.contains(pane.id().value()), message);
+        assertFalse(captureOf(server, pane.id().value()).contains(marker));
         assertNoOwnedBuffers(server);
     }
 
@@ -173,6 +351,39 @@ final class TypingTest {
         return String.join("\n", server.cmd("capture-pane", "-p", "-t", pane).stdout());
     }
 
+    private static List<String> sorted(String... paneIds) {
+        return java.util.stream.Stream.of(paneIds).sorted().toList();
+    }
+
+    private static Typing.Sent sendKeys(Server server, String paneId, String marker) {
+        return Typing.sendKeys(
+                TestCalls.on(server, "pane_id", paneId, "keys", List.of(marker), "literal", true));
+    }
+
+    private static void assertKeyRefused(Server server, String source, String blocked, String marker) {
+        IllegalStateException refused =
+                assertThrows(IllegalStateException.class, () -> sendKeys(server, source, marker));
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("send_keys"), message);
+        assertTrue(message.contains(blocked), message);
+        assertFalse(captureOf(server, source).contains(marker));
+        assertFalse(captureOf(server, blocked).contains(marker));
+    }
+
+    private static Map<String, Object> send(String paneId, String marker) {
+        return Map.of("pane_id", paneId, "keys", List.of(marker), "literal", true);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> map(Object value) {
+        return (Map<String, Object>) value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> rows(Map<String, Object> batch) {
+        return (List<Map<String, Object>>) java.util.Objects.requireNonNull(batch.get("results"));
+    }
+
     private static void assertNoOwnedBuffers(Server server) {
         assertTrue(server.buffers().list().stream()
                 .noneMatch(buffer -> buffer.name().startsWith("libtmux-paste-")));
@@ -187,5 +398,16 @@ final class TypingTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("interrupted while arranging concurrent pastes", e);
         }
+    }
+
+    private static boolean await(BooleanSupplier condition) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (System.nanoTime() < deadline) {
+            if (condition.getAsBoolean()) {
+                return true;
+            }
+            Thread.sleep(20);
+        }
+        return condition.getAsBoolean();
     }
 }

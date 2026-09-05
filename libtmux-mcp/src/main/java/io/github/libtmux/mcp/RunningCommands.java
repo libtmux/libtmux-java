@@ -72,10 +72,12 @@ final class RunningCommands {
     static Ran run(Call call) {
         Server server = call.server();
         Pane pane = Targets.pane(server, call.string("pane_id"));
-        requirePosixShell(pane);
         String command = call.string("command");
         Duration timeout = Waits.requested(call);
         boolean suppressHistory = call.flag("suppress_history", true);
+        String currentCommand =
+                PaneInputCohort.resolve(pane).requireSingularCommandPane("run_shell_command");
+        requirePosixShell(currentCommand);
         PaneCommandFrame commandFrame = PaneCommandFrame.resolve(call);
 
         String nonce = "lt" + HexFormat.of().formatHex(bytes());
@@ -85,19 +87,24 @@ final class RunningCommands {
 
         Cursor before = Screen.from(pane).cursor();
         String typed = payload(commandFrame, command, startMark, endMark, channel, suppressHistory);
-        pane.sendLine(typed);
+        Pane freshPane = Targets.pane(server, pane.id().value());
+        String freshCommand =
+                PaneInputCohort.resolve(freshPane).requireSingularCommandPane("run_shell_command");
+        requirePosixShell(freshCommand);
+        freshPane.sendLine(typed);
 
         long started = System.nanoTime();
         WakeReason wake = server.channel(channel).await(timeout);
         double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
 
-        Screen.Fresh fresh = wake == WakeReason.SERVER_GONE ? null : Screen.since(pane, before, Trim.lineBudget(call));
+        Screen.Fresh fresh =
+                wake == WakeReason.SERVER_GONE ? null : Screen.since(freshPane, before, Trim.lineBudget(call));
         Framed framed = fresh == null ? new Framed(List.of(), false, null) : frame(fresh.lines(), startMark, endMark);
         Integer status = wake == WakeReason.SIGNALLED ? framed.status() : null;
         Trim.Trimmed trimmed = Trim.tail(framed.lines(), Trim.lineBudget(call));
 
         return new Ran(
-                pane.id().value(),
+                freshPane.id().value(),
                 wake.name(),
                 status,
                 trimmed.lines(),
@@ -223,8 +230,7 @@ final class RunningCommands {
         return value;
     }
 
-    private static void requirePosixShell(Pane pane) {
-        String current = pane.expand("#{pane_current_command}");
+    private static void requirePosixShell(String current) {
         int slash = current.lastIndexOf('/');
         String name = slash < 0 ? current : current.substring(slash + 1);
         if (name.startsWith("-")) {

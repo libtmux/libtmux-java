@@ -353,18 +353,21 @@ final class Operations {
         for (int index = 0; index < operations.size(); index++) {
             Map<String, Object> operation = operations.get(index);
             String paneId = requiredText(operation, "pane_id");
+            List<String> resolvedPaneIds = List.of();
             try {
                 Pane pane = Targets.pane(call.server(), paneId);
+                PaneInputCohort.Resolution cohort = PaneInputCohort.resolve(pane);
+                resolvedPaneIds = cohort.configuredKeyRecipientIds();
                 List<String> keys = strings(operation.get("keys"), "keys");
                 boolean literal = booleanValue(operation.get("literal"), false, "literal");
-                Typing.Sent sent = Typing.sendKeys(pane, keys, literal);
+                Typing.sendKeys(pane, keys, literal, cohort);
                 results.add(values(
                         "index",
                         index,
                         "pane_id",
                         paneId,
                         "resolved_pane_ids",
-                        sent.resolvedPaneIds(),
+                        resolvedPaneIds,
                         "success",
                         true));
             } catch (RuntimeException failure) {
@@ -373,6 +376,8 @@ final class Operations {
                         index,
                         "pane_id",
                         paneId,
+                        "resolved_pane_ids",
+                        resolvedPaneIds,
                         "success",
                         false,
                         "error",
