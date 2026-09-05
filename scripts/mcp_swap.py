@@ -49,7 +49,7 @@ $ uv run scripts/mcp_swap.py revert
 
 Scope
 -----
-Deliberately narrow, and best-effort:
+Deliberately narrow, and transactional:
 
 - **Global configs only.** Project-local ``.mcp.json`` and
   ``.cursor/mcp.json`` are left alone; a swap is a thing you do to your
@@ -59,6 +59,9 @@ Deliberately narrow, and best-effort:
   including comments in TOML and JSONC.
 - **A backup per file, once.** Written beside the original as
   ``<name>.mcp-swap-backup``. ``revert`` moves it back.
+- **One all-client transaction.** Every selected config and backup destination
+  is checked and staged before replacement. A failure rolls back in reverse;
+  recovery copies remain when an exact rollback cannot be proven.
 """
 
 from __future__ import annotations
@@ -67,7 +70,6 @@ import argparse
 import json
 import os
 import pathlib
-import shutil
 import stat
 import subprocess
 import sys
@@ -434,25 +436,6 @@ def render(layer: Layer, document: t.Any, original: bytes) -> bytes:
     return (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
 
-def save(layer: Layer, data: bytes) -> None:
-    """Replace config bytes atomically while retaining mode and symlinks."""
-    target = layer.path.resolve() if layer.path.is_symlink() else layer.path
-    mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else None
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=target.name + ".", dir=str(target.parent)
-    )
-    temporary = pathlib.Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "wb") as stream:
-            if mode is not None:
-                os.fchmod(stream.fileno(), mode)
-            stream.write(data)
-        temporary.replace(target)
-    except Exception:
-        temporary.unlink(missing_ok=True)
-        raise
-
-
 def servers(layer: Layer, document: t.Any, *, create: bool = False) -> t.Any:
     """The mapping of server name to launch spec, or None when there is none."""
     node = document
@@ -475,11 +458,711 @@ def entry_for(layer: Layer, command: str, arguments: list[str]) -> dict[str, t.A
     return {"command": command, "args": arguments}
 
 
-class Prepared(t.NamedTuple):
+class FileState(t.NamedTuple):
+    device: int
+    inode: int
+    mode: int
+    size: int
+    modified_ns: int
+    data: bytes
+
+
+class DirectoryState(t.NamedTuple):
+    logical: pathlib.Path
+    physical: pathlib.Path
+    symlink: bool
+    link_text: str | None
+    link_device: int
+    link_inode: int
+    link_mode: int
+    device: int
+    inode: int
+    mode: int
+
+
+class ConfigState(t.NamedTuple):
     layer: Layer
-    original: bytes
+    parent: DirectoryState
+    symlink: bool
+    link_text: str | None
+    link_device: int
+    link_inode: int
+    link_mode: int
+    target: pathlib.Path
+    file: FileState
+
+
+class BackupState(t.NamedTuple):
+    path: pathlib.Path
+    parent: DirectoryState
+    physical: pathlib.Path
+    file: FileState | None
+
+
+class PreparedUse(t.NamedTuple):
+    config: ConfigState
+    backup: BackupState
     output: bytes
     entry: dict[str, t.Any]
+
+
+class PreparedRevert(t.NamedTuple):
+    config: ConfigState
+    backup: BackupState
+
+
+class StagedUse(t.NamedTuple):
+    plan: PreparedUse
+    output: pathlib.Path
+    recovery: pathlib.Path
+    backup: pathlib.Path | None
+
+
+class StagedRevert(t.NamedTuple):
+    plan: PreparedRevert
+    restored: pathlib.Path
+    recovery: pathlib.Path
+    backup_recovery: pathlib.Path
+
+
+class ConfigWrite(t.NamedTuple):
+    config: ConfigState
+    committed: FileState
+    recovery: pathlib.Path
+
+
+class BackupWrite(t.NamedTuple):
+    backup: BackupState
+    committed: FileState
+    cli: str
+
+
+class BackupRemoval(t.NamedTuple):
+    backup: BackupState
+    recovery: pathlib.Path
+    cli: str
+
+
+def _file_state(path: pathlib.Path) -> FileState:
+    before = path.stat()
+    if not stat.S_ISREG(before.st_mode):
+        raise ValueError(f"{path} is not a regular file")
+    data = path.read_bytes()
+    after = path.stat()
+    before_key = (
+        before.st_dev,
+        before.st_ino,
+        before.st_mode,
+        before.st_size,
+        before.st_mtime_ns,
+    )
+    after_key = (
+        after.st_dev,
+        after.st_ino,
+        after.st_mode,
+        after.st_size,
+        after.st_mtime_ns,
+    )
+    if before_key != after_key:
+        raise RuntimeError(f"{path} changed while it was read")
+    return FileState(
+        after.st_dev,
+        after.st_ino,
+        stat.S_IMODE(after.st_mode),
+        after.st_size,
+        after.st_mtime_ns,
+        data,
+    )
+
+
+def _directory_state(path: pathlib.Path) -> DirectoryState:
+    logical = path.lstat()
+    symlink = stat.S_ISLNK(logical.st_mode)
+    if not symlink and not stat.S_ISDIR(logical.st_mode):
+        raise ValueError(f"{path} is not a directory or directory symlink")
+    physical = path.resolve(strict=True)
+    details = physical.stat()
+    if not stat.S_ISDIR(details.st_mode):
+        raise ValueError(f"{path} is not a directory")
+    return DirectoryState(
+        path,
+        physical,
+        symlink,
+        os.readlink(path) if symlink else None,
+        logical.st_dev,
+        logical.st_ino,
+        logical.st_mode,
+        details.st_dev,
+        details.st_ino,
+        stat.S_IMODE(details.st_mode),
+    )
+
+
+def _config_state(layer: Layer) -> ConfigState:
+    parent = _directory_state(layer.path.parent)
+    details = layer.path.lstat()
+    symlink = stat.S_ISLNK(details.st_mode)
+    if not symlink and not stat.S_ISREG(details.st_mode):
+        raise ValueError(f"{layer.path} is not a regular file or symlink")
+    link_text = os.readlink(layer.path) if symlink else None
+    target = layer.path.resolve(strict=True)
+    file = _file_state(target)
+    if not symlink and (details.st_dev, details.st_ino) != (
+        file.device,
+        file.inode,
+    ):
+        raise RuntimeError(f"{layer.path} changed while it was resolved")
+    return ConfigState(
+        layer,
+        parent,
+        symlink,
+        link_text,
+        details.st_dev,
+        details.st_ino,
+        details.st_mode,
+        target,
+        file,
+    )
+
+
+def _backup_state(layer: Layer, *, required: bool = False) -> BackupState:
+    path = backup_of(layer)
+    parent = _directory_state(path.parent)
+    physical = parent.physical / path.name
+    if not os.path.lexists(path):
+        if required:
+            raise FileNotFoundError(path)
+        return BackupState(path, parent, physical, None)
+    details = path.lstat()
+    if stat.S_ISLNK(details.st_mode) or not stat.S_ISREG(details.st_mode):
+        raise ValueError(f"{path} is not a regular file")
+    if path.resolve(strict=True) != physical:
+        raise RuntimeError(f"{path} did not resolve in its preflight directory")
+    file = _file_state(physical)
+    if (details.st_dev, details.st_ino) != (file.device, file.inode):
+        raise RuntimeError(f"{path} changed while it was resolved")
+    return BackupState(path, parent, physical, file)
+
+
+def _verify_directory(expected: DirectoryState) -> None:
+    current = _directory_state(expected.logical)
+    if current != expected:
+        raise RuntimeError(f"{expected.logical} changed")
+
+
+def _verify_config(config: ConfigState, expected: FileState) -> None:
+    _verify_directory(config.parent)
+    details = config.layer.path.lstat()
+    if config.symlink:
+        if (
+            not stat.S_ISLNK(details.st_mode)
+            or os.readlink(config.layer.path) != config.link_text
+            or (details.st_dev, details.st_ino, details.st_mode)
+            != (config.link_device, config.link_inode, config.link_mode)
+        ):
+            raise RuntimeError(f"{config.layer.path} symlink changed")
+    elif not stat.S_ISREG(details.st_mode):
+        raise RuntimeError(f"{config.layer.path} topology changed")
+    if config.layer.path.resolve(strict=True) != config.target:
+        raise RuntimeError(f"{config.layer.path} target changed")
+    current = _file_state(config.target)
+    if current != expected:
+        raise RuntimeError(f"{config.layer.path} identity, mode, or bytes changed")
+    if not config.symlink and (details.st_dev, details.st_ino) != (
+        current.device,
+        current.inode,
+    ):
+        raise RuntimeError(f"{config.layer.path} logical identity changed")
+
+
+def _verify_restored_config(config: ConfigState, *, data: bytes, mode: int) -> None:
+    _verify_directory(config.parent)
+    details = config.layer.path.lstat()
+    if config.symlink:
+        if (
+            not stat.S_ISLNK(details.st_mode)
+            or os.readlink(config.layer.path) != config.link_text
+            or (details.st_dev, details.st_ino, details.st_mode)
+            != (config.link_device, config.link_inode, config.link_mode)
+        ):
+            raise RuntimeError(f"{config.layer.path} symlink changed")
+    elif not stat.S_ISREG(details.st_mode):
+        raise RuntimeError(f"{config.layer.path} topology changed")
+    if config.layer.path.resolve(strict=True) != config.target:
+        raise RuntimeError(f"{config.layer.path} target changed")
+    current = _file_state(config.target)
+    if current.data != data or current.mode != mode:
+        raise RuntimeError(f"{config.layer.path} was not restored exactly")
+
+
+def _verify_backup(backup: BackupState, expected: FileState | None) -> None:
+    _verify_directory(backup.parent)
+    if expected is None:
+        if os.path.lexists(backup.path):
+            raise RuntimeError(f"{backup.path} appeared")
+        return
+    if not os.path.lexists(backup.path) or backup.path.is_symlink():
+        raise RuntimeError(f"{backup.path} topology changed")
+    if backup.path.resolve(strict=True) != backup.physical:
+        raise RuntimeError(f"{backup.path} target changed")
+    if _file_state(backup.physical) != expected:
+        raise RuntimeError(f"{backup.path} identity, mode, or bytes changed")
+
+
+def _verify_restored_backup(backup: BackupState) -> None:
+    expected = t.cast(FileState, backup.file)
+    _verify_directory(backup.parent)
+    if not os.path.lexists(backup.path) or backup.path.is_symlink():
+        raise RuntimeError(f"{backup.path} topology changed")
+    if backup.path.resolve(strict=True) != backup.physical:
+        raise RuntimeError(f"{backup.path} target changed")
+    current = _file_state(backup.physical)
+    if current.data != expected.data or current.mode != expected.mode:
+        raise RuntimeError(f"{backup.path} was not restored exactly")
+
+
+def _reject_duplicate_targets(plans: t.Iterable[t.Any]) -> None:
+    config_paths: dict[pathlib.Path, str] = {}
+    config_inodes: dict[tuple[int, int], str] = {}
+    all_paths: dict[pathlib.Path, str] = {}
+    all_inodes: dict[tuple[int, int], str] = {}
+    for plan in plans:
+        config = plan.config
+        cli = config.layer.cli
+        by_path = config_paths.get(config.target)
+        by_inode = config_inodes.get((config.file.device, config.file.inode))
+        if by_path is not None or by_inode is not None:
+            other = by_path or by_inode
+            raise SystemExit(f"duplicate physical config target for {other} and {cli}")
+        config_paths[config.target] = cli
+        config_inodes[(config.file.device, config.file.inode)] = cli
+        owner = all_paths.get(config.target) or all_inodes.get(
+            (config.file.device, config.file.inode)
+        )
+        if owner is not None:
+            raise SystemExit(
+                f"duplicate transaction destination for {owner} and {cli} config"
+            )
+        all_paths[config.target] = f"{cli} config"
+        all_inodes[(config.file.device, config.file.inode)] = f"{cli} config"
+
+        backup = plan.backup
+        backup_inode = (
+            None if backup.file is None else (backup.file.device, backup.file.inode)
+        )
+        owner = all_paths.get(backup.physical)
+        if owner is None and backup_inode is not None:
+            owner = all_inodes.get(backup_inode)
+        if owner is not None:
+            raise SystemExit(
+                f"duplicate transaction destination for {owner} and {cli} backup"
+            )
+        all_paths[backup.physical] = f"{cli} backup"
+        if backup_inode is not None:
+            all_inodes[backup_inode] = f"{cli} backup"
+
+
+def _stage(
+    directory: pathlib.Path,
+    logical_name: str,
+    role: str,
+    data: bytes,
+    mode: int,
+) -> pathlib.Path:
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{logical_name}.mcp-swap-{role}-", dir=str(directory)
+    )
+    temporary = pathlib.Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            os.fchmod(stream.fileno(), mode)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        return temporary
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _apply_replace(
+    staged: pathlib.Path, destination: pathlib.Path
+) -> tuple[FileState, Exception | None]:
+    staged_state = _file_state(staged)
+    delayed: Exception | None = None
+    try:
+        os.replace(staged, destination)
+    except Exception as error:
+        try:
+            moved = _file_state(destination) == staged_state
+        except (OSError, RuntimeError, ValueError):
+            moved = False
+        if not moved:
+            raise
+        delayed = error
+    committed = _file_state(destination)
+    if committed != staged_state:
+        raise RuntimeError(f"atomic replacement of {destination} was not exact")
+    return committed, delayed
+
+
+def _apply_unlink(path: pathlib.Path) -> Exception | None:
+    delayed: Exception | None = None
+    try:
+        os.unlink(path)
+    except Exception as error:
+        if os.path.lexists(path):
+            raise
+        delayed = error
+    if os.path.lexists(path):
+        raise RuntimeError(f"{path} still exists after removal")
+    return delayed
+
+
+def _cleanup_owned(
+    owned: set[pathlib.Path], preserve: set[pathlib.Path] | None = None
+) -> list[str]:
+    retained = preserve or set()
+    errors: list[str] = []
+    for path in sorted(owned - retained, key=str):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as error:
+            errors.append(f"could not remove task-owned stage {path}: {error}")
+    return errors
+
+
+def _transaction_failure(
+    action: str,
+    error: Exception,
+    rollback_errors: list[str],
+    cleanup_errors: list[str],
+    preserved: set[pathlib.Path],
+) -> t.NoReturn:
+    details = [f"{action} failed: {error}"]
+    if rollback_errors:
+        details.append("rollback incomplete: " + "; ".join(rollback_errors))
+    if cleanup_errors:
+        details.append("cleanup incomplete: " + "; ".join(cleanup_errors))
+    if preserved:
+        details.append(
+            "recovery artifacts: "
+            + ", ".join(str(path) for path in sorted(preserved, key=str))
+        )
+    raise SystemExit("; ".join(details)) from error
+
+
+def _plan_use(
+    args: argparse.Namespace, command: str, arguments: list[str]
+) -> list[PreparedUse]:
+    prepared: list[PreparedUse] = []
+    for layer in chosen(args):
+        if not os.path.lexists(layer.path):
+            print(f"{layer.cli:<{CLI_COLUMN}} skipped, no config")
+            continue
+        try:
+            config = _config_state(layer)
+            document = parse(layer, config.file.data)
+            entry = entry_for(layer, command, arguments)
+            into = servers(layer, document, create=True)
+            into[args.name] = entry
+            output = render(layer, document, config.file.data)
+        except Exception as error:
+            raise SystemExit(f"{layer.cli} config is unreadable: {error}") from error
+        try:
+            backup = _backup_state(layer)
+        except Exception as error:
+            raise SystemExit(f"{layer.cli} backup is unusable: {error}") from error
+        prepared.append(PreparedUse(config, backup, output, entry))
+    _reject_duplicate_targets(prepared)
+    return prepared
+
+
+def _plan_revert(args: argparse.Namespace) -> list[PreparedRevert]:
+    prepared: list[PreparedRevert] = []
+    for layer in chosen(args):
+        if not os.path.lexists(backup_of(layer)):
+            print(f"{layer.cli:<{CLI_COLUMN}} nothing to revert")
+            continue
+        try:
+            backup = _backup_state(layer, required=True)
+        except Exception as error:
+            raise SystemExit(f"{layer.cli} backup is unusable: {error}") from error
+        try:
+            config = _config_state(layer)
+        except Exception as error:
+            raise SystemExit(f"{layer.cli} config is unreadable: {error}") from error
+        prepared.append(PreparedRevert(config, backup))
+    _reject_duplicate_targets(prepared)
+    return prepared
+
+
+def _changed_config(config: ConfigState, expected: FileState) -> None:
+    try:
+        _verify_config(config, expected)
+    except Exception as error:
+        raise RuntimeError(
+            f"{config.layer.cli} config changed during preflight"
+        ) from error
+
+
+def _changed_backup(backup: BackupState, expected: FileState | None, cli: str) -> None:
+    try:
+        _verify_backup(backup, expected)
+    except Exception as error:
+        raise RuntimeError(f"{cli} backup changed during preflight") from error
+
+
+def _stage_use(plans: list[PreparedUse], owned: set[pathlib.Path]) -> list[StagedUse]:
+    staged: list[StagedUse] = []
+    try:
+        for plan in plans:
+            config = plan.config
+            output = _stage(
+                config.target.parent,
+                config.layer.path.name,
+                "output",
+                plan.output,
+                config.file.mode,
+            )
+            owned.add(output)
+            recovery = _stage(
+                config.target.parent,
+                config.layer.path.name,
+                "recovery",
+                config.file.data,
+                config.file.mode,
+            )
+            owned.add(recovery)
+            backup = None
+            if plan.backup.file is None:
+                backup = _stage(
+                    plan.backup.parent.physical,
+                    plan.backup.path.name,
+                    "new",
+                    config.file.data,
+                    config.file.mode,
+                )
+                owned.add(backup)
+            staged.append(StagedUse(plan, output, recovery, backup))
+    except Exception as error:
+        cleanup = _cleanup_owned(owned)
+        detail = f"swap staging failed: {error}"
+        if cleanup:
+            detail += "; " + "; ".join(cleanup)
+        raise SystemExit(detail) from error
+    return staged
+
+
+def _stage_revert(
+    plans: list[PreparedRevert], owned: set[pathlib.Path]
+) -> list[StagedRevert]:
+    staged: list[StagedRevert] = []
+    try:
+        for plan in plans:
+            config = plan.config
+            backup = t.cast(FileState, plan.backup.file)
+            restored = _stage(
+                config.target.parent,
+                config.layer.path.name,
+                "restore",
+                backup.data,
+                backup.mode,
+            )
+            owned.add(restored)
+            recovery = _stage(
+                config.target.parent,
+                config.layer.path.name,
+                "recovery",
+                config.file.data,
+                config.file.mode,
+            )
+            owned.add(recovery)
+            backup_recovery = _stage(
+                plan.backup.parent.physical,
+                plan.backup.path.name,
+                "recovery",
+                backup.data,
+                backup.mode,
+            )
+            owned.add(backup_recovery)
+            staged.append(StagedRevert(plan, restored, recovery, backup_recovery))
+    except Exception as error:
+        cleanup = _cleanup_owned(owned)
+        detail = f"revert staging failed: {error}"
+        if cleanup:
+            detail += "; " + "; ".join(cleanup)
+        raise SystemExit(detail) from error
+    return staged
+
+
+def _rollback_use(
+    operations: list[ConfigWrite | BackupWrite],
+    owned: set[pathlib.Path],
+) -> tuple[list[str], set[pathlib.Path]]:
+    errors: list[str] = []
+    preserved: set[pathlib.Path] = set()
+    failed_configs: set[str] = set()
+    for operation in reversed(operations):
+        if isinstance(operation, ConfigWrite):
+            cli = operation.config.layer.cli
+            try:
+                _verify_config(operation.config, operation.committed)
+                _apply_replace(operation.recovery, operation.config.target)
+                owned.discard(operation.recovery)
+                _verify_restored_config(
+                    operation.config,
+                    data=operation.config.file.data,
+                    mode=operation.config.file.mode,
+                )
+            except Exception as error:  # noqa: BLE001 - continue reverse rollback
+                failed_configs.add(cli)
+                if operation.recovery.exists():
+                    preserved.add(operation.recovery)
+                errors.append(f"{cli} config: {error}")
+            continue
+
+        cli = operation.cli
+        if cli in failed_configs:
+            preserved.add(operation.backup.path)
+            continue
+        try:
+            _verify_backup(operation.backup, operation.committed)
+            _apply_unlink(operation.backup.physical)
+        except Exception as error:  # noqa: BLE001 - continue reverse rollback
+            preserved.add(operation.backup.path)
+            errors.append(f"{cli} backup: {error}")
+    return errors, preserved
+
+
+def _commit_use(staged: list[StagedUse], owned: set[pathlib.Path]) -> None:
+    operations: list[ConfigWrite | BackupWrite] = []
+    committed_backups: dict[str, FileState] = {}
+    try:
+        for item in staged:
+            _changed_config(item.plan.config, item.plan.config.file)
+            _changed_backup(
+                item.plan.backup,
+                item.plan.backup.file,
+                item.plan.config.layer.cli,
+            )
+
+        for item in staged:
+            if item.backup is None:
+                continue
+            plan = item.plan
+            cli = plan.config.layer.cli
+            _changed_config(plan.config, plan.config.file)
+            _changed_backup(plan.backup, None, cli)
+            committed, delayed = _apply_replace(item.backup, plan.backup.physical)
+            owned.discard(item.backup)
+            operations.append(BackupWrite(plan.backup, committed, cli))
+            committed_backups[cli] = committed
+            if delayed is not None:
+                raise delayed
+
+        for item in staged:
+            plan = item.plan
+            cli = plan.config.layer.cli
+            _changed_config(plan.config, plan.config.file)
+            expected_backup = committed_backups.get(cli, plan.backup.file)
+            _changed_backup(plan.backup, expected_backup, cli)
+            committed, delayed = _apply_replace(item.output, plan.config.target)
+            owned.discard(item.output)
+            operations.append(ConfigWrite(plan.config, committed, item.recovery))
+            if delayed is not None:
+                raise delayed
+    except Exception as error:  # noqa: BLE001 - every commit failure rolls back
+        rollback_errors, preserved = _rollback_use(operations, owned)
+        cleanup_errors = _cleanup_owned(owned, preserved)
+        _transaction_failure("swap", error, rollback_errors, cleanup_errors, preserved)
+
+    cleanup_errors = _cleanup_owned(owned)
+    for error in cleanup_errors:
+        print(f"warning: {error}", file=sys.stderr)
+
+
+def _rollback_revert(
+    operations: list[ConfigWrite | BackupRemoval],
+    owned: set[pathlib.Path],
+) -> tuple[list[str], set[pathlib.Path]]:
+    errors: list[str] = []
+    preserved: set[pathlib.Path] = set()
+    for operation in reversed(operations):
+        if isinstance(operation, BackupRemoval):
+            cli = operation.cli
+            try:
+                _verify_directory(operation.backup.parent)
+                if os.path.lexists(operation.backup.path):
+                    raise RuntimeError(
+                        f"{operation.backup.path} appeared before rollback"
+                    )
+                _apply_replace(operation.recovery, operation.backup.physical)
+                owned.discard(operation.recovery)
+                _verify_restored_backup(operation.backup)
+            except Exception as error:  # noqa: BLE001 - continue reverse rollback
+                if operation.recovery.exists():
+                    preserved.add(operation.recovery)
+                errors.append(f"{cli} backup: {error}")
+            continue
+
+        cli = operation.config.layer.cli
+        try:
+            _verify_config(operation.config, operation.committed)
+            _apply_replace(operation.recovery, operation.config.target)
+            owned.discard(operation.recovery)
+            _verify_restored_config(
+                operation.config,
+                data=operation.config.file.data,
+                mode=operation.config.file.mode,
+            )
+        except Exception as error:  # noqa: BLE001 - continue reverse rollback
+            if operation.recovery.exists():
+                preserved.add(operation.recovery)
+            errors.append(f"{cli} config: {error}")
+    return errors, preserved
+
+
+def _commit_revert(staged: list[StagedRevert], owned: set[pathlib.Path]) -> None:
+    operations: list[ConfigWrite | BackupRemoval] = []
+    committed_configs: dict[str, FileState] = {}
+    try:
+        for item in staged:
+            plan = item.plan
+            _changed_config(plan.config, plan.config.file)
+            _changed_backup(plan.backup, plan.backup.file, plan.config.layer.cli)
+
+        for item in staged:
+            plan = item.plan
+            cli = plan.config.layer.cli
+            _changed_config(plan.config, plan.config.file)
+            _changed_backup(plan.backup, plan.backup.file, cli)
+            committed, delayed = _apply_replace(item.restored, plan.config.target)
+            owned.discard(item.restored)
+            operations.append(ConfigWrite(plan.config, committed, item.recovery))
+            committed_configs[cli] = committed
+            if delayed is not None:
+                raise delayed
+
+        for item in staged:
+            plan = item.plan
+            cli = plan.config.layer.cli
+            _verify_config(plan.config, committed_configs[cli])
+            _changed_backup(plan.backup, plan.backup.file, cli)
+            delayed = _apply_unlink(plan.backup.physical)
+            operations.append(BackupRemoval(plan.backup, item.backup_recovery, cli))
+            if delayed is not None:
+                raise delayed
+    except Exception as error:  # noqa: BLE001 - every commit failure rolls back
+        rollback_errors, preserved = _rollback_revert(operations, owned)
+        cleanup_errors = _cleanup_owned(owned, preserved)
+        _transaction_failure(
+            "revert", error, rollback_errors, cleanup_errors, preserved
+        )
+
+    cleanup_errors = _cleanup_owned(owned)
+    for error in cleanup_errors:
+        print(f"warning: {error}", file=sys.stderr)
 
 
 # ------------------------------------------------------------------ what to point at
@@ -575,59 +1258,42 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_use(args: argparse.Namespace) -> int:
     command, arguments = launcher(args)
-    prepared: list[Prepared] = []
-    for layer in chosen(args):
-        if not layer.exists():
-            print(f"{layer.cli:<{CLI_COLUMN}} skipped, no config")
-            continue
-        try:
-            original = layer.path.read_bytes()
-            document = parse(layer, original)
-            entry = entry_for(layer, command, arguments)
-            into = servers(layer, document, create=True)
-            into[args.name] = entry
-            output = render(layer, document, original)
-        except Exception as error:
-            raise SystemExit(f"{layer.cli} config is unreadable: {error}") from error
-        prepared.append(Prepared(layer, original, output, entry))
-
-    build(args)
+    prepared = _plan_use(args, command, arguments)
     print(
         f"pointing '{args.name}' at: {command} {' '.join(arguments)}".rstrip(),
         file=sys.stderr,
     )
-    if not args.dry_run:
+    if args.dry_run:
         for item in prepared:
-            if item.layer.path.read_bytes() != item.original:
-                raise SystemExit(
-                    f"{item.layer.cli} config changed during preflight; nothing written"
-                )
-    for item in prepared:
-        layer = item.layer
-        if args.dry_run:
+            layer = item.config.layer
             print(
                 f"{layer.cli:<{CLI_COLUMN}} would set {args.name} = {json.dumps(item.entry)}"
             )
-            continue
-        # Taken once. Swapping something already swapped must still revert to
-        # the config that was there before any of this started.
-        if not backup_of(layer).is_file():
-            shutil.copy2(layer.path, backup_of(layer))
-        save(layer, item.output)
+        return 0
+
+    build(args)
+    owned: set[pathlib.Path] = set()
+    staged = _stage_use(prepared, owned)
+    _commit_use(staged, owned)
+    for item in prepared:
+        layer = item.config.layer
         print(f"{layer.cli:<{CLI_COLUMN}} set {args.name}")
     return 0
 
 
 def cmd_revert(args: argparse.Namespace) -> int:
-    for layer in chosen(args):
-        backup = backup_of(layer)
-        if not backup.is_file():
-            print(f"{layer.cli:<{CLI_COLUMN}} nothing to revert")
-            continue
-        if args.dry_run:
-            print(f"{layer.cli:<{CLI_COLUMN}} would restore {backup}")
-            continue
-        shutil.move(str(backup), str(layer.path))
+    prepared = _plan_revert(args)
+    if args.dry_run:
+        for item in prepared:
+            layer = item.config.layer
+            print(f"{layer.cli:<{CLI_COLUMN}} would restore {item.backup.path}")
+        return 0
+
+    owned: set[pathlib.Path] = set()
+    staged = _stage_revert(prepared, owned)
+    _commit_revert(staged, owned)
+    for item in prepared:
+        layer = item.config.layer
         print(f"{layer.cli:<{CLI_COLUMN}} restored")
     return 0
 
