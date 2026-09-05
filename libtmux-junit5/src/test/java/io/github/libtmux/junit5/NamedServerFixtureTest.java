@@ -3,6 +3,7 @@ package io.github.libtmux.junit5;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Server;
@@ -76,7 +77,36 @@ final class NamedServerFixtureTest {
     }
 
     @Test
-    void failedAuthenticationKillsOnlyThroughTheServerHandle(@TempDir Path directory) throws Exception {
+    void aLiveReplacementServerSurvivesStaleFixtureCleanup(@TempDir Path directory) throws Exception {
+        String name = "ltj-replacement-" + ProcessHandle.current().pid();
+        Path socket;
+        NamedServerFixture originalFixture;
+        try (Server original = openNamed(name, directory)) {
+            original.newSession("original");
+            socket = reportedSocket(original);
+            ProcessHandle originalProcess = reportedProcess(original);
+            originalFixture = NamedServerFixture.own(original, name, quarantine());
+
+            original.killServer();
+            awaitExit(originalProcess);
+            Files.delete(socket);
+
+            try (Server replacement = openNamed(name, directory)) {
+                replacement.newSession("replacement");
+                try (NamedServerFixture replacementFixture = NamedServerFixture.own(replacement, name, quarantine())) {
+                    assertEquals(socket, replacementFixture.socket());
+                    AssertionError refused = assertTimeoutPreemptively(
+                            Duration.ofSeconds(2), () -> assertThrows(AssertionError.class, originalFixture::close));
+
+                    assertTrue(String.valueOf(refused.getMessage()).contains("replacement"));
+                    assertTrue(replacement.hasSession("replacement"));
+                }
+            }
+        }
+    }
+
+    @Test
+    void failedAuthenticationNeverSendsAnEndpointCommand(@TempDir Path directory) throws Exception {
         Path sentinel = directory.resolve("not-a-socket");
         Files.writeString(sentinel, "keep");
         List<CommandRequest> requests = new ArrayList<>();
@@ -105,11 +135,10 @@ final class NamedServerFixtureTest {
             assertTrue(String.valueOf(refused.getMessage()).contains("malformed identity row"));
         }
         assertEquals("keep", Files.readString(sentinel));
-        assertEquals(2, requests.size());
+        assertEquals(1, requests.size());
         assertEquals(
                 List.of("display-message", "-p", "#{pid}\t#{socket_path}"),
                 requests.get(0).commands().getFirst());
-        assertEquals(List.of("kill-server"), requests.get(1).commands().getFirst());
         assertTrue(requests.stream().allMatch(request -> request.endpoint().contains(sentinel.toString())));
     }
 

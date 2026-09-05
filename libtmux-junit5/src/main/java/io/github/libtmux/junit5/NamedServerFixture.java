@@ -49,16 +49,7 @@ public final class NamedServerFixture implements AutoCloseable {
         Objects.requireNonNull(server, "server");
         Objects.requireNonNull(expectedName, "expectedName");
         Objects.requireNonNull(quarantine, "quarantine");
-        try {
-            return authenticate(server, expectedName, quarantine);
-        } catch (IOException | RuntimeException | AssertionError failure) {
-            try {
-                server.killServer();
-            } catch (RuntimeException killFailure) {
-                failure.addSuppressed(killFailure);
-            }
-            throw failure;
-        }
+        return authenticate(server, expectedName, quarantine);
     }
 
     private static NamedServerFixture authenticate(Server server, String expectedName, Path configuredQuarantine)
@@ -106,10 +97,15 @@ public final class NamedServerFixture implements AutoCloseable {
         }
 
         RuntimeException killFailure = null;
-        try {
-            server.killServer();
-        } catch (RuntimeException failure) {
-            killFailure = failure;
+        if (process.isAlive()) {
+            authenticateCurrentOwnership();
+            try {
+                server.killServer();
+            } catch (RuntimeException failure) {
+                killFailure = failure;
+            }
+        } else if (server.isAlive()) {
+            authenticateCurrentOwnership();
         }
         if (!awaitExit(process)) {
             AssertionError failure =
@@ -123,6 +119,15 @@ public final class NamedServerFixture implements AutoCloseable {
         reclaimSocket();
         pruneEmptyParents(Objects.requireNonNull(socket.getParent()), quarantine);
         closed = true;
+    }
+
+    private void authenticateCurrentOwnership() throws IOException {
+        NamedServerFixture current = authenticate(server, socket.getFileName().toString(), quarantine);
+        require(
+                current.process.pid() == process.pid(),
+                "refusing to terminate a replacement tmux process at " + socket);
+        require(current.socket.equals(socket), "refusing to terminate a replacement tmux endpoint");
+        require(current.fileKey.equals(fileKey), "refusing to terminate a replacement socket inode");
     }
 
     private void reclaimSocket() throws IOException {
