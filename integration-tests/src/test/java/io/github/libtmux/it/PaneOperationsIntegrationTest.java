@@ -45,10 +45,11 @@ final class PaneOperationsIntegrationTest {
     @Test
     void breakingOutWithAChosenNameUsesIt(Server server) {
         Pane split = server.sessions().get(0).windows().get(0).split();
+        String requested = "chosen-#S";
 
-        Window broken = split.breakOut("chosen");
+        Window broken = split.breakOut(requested);
 
-        assertEquals("chosen", broken.name());
+        assertEquals(requested, broken.name());
         assertTrue(server.isAlive());
     }
 

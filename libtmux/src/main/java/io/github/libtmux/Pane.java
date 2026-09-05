@@ -447,7 +447,7 @@ public final class Pane {
      * @param supplied the name to hand tmux, which is never absent because 3.7 crashes without one
      */
     private Window breakNamed(Optional<String> wanted, String supplied) {
-        List<String> argv = new ArrayList<>(List.of("break-pane", "-d", "-n", TmuxFormats.literal(supplied)));
+        List<String> argv = new ArrayList<>(List.of("break-pane", "-d", "-n", supplied));
         argv.addAll(List.of("-s", state.id().value(), "-P", "-F", BROKEN_OUT.template()));
         List<String> fields =
                 BROKEN_OUT.split(server.run(snapshot, argv).stdout().get(0));
