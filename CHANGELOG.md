@@ -26,6 +26,28 @@ production.
 
 ### Changed
 
+- **`libtmux-mcp` now exposes a fixed 47-tool capability surface.** One native
+  registry drives tool registration, schemas, trust metadata, selection, and
+  the static `tmux://capabilities` resource. Unordered toolsets and named
+  include/exclude lists replace safety tiers; the retired `LIBTMUX_SAFETY`
+  variable and `--safety` option now fail with migration guidance. The retired
+  `LIBTMUX_WATCH` variable and `--watch` option also fail; use bounded wait and
+  capture tools instead of dynamic resource notifications. The server defaults
+  to the dedicated `libtmux-mcp` socket, supports separate socket-name and
+  absolute socket-path selectors, and enables teardown by default only for a
+  newly created minimal daemon.
+- **The MCP guide maps every earlier public tool, resource URI, prompt workflow,
+  and completion path.** Each retired name now points to its current typed
+  route, composed workflow, or explicit no-replacement boundary.
+- **MCP searches and read batches now have fixed work ceilings.** Search stops
+  after 200 panes, 20,000 lines, 1,000,000 bytes of matching input, or five
+  seconds. Read batches validate each nested call and cap the complete JSON-RPC
+  response, including line framing, at 1,000,000 bytes without dropping an
+  executed row. Request IDs over 512 KiB now fail before dispatch rather than
+  consuming that response budget.
+- **`capture_since` and `call_read_tools_batch` now advertise observe-only tmux
+  effects.** Cursor capture and every batch-eligible inspect operation leave
+  tmux state unchanged.
 - **`Pane.findWindowByName` and `Pane.findWindowByContent` are removed.** Use
   `findWindow` with `inName()` or `inContent()`. (#6)
 - **`Server.waitFor`, `waitForWithSignalCapacity`, `signal`, and `drain` move
@@ -128,6 +150,9 @@ production.
 
 ### Removed
 
+- **MCP prompts, completions, watches, dynamic resources, per-call server
+  discovery, and workspace tools are removed.** Use the fixed tool surface and
+  its static `tmux://capabilities` resource.
 - **`ExecutionMode`, `ControlTransport`, `VirtualThreadTransport`,
   `LIBTMUX_MODE`, and their benchmark surface are removed.** `Server` uses
   process execution; use `ControlClient` for event streams and batches or
