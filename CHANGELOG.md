@@ -14,6 +14,9 @@ production.
 
 ### Added
 
+- **`NamedServerFixture` safely owns explicitly named test servers.** It binds
+  teardown to the reported process, socket path, and inode, then fails closed if
+  any of that identity changes before cleanup.
 - **`Pane.findWindow` searches by name, title, or content, with
   case-insensitive and regular-expression matching.** Build a `FindSpec` or
   configure one inline. (#6)
@@ -86,6 +89,16 @@ production.
 
 ### Fixed
 
+- **`Pane.sendKeys` preserves option-shaped input.** It ends tmux option parsing
+  before caller keys, so values such as `-X`, `-R`, and `-N` reach pane programs
+  through the core API and MCP single or batch routes.
+- **`Pane.breakOut` preserves literal `#` in requested window names.** The
+  `break-pane -n` path receives the raw name; only the tmux 3.7 rename fallback
+  applies tmux format literalization.
+- **MCP capability rows disclose both output risk dimensions.** Pane text,
+  environment and configured-command values, and names, titles, paths, or
+  current commands now advertise both secret and untrusted-content risk;
+  strictly structural results remain false for both.
 - **MCP pane input now refuses effective recipients in a human-owned mode.**
   `send_keys` and each `send_keys_batch` operation resolve pane-level
   `synchronize-panes` overrides before dispatch; `paste_text` remains
