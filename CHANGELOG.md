@@ -86,6 +86,21 @@ production.
 
 ### Fixed
 
+- **MCP pane input now refuses effective recipients in a human-owned mode.**
+  `send_keys` and each `send_keys_batch` operation resolve pane-level
+  `synchronize-panes` overrides before dispatch; `paste_text` remains
+  target-only, dead configured recipients fail closed, and
+  `run_shell_command` checks a singular cohort before setup and again before
+  input because its completion, output, and status are singular.
+- **`run_shell_command` no longer relies on mutable pane-shell framing state.**
+  Completion markers and signalling run in an isolated outer subshell through
+  an absolute selected tmux executable and the server's resolved `-S` socket,
+  so ordinary output-command aliases/functions, pane `PATH`/socket variables,
+  inherited `errexit`, and a readonly nonce name cannot lose completion or
+  close the pane; the frame also leaves no status variable behind. This assumes
+  the parent shell has not replaced the exact client word or
+  `trap`/`eval`/`exit` with functions, and marker commands honor trusted server
+  hooks.
 - **Destructive MCP tools fail closed when caller-pane identity cannot be
   proven.** Uncertain socket, server, or pane identity now requires explicit
   self-confirmation instead of bypassing the guard. (#6)
