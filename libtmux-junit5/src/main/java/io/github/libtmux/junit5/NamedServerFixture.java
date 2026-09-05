@@ -49,11 +49,36 @@ public final class NamedServerFixture implements AutoCloseable {
         Objects.requireNonNull(server, "server");
         Objects.requireNonNull(expectedName, "expectedName");
         Objects.requireNonNull(quarantine, "quarantine");
-        return authenticate(server, expectedName, quarantine);
+        return authenticate(
+                server,
+                candidate -> require(
+                        expectedName.equals(candidate.getFileName().toString()),
+                        "tmux reported another server's socket " + candidate),
+                quarantine);
     }
 
-    private static NamedServerFixture authenticate(Server server, String expectedName, Path configuredQuarantine)
-            throws IOException {
+    /**
+     * Authenticates a live server at an exact socket path and takes responsibility for ending it.
+     *
+     * @param server the server this test started
+     * @param expectedSocket the exact socket path the test supplied to tmux
+     * @param quarantine the owned root that must contain the socket
+     * @return cleanup bound to the reported process, path, and socket inode
+     * @throws IOException if the endpoint cannot be inspected
+     */
+    public static NamedServerFixture own(Server server, Path expectedSocket, Path quarantine) throws IOException {
+        Objects.requireNonNull(server, "server");
+        Objects.requireNonNull(expectedSocket, "expectedSocket");
+        Objects.requireNonNull(quarantine, "quarantine");
+        Path expected = expectedSocket.toAbsolutePath().normalize();
+        return authenticate(
+                server,
+                candidate -> require(expected.equals(candidate), "tmux reported another server's socket " + candidate),
+                quarantine);
+    }
+
+    private static NamedServerFixture authenticate(
+            Server server, SocketExpectation expectation, Path configuredQuarantine) throws IOException {
         List<String> identity =
                 server.cmd("display-message", "-p", "#{pid}\t#{socket_path}").stdout();
         require(identity.size() == 1, "tmux reported identity rows " + identity);
@@ -76,9 +101,7 @@ public final class NamedServerFixture implements AutoCloseable {
         require(
                 !socket.equals(quarantine) && socket.startsWith(quarantine),
                 "refusing to reclaim a socket outside this port's quarantine");
-        require(
-                expectedName.equals(socket.getFileName().toString()),
-                "tmux reported another server's socket " + socket);
+        expectation.verify(socket);
         BasicFileAttributes owned = Files.readAttributes(socket, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
         require(isUnixSocket(socket), "tmux did not report a unix-domain socket inode");
         require(owned.fileKey() != null, "the filesystem cannot identify the socket inode");
@@ -122,7 +145,10 @@ public final class NamedServerFixture implements AutoCloseable {
     }
 
     private void authenticateCurrentOwnership() throws IOException {
-        NamedServerFixture current = authenticate(server, socket.getFileName().toString(), quarantine);
+        NamedServerFixture current = authenticate(
+                server,
+                candidate -> require(socket.equals(candidate), "tmux reported another server's socket " + candidate),
+                quarantine);
         require(
                 current.process.pid() == process.pid(),
                 "refusing to terminate a replacement tmux process at " + socket);
@@ -191,5 +217,10 @@ public final class NamedServerFixture implements AutoCloseable {
         if (!condition) {
             throw new AssertionError(message);
         }
+    }
+
+    @FunctionalInterface
+    private interface SocketExpectation {
+        void verify(Path socket);
     }
 }

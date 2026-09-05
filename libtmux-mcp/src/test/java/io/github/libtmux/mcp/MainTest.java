@@ -1,12 +1,14 @@
 package io.github.libtmux.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.junit5.NamedServerFixture;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.TmuxTransport;
@@ -186,11 +188,12 @@ final class MainTest {
         LaunchConfiguration second = dedicatedOn(LaunchConfiguration.resolve(List.of(), Map.of()), socket);
 
         try (Server firstServer = Server.open(first.config())) {
-            try {
-                SocketProfile created = first.profile(firstServer);
-                assertEquals("created", created.serverState());
-                assertTrue(created.defaultTeardown());
+            SocketProfile created = first.profile(firstServer);
+            assertEquals("created", created.serverState());
+            assertTrue(created.defaultTeardown());
 
+            try (NamedServerFixture fixture = NamedServerFixture.own(firstServer, socket, root)) {
+                assertEquals(socket, fixture.socket());
                 try (Server secondServer = Server.open(second.config())) {
                     SocketProfile existing = second.profile(secondServer);
                     assertEquals("existing", existing.serverState());
@@ -201,12 +204,9 @@ final class MainTest {
                             .noneMatch(line -> line.contains(Objects.requireNonNull(first.ownerNonce()))
                                     || line.contains(Objects.requireNonNull(second.ownerNonce()))));
                 }
-            } finally {
-                if (firstServer.isAlive()) {
-                    firstServer.killServer();
-                }
             }
         }
+        assertFalse(Files.exists(socket), "the launcher ownership socket survived teardown");
     }
 
     @Test

@@ -50,6 +50,23 @@ final class NamedServerFixtureTest {
     }
 
     @Test
+    void theSameExplicitEndpointCanBeOwnedTwice(@TempDir Path directory) throws Exception {
+        Path socket =
+                quarantine().resolve("ltj-explicit-" + ProcessHandle.current().pid());
+
+        for (int run = 0; run < 2; run++) {
+            try (Server server = openPath(socket, directory)) {
+                server.newSession("explicit-" + run);
+                try (NamedServerFixture fixture = NamedServerFixture.own(server, socket, quarantine())) {
+                    assertEquals(socket, fixture.socket());
+                    assertTrue(server.hasSession("explicit-" + run));
+                }
+            }
+            assertFalse(Files.exists(socket), "the explicit socket survived teardown");
+        }
+    }
+
+    @Test
     void aReplacementSentinelIsNeverRemoved(@TempDir Path directory) throws Exception {
         String name = "ltj-sentinel-" + ProcessHandle.current().pid();
         Path socket = null;
@@ -148,6 +165,16 @@ final class NamedServerFixtureTest {
         return Server.open(ServerConfig.builder()
                 .binary(TMUX)
                 .endpoint(ServerEndpoint.namedSocket(name))
+                .configFile(config)
+                .build());
+    }
+
+    private static Server openPath(Path socket, Path directory) throws IOException {
+        Path config = directory.resolve(socket.getFileName() + ".conf");
+        Files.writeString(config, "");
+        return Server.open(ServerConfig.builder()
+                .binary(TMUX)
+                .endpoint(ServerEndpoint.socketPath(socket))
                 .configFile(config)
                 .build());
     }
