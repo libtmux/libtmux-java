@@ -14,6 +14,7 @@ import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -131,7 +132,62 @@ final class PaneInputCohortTest {
     }
 
     @Test
-    void resolutionUsesOneTargetedFiveFieldListing(Server server) {
+    void callerProtectionCoversEveryConfiguredMember(Server server) {
+        var panes = server.panes();
+        var source = panes.getFirst();
+        var peer = source.split();
+        Caller caller = TestCalls.asCaller(server, peer.id().value()).caller();
+        var resolved = PaneInputCohort.parse(
+                source.id().value(),
+                answer(
+                        row(source.id().value(), "1", "0", "0", "sh"),
+                        row(peer.id().value(), "1", "0", "0", "sh")),
+                answer(),
+                caller);
+
+        IllegalStateException refused =
+                assertThrows(IllegalStateException.class, () -> resolved.requireKeyRecipients("send_keys"));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains(peer.id().value()), refused.getMessage());
+    }
+
+    @Test
+    void attendedProtectionCoversEveryConfiguredMember() {
+        var resolved = PaneInputCohort.parse(
+                "%0",
+                answer(row("%0", "1", "0", "0", "sh"), row("%1", "1", "0", "0", "sh")),
+                answer(clientRow("0", "%1", "1")),
+                Caller.nowhere());
+
+        IllegalStateException refused =
+                assertThrows(IllegalStateException.class, () -> resolved.requireKeyRecipients("send_keys"));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains("%1"), refused.getMessage());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("malformedClientRows")
+    void malformedClientAttentionFailsClosed(String label, CommandResult clients) {
+        assertThrows(
+                LibTmuxException.class,
+                () -> PaneInputCohort.parse("%0", answer(row("%0", "0", "0", "0", "sh")), clients, Caller.nowhere()),
+                label);
+    }
+
+    @Test
+    void uncertainCallerIdentityFailsClosed(Server server) {
+        Caller uncertain = TestCalls.withEnvironment(server, Map.of("TMUX", "malformed", "TMUX_PANE", "%0"))
+                .caller();
+        var resolved = PaneInputCohort.parse("%0", answer(row("%0", "0", "0", "0", "sh")), answer(), uncertain);
+
+        IllegalStateException refused =
+                assertThrows(IllegalStateException.class, () -> resolved.requirePasteTarget("paste_text"));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains("caller"), refused.getMessage());
+    }
+
+    @Test
+    void resolutionUsesOnePaneAndClientSnapshot(Server server) {
         CopyOnWriteArrayList<CommandRequest> requests = new CopyOnWriteArrayList<>();
         try (ProcessTransport processes = new ProcessTransport()) {
             TmuxTransport recording = new TmuxTransport() {
@@ -148,16 +204,18 @@ final class PaneInputCohortTest {
                 var pane = measured.panes().getFirst();
                 requests.clear();
 
-                var resolved = PaneInputCohort.resolve(pane);
+                var resolved = PaneInputCohort.resolve(pane, Caller.nowhere());
 
                 assertEquals(List.of(pane.id().value()), resolved.configuredKeyRecipientIds());
             }
         }
 
+        assertEquals(1, requests.size());
         List<List<String>> commands = requests.stream()
                 .flatMap(request -> request.commands().stream())
+                .filter(command -> command.getFirst().startsWith("list-"))
                 .toList();
-        assertEquals(1, commands.size());
+        assertEquals(2, commands.size());
         List<String> listing = commands.getFirst();
         assertEquals(List.of("list-panes", "-t"), listing.subList(0, 2));
         assertTrue(listing.contains("-F"));
@@ -165,6 +223,12 @@ final class PaneInputCohortTest {
         for (String field :
                 List.of("pane_id", "pane_synchronized", "pane_in_mode", "pane_dead", "pane_current_command")) {
             assertEquals(1, occurrences(format, "#{" + field + "}"));
+        }
+        List<String> clients = commands.get(1);
+        assertEquals("list-clients", clients.getFirst());
+        String clientFormat = clients.get(clients.indexOf("-F") + 1);
+        for (String field : List.of("client_control_mode", "pane_id", "window_zoomed_flag")) {
+            assertEquals(1, occurrences(clientFormat, "#{" + field + "}"));
         }
     }
 
@@ -197,12 +261,28 @@ final class PaneInputCohortTest {
                 Arguments.of("word dead", List.of(row("%0", "0", "0", "on", "sh"))));
     }
 
+    private static Stream<Arguments> malformedClientRows() {
+        return Stream.of(
+                Arguments.of("listing failed", new CommandResult(1, List.of(), List.of("gone"))),
+                Arguments.of("empty control flag", answer(clientRow("", "%0", "0"))),
+                Arguments.of("word control flag", answer(clientRow("on", "%0", "0"))),
+                Arguments.of("missing active pane", answer(clientRow("0", "", "0"))),
+                Arguments.of("invalid active pane", answer(clientRow("0", "0", "0"))),
+                Arguments.of("empty zoom flag", answer(clientRow("0", "%0", ""))),
+                Arguments.of("word zoom flag", answer(clientRow("0", "%0", "on"))),
+                Arguments.of("unterminated row", answer(fields("0", "%0", "0"))));
+    }
+
     private static CommandResult answer(String... rows) {
         return new CommandResult(0, List.of(rows), List.of());
     }
 
     private static String row(String... fields) {
         return fields(fields) + TERMINATOR;
+    }
+
+    private static String clientRow(String control, String activePane, String zoomed) {
+        return row(control, activePane, zoomed);
     }
 
     private static String fields(String... fields) {

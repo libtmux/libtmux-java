@@ -775,7 +775,8 @@ final class Catalog {
                 "run_shell_command",
                 "Run a shell command",
                 "Runs one authored command in a trusted pane shell and waits for singular framed output and "
-                        + "completion. It refuses an effective cohort larger than one at either of two preflights. "
+                        + "completion. Its two preflights refuse caller or attended panes and an effective cohort "
+                        + "larger than one. "
                         + "Pre-existing exact-client-path, trap, eval, or exit functions are outside the supported "
                         + "boundary; marker display-message commands honor the trusted server's command aliases "
                         + "and hooks.",
@@ -803,7 +804,8 @@ final class Catalog {
                 "send_keys",
                 "Send keys",
                 "Sends input to the target's configured effective synchronized cohort without waiting for output. "
-                        + "Reports configured pane ids observed before dispatch, not delivery receipts.",
+                        + "Every configured member must be live, nonmodal, and neither caller nor attended. Reports "
+                        + "configured pane ids observed before dispatch, not delivery receipts.",
                 EXECUTE,
                 PANE_INPUT,
                 effects(OBSERVE, CHANGE),
@@ -841,7 +843,7 @@ final class Catalog {
                 "paste_text",
                 "Paste text",
                 "Pastes one literal text block into one target pane through an ephemeral buffer; paste-buffer "
-                        + "input does not fan out to synchronized peers.",
+                        + "input does not fan out to synchronized peers. The target cannot be caller or attended.",
                 EXECUTE,
                 PANE_INPUT,
                 effects(OBSERVE, CHANGE),

@@ -43,7 +43,7 @@ final class Typing {
                     "'keys' is empty; give the key names to send, such as [\"C-c\"] or [\"q\"]");
         }
         boolean literal = call.flag("literal", false);
-        return sendKeys(pane, keys, literal);
+        return sendKeys(pane, keys, literal, PaneInputCohort.resolve(pane, call.caller()));
     }
 
     static Sent sendKeys(Pane pane, List<String> keys, boolean literal) {
@@ -76,7 +76,7 @@ final class Typing {
         Pane pane = Targets.pane(call.server(), call.string("pane_id"));
         String text = call.string("text");
         boolean enter = call.flag("enter", false);
-        PaneInputCohort.resolve(pane).requirePasteTarget("paste_text");
+        PaneInputCohort.resolve(pane, call.caller()).requirePasteTarget("paste_text");
         // tmux turns the line feeds in a buffer into carriage returns as it pastes, so a trailing
         // newline is what submits the text — there is no flag that means "and Enter".
         pane.paste(enter ? text + "\n" : text);

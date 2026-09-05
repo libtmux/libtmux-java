@@ -123,8 +123,10 @@ Key input follows tmux's effective `synchronize-panes` values: a source whose
 effective value is off receives input alone; a source whose value is on sends to
 all panes whose effective value is on. The window option supplies the inherited
 default, and a pane-level override can change an individual pane's value. One
-modal or dead member refuses the whole configured key cohort before dispatch,
-while paste-buffer input checks and targets only its requested pane.
+modal, dead, caller, or attended member refuses the whole configured key cohort
+before dispatch, while paste-buffer input checks and targets only its requested
+pane. Each preflight reads the pane cohort and attached-client attention in one
+observational snapshot; control-mode clients are not people watching a terminal.
 
 Framed commands refuse a synchronized cohort because their output, completion,
 and status describe one pane. They require one normal live shell at the initial
@@ -231,8 +233,8 @@ the model's ability to act at all.
 
 tmux says which one in `TMUX_PANE`, but a pane id is only unique within a single
 server — so the socket is checked too, by resolving both paths, before that pane
-is believed to be the caller's own. Unprovable means not the caller's: a wrong
-"yes" disarms a guard, while a wrong "no" merely declines to help.
+is believed to be the caller's own. Pane input fails closed when that relationship
+is malformed or unprovable; read metadata does not claim an uncertain match.
 
 `list_panes` marks it as the caller. `kill_pane`, `kill_window`, and
 `kill_session` refuse it and its containers unless `confirm_self` is passed.

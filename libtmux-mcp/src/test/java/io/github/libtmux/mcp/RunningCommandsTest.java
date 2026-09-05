@@ -25,7 +25,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
@@ -82,6 +84,57 @@ final class RunningCommandsTest {
         assertEquals(0, ran.exitStatus());
         assertEquals(java.util.List.of("hello"), ran.output(), "only what the command printed");
         assertTrue(ran.framed(), "the plumbing was cut out exactly");
+    }
+
+    @Test
+    void callerPaneRefusesBeforeRunSetup(Server server) {
+        String pane = server.panes().getFirst().id().value();
+        String marker = "caller-run-marker";
+
+        IllegalStateException refused = assertThrows(
+                IllegalStateException.class,
+                () -> RunningCommands.run(
+                        TestCalls.asCaller(server, pane, "pane_id", pane, "command", "echo " + marker)));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains(pane), refused.getMessage());
+        assertFalse(capture(server, pane).contains(marker));
+    }
+
+    @Test
+    void newlyAttendedPaneRefusesAtFinalPreflight(Server server) throws Exception {
+        Pane pane = server.panes().getFirst();
+        String marker = "attended-transition-marker";
+        AtomicBoolean attached = new AtomicBoolean();
+        AtomicReference<Process> client = new AtomicReference<>();
+        CopyOnWriteArrayList<CommandRequest> requests = new CopyOnWriteArrayList<>();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport transitioning = borrowing(request -> {
+                CommandResult result = processes.execute(request);
+                requests.add(request);
+                if (hasCommand(request, "capture-pane") && attached.compareAndSet(false, true)) {
+                    client.set(attachClient(server, pane));
+                }
+                return result;
+            });
+            try (Server measured = Server.using(server.config(), transitioning)) {
+                IllegalStateException refused = assertThrows(
+                        IllegalStateException.class,
+                        () -> RunningCommands.run(
+                                TestCalls.on(measured, "pane_id", pane.id().value(), "command", "echo " + marker)));
+                assertTrue(
+                        String.valueOf(refused.getMessage()).contains(pane.id().value()), refused.getMessage());
+            }
+        } finally {
+            server.clients().forEach(io.github.libtmux.Client::detach);
+            Process process = client.get();
+            if (process != null && !process.waitFor(5, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+            }
+        }
+
+        assertEquals(0, commandCount(requests, "send-keys"));
+        assertEquals(0, commandCount(requests, "wait-for"));
+        assertFalse(capture(server, pane.id().value()).contains(marker));
     }
 
     @ParameterizedTest
@@ -590,6 +643,30 @@ final class RunningCommandsTest {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("interrupted while arranging concurrent command delivery", e);
+        }
+    }
+
+    private static Process attachClient(Server server, Pane pane) {
+        String socket =
+                server.cmd("display-message", "-p", "#{socket_path}").stdout().getFirst();
+        String command = Shell.quote(server.config().binary()) + " -S " + Shell.quote(socket) + " attach-session -t "
+                + Shell.quote(pane.window().session().id().value());
+        try {
+            ProcessBuilder builder = new ProcessBuilder("script", "-q", "-c", command, "/dev/null")
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD);
+            builder.environment().put("TERM", "xterm");
+            Process process = builder.start();
+            if (!await(() -> !server.clients().isEmpty())) {
+                process.destroyForcibly();
+                throw new IllegalStateException("the attended client did not attach");
+            }
+            return process;
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("could not attach the attended test client", failure);
+        } catch (java.io.IOException failure) {
+            throw new IllegalStateException("could not attach the attended test client", failure);
         }
     }
 

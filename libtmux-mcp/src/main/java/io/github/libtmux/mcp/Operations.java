@@ -356,7 +356,7 @@ final class Operations {
             List<String> resolvedPaneIds = List.of();
             try {
                 Pane pane = Targets.pane(call.server(), paneId);
-                PaneInputCohort.Resolution cohort = PaneInputCohort.resolve(pane);
+                PaneInputCohort.Resolution cohort = PaneInputCohort.resolve(pane, call.caller());
                 resolvedPaneIds = cohort.configuredKeyRecipientIds();
                 List<String> keys = strings(operation.get("keys"), "keys");
                 boolean literal = booleanValue(operation.get("literal"), false, "literal");

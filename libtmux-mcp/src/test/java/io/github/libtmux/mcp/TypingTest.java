@@ -90,6 +90,55 @@ final class TypingTest {
     }
 
     @Test
+    void callerPaneRefusesDirectKeys(Server server) {
+        String pane = server.panes().getFirst().id().value();
+        String marker = "caller-direct-marker";
+
+        IllegalStateException refused = assertThrows(
+                IllegalStateException.class,
+                () -> Typing.sendKeys(
+                        TestCalls.asCaller(server, pane, "pane_id", pane, "keys", List.of(marker), "literal", true)));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains(pane), refused.getMessage());
+        assertFalse(captureOf(server, pane).contains(marker));
+    }
+
+    @Test
+    void callerPaneRefusesPaste(Server server) {
+        assumeTrue(server.version().atLeast(SAFE_PASTE_CLEANUP));
+        String pane = server.panes().getFirst().id().value();
+        String marker = "caller-paste-marker";
+
+        IllegalStateException refused = assertThrows(
+                IllegalStateException.class,
+                () -> Typing.pasteText(TestCalls.asCaller(server, pane, "pane_id", pane, "text", marker)));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains(pane), refused.getMessage());
+        assertFalse(captureOf(server, pane).contains(marker));
+        assertNoOwnedBuffers(server);
+    }
+
+    @Test
+    void batchProtectsACallerPeerInTheConfiguredCohort(Server server) {
+        var source = server.panes().getFirst();
+        var peer = source.split(SplitSpec.builder().build());
+        source.window().setSynchronizePanes(true);
+        String marker = "caller-batch-peer-marker";
+
+        Map<String, Object> batch = map(Operations.sendKeysBatch(TestCalls.asCaller(
+                server,
+                peer.id().value(),
+                "operations",
+                List.of(send(source.id().value(), marker)))));
+        Map<String, Object> row = rows(batch).getFirst();
+
+        assertEquals(false, row.get("success"));
+        assertTrue(String.valueOf(row.get("error")).contains(peer.id().value()), row.toString());
+        assertFalse(captureOf(server, source.id().value()).contains(marker));
+        assertFalse(captureOf(server, peer.id().value()).contains(marker));
+    }
+
+    @Test
     void synchronizedKeysReachOnlyTheEffectiveOnCohort(Server server) throws Exception {
         var source = server.panes().getFirst();
         var effective = source.split(SplitSpec.builder().build());

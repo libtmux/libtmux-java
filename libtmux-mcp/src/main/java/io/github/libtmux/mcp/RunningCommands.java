@@ -75,7 +75,8 @@ final class RunningCommands {
         String command = call.string("command");
         Duration timeout = Waits.requested(call);
         boolean suppressHistory = call.flag("suppress_history", true);
-        String currentCommand = PaneInputCohort.resolve(pane).requireSingularCommandPane("run_shell_command");
+        String currentCommand =
+                PaneInputCohort.resolve(pane, call.caller()).requireSingularCommandPane("run_shell_command");
         requirePosixShell(currentCommand);
         PaneCommandFrame commandFrame = PaneCommandFrame.resolve(call);
 
@@ -87,7 +88,8 @@ final class RunningCommands {
         Cursor before = Screen.from(pane).cursor();
         String typed = payload(commandFrame, command, startMark, endMark, channel, suppressHistory);
         Pane freshPane = Targets.pane(server, pane.id().value());
-        String freshCommand = PaneInputCohort.resolve(freshPane).requireSingularCommandPane("run_shell_command");
+        String freshCommand =
+                PaneInputCohort.resolve(freshPane, call.caller()).requireSingularCommandPane("run_shell_command");
         requirePosixShell(freshCommand);
         freshPane.sendLine(typed);
 
