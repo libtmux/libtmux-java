@@ -7,9 +7,9 @@
 
 Use when you want to try the server you are editing in a real agent rather
 than in a test. ``use`` rewrites each CLI's global config; ``revert``
-restores from the timestamped backup the swap wrote. Swapping a config
-that is already swapped keeps the first backup rather than taking a new
-one, so ``revert`` always lands on the pre-swap config.
+restores from the backup and recovery record the swap wrote. Swapping a
+config that is already swapped keeps the first backup, after verifying
+the owned recovery state, so ``revert`` lands on the pre-swap config.
 
 Sources
 -------
@@ -57,11 +57,12 @@ Deliberately narrow, and transactional:
 - **One server name.** Only the entry named by ``--name`` (default
   ``tmux``) is touched. Everything else in the file is preserved,
   including comments in TOML and JSONC.
-- **A backup per file, once.** Written beside the original as
-  ``<name>.mcp-swap-backup``. ``revert`` moves it back.
-- **One all-client transaction.** Every selected config and backup destination
-  is checked and staged before replacement. A failure rolls back in reverse;
-  recovery copies remain when an exact rollback cannot be proven.
+- **A recovery pair per file, once.** The backup and its private, versioned
+  ``.state`` record are written beside the original. ``revert`` proceeds only
+  while the config, topology, backup, record, and server route still match.
+- **One all-client transaction.** Every selected config, backup, and state
+  destination is checked and staged before replacement. A failure rolls back
+  in reverse; recovery files remain when exact rollback cannot be proven.
 """
 
 from __future__ import annotations

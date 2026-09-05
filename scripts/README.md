@@ -80,11 +80,13 @@ $ uv run scripts/mcp_swap.py revert
 
 It rewrites **global** configs only, touches only the one server entry named by
 `--name` (default `tmux`), and keeps everything else in the file — including
-comments and trailing commas in JSONC, and comments in TOML. The backup is taken
-once, so swapping something already swapped still reverts to the config that was
-there before any of it started. All selected files commit as one transaction;
-failed commits reverse in order and retain recovery copies if exact rollback is
-not possible. `--dry-run` parses the complete plan without building or writing.
+comments and trailing commas in JSONC, and comments in TOML. A backup and its
+private recovery record are taken together once. Repeat swaps and reverts first
+verify the exact config, path topology, backup, record, and server route; a
+mismatch leaves the recovery pair intact. All selected files commit as one
+transaction; failed commits reverse in order and retain recovery files if exact
+rollback is not possible. `--dry-run` validates the complete plan without
+building or writing.
 
 To try it without changing anything at all, most CLIs take a config per
 invocation instead — `claude --mcp-config <file> --strict-mcp-config`, or
