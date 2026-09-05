@@ -612,7 +612,8 @@ final class CapabilityRegistryTest {
         assertTrue(strings(sendRow.get("required"), "send result required").contains("resolved_pane_ids"));
         assertEquals(
                 Map.of("type", "string"),
-                object(sendRowProperties.get("resolved_pane_ids"), "resolved panes").get("items"));
+                object(sendRowProperties.get("resolved_pane_ids"), "resolved panes")
+                        .get("items"));
 
         assertTrue(strings(byName("send_keys").outputSchema().get("required"), "send required")
                 .contains("resolved_pane_ids"));

@@ -190,12 +190,8 @@ final class RunningCommandsTest {
 
         IllegalStateException refused = assertThrows(
                 IllegalStateException.class,
-                () -> RunningCommands.run(TestCalls.on(
-                        server,
-                        "pane_id",
-                        source.id().value(),
-                        "command",
-                        "printf '" + marker + "\\n'")));
+                () -> RunningCommands.run(
+                        TestCalls.on(server, "pane_id", source.id().value(), "command", "printf '" + marker + "\\n'")));
 
         String message = String.valueOf(refused.getMessage());
         assertTrue(message.contains("run_shell_command"), message);
@@ -211,7 +207,8 @@ final class RunningCommandsTest {
         source.window().setSynchronizePanes(true);
         modal.copyMode();
 
-        assertRefusedBeforeRunWork(server, source, "modal-must-not-run", modal.id().value());
+        assertRefusedBeforeRunWork(
+                server, source, "modal-must-not-run", modal.id().value());
     }
 
     @Test
@@ -222,7 +219,8 @@ final class RunningCommandsTest {
         source.sendLine("exit");
         assertTrue(await(() -> "1".equals(source.expand("#{pane_dead}"))), "the pane did not become dead");
 
-        assertRefusedBeforeRunWork(server, source, "dead-must-not-run", "dead", source.id().value());
+        assertRefusedBeforeRunWork(
+                server, source, "dead-must-not-run", "dead", source.id().value());
     }
 
     @ParameterizedTest(name = "{0}")
@@ -246,11 +244,7 @@ final class RunningCommandsTest {
                 assertThrows(
                         RuntimeException.class,
                         () -> RunningCommands.run(TestCalls.on(
-                                measured,
-                                "pane_id",
-                                source.id().value(),
-                                "command",
-                                "echo transition-must-not-run")));
+                                measured, "pane_id", source.id().value(), "command", "echo transition-must-not-run")));
             } finally {
                 restore(transition, server, source);
             }
@@ -259,7 +253,8 @@ final class RunningCommandsTest {
         assertEquals(2, listings.get(), "the run must attempt both authoritative preflights");
         assertEquals(0, commandCount(requests, "send-keys"));
         assertEquals(0, commandCount(requests, "wait-for"));
-        assertTrue(server.buffers().list().stream().noneMatch(buffer -> buffer.name().startsWith("libtmux-run-")));
+        assertTrue(server.buffers().list().stream()
+                .noneMatch(buffer -> buffer.name().startsWith("libtmux-run-")));
         assertTrue(server.panes().stream()
                 .flatMap(pane -> pane.options().all().keySet().stream())
                 .noneMatch(name -> name.startsWith("@st_")));
@@ -276,8 +271,8 @@ final class RunningCommandsTest {
                 return processes.execute(request);
             });
             try (Server measured = Server.using(server.config(), recording)) {
-                RunningCommands.Ran ran = RunningCommands.run(
-                        TestCalls.on(measured, "pane_id", pane, "command", "true"));
+                RunningCommands.Ran ran =
+                        RunningCommands.run(TestCalls.on(measured, "pane_id", pane, "command", "true"));
                 assertCompleted(ran, 0);
             }
         }
@@ -679,8 +674,8 @@ final class RunningCommandsTest {
             try (Server measured = Server.using(server.config(), recording)) {
                 IllegalStateException refused = assertThrows(
                         IllegalStateException.class,
-                        () -> RunningCommands.run(TestCalls.on(
-                                measured, "pane_id", source.id().value(), "command", "echo " + marker)));
+                        () -> RunningCommands.run(
+                                TestCalls.on(measured, "pane_id", source.id().value(), "command", "echo " + marker)));
                 String message = String.valueOf(refused.getMessage());
                 assertTrue(message.contains("run_shell_command"), message);
                 for (String part : expectedMessageParts) {
@@ -698,7 +693,8 @@ final class RunningCommandsTest {
     }
 
     private static int commandCount(List<CommandRequest> requests, String name) {
-        return Math.toIntExact(requests.stream().filter(request -> hasCommand(request, name)).count());
+        return Math.toIntExact(
+                requests.stream().filter(request -> hasCommand(request, name)).count());
     }
 
     private static int directCommandCount(List<CommandRequest> requests, String name) {
@@ -717,8 +713,9 @@ final class RunningCommandsTest {
     }
 
     private static boolean hasCommand(CommandRequest request, String name) {
-        return request.commands().stream().anyMatch(command -> command.getFirst().equals(name)
-                || command.stream().anyMatch(argument -> argument.contains("'" + name + "'")));
+        return request.commands().stream()
+                .anyMatch(command -> command.getFirst().equals(name)
+                        || command.stream().anyMatch(argument -> argument.contains("'" + name + "'")));
     }
 
     private static boolean isCohortListing(CommandRequest request) {
@@ -730,19 +727,13 @@ final class RunningCommandsTest {
             return false;
         }
         String format = command.get(command.indexOf("-F") + 1);
-        return List.of(
-                        "pane_id",
-                        "pane_synchronized",
-                        "pane_in_mode",
-                        "pane_dead",
-                        "pane_current_command")
-                .stream()
+        return List.of("pane_id", "pane_synchronized", "pane_in_mode", "pane_dead", "pane_current_command").stream()
                 .allMatch(format::contains);
     }
 
     private static boolean isSocketDiscovery(CommandRequest request) {
-        return request.commands().stream().anyMatch(command -> command.equals(
-                List.of("display-message", "-p", "#{socket_path}")));
+        return request.commands().stream()
+                .anyMatch(command -> command.equals(List.of("display-message", "-p", "#{socket_path}")));
     }
 
     private static void prepare(RunTransition transition, Pane source) {

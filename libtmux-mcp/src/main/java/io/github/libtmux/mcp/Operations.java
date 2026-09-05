@@ -362,14 +362,7 @@ final class Operations {
                 boolean literal = booleanValue(operation.get("literal"), false, "literal");
                 Typing.sendKeys(pane, keys, literal, cohort);
                 results.add(values(
-                        "index",
-                        index,
-                        "pane_id",
-                        paneId,
-                        "resolved_pane_ids",
-                        resolvedPaneIds,
-                        "success",
-                        true));
+                        "index", index, "pane_id", paneId, "resolved_pane_ids", resolvedPaneIds, "success", true));
             } catch (RuntimeException failure) {
                 results.add(values(
                         "index",

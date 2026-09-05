@@ -138,7 +138,8 @@ final class TypingTest {
         var first = server.panes().getFirst();
         var firstPeer = first.split(SplitSpec.builder().build());
         first.window().setSynchronizePanes(true);
-        var second = server.sessions().getFirst().newWindow("batch-modal").panes().getFirst();
+        var second =
+                server.sessions().getFirst().newWindow("batch-modal").panes().getFirst();
         var modal = second.split(SplitSpec.builder().build());
         second.window().setSynchronizePanes(true);
         modal.copyMode();
@@ -156,9 +157,11 @@ final class TypingTest {
 
         assertEquals(3, batch.get("completed"));
         assertEquals(true, rows.get(0).get("success"));
-        assertEquals(sorted(first.id().value(), firstPeer.id().value()), rows.get(0).get("resolved_pane_ids"));
+        assertEquals(
+                sorted(first.id().value(), firstPeer.id().value()), rows.get(0).get("resolved_pane_ids"));
         assertEquals(false, rows.get(1).get("success"));
-        assertEquals(sorted(second.id().value(), modal.id().value()), rows.get(1).get("resolved_pane_ids"));
+        assertEquals(
+                sorted(second.id().value(), modal.id().value()), rows.get(1).get("resolved_pane_ids"));
         assertEquals(false, rows.get(2).get("success"));
         assertEquals(List.of(), rows.get(2).get("resolved_pane_ids"));
         assertTrue(await(() -> captureOf(server, first.id().value()).contains("batch-first-marker")));
@@ -170,9 +173,9 @@ final class TypingTest {
             TmuxTransport failing = new TmuxTransport() {
                 @Override
                 public CommandResult execute(CommandRequest request) {
-                    boolean sending = request.commands().stream().anyMatch(command -> command.getFirst()
-                                    .equals("send-keys")
-                            || command.stream().anyMatch(argument -> argument.contains("'send-keys'")));
+                    boolean sending = request.commands().stream()
+                            .anyMatch(command -> command.getFirst().equals("send-keys")
+                                    || command.stream().anyMatch(argument -> argument.contains("'send-keys'")));
                     if (sending) {
                         throw new IllegalStateException("dispatch refused by fixture");
                     }
@@ -232,8 +235,8 @@ final class TypingTest {
         modal.copyMode();
         String marker = "target-only-paste-marker";
 
-        Typing.Pasted pasted = Typing.pasteText(TestCalls.on(
-                server, "pane_id", source.id().value(), "text", marker));
+        Typing.Pasted pasted =
+                Typing.pasteText(TestCalls.on(server, "pane_id", source.id().value(), "text", marker));
 
         assertEquals(source.id().value(), pasted.paneId());
         assertTrue(await(() -> captureOf(server, source.id().value()).contains(marker)));
@@ -249,8 +252,7 @@ final class TypingTest {
 
         IllegalStateException refused = assertThrows(
                 IllegalStateException.class,
-                () -> Typing.pasteText(TestCalls.on(
-                        server, "pane_id", pane.id().value(), "text", marker)));
+                () -> Typing.pasteText(TestCalls.on(server, "pane_id", pane.id().value(), "text", marker)));
 
         String message = String.valueOf(refused.getMessage());
         assertTrue(message.contains("paste_text"), message);
@@ -356,8 +358,7 @@ final class TypingTest {
     }
 
     private static Typing.Sent sendKeys(Server server, String paneId, String marker) {
-        return Typing.sendKeys(
-                TestCalls.on(server, "pane_id", paneId, "keys", List.of(marker), "literal", true));
+        return Typing.sendKeys(TestCalls.on(server, "pane_id", paneId, "keys", List.of(marker), "literal", true));
     }
 
     private static void assertKeyRefused(Server server, String source, String blocked, String marker) {

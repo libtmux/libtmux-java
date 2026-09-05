@@ -51,8 +51,7 @@ final class Typing {
         return sendKeys(pane, keys, literal, cohort);
     }
 
-    static Sent sendKeys(
-            Pane pane, List<String> keys, boolean literal, PaneInputCohort.Resolution cohort) {
+    static Sent sendKeys(Pane pane, List<String> keys, boolean literal, PaneInputCohort.Resolution cohort) {
         List<String> resolved = cohort.requireKeyRecipients("send_keys");
         pane.sendKeys(keys, literal);
         return new Sent(

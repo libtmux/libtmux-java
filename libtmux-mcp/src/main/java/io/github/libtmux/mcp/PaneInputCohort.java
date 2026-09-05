@@ -14,12 +14,8 @@ final class PaneInputCohort {
 
     private static final long MAX_TMUX_PANE_ID = 4_294_967_295L;
 
-    private static final RowFormat PANES = RowFormat.of(
-            "pane_id",
-            "pane_synchronized",
-            "pane_in_mode",
-            "pane_dead",
-            "pane_current_command");
+    private static final RowFormat PANES =
+            RowFormat.of("pane_id", "pane_synchronized", "pane_in_mode", "pane_dead", "pane_current_command");
 
     private static final String TERMINATOR =
             PANES.template().substring(PANES.template().lastIndexOf('}') + 1);
@@ -29,12 +25,7 @@ final class PaneInputCohort {
     static Resolution resolve(Pane source) {
         return parse(
                 source.id().value(),
-                source.server().cmd(List.of(
-                        "list-panes",
-                        "-t",
-                        source.id().value(),
-                        "-F",
-                        PANES.template())));
+                source.server().cmd(List.of("list-panes", "-t", source.id().value(), "-F", PANES.template())));
     }
 
     static Resolution parse(String sourcePaneId, CommandResult answer) {
@@ -155,8 +146,8 @@ final class PaneInputCohort {
         String requireSingularCommandPane(String operation) {
             keyRecipients.forEach(member -> requireWritable(operation, member));
             if (keyRecipients.size() != 1) {
-                throw new IllegalStateException(operation + " requires exactly one effective pane; observed "
-                        + configuredKeyRecipientIds());
+                throw new IllegalStateException(
+                        operation + " requires exactly one effective pane; observed " + configuredKeyRecipientIds());
             }
             return source.currentCommand();
         }
