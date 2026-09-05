@@ -71,8 +71,11 @@ public final class TmuxMcpServer {
         SessionLifetime lifetime = new SessionLifetime(onSessionEnd);
         lifetime.own(in);
         try {
+            OutputStream protocolOutput = lifetime.observe(out);
             var provider = new StdioServerTransportProvider(
-                    new JacksonMcpJsonMapper(new ObjectMapper()), in, lifetime.observe(out));
+                    new JacksonMcpJsonMapper(new ObjectMapper()),
+                    new StdioRequestFilter(in, protocolOutput),
+                    protocolOutput);
             lifetime.own(provider::close);
             return serving(server, surface, lifetime.observe(provider), lifetime);
         } catch (RuntimeException | Error failure) {

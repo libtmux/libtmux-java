@@ -122,6 +122,65 @@ final class TmuxMcpServerTest {
     }
 
     @Test
+    void oversizedRequestIdFailsBeforeToolDispatch() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        TmuxTransport environment = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                calls.incrementAndGet();
+                return new CommandResult(0, List.of("VALUE=kept"), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+        ToolSurface surface =
+                ToolSurface.resolve(Map.of(ToolSurface.TOOLSETS_ENV, "", ToolSurface.TOOLS_ENV, "show_environment"));
+        String acceptedId = "i".repeat(StdioRequestFilter.REQUEST_ID_MAX_BYTES - 2);
+        assertEquals(StdioRequestFilter.REQUEST_ID_MAX_BYTES, Answers.JSON.writeValueAsBytes(acceptedId).length);
+        WireOutput output = new WireOutput();
+
+        try (Server server = Server.using(ServerConfig.builder().build(), environment);
+                PipedInputStream input = new PipedInputStream();
+                PipedOutputStream client = new PipedOutputStream(input)) {
+            McpSyncServer mcp = TmuxMcpServer.overStdio(server, input, output, surface, () -> {});
+            try {
+                client.write(initialize());
+                client.flush();
+                assertTrue(output.first.await(3, TimeUnit.SECONDS), "initialization did not answer");
+                calls.set(0);
+
+                client.write("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
+                        .getBytes(StandardCharsets.UTF_8));
+                client.write(toolCall(acceptedId));
+                client.flush();
+                assertTrue(output.second.await(5, TimeUnit.SECONDS), "near-bound request ID did not answer");
+                assertEquals(1, calls.get(), "near-bound request ID did not dispatch exactly once");
+                assertEquals(
+                        acceptedId,
+                        Answers.JSON.readTree(output.lines().get(1)).path("id").textValue(),
+                        "near-bound request ID did not round trip");
+
+                client.write(toolCall("i".repeat(1_000_000)));
+                client.flush();
+                assertTrue(output.awaitLines(3, 5, TimeUnit.SECONDS), "oversized request ID did not answer");
+            } finally {
+                mcp.close();
+            }
+        }
+
+        String rejectedLine = output.lines().get(2);
+        var rejected = Answers.JSON.readTree(rejectedLine);
+        boolean idNull = rejected.has("id") && rejected.path("id").isNull();
+        int code = rejected.path("error").path("code").asInt();
+        int wireBytes = rejectedLine.getBytes(StandardCharsets.UTF_8).length + 1;
+        assertTrue(
+                idNull && code == -32600 && wireBytes <= 1_000_000 && calls.get() == 1,
+                () -> "oversized response = (" + wireBytes + " bytes, id null " + idNull + ", code " + code + ", calls "
+                        + calls.get() + ")");
+    }
+
+    @Test
     void brokenOutputEndsAStdioSessionEvenWhileInputRemainsOpen(Server server) throws Exception {
         CountDownLatch ended = new CountDownLatch(1);
         AtomicInteger endCalls = new AtomicInteger();
@@ -231,6 +290,20 @@ final class TmuxMcpServerTest {
         return request.getBytes(StandardCharsets.UTF_8);
     }
 
+    private static byte[] toolCall(String id) throws IOException {
+        return (Answers.JSON.writeValueAsString(Map.of(
+                                "jsonrpc",
+                                "2.0",
+                                "id",
+                                id,
+                                "method",
+                                "tools/call",
+                                "params",
+                                Map.of("name", "show_environment", "arguments", Map.of())))
+                        + "\n")
+                .getBytes(StandardCharsets.UTF_8);
+    }
+
     private static final class BlockingInput extends java.io.InputStream {
 
         private final CountDownLatch reading = new CountDownLatch(1);
@@ -291,11 +364,22 @@ final class TmuxMcpServerTest {
             return bytes.toString(StandardCharsets.UTF_8).lines().toList();
         }
 
+        synchronized boolean awaitLines(int expected, long timeout, TimeUnit unit) throws InterruptedException {
+            long remaining = unit.toNanos(timeout);
+            long end = System.nanoTime() + remaining;
+            while (lines < expected && remaining > 0) {
+                TimeUnit.NANOSECONDS.timedWait(this, remaining);
+                remaining = end - System.nanoTime();
+            }
+            return lines >= expected;
+        }
+
         private void count(int value) {
             if (value != '\n') {
                 return;
             }
             lines++;
+            notifyAll();
             if (lines == 1) {
                 first.countDown();
             } else if (lines == 2) {

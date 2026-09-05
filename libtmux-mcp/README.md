@@ -193,6 +193,9 @@ order with `result: null` and
 `resultTruncated: true`; the outer result sets `truncated` and reports the
 removed byte count in `truncatedBytes`.
 
+A serialized request ID may use at most 524,288 bytes; a larger ID returns an
+`id: null` invalid-request error before any tool runs.
+
 ### Waiting
 
 | tool | for |
