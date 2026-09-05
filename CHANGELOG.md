@@ -16,8 +16,9 @@ production.
 
 - **`mcp_swap.py` configures all eight supported agent clients.** OpenCode edits
   preserve JSONC comments and trailing commas, Pi reports its adapter
-  prerequisite, and `antigravity` selects canonical `agy`; multi-client swaps
-  validate every config before writing.
+  prerequisite, and `antigravity` selects canonical `agy`. Multi-client use and
+  revert preflight and stage one transaction, preserve config symlinks, reverse
+  proven writes on failure, and keep `--dry-run` fully observational.
 - **`NamedServerFixture` safely owns explicitly named test servers.** It binds
   teardown to the reported process, socket path, and inode, then fails closed if
   any of that identity changes before cleanup.
