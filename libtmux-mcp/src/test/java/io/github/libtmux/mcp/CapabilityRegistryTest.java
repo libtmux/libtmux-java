@@ -57,8 +57,6 @@ final class CapabilityRegistryTest {
             "move_window",
             "swap_pane",
             "set_pane_title",
-            "enter_copy_mode",
-            "exit_copy_mode",
             "wait_for_channel",
             "signal_channel",
             "set_mouse_enabled",
@@ -110,8 +108,6 @@ final class CapabilityRegistryTest {
                     "move_window",
                     "swap_pane",
                     "set_pane_title",
-                    "enter_copy_mode",
-                    "exit_copy_mode",
                     "wait_for_channel",
                     "signal_channel",
                     "set_mouse_enabled",
@@ -206,9 +202,9 @@ final class CapabilityRegistryTest {
             assertSame(tool, all.require(tool.name()));
         }
 
-        assertEquals(47, Catalog.tools().size());
+        assertEquals(45, Catalog.tools().size());
         assertEquals(
-                Map.of("inspect", 18L, "manage", 16L, "execute", 9L, "teardown", 4L),
+                Map.of("inspect", 18L, "manage", 14L, "execute", 9L, "teardown", 4L),
                 Catalog.tools().stream()
                         .collect(java.util.stream.Collectors.groupingBy(
                                 tool -> tool.toolset().wireName(), java.util.stream.Collectors.counting())));
@@ -288,7 +284,6 @@ final class CapabilityRegistryTest {
                 Map.entry("capture_since", Set.of(ToolSpec.TmuxEffect.OBSERVE)),
                 Map.entry("call_read_tools_batch", Set.of(ToolSpec.TmuxEffect.OBSERVE)),
                 Map.entry("create_session", Set.of(ToolSpec.TmuxEffect.OBSERVE, ToolSpec.TmuxEffect.CHANGE)),
-                Map.entry("enter_copy_mode", Set.of(ToolSpec.TmuxEffect.OBSERVE, ToolSpec.TmuxEffect.CHANGE)),
                 Map.entry("kill_pane", Set.of(ToolSpec.TmuxEffect.OBSERVE, ToolSpec.TmuxEffect.DELETE)),
                 Map.entry(
                         "respawn_pane",

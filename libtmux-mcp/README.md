@@ -126,7 +126,7 @@ The complete frozen inventory below is generated from the code registry.
 | toolset | public tools |
 | --- | --- |
 | `inspect` | `list_sessions` · `list_windows` · `list_panes` · `get_server_info` · `get_session_info` · `get_window_info` · `get_pane_info` · `capture_pane` · `capture_since` · `snapshot_pane` · `search_panes` · `find_pane_by_position` · `wait_for_text` · `get_tmux_variables` · `show_option` · `show_environment` · `show_hooks` · `call_read_tools_batch` |
-| `manage` | `rename_session` · `rename_window` · `select_window` · `select_pane` · `select_layout` · `resize_window` · `resize_pane` · `move_window` · `swap_pane` · `set_pane_title` · `enter_copy_mode` · `exit_copy_mode` · `wait_for_channel` · `signal_channel` · `set_mouse_enabled` · `set_history_limit` |
+| `manage` | `rename_session` · `rename_window` · `select_window` · `select_pane` · `select_layout` · `resize_window` · `resize_pane` · `move_window` · `swap_pane` · `set_pane_title` · `wait_for_channel` · `signal_channel` · `set_mouse_enabled` · `set_history_limit` |
 | `execute` | `create_session` · `create_window` · `split_window` · `respawn_pane` · `run_shell_command` · `send_keys` · `send_keys_batch` · `paste_text` · `set_synchronize_panes` |
 | `teardown` | `clear_pane_scrollback` · `kill_pane` · `kill_window` · `kill_session` |
 <!-- END GENERATED TOOL INVENTORY -->
@@ -186,6 +186,11 @@ Existing callers from earlier alpha releases must also migrate tool names:
 `list_panes` reads metadata — what is *running*, and where. `search_panes`
 reads content — what is *displayed*. "Which pane mentions the error" is a search.
 
+Copy mode is an attached-client interface, not a prerequisite for reading pane
+text. Set `history: true` on `capture_pane` or `snapshot_pane` for bounded
+scrollback, use `search_panes` to locate displayed text, and continue from a
+cursor with `capture_since` instead of entering or cancelling a person's mode.
+
 Batch rows retain the nested MCP envelope rather than flattening its text or
 structured content. The complete JSON-RPC response, including line framing, is
 capped at 1,000,000 bytes. A row that would cross that boundary remains in
@@ -209,8 +214,8 @@ A serialized request ID may use at most 524,288 bytes; a larger ID returns an
 
 `rename_session` · `rename_window` · `select_window` · `select_pane` ·
 `select_layout` · `resize_window` · `resize_pane` · `move_window` · `swap_pane` ·
-`set_pane_title` · `enter_copy_mode` · `exit_copy_mode` · `set_mouse_enabled` ·
-`set_history_limit` · `create_session` · `create_window` · `split_window` ·
+`set_pane_title` · `set_mouse_enabled` · `set_history_limit` · `create_session` ·
+`create_window` · `split_window` ·
 `respawn_pane` · `send_keys` · `send_keys_batch` · `paste_text` ·
 `set_synchronize_panes`
 

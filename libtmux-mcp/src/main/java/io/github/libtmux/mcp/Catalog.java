@@ -606,23 +606,6 @@ final class Catalog {
                         PANE_OUTPUT,
                         Operations::setPaneTitle),
                 "title"));
-        tools.add(manageTool(
-                "enter_copy_mode",
-                "Enter copy mode",
-                "Puts a pane into copy mode.",
-                List.of(paneId()),
-                sinks(input("pane_id", TMUX_LOOKUP)),
-                shape(field("pane_id", STRING), field("mode", STRING)),
-                Operations::enterCopyMode));
-        tools.add(manageTool(
-                "exit_copy_mode",
-                "Exit copy mode",
-                "Leaves the pane's current mode.",
-                List.of(paneId()),
-                sinks(input("pane_id", TMUX_LOOKUP)),
-                shape(field("pane_id", STRING), field("mode", STRING)),
-                Operations::exitCopyMode));
-
         List<Argument> channelWait = List.of(
                 required("channel", "A server-wide tmux channel name."),
                 seconds("timeout", "Seconds to wait before giving up.", 30),

@@ -269,18 +269,6 @@ final class Operations {
         return pane(Targets.pane(call.server(), call.string("pane_id")).retitle(call.string("title")));
     }
 
-    static Object enterCopyMode(Call call) {
-        Pane pane = Targets.pane(call.server(), call.string("pane_id"));
-        pane.copyMode();
-        return values("pane_id", pane.id().value(), "mode", "copy-mode");
-    }
-
-    static Object exitCopyMode(Call call) {
-        Pane pane = Targets.pane(call.server(), call.string("pane_id"));
-        pane.exitMode();
-        return values("pane_id", pane.id().value(), "mode", "normal");
-    }
-
     static Object setMouseEnabled(Call call) {
         boolean enabled = call.flag("enabled", false);
         call.server().setMouseEnabled(enabled);
