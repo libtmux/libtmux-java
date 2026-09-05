@@ -22,10 +22,7 @@ final class NamedSocketIntegrationTest {
 
     private static final String TMUX = System.getProperty("libtmux.tmux", "tmux");
 
-    /**
-     * Short because {@code TMUX_TMPDIR} already spends about eighty of the ~104 bytes a unix socket
-     * path may hold. The pid keeps concurrent runs — Gradle's workers, the matrix's lanes — apart.
-     */
+    /** The pid keeps concurrent Gradle workers and matrix lanes apart inside their quarantine. */
     private static final String NAMESPACE = "ltj-" + ProcessHandle.current().pid();
 
     @Test

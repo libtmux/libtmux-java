@@ -1,4 +1,7 @@
 // Shared Java conventions. A module script then declares only what makes it different.
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.HexFormat
 import net.ltgt.gradle.errorprone.errorprone
 
 plugins {
@@ -94,7 +97,14 @@ tasks.withType<Test>().configureEach {
     // a real server and can kill it. Two environment values decide where a bare client lands: tmux
     // resolves its default socket under TMUX_TMPDIR when it execs, and $TMUX takes precedence over
     // that for a client started inside a pane — which the Gradle daemon may well have been.
-    val tmuxTmpDir = layout.buildDirectory.dir("tmux-tmpdir").get().asFile
+    //
+    // The worktree-and-task digest separates concurrent namespaces while the 39-byte path leaves
+    // AF_UNIX room. Recreate the owned namespace so stale sockets cannot be reused.
+    val quarantineIdentity = rootProject.rootDir.canonicalPath + "\u0000" + path
+    val quarantineDigest = MessageDigest.getInstance("SHA-256")
+        .digest(quarantineIdentity.toByteArray(StandardCharsets.UTF_8))
+    val quarantineName = HexFormat.of().formatHex(quarantineDigest, 0, 8)
+    val tmuxTmpDir = File("/tmp/libtmux-java-test", quarantineName)
     environment("TMUX_TMPDIR", tmuxTmpDir.absolutePath)
     environment.remove("TMUX")
     environment.remove("TMUX_PANE")
@@ -110,10 +120,15 @@ tasks.withType<Test>().configureEach {
     val socketRoot = providers.gradleProperty("libtmuxSocketRoot").getOrElse("/tmp/libtmux-java-test")
     systemProperty("java.io.tmpdir", socketRoot)
     doFirst {
+        require(tmuxTmpDir.deleteRecursively()) {
+            "could not clear this test task's tmux quarantine"
+        }
+        require(tmuxTmpDir.mkdirs()) {
+            "could not create this test task's tmux quarantine"
+        }
         require(socketRoot.length <= 40) {
             "libtmuxSocketRoot is $socketRoot, too long to leave room for a socket under it"
         }
-        tmuxTmpDir.mkdirs()
         File(socketRoot).mkdirs()
     }
 

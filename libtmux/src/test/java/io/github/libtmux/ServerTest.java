@@ -53,7 +53,15 @@ final class ServerTest {
         String quarantine = System.getenv("TMUX_TMPDIR");
 
         assertNotNull(quarantine, "without this a bare client lands on the developer's default socket");
-        assertTrue(quarantine.contains("build"), "the quarantine must sit inside the build tree: " + quarantine);
+        Path quarantinePath = Path.of(quarantine);
+        assertEquals(
+                Path.of("/tmp/libtmux-java-test"),
+                quarantinePath.getParent(),
+                "the quarantine must stay inside this port's test root");
+        assertTrue(
+                quarantinePath.getFileName().toString().matches("[0-9a-f]{16}"),
+                "the quarantine must identify this build without exposing its path: " + quarantine);
+        assertTrue(quarantine.length() <= 40, "named sockets need a short quarantine: " + quarantine);
     }
 
     // -------------------------------------------------------------------------------- dispatch

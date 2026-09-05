@@ -42,9 +42,13 @@ left behind — a test cannot watch its own teardown.
 
 ## Isolation from your own tmux
 
-Every test task runs with a build-local `TMUX_TMPDIR` and with `TMUX` and
-`TMUX_PANE` removed. A command that omits its `-S` therefore cannot reach the
-tmux you are working in.
+Every test task runs with a short `TMUX_TMPDIR` under
+`/tmp/libtmux-java-test/`, and with `TMUX` and `TMUX_PANE` removed. Its
+16-character hexadecimal namespace hashes the canonical worktree and task path,
+which separates concurrent modules and linked worktrees without spending the
+socket path's limited bytes. The task recreates that namespace before use, so
+stale sockets cannot be reused. A command that omits its `-S` therefore cannot
+reach the tmux you are working in.
 
 This is enforced by the build rather than by every test remembering, because the
 code under test is exactly what is allowed to be wrong. The suite asserts the
