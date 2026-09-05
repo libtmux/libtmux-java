@@ -262,7 +262,7 @@ final class CapabilityRegistryTest {
         assertFalse(batch.nestedAuthority().contains("wait_for_text"));
         assertTrue(batch.outputClasses().contains(ToolSpec.OutputClass.PROCESS_ENVIRONMENT));
         assertTrue(batch.controlledOpener().startsWith("Read pane output"));
-        assertEquals(Set.of(ToolSpec.TmuxEffect.OBSERVE, ToolSpec.TmuxEffect.CHANGE), batch.effects());
+        assertEquals(Set.of(ToolSpec.TmuxEffect.OBSERVE), batch.effects());
         assertEquals(Set.of(ToolSpec.InputSink.NESTED_TOOL), batch.inputSinks().get("operations"));
         assertTrue(batch.description().contains("no separate approval"));
         assertTrue(batch.description().contains("1,000,000 bytes"));
@@ -285,7 +285,8 @@ final class CapabilityRegistryTest {
     @Test
     void exactEffectRowsAndExclusionPrunedBatchUnionsStayAligned() {
         Map<String, Set<ToolSpec.TmuxEffect>> expected = Map.ofEntries(
-                Map.entry("capture_since", Set.of(ToolSpec.TmuxEffect.OBSERVE, ToolSpec.TmuxEffect.CHANGE)),
+                Map.entry("capture_since", Set.of(ToolSpec.TmuxEffect.OBSERVE)),
+                Map.entry("call_read_tools_batch", Set.of(ToolSpec.TmuxEffect.OBSERVE)),
                 Map.entry("create_session", Set.of(ToolSpec.TmuxEffect.OBSERVE, ToolSpec.TmuxEffect.CHANGE)),
                 Map.entry("enter_copy_mode", Set.of(ToolSpec.TmuxEffect.OBSERVE, ToolSpec.TmuxEffect.CHANGE)),
                 Map.entry("kill_pane", Set.of(ToolSpec.TmuxEffect.OBSERVE, ToolSpec.TmuxEffect.DELETE)),
@@ -301,6 +302,19 @@ final class CapabilityRegistryTest {
         assertEquals(
                 Set.of(ToolSpec.OutputClass.CONFIGURED_COMMAND),
                 byName("show_hooks").outputClasses());
+
+        String everythingButCaptureSince = byName("call_read_tools_batch").nestedAuthority().stream()
+                .filter(name -> !name.equals("capture_since"))
+                .collect(java.util.stream.Collectors.joining(","));
+        ToolSpec captureOnlyBatch = ToolSurface.resolve(Map.of(
+                        ToolSurface.TOOLSETS_ENV,
+                        "",
+                        ToolSurface.TOOLS_ENV,
+                        "call_read_tools_batch",
+                        ToolSurface.EXCLUDE_TOOLS_ENV,
+                        everythingButCaptureSince))
+                .require("call_read_tools_batch");
+        assertEquals(Set.of(ToolSpec.TmuxEffect.OBSERVE), captureOnlyBatch.effects());
 
         ToolSurface pruned = ToolSurface.resolve(Map.of(
                 ToolSurface.TOOLSETS_ENV,
