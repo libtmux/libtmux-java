@@ -323,7 +323,7 @@ public final class Pane {
         if (literal) {
             argv.add("-l");
         }
-        argv.addAll(List.of("-t", state.id().value()));
+        argv.addAll(List.of("-t", state.id().value(), "--"));
         argv.addAll(keys);
         server.run(snapshot, argv);
     }

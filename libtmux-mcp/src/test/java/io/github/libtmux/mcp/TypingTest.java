@@ -47,6 +47,37 @@ final class TypingTest {
     }
 
     @Test
+    void leadingOptionNamesReachTheSingleSendRoute(Server server) throws Exception {
+        String pane = server.panes().getFirst().id().value();
+        List<String> input = List.of("-X", "-R", "-N");
+
+        Typing.Sent sent = Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", input, "literal", true));
+
+        assertEquals(3, sent.keys());
+        assertTrue(await(() -> captureOf(server, pane).contains("-X-R-N")));
+    }
+
+    @Test
+    void leadingOptionNamesReachEveryBatchRoute(Server server) throws Exception {
+        var first = server.panes().getFirst();
+        var second = first.split(SplitSpec.builder().build());
+        var third = first.split(SplitSpec.builder().build());
+        List<Map<String, Object>> operations = List.of(
+                send(first.id().value(), "-X"),
+                send(second.id().value(), "-R"),
+                send(third.id().value(), "-N"));
+
+        List<Map<String, Object>> rows = rows(
+                map(Operations.sendKeysBatch(TestCalls.on(server, "operations", operations, "onError", "continue"))));
+
+        assertEquals(3, rows.size());
+        assertTrue(rows.stream().allMatch(row -> Boolean.TRUE.equals(row.get("success"))), rows.toString());
+        assertTrue(await(() -> captureOf(server, first.id().value()).contains("-X")));
+        assertTrue(await(() -> captureOf(server, second.id().value()).contains("-R")));
+        assertTrue(await(() -> captureOf(server, third.id().value()).contains("-N")));
+    }
+
+    @Test
     void synchronizedInputDisclosesEveryResolvedPane(Server server) {
         var source = server.panes().getFirst();
         var other = source.split(SplitSpec.builder().build());
