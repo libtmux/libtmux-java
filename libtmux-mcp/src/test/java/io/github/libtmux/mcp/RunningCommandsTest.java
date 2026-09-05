@@ -322,7 +322,7 @@ final class RunningCommandsTest {
                 () -> RunningCommands.run(TestCalls.on(server, "pane_id", "%999", "command", "true")));
 
         String message = String.valueOf(refused.getMessage());
-        assertTrue(message.contains("tmux_list_panes"), message);
+        assertTrue(message.contains("list_panes"), message);
     }
 
     @Test

@@ -4,6 +4,7 @@ kotlin = "2.4.10"
 junit = "5.14.4"
 jackson = "2.21.5"
 mcp = "2.0.1"
+re2j = "1.8"
 slf4j = "2.0.17"
 errorprone = "2.50.0"
 nullaway = "0.13.8"
@@ -23,6 +24,7 @@ jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", ver
 jackson-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml", version.ref = "jackson" }
 mcp-core = { module = "io.modelcontextprotocol.sdk:mcp-core", version.ref = "mcp" }
 mcp-json-jackson2 = { module = "io.modelcontextprotocol.sdk:mcp-json-jackson2", version.ref = "mcp" }
+re2j = { module = "com.google.re2j:re2j", version.ref = "re2j" }
 slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
 nullaway = { module = "com.uber.nullaway:nullaway", version.ref = "nullaway" }

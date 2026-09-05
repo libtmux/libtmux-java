@@ -2,6 +2,7 @@ package io.github.libtmux.mcp;
 
 import io.github.libtmux.Server;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -23,8 +24,8 @@ record Call(Connection connection, Map<String, Object> arguments, Progress progr
         return connection.caller();
     }
 
-    Safety ceiling() {
-        return connection.ceiling();
+    ToolSurface surface() {
+        return connection.surface();
     }
 
     /** Reports how a slow tool is going while the client is still listening. */
@@ -112,5 +113,23 @@ record Call(Connection connection, Map<String, Object> arguments, Progress progr
         }
         String single = value.toString();
         return single.isEmpty() ? List.of() : List.of(single);
+    }
+
+    /** A JSON array of objects for the two purpose-built aggregate tools. */
+    List<Map<String, Object>> objects(String name) {
+        Object value = arguments.get(name);
+        if (!(value instanceof List<?> many)) {
+            throw new IllegalArgumentException("expected an array of objects for '" + name + "'");
+        }
+        return many.stream()
+                .map(item -> {
+                    if (!(item instanceof Map<?, ?> object)) {
+                        throw new IllegalArgumentException("every item in '" + name + "' must be an object");
+                    }
+                    Map<String, Object> copy = new LinkedHashMap<>();
+                    object.forEach((key, nested) -> copy.put(String.valueOf(key), nested));
+                    return Map.copyOf(copy);
+                })
+                .toList();
     }
 }

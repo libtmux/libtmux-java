@@ -1,7 +1,7 @@
 package io.github.libtmux.mcp;
 
 import io.github.libtmux.Pane;
-import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 
@@ -20,6 +20,7 @@ final class Typing {
             String paneId,
             int keys,
             boolean literal,
+            List<String> resolvedPaneIds,
             @Nullable String note) {}
 
     record Pasted(
@@ -43,19 +44,33 @@ final class Typing {
                     "'keys' is empty; give the key names to send, such as [\"C-c\"] or [\"q\"]");
         }
         boolean literal = call.flag("literal", false);
-        List<String> argv = new ArrayList<>(List.of("send-keys"));
-        if (literal) {
-            argv.add("-l");
-        }
-        argv.addAll(List.of("-t", pane.id().value()));
-        argv.addAll(keys);
-        call.server().run(argv);
+        return sendKeys(pane, keys, literal);
+    }
+
+    static Sent sendKeys(Pane pane, List<String> keys, boolean literal) {
+        List<String> resolved = resolvedPaneIds(pane);
+        pane.sendKeys(keys, literal);
         return new Sent(
                 pane.id().value(),
                 keys.size(),
                 literal,
-                "Sent, not waited for. Call tmux_capture_since or tmux_wait_for_text on this pane to see "
-                        + "what it did.");
+                resolved,
+                "Sent, not waited for. Call capture_since or wait_for_text on this pane to see " + "what it did.");
+    }
+
+    private static List<String> resolvedPaneIds(Pane pane) {
+        boolean synchronizedPanes = pane.window()
+                .options()
+                .get("synchronize-panes")
+                .map(value -> value.equals("on") || value.equals("1"))
+                .orElse(false);
+        if (!synchronizedPanes) {
+            return List.of(pane.id().value());
+        }
+        return pane.window().panes().stream()
+                .map(candidate -> candidate.id().value())
+                .sorted(Comparator.naturalOrder())
+                .toList();
     }
 
     /**

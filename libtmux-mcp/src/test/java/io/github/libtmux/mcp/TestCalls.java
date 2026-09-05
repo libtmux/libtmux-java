@@ -20,8 +20,7 @@ final class TestCalls {
         for (int index = 0; index + 1 < pairs.length; index += 2) {
             arguments.put(pairs[index].toString(), pairs[index + 1]);
         }
-        Connection connection = new Connection(
-                server, Caller.nowhere(), Safety.DESTRUCTIVE, java.util.concurrent.ConcurrentHashMap.newKeySet());
+        Connection connection = new Connection(server, Caller.nowhere(), ToolSurface.defaults());
         return new Call(connection, arguments, Call.Progress.SILENT);
     }
 
@@ -44,11 +43,7 @@ final class TestCalls {
     }
 
     private static Call withEnvironment(Server server, Map<String, String> environment, Map<String, Object> arguments) {
-        Connection connection = new Connection(
-                server,
-                Caller.of(server, environment),
-                Safety.DESTRUCTIVE,
-                java.util.concurrent.ConcurrentHashMap.newKeySet());
+        Connection connection = new Connection(server, Caller.of(server, environment), ToolSurface.defaults());
         return new Call(connection, arguments, Call.Progress.SILENT);
     }
 

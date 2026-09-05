@@ -6,13 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.libtmux.Pane;
-import io.github.libtmux.Pane_;
 import io.github.libtmux.Server;
-import io.github.libtmux.jackson.FilterJson;
-import io.github.libtmux.jackson.LibTmuxModels;
 import io.github.libtmux.junit5.TmuxExtension;
-import io.github.libtmux.query.FilterExpr;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
@@ -26,7 +21,6 @@ import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -44,57 +38,13 @@ import reactor.core.publisher.Mono;
 final class TmuxMcpServerTest {
 
     @Test
-    void theFilterExampleShownToAModelIsOneTheLibraryReads() {
-        FilterExpr<Pane> parsed = FilterJson.readString(Catalog.EXAMPLE_FILTER, LibTmuxModels.pane());
-
-        assertEquals(
-                Pane_.command().startsWith("nvim").describe(),
-                parsed.describe(),
-                "the example must mean what it appears to mean");
-    }
-
-    /** And it has to select on a real server, not merely parse. */
-    @Test
-    void theFilterExampleSelectsAgainstRealTmux(Server server) {
-        FilterExpr<Pane> parsed = FilterJson.readString(Catalog.EXAMPLE_FILTER, LibTmuxModels.pane());
-
-        assertTrue(
-                server.panes().stream().noneMatch(parsed),
-                "the fixture runs a shell, so nothing should match a filter for nvim");
-        assertEquals(1, server.panes().size(), "and the unfiltered listing still sees the pane");
-    }
-
-    @Test
-    void closingAnEmbeddedMcpServerClosesItsWatcher(Server server) throws Exception {
-        PipedInputStream input = new PipedInputStream();
-        try (PipedOutputStream client = new PipedOutputStream(input)) {
-            client.flush();
-            StdioServerTransportProvider transport = new StdioServerTransportProvider(
-                    new JacksonMcpJsonMapper(new ObjectMapper()), input, new ByteArrayOutputStream());
-            McpSyncServer mcp = TmuxMcpServer.serving(server, Safety.MUTATING, true, transport);
-            try {
-                assertTrue(await(() -> !server.clients().isEmpty()), "the watcher never attached");
-
-                mcp.close();
-
-                assertTrue(await(() -> server.clients().isEmpty()), "closing MCP left its watcher attached");
-            } finally {
-                mcp.close();
-                for (var attached : server.clients()) {
-                    server.cmd("detach-client", "-t", attached.name());
-                }
-            }
-        }
-    }
-
-    @Test
     void brokenOutputEndsAStdioSessionEvenWhileInputRemainsOpen(Server server) throws Exception {
         CountDownLatch ended = new CountDownLatch(1);
         AtomicInteger endCalls = new AtomicInteger();
         PipedInputStream input = new PipedInputStream();
         try (PipedOutputStream client = new PipedOutputStream(input);
                 PrintStream output = new PrintStream(brokenOutput(), true, StandardCharsets.UTF_8)) {
-            McpSyncServer mcp = TmuxMcpServer.overStdio(server, input, output, Safety.MUTATING, false, () -> {
+            McpSyncServer mcp = TmuxMcpServer.overStdio(server, input, output, ToolSurface.defaults(), () -> {
                 endCalls.incrementAndGet();
                 ended.countDown();
             });
@@ -114,7 +64,7 @@ final class TmuxMcpServerTest {
     void closingAStdioServerUnblocksItsInputReader(Server server) throws Exception {
         BlockingInput input = new BlockingInput();
         McpSyncServer mcp =
-                TmuxMcpServer.overStdio(server, input, new ByteArrayOutputStream(), Safety.MUTATING, false, () -> {});
+                TmuxMcpServer.overStdio(server, input, new ByteArrayOutputStream(), ToolSurface.defaults(), () -> {});
         try {
             assertTrue(input.reading.await(3, TimeUnit.SECONDS), "the protocol reader never started");
 
@@ -129,75 +79,36 @@ final class TmuxMcpServerTest {
     }
 
     @Test
-    void failedStdioStartupClosesItsOwnedInput(Server server) throws Exception {
-        server.sessions().getFirst().kill();
-        BlockingInput input = new BlockingInput();
-        try {
-            assertThrows(
-                    IllegalStateException.class,
-                    () -> TmuxMcpServer.overStdio(
-                            server, input, new ByteArrayOutputStream(), Safety.MUTATING, true, () -> {}));
-
-            assertTrue(input.closed.await(1, TimeUnit.SECONDS), "failed startup left its input stream open");
-        } finally {
-            input.close();
-        }
-    }
-
-    @Test
     void failedStartupClosesAnyAcceptedTransport(Server server) throws Exception {
-        for (boolean watching : new boolean[] {false, true}) {
-            AtomicInteger closes = new AtomicInteger();
-            IllegalStateException startupFailure = new IllegalStateException("session factory failed");
-            McpServerTransportProvider transport = new McpServerTransportProvider() {
-                @Override
-                public void setSessionFactory(McpServerSession.Factory factory) {
-                    throw startupFailure;
-                }
-
-                @Override
-                public Mono<Void> notifyClients(String method, Object params) {
-                    return Mono.empty();
-                }
-
-                @Override
-                public Mono<Void> closeGracefully() {
-                    return Mono.empty();
-                }
-
-                @Override
-                public void close() {
-                    closes.incrementAndGet();
-                }
-            };
-
-            IllegalStateException thrown = assertThrows(
-                    IllegalStateException.class,
-                    () -> TmuxMcpServer.serving(server, Safety.MUTATING, watching, transport),
-                    "watching=" + watching);
-
-            assertSame(startupFailure, thrown);
-            assertEquals(1, closes.get(), "accepted transport was not closed exactly once");
-            assertTrue(await(() -> server.clients().isEmpty()), "failed startup left a watcher attached");
-        }
-    }
-
-    @Test
-    void brokenOutputDetachesTheOwnedWatcherWhileInputRemainsOpen(Server server) throws Exception {
-        PipedInputStream input = new PipedInputStream();
-        try (PipedOutputStream client = new PipedOutputStream(input);
-                PrintStream output = new PrintStream(brokenOutput(), true, StandardCharsets.UTF_8)) {
-            McpSyncServer mcp = TmuxMcpServer.overStdio(server, input, output, Safety.MUTATING, true, () -> {});
-            try {
-                assertTrue(await(() -> !server.clients().isEmpty()), "the watcher never attached");
-                client.write(initialize());
-                client.flush();
-
-                assertTrue(await(() -> server.clients().isEmpty()), "stdout failed but the watcher stayed attached");
-            } finally {
-                mcp.close();
+        AtomicInteger closes = new AtomicInteger();
+        IllegalStateException startupFailure = new IllegalStateException("session factory failed");
+        McpServerTransportProvider transport = new McpServerTransportProvider() {
+            @Override
+            public void setSessionFactory(McpServerSession.Factory factory) {
+                throw startupFailure;
             }
-        }
+
+            @Override
+            public Mono<Void> notifyClients(String method, Object params) {
+                return Mono.empty();
+            }
+
+            @Override
+            public Mono<Void> closeGracefully() {
+                return Mono.empty();
+            }
+
+            @Override
+            public void close() {
+                closes.incrementAndGet();
+            }
+        };
+
+        IllegalStateException thrown = assertThrows(
+                IllegalStateException.class, () -> TmuxMcpServer.serving(server, ToolSurface.defaults(), transport));
+
+        assertSame(startupFailure, thrown);
+        assertEquals(1, closes.get(), "accepted transport was not closed exactly once");
     }
 
     @Test
@@ -208,7 +119,7 @@ final class TmuxMcpServerTest {
         try (PipedOutputStream client = new PipedOutputStream(input)) {
             var transport = new StdioServerTransportProvider(
                     new JacksonMcpJsonMapper(new ObjectMapper()), input, new ByteArrayOutputStream(), 64);
-            McpSyncServer mcp = TmuxMcpServer.serving(server, Safety.MUTATING, lifetime.observe(transport));
+            McpSyncServer mcp = TmuxMcpServer.serving(server, ToolSurface.defaults(), lifetime.observe(transport));
             try {
                 client.write("x".repeat(65).getBytes(StandardCharsets.UTF_8));
                 client.flush();
@@ -269,16 +180,5 @@ final class TmuxMcpServerTest {
         public void close() {
             closed.countDown();
         }
-    }
-
-    private static boolean await(java.util.function.BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-        while (System.nanoTime() < deadline) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(25);
-        }
-        return condition.getAsBoolean();
     }
 }

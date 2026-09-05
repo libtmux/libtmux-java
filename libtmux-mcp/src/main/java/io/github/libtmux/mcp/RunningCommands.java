@@ -108,11 +108,11 @@ final class RunningCommands {
         return switch (wake) {
             case TIMED_OUT ->
                 "The command is still running; the output above is what it had printed by the "
-                        + "deadline. Call tmux_wait_for_text or tmux_capture_since on this pane to keep watching, "
-                        + "or tmux_send_keys with 'C-c' to stop it.";
+                        + "deadline. Call wait_for_text or capture_since on this pane to keep watching, "
+                        + "or send_keys with 'C-c' to stop it.";
             case SERVER_GONE ->
                 "The tmux server ended while the command was running. Nothing this call was "
-                        + "waiting on can be relied on; call tmux_list_servers to see what is left.";
+                        + "waiting on can be relied on; check that this process selected the intended socket.";
             case SIGNALLED ->
                 framed.exact()
                         ? null
@@ -227,9 +227,9 @@ final class RunningCommands {
             name = name.substring(1);
         }
         if (!POSIX_SHELLS.contains(name)) {
-            throw new IllegalStateException(
-                    "tmux_run requires a POSIX-compatible shell in the target pane; " + "it is running '" + name
-                            + "'. Use tmux_send_keys when typing into another program is intentional");
+            throw new IllegalStateException("run_shell_command requires a POSIX-compatible shell in the target pane; "
+                    + "it is running '" + name
+                    + "'. Use send_keys when typing into another program is intentional");
         }
     }
 }

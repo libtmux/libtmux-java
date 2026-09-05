@@ -28,13 +28,7 @@ dependencies {
 
     implementation(libs.mcp.json.jackson2)
     implementation(libs.jackson.databind)
-
-    // A model sends a filter as the versioned JSON document, which is what this module reads it
-    // from. Every use of it is inside a package-private type, so it is not part of the API.
-    implementation(project(":libtmux-jackson"))
-
-    // A whole session described in one document, which is what tmux_apply_workspace takes.
-    implementation(project(":libtmux-workspace"))
+    implementation(libs.re2j)
 
     add(launcherRuntime.name, libs.slf4j.nop)
 

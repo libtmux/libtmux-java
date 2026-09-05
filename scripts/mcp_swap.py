@@ -40,7 +40,7 @@ $ uv run scripts/mcp_swap.py use --dry-run
 ```
 
 ```console
-$ uv run scripts/mcp_swap.py use --socket /tmp/libtmux-java-dev/demo/s --safety destructive
+$ uv run scripts/mcp_swap.py use --socket /tmp/libtmux-java-dev/demo/s
 ```
 
 ```console
@@ -160,10 +160,6 @@ def launcher(args: argparse.Namespace) -> tuple[str, list[str]]:
         flags += ["--socket-name", args.socket_name]
     if args.tmux:
         flags += ["--tmux", args.tmux]
-    if args.safety:
-        flags += ["--safety", args.safety]
-    if args.watch:
-        flags += ["--watch"]
 
     # Gradle takes the server's own flags as one --args string.
     if args.source == "gradle":
@@ -306,8 +302,6 @@ def build_parser() -> argparse.ArgumentParser:
     use.add_argument("--socket", help="tmux socket path to serve")
     use.add_argument("--socket-name", help="tmux socket name to serve")
     use.add_argument("--tmux", help="which tmux binary the server should run")
-    use.add_argument("--safety", choices=("readonly", "mutating", "destructive"))
-    use.add_argument("--watch", action="store_true", help="push notifications as tmux changes")
     use.set_defaults(run=cmd_use)
 
     revert = commands.add_parser("revert", help="restore each config from its backup")

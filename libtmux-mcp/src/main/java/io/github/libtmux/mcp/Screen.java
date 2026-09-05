@@ -6,7 +6,6 @@ import io.github.libtmux.batch.BatchResult;
 import io.github.libtmux.batch.OperationResult;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -35,6 +34,8 @@ final class Screen {
      * a second look rather than a bigger one every time.
      */
     private static final int SLACK_LINES = 256;
+
+    private static final int CURSOR_RECOVERY_LINES = 20_000;
 
     private Screen() {}
 
@@ -83,12 +84,17 @@ final class Screen {
         if (answer != null) {
             return answer;
         }
-        // The cursor's line is older than the look reached. Looking as far back as tmux keeps
-        // anything settles it either way: found, and the pane merely ran ahead; absent, and its
-        // history really has rolled past what was delivered. A look that started at the oldest line
-        // there is always answers, which is what makes this terminate.
-        return Objects.requireNonNull(
-                resolve(from, look(pane, Integer.MAX_VALUE)), "a look at the whole history always answers");
+        Look recovery = look(pane, CURSOR_RECOVERY_LINES);
+        Fresh resumed = resolve(from, recovery);
+        if (resumed != null) {
+            return resumed;
+        }
+        List<String> written = recovery.complete();
+        return new Fresh(List.copyOf(written), Cursor.of(recovery.serverPid(), paneId, written), false);
+    }
+
+    static int cursorRecoveryLines() {
+        return CURSOR_RECOVERY_LINES;
     }
 
     /**

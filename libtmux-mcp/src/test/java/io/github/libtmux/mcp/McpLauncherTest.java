@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
@@ -45,21 +44,16 @@ final class McpLauncherTest {
     private static final int PATIENCE_SECONDS = 60;
 
     @Test
-    void failedWatchStartupDoesNotLeaveTheLauncherAlive(Server server, TmuxSocketPath socket) throws Exception {
-        assertTrue(server.cmd("set-option", "-g", "exit-empty", "off").succeeded());
-        server.sessions().getFirst().kill();
-        assertTrue(server.sessions().isEmpty(), "the fixture still had a session for the watcher to attach to");
-
+    void theRemovedWatchFlagDoesNotLeaveTheLauncherAlive(Server server, TmuxSocketPath socket) throws Exception {
         Process launcher =
                 rawLauncher(socket.path(), ProcessBuilder.Redirect.DISCARD, ProcessBuilder.Redirect.PIPE, "--watch");
         try {
             assertTrue(
-                    launcher.waitFor(5, TimeUnit.SECONDS),
-                    "watch startup failed, but the launcher stayed alive on its tmux transport threads");
-            assertTrue(launcher.exitValue() != 0, "failed watch startup reported success");
+                    launcher.waitFor(5, TimeUnit.SECONDS), "the rejected launch stayed alive on its transport threads");
+            assertTrue(launcher.exitValue() != 0, "the removed watch flag reported success");
             String diagnostic = new String(launcher.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
             assertTrue(
-                    diagnostic.contains("watching requires a tmux session to attach to"),
+                    diagnostic.contains("unknown argument '--watch'"),
                     "the launcher failed for the wrong reason: " + diagnostic);
         } finally {
             stop(launcher);
@@ -114,7 +108,7 @@ final class McpLauncherTest {
             client.initialize();
 
             String listed = textOf(client.callTool(
-                    McpSchema.CallToolRequest.builder("tmux_list_sessions").build()));
+                    McpSchema.CallToolRequest.builder("list_sessions").build()));
 
             assertTrue(listed.contains("libtmux"), "the launcher did not find the fixture's session: " + listed);
             assertTrue(listed.contains("editor"), "the launcher answered about a different server: " + listed);
@@ -133,40 +127,8 @@ final class McpLauncherTest {
 
             assertTrue(
                     offered.containsAll(List.of(
-                            "tmux_list_sessions",
-                            "tmux_list_panes",
-                            "tmux_capture_pane",
-                            "tmux_run",
-                            "tmux_new_window")),
+                            "list_sessions", "list_panes", "capture_pane", "run_shell_command", "create_window")),
                     offered.toString());
-        }
-    }
-
-    /**
-     * The filter is the one argument that is a structured document rather than a string, so it is
-     * the one that can be mangled between the model and tmux without anything noticing.
-     */
-    @Test
-    @Timeout(PATIENCE_SECONDS)
-    void aFilterSentAsADocumentNarrowsWhatComesBack(Server server, TmuxSocketPath socket) {
-        String running = server.panes().get(0).currentCommand();
-
-        try (McpSyncClient client = launch(socket.path())) {
-            client.initialize();
-
-            String matching = textOf(client.callTool(McpSchema.CallToolRequest.builder("tmux_list_panes")
-                    .arguments(Map.of("filter", filterOn(running)))
-                    .build()));
-            String missing = textOf(client.callTool(McpSchema.CallToolRequest.builder("tmux_list_panes")
-                    .arguments(Map.of("filter", filterOn("no-such-command-anywhere")))
-                    .build()));
-
-            assertTrue(matching.contains("\"id\":\"%"), "the filter excluded the pane that matches it: " + matching);
-            assertTrue(missing.contains("\"count\":0"), "a filter matching nothing returned panes: " + missing);
-            assertFalse(missing.contains("\"id\":\"%"), "a filter matching nothing must not return everything");
-            assertTrue(
-                    missing.contains("without 'filter'"),
-                    "an empty answer has to say whether the server was empty or the filter was wrong: " + missing);
         }
     }
 
@@ -182,113 +144,87 @@ final class McpLauncherTest {
             String instructions = String.valueOf(initialized.instructions());
 
             assertTrue(instructions.contains("WAIT, DO NOT POLL"), instructions);
-            assertTrue(instructions.contains("tmux_whoami"), "a model has to be told how to find its own pane");
+            assertTrue(instructions.contains("get_server_info"), "a model has to be told how to identify the server");
             assertTrue(instructions.contains("Do NOT use them for browser tabs"), "anti-triggers must be stated");
-            assertTrue(instructions.contains("SAFETY"), "and what it is not allowed to do");
+            assertTrue(instructions.contains("Tool filtering"), "the interface boundary must be stated");
         }
     }
 
-    /** Resources, prompts and completion are all advertised, or a client will never ask for them. */
+    /** Capabilities are the only resource; no second prompt authority is advertised. */
     @Test
     @Timeout(PATIENCE_SECONDS)
-    void theOtherHalvesOfTheProtocolAreOfferedToo(Server server, TmuxSocketPath socket) {
+    void theCapabilityReportIsTheOnlyResource(Server server, TmuxSocketPath socket) {
         try (McpSyncClient client = launch(socket.path())) {
             client.initialize();
 
             List<String> resources = client.listResources().resources().stream()
                     .map(McpSchema.Resource::uri)
                     .toList();
-            List<String> templates = client.listResourceTemplates().resourceTemplates().stream()
-                    .map(McpSchema.ResourceTemplate::uriTemplate)
-                    .toList();
-            List<String> prompts = client.listPrompts().prompts().stream()
-                    .map(McpSchema.Prompt::name)
-                    .toList();
-
-            assertTrue(resources.contains("tmux://panes"), resources.toString());
-            assertTrue(templates.contains("tmux://panes/{pane_id}/content"), templates.toString());
-            assertTrue(prompts.contains("run_and_wait"), prompts.toString());
-        }
-    }
-
-    /** A pane resource is the pane's own text, addressable without spending a tool call on it. */
-    @Test
-    @Timeout(PATIENCE_SECONDS)
-    void aPaneCanBeReadAsAResource(Server server, TmuxSocketPath socket) {
-        String pane = server.panes().get(0).id().value();
-
-        try (McpSyncClient client = launch(socket.path())) {
-            client.initialize();
-
-            McpSchema.ReadResourceResult read = client.readResource(
-                    McpSchema.ReadResourceRequest.builder(Resources.paneContentUri(new PaneId(pane)))
-                            .build());
-
-            assertEquals(1, read.contents().size());
-            assertEquals(
-                    "text/plain",
-                    ((McpSchema.TextResourceContents) read.contents().get(0)).mimeType(),
-                    "terminal text is not JSON and must not be labelled as it");
-        }
-    }
-
-    /**
-     * Completion answered from tmux rather than from a fixed list. Without it, finding a pane id
-     * costs a listing call, a read of that listing, and a choice.
-     */
-    @Test
-    @Timeout(PATIENCE_SECONDS)
-    void completionOffersThePaneIdsThatActuallyExist(Server server, TmuxSocketPath socket) {
-        String pane = server.panes().get(0).id().value();
-
-        try (McpSyncClient client = launch(socket.path())) {
-            client.initialize();
-
-            McpSchema.CompleteResult completed = client.completeCompletion(McpSchema.CompleteRequest.builder(
-                            new McpSchema.ResourceReference("tmux://panes/{pane_id}"),
-                            new McpSchema.CompleteRequest.CompleteArgument("pane_id", "%"))
-                    .build());
-
-            assertTrue(
-                    completed.completion().values().contains(pane),
-                    "the pane that exists was not offered: "
-                            + completed.completion().values());
+            assertEquals(List.of(Resources.CAPABILITIES_URI), resources);
         }
     }
 
     /** What a client decides to confirm with a person on comes from these, so they have to arrive. */
     @Test
     @Timeout(PATIENCE_SECONDS)
-    void everyToolArrivesWithItsRiskDeclared(Server server, TmuxSocketPath socket) {
+    void everyToolArrivesWithItsRiskDeclared(Server server, TmuxSocketPath socket) throws Exception {
         try (McpSyncClient client = launch(socket.path())) {
             client.initialize();
 
-            for (McpSchema.Tool tool : client.listTools().tools()) {
-                assertTrue(tool.annotations() != null, tool.name() + " arrived with no annotations");
-            }
-            McpSchema.Tool reading = named(client, "tmux_capture_pane");
-            McpSchema.Tool running = named(client, "tmux_run");
+            List<McpSchema.Tool> tools = client.listTools().tools();
+            McpSchema.ReadResourceResult resource =
+                    client.readResource(McpSchema.ReadResourceRequest.builder(Resources.CAPABILITIES_URI)
+                            .build());
+            McpSchema.TextResourceContents contents =
+                    (McpSchema.TextResourceContents) resource.contents().getFirst();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> report = new ObjectMapper().readValue(contents.text(), Map.class);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rows = (List<Map<String, Object>>)
+                    java.util.Objects.requireNonNull(report.get("tools"), "capability rows");
 
-            assertEquals(true, reading.annotations().readOnlyHint(), "reading a pane changes nothing");
+            for (McpSchema.Tool tool : tools) {
+                assertTrue(tool.annotations() != null, tool.name() + " arrived with no annotations");
+                assertEquals(
+                        java.util.Set.of(ToolSpec.CAPABILITY_META_KEY),
+                        tool.meta().keySet(),
+                        tool.name() + " arrived without its capability row");
+                Map<String, Object> row = rows.stream()
+                        .filter(candidate -> tool.name().equals(candidate.get("name")))
+                        .findFirst()
+                        .orElseThrow();
+                assertEquals(
+                        row,
+                        tool.meta().get(ToolSpec.CAPABILITY_META_KEY),
+                        tool.name() + " metadata differs from tmux://capabilities");
+            }
+            McpSchema.Tool reading = named(client, "capture_pane");
+            McpSchema.Tool running = named(client, "run_shell_command");
+
+            assertEquals(
+                    false,
+                    reading.annotations().readOnlyHint(),
+                    "unknown configuration provenance requires conservative whole-call annotations");
             assertEquals(false, running.annotations().readOnlyHint(), "running a command does");
             assertEquals(true, running.annotations().destructiveHint(), "a shell command may delete data");
         }
     }
 
-    /** A ceiling removes tools rather than refusing them, and this is where that reaches a client. */
+    /** A toolset selection removes tools rather than refusing them, and this reaches the client. */
     @Test
     @Timeout(PATIENCE_SECONDS)
-    void aReadOnlyLauncherDoesNotEvenOfferTheToolsThatChangeThings(Server server, TmuxSocketPath socket) {
-        try (McpSyncClient client = launch(socket.path(), "--safety", "readonly")) {
+    void anInspectOnlyLauncherDoesNotOfferToolsThatChangeThings(Server server, TmuxSocketPath socket) {
+        try (McpSyncClient client =
+                launch("--socket", socket.path().toString(), Map.of(ToolSurface.TOOLSETS_ENV, "inspect"))) {
             client.initialize();
 
             List<String> offered = client.listTools().tools().stream()
                     .map(McpSchema.Tool::name)
                     .toList();
 
-            assertTrue(offered.contains("tmux_capture_pane"), offered.toString());
-            assertFalse(offered.contains("tmux_run"), "a read-only server must not offer to run commands");
-            assertFalse(offered.contains("tmux_kill"), offered.toString());
+            assertTrue(offered.contains("capture_pane"), offered.toString());
+            assertFalse(offered.contains("run_shell_command"), "an inspect-only server must not offer execution");
+            assertFalse(offered.contains("kill_session"), offered.toString());
         }
     }
 
@@ -310,7 +246,7 @@ final class McpLauncherTest {
         try (McpSyncClient client = launch(socket.path())) {
             client.initialize();
 
-            McpSchema.CallToolResult ran = client.callTool(McpSchema.CallToolRequest.builder("tmux_run")
+            McpSchema.CallToolResult ran = client.callTool(McpSchema.CallToolRequest.builder("run_shell_command")
                     .arguments(Map.of("pane_id", pane, "command", "echo over-the-wire; exit 7", "timeout", 30))
                     .build());
 
@@ -338,42 +274,15 @@ final class McpLauncherTest {
         try (McpSyncClient client = launch(socket.path())) {
             client.initialize();
 
-            McpSchema.CallToolResult keys = client.callTool(McpSchema.CallToolRequest.builder("tmux_send_keys")
+            McpSchema.CallToolResult keys = client.callTool(McpSchema.CallToolRequest.builder("send_keys")
                     .arguments(Map.of("pane_id", pane, "keys", "q"))
                     .build());
-            McpSchema.CallToolResult waited = client.callTool(McpSchema.CallToolRequest.builder("tmux_wait_for_text")
+            McpSchema.CallToolResult waited = client.callTool(McpSchema.CallToolRequest.builder("wait_for_text")
                     .arguments(Map.of("pane_id", pane, "patterns", "never-appears-here", "timeout", 1))
                     .build());
 
             assertEquals(false, keys.isError(), textOf(keys));
             assertEquals(false, waited.isError(), textOf(waited));
-        }
-    }
-
-    /**
-     * The tool a model is told to call first, on a socket no server is listening on. Everything else
-     * here needs a server to answer, so this one has to answer without one.
-     */
-    @Test
-    @Timeout(PATIENCE_SECONDS)
-    void whoamiAnswersWhenNoServerIsRunning(@TempDir Path directory) {
-        Path absent = directory.resolve("nothing-here");
-
-        try (McpSyncClient client = launch(absent)) {
-            client.initialize();
-
-            McpSchema.CallToolResult whoami = client.callTool(
-                    McpSchema.CallToolRequest.builder("tmux_whoami").build());
-            McpSchema.CallToolResult panes = client.callTool(
-                    McpSchema.CallToolRequest.builder("tmux_list_panes").build());
-
-            assertEquals(false, whoami.isError(), "asking where we are must not fail: " + textOf(whoami));
-            assertTrue(textOf(whoami).contains("No tmux server is running"), textOf(whoami));
-            assertTrue(textOf(whoami).contains("tmux_list_servers"), "and where to look instead");
-            assertEquals(false, panes.isError(), textOf(panes));
-            assertTrue(
-                    textOf(panes).contains("No tmux server is running"),
-                    "an empty listing has to say whether the server was empty or absent: " + textOf(panes));
         }
     }
 
@@ -394,7 +303,7 @@ final class McpLauncherTest {
         try (McpSyncClient client = launch(socket.path())) {
             client.initialize();
 
-            McpSchema.CallToolResult refused = client.callTool(McpSchema.CallToolRequest.builder("tmux_capture_pane")
+            McpSchema.CallToolResult refused = client.callTool(McpSchema.CallToolRequest.builder("capture_pane")
                     .arguments(Map.of("pane_id", "%999"))
                     .build());
 
@@ -403,7 +312,7 @@ final class McpLauncherTest {
 
             // The same client keeps working, which is what separates a tool error from a crash.
             assertFalse(
-                    textOf(client.callTool(McpSchema.CallToolRequest.builder("tmux_list_sessions")
+                    textOf(client.callTool(McpSchema.CallToolRequest.builder("list_sessions")
                                     .build()))
                             .isEmpty(),
                     "the launcher died on a bad target instead of reporting it");
@@ -423,8 +332,8 @@ final class McpLauncherTest {
                 try (McpSyncClient client = launch("--socket-name", name, Map.of("TMUX_TMPDIR", tmuxTmpDir()))) {
                     client.initialize();
 
-                    String listed = textOf(client.callTool(McpSchema.CallToolRequest.builder("tmux_list_sessions")
-                            .build()));
+                    String listed = textOf(client.callTool(
+                            McpSchema.CallToolRequest.builder("list_sessions").build()));
 
                     assertTrue(listed.contains("by-name"), "the launcher did not find the named server: " + listed);
                 }
@@ -433,17 +342,6 @@ final class McpLauncherTest {
                 named.killServer();
             }
         }
-    }
-
-    /** The versioned document a model sends, built here rather than pasted, so it cannot drift. */
-    private static Map<String, Object> filterOn(String command) {
-        return Map.of(
-                "schema",
-                "libtmux.filter/1",
-                "model",
-                "pane",
-                "expr",
-                Map.of("node", "compare", "field", "pane_current_command", "op", "starts_with", "value", command));
     }
 
     private static String textOf(McpSchema.CallToolResult result) {

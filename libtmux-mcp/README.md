@@ -4,7 +4,7 @@
 
 Point Claude Code, Claude Desktop, Codex, or any MCP client at a tmux socket and
 it can find its way around, read what a pane is showing, run a command and wait
-for it, and build a whole session from one description.
+for it, and build a whole session with typed operations.
 
 `io.github.libtmux:libtmux-mcp` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-mcp).
 
@@ -20,16 +20,45 @@ That writes a launcher at `libtmux-mcp/build/install/libtmux-mcp/bin/libtmux-mcp
 An MCP client starts it as a subprocess and speaks JSON-RPC over its stdin and
 stdout.
 
+Commands below that use `libtmux-mcp` assume that launcher's `bin` directory is
+on `PATH`; otherwise substitute the full path.
+
 | flag | what it chooses |
 | --- | --- |
 | `--socket <path>` | which tmux server, by socket path |
 | `--socket-name <name>` | which tmux server, by name under tmux's own directory |
 | `--tmux <binary>` | which tmux to run |
-| `--safety readonly\|mutating\|destructive` | how much the model may do — see [Safety](#safety) |
-| `--watch` | push notifications as tmux changes — see [Watching](#watching-instead-of-polling) |
 
-`LIBTMUX_SAFETY` and `LIBTMUX_WATCH` set the last two for an operator who cannot
-edit the client's launch command.
+Without a socket flag, the launcher pins the named socket `libtmux-mcp`. When
+that socket does not exist, it starts tmux with the package's minimal
+configuration and enables all four toolsets. A process that finds an existing
+or explicitly selected server cannot prove how it was configured, so teardown
+is omitted from its default surface.
+
+| environment | what it chooses |
+| --- | --- |
+| `LIBTMUX_SOCKET` | one socket name, mutually exclusive with the path |
+| `LIBTMUX_SOCKET_PATH` | one absolute socket path |
+| `LIBTMUX_TMUX_CONFIG` | one nonempty absolute tmux configuration path |
+| `LIBTMUX_TOOLSETS` | any unordered subset of `inspect,manage,execute,teardown` |
+| `LIBTMUX_TOOLS` | exact tool names to add |
+| `LIBTMUX_EXCLUDE_TOOLS` | exact tool names to remove last |
+
+The surface is frozen before tmux opens. An empty `LIBTMUX_TOOLSETS` value
+selects no toolset; unknown names and empty comma-separated elements stop
+startup. Existing launcher configurations must migrate:
+
+- `--safety` and `LIBTMUX_SAFETY` are retired and fail startup. The old
+  `readonly`, `mutating`, and `destructive` values map to `inspect`;
+  `inspect,manage,execute`; and all four toolsets, respectively. Use
+  `LIBTMUX_TOOLS` and `LIBTMUX_EXCLUDE_TOOLS` for exact exceptions.
+- `--watch` and `LIBTMUX_WATCH` are retired and fail startup. MCP no longer
+  sends dynamic resource notifications. Use `wait_for_text`,
+  `wait_for_channel`, or `capture_since`; Java applications can use
+  `ControlClient`.
+
+See [Watching, instead of polling](#watching-instead-of-polling) for bounded
+waits and [Safety](#safety) for the capability and trust boundary.
 
 ### Claude Code
 
@@ -52,7 +81,7 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "tmux": {
       "command": "/absolute/path/to/libtmux-mcp",
-      "args": ["--socket", "/tmp/my-app/s", "--safety", "mutating"]
+      "args": ["--socket", "/tmp/my-app/s"]
     }
   }
 }
@@ -91,49 +120,95 @@ one, which is how a model concludes a build printed nothing.
 
 ## Tools
 
+<!-- BEGIN GENERATED TOOL INVENTORY -->
+The complete frozen inventory below is generated from the code registry.
+
+| toolset | public tools |
+| --- | --- |
+| `inspect` | `list_sessions` · `list_windows` · `list_panes` · `get_server_info` · `get_session_info` · `get_window_info` · `get_pane_info` · `capture_pane` · `capture_since` · `snapshot_pane` · `search_panes` · `find_pane_by_position` · `wait_for_text` · `get_tmux_variables` · `show_option` · `show_environment` · `show_hooks` · `call_read_tools_batch` |
+| `manage` | `rename_session` · `rename_window` · `select_window` · `select_pane` · `select_layout` · `resize_window` · `resize_pane` · `move_window` · `swap_pane` · `set_pane_title` · `enter_copy_mode` · `exit_copy_mode` · `wait_for_channel` · `signal_channel` · `set_mouse_enabled` · `set_history_limit` |
+| `execute` | `create_session` · `create_window` · `split_window` · `respawn_pane` · `run_shell_command` · `send_keys` · `send_keys_batch` · `paste_text` · `set_synchronize_panes` |
+| `teardown` | `clear_pane_scrollback` · `kill_pane` · `kill_window` · `kill_session` |
+<!-- END GENERATED TOOL INVENTORY -->
+
+Existing callers from earlier alpha releases must also migrate tool names:
+
+- `tmux_capture_pane`, `tmux_capture_since`, `tmux_list_panes`,
+  `tmux_list_sessions`, `tmux_list_windows`, `tmux_paste_text`,
+  `tmux_resize_pane`, `tmux_search_panes`, `tmux_select_layout`,
+  `tmux_send_keys`, `tmux_show_environment`, `tmux_show_hooks`,
+  `tmux_signal_channel`, `tmux_wait_for_channel`, and `tmux_wait_for_text`
+  retain their suffix without `tmux_`. `list_panes` no longer accepts a
+  filter; filter its bounded metadata client-side. Use `search_panes` only for
+  displayed text.
+- `tmux_run`, `tmux_new_session`, `tmux_new_window`, `tmux_split_pane`, and
+  `tmux_show_options` become `run_shell_command`, `create_session`,
+  `create_window`, `split_window`, and `show_option`, in the same order.
+- `tmux_whoami` splits into `get_server_info` and the caller marker from
+  `list_panes`. `tmux_rename` becomes `rename_session` or `rename_window`;
+  `tmux_select` becomes `select_window` or `select_pane`; `tmux_kill` becomes
+  `kill_session`, `kill_window`, or `kill_pane`. Server termination is not
+  exposed.
+- `tmux_set_option` has no generic equivalent. Migrate supported uses to
+  `set_mouse_enabled`, `set_history_limit`, `set_synchronize_panes`, or
+  `set_pane_title`.
+- `tmux_apply_workspace` becomes explicit `create_session`, `create_window`,
+  `split_window`, and `select_layout` calls followed by `run_shell_command`,
+  `send_keys`, or `paste_text`.
+- `tmux_list_servers`, `tmux_list_clients`, and `tmux_drain_channel` have no
+  direct equivalents. Each process pins one server, described by
+  `get_server_info`; `list_sessions` marks attached sessions but exposes no
+  client details; stale channel signals cannot be drained through MCP.
+
 ### Finding your way
 
 | tool | gives back |
 | --- | --- |
-| `tmux_whoami` | which server this is, and **which pane this conversation is coming through** |
-| `tmux_list_servers` | every tmux server this user has, by socket |
-| `tmux_list_sessions` | sessions, with the windows in each |
-| `tmux_list_windows` | windows, with the `@id` other tools take |
-| `tmux_list_panes` | panes, with the `%id` other tools take — optionally narrowed by a `filter` |
-| `tmux_list_clients` | who is attached, so you know whether a person is watching |
+| `get_server_info` | the pinned server's identity, version, and current state |
+| `list_sessions` | sessions, with stable `$id` values |
+| `list_windows` | windows, with the `@id` other tools take |
+| `list_panes` | panes, with the `%id` other tools take |
+| `get_session_info`, `get_window_info`, `get_pane_info` | one target's metadata |
+| `find_pane_by_position` | one pane at a named window corner |
 
 ### Reading what panes show
 
 | tool | gives back |
 | --- | --- |
-| `tmux_capture_pane` | what a pane shows now, plus a cursor |
-| `tmux_capture_since` | **only what is new** since a cursor, plus the next cursor — finished lines only, so half a line is never handed over as though it were the whole of one |
-| `tmux_search_panes` | which panes are showing some text |
+| `capture_pane` | what a pane shows now, plus a cursor |
+| `capture_since` | **only what is new** since a cursor, plus the next cursor — finished lines only, so half a line is never handed over as though it were the whole of one |
+| `snapshot_pane` | bounded content and pane metadata together |
+| `search_panes` | which panes show bounded plain text or a bounded RE2 pattern |
+| `show_environment`, `show_hooks`, `show_option` | selected configuration state |
+| `get_tmux_variables` | a capped set of validated variable names |
+| `call_read_tools_batch` | up to sixteen typed inspect calls with full nested MCP results when they fit |
 
-`tmux_list_panes` reads metadata — what is *running*, and where. `tmux_search_panes`
+`list_panes` reads metadata — what is *running*, and where. `search_panes`
 reads content — what is *displayed*. "Which pane mentions the error" is a search.
 
 ### Waiting
 
 | tool | for |
 | --- | --- |
-| `tmux_run` | **a command you wrote** — sends it, waits, returns output *and exit status* in one call |
-| `tmux_wait_for_text` | output you did not start: a dev server, a daemon, someone else's build |
-| `tmux_wait_for_channel` | anything you can compose `; tmux wait-for -S name` into |
-| `tmux_signal_channel`, `tmux_drain_channel` | the other end of that |
+| `run_shell_command` | **a command you wrote** — sends it, waits, returns output *and exit status* in one call |
+| `wait_for_text` | output you did not start: a dev server, a daemon, someone else's build |
+| `wait_for_channel` | anything you can compose `; tmux wait-for -S name` into |
+| `signal_channel` | the other end of that |
 
 ### Input, structure, configuration
 
-`tmux_send_keys` · `tmux_paste_text` · `tmux_new_session` · `tmux_new_window` ·
-`tmux_split_pane` · `tmux_apply_workspace` · `tmux_rename` · `tmux_select` ·
-`tmux_select_layout` · `tmux_resize_pane` · `tmux_show_options` ·
-`tmux_set_option` · `tmux_show_hooks` · `tmux_show_environment`
+`rename_session` · `rename_window` · `select_window` · `select_pane` ·
+`select_layout` · `resize_window` · `resize_pane` · `move_window` · `swap_pane` ·
+`set_pane_title` · `enter_copy_mode` · `exit_copy_mode` · `set_mouse_enabled` ·
+`set_history_limit` · `create_session` · `create_window` · `split_window` ·
+`respawn_pane` · `send_keys` · `send_keys_batch` · `paste_text` ·
+`set_synchronize_panes`
 
 ### Ending things
 
-`tmux_kill` ends a pane, window, session, or the whole server. Offered only at
-the `destructive` ceiling, and it **refuses to end the pane this conversation is
-running through** unless `confirm_self` is set.
+`clear_pane_scrollback` · `kill_pane` · `kill_window` · `kill_session`. The kill
+tools refuse to end the pane this conversation is running through, or one of its
+containers, unless `confirm_self` is set. No tool ends the tmux server itself.
 
 ## Waiting, which is the part that pays for itself
 
@@ -145,7 +220,7 @@ agent's turn, where it has no ceiling at all.
 inference:
 
 ```json
-{"name": "tmux_run",
+{"name": "run_shell_command",
  "arguments": {"pane_id": "%1", "command": "pytest -q", "timeout": 120}}
 ```
 
@@ -162,7 +237,7 @@ wake, so "it worked" is never the answer on its own.
 **You did not write it.** Always pass `stop`:
 
 ```json
-{"name": "tmux_wait_for_text",
+{"name": "wait_for_text",
  "arguments": {"pane_id": "%2", "patterns": ["Listening on"],
                "stop": ["error:", "EADDRINUSE"], "timeout": 60}}
 ```
@@ -186,105 +261,146 @@ handler or undo tmux changes it already dispatched.
 
 ## Watching, instead of polling
 
-With `--watch`, this server attaches a tmux control client and asks tmux to
-report a format whenever its value changes. tmux does the comparing itself, about
-once a second, and sends nothing while nothing changes — so a client subscribed
-to a pane spends nothing at all while it is idle.
+The MCP surface no longer keeps a hidden control client or advertises dynamic
+resource subscriptions. Instead it gives an agent three bounded ways to wait
+without rereading a screen in a loop.
 
-What arrives is `notifications/resources/updated` naming the resource that went
-stale: `tmux://panes/%251/content` when pane `%1` produces output, `tmux://sessions`
-and `tmux://panes` when a window appears, closes, or is renamed.
+- `wait_for_text` watches one pane for wanted or stop patterns and returns the
+  output that arrived during the call.
+- `wait_for_channel` lets tmux itself block until a cooperating command signals
+  a channel.
+- `capture_since` takes an opaque cursor and returns only finished lines added
+  since that point.
 
-It is off by default because it is not free: watching means attaching a client,
-and an attached client is a real change to the server. The one attached here is
-hidden from `tmux_list_clients`, so it cannot be mistaken for a person.
+```json
+{"name": "capture_since",
+ "arguments": {"pane_id": "%1", "cursor": "<cursor from capture_pane>"}}
+```
+
+The Java library still exposes control-mode subscriptions directly when an
+application genuinely needs a long-lived event stream; the
+[streaming guide](../docs/guide/streaming.md) covers that lower-level API.
 
 ## Safety
 
-Three tiers, the same three every port of libtmux uses.
+Four unordered toolsets replace the old safety ceiling: `inspect`, `manage`,
+`execute`, and `teardown`. They are capabilities, not increasing levels. Ask for
+the independent sets a client needs, then add or exclude exact tool names.
 
-```java
-Safety.READONLY.allows(Safety.MUTATING);      // → false
-Safety.MUTATING.allows(Safety.READONLY);      // → true
-Safety.MUTATING.allows(Safety.DESTRUCTIVE);   // → false
-Safety.ofWireName("destructive");             // → DESTRUCTIVE
+```console
+$ LIBTMUX_TOOLSETS=inspect,manage libtmux-mcp --socket-name my-project
 ```
 
-The ceiling filters the tool catalog; it does not confine effects. `MUTATING`
-includes `tmux_run`, key input, and pasted text, so it can run programs or
-delete data in a pane. Use a separate OS account, socket permissions, or a
-container when effects must be contained.
+```console
+$ LIBTMUX_TOOLSETS= LIBTMUX_TOOLS=capture_pane,wait_for_text libtmux-mcp \
+    --socket-name my-project
+```
 
-A tool above the ceiling is **not listed at all**, rather than listed and
-refused. A model cannot be tempted by a tool it never saw, and an error it can do
-nothing about is wasted context. The server's instructions say plainly what is
-missing and why, so a model does not spend a turn looking for it.
+The same immutable selection governs both listing and calls. A hidden tool is
+not callable, exclusions win, and an aggregate-only
+`call_read_tools_batch` retains its eligible nested inspect operations unless
+they are excluded explicitly.
+
+Filtering the catalog does not confine effects. Every call runs with the tmux
+user's authority; pane input can reach a shell, and reads may return terminal
+content, process environment, or configured commands. Use a separate OS
+account, socket permissions, or a container when effects must be contained.
 
 Every tool carries MCP's own effect hints — `readOnlyHint`, `destructiveHint`,
-`idempotentHint`, and `openWorldHint` — independently of the ceiling. A command
-tool can stay at the `MUTATING` ceiling while truthfully warning that its update
-may be destructive.
+`idempotentHint`, and `openWorldHint` — plus its full native capability row.
+Those claims remain conservative when the selected server's configuration is
+unknown.
 
 ## Resources, prompts, completion
 
-**Resources** are the same state, addressable rather than asked for. A client can
-attach one to a conversation and refresh it without spending a tool call or a
-model's decision.
+There is one resource: `tmux://capabilities`. It is static for the process
+lifetime and reports the effective tool surface, its selection provenance, the
+pinned tmux connection, and the same capability row published on every tool.
 
-`tmux://server` · `tmux://sessions` · `tmux://panes` ·
-`tmux://sessions/{session_name}` · `tmux://panes/{pane_id}` ·
-`tmux://panes/{pane_id}/content`
+```json
+{"method": "resources/read", "params": {"uri": "tmux://capabilities"}}
+```
 
-**Prompts** are worked recipes for the jobs that take several tools in an order
-that matters: `run_and_wait`, `watch_until_ready`, `find_the_pane`,
-`build_workspace`, `clean_up_safely`.
+Earlier dynamic resource routes migrate to typed reads:
 
-**Completion** is answered live. A client asking what could go in `{pane_id}`
-gets the pane ids that exist right now, not a fixed list and not a round trip
-through `tmux_list_panes`.
+- `tmux://server` becomes `get_server_info`; the static capability resource
+  adds connection and selection provenance.
+- `tmux://sessions` and `tmux://panes` become `list_sessions` and
+  `list_panes`.
+- `tmux://sessions/{session_name}` and `tmux://panes/{pane_id}` become
+  `get_session_info` and `get_pane_info`.
+- `tmux://panes/{pane_id}/content` becomes `capture_pane`, `snapshot_pane`, or
+  `capture_since`. Use `wait_for_text` when the old subscription was waiting
+  for a terminal condition.
+
+The removed prompts remain useful as explicit tool workflows:
+
+- `run_and_wait` becomes one `run_shell_command` call.
+- `watch_until_ready` uses `wait_for_text`, or `snapshot_pane` followed by
+  `capture_since` when output must be carried across turns. After a timeout,
+  continue from the returned cursor instead of restarting the observation.
+- `find_the_pane` composes `list_panes`, `search_panes`,
+  `find_pane_by_position`, and `get_pane_info` as needed.
+- `build_workspace` composes the create, split, layout, title, selection, and
+  execution tools documented below.
+- `clean_up_safely` starts with `list_panes` to identify the MCP pane and
+  `list_sessions` to identify attached sessions, then uses the specific pane,
+  window, or session teardown tool. An attached session may have a person
+  watching it, so apparently abandoned state may still be live.
+
+Earlier live `completion/complete` suggestions for `pane_id` have no direct
+replacement. Call `list_panes`, then pass the exact id through the typed tool
+schema.
+
+There are deliberately no dynamic hierarchy or pane-content resources,
+templates, subscriptions, prompts, or live completion routes. State belongs in
+typed tools, while the resource answers the one question a client should not
+have to infer: what this frozen process can reach and disclose.
 
 ## Filtering, which is the interesting part
 
-A server with forty panes gives a model forty things to reason about.
-`tmux_list_panes` takes an optional `filter`: the same versioned document every
-port of libtmux reads.
+A server with forty panes gives a model forty things to reason about. MCP now
+does two narrower kinds of filtering: startup selection removes tools the client
+does not need, and `search_panes` narrows terminal content without returning
+every pane capture.
 
 ```json
 {
-  "filter": {
-    "schema": "libtmux.filter/1",
-    "model": "pane",
-    "expr": {
-      "node": "compare",
-      "field": "pane_current_command",
-      "op": "starts_with",
-      "value": "nvim"
-    }
+  "name": "search_panes",
+  "arguments": {
+    "pattern": "FAILED|ERROR",
+    "regex": true,
+    "max_matches_per_pane": 5,
+    "max_lines": 50
   }
 }
 ```
 
-Field and operator names are **tmux's own format names** — `pane_current_command`,
-not anything Java calls a field — so a model that has seen the schema once can
-write one for any libtmux port. Combine them with `and`, `or`, `not`:
+One call examines at most 200 panes, 20,000 lines, 1,000,000 UTF-8 bytes, and
+five seconds of matching work. The answer says when a pane, line, byte, time, or
+result limit stopped it. Pattern count and UTF-8 size are rejected before tmux
+opens; regular expressions use the bounded RE2 dialect.
+
+For several different observations, batch exact inspect calls instead of asking
+for one broad untyped projection:
 
 ```json
-{"node": "and", "operands": [
-  {"node": "compare", "field": "pane_active", "op": "equals", "value": true},
-  {"node": "compare", "field": "pane_current_command", "op": "starts_with", "value": "nvim"}
-]}
+{"name": "call_read_tools_batch", "arguments": {"operations": [
+  {"tool": "list_panes", "arguments": {}},
+  {"tool": "show_option", "arguments": {"scope": "server", "name": "status"}}
+]}}
 ```
 
-Schema: [`filter-expr-v1.schema.json`](../libtmux-jackson/src/main/resources/io/github/libtmux/jackson/filter-expr-v1.schema.json).
-A malformed document comes back as a tool error naming what was wrong.
-
-**One capture either way.** The filter runs over what the single read already
-returned, so a narrower answer costs no more tmux commands than the whole listing.
+The Java library's richer query API and its versioned
+[`filter-expr-v1.schema.json`](../libtmux-jackson/src/main/resources/io/github/libtmux/jackson/filter-expr-v1.schema.json)
+remain available to application code. MCP does not accept that open expression
+document: its authoritative schemas expose only the bounded inputs above, and a
+field not in those schemas never reaches tmux.
 
 ## A whole session from one description
 
-`tmux_apply_workspace` takes the shape tmuxp uses, so a file somebody already has
-is one a model can send:
+A workspace may still begin as the same readable shape tmuxp and
+[`libtmux-workspace`](../libtmux-workspace/) use:
 
 ```yaml
 session_name: api-work
@@ -299,9 +415,34 @@ windows:
       - docker compose logs -f
 ```
 
-One call instead of a dozen. The document and layouts are validated before any
-session exists. If a later creation step or command fails, cleanup is best effort;
-commands already started cannot be undone.
+The MCP server no longer accepts that whole document as one opaque mutation.
+Creation stays explicit and typed: create the detached session, retain the IDs
+it returns, then create and split windows and choose a layout.
+
+```json
+{"name": "create_session", "arguments": {"session_name": "api-work",
+ "window_name": "editor"}}
+```
+
+```json
+{"name": "create_window", "arguments": {"session_id": "$1",
+ "window_name": "services"}}
+```
+
+```json
+{"name": "split_window", "arguments": {"pane_id": "%2",
+ "direction": "right", "percent": 50}}
+```
+
+```json
+{"name": "select_layout", "arguments": {"window_id": "@2",
+ "layout": "even-horizontal"}}
+```
+
+These tools accept no command or environment payload. Start the configured
+process first, then use `run_shell_command`, `send_keys`, or `paste_text` for
+workload input. If a later step fails, the earlier typed results still identify
+exactly what exists and what can be removed.
 
 ## Embedding it
 
@@ -316,9 +457,13 @@ Server server = Server.open(config);
 TmuxMcpServer.overStdio(server);
 ```
 
-`TmuxMcpServer.serving(server, ceiling, transport)` takes an MCP transport of
-your own, which is how this is tested. Add a `boolean watching` argument to have
-it attach a control client and push notifications as tmux changes.
+`TmuxMcpServer.serving(server, transport)` takes an MCP transport of your own,
+which is how this is tested. It registers the same startup-frozen manifest and
+single static capability resource as the stdio launcher.
+
+The removed `serving(server, ceiling, transport)` and watching-boolean overloads
+become `serving(server, transport)`. It reads selection from the process
+environment; Java applications own `ControlClient` subscriptions directly.
 
 ## Install
 
@@ -330,12 +475,16 @@ dependencies {
 }
 ```
 
-Depends on [`libtmux`](../libtmux/), [`libtmux-jackson`](../libtmux-jackson/) and
-[`libtmux-workspace`](../libtmux-workspace/).
+Depends on [`libtmux`](../libtmux/) and the MCP Java SDK. The sibling
+[`libtmux-jackson`](../libtmux-jackson/) and
+[`libtmux-workspace`](../libtmux-workspace/) modules remain available to Java
+applications that need filter documents or declarative workspace building.
 
 ## Next
 
 - [MCP guide](../docs/guide/mcp.md) — the design, and why each tool is shaped as it is
 - [Filtering guide](../docs/guide/filtering.md) — the expression model behind the wire format
+- [Streaming guide](../docs/guide/streaming.md) — the lower-level control client
+  used by Java applications
 - [`libtmux`](../libtmux/) — the library underneath
 - [Root README](../README.md)

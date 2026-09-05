@@ -14,7 +14,7 @@ final class Instructions {
 
     private Instructions() {}
 
-    static String forServer(Safety ceiling, boolean watching) {
+    static String forServer(Connection connection) {
         return """
                 Drives tmux: a terminal multiplexer holding Server > Session > Window > Pane.
                 Target everything by id — %1 a pane, @1 a window, $1 a session. Ids survive; \
@@ -28,50 +28,36 @@ final class Instructions {
                 sight, ask which is meant before acting.
 
                 START HERE
-                tmux_whoami says which server this is and, when the client launched me from inside \
-                tmux, which pane this conversation is coming through. That pane is the one never to \
-                kill or type into. tmux_list_servers finds other tmux servers when the sessions you \
-                expected are missing — separate sockets cannot see each other.
+                get_server_info identifies the pinned server. list_panes returns stable pane IDs and \
+                marks this process's pane when it runs inside the selected server. Direct teardown \
+                tools guard that pane. This process cannot address objects outside its selected socket.
 
                 WAIT, DO NOT POLL
-                A command you wrote: tmux_run. It sends, waits, and returns output with an exit status \
-                in one call. Never send a command and then call tmux_capture_pane repeatedly to guess \
+                A command you wrote: run_shell_command. It sends, waits, and returns output with an exit status \
+                in one call. Never send a command and then call capture_pane repeatedly to guess \
                 whether it finished.
-                Output you did not start: tmux_wait_for_text, always with 'stop' set to the failure \
+                Output you did not start: wait_for_text, always with 'stop' set to the failure \
                 text — without it a run that fails is waited on until the deadline.
-                Something you can compose a signal into: tmux_wait_for_channel. It blocks inside tmux \
+                Something you can compose a signal into: wait_for_channel. It blocks inside tmux \
                 and infers nothing from the screen.
-                Watching over several turns: tmux_capture_since with the cursor it returns, so you pay \
+                Watching over several turns: capture_since with the cursor it returns, so you pay \
                 for new lines rather than the whole screen again.
                 Every wait is bounded and says the ceiling it enforced. A wait that ends without what \
                 you wanted is a cheap retry, not a failure.
 
                 METADATA IS NOT CONTENT
-                tmux_list_panes and friends read what tmux knows about a pane — its command, its path, \
-                its size. What a pane is SHOWING comes from tmux_capture_pane, tmux_capture_since or \
-                tmux_search_panes. "Which pane mentions the error" is a search, not a listing.
+                list_panes and friends read what tmux knows about a pane — its command, its path, \
+                its size. What a pane is SHOWING comes from capture_pane, capture_since or \
+                search_panes. "Which pane mentions the error" is a search, not a listing.
 
                 READING COSTS CONTEXT
                 Reads are capped and say when they dropped anything; raise 'max_lines' deliberately \
-                rather than by habit. Prefer a filter on tmux_list_panes over reading every pane.
+                rather than by habit. Prefer list_panes over reading every pane's content.
 
-                RESOURCES AND RECIPES
-                tmux://... resources expose the same state for a client to attach without spending a \
-                tool call. The prompts here are worked recipes for the common jobs.
-                """ + watching(watching) + ending(ceiling);
-    }
-
-    /**
-     * Said only when it is true. A model told it will be notified, that then is not, waits for
-     * something that never comes — which is worse than knowing it has to ask.
-     */
-    private static String watching(boolean watching) {
-        return watching
-                ? "\nPUSHED UPDATES\nThis server watches tmux and sends notifications/resources/updated "
-                        + "when a pane produces output or the shape of the server changes. Subscribe to "
-                        + "tmux://panes/{pane_id}/content rather than re-reading a pane to see whether "
-                        + "anything happened.\n"
-                : "";
+                CAPABILITY DISCLOSURE
+                tmux://capabilities reports this process's frozen effective tool surface and selected \
+                socket. It is the only MCP resource exposed by this server.
+                """ + ending(connection);
     }
 
     /**
@@ -80,20 +66,12 @@ final class Instructions {
      * <p>A model that cannot see a tool cannot tell an operator's choice from a gap in the server,
      * and will otherwise spend a turn looking for a way to do what it has been refused.
      */
-    private static String ending(Safety ceiling) {
-        return switch (ceiling) {
-            case READONLY ->
-                "\nSAFETY\nThis server is read-only. Nothing here changes tmux: no sending "
-                        + "keys, no creating or killing. Ask the operator to raise LIBTMUX_SAFETY if a change "
-                        + "is genuinely needed.\n";
-            case MUTATING ->
-                "\nSAFETY\nThis server can read and change tmux, but tmux_kill is not offered. "
-                        + "Commands and pane input can still end processes or delete data. Ask the operator to set "
-                        + "LIBTMUX_SAFETY=destructive only when the dedicated kill tool is needed.\n";
-            case DESTRUCTIVE ->
-                "\nSAFETY\nEverything is offered, including tmux_kill, which ends processes "
-                        + "and cannot be undone. It refuses to end the pane this conversation runs through "
-                        + "unless confirm_self is set.\n";
-        };
+    private static String ending(Connection connection) {
+        var socket = connection.surface().socketReport(connection.server());
+        String toolsets = String.join(",", connection.surface().toolsetNames());
+        return "\nCAPABILITIES\nOperating on selected socket " + socket.get("selector")
+                + " (" + socket.get("selectionProvenance") + "). Enabled toolsets: "
+                + (toolsets.isEmpty() ? "none" : toolsets) + ". Execute tools run with the tmux user's authority. "
+                + "Tool filtering shapes this advertised interface; it is not authorization or an OS sandbox.\n";
     }
 }

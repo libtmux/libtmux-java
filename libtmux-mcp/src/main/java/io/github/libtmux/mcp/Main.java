@@ -2,9 +2,8 @@ package io.github.libtmux.mcp;
 
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
-import io.github.libtmux.ServerEndpoint;
-import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 
 /**
@@ -20,13 +19,10 @@ import java.util.concurrent.CountDownLatch;
  * <pre>{@code
  * libtmux-mcp --socket /run/user/1000/tmux/default
  * libtmux-mcp --socket-name work --tmux /usr/local/bin/tmux
- * libtmux-mcp --safety readonly
- * libtmux-mcp --watch
  * }</pre>
  *
- * <p>The safety ceiling decides which tools exist at all. A tool above it is never listed, so a
- * model is not offered something it will be refused — and {@code LIBTMUX_SAFETY} sets the same
- * thing for an operator who cannot edit the client's launch command.
+ * <p>The unordered toolset and named-tool environment variables resolve one immutable surface
+ * before tmux is opened. A tool outside it is neither listed nor callable.
  */
 public final class Main {
 
@@ -35,36 +31,37 @@ public final class Main {
     /**
      * Serves a tmux server over stdin and stdout until the client closes them.
      *
-     * @param args {@code --socket PATH}, {@code --socket-name NAME}, {@code --tmux BINARY},
-     *     {@code --safety readonly|mutating|destructive}
+     * @param args {@code --socket PATH}, {@code --socket-name NAME}, {@code --tmux BINARY}
      */
     public static void main(String[] args) {
-        ServerConfig config;
-        Safety ceiling;
-        boolean watching;
+        LaunchConfiguration launch;
+        Map<String, String> environment = System.getenv();
         try {
             List<String> given = List.of(args);
-            config = configure(given);
-            ceiling = safety(given);
-            watching = watching(given);
+            ToolSurface.resolve(environment);
+            launch = LaunchConfiguration.resolve(given, environment);
         } catch (IllegalArgumentException e) {
             System.err.println("libtmux-mcp: " + e.getMessage());
-            System.err.println("usage: libtmux-mcp [--socket PATH] [--socket-name NAME] [--tmux BINARY]"
-                    + " [--safety readonly|mutating|destructive] [--watch]");
+            System.err.println("usage: libtmux-mcp [--socket PATH] [--socket-name NAME] [--tmux BINARY]");
             System.exit(2);
             return;
         }
         // The server outlives setup: the MCP transport reads stdin until the client closes it.
         // Lexical ownership also releases its process transport when protocol startup fails.
-        try (Server server = Server.open(config)) {
+        try (Server server = Server.open(launch.config())) {
+            SocketProfile profile = launch.profile(server);
+            ToolSurface surface = ToolSurface.resolve(environment, profile);
             Runtime.getRuntime().addShutdownHook(new Thread(server::close, "libtmux-mcp-shutdown"));
-            System.err.println("libtmux-mcp: serving " + server.identity() + " at safety " + ceiling.wireName() + " ("
-                    + Catalog.offered(ceiling).size() + " tools)");
+            System.err.println("libtmux-mcp: serving " + server.identity() + " on " + profile.selector()
+                    + " (server_state=" + profile.serverState()
+                    + ", configuration_provenance=" + profile.configurationProvenance() + ") with toolsets "
+                    + surface.toolsetNames() + " (" + surface.tools().size()
+                    + " tools, host_command_tools=0)");
 
             // A client that disconnects closes this end. Without noticing that, the process outlives
             // the client that launched it, and an MCP client leaves one behind every time it restarts.
             CountDownLatch disconnected = new CountDownLatch(1);
-            var mcp = TmuxMcpServer.overStdio(server, System.in, ceiling, watching, disconnected::countDown);
+            var mcp = TmuxMcpServer.overStdio(server, System.in, surface, disconnected::countDown);
             Runtime.getRuntime().addShutdownHook(new Thread(mcp::close, "libtmux-mcp-protocol-shutdown"));
             try {
                 disconnected.await();
@@ -77,58 +74,10 @@ public final class Main {
     }
 
     static ServerConfig configure(List<String> args) {
-        ServerConfig.Builder config = ServerConfig.builder();
-        for (int index = 0; index < args.size(); index++) {
-            String flag = args.get(index);
-            switch (flag) {
-                case "--socket" -> config.endpoint(ServerEndpoint.socketPath(Path.of(value(args, ++index, flag))));
-                case "--socket-name" -> config.endpoint(ServerEndpoint.namedSocket(value(args, ++index, flag)));
-                case "--tmux" -> config.binary(value(args, ++index, flag));
-                // Read elsewhere, but named here so the endpoint parser does not reject a launch
-                // that is perfectly correct.
-                case "--safety" -> value(args, ++index, flag);
-                case "--watch" -> {}
-                default -> throw new IllegalArgumentException("unknown argument '" + flag + "'");
-            }
-        }
-        return config.build();
+        return configure(args, Map.of());
     }
 
-    /**
-     * The ceiling a launch asked for.
-     *
-     * <p>The flag wins over the environment variable, so an operator who cannot change how a client
-     * launches this can still set a floor with {@code LIBTMUX_SAFETY}, and one who can override it
-     * per client.
-     */
-    static Safety safety(List<String> args) {
-        for (int index = 0; index + 1 < args.size(); index++) {
-            if ("--safety".equals(args.get(index))) {
-                return Safety.ofWireName(args.get(index + 1));
-            }
-        }
-        String configured = System.getenv("LIBTMUX_SAFETY");
-        return configured == null || configured.isEmpty() ? Safety.MUTATING : Safety.ofWireName(configured);
-    }
-
-    /**
-     * Whether to watch tmux and push notifications as it changes.
-     *
-     * <p>Off unless asked for. Watching attaches a control client, and an attached client is a real
-     * change to the server a person may be looking at, so it is not something to do uninvited.
-     */
-    static boolean watching(List<String> args) {
-        if (args.contains("--watch")) {
-            return true;
-        }
-        String configured = System.getenv("LIBTMUX_WATCH");
-        return "1".equals(configured) || "true".equalsIgnoreCase(String.valueOf(configured));
-    }
-
-    private static String value(List<String> args, int index, String flag) {
-        if (index >= args.size()) {
-            throw new IllegalArgumentException(flag + " needs a value");
-        }
-        return args.get(index);
+    static ServerConfig configure(List<String> args, Map<String, String> environment) {
+        return LaunchConfiguration.resolve(args, environment).config();
     }
 }

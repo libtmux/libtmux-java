@@ -6,7 +6,6 @@ import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
-import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -40,8 +39,6 @@ final class Shaping {
         }
         Session session = server.newSession(spec -> {
             spec.named(name);
-            call.maybe("path").ifPresent(path -> spec.in(Path.of(path)));
-            call.maybe("command").ifPresent(command -> spec.running("sh", "-c", command));
         });
         Pane first = session.windows().get(0).panes().get(0);
         return new Made(
@@ -56,8 +53,6 @@ final class Shaping {
         Session session = Targets.sessionNamed(call.server(), call.string("session"));
         Window window = session.newWindow(spec -> {
             call.maybe("name").ifPresent(spec::named);
-            call.maybe("path").ifPresent(path -> spec.in(Path.of(path)));
-            call.maybe("command").ifPresent(command -> spec.running("sh", "-c", command));
             spec.detached();
         });
         Pane first = window.panes().get(0);
@@ -92,8 +87,6 @@ final class Shaping {
             if (percent > 0) {
                 spec.percent(Math.clamp(percent, 1, 99));
             }
-            call.maybe("path").ifPresent(path -> spec.in(Path.of(path)));
-            call.maybe("command").ifPresent(command -> spec.running("sh", "-c", command));
         });
         return new Made(
                 "pane",

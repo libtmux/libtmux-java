@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
+import io.github.libtmux.SplitSpec;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
@@ -16,6 +17,7 @@ import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -38,7 +40,20 @@ final class TypingTest {
 
         assertEquals(1, sent.keys());
         assertFalse(sent.literal());
+        assertEquals(List.of(pane), sent.resolvedPaneIds());
         assertTrue(String.valueOf(sent.note()).contains("not waited for"), String.valueOf(sent.note()));
+    }
+
+    @Test
+    void synchronizedInputDisclosesEveryResolvedPane(Server server) {
+        var source = server.panes().getFirst();
+        var other = source.split(SplitSpec.builder().build());
+        source.window().setSynchronizePanes(true);
+
+        Typing.Sent sent = Typing.sendKeys(
+                TestCalls.on(server, "pane_id", source.id().value(), "keys", List.of("q"), "literal", true));
+
+        assertEquals(Set.of(source.id().value(), other.id().value()), Set.copyOf(sent.resolvedPaneIds()));
     }
 
     @Test

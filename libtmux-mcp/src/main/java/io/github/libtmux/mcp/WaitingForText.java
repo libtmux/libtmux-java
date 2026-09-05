@@ -2,9 +2,8 @@ package io.github.libtmux.mcp;
 
 import io.github.libtmux.Pane;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -49,8 +48,13 @@ final class WaitingForText {
     static Waited waitFor(Call call) {
         Pane pane = Targets.pane(call.server(), call.string("pane_id"));
         Duration timeout = Waits.requested(call);
-        List<Matcher> wanted = matchers(call.strings("patterns"), call.flag("regex", false));
-        List<Matcher> stops = matchers(call.strings("stop"), call.flag("regex", false));
+        List<String> wantedSources = nonempty(call.strings("patterns"));
+        List<String> stopSources = nonempty(call.strings("stop"));
+        List<String> allSources = new ArrayList<>(wantedSources);
+        allSources.addAll(stopSources);
+        List<TextPatterns.Matcher> all = TextPatterns.compile(allSources, call.flag("regex", false));
+        List<TextPatterns.Matcher> wanted = all.subList(0, wantedSources.size());
+        List<TextPatterns.Matcher> stops = all.subList(wantedSources.size(), all.size());
 
         int budget = Trim.lineBudget(call);
         Cursor cursor = call.maybe("cursor")
@@ -61,7 +65,7 @@ final class WaitingForText {
         long deadline = started + timeout.toNanos();
 
         String outcome = "TIMED_OUT";
-        Matcher hit = null;
+        TextPatterns.Matcher hit = null;
         String hitLine = null;
 
         while (true) {
@@ -123,7 +127,8 @@ final class WaitingForText {
                 note(outcome, wanted, stops));
     }
 
-    private static @Nullable String note(String outcome, List<Matcher> wanted, List<Matcher> stops) {
+    private static @Nullable String note(
+            String outcome, List<TextPatterns.Matcher> wanted, List<TextPatterns.Matcher> stops) {
         if ("TIMED_OUT".equals(outcome)) {
             return stops.isEmpty()
                     ? "Nothing matched before the deadline. Pass 'cursor' to carry on from here without "
@@ -141,11 +146,11 @@ final class WaitingForText {
         return wanted.isEmpty() ? "Matched on any new output, because no patterns were given." : null;
     }
 
-    private record Found(Matcher matcher, String line) {}
+    private record Found(TextPatterns.Matcher matcher, String line) {}
 
-    private static @Nullable Found find(List<Matcher> matchers, List<String> lines) {
+    private static @Nullable Found find(List<TextPatterns.Matcher> matchers, List<String> lines) {
         for (String line : lines) {
-            for (Matcher matcher : matchers) {
+            for (TextPatterns.Matcher matcher : matchers) {
                 if (matcher.matches(line)) {
                     return new Found(matcher, line);
                 }
@@ -164,32 +169,7 @@ final class WaitingForText {
         }
     }
 
-    private static List<Matcher> matchers(List<String> sources, boolean regex) {
-        return sources.stream()
-                .filter(source -> !source.isEmpty())
-                .map(source -> Matcher.of(source, regex))
-                .toList();
-    }
-
-    /** One thing to look for, and the text a caller asked for so a result can name it back. */
-    private record Matcher(String source, @Nullable Pattern compiled) {
-
-        static Matcher of(String source, boolean regex) {
-            if (!regex) {
-                return new Matcher(source, null);
-            }
-            try {
-                return new Matcher(source, Pattern.compile(source));
-            } catch (PatternSyntaxException e) {
-                throw new IllegalArgumentException("'" + source + "' is not a valid regular expression: "
-                        + e.getDescription() + ". Omit 'regex' to match it as plain text instead");
-            }
-        }
-
-        boolean matches(String line) {
-            return compiled == null
-                    ? line.contains(source)
-                    : compiled.matcher(line).find();
-        }
+    private static List<String> nonempty(List<String> sources) {
+        return sources.stream().filter(source -> !source.isEmpty()).toList();
     }
 }
