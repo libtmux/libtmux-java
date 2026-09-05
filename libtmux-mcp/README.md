@@ -186,6 +186,13 @@ Existing callers from earlier alpha releases must also migrate tool names:
 `list_panes` reads metadata — what is *running*, and where. `search_panes`
 reads content — what is *displayed*. "Which pane mentions the error" is a search.
 
+Batch rows retain the nested MCP envelope rather than flattening its text or
+structured content. The complete JSON-RPC response, including line framing, is
+capped at 1,000,000 bytes. A row that would cross that boundary remains in
+order with `result: null` and
+`resultTruncated: true`; the outer result sets `truncated` and reports the
+removed byte count in `truncatedBytes`.
+
 ### Waiting
 
 | tool | for |

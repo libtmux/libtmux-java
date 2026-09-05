@@ -7,7 +7,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerConfig;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.TmuxTransport;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
@@ -21,6 +25,8 @@ import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -36,6 +42,84 @@ import reactor.core.publisher.Mono;
  */
 @ExtendWith(TmuxExtension.class)
 final class TmuxMcpServerTest {
+
+    @Test
+    void readBatchBoundsTheCompleteJsonRpcLine() throws Exception {
+        String payload = "x".repeat(140_000);
+        TmuxTransport environment = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return new CommandResult(0, List.of("VALUE=" + payload), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+        ToolSurface surface = ToolSurface.resolve(
+                Map.of(ToolSurface.TOOLSETS_ENV, "", ToolSurface.TOOLS_ENV, "call_read_tools_batch"));
+        String requestId = "batch-response";
+        byte[] request = (Answers.JSON.writeValueAsString(Map.of(
+                                "jsonrpc",
+                                "2.0",
+                                "id",
+                                requestId,
+                                "method",
+                                "tools/call",
+                                "params",
+                                Map.of(
+                                        "name",
+                                        "call_read_tools_batch",
+                                        "arguments",
+                                        Map.of(
+                                                "operations",
+                                                List.of(
+                                                        Map.of("tool", "show_environment"),
+                                                        Map.of("tool", "show_environment"))))))
+                        + "\n")
+                .getBytes(StandardCharsets.UTF_8);
+        WireOutput output = new WireOutput();
+
+        try (Server server = Server.using(ServerConfig.builder().build(), environment);
+                PipedInputStream input = new PipedInputStream();
+                PipedOutputStream client = new PipedOutputStream(input)) {
+            McpSyncServer mcp = TmuxMcpServer.overStdio(server, input, output, surface, () -> {});
+            try {
+                client.write(initialize());
+                client.flush();
+                assertTrue(output.first.await(3, TimeUnit.SECONDS), "initialization did not answer");
+
+                client.write("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
+                        .getBytes(StandardCharsets.UTF_8));
+                client.write(request);
+                client.flush();
+                assertTrue(output.second.await(5, TimeUnit.SECONDS), "read batch did not answer");
+            } finally {
+                mcp.close();
+            }
+        }
+
+        String response = output.lines().stream()
+                .filter(line -> line.contains(requestId))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("read batch response is absent"));
+        assertTrue(
+                response.getBytes(StandardCharsets.UTF_8).length + 1 <= 1_000_000,
+                "the complete JSON-RPC response, including its newline, exceeds 1,000,000 bytes");
+
+        var result = Answers.JSON.readTree(response).path("result").path("structuredContent");
+        assertEquals(2, result.path("results").size(), "an executed row was dropped");
+        boolean explicitlyTruncated = false;
+        for (var row : result.path("results")) {
+            assertEquals(true, row.path("success").asBoolean());
+            if (row.path("resultTruncated").asBoolean()) {
+                explicitlyTruncated = true;
+                assertTrue(row.path("result").isNull());
+            }
+        }
+        assertTrue(explicitlyTruncated, "the oversized nested payloads were not marked as truncated");
+        assertEquals(true, result.path("truncated").asBoolean());
+        assertTrue(result.path("truncatedBytes").asInt() > 0);
+    }
 
     @Test
     void brokenOutputEndsAStdioSessionEvenWhileInputRemainsOpen(Server server) throws Exception {
@@ -179,6 +263,44 @@ final class TmuxMcpServerTest {
         @Override
         public void close() {
             closed.countDown();
+        }
+    }
+
+    private static final class WireOutput extends OutputStream {
+
+        private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        private final CountDownLatch first = new CountDownLatch(1);
+        private final CountDownLatch second = new CountDownLatch(1);
+        private int lines;
+
+        @Override
+        public synchronized void write(int value) {
+            bytes.write(value);
+            count(value);
+        }
+
+        @Override
+        public synchronized void write(byte[] values, int offset, int length) {
+            bytes.write(values, offset, length);
+            for (int index = offset; index < offset + length; index++) {
+                count(values[index]);
+            }
+        }
+
+        synchronized List<String> lines() {
+            return bytes.toString(StandardCharsets.UTF_8).lines().toList();
+        }
+
+        private void count(int value) {
+            if (value != '\n') {
+                return;
+            }
+            lines++;
+            if (lines == 1) {
+                first.countDown();
+            } else if (lines == 2) {
+                second.countDown();
+            }
         }
     }
 }

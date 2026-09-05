@@ -488,7 +488,7 @@ final class Catalog {
         tools.add(tool(
                 "call_read_tools_batch",
                 "Call read tools in a batch",
-                "Calls up to sixteen eligible inspect tools serially; inner tools receive no separate approval, and its nested authority is disclosed. The full serialized outer MCP result is capped at 1 MiB; a removed nested envelope is marked on its row and counted in truncatedBytes.",
+                "Calls up to sixteen eligible inspect tools serially; inner tools receive no separate approval, and its nested authority is disclosed. The complete JSON-RPC response is capped at 1,000,000 bytes; a removed nested envelope is marked on its row and counted in truncatedBytes.",
                 INSPECT,
                 NONE,
                 effects(OBSERVE, CHANGE),

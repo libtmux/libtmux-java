@@ -265,7 +265,7 @@ final class CapabilityRegistryTest {
         assertEquals(Set.of(ToolSpec.TmuxEffect.OBSERVE, ToolSpec.TmuxEffect.CHANGE), batch.effects());
         assertEquals(Set.of(ToolSpec.InputSink.NESTED_TOOL), batch.inputSinks().get("operations"));
         assertTrue(batch.description().contains("no separate approval"));
-        assertTrue(batch.description().contains("1 MiB"));
+        assertTrue(batch.description().contains("1,000,000 bytes"));
         assertTrue(byName("set_synchronize_panes").description().contains("subsequent input is copied to every pane"));
         for (String removed : List.of(
                 "tmux_whoami",
@@ -732,7 +732,7 @@ final class CapabilityRegistryTest {
     }
 
     @Test
-    void aggregateOutputStopsAtOneMiBAndReportsTruncation() throws Exception {
+    void aggregateWireLimiterReportsTruncation() throws Exception {
         ToolSurface surface = ToolSurface.resolve(
                 Map.of(ToolSurface.TOOLSETS_ENV, "", ToolSurface.TOOLS_ENV, "call_read_tools_batch"));
         TmuxTransport oversizedEnvironment = new TmuxTransport() {
@@ -751,8 +751,8 @@ final class CapabilityRegistryTest {
             int expectedRemovedBytes = Answers.JSON.writeValueAsBytes(Answers.envelope(Answers.ok(nested))).length
                     - Answers.JSON.writeValueAsBytes(com.fasterxml.jackson.databind.node.NullNode.getInstance()).length;
             @SuppressWarnings("unchecked")
-            Map<String, Object> result = (Map<String, Object>) Operations.callReadToolsBatch(connection.call(
-                    Map.of("operations", List.of(Map.of("tool", "show_environment"))), Call.Progress.SILENT));
+            Map<String, Object> result = boundedBatch(Operations.callReadToolsBatch(connection.call(
+                    Map.of("operations", List.of(Map.of("tool", "show_environment"))), Call.Progress.SILENT)));
 
             byName("call_read_tools_batch").validateOutput(result);
             assertEquals(1, result.get("succeeded"));
@@ -769,9 +769,6 @@ final class CapabilityRegistryTest {
             assertEquals(
                     com.fasterxml.jackson.databind.node.NullNode.getInstance(),
                     rows.getFirst().get("result"));
-            assertTrue(
-                    Answers.JSON.writeValueAsBytes(Answers.envelope(Answers.ok(result))).length <= 1_048_576,
-                    "the complete duplicated MCP tool result must fit the cap");
         }
     }
 
@@ -794,11 +791,11 @@ final class CapabilityRegistryTest {
         try (Server server = Server.using(ServerConfig.builder().build(), secondResultIsOversized)) {
             Connection connection = new Connection(server, Caller.nowhere(), surface);
             @SuppressWarnings("unchecked")
-            Map<String, Object> result = (Map<String, Object>) Operations.callReadToolsBatch(connection.call(
+            Map<String, Object> result = boundedBatch(Operations.callReadToolsBatch(connection.call(
                     Map.of(
                             "operations",
                             List.of(Map.of("tool", "get_server_info"), Map.of("tool", "show_environment"))),
-                    Call.Progress.SILENT));
+                    Call.Progress.SILENT)));
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> rows =
                     (List<Map<String, Object>>) Objects.requireNonNull(result.get("results"), "results");
@@ -811,6 +808,14 @@ final class CapabilityRegistryTest {
                     rows.get(1).get("result"));
             assertEquals(true, rows.get(1).get("resultTruncated"));
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> boundedBatch(Object output) {
+        McpSchema.JSONRPCResponse response = McpSchema.JSONRPCResponse.result("read-batch", Answers.ok(output));
+        McpSchema.JSONRPCResponse bounded = (McpSchema.JSONRPCResponse) ReadBatchResponses.limit(response);
+        McpSchema.CallToolResult result = (McpSchema.CallToolResult) bounded.result();
+        return (Map<String, Object>) result.structuredContent();
     }
 
     @Test

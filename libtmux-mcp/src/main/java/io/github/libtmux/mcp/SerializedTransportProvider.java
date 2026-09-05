@@ -79,7 +79,8 @@ final class SerializedTransportProvider implements McpServerTransportProvider {
             return Mono.create(sink -> {
                 PendingSend added;
                 try {
-                    added = new PendingSend(message, sink, encodedBytes(message));
+                    McpSchema.JSONRPCMessage bounded = ReadBatchResponses.limit(message);
+                    added = new PendingSend(bounded, sink, encodedBytes(bounded));
                 } catch (RuntimeException failure) {
                     sink.error(failure);
                     return;

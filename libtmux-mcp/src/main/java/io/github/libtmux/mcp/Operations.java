@@ -21,8 +21,6 @@ import org.jspecify.annotations.Nullable;
 /** Small typed adapters for the capability-model inventory. */
 final class Operations {
 
-    private static final int MAX_READ_BATCH_BYTES = 1_048_576;
-
     private Operations() {}
 
     static Object serverInfo(Call call) {
@@ -156,8 +154,6 @@ final class Operations {
             validated.add(new ReadOperation(name, nested, arguments));
         }
         List<Map<String, Object>> results = new ArrayList<>();
-        boolean truncated = false;
-        int truncatedBytes = 0;
         @Nullable Integer stoppedAt = null;
         for (int index = 0; index < validated.size(); index++) {
             ReadOperation operation = validated.get(index);
@@ -190,36 +186,15 @@ final class Operations {
             if (!success && !keepGoing) {
                 stoppedAt = index;
             }
-            while (outerBytes(batchResult(results, stoppedAt, truncated, truncatedBytes, onError))
-                    > MAX_READ_BATCH_BYTES) {
-                int row = resultRow(results);
-                if (row < 0) {
-                    throw new IllegalStateException("read batch accounting exceeds its fixed response limit");
-                }
-                Map<String, Object> original = results.get(row);
-                int removed = Math.subtractExact(
-                        encodedBytes(java.util.Objects.requireNonNull(original.get("result"))),
-                        encodedBytes(com.fasterxml.jackson.databind.node.NullNode.getInstance()));
-                truncatedBytes = Math.addExact(truncatedBytes, removed);
-                Map<String, Object> shortened = new LinkedHashMap<>(original);
-                shortened.put("result", com.fasterxml.jackson.databind.node.NullNode.getInstance());
-                shortened.put("resultTruncated", true);
-                results.set(row, Collections.unmodifiableMap(shortened));
-                truncated = true;
-            }
             if (stoppedAt != null) {
                 break;
             }
         }
-        return batchResult(results, stoppedAt, truncated, truncatedBytes, onError);
+        return batchResult(results, stoppedAt, onError);
     }
 
     private static Map<String, Object> batchResult(
-            List<Map<String, Object>> results,
-            @Nullable Integer stoppedAt,
-            boolean truncated,
-            int truncatedBytes,
-            String onError) {
+            List<Map<String, Object>> results, @Nullable Integer stoppedAt, String onError) {
         long succeeded = results.stream()
                 .filter(row -> Boolean.TRUE.equals(row.get("success")))
                 .count();
@@ -233,33 +208,12 @@ final class Operations {
                 "stoppedAt",
                 stoppedAt == null ? com.fasterxml.jackson.databind.node.NullNode.getInstance() : stoppedAt,
                 "truncated",
-                truncated,
+                false,
                 "truncatedBytes",
-                truncatedBytes,
+                0,
                 "onError",
                 onError));
         return Collections.unmodifiableMap(result);
-    }
-
-    private static int resultRow(List<Map<String, Object>> results) {
-        for (int index = results.size() - 1; index >= 0; index--) {
-            if (!Boolean.TRUE.equals(results.get(index).get("resultTruncated"))) {
-                return index;
-            }
-        }
-        return -1;
-    }
-
-    private static int outerBytes(Object value) {
-        return encodedBytes(Answers.envelope(Answers.ok(value)));
-    }
-
-    private static int encodedBytes(Object value) {
-        try {
-            return Answers.JSON.writeValueAsBytes(value).length;
-        } catch (com.fasterxml.jackson.core.JacksonException failure) {
-            throw new IllegalStateException("could not measure a batch result", failure);
-        }
     }
 
     private record ReadOperation(String name, ToolSpec tool, Map<String, Object> arguments) {}
