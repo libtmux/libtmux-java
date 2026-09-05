@@ -1,5 +1,8 @@
 // Shared Java conventions. A module script then declares only what makes it different.
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.HexFormat
 import net.ltgt.gradle.errorprone.errorprone
@@ -98,14 +101,6 @@ tasks.withType<Test>().configureEach {
     // resolves its default socket under TMUX_TMPDIR when it execs, and $TMUX takes precedence over
     // that for a client started inside a pane — which the Gradle daemon may well have been.
     //
-    // The worktree-and-task digest separates concurrent namespaces while the 39-byte path leaves
-    // AF_UNIX room. Recreate the owned namespace so stale sockets cannot be reused.
-    val quarantineIdentity = rootProject.rootDir.canonicalPath + "\u0000" + path
-    val quarantineDigest = MessageDigest.getInstance("SHA-256")
-        .digest(quarantineIdentity.toByteArray(StandardCharsets.UTF_8))
-    val quarantineName = HexFormat.of().formatHex(quarantineDigest, 0, 8)
-    val tmuxTmpDir = File("/tmp/libtmux-java-test", quarantineName)
-    environment("TMUX_TMPDIR", tmuxTmpDir.absolutePath)
     environment.remove("TMUX")
     environment.remove("TMUX_PANE")
 
@@ -120,12 +115,32 @@ tasks.withType<Test>().configureEach {
     val socketRoot = providers.gradleProperty("libtmuxSocketRoot").getOrElse("/tmp/libtmux-java-test")
     systemProperty("java.io.tmpdir", socketRoot)
     doFirst {
-        require(tmuxTmpDir.deleteRecursively()) {
-            "could not clear this test task's tmux quarantine"
+        // Owner identity separates concurrent invocations; the 39-byte path leaves AF_UNIX room.
+        val quarantineIdentity = listOf(
+            rootProject.rootDir.canonicalPath,
+            path,
+            ProcessHandle.current().pid().toString(),
+        ).joinToString("\u0000")
+        val quarantineDigest = MessageDigest.getInstance("SHA-256")
+            .digest(quarantineIdentity.toByteArray(StandardCharsets.UTF_8))
+        val quarantineName = HexFormat.of().formatHex(quarantineDigest, 0, 8)
+        val tmuxTmpDir = Path.of("/tmp/libtmux-java-test", quarantineName)
+
+        if (Files.exists(tmuxTmpDir, LinkOption.NOFOLLOW_LINKS)) {
+            require(Files.isDirectory(tmuxTmpDir, LinkOption.NOFOLLOW_LINKS)) {
+                "tmux quarantine is not a directory: $tmuxTmpDir"
+            }
+            val entries = Files.walk(tmuxTmpDir).use { paths -> paths.toList() }
+            val stale = entries.firstOrNull {
+                it != tmuxTmpDir && !Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS)
+            }
+            require(stale == null) {
+                "tmux quarantine contains a stale entry: $stale"
+            }
+            entries.asReversed().filter { it != tmuxTmpDir }.forEach(Files::delete)
         }
-        require(tmuxTmpDir.mkdirs()) {
-            "could not create this test task's tmux quarantine"
-        }
+        Files.createDirectories(tmuxTmpDir)
+        environment("TMUX_TMPDIR", tmuxTmpDir.toString())
         require(socketRoot.length <= 40) {
             "libtmuxSocketRoot is $socketRoot, too long to leave room for a socket under it"
         }
