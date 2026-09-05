@@ -26,7 +26,7 @@ production.
 
 ### Changed
 
-- **`libtmux-mcp` now exposes a fixed 47-tool capability surface.** One native
+- **`libtmux-mcp` now exposes a fixed 45-tool capability surface.** One native
   registry drives tool registration, schemas, trust metadata, selection, and
   the static `tmux://capabilities` resource. Unordered toolsets and named
   include/exclude lists replace safety tiers; the retired `LIBTMUX_SAFETY`
@@ -36,6 +36,10 @@ production.
   to the dedicated `libtmux-mcp` socket, supports separate socket-name and
   absolute socket-path selectors, and enables teardown by default only for a
   newly created minimal daemon.
+- **Copy-mode entry and exit remain library-only.** The MCP surface reads pane
+  text through `capture_pane` history, `snapshot_pane`, `search_panes`, or
+  `capture_since` without taking ownership of an attached client's modal
+  interface. Java callers retain `Pane.copyMode` and `Pane.exitMode`.
 - **The MCP guide maps every earlier public tool, resource URI, prompt workflow,
   and completion path.** Each retired name now points to its current typed
   route, composed workflow, or explicit no-replacement boundary.
