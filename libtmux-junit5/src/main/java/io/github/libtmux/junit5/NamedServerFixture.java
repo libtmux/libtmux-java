@@ -1,6 +1,7 @@
 package io.github.libtmux.junit5;
 
 import io.github.libtmux.Server;
+import io.github.libtmux.transport.CommandResult;
 import java.io.IOException;
 import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.Files;
@@ -120,15 +121,10 @@ public final class NamedServerFixture implements AutoCloseable {
         }
 
         RuntimeException killFailure = null;
-        if (process.isAlive()) {
-            authenticateCurrentOwnership();
-            try {
-                server.killServer();
-            } catch (RuntimeException failure) {
-                killFailure = failure;
-            }
-        } else if (server.isAlive()) {
-            authenticateCurrentOwnership();
+        try {
+            killOwnedServer();
+        } catch (RuntimeException failure) {
+            killFailure = failure;
         }
         if (!awaitExit(process)) {
             AssertionError failure =
@@ -144,16 +140,13 @@ public final class NamedServerFixture implements AutoCloseable {
         closed = true;
     }
 
-    private void authenticateCurrentOwnership() throws IOException {
-        NamedServerFixture current = authenticate(
-                server,
-                candidate -> require(socket.equals(candidate), "tmux reported another server's socket " + candidate),
-                quarantine);
-        require(
-                current.process.pid() == process.pid(),
-                "refusing to terminate a replacement tmux process at " + socket);
-        require(current.socket.equals(socket), "refusing to terminate a replacement tmux endpoint");
-        require(current.fileKey.equals(fileKey), "refusing to terminate a replacement socket inode");
+    private void killOwnedServer() {
+        long pid = process.pid();
+        String stale = "libtmux-junit5-stale-owner-" + pid;
+        CommandResult result = server.cmd("if-shell", "-F", "#{==:#{pid}," + pid + "}", "kill-server", stale);
+        if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
+            throw new AssertionError("refusing to terminate a replacement tmux process at " + socket);
+        }
     }
 
     private void reclaimSocket() throws IOException {

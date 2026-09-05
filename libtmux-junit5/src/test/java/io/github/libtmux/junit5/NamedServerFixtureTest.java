@@ -3,7 +3,6 @@ package io.github.libtmux.junit5;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Server;
@@ -110,14 +109,73 @@ final class NamedServerFixtureTest {
 
             try (Server replacement = openNamed(name, directory)) {
                 replacement.newSession("replacement");
-                try (NamedServerFixture replacementFixture = NamedServerFixture.own(replacement, name, quarantine())) {
+                ProcessHandle replacementProcess = reportedProcess(replacement);
+                NamedServerFixture replacementFixture = NamedServerFixture.own(replacement, name, quarantine());
+                try {
                     assertEquals(socket, replacementFixture.socket());
-                    AssertionError refused = assertTimeoutPreemptively(
-                            Duration.ofSeconds(2), () -> assertThrows(AssertionError.class, originalFixture::close));
+                    AssertionError refused = assertThrows(AssertionError.class, originalFixture::close);
 
                     assertTrue(String.valueOf(refused.getMessage()).contains("replacement"));
                     assertTrue(replacement.hasSession("replacement"));
+                } finally {
+                    replacementFixture.close();
                 }
+                assertFalse(replacementProcess.isAlive(), "replacement cleanup did not end its process");
+                assertFalse(Files.exists(socket), "replacement cleanup left its socket");
+            }
+        }
+    }
+
+    @Test
+    void replacementBetweenIdentityReadAndKillSurvives(@TempDir Path directory) throws Exception {
+        String suffix = Long.toString(ProcessHandle.current().pid());
+        String originalName = "ltj-race-original-" + suffix;
+        String replacementName = "ltj-race-replacement-" + suffix;
+
+        try (Server original = openNamed(originalName, directory);
+                Server replacement = openNamed(replacementName, directory)) {
+            original.newSession("race-original");
+            replacement.newSession("race-replacement");
+            NamedServerFixture originalCleanup = NamedServerFixture.own(original, originalName, quarantine());
+            try {
+                NamedServerFixture replacementCleanup =
+                        NamedServerFixture.own(replacement, replacementName, quarantine());
+                try {
+                    List<CommandRequest> requests = new ArrayList<>();
+                    int[] identityReads = {0};
+                    TmuxTransport switching = new TmuxTransport() {
+                        @Override
+                        public CommandResult execute(CommandRequest request) {
+                            requests.add(request);
+                            List<String> command = request.commands().getFirst();
+                            Server destination = command.getFirst().equals("display-message") && identityReads[0]++ < 2
+                                    ? original
+                                    : replacement;
+                            return destination.cmd(command);
+                        }
+
+                        @Override
+                        public void close() {}
+                    };
+
+                    try (Server routed = Server.using(original.config(), switching)) {
+                        NamedServerFixture stale = NamedServerFixture.own(routed, originalName, quarantine());
+                        AssertionError refused = assertThrows(AssertionError.class, stale::close);
+
+                        assertTrue(String.valueOf(refused.getMessage()).contains("replacement"));
+                        assertTrue(replacement.hasSession("race-replacement"));
+                        assertEquals(
+                                List.of("display-message", "if-shell"),
+                                requests.stream()
+                                        .map(request ->
+                                                request.commands().getFirst().getFirst())
+                                        .toList());
+                    }
+                } finally {
+                    replacementCleanup.close();
+                }
+            } finally {
+                originalCleanup.close();
             }
         }
     }
