@@ -191,6 +191,13 @@ text. Set `history: true` on `capture_pane` or `snapshot_pane` for bounded
 scrollback, use `search_panes` to locate displayed text, and continue from a
 cursor with `capture_since` instead of entering or cancelling a person's mode.
 
+Key sends resolve the target's current effective synchronized cohort and refuse
+the whole send when one configured recipient is modal or dead. Paste remains
+target-only, while framed shell runs require one effective recipient at both
+preflights. This observation is not atomic: membership can change before
+dispatch, and `resolved_pane_ids` reports configured membership rather than
+confirmed recipients or delivery.
+
 Batch rows retain the nested MCP envelope rather than flattening its text or
 structured content. The complete JSON-RPC response, including line framing, is
 capped at 1,000,000 bytes. A row that would cross that boundary remains in

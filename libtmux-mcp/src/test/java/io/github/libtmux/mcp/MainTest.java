@@ -157,6 +157,7 @@ final class MainTest {
         assertEquals("existing", existing.serverState());
 
         assertEquals(45, ToolSurface.resolve(Map.of(), created).tools().size());
+        assertEquals(41, ToolSurface.resolve(Map.of(), existing).tools().size());
         assertEquals(false, ToolSurface.resolve(Map.of(), existing).tools().containsKey("kill_session"));
         assertEquals(
                 List.of("kill_pane", "kill_window", "kill_session"),

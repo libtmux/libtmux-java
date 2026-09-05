@@ -117,6 +117,21 @@ a supported hostile-shell case. The marker `display-message` calls still use the
 trusted server's normal command path, including configured command aliases and
 `after-display-message` hooks.
 
+### Pane modes and synchronized input
+
+Key input follows tmux's effective `synchronize-panes` values: a source whose
+effective value is off receives input alone; a source whose value is on sends to
+all panes whose effective value is on. The window option supplies the inherited
+default, and a pane-level override can change an individual pane's value. One
+modal or dead member refuses the whole configured key cohort before dispatch,
+while paste-buffer input checks and targets only its requested pane.
+
+Framed commands refuse a synchronized cohort because their output, completion,
+and status describe one pane. They require one normal live shell at the initial
+preflight and again immediately before input. Each preflight is an observation,
+not an atomic reservation: membership can change before dispatch, and reported
+pane ids prove neither actual recipients nor delivery.
+
 ## A cursor, so watching is not re-reading
 
 `capture_since` takes an opaque cursor and returns the lines added since it,

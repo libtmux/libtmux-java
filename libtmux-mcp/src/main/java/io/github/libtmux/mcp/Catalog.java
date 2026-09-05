@@ -761,8 +761,11 @@ final class Catalog {
         tools.add(tool(
                 "run_shell_command",
                 "Run a shell command",
-                "Runs one authored command in a trusted pane shell and waits for framed completion; marker "
-                        + "display-message commands honor the selected trusted server's command aliases and hooks.",
+                "Runs one authored command in a trusted pane shell and waits for singular framed output and "
+                        + "completion. It refuses an effective cohort larger than one at either of two preflights. "
+                        + "Pre-existing exact-client-path, trap, eval, or exit functions are outside the supported "
+                        + "boundary; marker display-message commands honor the trusted server's command aliases "
+                        + "and hooks.",
                 EXECUTE,
                 PANE_COMMAND,
                 effects(OBSERVE, CHANGE),
@@ -786,7 +789,8 @@ final class Catalog {
         tools.add(tool(
                 "send_keys",
                 "Send keys",
-                "Sends input to one pane without waiting for output.",
+                "Sends input to the target's configured effective synchronized cohort without waiting for output. "
+                        + "Reports configured pane ids observed before dispatch, not delivery receipts.",
                 EXECUTE,
                 PANE_INPUT,
                 effects(OBSERVE, CHANGE),
@@ -803,7 +807,9 @@ final class Catalog {
         tools.add(tool(
                 "send_keys_batch",
                 "Send keys in a batch",
-                "Sends up to sixty-four ordered pane-input operations.",
+                "Sends up to sixty-four ordered pane-input operations, resolving and guarding the configured "
+                        + "effective cohort separately for each ordered operation. A later policy or dispatch "
+                        + "failure retains observed membership.",
                 EXECUTE,
                 PANE_INPUT,
                 effects(OBSERVE, CHANGE),
@@ -821,7 +827,8 @@ final class Catalog {
         tools.add(tool(
                 "paste_text",
                 "Paste text",
-                "Pastes one literal text block into a pane through an ephemeral buffer.",
+                "Pastes one literal text block into one target pane through an ephemeral buffer; paste-buffer "
+                        + "input does not fan out to synchronized peers.",
                 EXECUTE,
                 PANE_INPUT,
                 effects(OBSERVE, CHANGE),
@@ -841,7 +848,8 @@ final class Catalog {
         tools.add(amplifying(tool(
                 "set_synchronize_panes",
                 "Set synchronized panes",
-                "When enabled, subsequent input is copied to every pane in the window.",
+                "When enabled, sets the inherited window default; pane-level overrides determine each pane's "
+                        + "effective synchronized value.",
                 EXECUTE,
                 NONE,
                 effects(CHANGE),
@@ -1177,7 +1185,7 @@ final class Catalog {
                         field("resolved_pane_ids", ARRAY),
                         field("success", BOOLEAN),
                         field("error", STRING))
-                .withOptionalFields("resolved_pane_ids", "error")
+                .withOptionalFields("error")
                 .withPropertySchema("resolved_pane_ids", arrayOf(Map.of("type", "string")));
         return shape(field("results", ARRAY), field("completed", INTEGER))
                 .withPropertySchema("results", arrayOf(row.wireSchema()));

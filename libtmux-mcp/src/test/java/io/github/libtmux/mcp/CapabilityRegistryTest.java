@@ -262,7 +262,14 @@ final class CapabilityRegistryTest {
         assertEquals(Set.of(ToolSpec.InputSink.NESTED_TOOL), batch.inputSinks().get("operations"));
         assertTrue(batch.description().contains("no separate approval"));
         assertTrue(batch.description().contains("1,000,000 bytes"));
-        assertTrue(byName("set_synchronize_panes").description().contains("subsequent input is copied to every pane"));
+        assertTrue(byName("send_keys").description().contains("configured effective synchronized cohort"));
+        assertTrue(byName("send_keys").description().contains("not delivery receipts"));
+        assertTrue(byName("send_keys_batch").description().contains("separately for each ordered operation"));
+        assertTrue(byName("send_keys_batch").description().contains("retains observed membership"));
+        assertTrue(byName("set_synchronize_panes").description().contains("inherited window default"));
+        assertTrue(byName("set_synchronize_panes").description().contains("pane-level overrides"));
+        assertTrue(byName("paste_text").description().contains("does not fan out"));
+        assertTrue(byName("run_shell_command").description().contains("two preflights"));
         assertTrue(byName("run_shell_command").description().contains("trusted pane shell"));
         assertTrue(byName("run_shell_command").description().contains("command aliases and hooks"));
         for (String removed : List.of(
@@ -601,6 +608,16 @@ final class CapabilityRegistryTest {
         Map<String, Object> sends = object(sendProperties.get("results"), "send results");
         Map<String, Object> sendRow = object(sends.get("items"), "send result item");
         assertEquals("object", sendRow.get("type"));
+        Map<String, Object> sendRowProperties = object(sendRow.get("properties"), "send result properties");
+        assertTrue(strings(sendRow.get("required"), "send result required").contains("resolved_pane_ids"));
+        assertEquals(
+                Map.of("type", "string"),
+                object(sendRowProperties.get("resolved_pane_ids"), "resolved panes").get("items"));
+
+        assertTrue(strings(byName("send_keys").outputSchema().get("required"), "send required")
+                .contains("resolved_pane_ids"));
+        assertFalse(object(byName("run_shell_command").outputSchema().get("properties"), "run properties")
+                .containsKey("resolved_pane_ids"));
 
         Object nil = com.fasterxml.jackson.databind.node.NullNode.getInstance();
         Map<String, Object> malformedRow = Map.of(
