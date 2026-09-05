@@ -8,6 +8,7 @@ import io.github.libtmux.snapshot.WindowContext;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -222,7 +223,7 @@ public final class Pane {
      */
     public Pane retitle(String title) {
         Objects.requireNonNull(title, "title");
-        server.run(snapshot, List.of("select-pane", "-t", state.id().value(), "-T", title));
+        server.run(snapshot, List.of("select-pane", "-t", state.id().value(), "-T", TmuxFormats.literal(title)));
         return refresh();
     }
 
@@ -312,6 +313,21 @@ public final class Pane {
         server.run(snapshot, List.of("send-keys", "-t", state.id().value(), keys));
     }
 
+    /** Sends an ordered group of key names, or literal strings, to this pane. */
+    public void sendKeys(List<String> keys, boolean literal) {
+        Objects.requireNonNull(keys, "keys");
+        if (keys.isEmpty()) {
+            throw new IllegalArgumentException("keys are empty");
+        }
+        List<String> argv = new ArrayList<>(List.of("send-keys"));
+        if (literal) {
+            argv.add("-l");
+        }
+        argv.addAll(List.of("-t", state.id().value()));
+        argv.addAll(keys);
+        server.run(snapshot, argv);
+    }
+
     /** Sends a line to this pane and presses Enter, which is how a command gets run. */
     public void sendLine(String command) {
         Objects.requireNonNull(command, "command");
@@ -362,6 +378,11 @@ public final class Pane {
         return String.join("\n", reported);
     }
 
+    /** Reads validated tmux variables in this pane's format context. */
+    public Map<String, String> variables(List<String> names) {
+        return server.variables(names, this::expand);
+    }
+
     /**
      * Kills whatever runs here and starts the pane's default command again.
      *
@@ -371,6 +392,16 @@ public final class Pane {
      */
     public void respawn() {
         server.run(snapshot, List.of("respawn-pane", "-k", "-t", state.id().value()));
+    }
+
+    /** Restarts the configured pane process in a caller-supplied literal directory. */
+    public void respawnIn(Path directory) {
+        Objects.requireNonNull(directory, "directory");
+        server.run(snapshot, respawnArgv(state.id(), directory));
+    }
+
+    static List<String> respawnArgv(PaneId pane, Path directory) {
+        return List.of("respawn-pane", "-k", "-c", TmuxFormats.literal(directory.toString()), "-t", pane.value());
     }
 
     /**
@@ -416,7 +447,7 @@ public final class Pane {
      * @param supplied the name to hand tmux, which is never absent because 3.7 crashes without one
      */
     private Window breakNamed(Optional<String> wanted, String supplied) {
-        List<String> argv = new ArrayList<>(List.of("break-pane", "-d", "-n", supplied));
+        List<String> argv = new ArrayList<>(List.of("break-pane", "-d", "-n", TmuxFormats.literal(supplied)));
         argv.addAll(List.of("-s", state.id().value(), "-P", "-F", BROKEN_OUT.template()));
         List<String> fields =
                 BROKEN_OUT.split(server.run(snapshot, argv).stdout().get(0));
@@ -426,7 +457,8 @@ public final class Pane {
                 new WindowId(fields.get(1)));
         if (server.version(snapshot).equals(BREAK_PANE_NAMING_BROKEN)) {
             // 3.7 took the name and ignored it, so the caller's choice is applied afterwards.
-            wanted.ifPresent(name -> server.run(snapshot, List.of("rename-window", "-t", fields.get(1), name)));
+            wanted.ifPresent(name ->
+                    server.run(snapshot, List.of("rename-window", "-t", fields.get(1), TmuxFormats.literal(name))));
         }
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.window(created)

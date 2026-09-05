@@ -13,10 +13,15 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 
@@ -31,6 +36,8 @@ import org.jspecify.annotations.Nullable;
  * outlive the program that made them, which is the entire point of tmux.
  */
 public final class Server implements AutoCloseable {
+
+    private static final Pattern VARIABLE_NAME = Pattern.compile("[A-Za-z][A-Za-z0-9_]*");
 
     private final ServerConfig config;
     private final TmuxTransport transport;
@@ -332,6 +339,36 @@ public final class Server implements AutoCloseable {
     /** One of this server's wait-for channels, which is where a signal is sent and waited for. */
     public Channel channel(String name) {
         return new Channel(this, name);
+    }
+
+    /** Reads only validated tmux variable names, never caller-authored format syntax. */
+    public Map<String, String> variables(List<String> names) {
+        return variables(names, this::expand);
+    }
+
+    Map<String, String> variables(List<String> names, Function<String, String> expand) {
+        Objects.requireNonNull(names, "names");
+        Objects.requireNonNull(expand, "expand");
+        if (names.isEmpty()) {
+            throw new IllegalArgumentException("variable names are empty");
+        }
+        if (names.size() > 32) {
+            throw new IllegalArgumentException("at most 32 tmux variables may be read at once");
+        }
+        Map<String, String> values = new LinkedHashMap<>();
+        for (String name : names) {
+            if (!VARIABLE_NAME.matcher(name).matches()) {
+                throw new IllegalArgumentException(
+                        "invalid tmux variable '" + name + "'; expected [A-Za-z][A-Za-z0-9_]*");
+            }
+            values.put(name, expand.apply("#{" + name + "}"));
+        }
+        return Collections.unmodifiableMap(values);
+    }
+
+    /** Enables or disables mouse handling for sessions on this server. */
+    public void setMouseEnabled(boolean enabled) {
+        globalOptions().set("mouse", enabled ? "on" : "off");
     }
 
     WakeReason awaitChannel(String channel, Duration timeout, boolean reserveSignalCapacity) {

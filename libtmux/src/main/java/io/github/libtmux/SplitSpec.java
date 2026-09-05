@@ -169,7 +169,7 @@ public final class SplitSpec {
         }
         if (directory != null) {
             argv.add("-c");
-            argv.add(directory.toString());
+            argv.add(TmuxFormats.literal(directory.toString()));
         }
         for (Map.Entry<String, String> variable : environment.entrySet()) {
             argv.add("-e");

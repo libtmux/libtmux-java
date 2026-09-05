@@ -143,11 +143,11 @@ public final class SessionSpec {
         }
         if (name != null) {
             argv.add("-s");
-            argv.add(name);
+            argv.add(TmuxFormats.literal(name));
         }
         if (windowName != null) {
             argv.add("-n");
-            argv.add(windowName);
+            argv.add(TmuxFormats.literal(windowName));
         }
         if (size != null) {
             argv.add("-x");
@@ -157,7 +157,7 @@ public final class SessionSpec {
         }
         if (directory != null) {
             argv.add("-c");
-            argv.add(directory.toString());
+            argv.add(TmuxFormats.literal(directory.toString()));
         }
         if (!clientFlags.isEmpty()) {
             // tmux reads -f as one comma-separated list, not as a flag that may repeat.
