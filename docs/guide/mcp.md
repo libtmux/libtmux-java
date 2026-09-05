@@ -6,6 +6,9 @@ Every Java snippet here is executed by `ExamplesTest`.
 [module README](../../libtmux-mcp/README.md) is how to run it; this page is why
 it is shaped the way it is, and what was measured to decide.
 
+Commands here use `libtmux-mcp` as the installed launcher name; the module
+README gives its full path.
+
 ## The thing an agent actually spends
 
 Not tmux commands. Context, and turns.
@@ -24,19 +27,19 @@ loop as a polling cycle, where it costs a call per look and has no ceiling at al
 
 Four waits, cheapest first.
 
-**You wrote the command: `tmux_run`.** It sends the command, waits for it, and
+**You wrote the command: `run_shell_command`.** It sends the command, waits for it, and
 returns the output with an exit status in one call.
 
-**You wrote it but want it composed yourself: `tmux_wait_for_channel`.** Append
+**You wrote it but want it composed yourself: `wait_for_channel`.** Append
 `; tmux wait-for -S mychannel` to whatever you send, then block on the channel.
 This is the only wait that infers nothing — tmux blocks inside the server and
 returns on the signal itself.
 
-**You did not write it: `tmux_wait_for_text`.** A daemon, a dev server, a build
+**You did not write it: `wait_for_text`.** A daemon, a dev server, a build
 someone else started. There is no command to append a signal to, so the screen is
 all there is to read. This is the only one that is a heuristic.
 
-**You want to keep watching: `tmux_capture_since`.** It returns a cursor; pass it
+**You want to keep watching: `capture_since`.** It returns a cursor; pass it
 back and you get the lines added since, not the screen again.
 
 ### Why every wait is bounded
@@ -73,7 +76,7 @@ work bounded.
 
 ## Telling output apart from the plumbing
 
-`tmux_run` has to know when a command finished and what it exited with. The shell
+`run_shell_command` has to know when a command finished and what it exited with. The shell
 in a pane will not tell anyone, so the command is followed by two things it runs
 afterwards — one recording the status in a pane option, one signalling a private
 tmux channel — and the wait is tmux's own `wait-for`.
@@ -101,13 +104,13 @@ Two consequences worth knowing, both pinned by tests:
 - The command runs in a **subshell**, so a `cd` or an `export` in it does not
   outlive the call — and neither does an `exit`, which is what keeps `exit 3`
   from closing the pane.
-- `tmux_run` returns on the completion signal, which happens *before* the shell
-  redraws its prompt. A following `tmux_capture_since` legitimately reports that
+- `run_shell_command` returns on the completion signal, which happens *before* the shell
+  redraws its prompt. A following `capture_since` legitimately reports that
   prompt as new output.
 
 ## A cursor, so watching is not re-reading
 
-`tmux_capture_since` takes an opaque cursor and returns the lines added since it,
+`capture_since` takes an opaque cursor and returns the lines added since it,
 plus the next one. The tenth look at a build log costs the few lines it added,
 not the nine screens already read.
 
@@ -141,11 +144,8 @@ tmux can push. A control client that has attached is told when a window appears
 or a session is renamed, and `refresh-client -B` registers a format tmux
 re-expands on its own one-second timer and reports **only when the value differs**.
 
-That is a change detector inside the server. With `--watch`, this server turns
-those into MCP `notifications/resources/updated`, so a client holding
-`tmux://panes/%251/content` refreshes when pane `%1` changes and never otherwise.
-
-The same mechanism is available to any Java caller:
+That is a change detector inside the server. The Java library exposes it to
+applications directly:
 
 <!-- snippet: compile-only: a watch reports a format when its value changes -->
 ```java
@@ -161,8 +161,10 @@ try (ControlClient client = ControlClient.attach(server.config(), session.id());
 ```
 
 Watching costs one attached client, which is a real change to a server somebody
-may be looking at — so it is off unless asked for, and the client it attaches is
-hidden from `tmux_list_clients` so it cannot be mistaken for a person.
+may be looking at. The MCP process therefore does not attach one implicitly or
+turn it into dynamic resource notifications. An agent uses `wait_for_text`,
+`wait_for_channel`, and cursor-based `capture_since`; an embedding application
+that chooses the control client owns its lifetime explicitly.
 
 For a sibling design that was measured and rejected: tapping the pty with
 `pipe-pane` gives an event source too, but tmux keeps a single pipe per pane, so
@@ -171,25 +173,31 @@ pipe carries raw pty bytes rather than the rendered grid.
 
 ## What a model may do
 
-Three tiers, and they decide which tools exist rather than which are refused.
+Four unordered toolsets decide which tools exist rather than which are refused.
 
-```java
-Safety.READONLY.allows(Safety.MUTATING);      // → false
-Safety.DESTRUCTIVE.allows(Safety.MUTATING);   // → true
-Safety.ofWireName("readonly");                // → READONLY
+```console
+$ LIBTMUX_TOOLSETS=inspect,execute \
+    LIBTMUX_EXCLUDE_TOOLS=run_shell_command \
+    libtmux-mcp --socket-name project
 ```
 
-The ceiling filters the tool catalog; it does not confine effects. `MUTATING`
-includes `tmux_run`, key input, and pasted text, so it can run programs or
-delete data in a pane. Use a separate OS account, socket permissions, or a
-container when effects must be contained. MCP effect hints are declared
-separately, so a tool can remain available at this ceiling while warning that
-its update may be destructive.
+`inspect`, `manage`, `execute`, and `teardown` are independent capabilities, not
+increasing trust levels. Exact names can add tools, exclusions remove them last,
+and an empty toolset selection starts with none. A newly created dedicated
+minimal daemon defaults to all four; existing or operator-selected daemons omit
+teardown unless it is requested explicitly.
 
-A tool above the ceiling is never listed. A model cannot be tempted by a tool it
-never saw, and an error it can do nothing about is context spent for nothing. The
-server's instructions say plainly what is absent and how an operator would enable
-it, so the model does not spend a turn hunting for another way.
+The selection filters the catalog; it does not confine effects. `execute`
+includes authored shell commands, key input, and pasted text, so it can run
+programs or delete data in a pane. Use a separate OS account, socket permissions,
+or a container when effects must be contained.
+
+A hidden tool is never listed and is not callable. Every visible tool also
+publishes process reach, tmux effects, output classes, one
+`inputLiteralization` map, schemas, nested authority, and conservative MCP
+effect hints in one capability row. Detailed interpreter-sink tables remain
+internal validation data. `tmux://capabilities` reports those same rows and why
+this process selected them.
 
 ### The pane you are speaking through
 
@@ -202,8 +210,8 @@ server — so the socket is checked too, by resolving both paths, before that pa
 is believed to be the caller's own. Unprovable means not the caller's: a wrong
 "yes" disarms a guard, while a wrong "no" merely declines to help.
 
-`tmux_whoami` names it. `tmux_kill` refuses it, and the window and session holding
-it, unless `confirm_self` is passed.
+`list_panes` marks it as the caller. `kill_pane`, `kill_window`, and
+`kill_session` refuse it and its containers unless `confirm_self` is passed.
 
 ## Reading costs context
 
@@ -227,11 +235,11 @@ exist.
 Errors work the same way. A failure comes back as a tool error rather than an
 exception, because a transport-level exception never reaches the model — and the
 model is the one participant able to choose a different pane. Each one names the
-recovery: `no pane %9 on this server; call tmux_list_panes for the 3 that exist`.
+recovery: `no pane %9 on this server; call list_panes for the 3 that exist`.
 
 ## Further reading
 
 - [`libtmux-mcp` README](../../libtmux-mcp/README.md) — running it, and the tool list
-- [Filtering](filtering.md) — the expression model a `filter` argument carries
+- [Filtering](filtering.md) — the expression model Java applications can use outside MCP
 - [Watching output as it happens](streaming.md) — the control client directly
 - [Control-mode subscriptions](../spikes/23-control-subscriptions.md) — what was measured

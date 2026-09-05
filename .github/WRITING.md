@@ -73,15 +73,14 @@ An entry opens with a bold clause naming what changed, then gives the prose that
 makes it decidable:
 
 ```markdown
-- **`tmux_whoami` failed on a socket with no server behind it.** It is the tool
-  the instructions tell a model to call first, and it asked tmux for its
-  version, which needs a running server. It now says there is no server and
-  points at `tmux_list_servers`.
+- **`capture_since` now reports an observe-only tmux effect.** Reading from a
+  cursor leaves tmux state unchanged, so the capability metadata no longer
+  overstates what the call changes.
 ```
 
-Name identifiers literally: `Pane.capture`, `LIBTMUX_WATCH`, `--rerun-tasks`,
-`tmux://panes/{pane}`. Lead with a concrete verb — add, fix, remove, reject,
-`now`, `no longer`.
+Name identifiers literally: `Pane.capture`, `LIBTMUX_TOOLSETS`,
+`--rerun-tasks`, `tmux://capabilities`. Lead with a concrete verb: add, fix,
+remove, reject, `now`, or `no longer`.
 
 State a changed default explicitly, and an incompatibility more explicitly
 still, with the way forward in the same entry.
@@ -354,8 +353,8 @@ has nothing but the string:
   "JDK 21" both appear upstream — this project writes **JDK 21**.
 - A **pane**, **window**, **session**, and **server** are what tmux calls them.
   Do not introduce a synonym for one.
-- Write the identifier, not a description of it: `LIBTMUX_WATCH=true`, not
-  "the watch environment variable"; `--rerun-tasks`, not "the rerun flag";
+- Write the identifier, not a description of it: `LIBTMUX_TOOLSETS=inspect`,
+  not "the toolset environment variable"; `--rerun-tasks`, not "the rerun flag";
   `/tmp/libtmux-java-test/`, not "the test socket directory".
 
 Treat AI slop as review-hostile noise. The goal is information density:

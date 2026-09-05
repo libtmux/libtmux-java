@@ -55,10 +55,16 @@ $ uv run scripts/mcp_swap.py use --dry-run
 
 ```console
 $ uv run scripts/mcp_swap.py use \
-    --socket /tmp/libtmux-java-dev/demo/s \
-    --safety destructive \
-    --watch
+    --socket /tmp/libtmux-java-dev/demo/s
 ```
+
+The swapper records the executable and connection selector. Set
+`LIBTMUX_TOOLSETS`, `LIBTMUX_TOOLS`, and `LIBTMUX_EXCLUDE_TOOLS` in the MCP
+client's launch environment when the default capability surface is not the one
+you want.
+
+The retired `--safety` and `--watch` swapper arguments are rejected; the
+[module README](../libtmux-mcp/README.md#run-it) maps their replacements.
 
 Put them back:
 
