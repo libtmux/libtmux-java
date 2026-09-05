@@ -76,10 +76,10 @@ work bounded.
 
 ## Telling output apart from the plumbing
 
-`run_shell_command` has to know when a command finished and what it exited with. An
-outer subshell therefore arms an exit trap before starting the command. The trap sends
-the numeric status marker and signals a private tmux channel; the wait is tmux's own
-`wait-for`.
+`run_shell_command` has to know when a command finished and what it exited with.
+An outer subshell therefore arms an exit trap before starting the command. The
+trap sends the numeric status marker and signals a private tmux channel; the
+wait is tmux's own `wait-for`.
 
 The catch is that a shell echoes everything typed at it, so that plumbing lands on
 screen amongst the output. Matching it by its shape does not work: in a narrow
@@ -104,18 +104,18 @@ Two consequences worth knowing, both pinned by tests:
 - The command runs in a **subshell**, so a `cd` or an `export` in it does not
   outlive the call — and neither does an `exit`, which is what keeps `exit 3`
   from closing the pane.
-- `run_shell_command` returns on the completion signal, which happens *before* the shell
-  redraws its prompt. A following `capture_since` legitimately reports that
-  prompt as new output.
+- `run_shell_command` returns on the completion signal, which happens *before*
+  the shell redraws its prompt. A following `capture_since` legitimately reports
+  that prompt as new output.
 
 The command's inner subshell inherits the pane's ordinary environment, options,
 traps, and functions. The outer frame uses one absolute client and the server's
 resolved `-S` socket, so output-command aliases and functions, a `tmux` basename
-function, pane `PATH`, and pane socket variables do not own completion. Pre-existing
-functions named `trap`, `eval`, `exit`, or exactly like that resolved client are not
-a supported hostile-shell case. The marker `display-message` calls still use the
-trusted server's normal command path, including configured command aliases and
-`after-display-message` hooks.
+function, pane `PATH`, and pane socket variables do not own completion.
+Pre-existing functions named `trap`, `eval`, `exit`, or exactly like that
+resolved client are not a supported hostile-shell case. The marker
+`display-message` calls still use the trusted server's normal command path,
+including configured command aliases and `after-display-message` hooks.
 
 ### Pane modes and synchronized input
 
