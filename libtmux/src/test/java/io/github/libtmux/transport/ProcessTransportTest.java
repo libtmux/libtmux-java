@@ -296,15 +296,39 @@ final class ProcessTransportTest {
     @Test
     void cleanupDoesNotAdoptADescendantSpawnedAfterItsOwnershipSnapshot(@TempDir Path directory) throws Exception {
         Path descendantPid = directory.resolve("detached.pid");
-        String script = "trap '(trap \"\" HUP TERM; echo \"$BASHPID\" > \"$1.tmp\"; "
+        Path ready = directory.resolve("ready");
+        String script = "sleep 1; trap '(trap \"\" HUP TERM; echo \"$BASHPID\" > \"$1.tmp\"; "
                 + "mv \"$1.tmp\" \"$1\"; exec sleep 30) </dev/null >/dev/null 2>&1 & "
                 + "while :; do :; done' TERM; "
-                + "while :; do sleep 30; done";
+                + "ready=0; while :; do sleep 30 & child=$!; "
+                + "if [ \"$ready\" = 0 ]; then echo ready > \"$2.tmp\"; mv \"$2.tmp\" \"$2\"; ready=1; fi; "
+                + "wait \"$child\"; done";
+        ProcessTransport.ProcessStarter starter = command -> {
+            Process started = new ProcessBuilder(command).start();
+            boolean armed = false;
+            try {
+                armed = awaitFile(ready);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted while arming the cleanup fixture", e);
+            } finally {
+                if (!armed) {
+                    started.descendants().forEach(ProcessHandle::destroyForcibly);
+                    started.destroyForcibly();
+                }
+            }
+            if (!armed) {
+                throw new IOException("cleanup fixture did not arm");
+            }
+            return started;
+        };
         CommandRequest request = CommandRequest.of(
-                List.of("/bin/bash"), List.of("-c", script, "probe", descendantPid.toString()), Duration.ofMillis(250));
+                List.of("/bin/bash"),
+                List.of("-c", script, "probe", descendantPid.toString(), ready.toString()),
+                Duration.ofMillis(250));
         long descendant = -1;
 
-        try (ProcessTransport transport = new ProcessTransport()) {
+        try (ProcessTransport transport = new ProcessTransport(1, 1_024, starter, System::nanoTime)) {
             assertThrows(TmuxTransportException.class, () -> transport.execute(request));
             assertTrue(awaitFile(descendantPid), "the cleanup-time descendant never started");
             descendant = Long.parseLong(Files.readString(descendantPid).trim());
