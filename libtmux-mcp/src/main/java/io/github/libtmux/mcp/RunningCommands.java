@@ -21,10 +21,11 @@ import org.jspecify.annotations.Nullable;
  *
  * <h2>How completion is known</h2>
  *
- * <p>The command is followed by two things the shell runs after it: an end marker carrying the exit
- * status, and a signal on a private tmux channel. Waiting is then tmux's own {@code wait-for}, which
- * blocks server-side and returns on the signal itself — completion is not inferred from what the
- * screen looks like.
+ * <p>An inner subshell evaluates the command with the pane shell's inherited environment, options,
+ * traps, and functions. An outer subshell arms an exit trap first; that trap prints the numeric end
+ * marker and signals a private channel through one absolute tmux executable and the live server's
+ * exact {@code -S} socket. Waiting is tmux's own {@code wait-for}, so completion is not inferred
+ * from the screen.
  *
  * <h2>How the output is separated from the plumbing</h2>
  *
@@ -33,6 +34,9 @@ import org.jspecify.annotations.Nullable;
  * nonce, and only lines strictly between them are returned. The echo of the whole payload contains
  * the nonce, but never as a complete start marker or an end marker followed only by a numeric
  * status. Matching those forms separates the two even when the echo wraps across several rows.
+ * Ordinary aliases and functions such as {@code echo}, {@code printf}, or {@code tmux} cannot own
+ * the marker path. A parent shell that already replaces {@code trap}, {@code eval}, {@code exit},
+ * or the exact resolved executable with a same-name function is outside the supported boundary.
  */
 final class RunningCommands {
 
@@ -72,6 +76,7 @@ final class RunningCommands {
         String command = call.string("command");
         Duration timeout = Waits.requested(call);
         boolean suppressHistory = call.flag("suppress_history", true);
+        PaneCommandFrame commandFrame = PaneCommandFrame.resolve(call);
 
         String nonce = "lt" + HexFormat.of().formatHex(bytes());
         String startMark = nonce + "-s";
@@ -79,7 +84,7 @@ final class RunningCommands {
         String channel = "ch_" + nonce;
 
         Cursor before = Screen.from(pane).cursor();
-        String typed = payload(server, command, nonce, startMark, endMark, channel, suppressHistory);
+        String typed = payload(commandFrame, command, startMark, endMark, channel, suppressHistory);
         pane.sendLine(typed);
 
         long started = System.nanoTime();
@@ -132,27 +137,26 @@ final class RunningCommands {
      * neither records the line like any other.
      */
     private static String payload(
-            Server server,
+            PaneCommandFrame frame,
             String command,
-            String nonce,
             String startMark,
             String endMark,
             String channel,
             boolean suppressHistory) {
-        // The config file is left off: it is read when a server starts and means nothing to a command
-        // sent to one already running. Everything typed here is echoed by the shell onto the pane a
-        // person may be watching, so the shortest correct command line is the kindest one.
-        // A resolved path, not the name: the pane resolves a name against the user's PATH, and a
-        // client from another release than this server is dropped without delivering the signal.
-        List<String> tmux = new ArrayList<>(List.of(server.config().binaryPath()));
-        tmux.addAll(server.config().endpoint().flags());
-
-        String finish = Shell.quoteAll(append(tmux, "wait-for", "-S", channel));
-
-        // The status is held in a shell variable named for the nonce, so nothing this types can
-        // collide with a variable the person using the pane already had.
-        return (suppressHistory ? " " : "") + "echo " + startMark + "; ( eval " + Shell.quote(command) + " ); " + nonce
-                + "=$?; echo " + endMark + ":\"$" + nonce + "\"; " + finish;
+        List<String> tmux = frame.client();
+        String start = Shell.quoteAll(append(tmux, "display-message", "-p", startMark));
+        String end =
+                Shell.quoteAll(append(tmux, "display-message", "-p")) + " " + Shell.quote(endMark + ":") + "\"$?\"";
+        String signal = Shell.quoteAll(append(tmux, "wait-for", "-S", channel));
+        String finish = end + "; " + signal + "; \\exit 0";
+        return (suppressHistory ? " " : "")
+                + "( \\trap "
+                + Shell.quote(finish)
+                + " 0; "
+                + start
+                + "; ( \\eval "
+                + Shell.quote(command)
+                + " ) )";
     }
 
     private static List<String> append(List<String> base, String... more) {

@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.ObjectDoesNotExist;
+import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
@@ -18,13 +19,20 @@ import io.github.libtmux.transport.TmuxTransport;
 import io.github.libtmux.transport.TmuxTransportException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import java.util.regex.MatchResult;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Running a command and knowing how it ended, against real tmux.
@@ -35,6 +43,8 @@ import org.junit.jupiter.api.io.TempDir;
  */
 @ExtendWith(TmuxExtension.class)
 final class RunningCommandsTest {
+
+    private static final Pattern NONCE = Pattern.compile("\\blt[0-9a-f]{32}\\b");
 
     /**
      * The signal is sent by the pane, so it is the pane's PATH that decides which tmux sends it. A
@@ -70,6 +80,103 @@ final class RunningCommandsTest {
         assertEquals(0, ran.exitStatus());
         assertEquals(java.util.List.of("hello"), ran.output(), "only what the command printed");
         assertTrue(ran.framed(), "the plumbing was cut out exactly");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"echo(){ :; }; alias printf=:", "alias echo=:; printf(){ :; }"})
+    void preexistingOutputShadowsCannotHideCompletion(String shadow, Server server, @TempDir Path temporary)
+            throws Exception {
+        Pane pane = shellPane(server, "output-shadow", "/bin/dash");
+        ready(
+                pane,
+                temporary.resolve("output-shadow"),
+                "frame_value=kept; frame_helper(){ test \"$frame_value\" = kept; }; " + shadow);
+
+        RunningCommands.Ran ran = RunningCommands.run(TestCalls.on(
+                server, "pane_id", pane.id().value(), "command", "frame_helper || exit 91; exit 7", "timeout", 5));
+
+        assertCompleted(ran, 7);
+    }
+
+    @Test
+    void ordinaryClientNameShadowsDoNotOwnFraming(Server server, @TempDir Path temporary) throws Exception {
+        Pane pane = shellPane(server, "client-shadow", "/bin/dash");
+        String client = PaneCommandFrame.resolve(TestCalls.on(server)).client().getFirst();
+        ready(pane, temporary.resolve("client-shadow"), "tmux(){ :; }; alias " + Shell.quote(client + "=:"));
+
+        RunningCommands.Ran ran =
+                RunningCommands.run(TestCalls.on(server, "pane_id", pane.id().value(), "command", "exit 4"));
+
+        assertCompleted(ran, 4);
+    }
+
+    @Test
+    void commandDefinedFramingNamesStayInTheInnerShell(Server server) {
+        Pane pane = shellPane(server, "defined-frame", "/bin/bash", "--noprofile", "--norc");
+        String client = PaneCommandFrame.resolve(TestCalls.on(server)).client().getFirst();
+        String definitions = "function trap { :; }; function eval { :; }; function exit { :; }; function "
+                + client
+                + " { :; }; false";
+
+        RunningCommands.Ran defined =
+                RunningCommands.run(TestCalls.on(server, "pane_id", pane.id().value(), "command", definitions));
+        RunningCommands.Ran after =
+                RunningCommands.run(TestCalls.on(server, "pane_id", pane.id().value(), "command", "true"));
+
+        assertCompleted(defined, 1);
+        assertCompleted(after, 0);
+    }
+
+    @Test
+    void inheritedErrexitAndXtraceKeepThePaneAlive(Server server, @TempDir Path temporary) throws Exception {
+        Pane pane = shellPane(server, "errexit", "/bin/bash", "--noprofile", "--norc");
+        Path forbidden = temporary.resolve("must-not-exist");
+        ready(pane, temporary.resolve("errexit"), "set -ex");
+
+        String command = "false; : > " + Shell.quote(forbidden.toString());
+        RunningCommands.Ran ran = RunningCommands.run(
+                TestCalls.on(server, "pane_id", pane.id().value(), "command", command, "timeout", 5));
+
+        assertCompleted(ran, 1);
+        assertFalse(Files.exists(forbidden), "errexit did not stop the authored sequence");
+
+        pane.sendLine("printf 'parent-alive:%s\\n' \"$-\"");
+        assertTrue(await(() -> pane.capture().stream()
+                .map(String::trim)
+                .anyMatch(line -> line.matches("parent-alive:.*e.*x.*|parent-alive:.*x.*e.*"))));
+    }
+
+    @Test
+    void framingUsesNoPaneStatusVariableAndIgnoresReadonlyCollision(Server server) throws Exception {
+        Pane pane = server.panes().get(0);
+        CopyOnWriteArrayList<String> nonces = new CopyOnWriteArrayList<>();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport recording = borrowing(request -> {
+                nonce(request)
+                        .filter(nonces::addIfAbsent)
+                        .filter(value -> nonces.size() == 2)
+                        .ifPresent(value -> armReadonly(pane, value));
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), recording)) {
+                RunningCommands.Ran first = RunningCommands.run(
+                        TestCalls.on(measured, "pane_id", pane.id().value(), "command", "exit 5"));
+                assertCompleted(first, 5);
+
+                String captured = nonces.getFirst();
+                String inspect = "if [ \"${" + captured + "+set}\" = set ]; then "
+                        + "printf 'set\\n'; else printf 'unset\\n'; fi";
+                RunningCommands.Ran inspected = RunningCommands.run(
+                        TestCalls.on(server, "pane_id", pane.id().value(), "command", inspect));
+                assertEquals(List.of("unset"), inspected.output(), "the frame leaked its status name");
+
+                RunningCommands.Ran collided = RunningCommands.run(
+                        TestCalls.on(measured, "pane_id", pane.id().value(), "command", "exit 6", "timeout", 5));
+
+                assertEquals(2, nonces.size(), "the collision nonce was not captured");
+                assertCompleted(collided, 6);
+            }
+        }
     }
 
     @Test
@@ -178,7 +285,7 @@ final class RunningCommandsTest {
      */
     @Test
     void aCommandStillRunningAtTheDeadlineSaysSoAndHandsBackWhatItHas(Server server) {
-        String pane = server.panes().get(0).id().value();
+        String pane = shellPane(server, "timed-output", "/bin/dash").id().value();
 
         RunningCommands.Ran ran = RunningCommands.run(
                 TestCalls.on(server, "pane_id", pane, "command", "echo started; sleep 30", "timeout", 6));
@@ -283,36 +390,45 @@ final class RunningCommandsTest {
      * the command by hand — pinned here because the tool's description promises it.
      */
     @Test
-    void aCommandCannotChangeThePanesShellAndCannotEndIt(Server server) {
+    void aCommandCannotChangeThePanesShellAndCannotEndIt(Server server, @TempDir Path temporary) {
         String pane = server.panes().get(0).id().value();
 
-        RunningCommands.Ran exited =
-                RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "mine=set; cd /; exit 3"));
+        String changed = Shell.quote(temporary.toString());
+        String mutation = "mine=set; mine_helper(){ :; }; trap 'mine_trap=ran' 0; cd " + changed
+                + "; export mine_export=set; exit 3";
+        RunningCommands.Ran exited = RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", mutation));
         RunningCommands.Ran commented =
                 RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "echo comment-safe # comment"));
         RunningCommands.Ran parenthesis =
                 RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", ": ); exit 7; #"));
-        RunningCommands.Ran after =
-                RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "echo \"[$mine]\""));
+        String inspect = "if [ \"${mine+set}\" = set ] || command -v mine_helper >/dev/null 2>&1 "
+                + "|| [ \"${mine_trap+set}\" = set ] || [ \"${mine_export+set}\" = set ] "
+                + "|| [ \"$PWD\" = " + changed + " ]; then printf 'leaked\\n'; else printf 'clean\\n'; fi";
+        RunningCommands.Ran after = RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", inspect));
 
         assertEquals(3, exited.exitStatus(), "exit reports from the isolated command");
         assertEquals(java.util.List.of("comment-safe"), commented.output(), "a comment cannot hide the framing");
         assertEquals("SIGNALLED", parenthesis.outcome(), "a closing parenthesis cannot escape the command");
-        assertEquals(java.util.List.of("[]"), after.output(), "the assignment did not escape its subshell");
+        assertEquals(java.util.List.of("clean"), after.output(), "authored state escaped its inner subshell");
         assertEquals(1, server.panes().size(), "and exiting inside it did not take the pane with it");
     }
 
     /** A variable a person set in the pane themselves must survive the plumbing running around it. */
     @Test
-    void thePlumbingDoesNotDisturbThePanesOwnShellVariables(Server server) {
-        String pane = server.panes().get(0).id().value();
-        server.run(java.util.List.of("send-keys", "-l", "-t", pane, "theirs=kept"));
-        server.run(java.util.List.of("send-keys", "-t", pane, "Enter"));
+    void thePlumbingDoesNotDisturbThePanesOwnShellVariables(Server server, @TempDir Path temporary) throws Exception {
+        Pane pane = server.panes().get(0);
+        Path ready = temporary.resolve("parent-state-ready");
+        pane.sendLine("theirs=kept; trap 'theirs_trap=kept' USR1; : > " + Shell.quote(ready.toString()));
+        assertTrue(await(() -> Files.exists(ready)), "the parent-state setup did not finish");
 
         RunningCommands.Ran ran =
-                RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "echo \"$theirs\""));
+                RunningCommands.run(TestCalls.on(server, "pane_id", pane.id().value(), "command", "echo \"$theirs\""));
 
         assertEquals(java.util.List.of("kept"), ran.output());
+        pane.sendLine("kill -USR1 $$; printf 'parent-trap:%s\\n' \"$theirs_trap\"");
+        assertTrue(
+                await(() -> pane.capture().stream().map(String::trim).anyMatch("parent-trap:kept"::equals)),
+                "the frame disturbed the parent shell's trap");
     }
 
     @Test
@@ -392,5 +508,44 @@ final class RunningCommandsTest {
             @Override
             public void close() {}
         };
+    }
+
+    private static Pane shellPane(Server server, String name, String... command) {
+        return server.sessions()
+                .getFirst()
+                .newWindow(window -> window.named(name).running(command))
+                .panes()
+                .getFirst();
+    }
+
+    private static void ready(Pane pane, Path marker, String setup) throws InterruptedException {
+        pane.sendLine(setup + "; : > " + Shell.quote(marker.toString()));
+        assertTrue(await(() -> Files.exists(marker)), "the pane setup did not finish");
+    }
+
+    private static void assertCompleted(RunningCommands.Ran ran, int status) {
+        assertEquals("SIGNALLED", ran.outcome());
+        assertEquals(status, ran.exitStatus());
+        assertTrue(ran.framed(), "completion was not framed exactly");
+    }
+
+    private static void armReadonly(Pane pane, String nonce) {
+        pane.sendLine("readonly " + nonce + "=held; printf 'nonce-armed\\n'");
+        try {
+            assertTrue(
+                    await(() -> pane.capture().stream().map(String::trim).anyMatch("nonce-armed"::equals)),
+                    "the nonce collision setup did not finish");
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while arming the nonce collision", failure);
+        }
+    }
+
+    private static Optional<String> nonce(CommandRequest request) {
+        return request.commands().getFirst().stream()
+                .filter(argument -> argument.contains("ch_lt"))
+                .flatMap(argument -> NONCE.matcher(argument).results())
+                .map(MatchResult::group)
+                .findFirst();
     }
 }

@@ -249,6 +249,14 @@ wait. Those mean different things, and only the first makes `exit_status`
 meaningful — tmux reports a server that died under a waiter as a *successful*
 wake, so "it worked" is never the answer on its own.
 
+Completion runs inside the pane's trusted POSIX shell: an inherited inner
+subshell contains the authored command, while an outer exit trap emits its status
+and signals through one absolute tmux client and the server's resolved `-S`
+socket. Ordinary output aliases and functions are tolerated; pre-existing
+functions named `trap`, `eval`, `exit`, or exactly like that resolved client are
+outside this boundary. Marker `display-message` calls honor the selected trusted
+server's command aliases and hooks.
+
 **You did not write it.** Always pass `stop`:
 
 ```json

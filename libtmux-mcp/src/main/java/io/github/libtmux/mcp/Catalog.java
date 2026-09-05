@@ -761,7 +761,8 @@ final class Catalog {
         tools.add(tool(
                 "run_shell_command",
                 "Run a shell command",
-                "Runs one authored command in a pane and waits for its framed completion.",
+                "Runs one authored command in a trusted pane shell and waits for framed completion; marker "
+                        + "display-message commands honor the selected trusted server's command aliases and hooks.",
                 EXECUTE,
                 PANE_COMMAND,
                 effects(OBSERVE, CHANGE),

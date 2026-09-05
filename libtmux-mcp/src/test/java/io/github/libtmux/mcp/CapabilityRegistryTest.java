@@ -263,6 +263,8 @@ final class CapabilityRegistryTest {
         assertTrue(batch.description().contains("no separate approval"));
         assertTrue(batch.description().contains("1,000,000 bytes"));
         assertTrue(byName("set_synchronize_panes").description().contains("subsequent input is copied to every pane"));
+        assertTrue(byName("run_shell_command").description().contains("trusted pane shell"));
+        assertTrue(byName("run_shell_command").description().contains("command aliases and hooks"));
         for (String removed : List.of(
                 "tmux_whoami",
                 "tmux_list_servers",

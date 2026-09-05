@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
@@ -117,6 +118,11 @@ final class ToolSurface {
 
     Set<String> exclusions() {
         return exclusions;
+    }
+
+    /** Startup-frozen socket path, when this surface was built by the MCP launcher. */
+    Optional<String> resolvedSocketPath() {
+        return socketProfile == null ? Optional.empty() : Optional.of(socketProfile.resolvedSocketPath());
     }
 
     List<String> toolsetNames() {

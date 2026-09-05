@@ -76,10 +76,10 @@ work bounded.
 
 ## Telling output apart from the plumbing
 
-`run_shell_command` has to know when a command finished and what it exited with. The shell
-in a pane will not tell anyone, so the command is followed by two things it runs
-afterwards — one recording the status in a pane option, one signalling a private
-tmux channel — and the wait is tmux's own `wait-for`.
+`run_shell_command` has to know when a command finished and what it exited with. An
+outer subshell therefore arms an exit trap before starting the command. The trap sends
+the numeric status marker and signals a private tmux channel; the wait is tmux's own
+`wait-for`.
 
 The catch is that a shell echoes everything typed at it, so that plumbing lands on
 screen amongst the output. Matching it by its shape does not work: in a narrow
@@ -91,7 +91,7 @@ So the command is framed instead. It is bracketed by two lines that print a rand
 nonce, and only lines strictly between them are returned:
 
 ```
- echo lt3fa9-s; ( pytest -q ); lt3fa9=$?; echo lt3fa9-e; tmux … wait-for -S ch_lt3fa9
+ ( \trap '/usr/bin/tmux -S /tmp/tmux.sock display-message -p lt3fa9-e:"$?"; /usr/bin/tmux -S /tmp/tmux.sock wait-for -S ch_lt3fa9; \exit 0' 0; /usr/bin/tmux -S /tmp/tmux.sock display-message -p lt3fa9-s; ( \eval 'pytest -q' ) )
 ```
 
 The echo of that whole line *contains* both markers. No echo is ever *equal* to
@@ -107,6 +107,15 @@ Two consequences worth knowing, both pinned by tests:
 - `run_shell_command` returns on the completion signal, which happens *before* the shell
   redraws its prompt. A following `capture_since` legitimately reports that
   prompt as new output.
+
+The command's inner subshell inherits the pane's ordinary environment, options,
+traps, and functions. The outer frame uses one absolute client and the server's
+resolved `-S` socket, so output-command aliases and functions, a `tmux` basename
+function, pane `PATH`, and pane socket variables do not own completion. Pre-existing
+functions named `trap`, `eval`, `exit`, or exactly like that resolved client are not
+a supported hostile-shell case. The marker `display-message` calls still use the
+trusted server's normal command path, including configured command aliases and
+`after-display-message` hooks.
 
 ## A cursor, so watching is not re-reading
 
