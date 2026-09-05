@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -115,6 +116,54 @@ final class PaneCommandFrameTest {
     void malformedSocketRoutesFailClosed(String label, Optional<String> supplied, CommandResult result) {
         assertThrows(
                 IllegalArgumentException.class, () -> PaneCommandFrame.resolveSocket(supplied, () -> result), label);
+    }
+
+    @ParameterizedTest(name = "ASCII route control {0}")
+    @MethodSource("routeControls")
+    void asciiControlsCannotEnterSocketRoutes(String label, String control) {
+        AtomicInteger retainedQueries = new AtomicInteger();
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PaneCommandFrame.resolveSocket(Optional.of("/tmp/retained" + control + ".sock"), () -> {
+                    retainedQueries.incrementAndGet();
+                    return result("/tmp/unused.sock");
+                }),
+                label);
+        assertEquals(0, retainedQueries.get(), label);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PaneCommandFrame.resolveSocket(
+                        Optional.empty(), () -> result("/tmp/discovered" + control + ".sock")),
+                label);
+    }
+
+    @Test
+    void unsafeExecutableRefusesBeforeSocketDiscovery(@TempDir Path temporary) throws Exception {
+        for (String control : List.of("\u0001", "\n", "\u001f", "\u007f")) {
+            Path unsafe = executable(temporary.resolve("tmux" + control + "client"));
+            AtomicInteger queries = new AtomicInteger();
+            ServerConfig config = config(unsafe, ServerEndpoint.defaultSocket());
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> PaneCommandFrame.resolve(config, Optional.empty(), Map.of(), temporary, () -> {
+                        queries.incrementAndGet();
+                        return result("/tmp/socket");
+                    }));
+            assertEquals(0, queries.get(), "unsafe executable reached socket discovery");
+        }
+    }
+
+    @Test
+    void apostrophesRemainValidRouteCharacters(@TempDir Path temporary) throws Exception {
+        Path executable = executable(temporary.resolve("tmux's"));
+
+        assertEquals(
+                executable.toRealPath().toString(),
+                PaneCommandFrame.resolveExecutable(executable.toString(), Map.of(), temporary));
+        assertEquals("/tmp/socket's", PaneCommandFrame.resolveSocket(Optional.of("/tmp/socket's"), () -> {
+            throw new AssertionError("a retained socket must avoid discovery");
+        }));
     }
 
     @ParameterizedTest
@@ -215,6 +264,11 @@ final class PaneCommandFrameTest {
                         "relative retained",
                         Optional.of("relative.sock"),
                         new CommandResult(0, List.of("/tmp/unused.sock"), List.of())));
+    }
+
+    private static Stream<Arguments> routeControls() {
+        return IntStream.concat(IntStream.rangeClosed(0, 0x1f), IntStream.of(0x7f))
+                .mapToObj(value -> Arguments.of(String.format("U+%04X", value), Character.toString(value)));
     }
 
     private static Path executable(Path path) throws IOException {

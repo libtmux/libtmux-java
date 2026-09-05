@@ -264,6 +264,8 @@ socket. Ordinary output aliases and functions are tolerated; pre-existing
 functions named `trap`, `eval`, `exit`, or exactly like that resolved client are
 outside this boundary. Marker `display-message` calls honor the selected trusted
 server's command aliases and hooks.
+ASCII control characters and DEL are refused in executable and socket routes
+before those values can enter framing.
 
 **You did not write it.** Always pass `stop`:
 

@@ -116,6 +116,8 @@ Pre-existing functions named `trap`, `eval`, `exit`, or exactly like that
 resolved client are not a supported hostile-shell case. The marker
 `display-message` calls still use the trusted server's normal command path,
 including configured command aliases and `after-display-message` hooks.
+Executable and socket routes refuse ASCII control characters and DEL before
+those values can enter the frame.
 
 ### Pane modes and synchronized input
 

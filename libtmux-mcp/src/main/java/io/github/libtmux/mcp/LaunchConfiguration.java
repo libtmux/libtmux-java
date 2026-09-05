@@ -40,12 +40,12 @@ record LaunchConfiguration(
             String flag = args.get(index);
             switch (flag) {
                 case "--socket" -> {
-                    flaggedPath = absolute(value(args, ++index, flag), flag);
+                    flaggedPath = absolute(RouteValue.requireSafe(value(args, ++index, flag), flag), flag);
                 }
                 case "--socket-name" -> {
-                    flaggedName = nonempty(value(args, ++index, flag), flag);
+                    flaggedName = nonempty(RouteValue.requireSafe(value(args, ++index, flag), flag), flag);
                 }
-                case "--tmux" -> binary = nonempty(value(args, ++index, flag), flag);
+                case "--tmux" -> binary = nonempty(RouteValue.requireSafe(value(args, ++index, flag), flag), flag);
                 case "--safety" ->
                     throw new IllegalArgumentException(
                             "--safety was retired; select unordered toolsets with " + ToolSurface.TOOLSETS_ENV);
@@ -121,6 +121,7 @@ record LaunchConfiguration(
 
     private SocketProfile socketProfile(
             String serverState, String configurationProvenance, boolean defaultTeardown, String resolvedSocketPath) {
+        RouteValue.requireSafe(resolvedSocketPath, "resolved tmux socket path");
         return new SocketProfile(
                 selector,
                 selectionProvenance,
@@ -142,10 +143,11 @@ record LaunchConfiguration(
                     ServerEndpoint.namedSocket(DEFAULT_SOCKET), "name:" + DEFAULT_SOCKET, "default-dedicated", true);
         }
         if (configuredPath != null) {
-            Path path = absolute(configuredPath, SOCKET_PATH_ENV);
+            Path path = absolute(RouteValue.requireSafe(configuredPath, SOCKET_PATH_ENV), SOCKET_PATH_ENV);
             return new SocketChoice(ServerEndpoint.socketPath(path), "path:" + path, "operator-current", false);
         }
-        String name = nonempty(Objects.requireNonNull(configuredName, SOCKET_ENV), SOCKET_ENV);
+        String name = nonempty(
+                RouteValue.requireSafe(Objects.requireNonNull(configuredName, SOCKET_ENV), SOCKET_ENV), SOCKET_ENV);
         return new SocketChoice(ServerEndpoint.namedSocket(name), "name:" + name, "operator-current", false);
     }
 

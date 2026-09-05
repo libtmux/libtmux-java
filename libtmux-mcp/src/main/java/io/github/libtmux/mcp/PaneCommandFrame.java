@@ -39,6 +39,7 @@ record PaneCommandFrame(List<String> client) {
     }
 
     static String resolveExecutable(String configured, Map<String, String> environment, Path workingDirectory) {
+        RouteValue.requireSafe(configured, "tmux executable");
         if (configured.indexOf(File.separatorChar) >= 0) {
             Path selected = Path.of(configured);
             return requireExecutable(selected.isAbsolute() ? selected : workingDirectory.resolve(selected), configured);
@@ -71,15 +72,18 @@ record PaneCommandFrame(List<String> client) {
                 throw new IllegalArgumentException(
                         "tmux executable '" + configured + "' did not resolve to an absolute executable file");
             }
-            return resolved.toString();
+            return RouteValue.requireSafe(resolved.toString(), "resolved tmux executable");
         } catch (IOException failure) {
             throw new IllegalArgumentException("tmux executable '" + configured + "' could not be resolved", failure);
         }
     }
 
     static String resolveSocket(Optional<String> supplied, Supplier<CommandResult> socketQuery) {
-        if (supplied.isPresent() && !supplied.orElseThrow().isBlank()) {
-            return requireAbsoluteSocket(supplied.orElseThrow());
+        if (supplied.isPresent()) {
+            String retained = RouteValue.requireSafe(supplied.orElseThrow(), "retained tmux socket path");
+            if (!retained.isBlank()) {
+                return requireAbsoluteSocket(retained);
+            }
         }
         CommandResult result = socketQuery.get();
         if (!result.succeeded() || result.stdout().size() != 1) {
@@ -89,6 +93,7 @@ record PaneCommandFrame(List<String> client) {
     }
 
     private static String requireAbsoluteSocket(String socket) {
+        RouteValue.requireSafe(socket, "resolved tmux socket path");
         if (socket.isBlank() || !Path.of(socket).isAbsolute()) {
             throw new IllegalArgumentException("tmux socket path must be nonblank and absolute");
         }

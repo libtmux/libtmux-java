@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -262,6 +263,64 @@ final class MainTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> LaunchConfiguration.resolve(List.of(), Map.of(LaunchConfiguration.CONFIG_ENV, "")));
+    }
+
+    @Test
+    void startupRejectsControlCharactersInClientRoutes() {
+        for (int value : IntStream.concat(IntStream.rangeClosed(0, 0x1f), IntStream.of(0x7f))
+                .toArray()) {
+            String control = Character.toString(value);
+            String label = String.format("U+%04X", value);
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> LaunchConfiguration.resolve(List.of("--tmux", "tmux" + control), Map.of()),
+                    label + " executable");
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> LaunchConfiguration.resolve(List.of("--socket-name", "socket" + control), Map.of()),
+                    label + " socket name");
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> LaunchConfiguration.resolve(List.of("--socket", "/tmp/socket" + control), Map.of()),
+                    label + " socket path");
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> LaunchConfiguration.resolve(
+                            List.of(), Map.of(LaunchConfiguration.SOCKET_ENV, "socket" + control)),
+                    label + " environment socket name");
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> LaunchConfiguration.resolve(
+                            List.of(), Map.of(LaunchConfiguration.SOCKET_PATH_ENV, "/tmp/socket" + control)),
+                    label + " environment socket path");
+        }
+    }
+
+    @Test
+    void startupKeepsApostrophesInClientRoutes() {
+        LaunchConfiguration launch =
+                LaunchConfiguration.resolve(List.of("--tmux", "/tmp/tmux's", "--socket-name", "socket's"), Map.of());
+
+        assertEquals("/tmp/tmux's", launch.config().binary());
+        assertEquals(ServerEndpoint.namedSocket("socket's"), launch.config().endpoint());
+    }
+
+    @Test
+    void startupRejectsControlCharactersReportedInAResolvedSocket() {
+        LaunchConfiguration launch = LaunchConfiguration.resolve(List.of("--socket", "/tmp/configured.sock"), Map.of());
+        TmuxTransport reporting = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return new CommandResult(0, List.of("/tmp/reported\nsocket"), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(launch.config(), reporting)) {
+            assertThrows(IllegalArgumentException.class, () -> launch.profile(server));
+        }
     }
 
     private static SocketProfile profile(LaunchConfiguration launch, String marker) {
