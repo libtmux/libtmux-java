@@ -19,6 +19,9 @@ production.
   prerequisite, and `antigravity` selects canonical `agy`. Multi-client use and
   revert preflight and stage one transaction, preserve config symlinks, reverse
   proven writes on failure, and keep `--dry-run` fully observational.
+  Persistent, versioned recovery records bind each backup to the exact swapped
+  config, path topology, and server route; drift fails closed without deleting
+  recovery.
 - **`NamedServerFixture` safely owns explicitly named test servers.** It binds
   teardown to the reported process, socket path, and inode, then fails closed if
   any of that identity changes before cleanup.
