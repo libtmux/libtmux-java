@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.junit5.NamedServerFixture;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.junit5.TmuxSocketPath;
 import io.modelcontextprotocol.client.McpClient;
@@ -326,8 +327,9 @@ final class McpLauncherTest {
         String name = "ltj-mcp-" + ProcessHandle.current().pid();
 
         try (Server named = openNamed(name, directory)) {
-            try {
-                named.newSession("by-name");
+            named.newSession("by-name");
+            try (NamedServerFixture owned = NamedServerFixture.own(named, name, Path.of(tmuxTmpDir()))) {
+                assertEquals(name, owned.socket().getFileName().toString());
 
                 try (McpSyncClient client = launch("--socket-name", name, Map.of("TMUX_TMPDIR", tmuxTmpDir()))) {
                     client.initialize();
@@ -337,9 +339,6 @@ final class McpLauncherTest {
 
                     assertTrue(listed.contains("by-name"), "the launcher did not find the named server: " + listed);
                 }
-            } finally {
-                // -L leaves no -S for the fixture's sweep to match, so nothing else ends this server.
-                named.killServer();
             }
         }
     }
