@@ -126,6 +126,56 @@ final class CapabilityRegistryTest {
             "teardown",
             Set.of("clear_pane_scrollback", "kill_pane", "kill_window", "kill_session"));
 
+    private static final OutputRisks RICH_OUTPUT = new OutputRisks(true, true);
+    private static final OutputRisks STRUCTURAL_OUTPUT = new OutputRisks(false, false);
+
+    private static final Map<String, OutputRisks> EXPECTED_OUTPUT_RISKS = Map.ofEntries(
+            Map.entry("list_sessions", RICH_OUTPUT),
+            Map.entry("list_windows", RICH_OUTPUT),
+            Map.entry("list_panes", RICH_OUTPUT),
+            Map.entry("get_server_info", RICH_OUTPUT),
+            Map.entry("get_session_info", RICH_OUTPUT),
+            Map.entry("get_window_info", RICH_OUTPUT),
+            Map.entry("get_pane_info", RICH_OUTPUT),
+            Map.entry("capture_pane", RICH_OUTPUT),
+            Map.entry("capture_since", RICH_OUTPUT),
+            Map.entry("snapshot_pane", RICH_OUTPUT),
+            Map.entry("search_panes", RICH_OUTPUT),
+            Map.entry("find_pane_by_position", RICH_OUTPUT),
+            Map.entry("wait_for_text", RICH_OUTPUT),
+            Map.entry("get_tmux_variables", RICH_OUTPUT),
+            Map.entry("show_option", RICH_OUTPUT),
+            Map.entry("show_environment", RICH_OUTPUT),
+            Map.entry("show_hooks", RICH_OUTPUT),
+            Map.entry("call_read_tools_batch", RICH_OUTPUT),
+            Map.entry("rename_session", RICH_OUTPUT),
+            Map.entry("rename_window", RICH_OUTPUT),
+            Map.entry("select_window", RICH_OUTPUT),
+            Map.entry("select_pane", RICH_OUTPUT),
+            Map.entry("select_layout", STRUCTURAL_OUTPUT),
+            Map.entry("resize_window", RICH_OUTPUT),
+            Map.entry("resize_pane", STRUCTURAL_OUTPUT),
+            Map.entry("move_window", STRUCTURAL_OUTPUT),
+            Map.entry("swap_pane", STRUCTURAL_OUTPUT),
+            Map.entry("set_pane_title", RICH_OUTPUT),
+            Map.entry("wait_for_channel", RICH_OUTPUT),
+            Map.entry("signal_channel", RICH_OUTPUT),
+            Map.entry("set_mouse_enabled", STRUCTURAL_OUTPUT),
+            Map.entry("set_history_limit", STRUCTURAL_OUTPUT),
+            Map.entry("create_session", RICH_OUTPUT),
+            Map.entry("create_window", RICH_OUTPUT),
+            Map.entry("split_window", RICH_OUTPUT),
+            Map.entry("respawn_pane", STRUCTURAL_OUTPUT),
+            Map.entry("run_shell_command", RICH_OUTPUT),
+            Map.entry("send_keys", STRUCTURAL_OUTPUT),
+            Map.entry("send_keys_batch", RICH_OUTPUT),
+            Map.entry("paste_text", STRUCTURAL_OUTPUT),
+            Map.entry("set_synchronize_panes", STRUCTURAL_OUTPUT),
+            Map.entry("clear_pane_scrollback", STRUCTURAL_OUTPUT),
+            Map.entry("kill_pane", STRUCTURAL_OUTPUT),
+            Map.entry("kill_window", STRUCTURAL_OUTPUT),
+            Map.entry("kill_session", STRUCTURAL_OUTPUT));
+
     @Test
     void everyManifestRowDrivesConservativeRegistrationMetadataAndSinkValidation() {
         assertEquals(CATALOG_ORDER, Catalog.tools().stream().map(ToolSpec::name).toList());
@@ -285,6 +335,25 @@ final class CapabilityRegistryTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> Catalog.validate(List.of(byName("get_server_info"), byName("get_server_info"))));
+    }
+
+    @Test
+    void everyToolDeclaresItsExactAdrOutputRisks() {
+        assertEquals(Set.copyOf(CATALOG_ORDER), EXPECTED_OUTPUT_RISKS.keySet());
+        Map<String, OutputRisks> actual = Catalog.tools().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        ToolSpec::name,
+                        tool -> new OutputRisks(tool.mayExposeSecrets(), tool.mayReturnUntrustedContent())));
+        assertEquals(EXPECTED_OUTPUT_RISKS, actual);
+
+        for (ToolSpec tool : Catalog.tools()) {
+            OutputRisks expected = Objects.requireNonNull(EXPECTED_OUTPUT_RISKS.get(tool.name()), tool.name());
+            @SuppressWarnings("unchecked")
+            Map<String, Object> metadata = (Map<String, Object>) Objects.requireNonNull(
+                    tool.describe().meta().get("com.git-pull.libtmux-mcp/capability"), "capability metadata");
+            assertEquals(expected.mayExposeSecrets(), metadata.get("mayExposeSecrets"), tool.name());
+            assertEquals(expected.mayReturnUntrustedContent(), metadata.get("mayReturnUntrustedContent"), tool.name());
+        }
     }
 
     @Test
@@ -959,6 +1028,8 @@ final class CapabilityRegistryTest {
     private static List<String> wireNames(Set<ToolSpec.TmuxEffect> effects) {
         return effects.stream().map(ToolSpec.TmuxEffect::wireName).toList();
     }
+
+    private record OutputRisks(boolean mayExposeSecrets, boolean mayReturnUntrustedContent) {}
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> object(@Nullable Object value, String name) {

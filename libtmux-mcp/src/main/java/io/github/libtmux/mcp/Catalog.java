@@ -210,7 +210,7 @@ final class Catalog {
                                         .wireSchema())),
                 Listings::panes));
 
-        tools.add(inspectMetadata(
+        tools.add(inspectRichMetadata(
                 "get_server_info",
                 "Get server info",
                 "Reports whether the pinned server exists and its version.",
@@ -222,7 +222,7 @@ final class Catalog {
                         field("version", STRING),
                         field("sessions", INTEGER)),
                 Operations::serverInfo));
-        tools.add(inspectMetadata(
+        tools.add(inspectRichMetadata(
                 "get_session_info",
                 "Get session info",
                 "Returns metadata for one session.",
@@ -230,7 +230,7 @@ final class Catalog {
                 sinks(input("session_id", TMUX_LOOKUP)),
                 SESSION_OUTPUT,
                 Operations::sessionInfo));
-        tools.add(inspectMetadata(
+        tools.add(inspectRichMetadata(
                 "get_window_info",
                 "Get window info",
                 "Returns metadata for one window.",
@@ -238,7 +238,7 @@ final class Catalog {
                 sinks(input("window_id", TMUX_LOOKUP)),
                 WINDOW_OUTPUT,
                 Operations::windowInfo));
-        tools.add(inspectMetadata(
+        tools.add(inspectRichMetadata(
                 "get_pane_info",
                 "Get pane info",
                 "Returns metadata for one pane.",
@@ -337,7 +337,7 @@ final class Catalog {
                         input("max_lines", ToolSpec.InputSink.NONE)),
                 record(Reading.Found.class, "note"),
                 Reading::search));
-        tools.add(inspectMetadata(
+        tools.add(inspectRichMetadata(
                 "find_pane_by_position",
                 "Find pane by position",
                 "Finds a pane at one of a window's four corners.",
@@ -425,7 +425,7 @@ final class Catalog {
                 effects(OBSERVE),
                 outputs(TMUX_METADATA, CONFIGURED_COMMAND),
                 true,
-                false,
+                true,
                 option,
                 sinks(
                         input("name", TMUX_LOOKUP),
@@ -443,7 +443,7 @@ final class Catalog {
                 effects(OBSERVE),
                 outputs(PROCESS_ENVIRONMENT),
                 true,
-                false,
+                true,
                 List.of(optional("session", "A session name; omit for the global environment.")),
                 sinks(input("session", TMUX_LOOKUP)),
                 record(Settings.Environment.class),
@@ -462,7 +462,7 @@ final class Catalog {
                 effects(OBSERVE),
                 outputs(CONFIGURED_COMMAND),
                 true,
-                false,
+                true,
                 hooks,
                 sinks(input("scope", TMUX_LOOKUP), input("target", TMUX_LOOKUP), input("name", TMUX_LOOKUP)),
                 shape(field("scope", STRING), field("target", STRING), field("count", INTEGER), field("hooks", OBJECT)),
@@ -514,6 +514,7 @@ final class Catalog {
                                 required("session_id", "The session ID, such as $1."),
                                 required("new_name", "The literal new session name.")),
                         sinks(input("session_id", TMUX_LOOKUP), input("new_name", TMUX_FORMAT)),
+                        true,
                         SESSION_OUTPUT,
                         Operations::renameSession),
                 "new_name"));
@@ -526,6 +527,7 @@ final class Catalog {
                                 required("window_id", "The window ID, such as @1."),
                                 required("new_name", "The literal new window name.")),
                         sinks(input("window_id", TMUX_LOOKUP), input("new_name", TMUX_FORMAT)),
+                        true,
                         WINDOW_OUTPUT,
                         Operations::renameWindow),
                 "new_name"));
@@ -535,6 +537,7 @@ final class Catalog {
                 "Makes one window active.",
                 List.of(required("window_id", "The window ID, such as @1.")),
                 sinks(input("window_id", TMUX_LOOKUP)),
+                true,
                 WINDOW_OUTPUT,
                 Operations::selectWindow));
         tools.add(manageTool(
@@ -543,6 +546,7 @@ final class Catalog {
                 "Makes one pane active.",
                 List.of(paneId()),
                 sinks(input("pane_id", TMUX_LOOKUP)),
+                true,
                 PANE_OUTPUT,
                 Operations::selectPane));
         tools.add(manageTool(
@@ -553,6 +557,7 @@ final class Catalog {
                         required("window_id", "The window ID, such as @1."),
                         required("layout", "A built-in layout name.")),
                 sinks(input("window_id", TMUX_LOOKUP), input("layout", TMUX_STATE)),
+                false,
                 record(Shaping.Changed.class, "note"),
                 Shaping::selectLayout));
         tools.add(manageTool(
@@ -564,6 +569,7 @@ final class Catalog {
                         number("width", "Width in terminal cells; omit to retain it.", 0),
                         number("height", "Height in terminal cells; omit to retain it.", 0)),
                 sinks(input("window_id", TMUX_LOOKUP), input("width", TMUX_STATE), input("height", TMUX_STATE)),
+                true,
                 WINDOW_OUTPUT,
                 Operations::resizeWindow));
         tools.add(manageTool(
@@ -575,6 +581,7 @@ final class Catalog {
                         number("width", "Width in terminal cells; omit to retain it.", 0),
                         number("height", "Height in terminal cells; omit to retain it.", 0)),
                 sinks(input("pane_id", TMUX_LOOKUP), input("width", TMUX_STATE), input("height", TMUX_STATE)),
+                false,
                 record(Shaping.Changed.class, "note"),
                 Shaping::resizePane));
         tools.add(manageTool(
@@ -586,6 +593,7 @@ final class Catalog {
                         required("session_id", "The destination session ID, such as $1."),
                         number("index", "A destination window index; omit for tmux's choice.", -1)),
                 sinks(input("window_id", TMUX_LOOKUP), input("session_id", TMUX_LOOKUP), input("index", TMUX_STATE)),
+                false,
                 shape(field("window_id", STRING), field("session_id", STRING), field("index", INTEGER)),
                 Operations::moveWindow));
         tools.add(manageTool(
@@ -594,6 +602,7 @@ final class Catalog {
                 "Swaps the positions of two panes.",
                 List.of(paneId(), required("other_pane_id", "The other pane ID, such as %2.")),
                 sinks(input("pane_id", TMUX_LOOKUP), input("other_pane_id", TMUX_LOOKUP)),
+                false,
                 shape(field("pane_id", STRING), field("other_pane_id", STRING)),
                 Operations::swapPane));
         tools.add(literalized(
@@ -603,6 +612,7 @@ final class Catalog {
                         "Replaces a pane's literal title.",
                         List.of(paneId(), required("title", "The literal title.")),
                         sinks(input("pane_id", TMUX_LOOKUP), input("title", TMUX_FORMAT)),
+                        true,
                         PANE_OUTPUT,
                         Operations::setPaneTitle),
                 "title"));
@@ -618,7 +628,7 @@ final class Catalog {
                 NONE,
                 effects(CHANGE),
                 outputs(TMUX_METADATA),
-                false,
+                true,
                 true,
                 channelWait,
                 sinks(
@@ -633,6 +643,7 @@ final class Catalog {
                 "Signals one server-wide tmux channel.",
                 List.of(required("channel", "The channel name.")),
                 sinks(input("channel", TMUX_STATE)),
+                true,
                 record(Channels.Signalled.class),
                 Channels::signal));
         tools.add(changeOnlyTool(
@@ -641,6 +652,7 @@ final class Catalog {
                 "Enables or disables tmux mouse handling.",
                 List.of(flag("enabled", "Whether mouse handling is enabled.", false)),
                 sinks(input("enabled", TMUX_STATE)),
+                false,
                 shape(field("enabled", BOOLEAN)),
                 Operations::setMouseEnabled));
         tools.add(changeOnlyTool(
@@ -651,6 +663,7 @@ final class Catalog {
                         required("session_id", "The session ID, such as $1."),
                         requiredNumber("lines", "The nonnegative retained line count.")),
                 sinks(input("session_id", TMUX_LOOKUP), input("lines", TMUX_STATE)),
+                false,
                 shape(field("session_id", STRING), field("lines", INTEGER)),
                 Operations::setHistoryLimit));
     }
@@ -665,7 +678,7 @@ final class Catalog {
                         CONFIGURED_PROCESS,
                         effects(OBSERVE, CHANGE),
                         outputs(TMUX_METADATA),
-                        false,
+                        true,
                         true,
                         List.of(
                                 optional("session_name", "A literal session name."),
@@ -693,7 +706,7 @@ final class Catalog {
                         CONFIGURED_PROCESS,
                         effects(OBSERVE, CHANGE),
                         outputs(TMUX_METADATA),
-                        false,
+                        true,
                         true,
                         List.of(
                                 required("session_id", "The session ID, such as $1."),
@@ -720,7 +733,7 @@ final class Catalog {
                         CONFIGURED_PROCESS,
                         effects(OBSERVE, CHANGE),
                         outputs(TMUX_METADATA),
-                        false,
+                        true,
                         true,
                         List.of(
                                 paneId(),
@@ -745,7 +758,7 @@ final class Catalog {
                         effects(OBSERVE, CHANGE, DELETE),
                         outputs(TMUX_METADATA),
                         false,
-                        true,
+                        false,
                         List.of(paneId(), optional("start_directory", "An absolute literal start directory.")),
                         sinks(input("pane_id", TMUX_LOOKUP), input("start_directory", TMUX_FORMAT)),
                         shape(field("pane_id", STRING), field("restarted", BOOLEAN)),
@@ -796,7 +809,7 @@ final class Catalog {
                 effects(OBSERVE, CHANGE),
                 outputs(TMUX_METADATA),
                 false,
-                true,
+                false,
                 keys,
                 sinks(
                         input("pane_id", TMUX_LOOKUP),
@@ -814,7 +827,7 @@ final class Catalog {
                 PANE_INPUT,
                 effects(OBSERVE, CHANGE),
                 outputs(TMUX_METADATA),
-                false,
+                true,
                 true,
                 List.of(
                         boundedObjects("operations", "Objects with pane_id, keys and optional literal fields.", 64),
@@ -834,7 +847,7 @@ final class Catalog {
                 effects(OBSERVE, CHANGE),
                 outputs(TMUX_METADATA),
                 false,
-                true,
+                false,
                 List.of(
                         paneId(),
                         required("text", "The literal text to paste."),
@@ -855,7 +868,7 @@ final class Catalog {
                 effects(CHANGE),
                 outputs(TMUX_METADATA),
                 false,
-                true,
+                false,
                 List.of(
                         required("window_id", "The window ID, such as @1."),
                         flag("enabled", "Whether pane input is synchronized.", false)),
@@ -905,7 +918,7 @@ final class Catalog {
                 flag("confirm_self", "Permit ending the pane this MCP process runs in.", false));
     }
 
-    private static ToolSpec inspectMetadata(
+    private static ToolSpec inspectRichMetadata(
             String name,
             String title,
             String details,
@@ -922,7 +935,7 @@ final class Catalog {
                 effects(OBSERVE),
                 outputs(TMUX_METADATA),
                 true,
-                false,
+                true,
                 arguments,
                 sinks,
                 output,
@@ -935,6 +948,7 @@ final class Catalog {
             String details,
             List<Argument> arguments,
             Map<String, Set<ToolSpec.InputSink>> sinks,
+            boolean richOutput,
             OutputSchema output,
             java.util.function.Function<Call, Object> answer) {
         return tool(
@@ -945,8 +959,8 @@ final class Catalog {
                 NONE,
                 effects(OBSERVE, CHANGE),
                 outputs(TMUX_METADATA),
-                false,
-                true,
+                richOutput,
+                richOutput,
                 arguments,
                 sinks,
                 output,
@@ -959,6 +973,7 @@ final class Catalog {
             String details,
             List<Argument> arguments,
             Map<String, Set<ToolSpec.InputSink>> sinks,
+            boolean richOutput,
             OutputSchema output,
             java.util.function.Function<Call, Object> answer) {
         return tool(
@@ -969,8 +984,8 @@ final class Catalog {
                 NONE,
                 effects(CHANGE),
                 outputs(TMUX_METADATA),
-                false,
-                true,
+                richOutput,
+                richOutput,
                 arguments,
                 sinks,
                 output,
