@@ -67,6 +67,7 @@ Deliberately narrow, and transactional:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -86,6 +87,9 @@ DIST_LAUNCHER = (
 )
 
 BACKUP_SUFFIX = ".mcp-swap-backup"
+STATE_SUFFIX = ".state"
+STATE_VERSION = 1
+STATE_MAX_BYTES = 16 * 1024
 
 
 class Layer(t.NamedTuple):
@@ -452,6 +456,11 @@ def backup_of(layer: Layer) -> pathlib.Path:
     return layer.path.with_name(layer.path.name + BACKUP_SUFFIX)
 
 
+def state_of(layer: Layer) -> pathlib.Path:
+    backup = backup_of(layer)
+    return backup.with_name(backup.name + STATE_SUFFIX)
+
+
 def entry_for(layer: Layer, command: str, arguments: list[str]) -> dict[str, t.Any]:
     if layer.cli == "opencode":
         return {"type": "local", "command": [command, *arguments]}
@@ -499,16 +508,29 @@ class BackupState(t.NamedTuple):
     file: FileState | None
 
 
+class StateFile(t.NamedTuple):
+    path: pathlib.Path
+    parent: DirectoryState
+    physical: pathlib.Path
+    file: FileState | None
+    record: dict[str, t.Any] | None
+
+
 class PreparedUse(t.NamedTuple):
     config: ConfigState
     backup: BackupState
+    state: StateFile
     output: bytes
     entry: dict[str, t.Any]
+    server_name: str
+    command: str
+    arguments: tuple[str, ...]
 
 
 class PreparedRevert(t.NamedTuple):
     config: ConfigState
     backup: BackupState
+    state: StateFile
 
 
 class StagedUse(t.NamedTuple):
@@ -516,6 +538,8 @@ class StagedUse(t.NamedTuple):
     output: pathlib.Path
     recovery: pathlib.Path
     backup: pathlib.Path | None
+    state: pathlib.Path
+    state_recovery: pathlib.Path | None
 
 
 class StagedRevert(t.NamedTuple):
@@ -523,11 +547,17 @@ class StagedRevert(t.NamedTuple):
     restored: pathlib.Path
     recovery: pathlib.Path
     backup_recovery: pathlib.Path
+    state_recovery: pathlib.Path
 
 
 class ConfigWrite(t.NamedTuple):
     config: ConfigState
     committed: FileState
+    recovery: pathlib.Path
+
+
+class ConfigRemoval(t.NamedTuple):
+    config: ConfigState
     recovery: pathlib.Path
 
 
@@ -537,8 +567,22 @@ class BackupWrite(t.NamedTuple):
     cli: str
 
 
+class StateWrite(t.NamedTuple):
+    state: StateFile
+    backup: BackupState
+    committed: FileState
+    recovery: pathlib.Path | None
+    cli: str
+
+
 class BackupRemoval(t.NamedTuple):
     backup: BackupState
+    recovery: pathlib.Path
+    cli: str
+
+
+class StateRemoval(t.NamedTuple):
+    state: StateFile
     recovery: pathlib.Path
     cli: str
 
@@ -644,6 +688,173 @@ def _backup_state(layer: Layer, *, required: bool = False) -> BackupState:
     return BackupState(path, parent, physical, file)
 
 
+def _file_document(file: FileState) -> dict[str, t.Any]:
+    return {
+        "device": file.device,
+        "inode": file.inode,
+        "mode": file.mode,
+        "sha256": hashlib.sha256(file.data).hexdigest(),
+        "size": file.size,
+    }
+
+
+def _directory_document(directory: DirectoryState) -> dict[str, t.Any]:
+    return {
+        "device": directory.device,
+        "inode": directory.inode,
+        "link_device": directory.link_device if directory.symlink else None,
+        "link_inode": directory.link_inode if directory.symlink else None,
+        "link_mode": directory.link_mode if directory.symlink else None,
+        "link_text": directory.link_text,
+        "logical": str(directory.logical),
+        "mode": directory.mode,
+        "physical": str(directory.physical),
+        "symlink": directory.symlink,
+    }
+
+
+def _config_document(config: ConfigState, file: FileState) -> dict[str, t.Any]:
+    return {
+        "file": _file_document(file),
+        "link_device": config.link_device if config.symlink else None,
+        "link_inode": config.link_inode if config.symlink else None,
+        "link_mode": config.link_mode if config.symlink else None,
+        "link_text": config.link_text,
+        "logical": str(config.layer.path),
+        "parent": _directory_document(config.parent),
+        "symlink": config.symlink,
+        "target": str(config.target),
+    }
+
+
+def _record_bytes(record: dict[str, t.Any]) -> bytes:
+    data = (json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    if len(data) > STATE_MAX_BYTES:
+        raise ValueError(f"recovery state exceeds {STATE_MAX_BYTES} bytes")
+    return data
+
+
+def _object(value: t.Any, keys: set[str], label: str) -> dict[str, t.Any]:
+    if not isinstance(value, dict) or set(value) != keys:
+        raise ValueError(f"{label} has unknown or missing fields")
+    return value
+
+
+def _decode_record(layer: Layer, data: bytes) -> dict[str, t.Any]:
+    if len(data) > STATE_MAX_BYTES:
+        raise ValueError(f"recovery state exceeds {STATE_MAX_BYTES} bytes")
+    try:
+        root = json.loads(data)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("recovery state is malformed") from error
+    document = _object(
+        root, {"backup", "cli", "config", "server", "version"}, "recovery state"
+    )
+    if type(document["version"]) is not int or document["version"] != STATE_VERSION:
+        raise ValueError("recovery state version is unsupported")
+    if type(document["cli"]) is not str or document["cli"] != layer.cli:
+        raise ValueError("recovery state names another client")
+    server = _object(
+        document["server"], {"arguments", "command", "name"}, "recovery server"
+    )
+    arguments = server["arguments"]
+    if (
+        not isinstance(arguments, list)
+        or len(arguments) > 128
+        or any(not isinstance(argument, str) for argument in arguments)
+        or type(server["command"]) is not str
+        or type(server["name"]) is not str
+    ):
+        raise ValueError("recovery server route is invalid")
+    _object(document["backup"], {"file", "parent", "path", "target"}, "recovery backup")
+    if not isinstance(document["config"], dict):
+        raise TypeError("recovery config is invalid")
+    return document
+
+
+def _same_typed(left: t.Any, right: t.Any) -> bool:
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return set(left) == set(right) and all(
+            _same_typed(left[key], right[key]) for key in left
+        )
+    if isinstance(left, list):
+        return len(left) == len(right) and all(
+            _same_typed(one, two) for one, two in zip(left, right, strict=True)
+        )
+    return bool(left == right)
+
+
+def _state_file(layer: Layer, *, required: bool = False) -> StateFile:
+    path = state_of(layer)
+    parent = _directory_state(path.parent)
+    physical = parent.physical / path.name
+    if not os.path.lexists(path):
+        if required:
+            raise FileNotFoundError(path)
+        return StateFile(path, parent, physical, None, None)
+    details = path.lstat()
+    if stat.S_ISLNK(details.st_mode) or not stat.S_ISREG(details.st_mode):
+        raise ValueError(f"{path} is not a regular file")
+    if details.st_size > STATE_MAX_BYTES:
+        raise ValueError(f"{path} exceeds {STATE_MAX_BYTES} bytes")
+    if path.resolve(strict=True) != physical:
+        raise RuntimeError(f"{path} did not resolve in its preflight directory")
+    file = _file_state(physical)
+    if (details.st_dev, details.st_ino) != (file.device, file.inode):
+        raise RuntimeError(f"{path} changed while it was resolved")
+    if file.mode != 0o600:
+        raise ValueError(f"{path} mode is not 0600")
+    return StateFile(path, parent, physical, file, _decode_record(layer, file.data))
+
+
+def _record_for(
+    plan: PreparedUse, target_file: FileState, backup_file: FileState
+) -> dict[str, t.Any]:
+    return {
+        "backup": {
+            "file": _file_document(backup_file),
+            "parent": _directory_document(plan.backup.parent),
+            "path": str(plan.backup.path),
+            "target": str(plan.backup.physical),
+        },
+        "cli": plan.config.layer.cli,
+        "config": _config_document(plan.config, target_file),
+        "server": {
+            "arguments": list(plan.arguments),
+            "command": plan.command,
+            "name": plan.server_name,
+        },
+        "version": STATE_VERSION,
+    }
+
+
+def _verify_owned_recovery(
+    config: ConfigState, backup: BackupState, state: StateFile
+) -> None:
+    record = state.record
+    backup_file = backup.file
+    if record is None or backup_file is None:
+        raise RuntimeError("recovery backup and state are incomplete")
+    if not _same_typed(record["config"], _config_document(config, config.file)):
+        raise RuntimeError("config no longer matches the recovery state")
+    route = record["server"]
+    document = parse(config.layer, config.file.data)
+    actual = (servers(config.layer, document) or {}).get(route["name"])
+    expected = entry_for(config.layer, route["command"], route["arguments"])
+    if actual != expected:
+        raise RuntimeError("server route no longer matches the recovery state")
+    expected_backup = {
+        "file": _file_document(backup_file),
+        "parent": _directory_document(backup.parent),
+        "path": str(backup.path),
+        "target": str(backup.physical),
+    }
+    if not _same_typed(record["backup"], expected_backup):
+        raise RuntimeError("backup no longer matches the recovery state")
+
+
 def _verify_directory(expected: DirectoryState) -> None:
     current = _directory_state(expected.logical)
     if current != expected:
@@ -675,10 +886,10 @@ def _verify_config(config: ConfigState, expected: FileState) -> None:
         raise RuntimeError(f"{config.layer.path} logical identity changed")
 
 
-def _verify_restored_config(config: ConfigState, *, data: bytes, mode: int) -> None:
+def _verify_missing_config(config: ConfigState) -> None:
     _verify_directory(config.parent)
-    details = config.layer.path.lstat()
     if config.symlink:
+        details = config.layer.path.lstat()
         if (
             not stat.S_ISLNK(details.st_mode)
             or os.readlink(config.layer.path) != config.link_text
@@ -686,39 +897,31 @@ def _verify_restored_config(config: ConfigState, *, data: bytes, mode: int) -> N
             != (config.link_device, config.link_inode, config.link_mode)
         ):
             raise RuntimeError(f"{config.layer.path} symlink changed")
-    elif not stat.S_ISREG(details.st_mode):
-        raise RuntimeError(f"{config.layer.path} topology changed")
-    if config.layer.path.resolve(strict=True) != config.target:
-        raise RuntimeError(f"{config.layer.path} target changed")
-    current = _file_state(config.target)
-    if current.data != data or current.mode != mode:
-        raise RuntimeError(f"{config.layer.path} was not restored exactly")
+    elif os.path.lexists(config.layer.path):
+        raise RuntimeError(f"{config.layer.path} appeared")
+    if os.path.lexists(config.target):
+        raise RuntimeError(f"{config.target} appeared")
 
 
-def _verify_backup(backup: BackupState, expected: FileState | None) -> None:
-    _verify_directory(backup.parent)
+def _verify_artifact(
+    artifact: BackupState | StateFile, expected: FileState | None
+) -> None:
+    _verify_directory(artifact.parent)
     if expected is None:
-        if os.path.lexists(backup.path):
-            raise RuntimeError(f"{backup.path} appeared")
+        if os.path.lexists(artifact.path):
+            raise RuntimeError(f"{artifact.path} appeared")
         return
-    if not os.path.lexists(backup.path) or backup.path.is_symlink():
-        raise RuntimeError(f"{backup.path} topology changed")
-    if backup.path.resolve(strict=True) != backup.physical:
-        raise RuntimeError(f"{backup.path} target changed")
-    if _file_state(backup.physical) != expected:
-        raise RuntimeError(f"{backup.path} identity, mode, or bytes changed")
+    if not os.path.lexists(artifact.path) or artifact.path.is_symlink():
+        raise RuntimeError(f"{artifact.path} topology changed")
+    if artifact.path.resolve(strict=True) != artifact.physical:
+        raise RuntimeError(f"{artifact.path} target changed")
+    if _file_state(artifact.physical) != expected:
+        raise RuntimeError(f"{artifact.path} identity, mode, or bytes changed")
 
 
-def _verify_restored_backup(backup: BackupState) -> None:
-    expected = t.cast(FileState, backup.file)
-    _verify_directory(backup.parent)
-    if not os.path.lexists(backup.path) or backup.path.is_symlink():
-        raise RuntimeError(f"{backup.path} topology changed")
-    if backup.path.resolve(strict=True) != backup.physical:
-        raise RuntimeError(f"{backup.path} target changed")
-    current = _file_state(backup.physical)
-    if current.data != expected.data or current.mode != expected.mode:
-        raise RuntimeError(f"{backup.path} was not restored exactly")
+def _verify_restored_artifact(artifact: BackupState | StateFile) -> None:
+    expected = t.cast(FileState, artifact.file)
+    _verify_artifact(artifact, expected)
 
 
 def _reject_duplicate_targets(plans: t.Iterable[t.Any]) -> None:
@@ -760,6 +963,21 @@ def _reject_duplicate_targets(plans: t.Iterable[t.Any]) -> None:
         all_paths[backup.physical] = f"{cli} backup"
         if backup_inode is not None:
             all_inodes[backup_inode] = f"{cli} backup"
+
+        state = plan.state
+        state_inode = (
+            None if state.file is None else (state.file.device, state.file.inode)
+        )
+        owner = all_paths.get(state.physical)
+        if owner is None and state_inode is not None:
+            owner = all_inodes.get(state_inode)
+        if owner is not None:
+            raise SystemExit(
+                f"duplicate transaction destination for {owner} and {cli} state"
+            )
+        all_paths[state.physical] = f"{cli} state"
+        if state_inode is not None:
+            all_inodes[state_inode] = f"{cli} state"
 
 
 def _stage(
@@ -862,6 +1080,23 @@ def _plan_use(
             continue
         try:
             config = _config_state(layer)
+        except Exception as error:
+            raise SystemExit(f"{layer.cli} config is unreadable: {error}") from error
+        try:
+            backup = _backup_state(layer)
+        except Exception as error:
+            raise SystemExit(f"{layer.cli} backup is unusable: {error}") from error
+        try:
+            state = _state_file(layer)
+            if (backup.file is None) != (state.file is None):
+                raise RuntimeError("backup and state must exist together")
+            if state.file is not None:
+                _verify_owned_recovery(config, backup, state)
+        except Exception as error:
+            raise SystemExit(
+                f"{layer.cli} recovery state is unusable: {error}"
+            ) from error
+        try:
             document = parse(layer, config.file.data)
             entry = entry_for(layer, command, arguments)
             into = servers(layer, document, create=True)
@@ -869,11 +1104,40 @@ def _plan_use(
             output = render(layer, document, config.file.data)
         except Exception as error:
             raise SystemExit(f"{layer.cli} config is unreadable: {error}") from error
+        plan = PreparedUse(
+            config,
+            backup,
+            state,
+            output,
+            entry,
+            args.name,
+            command,
+            tuple(arguments),
+        )
+        largest_identity = (1 << 64) - 1
+        preview_target = FileState(
+            largest_identity,
+            largest_identity,
+            config.file.mode,
+            len(output),
+            0,
+            output,
+        )
+        preview_backup = backup.file or FileState(
+            largest_identity,
+            largest_identity,
+            config.file.mode,
+            config.file.size,
+            0,
+            config.file.data,
+        )
         try:
-            backup = _backup_state(layer)
+            _record_bytes(_record_for(plan, preview_target, preview_backup))
         except Exception as error:
-            raise SystemExit(f"{layer.cli} backup is unusable: {error}") from error
-        prepared.append(PreparedUse(config, backup, output, entry))
+            raise SystemExit(
+                f"{layer.cli} recovery state is unusable: {error}"
+            ) from error
+        prepared.append(plan)
     _reject_duplicate_targets(prepared)
     return prepared
 
@@ -881,18 +1145,40 @@ def _plan_use(
 def _plan_revert(args: argparse.Namespace) -> list[PreparedRevert]:
     prepared: list[PreparedRevert] = []
     for layer in chosen(args):
-        if not os.path.lexists(backup_of(layer)):
+        backup_exists = os.path.lexists(backup_of(layer))
+        state_exists = os.path.lexists(state_of(layer))
+        if not backup_exists and not state_exists:
             print(f"{layer.cli:<{CLI_COLUMN}} nothing to revert")
             continue
+        if backup_exists != state_exists:
+            raise SystemExit(f"{layer.cli} recovery backup and state are incomplete")
         try:
             backup = _backup_state(layer, required=True)
         except Exception as error:
             raise SystemExit(f"{layer.cli} backup is unusable: {error}") from error
         try:
+            state = _state_file(layer, required=True)
+        except Exception as error:
+            raise SystemExit(
+                f"{layer.cli} recovery state is unusable: {error}"
+            ) from error
+        try:
             config = _config_state(layer)
         except Exception as error:
             raise SystemExit(f"{layer.cli} config is unreadable: {error}") from error
-        prepared.append(PreparedRevert(config, backup))
+        try:
+            _verify_owned_recovery(config, backup, state)
+            record = t.cast(dict[str, t.Any], state.record)
+            server_name = record["server"]["name"]
+            if server_name != args.name:
+                raise RuntimeError(
+                    f"state belongs to server {server_name!r}, not {args.name!r}"
+                )
+        except Exception as error:
+            raise SystemExit(
+                f"{layer.cli} recovery ownership changed: {error}"
+            ) from error
+        prepared.append(PreparedRevert(config, backup, state))
     _reject_duplicate_targets(prepared)
     return prepared
 
@@ -908,9 +1194,16 @@ def _changed_config(config: ConfigState, expected: FileState) -> None:
 
 def _changed_backup(backup: BackupState, expected: FileState | None, cli: str) -> None:
     try:
-        _verify_backup(backup, expected)
+        _verify_artifact(backup, expected)
     except Exception as error:
         raise RuntimeError(f"{cli} backup changed during preflight") from error
+
+
+def _changed_state(state: StateFile, expected: FileState | None, cli: str) -> None:
+    try:
+        _verify_artifact(state, expected)
+    except Exception as error:
+        raise RuntimeError(f"{cli} recovery state changed during preflight") from error
 
 
 def _stage_use(plans: list[PreparedUse], owned: set[pathlib.Path]) -> list[StagedUse]:
@@ -944,7 +1237,33 @@ def _stage_use(plans: list[PreparedUse], owned: set[pathlib.Path]) -> list[Stage
                     config.file.mode,
                 )
                 owned.add(backup)
-            staged.append(StagedUse(plan, output, recovery, backup))
+            target_file = _file_state(output)
+            backup_file = (
+                _file_state(backup)
+                if backup is not None
+                else t.cast(FileState, plan.backup.file)
+            )
+            state = _stage(
+                plan.state.parent.physical,
+                plan.state.path.name,
+                "state",
+                _record_bytes(_record_for(plan, target_file, backup_file)),
+                0o600,
+            )
+            owned.add(state)
+            state_recovery = None
+            if plan.state.file is not None:
+                state_recovery = _stage(
+                    plan.state.parent.physical,
+                    plan.state.path.name,
+                    "recovery-state",
+                    plan.state.file.data,
+                    plan.state.file.mode,
+                )
+                owned.add(state_recovery)
+            staged.append(
+                StagedUse(plan, output, recovery, backup, state, state_recovery)
+            )
     except Exception as error:
         cleanup = _cleanup_owned(owned)
         detail = f"swap staging failed: {error}"
@@ -986,7 +1305,24 @@ def _stage_revert(
                 backup.mode,
             )
             owned.add(backup_recovery)
-            staged.append(StagedRevert(plan, restored, recovery, backup_recovery))
+            state = t.cast(FileState, plan.state.file)
+            state_recovery = _stage(
+                plan.state.parent.physical,
+                plan.state.path.name,
+                "recovery-state",
+                state.data,
+                state.mode,
+            )
+            owned.add(state_recovery)
+            staged.append(
+                StagedRevert(
+                    plan,
+                    restored,
+                    recovery,
+                    backup_recovery,
+                    state_recovery,
+                )
+            )
     except Exception as error:
         cleanup = _cleanup_owned(owned)
         detail = f"revert staging failed: {error}"
@@ -996,38 +1332,66 @@ def _stage_revert(
     return staged
 
 
+def _restore_removed_config(
+    operation: ConfigWrite | ConfigRemoval,
+    owned: set[pathlib.Path],
+) -> None:
+    if isinstance(operation, ConfigWrite):
+        _verify_config(operation.config, operation.committed)
+    else:
+        _verify_missing_config(operation.config)
+    _apply_replace(operation.recovery, operation.config.target)
+    owned.discard(operation.recovery)
+    _verify_config(operation.config, operation.config.file)
+
+
 def _rollback_use(
-    operations: list[ConfigWrite | BackupWrite],
+    operations: list[ConfigWrite | ConfigRemoval | BackupWrite | StateWrite],
     owned: set[pathlib.Path],
 ) -> tuple[list[str], set[pathlib.Path]]:
     errors: list[str] = []
     preserved: set[pathlib.Path] = set()
-    failed_configs: set[str] = set()
+    blocked: set[str] = set()
     for operation in reversed(operations):
-        if isinstance(operation, ConfigWrite):
+        if isinstance(operation, (ConfigWrite, ConfigRemoval)):
             cli = operation.config.layer.cli
             try:
-                _verify_config(operation.config, operation.committed)
-                _apply_replace(operation.recovery, operation.config.target)
-                owned.discard(operation.recovery)
-                _verify_restored_config(
-                    operation.config,
-                    data=operation.config.file.data,
-                    mode=operation.config.file.mode,
-                )
+                _restore_removed_config(operation, owned)
             except Exception as error:  # noqa: BLE001 - continue reverse rollback
-                failed_configs.add(cli)
+                blocked.add(cli)
                 if operation.recovery.exists():
                     preserved.add(operation.recovery)
                 errors.append(f"{cli} config: {error}")
             continue
 
+        if isinstance(operation, StateWrite):
+            cli = operation.cli
+            if cli in blocked:
+                preserved.update((operation.state.path, operation.backup.path))
+                continue
+            try:
+                _verify_artifact(operation.state, operation.committed)
+                if operation.state.file is None:
+                    _apply_unlink(operation.state.physical)
+                else:
+                    recovery = t.cast(pathlib.Path, operation.recovery)
+                    _apply_replace(recovery, operation.state.physical)
+                    owned.discard(recovery)
+                    _verify_restored_artifact(operation.state)
+            except Exception as error:  # noqa: BLE001 - continue reverse rollback
+                blocked.add(cli)
+                preserved.update((operation.state.path, operation.backup.path))
+                if operation.recovery is not None and operation.recovery.exists():
+                    preserved.add(operation.recovery)
+                errors.append(f"{cli} recovery state: {error}")
+            continue
+
         cli = operation.cli
-        if cli in failed_configs:
+        if cli in blocked:
             preserved.add(operation.backup.path)
             continue
         try:
-            _verify_backup(operation.backup, operation.committed)
+            _verify_artifact(operation.backup, operation.committed)
             _apply_unlink(operation.backup.physical)
         except Exception as error:  # noqa: BLE001 - continue reverse rollback
             preserved.add(operation.backup.path)
@@ -1036,14 +1400,20 @@ def _rollback_use(
 
 
 def _commit_use(staged: list[StagedUse], owned: set[pathlib.Path]) -> None:
-    operations: list[ConfigWrite | BackupWrite] = []
+    operations: list[ConfigWrite | ConfigRemoval | BackupWrite | StateWrite] = []
     committed_backups: dict[str, FileState] = {}
+    committed_states: dict[str, FileState] = {}
     try:
         for item in staged:
             _changed_config(item.plan.config, item.plan.config.file)
             _changed_backup(
                 item.plan.backup,
                 item.plan.backup.file,
+                item.plan.config.layer.cli,
+            )
+            _changed_state(
+                item.plan.state,
+                item.plan.state.file,
                 item.plan.config.layer.cli,
             )
 
@@ -1067,9 +1437,46 @@ def _commit_use(staged: list[StagedUse], owned: set[pathlib.Path]) -> None:
             _changed_config(plan.config, plan.config.file)
             expected_backup = committed_backups.get(cli, plan.backup.file)
             _changed_backup(plan.backup, expected_backup, cli)
+            _changed_state(plan.state, plan.state.file, cli)
+            committed, delayed = _apply_replace(item.state, plan.state.physical)
+            owned.discard(item.state)
+            operations.append(
+                StateWrite(
+                    plan.state,
+                    plan.backup,
+                    committed,
+                    item.state_recovery,
+                    cli,
+                )
+            )
+            committed_states[cli] = committed
+            if delayed is not None:
+                raise delayed
+
+        for item in staged:
+            plan = item.plan
+            cli = plan.config.layer.cli
+            _changed_config(plan.config, plan.config.file)
+            expected_backup = committed_backups.get(cli, plan.backup.file)
+            _changed_backup(plan.backup, expected_backup, cli)
+            _changed_state(plan.state, committed_states[cli], cli)
+            removed, delayed = _apply_replace(plan.config.target, item.recovery)
+            operations.append(ConfigRemoval(plan.config, item.recovery))
+            if removed != plan.config.file:
+                raise RuntimeError(f"{cli} config recovery identity changed")
+            if delayed is not None:
+                raise delayed
             committed, delayed = _apply_replace(item.output, plan.config.target)
             owned.discard(item.output)
-            operations.append(ConfigWrite(plan.config, committed, item.recovery))
+            operations[-1] = ConfigWrite(plan.config, committed, item.recovery)
+            expected_record = _record_for(
+                plan, committed, t.cast(FileState, expected_backup)
+            )
+            if (
+                _decode_record(plan.config.layer, committed_states[cli].data)
+                != expected_record
+            ):
+                raise RuntimeError(f"{cli} recovery state does not own the new config")
             if delayed is not None:
                 raise delayed
     except Exception as error:  # noqa: BLE001 - every commit failure rolls back
@@ -1083,12 +1490,30 @@ def _commit_use(staged: list[StagedUse], owned: set[pathlib.Path]) -> None:
 
 
 def _rollback_revert(
-    operations: list[ConfigWrite | BackupRemoval],
+    operations: list[ConfigWrite | ConfigRemoval | BackupRemoval | StateRemoval],
     owned: set[pathlib.Path],
 ) -> tuple[list[str], set[pathlib.Path]]:
     errors: list[str] = []
     preserved: set[pathlib.Path] = set()
     for operation in reversed(operations):
+        if isinstance(operation, StateRemoval):
+            cli = operation.cli
+            try:
+                _verify_directory(operation.state.parent)
+                if os.path.lexists(operation.state.path):
+                    raise RuntimeError(
+                        f"{operation.state.path} appeared before rollback"
+                    )
+                _apply_replace(operation.recovery, operation.state.physical)
+                owned.discard(operation.recovery)
+                _verify_restored_artifact(operation.state)
+            except Exception as error:  # noqa: BLE001 - continue reverse rollback
+                if operation.recovery.exists():
+                    preserved.add(operation.recovery)
+                preserved.add(operation.state.path)
+                errors.append(f"{cli} recovery state: {error}")
+            continue
+
         if isinstance(operation, BackupRemoval):
             cli = operation.cli
             try:
@@ -1099,7 +1524,7 @@ def _rollback_revert(
                     )
                 _apply_replace(operation.recovery, operation.backup.physical)
                 owned.discard(operation.recovery)
-                _verify_restored_backup(operation.backup)
+                _verify_restored_artifact(operation.backup)
             except Exception as error:  # noqa: BLE001 - continue reverse rollback
                 if operation.recovery.exists():
                     preserved.add(operation.recovery)
@@ -1108,14 +1533,7 @@ def _rollback_revert(
 
         cli = operation.config.layer.cli
         try:
-            _verify_config(operation.config, operation.committed)
-            _apply_replace(operation.recovery, operation.config.target)
-            owned.discard(operation.recovery)
-            _verify_restored_config(
-                operation.config,
-                data=operation.config.file.data,
-                mode=operation.config.file.mode,
-            )
+            _restore_removed_config(operation, owned)
         except Exception as error:  # noqa: BLE001 - continue reverse rollback
             if operation.recovery.exists():
                 preserved.add(operation.recovery)
@@ -1124,22 +1542,30 @@ def _rollback_revert(
 
 
 def _commit_revert(staged: list[StagedRevert], owned: set[pathlib.Path]) -> None:
-    operations: list[ConfigWrite | BackupRemoval] = []
+    operations: list[ConfigWrite | ConfigRemoval | BackupRemoval | StateRemoval] = []
     committed_configs: dict[str, FileState] = {}
     try:
         for item in staged:
             plan = item.plan
             _changed_config(plan.config, plan.config.file)
             _changed_backup(plan.backup, plan.backup.file, plan.config.layer.cli)
+            _changed_state(plan.state, plan.state.file, plan.config.layer.cli)
 
         for item in staged:
             plan = item.plan
             cli = plan.config.layer.cli
             _changed_config(plan.config, plan.config.file)
             _changed_backup(plan.backup, plan.backup.file, cli)
+            _changed_state(plan.state, plan.state.file, cli)
+            removed, delayed = _apply_replace(plan.config.target, item.recovery)
+            operations.append(ConfigRemoval(plan.config, item.recovery))
+            if removed != plan.config.file:
+                raise RuntimeError(f"{cli} config recovery identity changed")
+            if delayed is not None:
+                raise delayed
             committed, delayed = _apply_replace(item.restored, plan.config.target)
             owned.discard(item.restored)
-            operations.append(ConfigWrite(plan.config, committed, item.recovery))
+            operations[-1] = ConfigWrite(plan.config, committed, item.recovery)
             committed_configs[cli] = committed
             if delayed is not None:
                 raise delayed
@@ -1149,8 +1575,28 @@ def _commit_revert(staged: list[StagedRevert], owned: set[pathlib.Path]) -> None
             cli = plan.config.layer.cli
             _verify_config(plan.config, committed_configs[cli])
             _changed_backup(plan.backup, plan.backup.file, cli)
-            delayed = _apply_unlink(plan.backup.physical)
+            _changed_state(plan.state, plan.state.file, cli)
+            removed, delayed = _apply_replace(
+                plan.backup.physical, item.backup_recovery
+            )
             operations.append(BackupRemoval(plan.backup, item.backup_recovery, cli))
+            if removed != plan.backup.file:
+                raise RuntimeError(f"{cli} backup recovery identity changed")
+            if delayed is not None:
+                raise delayed
+
+        for item in staged:
+            plan = item.plan
+            cli = plan.config.layer.cli
+            _verify_config(plan.config, committed_configs[cli])
+            _verify_directory(plan.backup.parent)
+            if os.path.lexists(plan.backup.path):
+                raise RuntimeError(f"{cli} backup still exists after removal")
+            _changed_state(plan.state, plan.state.file, cli)
+            removed, delayed = _apply_replace(plan.state.physical, item.state_recovery)
+            operations.append(StateRemoval(plan.state, item.state_recovery, cli))
+            if removed != plan.state.file:
+                raise RuntimeError(f"{cli} recovery state identity changed")
             if delayed is not None:
                 raise delayed
     except Exception as error:  # noqa: BLE001 - every commit failure rolls back

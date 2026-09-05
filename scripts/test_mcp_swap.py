@@ -133,6 +133,7 @@ def test_each_client_swaps_and_restores_in_isolation(
     _assert_swapped(selected)
     assert stat.S_IMODE(selected.path.stat().st_mode) == 0o640
     assert swapper.backup_of(selected).read_bytes() == originals[cli]
+    assert _state_of(swapper, selected).is_file()
     for layer in swapper.LAYERS:
         if layer.cli != cli:
             assert layer.path.read_bytes() == originals[layer.cli]
@@ -142,6 +143,7 @@ def test_each_client_swaps_and_restores_in_isolation(
     assert selected.path.read_bytes() == originals[cli]
     assert stat.S_IMODE(selected.path.stat().st_mode) == 0o640
     assert not swapper.backup_of(selected).exists()
+    assert not _state_of(swapper, selected).exists()
 
 
 def test_all_eight_clients_commit_only_after_full_preflight(
@@ -156,12 +158,14 @@ def test_all_eight_clients_commit_only_after_full_preflight(
         _assert_swapped(layer)
         assert stat.S_IMODE(layer.path.stat().st_mode) == 0o640
         assert swapper.backup_of(layer).read_bytes() == originals[layer.cli]
+        assert _state_of(swapper, layer).is_file()
 
     assert swapper.main(["revert"]) == 0
     for layer in swapper.LAYERS:
         assert layer.path.read_bytes() == originals[layer.cli]
         assert stat.S_IMODE(layer.path.stat().st_mode) == 0o640
         assert not swapper.backup_of(layer).exists()
+        assert not _state_of(swapper, layer).exists()
 
 
 def test_failed_late_config_preflight_writes_nothing(
@@ -236,8 +240,35 @@ def test_use_commit_failure_rolls_back_every_client(
     configs = [layer.path for layer in swapper.LAYERS]
     assert [path for path in destinations if path in configs] == [
         *configs,
-        *reversed(configs[:-1]),
+        *reversed(configs),
     ]
+    _assert_no_stages(swapper)
+
+
+def test_state_publication_failure_rolls_back_every_client(
+    swapper: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later sidecar failure reverses earlier sidecars and backups."""
+    originals = _seed_configs(swapper)
+    states = [_state_of(swapper, layer) for layer in swapper.LAYERS]
+    destinations = _fail_first_replace_to(monkeypatch, states[-1])
+    real_unlink = os.unlink
+    removed: list[pathlib.Path] = []
+
+    def track_state_removal(path: object, *args: object, **kwargs: object) -> None:
+        target = pathlib.Path(path)
+        if target in states:
+            removed.append(target)
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", track_state_removal)
+
+    with pytest.raises(SystemExit, match="synthetic replace failure"):
+        swapper.main(_use_args())
+
+    _assert_original_state(swapper, originals)
+    assert [path for path in destinations if path in states] == states
+    assert removed == list(reversed(states[:-1]))
     _assert_no_stages(swapper)
 
 
@@ -260,6 +291,43 @@ def test_failed_repeat_use_preserves_existing_backups(
     _assert_no_stages(swapper)
 
 
+def test_repeat_use_refuses_an_unowned_config_edit(
+    swapper: types.ModuleType,
+) -> None:
+    """A retained backup never authorizes overwriting a human edit."""
+    _seed_configs(swapper)
+    layer = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    assert swapper.main(_use_args("--cli", layer.cli)) == 0
+    human = layer.path.read_bytes() + b"\n"
+    layer.path.write_bytes(human)
+
+    with pytest.raises(SystemExit, match="claude"):
+        swapper.main(_use_args("--cli", layer.cli, "--bin", "/opt/next/mcp"))
+
+    assert layer.path.read_bytes() == human
+    assert swapper.backup_of(layer).is_file()
+    assert _state_of(swapper, layer).is_file()
+
+
+def test_repeat_use_updates_owned_state_but_keeps_the_first_backup(
+    swapper: types.ModuleType,
+) -> None:
+    """An owned repeat swap advances its record without moving its baseline."""
+    originals = _seed_configs(swapper)
+    layer = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    assert swapper.main(_use_args("--cli", layer.cli)) == 0
+    backup = swapper.backup_of(layer)
+    first_state = _state_of(swapper, layer).read_bytes()
+
+    assert swapper.main(_use_args("--cli", layer.cli, "--bin", "/opt/next/mcp")) == 0
+
+    assert backup.read_bytes() == originals[layer.cli]
+    assert _state_of(swapper, layer).read_bytes() != first_state
+    assert _document(layer)["mcpServers"]["tmux"]["command"] == "/opt/next/mcp"
+    assert swapper.main(["revert", "--cli", layer.cli]) == 0
+    assert layer.path.read_bytes() == originals[layer.cli]
+
+
 def test_revert_commit_failure_restores_the_swapped_transaction(
     swapper: types.ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -279,9 +347,79 @@ def test_revert_commit_failure_restores_the_swapped_transaction(
     configs = [layer.path for layer in swapper.LAYERS]
     assert [path for path in destinations if path in configs] == [
         *configs,
-        *reversed(configs[:-1]),
+        *reversed(configs),
     ]
     _assert_no_stages(swapper)
+
+
+def test_state_removal_failure_restores_the_swapped_transaction(
+    swapper: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sidecar cleanup participates in reverse all-client rollback."""
+    _seed_configs(swapper)
+    assert swapper.main(_use_args()) == 0
+    before = {layer.cli: _owned_layer_state(swapper, layer) for layer in swapper.LAYERS}
+    pi = next(layer for layer in swapper.LAYERS if layer.cli == "pi")
+    blocked = _state_of(swapper, pi)
+    real_replace = swapper._apply_replace
+
+    def fail_state_removal(
+        source: pathlib.Path, destination: pathlib.Path
+    ) -> tuple[object, object]:
+        if pathlib.Path(source) == blocked:
+            raise OSError("synthetic state removal failure")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(swapper, "_apply_replace", fail_state_removal)
+    with pytest.raises(SystemExit, match="synthetic state removal failure"):
+        swapper.main(["revert"])
+
+    assert {
+        layer.cli: _owned_layer_state(swapper, layer) for layer in swapper.LAYERS
+    } == before
+    assert swapper.main(["revert", "--dry-run"]) == 0
+    _assert_no_stages(swapper)
+
+
+def test_revert_refuses_a_human_edit_and_retains_recovery(
+    swapper: types.ModuleType,
+) -> None:
+    """Revert owns only the exact config state written by use."""
+    originals = _seed_configs(swapper)
+    layer = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    assert swapper.main(_use_args("--cli", layer.cli)) == 0
+    human = layer.path.read_bytes() + b"\n"
+    layer.path.write_bytes(human)
+
+    with pytest.raises(SystemExit, match="claude"):
+        swapper.main(["revert", "--cli", layer.cli])
+
+    assert layer.path.read_bytes() == human
+    assert swapper.backup_of(layer).read_bytes() == originals[layer.cli]
+    assert _state_of(swapper, layer).is_file()
+
+
+def test_revert_refuses_a_same_path_inode_replacement(
+    swapper: types.ModuleType,
+) -> None:
+    """Identical bytes at a new physical config identity are not owned."""
+    _seed_configs(swapper)
+    layer = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    assert swapper.main(_use_args("--cli", layer.cli)) == 0
+    swapped = layer.path.read_bytes()
+    prior_inode = layer.path.stat().st_ino
+    replacement = layer.path.with_name("replacement.json")
+    replacement.write_bytes(swapped)
+    replacement.chmod(0o640)
+    os.replace(replacement, layer.path)
+    assert layer.path.stat().st_ino != prior_inode
+
+    with pytest.raises(SystemExit, match="claude"):
+        swapper.main(["revert", "--cli", layer.cli])
+
+    assert layer.path.read_bytes() == swapped
+    assert swapper.backup_of(layer).is_file()
+    assert _state_of(swapper, layer).is_file()
 
 
 def test_symlink_config_survives_use_and_revert(
@@ -312,6 +450,134 @@ def test_symlink_config_survives_use_and_revert(
     assert not any(".mcp-swap-" in path.name for path in tmp_path.rglob("*"))
 
 
+def test_revert_refuses_a_config_symlink_retarget(
+    swapper: types.ModuleType, tmp_path: pathlib.Path
+) -> None:
+    """A link moved after use cannot redirect restoration into another file."""
+    originals = _seed_configs(swapper)
+    layer = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    first = tmp_path / "first.json"
+    second = tmp_path / "second.json"
+    first.write_bytes(originals[layer.cli])
+    first.chmod(0o640)
+    layer.path.unlink()
+    layer.path.symlink_to(first)
+    assert swapper.main(_use_args("--cli", layer.cli)) == 0
+    swapped = first.read_bytes()
+    second.write_bytes(swapped)
+    second.chmod(0o640)
+    layer.path.unlink()
+    layer.path.symlink_to(second)
+
+    with pytest.raises(SystemExit, match="claude"):
+        swapper.main(["revert", "--cli", layer.cli])
+
+    assert second.read_bytes() == swapped
+    assert first.read_bytes() == swapped
+    assert swapper.backup_of(layer).is_file()
+    assert _state_of(swapper, layer).is_file()
+
+
+@pytest.mark.parametrize("artifact", ["backup", "state"])
+def test_revert_refuses_tampered_recovery_artifacts(
+    swapper: types.ModuleType, artifact: str
+) -> None:
+    """Neither half of the recovery unit may change before restore."""
+    _seed_configs(swapper)
+    layer = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    assert swapper.main(_use_args("--cli", layer.cli)) == 0
+    swapped = layer.path.read_bytes()
+    selected = (
+        swapper.backup_of(layer) if artifact == "backup" else _state_of(swapper, layer)
+    )
+    if artifact == "backup":
+        tampered = b"tampered recovery artifact\n"
+    else:
+        document = json.loads(selected.read_text(encoding="utf-8"))
+        document["server"]["command"] = "/tampered/mcp"
+        tampered = (
+            json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode()
+    selected.write_bytes(tampered)
+
+    with pytest.raises(SystemExit, match="claude"):
+        swapper.main(["revert", "--cli", layer.cli])
+
+    assert layer.path.read_bytes() == swapped
+    assert selected.read_bytes() == tampered
+    assert swapper.backup_of(layer).exists()
+    assert _state_of(swapper, layer).exists()
+
+
+def test_revert_refuses_a_replaced_backup_inode(
+    swapper: types.ModuleType,
+) -> None:
+    """Byte-identical backup replacement still loses recovery ownership."""
+    _seed_configs(swapper)
+    layer = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    assert swapper.main(_use_args("--cli", layer.cli)) == 0
+    swapped = layer.path.read_bytes()
+    backup = swapper.backup_of(layer)
+    replacement = backup.with_name("replacement.backup")
+    replacement.write_bytes(backup.read_bytes())
+    replacement.chmod(stat.S_IMODE(backup.stat().st_mode))
+    os.replace(replacement, backup)
+
+    with pytest.raises(SystemExit, match="claude"):
+        swapper.main(["revert", "--cli", layer.cli])
+
+    assert layer.path.read_bytes() == swapped
+    assert backup.is_file() and _state_of(swapper, layer).is_file()
+
+
+@pytest.mark.parametrize("dry_run", [True, False], ids=["dry-run", "commit"])
+def test_all_selected_revert_preflights_every_recovery_record(
+    swapper: types.ModuleType, dry_run: bool
+) -> None:
+    """A bad final record blocks every selected restore, including dry-run."""
+    _seed_configs(swapper)
+    assert swapper.main(_use_args()) == 0
+    pi = next(layer for layer in swapper.LAYERS if layer.cli == "pi")
+    _state_of(swapper, pi).write_bytes(b"{ malformed\n")
+    before = {layer.cli: _owned_layer_state(swapper, layer) for layer in swapper.LAYERS}
+    command = ["revert", *(["--dry-run"] if dry_run else [])]
+
+    with pytest.raises(SystemExit, match="pi"):
+        swapper.main(command)
+
+    assert {
+        layer.cli: _owned_layer_state(swapper, layer) for layer in swapper.LAYERS
+    } == before
+    _assert_no_stages(swapper)
+
+
+def test_recovery_record_is_bounded_private_and_route_specific(
+    swapper: types.ModuleType,
+) -> None:
+    """The durable ownership record identifies the exact requested route."""
+    _seed_configs(swapper)
+    layer = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    args = _use_args("--cli", layer.cli, "--name", "private-tmux")
+    assert swapper.main(args) == 0
+    state = _state_of(swapper, layer)
+    document = json.loads(state.read_text(encoding="utf-8"))
+
+    assert stat.S_ISREG(state.lstat().st_mode)
+    assert stat.S_IMODE(state.stat().st_mode) == 0o600
+    assert state.stat().st_size <= 16 * 1024
+    assert document["version"] == 1
+    assert document["cli"] == layer.cli
+    assert document["server"] == {
+        "name": "private-tmux",
+        "command": LAUNCHER,
+        "arguments": ["--socket", "/tmp/libtmux-java-dev/test/s"],
+    }
+
+    with pytest.raises(SystemExit, match="claude"):
+        swapper.main(["revert", "--cli", layer.cli])
+    assert swapper.main(["revert", "--cli", layer.cli, "--name", "private-tmux"]) == 0
+
+
 def test_duplicate_physical_config_targets_are_rejected(
     swapper: types.ModuleType,
 ) -> None:
@@ -328,6 +594,26 @@ def test_duplicate_physical_config_targets_are_rejected(
     assert claude.path.read_bytes() == originals[claude.cli]
     assert cursor.path.is_symlink()
     assert all(not swapper.backup_of(layer).exists() for layer in swapper.LAYERS)
+
+
+def test_duplicate_recovery_destinations_are_rejected(
+    swapper: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sidecar cannot share another selected client's physical destination."""
+    originals = _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    cursor = next(layer for layer in swapper.LAYERS if layer.cli == "cursor")
+    real_state_of = swapper.state_of
+    shared = real_state_of(claude)
+
+    def overlapping_state(layer: object) -> pathlib.Path:
+        return shared if layer.cli == cursor.cli else real_state_of(layer)
+
+    monkeypatch.setattr(swapper, "state_of", overlapping_state)
+    with pytest.raises(SystemExit, match="duplicate transaction destination"):
+        swapper.main(_use_args())
+
+    _assert_original_state(swapper, originals)
 
 
 def test_symlink_transition_after_planning_writes_nothing(
@@ -422,8 +708,9 @@ def test_existing_backup_mode_change_invalidates_the_plan(
     for layer in swapper.LAYERS:
         current = _layer_state(swapper, layer)
         if layer.cli == pi.cli:
-            assert current[:-1] == before[layer.cli][:-1]
-            assert current[-1] == 0o600
+            expected = list(before[layer.cli])
+            expected[6] = 0o600
+            assert current == tuple(expected)
         else:
             assert current == before[layer.cli]
     _assert_no_stages(swapper)
@@ -515,23 +802,18 @@ def test_failed_backup_rollback_preserves_its_recovery_copy(
     claude_backup = swapper.backup_of(claude)
     codex_backup = swapper.backup_of(codex)
     real_replace = os.replace
-    real_unlink = os.unlink
     rollback_started = False
 
     def fail_backup_restore(src: object, dst: object) -> None:
+        nonlocal rollback_started
+        if pathlib.Path(src) == codex_backup:
+            rollback_started = True
+            raise OSError("synthetic backup removal failure")
         if rollback_started and pathlib.Path(dst) == claude_backup:
             raise OSError("synthetic backup rollback failure")
         real_replace(src, dst)
 
-    def fail_later_removal(path: object, *args: object, **kwargs: object) -> None:
-        nonlocal rollback_started
-        if pathlib.Path(path) == codex_backup:
-            rollback_started = True
-            raise OSError("synthetic backup removal failure")
-        real_unlink(path, *args, **kwargs)
-
     monkeypatch.setattr(os, "replace", fail_backup_restore)
-    monkeypatch.setattr(os, "unlink", fail_later_removal)
     with pytest.raises(SystemExit, match="synthetic backup rollback failure"):
         swapper.main(["revert"])
 
@@ -657,11 +939,13 @@ def _assert_original_state(
             assert backup.read_bytes() == expected_backups[layer.cli]
         else:
             assert not backup.exists()
+            assert not _state_of(swapper, layer).exists()
 
 
 def _layer_state(swapper: types.ModuleType, layer: object) -> tuple[object, ...]:
     link = os.readlink(layer.path) if layer.path.is_symlink() else None
     backup = swapper.backup_of(layer)
+    state = _state_of(swapper, layer)
     return (
         layer.path.is_symlink(),
         link,
@@ -670,12 +954,24 @@ def _layer_state(swapper: types.ModuleType, layer: object) -> tuple[object, ...]
         backup.is_symlink(),
         backup.read_bytes() if backup.is_file() else None,
         stat.S_IMODE(backup.stat().st_mode) if backup.is_file() else None,
+        state.is_symlink(),
+        state.read_bytes() if state.is_file() else None,
+        stat.S_IMODE(state.stat().st_mode) if state.is_file() else None,
     )
+
+
+def _state_of(swapper: types.ModuleType, layer: object) -> pathlib.Path:
+    backup = swapper.backup_of(layer)
+    return backup.with_name(backup.name + ".state")
+
+
+def _owned_layer_state(swapper: types.ModuleType, layer: object) -> tuple[object, ...]:
+    return _layer_state(swapper, layer)
 
 
 def _assert_no_stages(swapper: types.ModuleType) -> None:
     home = next(layer for layer in swapper.LAYERS if layer.cli == "claude").path.parent
-    roles = re.compile(r"\.mcp-swap-(?:new|output|recovery|restore)-")
+    roles = re.compile(r"\.mcp-swap-(?:new|output|recovery|restore|state)-")
     assert [path for path in home.rglob("*") if roles.search(path.name)] == []
 
 
