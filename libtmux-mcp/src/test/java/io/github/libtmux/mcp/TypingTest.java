@@ -22,6 +22,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
@@ -362,12 +363,14 @@ final class TypingTest {
         assumeTrue(server.version().atLeast(SAFE_PASTE_CLEANUP));
         String pane = server.panes().get(0).id().value();
         try (ProcessTransport processes = new ProcessTransport()) {
+            AtomicBoolean disconnected = new AtomicBoolean();
             AtomicReference<Server> pasting = new AtomicReference<>();
             TmuxTransport disconnecting = new TmuxTransport() {
                 @Override
                 public CommandResult execute(CommandRequest request) {
                     CommandResult result = processes.execute(request);
-                    if (String.join(" ", request.commands().get(0)).contains("set-buffer")) {
+                    if (String.join(" ", request.commands().get(0)).contains("load-buffer")) {
+                        disconnected.set(true);
                         pasting.get().close();
                     }
                     return result;
@@ -383,6 +386,7 @@ final class TypingTest {
             } catch (RuntimeException expected) {
                 // The disconnect is what this arranges; surviving it is not what is being asserted.
             }
+            assertTrue(disconnected.get(), "the disconnect hook did not observe buffer setup");
         }
 
         assertNoOwnedBuffers(server);
