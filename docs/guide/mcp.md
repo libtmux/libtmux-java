@@ -27,8 +27,8 @@ loop as a polling cycle, where it costs a call per look and has no ceiling at al
 
 Four waits, cheapest first.
 
-**You wrote the command: `run_shell_command`.** It sends the command, waits for it, and
-returns the output with an exit status in one call.
+**You wrote the command: `run_shell_command`.** It sends the command, waits for
+it, and returns the output with an exit status in one call.
 
 **You wrote it but want it composed yourself: `wait_for_channel`.** Append
 `; tmux wait-for -S mychannel` to whatever you send, then block on the channel.
@@ -213,8 +213,8 @@ teardown unless it is requested explicitly.
 
 The selection filters the catalog; it does not confine effects. `execute`
 includes authored shell commands, key input, and pasted text, so it can run
-programs or delete data in a pane. Use a separate OS account, socket permissions,
-or a container when effects must be contained.
+programs or delete data in a pane. Use a separate OS account, socket
+permissions, or a container when effects must be contained.
 
 A hidden tool is never listed and is not callable. Every visible tool also
 publishes process reach, tmux effects, output classes, one
@@ -264,6 +264,7 @@ recovery: `no pane %9 on this server; call list_panes for the 3 that exist`.
 ## Further reading
 
 - [`libtmux-mcp` README](../../libtmux-mcp/README.md) — running it, and the tool list
-- [Filtering](filtering.md) — the expression model Java applications can use outside MCP
+- [Filtering](filtering.md) — the expression model Java applications can use
+  outside MCP
 - [Watching output as it happens](streaming.md) — the control client directly
 - [Control-mode subscriptions](../spikes/23-control-subscriptions.md) — what was measured
