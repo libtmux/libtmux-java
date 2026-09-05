@@ -66,6 +66,12 @@ you want.
 The retired `--safety` and `--watch` swapper arguments are rejected; the
 [module README](../libtmux-mcp/README.md#run-it) maps their replacements.
 
+The default covers Claude, Codex, Cursor, Gemini, Grok, `agy`, OpenCode, and
+Pi. Repeat `--cli` to limit a command; `antigravity` is accepted as an alias
+for the canonical `agy` name. OpenCode uses its global `opencode.jsonc` file.
+Pi uses the `pi-mcp-adapter` config because Pi has no built-in MCP client;
+`detect` and `doctor` report when that adapter is absent.
+
 Put them back:
 
 ```console
@@ -74,8 +80,9 @@ $ uv run scripts/mcp_swap.py revert
 
 It rewrites **global** configs only, touches only the one server entry named by
 `--name` (default `tmux`), and keeps everything else in the file — including
-comments in TOML. The backup is taken once, so swapping something already swapped
-still reverts to the config that was there before any of it started.
+comments and trailing commas in JSONC, and comments in TOML. The backup is taken
+once, so swapping something already swapped still reverts to the config that was
+there before any of it started.
 
 To try it without changing anything at all, most CLIs take a config per
 invocation instead — `claude --mcp-config <file> --strict-mcp-config`, or
