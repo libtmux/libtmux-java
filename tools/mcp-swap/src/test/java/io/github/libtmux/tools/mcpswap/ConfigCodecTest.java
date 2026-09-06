@@ -3,6 +3,7 @@ package io.github.libtmux.tools.mcpswap;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonFactory;
@@ -246,9 +247,37 @@ final class ConfigCodecTest {
                         .orElseThrow());
     }
 
+    @Test
+    void rejectsMalformedUtf8InsteadOfRewritingReplacementCharacters() {
+        var clients = List.of(
+                client("claude", ConfigFormat.JSON, false),
+                client("opencode", ConfigFormat.JSONC, true),
+                client("codex", ConfigFormat.TOML, false));
+        var prefixes = List.of("{\"keep\":\"", "{// keep ", "# keep ");
+        var suffixes = List.of("\"}\n", "\n}\n", "\nvalue = 1\n");
+
+        for (int index = 0; index < clients.size(); index++) {
+            var client = clients.get(index);
+            var malformed = malformedUtf8(prefixes.get(index), suffixes.get(index));
+            assertThrows(IllegalArgumentException.class, () -> ConfigCodec.update(client, malformed, "tmux", SERVER));
+            assertThrows(IllegalArgumentException.class, () -> ConfigCodec.read(client, malformed, "tmux"));
+        }
+    }
+
     private static Client client(String name, ConfigFormat format, boolean openCode) {
         var table = openCode ? "mcp" : format == ConfigFormat.TOML ? "mcp_servers" : "mcpServers";
         return new Client(name, Path.of("/test/config"), table, format, openCode);
+    }
+
+    private static byte[] malformedUtf8(String prefix, String suffix) {
+        var before = prefix.getBytes(StandardCharsets.UTF_8);
+        var after = suffix.getBytes(StandardCharsets.UTF_8);
+        var result = new byte[before.length + 2 + after.length];
+        System.arraycopy(before, 0, result, 0, before.length);
+        result[before.length] = (byte) 0xc3;
+        result[before.length + 1] = 0x28;
+        System.arraycopy(after, 0, result, before.length + 2, after.length);
+        return result;
     }
 
     private static void assertStandardEntry(JsonNode entry) {

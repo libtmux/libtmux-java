@@ -8,6 +8,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -42,7 +45,7 @@ final class ConfigCodec {
             Client client, byte[] original, String serverName, ServerSpec server, boolean comments) {
         try {
             var mapper = comments ? JSONC : JSON;
-            var text = new String(original, StandardCharsets.UTF_8);
+            var text = decodeUtf8(original, client.name() + " config");
             JsonNode parsed = text.isBlank() ? mapper.createObjectNode() : mapper.readTree(text);
             if (!(parsed instanceof ObjectNode root)) {
                 throw new IllegalArgumentException(client.name() + " config root is not an object");
@@ -118,7 +121,7 @@ final class ConfigCodec {
 
     private static Optional<ServerSpec> readJson(Client client, byte[] raw, String serverName, ObjectMapper mapper) {
         try {
-            var text = new String(raw, StandardCharsets.UTF_8);
+            var text = decodeUtf8(raw, client.name() + " config");
             JsonNode parsed = text.isBlank() ? mapper.createObjectNode() : mapper.readTree(text);
             if (!(parsed instanceof ObjectNode root)) {
                 throw new IllegalArgumentException(client.name() + " config root is not an object");
@@ -174,5 +177,18 @@ final class ConfigCodec {
             throw new IllegalArgumentException(client.name() + " server value is not a string");
         }
         return node.textValue();
+    }
+
+    static String decodeUtf8(byte[] raw, String subject) {
+        try {
+            return StandardCharsets.UTF_8
+                    .newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(raw))
+                    .toString();
+        } catch (CharacterCodingException error) {
+            throw new IllegalArgumentException(subject + " is not valid UTF-8", error);
+        }
     }
 }

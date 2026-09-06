@@ -18,7 +18,7 @@ final class TomlEditor {
     private TomlEditor() {}
 
     static byte[] update(byte[] original, String tableName, String serverName, ServerSpec server) {
-        var text = new String(original, StandardCharsets.UTF_8);
+        var text = ConfigCodec.decodeUtf8(original, "TOML config");
         var existing = read(original, tableName, serverName)
                 .map(ServerSpec::environment)
                 .orElseGet(Map::of);
@@ -64,7 +64,7 @@ final class TomlEditor {
     }
 
     static Optional<ServerSpec> read(byte[] raw, String tableName, String serverName) {
-        var result = requireValid(new String(raw, StandardCharsets.UTF_8));
+        var result = requireValid(ConfigCodec.decodeUtf8(raw, "TOML config"));
         var table = result.getTable(tableName);
         if (table == null) {
             return Optional.empty();
