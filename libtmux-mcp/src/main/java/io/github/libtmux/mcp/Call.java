@@ -41,6 +41,14 @@ record Call(Connection connection, Map<String, Object> arguments, Progress progr
         return maybe(name).orElseThrow(() -> new IllegalArgumentException("missing required argument '" + name + "'"));
     }
 
+    String stringIncludingEmpty(String name) {
+        Object value = arguments.get(name);
+        if (value == null) {
+            throw new IllegalArgumentException("missing required argument '" + name + "'");
+        }
+        return value.toString();
+    }
+
     Optional<String> maybe(String name) {
         Object value = arguments.get(name);
         if (value == null || (value instanceof String text && text.isEmpty())) {

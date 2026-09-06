@@ -74,12 +74,17 @@ final class Typing {
      */
     static Pasted pasteText(Call call) {
         Pane pane = Targets.pane(call.server(), call.string("pane_id"));
-        String text = call.string("text");
+        String text = call.stringIncludingEmpty("text");
         boolean enter = call.flag("enter", false);
         PaneInputCohort.resolve(pane, call.caller()).requirePasteTarget("paste_text");
+        if (text.isEmpty() && !enter) {
+            return new Pasted(pane.id().value(), 0, 0, "Empty text without Enter; nothing was sent.");
+        }
         // tmux turns the line feeds in a buffer into carriage returns as it pastes, so a trailing
         // newline is what submits the text — there is no flag that means "and Enter".
-        pane.paste(enter ? text + "\n" : text);
+        pane.paste(
+                enter ? text + "\n" : text,
+                () -> PaneInputCohort.resolve(pane, call.caller()).requirePasteTarget("paste_text"));
         return new Pasted(
                 pane.id().value(),
                 text.length(),

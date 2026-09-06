@@ -590,6 +590,40 @@ public final class Pane {
         }
     }
 
+    /**
+     * As {@link #paste(String)}, after a caller rechecks state once its private buffer is ready.
+     *
+     * <p>If the check throws, the text is not pasted and the private buffer is removed.
+     *
+     * @param beforePaste runs after staging and immediately before the paste dispatch
+     */
+    public void paste(String text, Runnable beforePaste) {
+        Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(beforePaste, "beforePaste");
+        if (text.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("pasted text cannot contain NUL");
+        }
+        TmuxVersion running = server.version(snapshot);
+        if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
+            throw new UnsupportedTmuxVersion("pasting text", Buffers.EXACT_NAMED_DELETE, running);
+        }
+        String buffer = "libtmux-paste-" + UUID.randomUUID();
+        try {
+            server.runTogether(snapshot, text, List.of(List.of("load-buffer", "-b", buffer, "-")));
+            beforePaste.run();
+            server.run(
+                    snapshot,
+                    List.of("paste-buffer", "-d", "-b", buffer, "-t", state.id().value()));
+        } catch (RuntimeException failure) {
+            try {
+                server.buffers().delete(buffer);
+            } catch (RuntimeException ignored) {
+                // Already gone, or the server is; neither changes what the caller is told.
+            }
+            throw failure;
+        }
+    }
+
     /** Discards this pane's scrollback. */
     public void clearHistory() {
         server.run(snapshot, List.of("clear-history", "-t", state.id().value()));

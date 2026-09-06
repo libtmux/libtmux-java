@@ -16,6 +16,7 @@ import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -23,7 +24,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -298,11 +298,26 @@ final class TypingTest {
         assumeTrue(server.version().atLeast(SAFE_PASTE_CLEANUP));
         String pane = server.panes().get(0).id().value();
         server.buffers().set("libtmux-paste", "user-owned");
+        List<CommandRequest> requests = new ArrayList<>();
 
-        Typing.Pasted pasted = Typing.pasteText(TestCalls.on(server, "pane_id", pane, "text", "Enter [C-c] done"));
+        Typing.Pasted pasted;
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport recording = borrowing(request -> {
+                requests.add(request);
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), recording)) {
+                pasted = Typing.pasteText(TestCalls.on(measured, "pane_id", pane, "text", "Enter [C-c] done"));
+            }
+        }
 
         assertEquals(16, pasted.characters());
         assertTrue(String.valueOf(pasted.note()).contains("pass 'enter'"), String.valueOf(pasted.note()));
+        assertEquals(
+                1,
+                requests.stream()
+                        .filter(request -> hasCommand(request, "paste-buffer"))
+                        .count());
         assertEquals("user-owned", server.buffers().show("libtmux-paste"));
         assertNoOwnedBuffers(server);
     }
@@ -343,6 +358,73 @@ final class TypingTest {
     }
 
     @Test
+    void emptyPasteGuardsBeforeItsBufferFreeNoOp(Server server) {
+        var pane = server.panes().getFirst();
+        List<CommandRequest> requests = new ArrayList<>();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport recording = borrowing(request -> {
+                requests.add(request);
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), recording)) {
+                Typing.Pasted empty = Typing.pasteText(
+                        TestCalls.on(measured, "pane_id", pane.id().value(), "text", ""));
+                assertEquals(0, empty.characters());
+                assertTrue(String.valueOf(empty.note()).contains("nothing was sent"));
+                pane.copyMode();
+                try {
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> Typing.pasteText(
+                                    TestCalls.on(measured, "pane_id", pane.id().value(), "text", "")));
+                } finally {
+                    server.cmd("send-keys", "-t", pane.id().value(), "-X", "cancel");
+                }
+            }
+        }
+
+        assertEquals(
+                2, requests.stream().filter(TypingTest::isPaneInputSnapshot).count());
+        assertFalse(requests.stream().anyMatch(request -> hasCommand(request, "load-buffer")));
+        assertFalse(requests.stream().anyMatch(request -> hasCommand(request, "paste-buffer")));
+        assertNoOwnedBuffers(server);
+    }
+
+    @Test
+    void pasteRechecksTargetAfterStaging(Server server) {
+        assumeTrue(server.version().atLeast(SAFE_PASTE_CLEANUP));
+        var pane = server.panes().getFirst();
+        AtomicBoolean staged = new AtomicBoolean();
+        AtomicBoolean pasted = new AtomicBoolean();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport changing = borrowing(request -> {
+                CommandResult result = processes.execute(request);
+                if (hasCommand(request, "load-buffer") && staged.compareAndSet(false, true)) {
+                    pane.copyMode();
+                }
+                if (hasCommand(request, "paste-buffer")) {
+                    pasted.set(true);
+                }
+                return result;
+            });
+            try (Server measured = Server.using(server.config(), changing)) {
+                try {
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> Typing.pasteText(
+                                    TestCalls.on(measured, "pane_id", pane.id().value(), "text", "must-not-dispatch")));
+                } finally {
+                    server.cmd("send-keys", "-t", pane.id().value(), "-X", "cancel");
+                }
+            }
+        }
+
+        assertTrue(staged.get(), "the transition seam did not observe staging");
+        assertFalse(pasted.get(), "paste dispatched after the target became modal");
+        assertNoOwnedBuffers(server);
+    }
+
+    @Test
     void pasteRefusesUnsafeCleanupBeforeCreatingABuffer(Server server) {
         assumeFalse(server.version().atLeast(SAFE_PASTE_CLEANUP));
         String pane = server.panes().get(0).id().value();
@@ -357,42 +439,28 @@ final class TypingTest {
         assertNoOwnedBuffers(server);
     }
 
-    /** A client that goes away mid-paste is the case that decides whether the text can outlive it. */
     @Test
-    void aDisconnectDuringAPasteLeavesNothingOnTheServer(Server server) {
+    void aDispatchFailureDuringPasteLeavesNothingOnTheServer(Server server) {
         assumeTrue(server.version().atLeast(SAFE_PASTE_CLEANUP));
         String pane = server.panes().get(0).id().value();
         try (ProcessTransport processes = new ProcessTransport()) {
-            AtomicBoolean disconnected = new AtomicBoolean();
-            AtomicReference<Server> pasting = new AtomicReference<>();
-            TmuxTransport disconnecting = new TmuxTransport() {
-                @Override
-                public CommandResult execute(CommandRequest request) {
-                    CommandResult result = processes.execute(request);
-                    if (String.join(" ", request.commands().get(0)).contains("load-buffer")) {
-                        disconnected.set(true);
-                        pasting.get().close();
-                    }
-                    return result;
+            AtomicBoolean failed = new AtomicBoolean();
+            TmuxTransport refusing = borrowing(request -> {
+                if (hasCommand(request, "paste-buffer") && failed.compareAndSet(false, true)) {
+                    throw new IllegalStateException("synthetic paste failure");
                 }
-
-                @Override
-                public void close() {}
-            };
-            Server cut = Server.using(server.config(), disconnecting);
-            pasting.set(cut);
-            try {
-                Typing.pasteText(TestCalls.on(cut, "pane_id", pane, "text", "secret-text"));
-            } catch (RuntimeException expected) {
-                // The disconnect is what this arranges; surviving it is not what is being asserted.
+                return processes.execute(request);
+            });
+            try (Server cut = Server.using(server.config(), refusing)) {
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> Typing.pasteText(TestCalls.on(cut, "pane_id", pane, "text", "secret-text")));
             }
-            assertTrue(disconnected.get(), "the disconnect hook did not observe buffer setup");
+            assertTrue(failed.get(), "the failure seam did not observe paste dispatch");
         }
 
         assertNoOwnedBuffers(server);
-        assertTrue(
-                String.join("\n", server.cmd("capture-pane", "-p", "-t", pane).stdout())
-                        .contains("secret-text"));
+        assertFalse(captureOf(server, pane).contains("secret-text"));
     }
 
     @Test
@@ -472,6 +540,30 @@ final class TypingTest {
     private static void assertNoOwnedBuffers(Server server) {
         assertTrue(server.buffers().list().stream()
                 .noneMatch(buffer -> buffer.name().startsWith("libtmux-paste-")));
+    }
+
+    private static TmuxTransport borrowing(java.util.function.Function<CommandRequest, CommandResult> execute) {
+        return new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return execute.apply(request);
+            }
+
+            @Override
+            public void close() {}
+        };
+    }
+
+    private static boolean hasCommand(CommandRequest request, String command) {
+        return request.commands().stream()
+                .anyMatch(argv ->
+                        argv.getFirst().equals(command) || argv.stream().anyMatch(part -> part.contains(command)));
+    }
+
+    private static boolean isPaneInputSnapshot(CommandRequest request) {
+        return request.commands().stream()
+                .anyMatch(argv -> argv.getFirst().equals("list-panes")
+                        && argv.stream().anyMatch(part -> part.contains("pane_in_mode")));
     }
 
     private static void await(CountDownLatch latch) {
