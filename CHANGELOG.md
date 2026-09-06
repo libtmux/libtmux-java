@@ -12,6 +12,8 @@ production.
 
 ## Unreleased
 
+## 0.0.1-alpha.9 — 2026-09-06
+
 ### Added
 
 - **`tools/mcp-swap` configures all eight supported agent clients.** It replaces
@@ -27,15 +29,6 @@ production.
 - **`NamedServerFixture` safely owns explicitly named test servers.** It binds
   teardown to the reported process, socket path, and inode, then fails closed if
   any of that identity changes before cleanup.
-- **`Pane.findWindow` searches by name, title, or content, with
-  case-insensitive and regular-expression matching.** Build a `FindSpec` or
-  configure one inline. (#6)
-- **`Batch.length()` reports the exact UTF-8 byte length of the encoded
-  command.** Use it to dispatch before tmux's command-size limit is reached.
-  (#6)
-- **`Pane.paste(String)` sends literal text without leaving a server buffer.**
-  Text no longer shares tmux's command-size limit; this API requires tmux 3.4.
-  (#6)
 
 ### Changed
 
@@ -65,6 +58,63 @@ production.
 - **`capture_since` and `call_read_tools_batch` now advertise observe-only tmux
   effects.** Cursor capture and every batch-eligible inspect operation leave
   tmux state unchanged.
+
+### Fixed
+
+- **The MCP server no longer holds its send lock across a completion callback.**
+  The pinned SDK resolves a stdio send on the subscribing thread, so a queued
+  send ran one stack frame deeper than the last, and a caller's callback blocked
+  every other thread's send. Sends are now promoted iteratively, with the
+  transport lock released before the delegate writes and before a caller runs.
+
+- **`Pane.sendKeys` preserves option-shaped input.** It ends tmux option parsing
+  before caller keys, so values such as `-X`, `-R`, and `-N` reach pane programs
+  through the core API and MCP single or batch routes.
+- **`Pane.breakOut` preserves literal `#` in requested window names.** The
+  `break-pane -n` path receives the raw name; only the tmux 3.7 rename fallback
+  applies tmux format literalization.
+- **MCP capability rows disclose both output risk dimensions.** Pane text,
+  environment and configured-command values, and names, titles, paths, or
+  current commands now advertise both secret and untrusted-content risk;
+  strictly structural results remain false for both.
+- **MCP pane input now refuses effective recipients in a human-owned mode.**
+  `send_keys` and each `send_keys_batch` operation resolve pane-level
+  `synchronize-panes` overrides before dispatch; `paste_text` remains
+  target-only, dead configured recipients fail closed, and
+  `run_shell_command` checks a singular cohort before setup and again before
+  input because its completion, output, and status are singular.
+- **`run_shell_command` no longer relies on mutable pane-shell framing state.**
+  Completion markers and signalling run in an isolated outer subshell through
+  an absolute selected tmux executable and the server's resolved `-S` socket,
+  so ordinary output-command aliases/functions, pane `PATH`/socket variables,
+  inherited `errexit`, and a readonly nonce name cannot lose completion or
+  close the pane; the frame also leaves no status variable behind. This assumes
+  the parent shell has not replaced the exact client word or
+  `trap`/`eval`/`exit` with functions, and marker commands honor trusted server
+  hooks.
+
+### Removed
+
+- **MCP prompts, completions, watches, dynamic resources, per-call server
+  discovery, and workspace tools are removed.** Use the fixed tool surface and
+  its static `tmux://capabilities` resource.
+
+## 0.0.1-alpha.8 — 2026-08-30
+
+### Added
+
+- **`Pane.findWindow` searches by name, title, or content, with
+  case-insensitive and regular-expression matching.** Build a `FindSpec` or
+  configure one inline. (#6)
+- **`Batch.length()` reports the exact UTF-8 byte length of the encoded
+  command.** Use it to dispatch before tmux's command-size limit is reached.
+  (#6)
+- **`Pane.paste(String)` sends literal text without leaving a server buffer.**
+  Text no longer shares tmux's command-size limit; this API requires tmux 3.4.
+  (#6)
+
+### Changed
+
 - **`Pane.findWindowByName` and `Pane.findWindowByContent` are removed.** Use
   `findWindow` with `inName()` or `inContent()`. (#6)
 - **`Server.waitFor`, `waitForWithSignalCapacity`, `signal`, and `drain` move
@@ -99,31 +149,6 @@ production.
 
 ### Fixed
 
-- **`Pane.sendKeys` preserves option-shaped input.** It ends tmux option parsing
-  before caller keys, so values such as `-X`, `-R`, and `-N` reach pane programs
-  through the core API and MCP single or batch routes.
-- **`Pane.breakOut` preserves literal `#` in requested window names.** The
-  `break-pane -n` path receives the raw name; only the tmux 3.7 rename fallback
-  applies tmux format literalization.
-- **MCP capability rows disclose both output risk dimensions.** Pane text,
-  environment and configured-command values, and names, titles, paths, or
-  current commands now advertise both secret and untrusted-content risk;
-  strictly structural results remain false for both.
-- **MCP pane input now refuses effective recipients in a human-owned mode.**
-  `send_keys` and each `send_keys_batch` operation resolve pane-level
-  `synchronize-panes` overrides before dispatch; `paste_text` remains
-  target-only, dead configured recipients fail closed, and
-  `run_shell_command` checks a singular cohort before setup and again before
-  input because its completion, output, and status are singular.
-- **`run_shell_command` no longer relies on mutable pane-shell framing state.**
-  Completion markers and signalling run in an isolated outer subshell through
-  an absolute selected tmux executable and the server's resolved `-S` socket,
-  so ordinary output-command aliases/functions, pane `PATH`/socket variables,
-  inherited `errexit`, and a readonly nonce name cannot lose completion or
-  close the pane; the frame also leaves no status variable behind. This assumes
-  the parent shell has not replaced the exact client word or
-  `trap`/`eval`/`exit` with functions, and marker commands honor trusted server
-  hooks.
 - **Destructive MCP tools fail closed when caller-pane identity cannot be
   proven.** Uncertain socket, server, or pane identity now requires explicit
   self-confirmation instead of bypassing the guard. (#6)
@@ -192,9 +217,6 @@ production.
 
 ### Removed
 
-- **MCP prompts, completions, watches, dynamic resources, per-call server
-  discovery, and workspace tools are removed.** Use the fixed tool surface and
-  its static `tmux://capabilities` resource.
 - **`ExecutionMode`, `ControlTransport`, `VirtualThreadTransport`,
   `LIBTMUX_MODE`, and their benchmark surface are removed.** `Server` uses
   process execution; use `ControlClient` for event streams and batches or
