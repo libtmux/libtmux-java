@@ -8,6 +8,9 @@ application {
     applicationName = "mcp-swap"
 }
 
-dependencies { implementation(libs.jackson.databind) }
+dependencies {
+    implementation(libs.jackson.databind)
+    implementation(libs.tomlj)
+}
 
 tasks.withType<Javadoc>().configureEach { enabled = false }
