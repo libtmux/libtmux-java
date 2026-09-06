@@ -9,6 +9,8 @@ import io.github.libtmux.batch.OperationResult;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.format.TmuxFormatException;
 import io.github.libtmux.transport.CommandResult;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -18,7 +20,7 @@ import java.util.Set;
 /** One authoritative view of the panes tmux may receive input through. */
 final class PaneInputCohort {
 
-    private static final long MAX_TMUX_PANE_ID = 4_294_967_295L;
+    private static final long MAX_TMUX_ID_COMPONENT = 4_294_967_295L;
 
     private static final RowFormat PANES = RowFormat.of(
             "pane_id",
@@ -29,12 +31,19 @@ final class PaneInputCohort {
             "pane_input_off",
             "session_id",
             "window_id",
+            "window_index",
             "pid",
             "start_time",
             "socket_path");
 
-    private static final RowFormat CLIENTS =
-            RowFormat.of("client_control_mode", "session_id", "window_id", "pane_id", "window_zoomed_flag");
+    private static final RowFormat CLIENTS = RowFormat.of(
+            "client_control_mode", "session_id", "window_id", "window_index", "pane_id", "window_zoomed_flag");
+
+    private static final Comparator<ClientPlacement> CLIENT_ORDER = Comparator.comparing(ClientPlacement::sessionId)
+            .thenComparing(ClientPlacement::windowId)
+            .thenComparingLong(ClientPlacement::windowIndex)
+            .thenComparing(ClientPlacement::paneId)
+            .thenComparingInt(client -> client.zoomed() ? 1 : 0);
 
     private PaneInputCohort() {}
 
@@ -90,13 +99,14 @@ final class PaneInputCohort {
                         .sorted(java.util.Comparator.comparing(Member::paneId))
                         .toList()
                 : List.of(source);
-        Set<String> attended = attended(clientAnswer, members, source.windowId());
+        ClientSnapshot clients = clients(clientAnswer, members, source.windowId());
         caller.requireConsistent(
                 generation.serverPid(),
                 generation.socketPath(),
                 members.values().stream()
                         .collect(java.util.stream.Collectors.toMap(Member::paneId, Member::sessionIds)));
-        return new Resolution(generation, source, recipients, caller, attended);
+        return new Resolution(
+                generation, source, recipients, caller, clients.attendedPaneIds(), clients.terminalClients());
     }
 
     static Presence presence(Pane pane, Authority expected) {
@@ -142,8 +152,17 @@ final class PaneInputCohort {
                 members.put(member.paneId(), member);
             } else if (!prior.samePane(member)) {
                 throw new LibTmuxException("tmux returned inconsistent duplicate pane input state");
+            } else if (prior.placements().containsAll(member.placements())) {
+                throw new LibTmuxException("tmux returned a duplicate pane placement");
             } else {
-                members.put(member.paneId(), prior.withSessions(member.sessionIds()));
+                members.put(member.paneId(), prior.withPlacements(member.placements()));
+            }
+        }
+        Map<String, Set<Placement>> windowPlacements = new LinkedHashMap<>();
+        for (Member member : members.values()) {
+            Set<Placement> prior = windowPlacements.putIfAbsent(member.windowId(), member.placements());
+            if (prior != null && !prior.equals(member.placements())) {
+                throw new TmuxFormatException("tmux returned incomplete linked-window pane placements");
             }
         }
         return new PaneSnapshot(java.util.Objects.requireNonNull(authority), Map.copyOf(members));
@@ -153,12 +172,12 @@ final class PaneInputCohort {
         return new CommandResult(operation.succeeded() ? 0 : 1, operation.stdout(), operation.stderr());
     }
 
-    private static Set<String> attended(CommandResult answer, Map<String, Member> members, String sourceWindowId) {
+    private static ClientSnapshot clients(CommandResult answer, Map<String, Member> members, String sourceWindowId) {
         if (!answer.succeeded()) {
             throw new LibTmuxException("tmux could not resolve client attention state");
         }
         if (answer.stdout().isEmpty()) {
-            return Set.of();
+            return new ClientSnapshot(List.of(), Set.of());
         }
         int terminators = validateFraming(CLIENTS, answer.stdout());
         List<RowFormat.Row> rows = CLIENTS.rows(answer.stdout());
@@ -166,6 +185,7 @@ final class PaneInputCohort {
             throw new TmuxFormatException("tmux returned an incomplete client attention listing");
         }
         Set<String> attended = new LinkedHashSet<>();
+        List<ClientPlacement> terminalClients = new ArrayList<>();
         for (RowFormat.Row row : rows) {
             boolean controlMode = row.flag("client_control_mode");
             if (controlMode) {
@@ -173,15 +193,18 @@ final class PaneInputCohort {
             }
             String clientSession = targetId(row.text("session_id"), '$', "session_id");
             String clientWindow = targetId(row.text("window_id"), '@', "window_id");
+            long clientWindowIndex = unsignedCanonical(row.text("window_index"), "window_index");
             String activePane = paneId(row.text("pane_id"));
             boolean zoomed = row.flag("window_zoomed_flag");
             Member active = members.get(activePane);
             if (active == null) {
                 throw new TmuxFormatException("a terminal client reported an unknown active pane");
             }
-            if (!active.windowId().equals(clientWindow) || !active.sessionIds().contains(clientSession)) {
+            if (!active.placements().contains(new Placement(clientSession, clientWindow, clientWindowIndex))) {
                 throw new TmuxFormatException("a terminal client reported inconsistent active pane placement");
             }
+            terminalClients.add(
+                    new ClientPlacement(clientSession, clientWindow, clientWindowIndex, activePane, zoomed));
             if (!active.windowId().equals(sourceWindowId)) {
                 continue;
             }
@@ -194,7 +217,8 @@ final class PaneInputCohort {
                         .forEach(attended::add);
             }
         }
-        return Set.copyOf(attended);
+        terminalClients.sort(CLIENT_ORDER);
+        return new ClientSnapshot(List.copyOf(terminalClients), Set.copyOf(attended));
     }
 
     private static int validateFraming(RowFormat format, List<String> lines) {
@@ -233,6 +257,7 @@ final class PaneInputCohort {
         boolean inputDisabled = row.flag("pane_input_off");
         String sessionId = targetId(row.text("session_id"), '$', "session_id");
         String windowId = targetId(row.text("window_id"), '@', "window_id");
+        long windowIndex = unsignedCanonical(row.text("window_index"), "window_index");
         return new Member(
                 paneId,
                 synchronizedPane,
@@ -242,7 +267,7 @@ final class PaneInputCohort {
                 command,
                 inputDisabled,
                 windowId,
-                Set.of(sessionId));
+                Set.of(new Placement(sessionId, windowId, windowIndex)));
     }
 
     private static Authority authority(String realm, RowFormat.Row row) {
@@ -280,12 +305,17 @@ final class PaneInputCohort {
         if (value.length() == 1 || value.isEmpty() || value.charAt(0) != sigil) {
             throw new TmuxFormatException(field + " was invalid");
         }
+        unsignedCanonical(value.substring(1), field);
+        return value;
+    }
+
+    private static long unsignedCanonical(String value, String field) {
         try {
-            long id = Long.parseLong(value.substring(1));
-            if (id < 0 || id > MAX_TMUX_PANE_ID || !value.equals(sigil + Long.toString(id))) {
+            long id = Long.parseLong(value);
+            if (id < 0 || id > MAX_TMUX_ID_COMPONENT || !value.equals(Long.toString(id))) {
                 throw new TmuxFormatException(field + " was invalid");
             }
-            return value;
+            return id;
         } catch (NumberFormatException failure) {
             throw new TmuxFormatException(field + " was invalid", failure);
         }
@@ -301,6 +331,12 @@ final class PaneInputCohort {
 
     private record PaneSnapshot(Authority authority, Map<String, Member> members) {}
 
+    private record ClientSnapshot(List<ClientPlacement> terminalClients, Set<String> attendedPaneIds) {}
+
+    record Placement(String sessionId, String windowId, long windowIndex) {}
+
+    record ClientPlacement(String sessionId, String windowId, long windowIndex, String paneId, boolean zoomed) {}
+
     record Member(
             String paneId,
             boolean synchronizedPane,
@@ -310,10 +346,16 @@ final class PaneInputCohort {
             String currentCommand,
             boolean inputDisabled,
             String windowId,
-            Set<String> sessionIds) {
+            Set<Placement> placements) {
 
         Member {
-            sessionIds = Set.copyOf(sessionIds);
+            placements = Set.copyOf(placements);
+        }
+
+        Set<String> sessionIds() {
+            return placements.stream()
+                    .map(Placement::sessionId)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
         }
 
         boolean writable() {
@@ -331,8 +373,8 @@ final class PaneInputCohort {
                     && windowId.equals(other.windowId);
         }
 
-        Member withSessions(Set<String> more) {
-            Set<String> merged = new LinkedHashSet<>(sessionIds);
+        Member withPlacements(Set<Placement> more) {
+            Set<Placement> merged = new LinkedHashSet<>(placements);
             merged.addAll(more);
             return new Member(
                     paneId,
@@ -352,11 +394,13 @@ final class PaneInputCohort {
             Member source,
             List<Member> keyRecipients,
             Caller caller,
-            Set<String> attendedPaneIds) {
+            Set<String> attendedPaneIds,
+            List<ClientPlacement> terminalClients) {
 
         Resolution {
             keyRecipients = List.copyOf(keyRecipients);
             attendedPaneIds = Set.copyOf(attendedPaneIds);
+            terminalClients = List.copyOf(terminalClients);
         }
 
         List<String> configuredKeyRecipientIds() {

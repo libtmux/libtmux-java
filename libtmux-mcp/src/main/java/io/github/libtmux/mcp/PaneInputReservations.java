@@ -120,11 +120,11 @@ final class PaneInputReservations {
             Generation generation,
             PaneInputCohort.Member source,
             List<PaneInputCohort.Member> members,
-            Set<String> attendedPaneIds) {
+            List<PaneInputCohort.ClientPlacement> terminalClients) {
 
         private Signature {
             members = List.copyOf(members);
-            attendedPaneIds = Set.copyOf(attendedPaneIds);
+            terminalClients = List.copyOf(terminalClients);
         }
 
         static Signature capture(
@@ -133,7 +133,7 @@ final class PaneInputReservations {
                     Generation.capture(resolution.authority(), operation),
                     resolution.source(),
                     members,
-                    resolution.attendedPaneIds());
+                    resolution.terminalClients());
         }
 
         Set<PaneKey> keys(List<PaneInputCohort.Member> selected) {

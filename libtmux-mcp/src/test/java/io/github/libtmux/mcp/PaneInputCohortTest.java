@@ -211,14 +211,72 @@ final class PaneInputCohortTest {
                 "%0",
                 answer(
                         row("%0", "0", "0", "0", "sh"),
-                        row("%0", "0", "0", "0", "sh", "0", "$1", "@0", "1", "1", "/tmp/test-tmux")),
-                answer(clientRow("0", "$1", "@0", "%0", "1")),
+                        row("%0", "0", "0", "0", "sh", "0", "$1", "@0", "7", "1", "1", "/tmp/test-tmux")),
+                answer(clientRow("0", "$1", "@0", "7", "%0", "1")),
                 Caller.nowhere());
 
         IllegalStateException refused =
                 assertThrows(IllegalStateException.class, () -> resolved.requirePasteTarget("paste_text"));
 
         assertTrue(String.valueOf(refused.getMessage()).contains("attended"), refused.getMessage());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "-1", "+0", "01", "4294967296"})
+    void windowIndexesMustBeCanonicalUnsigned32BitValues(String index) {
+        assertThrows(
+                TmuxFormatException.class,
+                () -> PaneInputCohort.parse(
+                        "%0",
+                        answer(row("%0", "0", "0", "0", "sh", "0", "$0", "@0", index, "1", "1", "/tmp/test-tmux"))));
+        assertThrows(
+                TmuxFormatException.class,
+                () -> PaneInputCohort.parse(
+                        "%0",
+                        answer(row("%0", "0", "0", "0", "sh")),
+                        answer(clientRow("0", "$0", "@0", index, "%0", "0")),
+                        Caller.nowhere()));
+    }
+
+    @Test
+    void everyPaneInALinkedWindowNeedsTheSamePlacementRectangle() {
+        assertThrows(
+                TmuxFormatException.class,
+                () -> PaneInputCohort.parse(
+                        "%0",
+                        answer(
+                                row("%0", "1", "0", "0", "sh"),
+                                row("%0", "1", "0", "0", "sh", "0", "$1", "@0", "7", "1", "1", "/tmp/test-tmux"),
+                                row("%1", "1", "0", "0", "sh"))));
+    }
+
+    @Test
+    void aWindowIndexMoveChangesTheGuardedResolution() {
+        var initial = PaneInputCohort.parse(
+                "%0", answer(row("%0", "0", "0", "0", "sh", "0", "$0", "@0", "0", "1", "1", "/tmp/test-tmux")));
+        var moved = PaneInputCohort.parse(
+                "%0", answer(row("%0", "0", "0", "0", "sh", "0", "$0", "@0", "9", "1", "1", "/tmp/test-tmux")));
+
+        assertFalse(initial.equals(moved));
+    }
+
+    @Test
+    void aTerminalClientMoveBetweenValidLinksChangesTheGuard(Server server) {
+        String pid = server.expand("#{pid}");
+        String started = server.expand("#{start_time}");
+        String socket = server.expand("#{socket_path}");
+        CommandResult panes = answer(
+                row("%0", "0", "0", "0", "sh", "0", "$0", "@0", "0", pid, started, socket),
+                row("%1", "0", "0", "0", "sh", "0", "$0", "@1", "1", pid, started, socket),
+                row("%1", "0", "0", "0", "sh", "0", "$1", "@1", "7", pid, started, socket));
+        var initial = PaneInputCohort.parse(
+                "%0", panes, answer(clientRow("0", "$0", "@1", "1", "%1", "0")), Caller.nowhere());
+        var moved = PaneInputCohort.parse(
+                "%0", panes, answer(clientRow("0", "$1", "@1", "7", "%1", "0")), Caller.nowhere());
+
+        try (var lease = PaneInputReservations.run(initial, "run_shell_command")) {
+            assertThrows(IllegalStateException.class, () -> lease.requireSameRun(moved));
+        }
     }
 
     @Test
@@ -287,6 +345,7 @@ final class PaneInputCohortTest {
                 "pane_dead",
                 "pane_current_command",
                 "pane_input_off",
+                "window_index",
                 "session_id",
                 "window_id",
                 "pid",
@@ -297,8 +356,8 @@ final class PaneInputCohortTest {
         List<String> clients = commands.get(1);
         assertEquals("list-clients", clients.getFirst());
         String clientFormat = clients.get(clients.indexOf("-F") + 1);
-        for (String field :
-                List.of("client_control_mode", "session_id", "window_id", "pane_id", "window_zoomed_flag")) {
+        for (String field : List.of(
+                "client_control_mode", "session_id", "window_id", "window_index", "pane_id", "window_zoomed_flag")) {
             assertEquals(1, occurrences(clientFormat, "#{" + field + "}"));
         }
     }
@@ -438,7 +497,8 @@ final class PaneInputCohortTest {
                 Arguments.of("missing window", clientRow("0", "$0", "", "%0", "0")),
                 Arguments.of("invalid window", clientRow("0", "$0", "0", "%0", "0")),
                 Arguments.of("session mismatch", clientRow("0", "$1", "@0", "%0", "0")),
-                Arguments.of("window mismatch", clientRow("0", "$0", "@1", "%0", "0")));
+                Arguments.of("window mismatch", clientRow("0", "$0", "@1", "%0", "0")),
+                Arguments.of("window index mismatch", clientRow("0", "$0", "@0", "7", "%0", "0")));
     }
 
     private static CommandResult answer(String... rows) {
@@ -451,7 +511,12 @@ final class PaneInputCohortTest {
             if (complete.size() == 5) {
                 complete.add("0");
             }
-            complete.addAll(List.of("$0", "@0", "1", "1", "/tmp/test-tmux"));
+            complete.addAll(List.of("$0", "@0", "0", "1", "1", "/tmp/test-tmux"));
+            return fields(complete.toArray(String[]::new)) + TERMINATOR;
+        }
+        if (fields.length == 11) {
+            List<String> complete = new java.util.ArrayList<>(List.of(fields));
+            complete.add(8, "0");
             return fields(complete.toArray(String[]::new)) + TERMINATOR;
         }
         return fields(fields) + TERMINATOR;
@@ -459,7 +524,12 @@ final class PaneInputCohortTest {
 
     private static String clientRow(
             String control, String sessionId, String windowId, String activePane, String zoomed) {
-        return fields(control, sessionId, windowId, activePane, zoomed) + TERMINATOR;
+        return clientRow(control, sessionId, windowId, "0", activePane, zoomed);
+    }
+
+    private static String clientRow(
+            String control, String sessionId, String windowId, String windowIndex, String activePane, String zoomed) {
+        return fields(control, sessionId, windowId, windowIndex, activePane, zoomed) + TERMINATOR;
     }
 
     private static String liveRow(
@@ -477,6 +547,7 @@ final class PaneInputCohortTest {
                 "0",
                 handle.window().session().id().value(),
                 handle.window().id().value(),
+                handle.window().index().toString(),
                 server.expand("#{pid}"),
                 server.expand("#{start_time}"),
                 server.expand("#{socket_path}"));
