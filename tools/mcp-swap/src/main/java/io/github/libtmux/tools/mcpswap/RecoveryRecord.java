@@ -15,6 +15,8 @@ record RecoveryRecord(
         String logical,
         String target,
         String physicalParent,
+        String anchor,
+        String anchorIdentity,
         boolean symbolicLink,
         String linkTarget,
         boolean originalExists,
@@ -35,6 +37,8 @@ record RecoveryRecord(
             "logical",
             "target",
             "physicalParent",
+            "anchor",
+            "anchorIdentity",
             "symbolicLink",
             "linkTarget",
             "originalExists",
@@ -65,6 +69,8 @@ record RecoveryRecord(
                 route.logical().toString(),
                 route.target().toString(),
                 route.physicalParent().toString(),
+                route.anchor().toString(),
+                route.anchorIdentity(),
                 route.symbolicLink(),
                 route.linkTarget(),
                 original.exists(),
@@ -85,6 +91,8 @@ record RecoveryRecord(
                 logical,
                 target,
                 physicalParent,
+                anchor,
+                anchorIdentity,
                 symbolicLink,
                 linkTarget,
                 originalExists,
@@ -163,6 +171,8 @@ record RecoveryRecord(
                 requiredText(root, "logical"),
                 requiredText(root, "target"),
                 requiredText(root, "physicalParent"),
+                requiredText(root, "anchor"),
+                requiredText(root, "anchorIdentity"),
                 requiredBoolean(root, "symbolicLink"),
                 requiredText(root, "linkTarget"),
                 requiredBoolean(root, "originalExists"),
@@ -184,6 +194,8 @@ record RecoveryRecord(
         if (!logical.equals(route.logical().toString())
                 || !target.equals(route.target().toString())
                 || !physicalParent.equals(route.physicalParent().toString())
+                || !anchor.equals(route.anchor().toString())
+                || !anchorIdentity.equals(route.anchorIdentity())
                 || symbolicLink != route.symbolicLink()
                 || !linkTarget.equals(route.linkTarget())) {
             throw new IOException("recovery config route changed for " + client);
@@ -218,6 +230,8 @@ record RecoveryRecord(
         root.put("logical", logical);
         root.put("target", target);
         root.put("physicalParent", physicalParent);
+        root.put("anchor", anchor);
+        root.put("anchorIdentity", anchorIdentity);
         root.put("symbolicLink", symbolicLink);
         root.put("linkTarget", linkTarget);
         root.put("originalExists", originalExists);

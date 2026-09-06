@@ -164,6 +164,47 @@ final class SwapServiceTest {
     }
 
     @Test
+    void rejectsAConfigDirectoryReplacementThatKeepsEveryFile() throws IOException {
+        var originals = seedAll();
+        var selected = clients.get(1);
+        var parent = Objects.requireNonNull(selected.configPath().getParent());
+        var displaced = parent.resolveSibling(".codex-displaced");
+        var replaced = new boolean[] {false};
+        var service = new SwapService(home, environment, (boundary, path) -> {
+            if (!replaced[0] && boundary.equals("backup-publish") && path.equals(SwapPaths.backup(selected))) {
+                replaced[0] = true;
+                replaceDirectoryKeepingChildren(parent, displaced);
+            }
+        });
+
+        assertThrows(IOException.class, () -> service.use(List.of(selected), clients, "tmux", FIRST, false));
+
+        assertTrue(replaced[0]);
+        assertArrayEquals(originals.get(selected.name()), Files.readAllBytes(selected.configPath()));
+        assertFalse(Files.exists(SwapPaths.backup(selected)));
+        assertFalse(Files.exists(SwapPaths.state(selected)));
+    }
+
+    @Test
+    void refusesRevertAfterAConfigDirectoryReplacementThatKeepsEveryFile() throws IOException {
+        seedAll();
+        var selected = clients.get(1);
+        var parent = Objects.requireNonNull(selected.configPath().getParent());
+        var service = new SwapService(home, environment);
+        service.use(List.of(selected), clients, "tmux", FIRST, false);
+
+        replaceDirectoryKeepingChildren(parent, parent.resolveSibling(".codex-displaced"));
+
+        assertThrows(IOException.class, () -> service.revert(List.of(selected), clients, "tmux", false));
+        assertEquals(
+                FIRST,
+                ConfigCodec.read(selected, Files.readAllBytes(selected.configPath()), "tmux")
+                        .orElseThrow());
+        assertTrue(Files.isRegularFile(SwapPaths.backup(selected)));
+        assertTrue(Files.isRegularFile(SwapPaths.state(selected)));
+    }
+
+    @Test
     void preservesALateFileAtAnAbsentConfigDestination() throws IOException {
         var selected = clients.get(2);
         Files.createDirectories(selected.configPath().getParent());
@@ -362,6 +403,16 @@ final class SwapServiceTest {
             originals.put(client.name(), bytes);
         }
         return originals;
+    }
+
+    private static void replaceDirectoryKeepingChildren(Path directory, Path displaced) throws IOException {
+        Files.move(directory, displaced);
+        Files.createDirectory(directory);
+        try (var children = Files.list(displaced)) {
+            for (var child : children.toList()) {
+                Files.move(child, directory.resolve(child.getFileName()));
+            }
+        }
     }
 
     private List<String> tree() throws IOException {
