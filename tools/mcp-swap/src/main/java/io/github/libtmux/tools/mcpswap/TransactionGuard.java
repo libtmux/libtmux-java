@@ -29,9 +29,9 @@ final class TransactionGuard {
     private static List<ProtectedPath> inspect(List<Client> clients) throws IOException {
         List<ProtectedPath> paths = new ArrayList<>();
         for (var client : clients) {
-            paths.add(capture(client.name() + " config", client.configPath(), true));
-            paths.add(capture(client.name() + " backup", SwapPaths.backup(client), false));
-            paths.add(capture(client.name() + " state", SwapPaths.state(client), false));
+            paths.add(capture(client.name() + " config", client.configPath(), true, true));
+            paths.add(capture(client.name() + " backup", SwapPaths.backup(client), false, true));
+            paths.add(capture(client.name() + " state", SwapPaths.state(client), false, true));
         }
         return paths;
     }
@@ -57,19 +57,40 @@ final class TransactionGuard {
             if (!path.route().logical().equals(logical.toAbsolutePath().normalize())) {
                 continue;
             }
-            paths.set(index, capture(path.label(), logical, path.config()));
+            paths.set(index, capture(path.label(), logical, path.config(), false));
             return;
         }
         throw new IOException("transaction path is not protected: " + logical);
     }
 
-    private static ProtectedPath capture(String label, Path logical, boolean config) throws IOException {
+    void updateTarget(Path target) throws IOException {
+        var normalized = target.toAbsolutePath().normalize();
+        for (int index = 0; index < paths.size(); index++) {
+            var path = paths.get(index);
+            if (path.route().target().equals(normalized)) {
+                paths.set(index, capture(path.label(), path.route().logical(), path.config(), false));
+            }
+        }
+    }
+
+    FileSnapshot snapshot(Path logical) throws IOException {
+        var normalized = logical.toAbsolutePath().normalize();
+        for (var path : paths) {
+            if (path.route().logical().equals(normalized)) {
+                return path.snapshot();
+            }
+        }
+        throw new IOException("transaction path is not protected: " + logical);
+    }
+
+    private static ProtectedPath capture(String label, Path logical, boolean config, boolean requireSingleLink)
+            throws IOException {
         var route = PathRoute.inspect(logical);
         if (!config && route.symbolicLink()) {
             throw new IOException(label + " must not be a symbolic link");
         }
         var snapshot = FileSnapshot.capture(route.target());
-        if (!config && snapshot.exists() && snapshot.links() != 1) {
+        if (!config && requireSingleLink && snapshot.exists() && snapshot.links() != 1) {
             throw new IOException(label + " must not be hard linked");
         }
         return new ProtectedPath(label, config, route, snapshot);

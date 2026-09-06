@@ -131,6 +131,16 @@ final class FileSnapshot {
                 && Arrays.equals(data, other.data);
     }
 
+    boolean sameExceptLinks(FileSnapshot other) {
+        return exists == other.exists
+                && identity.equals(other.identity)
+                && permissions.equals(other.permissions)
+                && size == other.size
+                && modified.equals(other.modified)
+                && digest.equals(other.digest)
+                && Arrays.equals(data, other.data);
+    }
+
     void verify() throws IOException {
         if (!same(capture(path))) {
             throw new IOException("file changed: " + path);

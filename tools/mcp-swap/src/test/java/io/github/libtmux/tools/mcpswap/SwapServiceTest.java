@@ -10,10 +10,12 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -117,6 +119,48 @@ final class SwapServiceTest {
     }
 
     @Test
+    void rejectsASelectedConfigHardLinkedToAnUnselectedClient() throws IOException {
+        seedAll();
+        var selected = clients.get(2);
+        var unselected = clients.get(3);
+        Files.delete(selected.configPath());
+        Files.createLink(selected.configPath(), unselected.configPath());
+        var before = Files.readAllBytes(unselected.configPath());
+
+        var service = new SwapService(home, environment);
+        assertThrows(IOException.class, () -> service.use(List.of(selected), clients, "tmux", FIRST, false));
+
+        assertArrayEquals(before, Files.readAllBytes(selected.configPath()));
+        assertArrayEquals(before, Files.readAllBytes(unselected.configPath()));
+        assertFalse(Files.exists(SwapPaths.backup(selected)));
+        assertFalse(Files.exists(SwapPaths.state(selected)));
+    }
+
+    @Test
+    void rechecksUnselectedClientsBeforeEveryPublication() throws IOException {
+        var originals = seedAll();
+        var selected = clients.get(2);
+        var unselected = clients.get(3);
+        var raced = new boolean[] {false};
+        var service = new SwapService(home, environment, (boundary, path) -> {
+            if (!raced[0] && boundary.equals("state-publish")) {
+                raced[0] = true;
+                var human = unselected.configPath().resolveSibling("human.json");
+                Files.writeString(human, "{\"human\":true}\n", StandardCharsets.UTF_8);
+                Files.move(human, unselected.configPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        });
+
+        assertThrows(IOException.class, () -> service.use(List.of(selected), clients, "tmux", FIRST, false));
+
+        assertTrue(raced[0]);
+        assertArrayEquals(originals.get(selected.name()), Files.readAllBytes(selected.configPath()));
+        assertEquals("{\"human\":true}\n", Files.readString(unselected.configPath(), StandardCharsets.UTF_8));
+        assertFalse(Files.exists(SwapPaths.backup(selected)));
+        assertFalse(Files.exists(SwapPaths.state(selected)));
+    }
+
+    @Test
     void preservesALateFileAtAnAbsentConfigDestination() throws IOException {
         var selected = clients.get(2);
         Files.createDirectories(selected.configPath().getParent());
@@ -153,6 +197,28 @@ final class SwapServiceTest {
     }
 
     @Test
+    void refusesAByteIdenticalReplacementOfTheRecoveryBackup() throws IOException {
+        seedAll();
+        var selected = clients.getFirst();
+        var service = new SwapService(home, environment);
+        service.use(List.of(selected), clients, "tmux", FIRST, false);
+        var backup = SwapPaths.backup(selected);
+        var replacement = backup.resolveSibling("replacement");
+        Files.copy(backup, replacement);
+        Files.setPosixFilePermissions(replacement, Files.getPosixFilePermissions(backup));
+        Files.move(replacement, backup, StandardCopyOption.REPLACE_EXISTING);
+
+        assertThrows(IOException.class, () -> service.revert(List.of(selected), clients, "tmux", false));
+
+        assertEquals(
+                FIRST,
+                ConfigCodec.read(selected, Files.readAllBytes(selected.configPath()), "tmux")
+                        .orElseThrow());
+        assertTrue(Files.isRegularFile(backup));
+        assertTrue(Files.isRegularFile(SwapPaths.state(selected)));
+    }
+
+    @Test
     void keepsAConfigSymlinkAcrossUseAndRevert() throws IOException {
         var selected = clients.getFirst();
         Files.createDirectories(selected.configPath().getParent());
@@ -171,6 +237,56 @@ final class SwapServiceTest {
         service.revert(List.of(selected), clients, "tmux", false);
         assertTrue(Files.isSymbolicLink(selected.configPath()));
         assertArrayEquals(original, Files.readAllBytes(target));
+    }
+
+    @Test
+    void retainsRecoveryWhenAConfigSymlinkIsRetargetedDuringPublish() throws IOException {
+        var selected = clients.getFirst();
+        Files.createDirectories(selected.configPath().getParent());
+        var originalTarget = home.resolve("original.json");
+        var humanTarget = home.resolve("human.json");
+        Files.writeString(originalTarget, "{\"original\":true}\n", StandardCharsets.UTF_8);
+        Files.writeString(humanTarget, "{\"human\":true}\n", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(selected.configPath(), originalTarget);
+        var retargeted = new boolean[] {false};
+        var service = new SwapService(home, environment, (boundary, path) -> {
+            if (!retargeted[0] && boundary.equals("config-publish")) {
+                retargeted[0] = true;
+                Files.delete(path);
+                Files.createSymbolicLink(path, humanTarget);
+            }
+        });
+
+        assertThrows(IOException.class, () -> service.use(List.of(selected), clients, "tmux", FIRST, false));
+
+        assertTrue(retargeted[0]);
+        assertEquals(humanTarget, selected.configPath().toRealPath());
+        assertEquals("{\"human\":true}\n", Files.readString(humanTarget, StandardCharsets.UTF_8));
+        assertTrue(Files.isRegularFile(SwapPaths.backup(selected)));
+        assertTrue(Files.isRegularFile(SwapPaths.state(selected)));
+        try (var paths = Files.list(home)) {
+            assertTrue(paths.anyMatch(path -> path.getFileName().toString().contains(".mcp-swap-old-")));
+        }
+    }
+
+    @Test
+    void refusesAnUnsafeLockAndASecondOwner() throws IOException {
+        var lockPath = SwapPaths.lock(home, environment);
+        var lockDirectory = Objects.requireNonNull(lockPath.getParent());
+        var stateDirectory = Objects.requireNonNull(lockDirectory.getParent());
+        Files.createDirectories(lockDirectory);
+        Files.setPosixFilePermissions(stateDirectory, PosixFilePermissions.fromString("rwx------"));
+        Files.setPosixFilePermissions(lockDirectory, PosixFilePermissions.fromString("rwx------"));
+        var target = home.resolve("lock-target");
+        Files.writeString(target, "not a lock");
+        Files.createSymbolicLink(lockPath, target);
+        assertThrows(IOException.class, () -> SwapLock.acquire(home, environment));
+
+        Files.delete(lockPath);
+        try (var first = SwapLock.acquire(home, environment)) {
+            assertThrows(IOException.class, () -> SwapLock.acquire(home, environment));
+            first.verify();
+        }
     }
 
     @Test

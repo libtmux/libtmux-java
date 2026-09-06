@@ -18,6 +18,7 @@ record RecoveryRecord(
         boolean symbolicLink,
         String linkTarget,
         boolean originalExists,
+        String backupIdentity,
         String originalDigest,
         String originalPermissions,
         String currentDigest,
@@ -37,6 +38,7 @@ record RecoveryRecord(
             "symbolicLink",
             "linkTarget",
             "originalExists",
+            "backupIdentity",
             "originalDigest",
             "originalPermissions",
             "currentDigest",
@@ -66,6 +68,7 @@ record RecoveryRecord(
                 route.symbolicLink(),
                 route.linkTarget(),
                 original.exists(),
+                original.identity(),
                 original.digest(),
                 original.permissions(),
                 current.digest(),
@@ -85,6 +88,7 @@ record RecoveryRecord(
                 symbolicLink,
                 linkTarget,
                 originalExists,
+                backupIdentity,
                 originalDigest,
                 originalPermissions,
                 current.digest(),
@@ -162,6 +166,7 @@ record RecoveryRecord(
                 root.path("symbolicLink").asBoolean(),
                 requiredText(root, "linkTarget"),
                 root.path("originalExists").asBoolean(),
+                requiredText(root, "backupIdentity"),
                 requiredText(root, "originalDigest"),
                 requiredText(root, "originalPermissions"),
                 requiredText(root, "currentDigest"),
@@ -191,6 +196,7 @@ record RecoveryRecord(
         if (originalExists) {
             if (!backup.exists()
                     || backup.links() != 1
+                    || !backup.identity().equals(backupIdentity)
                     || !backup.digest().equals(originalDigest)
                     || !backup.permissions().equals(originalPermissions)) {
                 throw new IOException("recovery backup changed for " + client);
@@ -215,6 +221,7 @@ record RecoveryRecord(
         root.put("symbolicLink", symbolicLink);
         root.put("linkTarget", linkTarget);
         root.put("originalExists", originalExists);
+        root.put("backupIdentity", backupIdentity);
         root.put("originalDigest", originalDigest);
         root.put("originalPermissions", originalPermissions);
         root.put("currentDigest", currentDigest);

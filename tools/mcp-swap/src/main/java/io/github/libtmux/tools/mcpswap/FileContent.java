@@ -4,19 +4,28 @@ final class FileContent {
     private final boolean exists;
     private final byte[] data;
     private final String permissions;
+    private final java.util.Optional<FileSnapshot> linkSource;
 
-    private FileContent(boolean exists, byte[] data, String permissions) {
+    private FileContent(boolean exists, byte[] data, String permissions, java.util.Optional<FileSnapshot> linkSource) {
         this.exists = exists;
         this.data = data.clone();
         this.permissions = permissions;
+        this.linkSource = linkSource;
     }
 
     static FileContent absent() {
-        return new FileContent(false, new byte[0], "");
+        return new FileContent(false, new byte[0], "", java.util.Optional.empty());
     }
 
     static FileContent of(byte[] data, String permissions) {
-        return new FileContent(true, data, permissions);
+        return new FileContent(true, data, permissions, java.util.Optional.empty());
+    }
+
+    static FileContent linked(FileSnapshot source) {
+        if (!source.exists()) {
+            throw new IllegalArgumentException("link source is absent");
+        }
+        return new FileContent(true, source.bytes(), source.permissions(), java.util.Optional.of(source));
     }
 
     byte[] bytes() {
@@ -29,6 +38,10 @@ final class FileContent {
 
     String permissions() {
         return permissions;
+    }
+
+    java.util.Optional<FileSnapshot> linkSource() {
+        return linkSource;
     }
 
     String digest() {

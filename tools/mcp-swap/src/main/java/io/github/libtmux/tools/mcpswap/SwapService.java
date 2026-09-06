@@ -40,10 +40,7 @@ final class SwapService {
             for (var plan : plans) {
                 if (!plan.active() && plan.config().exists()) {
                     changes.add(new AtomicChange(
-                            "backup",
-                            plan.backupRoute(),
-                            plan.backup(),
-                            FileContent.of(plan.config().bytes(), plan.config().permissions())));
+                            "backup", plan.backupRoute(), plan.backup(), FileContent.linked(plan.config())));
                 }
             }
             for (var plan : plans) {
@@ -97,6 +94,9 @@ final class SwapService {
             var backupRoute = PathRoute.inspect(SwapPaths.backup(client));
             var stateRoute = PathRoute.inspect(SwapPaths.state(client));
             var config = FileSnapshot.capture(configRoute.target());
+            if (config.exists() && config.links() != 1) {
+                throw new IOException("config must not be hard linked for " + client.name());
+            }
             var backup = FileSnapshot.capture(backupRoute.target());
             var state = FileSnapshot.capture(stateRoute.target());
             var active = recovery(client, serverName, configRoute, config, backup, state);

@@ -16,7 +16,7 @@ import org.jspecify.annotations.Nullable;
 final class AtomicChange {
     private final String role;
     private final PathRoute route;
-    private final FileSnapshot before;
+    private FileSnapshot before;
     private final FileContent desired;
     private @Nullable Path stage;
     private @Nullable FileSnapshot staged;
@@ -35,6 +35,11 @@ final class AtomicChange {
             return;
         }
         Files.createDirectories(route.target().getParent());
+        var source = desired.linkSource();
+        if (source.isPresent()) {
+            source.orElseThrow().verify();
+            return;
+        }
         stage = Files.createTempFile(route.target().getParent(), ".mcp-swap-new-", "");
         try {
             Files.write(stage, desired.bytes(), StandardOpenOption.TRUNCATE_EXISTING);
@@ -55,7 +60,16 @@ final class AtomicChange {
                 hook.before(role + "-take-aside", route.logical());
                 guard.verifyExcept(route.target());
                 route.verify();
-                before.verify();
+                var protectedBefore = guard.snapshot(route.logical());
+                protectedBefore.verify();
+                if (!before.same(protectedBefore)) {
+                    if (!role.equals("config")
+                            || !before.sameExceptLinks(protectedBefore)
+                            || protectedBefore.links() != before.links() + 1) {
+                        throw new IOException("file changed: " + route.logical());
+                    }
+                    before = protectedBefore;
+                }
                 aside = unique(route.target(), "old");
                 move(route.target(), aside);
                 if (!FileSnapshot.capture(aside).sameFile(before)
@@ -67,18 +81,27 @@ final class AtomicChange {
             guard.verifyExcept(route.target());
             verifyTransition();
             if (desired.exists()) {
-                if (stage == null || staged == null) {
-                    throw new IOException("change was not staged: " + route.logical());
+                var source = desired.linkSource();
+                if (source.isPresent()) {
+                    source.orElseThrow().verify();
+                    Files.createLink(route.target(), source.orElseThrow().path());
+                } else {
+                    if (stage == null || staged == null) {
+                        throw new IOException("change was not staged: " + route.logical());
+                    }
+                    staged.verify();
+                    Files.createLink(route.target(), stage);
+                    Files.delete(stage);
+                    stage = null;
                 }
-                staged.verify();
-                Files.createLink(route.target(), stage);
-                Files.delete(stage);
-                stage = null;
             }
             syncDirectory(route.physicalParent());
             committed = FileSnapshot.capture(route.target());
             verifyDesired(committed);
             guard.update(route.logical());
+            if (desired.linkSource().isPresent()) {
+                guard.updateTarget(desired.linkSource().orElseThrow().path());
+            }
         } catch (IOException | RuntimeException error) {
             try {
                 rollbackPartial(guard);
@@ -119,6 +142,9 @@ final class AtomicChange {
         committed = null;
         before.verify();
         guard.update(route.logical());
+        if (desired.linkSource().isPresent()) {
+            guard.updateTarget(desired.linkSource().orElseThrow().path());
+        }
     }
 
     void cleanup() throws IOException {
@@ -151,6 +177,7 @@ final class AtomicChange {
             return;
         }
         guard.verifyLock();
+        verifyRouteTransition();
         var current = FileSnapshot.capture(route.target());
         if (current.exists()) {
             throw new IOException("late destination preserved; original retained at " + aside);
@@ -206,6 +233,10 @@ final class AtomicChange {
                         && (!current.digest().equals(desired.digest())
                                 || !current.permissions().equals(desired.permissions())))) {
             throw new IOException("published file does not match staged bytes: " + route.logical());
+        }
+        if (desired.linkSource().isPresent()
+                && !current.identity().equals(desired.linkSource().orElseThrow().identity())) {
+            throw new IOException("published hard link changed identity: " + route.logical());
         }
     }
 
