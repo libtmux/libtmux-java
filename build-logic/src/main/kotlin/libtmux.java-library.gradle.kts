@@ -100,7 +100,7 @@ tasks.withType<Test>().configureEach {
     // a real server and can kill it. Two environment values decide where a bare client lands: tmux
     // resolves its default socket under TMUX_TMPDIR when it execs, and $TMUX takes precedence over
     // that for a client started inside a pane — which the Gradle daemon may well have been.
-    //
+    // TMUX_TMPDIR is set per invocation in doFirst below, under the same root as the named sockets.
     environment.remove("TMUX")
     environment.remove("TMUX_PANE")
 
@@ -115,7 +115,12 @@ tasks.withType<Test>().configureEach {
     val socketRoot = providers.gradleProperty("libtmuxSocketRoot").getOrElse("/tmp/libtmux-java-test")
     systemProperty("java.io.tmpdir", socketRoot)
     doFirst {
-        // Owner identity separates concurrent invocations; the 39-byte path leaves AF_UNIX room.
+        require(socketRoot.length <= 40) {
+            "libtmuxSocketRoot is $socketRoot, too long to leave room for a socket under it"
+        }
+        // The quarantine shares the configured root, so overriding libtmuxSocketRoot moves the
+        // bare-client sockets along with the named ones instead of splitting them across two roots.
+        // Owner identity separates concurrent invocations; 16 hex digits leave AF_UNIX room.
         val quarantineIdentity = listOf(
             rootProject.rootDir.canonicalPath,
             path,
@@ -124,7 +129,7 @@ tasks.withType<Test>().configureEach {
         val quarantineDigest = MessageDigest.getInstance("SHA-256")
             .digest(quarantineIdentity.toByteArray(StandardCharsets.UTF_8))
         val quarantineName = HexFormat.of().formatHex(quarantineDigest, 0, 8)
-        val tmuxTmpDir = Path.of("/tmp/libtmux-java-test", quarantineName)
+        val tmuxTmpDir = Path.of(socketRoot, quarantineName)
 
         if (Files.exists(tmuxTmpDir, LinkOption.NOFOLLOW_LINKS)) {
             require(Files.isDirectory(tmuxTmpDir, LinkOption.NOFOLLOW_LINKS)) {
@@ -141,9 +146,6 @@ tasks.withType<Test>().configureEach {
         }
         Files.createDirectories(tmuxTmpDir)
         environment("TMUX_TMPDIR", tmuxTmpDir.toString())
-        require(socketRoot.length <= 40) {
-            "libtmuxSocketRoot is $socketRoot, too long to leave room for a socket under it"
-        }
         File(socketRoot).mkdirs()
     }
 
