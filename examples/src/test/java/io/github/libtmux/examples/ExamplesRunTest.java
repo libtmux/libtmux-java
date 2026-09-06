@@ -53,6 +53,18 @@ final class ExamplesRunTest {
     }
 
     @Test
+    void servingOverMcpReportsTheFixedToolSurface(TmuxSocketPath socket) {
+        List<String> tools = ServeTmuxOverMcp.run(socket.path());
+
+        // The catalog holds 45. Teardown is enabled by default only for a daemon this process
+        // created, and the fixture's server already exists, so its four tools are not offered.
+        assertEquals(41, tools.size(), tools.toString());
+        assertTrue(tools.contains("capture_pane"), tools.toString());
+        assertFalse(tools.contains("kill_session"), "teardown reached a server the example did not start: " + tools);
+        assertEquals(tools.stream().sorted().toList(), tools, "the example reports a stable order");
+    }
+
+    @Test
     void watchingAServerIsToldWhenAWindowAppears(TmuxSocketPath socket) {
         List<ControlEvent> seen = WatchWhatChanges.run(socket.path(), Duration.ofSeconds(30), event -> {});
 

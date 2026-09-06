@@ -10,5 +10,11 @@ dependencies {
     implementation(project(":libtmux"))
     implementation(project(":libtmux-workspace"))
 
+    // Embedding libtmux-mcp means supplying the transport, which means supplying its JSON mapper.
+    implementation(project(":libtmux-mcp"))
+    implementation(libs.jackson.databind)
+    implementation(libs.mcp.core)
+    implementation(libs.mcp.json.jackson2)
+
     testImplementation(project(":libtmux-junit5"))
 }
