@@ -14,14 +14,16 @@ production.
 
 ### Added
 
-- **`mcp_swap.py` configures all eight supported agent clients.** OpenCode edits
-  preserve JSONC comments and trailing commas, Pi reports its adapter
-  prerequisite, and `antigravity` selects canonical `agy`. Multi-client use and
-  revert preflight and stage one transaction, preserve config symlinks, reverse
-  proven writes on failure, and keep `--dry-run` fully observational.
-  Persistent, versioned recovery records bind each backup to the exact swapped
-  config, path topology, and server route; drift fails closed without deleting
-  recovery.
+- **`tools/mcp-swap` configures all eight supported agent clients.** It replaces
+  the retired `scripts/mcp_swap.py`, builds through
+  `./gradlew :tools:mcp-swap:installDist`, and decodes JSON, JSONC, and TOML
+  with strict UTF-8. OpenCode edits preserve JSONC comments and trailing commas,
+  Pi reports its adapter prerequisite, and `antigravity` selects canonical
+  `agy`. Multi-client use and revert preflight and stage one transaction,
+  preserve config symlinks, reverse proven writes on failure, and keep
+  `--dry-run` fully observational. Persistent, versioned recovery records bind
+  each backup to the exact swapped config, path topology, and server route;
+  drift fails closed without deleting recovery.
 - **`NamedServerFixture` safely owns explicitly named test servers.** It binds
   teardown to the reported process, socket path, and inode, then fails closed if
   any of that identity changes before cleanup.
