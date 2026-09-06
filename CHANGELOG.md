@@ -12,6 +12,17 @@ production.
 
 ## Unreleased
 
+### Fixed
+
+- **Startup refuses a tmux socket path that names no file.** tmux 3.4 and 3.5
+  escape a non-printable byte in the socket path when they store it at server
+  start, so a format reports a rendering with no control character left to
+  refuse, naming nothing. That path is frozen as the `-S` argument for every
+  pane command frame, so `run_shell_command` framed its completion against a
+  socket that reached no server and the reported attach command was wrong.
+  Those two releases now fail closed at startup like every other supported
+  release. (#12)
+
 ## 0.0.1-alpha.9 — 2026-09-06
 
 ### Added

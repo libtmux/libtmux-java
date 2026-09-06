@@ -231,6 +231,26 @@ final class MainTest {
     }
 
     @Test
+    void aReportedSocketPathThatNamesNoFileFailsClosed() {
+        LaunchConfiguration launch = LaunchConfiguration.resolve(
+                List.of(), Map.of(LaunchConfiguration.SOCKET_PATH_ENV, "/tmp/libtmux-java-dev/escaped/s"));
+        // tmux 3.4 and 3.5 render a non-printable byte in the socket path before a format reads it,
+        // so the answer carries no control byte for RouteValue to refuse and still names no file.
+        TmuxTransport escaping = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return new CommandResult(0, List.of("/tmp/libtmux-java-dev/escaped\\001/s"), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+        try (Server server = Server.using(launch.config(), escaping)) {
+            assertThrows(IllegalStateException.class, () -> launch.profile(server));
+        }
+    }
+
+    @Test
     void explicitSocketMetadataErrorsAreNotMisreportedAsAnAbsentServer() {
         LaunchConfiguration launch = LaunchConfiguration.resolve(
                 List.of(), Map.of(LaunchConfiguration.SOCKET_PATH_ENV, "/tmp/libtmux-java-dev/denied/s"));
@@ -324,6 +344,8 @@ final class MainTest {
     }
 
     private static SocketProfile profile(LaunchConfiguration launch, String marker) {
+        // Startup refuses a reported path that names no file, so the double has to name one.
+        Path socket = reportableSocket();
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
@@ -332,8 +354,7 @@ final class MainTest {
                     return new CommandResult(0, List.of(), List.of());
                 }
                 if (command.getFirst().equals("display-message")) {
-                    return new CommandResult(
-                            0, List.of(marker + "\t/tmp/libtmux-java-dev/libtmux-mcp.sock"), List.of());
+                    return new CommandResult(0, List.of(marker + "\t" + socket), List.of());
                 }
                 throw new AssertionError(command);
             }
@@ -343,6 +364,16 @@ final class MainTest {
         };
         try (Server server = Server.using(launch.config(), transport)) {
             return launch.profile(server);
+        }
+    }
+
+    private static Path reportableSocket() {
+        try {
+            Path socket = Files.createTempFile("libtmux-mcp-", ".sock");
+            socket.toFile().deleteOnExit();
+            return socket;
+        } catch (IOException failure) {
+            throw new java.io.UncheckedIOException(failure);
         }
     }
 
