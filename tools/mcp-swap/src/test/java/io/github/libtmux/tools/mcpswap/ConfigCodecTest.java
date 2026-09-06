@@ -1,6 +1,7 @@
 package io.github.libtmux.tools.mcpswap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -28,6 +29,8 @@ final class ConfigCodecTest {
     void roundTripsTheServerRouteForAllEightClients() {
         var clients = ClientRegistry.knownClients(Path.of("/test/home"), Map.of());
         var seen = new ArrayList<String>();
+        var routed =
+                new ServerSpec(SERVER.command(), SERVER.arguments(), Map.of("LIBTMUX_TOOLSETS", "inspect,execute"));
 
         for (var client : clients) {
             var original =
@@ -37,9 +40,9 @@ final class ConfigCodecTest {
                         case TOML -> "title = \"keep\"\n";
                     };
             var updated =
-                    ConfigCodec.update(client, original.getBytes(StandardCharsets.UTF_8), "name.with.dot", SERVER);
+                    ConfigCodec.update(client, original.getBytes(StandardCharsets.UTF_8), "name.with.dot", routed);
             assertEquals(
-                    SERVER, ConfigCodec.read(client, updated, "name.with.dot").orElseThrow());
+                    routed, ConfigCodec.read(client, updated, "name.with.dot").orElseThrow());
             seen.add(client.name());
         }
 
@@ -147,6 +150,79 @@ final class ConfigCodecTest {
         var arguments = Toml.parse(updated).getArray("mcp_servers.tmux.args");
         assertNotNull(arguments);
         assertEquals("--socket", arguments.getString(0));
+    }
+
+    @Test
+    void replacesRetiredSafetyWithoutDroppingJsonEnvironment() throws Exception {
+        var client = client("claude", ConfigFormat.JSON, false);
+        var original = """
+                {
+                  "mcpServers": {
+                    "tmux": {
+                      "command": "old",
+                      "args": [],
+                      "env": {
+                        "LIBTMUX_SAFETY": "destructive",
+                        "LIBTMUX_TOOLSETS": "inspect,execute",
+                        "KEEP": "yes"
+                      }
+                    }
+                  }
+                }
+                """;
+
+        var updated = ConfigCodec.update(client, original.getBytes(StandardCharsets.UTF_8), "tmux", SERVER);
+
+        var entry = new ObjectMapper().readTree(updated).path("mcpServers").path("tmux");
+        assertFalse(entry.path("env").has("LIBTMUX_SAFETY"));
+        assertEquals(
+                "inspect,execute", entry.path("env").path("LIBTMUX_TOOLSETS").asText());
+        assertEquals("yes", entry.path("env").path("KEEP").asText());
+    }
+
+    @Test
+    void preservesTomlEnvironmentAndItsCommentsWhileRemovingSafety() {
+        var client = client("codex", ConfigFormat.TOML, false);
+        var original = """
+                [mcp_servers.tmux]
+                command = "old"
+                args = []
+
+                [mcp_servers.tmux.env]
+                # keep this environment rationale
+                LIBTMUX_SAFETY = "readonly"
+                LIBTMUX_TOOLSETS = "inspect"
+                KEEP = "yes"
+
+                [mcp_servers.other]
+                command = "echo"
+                args = []
+                """;
+
+        var updated = new String(
+                ConfigCodec.update(client, original.getBytes(StandardCharsets.UTF_8), "tmux", SERVER),
+                StandardCharsets.UTF_8);
+
+        var parsed = Toml.parse(updated);
+        assertTrue(updated.contains("# keep this environment rationale"));
+        assertFalse(updated.contains("LIBTMUX_SAFETY"));
+        assertEquals("inspect", parsed.getString("mcp_servers.tmux.env.LIBTMUX_TOOLSETS"));
+        assertEquals("yes", parsed.getString("mcp_servers.tmux.env.KEEP"));
+        assertEquals("echo", parsed.getString("mcp_servers.other.command"));
+    }
+
+    @Test
+    void refusesToGuessAToolsetWhenOnlyRetiredSafetyExists() {
+        var client = client("cursor", ConfigFormat.JSON, false);
+        var original = """
+                {"mcpServers":{"tmux":{"command":"old","args":[],"env":{"LIBTMUX_SAFETY":"destructive"}}}}
+                """;
+
+        var failure = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> ConfigCodec.update(client, original.getBytes(StandardCharsets.UTF_8), "tmux", SERVER));
+
+        assertTrue(String.valueOf(failure.getMessage()).contains("LIBTMUX_TOOLSETS"));
     }
 
     private static Client client(String name, ConfigFormat format, boolean openCode) {

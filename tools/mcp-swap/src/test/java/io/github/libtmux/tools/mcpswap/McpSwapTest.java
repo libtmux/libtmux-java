@@ -145,6 +145,35 @@ final class McpSwapTest {
         assertTrue(error().contains("mutually exclusive"));
     }
 
+    @Test
+    void explicitEnvironmentReplacesRetiredSafety() throws IOException {
+        var claude = clients.getFirst();
+        Files.createDirectories(claude.configPath().getParent());
+        Files.writeString(claude.configPath(), """
+                {"mcpServers":{"tmux":{"command":"old","args":[],"env":{"LIBTMUX_SAFETY":"readonly"}}}}
+                """, StandardCharsets.UTF_8);
+
+        assertEquals(1, run("use", "--dry-run", "--source", "gradle", "--cli", "claude"));
+        assertTrue(error().contains("LIBTMUX_TOOLSETS"));
+        stdout.reset();
+        stderr.reset();
+
+        assertEquals(
+                0,
+                run(
+                        "use",
+                        "--dry-run",
+                        "--source",
+                        "gradle",
+                        "--cli",
+                        "claude",
+                        "--env",
+                        "LIBTMUX_TOOLSETS=inspect,manage"));
+
+        assertTrue(error().contains("pointing 'tmux'"));
+        assertFalse(error().contains("LIBTMUX_SAFETY"));
+    }
+
     private int run(String... arguments) {
         return McpSwap.run(
                 arguments,

@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 import org.tomlj.Toml;
@@ -17,30 +19,45 @@ final class TomlEditor {
 
     static byte[] update(byte[] original, String tableName, String serverName, ServerSpec server) {
         var text = new String(original, StandardCharsets.UTF_8);
-        requireValid(text);
+        var existing = read(original, tableName, serverName)
+                .map(ServerSpec::environment)
+                .orElseGet(Map::of);
+        var merged = server.withEnvironment(existing);
         var newline = text.contains("\r\n") ? "\r\n" : "\n";
         var sections = sections(text);
-        Section selected = null;
+        var target = List.of(tableName, serverName);
+        var start = -1;
+        var end = -1;
         for (var section : sections) {
-            if (section.path().equals(List.of(tableName, serverName))) {
-                selected = section;
+            if (startsWith(section.path(), target)) {
+                if (start == -1) {
+                    start = section.start();
+                }
+                end = section.end();
+            } else if (start != -1) {
                 break;
             }
         }
-        var body = "command = " + string(server.command()) + newline + "args = " + array(server.arguments()) + newline;
+        var body = "command = " + string(merged.command()) + newline + "args = " + array(merged.arguments()) + newline;
+        if (!merged.environment().isEmpty()) {
+            body += newline + "[" + tableName + "." + string(serverName) + ".env]" + newline;
+            for (var value : merged.environment().entrySet()) {
+                body += string(value.getKey()) + " = " + string(value.getValue()) + newline;
+            }
+        }
         String updated;
-        if (selected == null) {
+        if (start == -1) {
             var separator = text.isEmpty() || text.endsWith(newline + newline)
                     ? ""
                     : text.endsWith(newline) ? newline : newline + newline;
             updated = text + separator + "[" + tableName + "." + string(serverName) + "]" + newline + body;
         } else {
-            var comments = commentsOnly(text.substring(selected.headerEnd(), selected.end()));
-            var replacement = text.substring(selected.start(), selected.headerEnd()) + body + comments;
+            var comments = commentsOnly(text.substring(start, end));
+            var replacement = "[" + tableName + "." + string(serverName) + "]" + newline + body + comments;
             if (!replacement.endsWith(newline)) {
                 replacement += newline;
             }
-            updated = text.substring(0, selected.start()) + replacement + text.substring(selected.end());
+            updated = text.substring(0, start) + replacement + text.substring(end);
         }
         requireValid(updated);
         return updated.getBytes(StandardCharsets.UTF_8);
@@ -69,7 +86,18 @@ final class TomlEditor {
             }
             values.add(value);
         }
-        return Optional.of(new ServerSpec(command, values));
+        Map<String, String> environment = new LinkedHashMap<>();
+        var rawEnvironment = server.getTable("env");
+        if (rawEnvironment != null) {
+            for (var key : rawEnvironment.keySet()) {
+                var value = rawEnvironment.getString(key);
+                if (value == null) {
+                    throw new IllegalArgumentException("server environment values must be strings");
+                }
+                environment.put(key, value);
+            }
+        }
+        return Optional.of(new ServerSpec(command, values, environment));
     }
 
     private static TomlParseResult requireValid(String text) {
@@ -208,6 +236,10 @@ final class TomlEditor {
             offset = afterLine;
         }
         return kept.toString();
+    }
+
+    private static boolean startsWith(List<String> path, List<String> prefix) {
+        return path.size() >= prefix.size() && path.subList(0, prefix.size()).equals(prefix);
     }
 
     private static String array(List<String> values) {

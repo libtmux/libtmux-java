@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 final class ConfigCodec {
@@ -55,7 +57,9 @@ final class ConfigCodec {
             } else {
                 throw new IllegalArgumentException(client.name() + " server table is not an object");
             }
-            table.set(serverName, entry(mapper, client, server));
+            var current = table.get(serverName);
+            var merged = server.withEnvironment(environment(client, current));
+            table.set(serverName, entry(mapper, client, merged));
             if (comments) {
                 return JsoncEditor.merge(text, root, mapper).getBytes(StandardCharsets.UTF_8);
             }
@@ -74,11 +78,42 @@ final class ConfigCodec {
             command.add(server.command());
             server.arguments().forEach(command::add);
         } else {
+            if (client.name().equals("claude")) {
+                entry.put("type", "stdio");
+            }
             entry.put("command", server.command());
             var arguments = entry.putArray("args");
             server.arguments().forEach(arguments::add);
         }
+        if (!server.environment().isEmpty() || client.name().equals("claude")) {
+            var values = entry.putObject(client.openCode() ? "environment" : "env");
+            server.environment().forEach(values::put);
+        }
         return entry;
+    }
+
+    private static Map<String, String> environment(Client client, JsonNode entry) {
+        if (entry == null || entry.isMissingNode()) {
+            return Map.of();
+        }
+        if (!(entry instanceof ObjectNode object)) {
+            throw new IllegalArgumentException(client.name() + " server entry is not an object");
+        }
+        var raw = object.get(client.openCode() ? "environment" : "env");
+        if (raw == null) {
+            return Map.of();
+        }
+        if (!(raw instanceof ObjectNode values)) {
+            throw new IllegalArgumentException(client.name() + " server environment is not an object");
+        }
+        Map<String, String> found = new LinkedHashMap<>();
+        for (var field : values.properties()) {
+            if (!field.getValue().isTextual()) {
+                throw new IllegalArgumentException(client.name() + " server environment values must be strings");
+            }
+            found.put(field.getKey(), field.getValue().textValue());
+        }
+        return found;
     }
 
     private static Optional<ServerSpec> readJson(Client client, byte[] raw, String serverName, ObjectMapper mapper) {
@@ -113,7 +148,8 @@ final class ConfigCodec {
                         array.get(0).textValue(),
                         java.util.stream.IntStream.range(1, array.size())
                                 .mapToObj(index -> text(array.get(index), client))
-                                .toList()));
+                                .toList(),
+                        environment(client, entry)));
             }
             var command = text(entry.get("command"), client);
             var arguments = entry.path("args");
@@ -124,7 +160,8 @@ final class ConfigCodec {
                     command,
                     java.util.stream.IntStream.range(0, arguments.size())
                             .mapToObj(index -> text(arguments.get(index), client))
-                            .toList()));
+                            .toList(),
+                    environment(client, entry)));
         } catch (IOException error) {
             throw new IllegalArgumentException(client.name() + " config is not valid JSON", error);
         }

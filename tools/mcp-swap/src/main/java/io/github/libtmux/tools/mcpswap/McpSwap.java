@@ -6,6 +6,8 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -48,7 +50,7 @@ public final class McpSwap {
             context.err().println("mcp-swap: interrupted");
             return 130;
         } catch (IOException | IllegalArgumentException error) {
-            context.err().println("mcp-swap: " + error.getMessage());
+            context.err().println("mcp-swap: " + detail(error));
             return 1;
         }
     }
@@ -171,13 +173,14 @@ public final class McpSwap {
 
     private static int doctor(Arguments options, List<Client> clients, Context context) {
         var ready = true;
+        ServerSpec spec = null;
         var gradle = context.repository().resolve("gradlew");
         if (!Files.isRegularFile(gradle) || !Files.isExecutable(gradle)) {
             context.out().println("no executable gradlew: is this the repository root?");
             ready = false;
         }
         try {
-            launcher(options, context.repository());
+            spec = launcher(options, context.repository());
         } catch (UsageException error) {
             context.out().println(error.getMessage());
             ready = false;
@@ -194,6 +197,18 @@ public final class McpSwap {
                 ConfigCodec.read(client, readConfig(client), options.name());
             } catch (IOException | IllegalArgumentException error) {
                 context.out().println(client.name() + " will not parse: " + error.getMessage());
+                ready = false;
+            }
+        }
+        if (spec != null) {
+            var targets = selected(options, clients).stream()
+                    .filter(client -> exists(client.configPath()))
+                    .toList();
+            try {
+                new SwapService(context.home(), context.environment())
+                        .use(targets, clients, options.name(), spec, true);
+            } catch (IOException | IllegalArgumentException error) {
+                context.out().println("swap plan is not safe: " + detail(error));
                 ready = false;
             }
         }
@@ -215,7 +230,7 @@ public final class McpSwap {
         addFlag(flags, "--socket-name", options.socketName());
         addFlag(flags, "--tmux", options.tmux());
         return switch (options.source()) {
-            case DIST -> new ServerSpec(distributionLauncher(repository).toString(), flags);
+            case DIST -> new ServerSpec(distributionLauncher(repository).toString(), flags, options.environment());
             case GRADLE -> {
                 var gradle = repository.resolve("gradlew").toAbsolutePath().normalize();
                 if (!Files.isRegularFile(gradle) || !Files.isExecutable(gradle)) {
@@ -223,7 +238,8 @@ public final class McpSwap {
                 }
                 yield new ServerSpec(
                         gradle.toString(),
-                        List.of("--quiet", "--console=plain", ":libtmux-mcp:run", "--args", gradleArguments(flags)));
+                        List.of("--quiet", "--console=plain", ":libtmux-mcp:run", "--args", gradleArguments(flags)),
+                        options.environment());
             }
             case PATH -> {
                 if (options.binary() == null) {
@@ -236,7 +252,7 @@ public final class McpSwap {
                 if (!Files.isRegularFile(binary) || !Files.isExecutable(binary)) {
                     throw new UsageException("--bin must name an executable file: " + binary);
                 }
-                yield new ServerSpec(binary.toString(), flags);
+                yield new ServerSpec(binary.toString(), flags, options.environment());
             }
         };
     }
@@ -304,11 +320,24 @@ public final class McpSwap {
                         .toList());
     }
 
+    private static String detail(Throwable error) {
+        var message = String.valueOf(error.getMessage());
+        var cause = error.getCause();
+        while (cause != null) {
+            var next = String.valueOf(cause.getMessage());
+            if (!next.equals(message)) {
+                message += ": " + next;
+            }
+            cause = cause.getCause();
+        }
+        return message;
+    }
+
     private static void printHelp(PrintStream out, @Nullable Command command) {
         if (command == Command.USE) {
             out.println("usage: mcp-swap use [--source dist|gradle|path] [--bin FILE]");
             out.println("                    [--socket PATH | --socket-name NAME] [--tmux FILE]");
-            out.println("                    [--name NAME] [--cli CLIENT] [--dry-run]");
+            out.println("                    [--env KEY=VALUE] [--name NAME] [--cli CLIENT] [--dry-run]");
             return;
         }
         out.println("usage: mcp-swap <detect|status|use|revert|doctor> [options]");
@@ -369,12 +398,14 @@ public final class McpSwap {
             List<String> clients,
             boolean dryRun,
             Source source,
+            Map<String, String> environment,
             @Nullable String binary,
             @Nullable String socket,
             @Nullable String socketName,
             @Nullable String tmux) {
         Arguments {
             clients = List.copyOf(clients);
+            environment = Collections.unmodifiableMap(new LinkedHashMap<>(environment));
         }
 
         static Arguments parse(String[] raw) {
@@ -391,6 +422,7 @@ public final class McpSwap {
             List<String> clients = new ArrayList<>();
             var dryRun = false;
             var source = Source.DIST;
+            Map<String, String> environment = new LinkedHashMap<>();
             String binary = null;
             String socket = null;
             String socketName = null;
@@ -410,6 +442,18 @@ public final class McpSwap {
                         } catch (IllegalArgumentException unknown) {
                             throw new UsageException("--source must be dist, gradle, or path");
                         }
+                    }
+                    case "--env" -> {
+                        var value = value(raw, ++index, option);
+                        var separator = value.indexOf('=');
+                        if (separator < 1 || !value.substring(0, separator).matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                            throw new UsageException("--env expects KEY=VALUE");
+                        }
+                        var key = value.substring(0, separator);
+                        if (key.equals("LIBTMUX_SAFETY")) {
+                            throw new UsageException("LIBTMUX_SAFETY is retired; use LIBTMUX_TOOLSETS");
+                        }
+                        environment.put(key, value.substring(separator + 1));
                     }
                     case "--bin" -> binary = value(raw, ++index, option);
                     case "--socket" -> socket = value(raw, ++index, option);
@@ -432,17 +476,20 @@ public final class McpSwap {
             }
             if ((command == Command.DETECT || command == Command.STATUS || command == Command.REVERT)
                     && (source != Source.DIST
+                            || !environment.isEmpty()
                             || binary != null
                             || socket != null
                             || socketName != null
                             || tmux != null)) {
                 throw new UsageException("launcher options apply only to use or doctor");
             }
-            return new Arguments(command, help, name, clients, dryRun, source, binary, socket, socketName, tmux);
+            return new Arguments(
+                    command, help, name, clients, dryRun, source, environment, binary, socket, socketName, tmux);
         }
 
         private static Arguments defaults(@Nullable Command command, boolean help) {
-            return new Arguments(command, help, "tmux", List.of(), false, Source.DIST, null, null, null, null);
+            return new Arguments(
+                    command, help, "tmux", List.of(), false, Source.DIST, Map.of(), null, null, null, null);
         }
 
         private static String value(String[] raw, int index, String option) {
