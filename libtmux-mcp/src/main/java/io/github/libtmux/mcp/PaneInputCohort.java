@@ -33,7 +33,8 @@ final class PaneInputCohort {
             "start_time",
             "socket_path");
 
-    private static final RowFormat CLIENTS = RowFormat.of("client_control_mode", "pane_id", "window_zoomed_flag");
+    private static final RowFormat CLIENTS =
+            RowFormat.of("client_control_mode", "session_id", "window_id", "pane_id", "window_zoomed_flag");
 
     private PaneInputCohort() {}
 
@@ -145,14 +146,19 @@ final class PaneInputCohort {
         Set<String> attended = new LinkedHashSet<>();
         for (RowFormat.Row row : rows) {
             boolean controlMode = row.flag("client_control_mode");
-            String activePane = paneId(row.text("pane_id"));
-            boolean zoomed = row.flag("window_zoomed_flag");
             if (controlMode) {
                 continue;
             }
+            String clientSession = targetId(row.text("session_id"), '$', "session_id");
+            String clientWindow = targetId(row.text("window_id"), '@', "window_id");
+            String activePane = paneId(row.text("pane_id"));
+            boolean zoomed = row.flag("window_zoomed_flag");
             Member active = members.get(activePane);
             if (active == null) {
                 throw new TmuxFormatException("a terminal client reported an unknown active pane");
+            }
+            if (!active.windowId().equals(clientWindow) || !active.sessionIds().contains(clientSession)) {
+                throw new TmuxFormatException("a terminal client reported inconsistent active pane placement");
             }
             if (!active.windowId().equals(sourceWindowId)) {
                 continue;

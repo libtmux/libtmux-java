@@ -156,7 +156,7 @@ final class PaneInputCohortTest {
         var resolved = PaneInputCohort.parse(
                 "%0",
                 answer(row("%0", "1", "0", "0", "sh"), row("%1", "1", "0", "0", "sh")),
-                answer(clientRow("0", "%1", "1")),
+                answer(clientRow("0", "$0", "@0", "%1", "1")),
                 Caller.nowhere());
 
         IllegalStateException refused =
@@ -180,7 +180,56 @@ final class PaneInputCohortTest {
                 TmuxFormatException.class,
                 () -> PaneInputCohort.parse(
                         "%0",
-                        answer(row("%0", "0", "0", "0", "sh")), answer(clientRow("0", "%9", "0")), Caller.nowhere()));
+                        answer(row("%0", "0", "0", "0", "sh")),
+                        answer(clientRow("0", "$0", "@0", "%9", "0")),
+                        Caller.nowhere()));
+    }
+
+    @Test
+    void controlClientsAreExcludedBeforeTheirOtherFieldsAreParsed() {
+        var resolved = PaneInputCohort.parse(
+                "%0", answer(row("%0", "0", "0", "0", "sh")), answer(clientRow("1", "", "", "", "")), Caller.nowhere());
+
+        assertEquals(List.of("%0"), resolved.requireKeyRecipients("send_keys"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidTerminalClientPlacements")
+    void terminalClientPlacementMustMatchThePaneSnapshot(String label, String client) {
+        assertThrows(
+                TmuxFormatException.class,
+                () -> PaneInputCohort.parse(
+                        "%0", answer(row("%0", "0", "0", "0", "sh")), answer(client), Caller.nowhere()),
+                label);
+    }
+
+    @Test
+    void linkedPanePlacementIsAcceptedForTheClientsSession() {
+        var resolved = PaneInputCohort.parse(
+                "%0",
+                answer(
+                        row("%0", "0", "0", "0", "sh"),
+                        row("%0", "0", "0", "0", "sh", "0", "$1", "@0", "1", "1", "/tmp/test-tmux")),
+                answer(clientRow("0", "$1", "@0", "%0", "1")),
+                Caller.nowhere());
+
+        IllegalStateException refused =
+                assertThrows(IllegalStateException.class, () -> resolved.requirePasteTarget("paste_text"));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains("attended"), refused.getMessage());
+    }
+
+    @Test
+    void validClientInAnotherWindowDoesNotAttendTheTarget() {
+        var resolved = PaneInputCohort.parse(
+                "%0",
+                answer(
+                        row("%0", "0", "0", "0", "sh"),
+                        row("%1", "0", "0", "0", "sh", "0", "$0", "@1", "1", "1", "/tmp/test-tmux")),
+                answer(clientRow("0", "$0", "@1", "%1", "0")),
+                Caller.nowhere());
+
+        assertEquals(List.of("%0"), resolved.requireKeyRecipients("send_keys"));
     }
 
     @Test
@@ -246,7 +295,8 @@ final class PaneInputCohortTest {
         List<String> clients = commands.get(1);
         assertEquals("list-clients", clients.getFirst());
         String clientFormat = clients.get(clients.indexOf("-F") + 1);
-        for (String field : List.of("client_control_mode", "pane_id", "window_zoomed_flag")) {
+        for (String field :
+                List.of("client_control_mode", "session_id", "window_id", "pane_id", "window_zoomed_flag")) {
             assertEquals(1, occurrences(clientFormat, "#{" + field + "}"));
         }
     }
@@ -298,13 +348,23 @@ final class PaneInputCohortTest {
     private static Stream<Arguments> malformedClientRows() {
         return Stream.of(
                 Arguments.of("listing failed", new CommandResult(1, List.of(), List.of("gone"))),
-                Arguments.of("empty control flag", answer(clientRow("", "%0", "0"))),
-                Arguments.of("word control flag", answer(clientRow("on", "%0", "0"))),
-                Arguments.of("missing active pane", answer(clientRow("0", "", "0"))),
-                Arguments.of("invalid active pane", answer(clientRow("0", "0", "0"))),
-                Arguments.of("empty zoom flag", answer(clientRow("0", "%0", ""))),
-                Arguments.of("word zoom flag", answer(clientRow("0", "%0", "on"))),
-                Arguments.of("unterminated row", answer(fields("0", "%0", "0"))));
+                Arguments.of("empty control flag", answer(clientRow("", "$0", "@0", "%0", "0"))),
+                Arguments.of("word control flag", answer(clientRow("on", "$0", "@0", "%0", "0"))),
+                Arguments.of("missing active pane", answer(clientRow("0", "$0", "@0", "", "0"))),
+                Arguments.of("invalid active pane", answer(clientRow("0", "$0", "@0", "0", "0"))),
+                Arguments.of("empty zoom flag", answer(clientRow("0", "$0", "@0", "%0", ""))),
+                Arguments.of("word zoom flag", answer(clientRow("0", "$0", "@0", "%0", "on"))),
+                Arguments.of("unterminated row", answer(fields("0", "$0", "@0", "%0", "0"))));
+    }
+
+    private static Stream<Arguments> invalidTerminalClientPlacements() {
+        return Stream.of(
+                Arguments.of("missing session", clientRow("0", "", "@0", "%0", "0")),
+                Arguments.of("invalid session", clientRow("0", "0", "@0", "%0", "0")),
+                Arguments.of("missing window", clientRow("0", "$0", "", "%0", "0")),
+                Arguments.of("invalid window", clientRow("0", "$0", "0", "%0", "0")),
+                Arguments.of("session mismatch", clientRow("0", "$1", "@0", "%0", "0")),
+                Arguments.of("window mismatch", clientRow("0", "$0", "@1", "%0", "0")));
     }
 
     private static CommandResult answer(String... rows) {
@@ -323,8 +383,9 @@ final class PaneInputCohortTest {
         return fields(fields) + TERMINATOR;
     }
 
-    private static String clientRow(String control, String activePane, String zoomed) {
-        return row(control, activePane, zoomed);
+    private static String clientRow(
+            String control, String sessionId, String windowId, String activePane, String zoomed) {
+        return fields(control, sessionId, windowId, activePane, zoomed) + TERMINATOR;
     }
 
     private static String liveRow(
