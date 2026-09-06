@@ -69,6 +69,8 @@ final class SerializedTransportProvider implements McpServerTransportProvider {
         private int admitted;
         private long admittedBytes;
         private boolean closed;
+        private boolean draining;
+        private boolean drainAgain;
 
         SerializedTransport(McpServerTransport delegate) {
             this.delegate = Objects.requireNonNull(delegate, "delegate");
@@ -92,7 +94,6 @@ final class SerializedTransportProvider implements McpServerTransportProvider {
 
         private void enqueue(PendingSend added) {
             @Nullable Throwable refused = null;
-            @Nullable PendingSend next = null;
             synchronized (sends) {
                 if (added.cancelled) {
                     return;
@@ -105,20 +106,16 @@ final class SerializedTransportProvider implements McpServerTransportProvider {
                     admitted++;
                     admittedBytes += added.bytes;
                     pending.addLast(added);
-                    if (active == null) {
-                        next = takeNext();
-                    }
                 }
             }
             if (refused != null) {
                 added.sink.error(refused);
-            } else if (next != null) {
-                start(next);
+            } else {
+                drain();
             }
         }
 
         private void cancel(PendingSend cancelled) {
-            @Nullable PendingSend next = null;
             synchronized (sends) {
                 cancelled.cancelled = true;
                 if (pending.remove(cancelled)) {
@@ -126,57 +123,74 @@ final class SerializedTransportProvider implements McpServerTransportProvider {
                 } else if (active == cancelled && !cancelled.started) {
                     active = null;
                     release(cancelled);
-                    if (!pending.isEmpty()) {
-                        next = takeNext();
+                } else {
+                    return;
+                }
+            }
+            drain();
+        }
+
+        /**
+         * Promotes queued sends one at a time.
+         *
+         * <p>The pinned SDK's stdio transport completes its send {@code Mono} on the subscribing thread once its
+         * readiness sinks are resolved, so {@link #finish} re-enters this method from inside {@link #start}. Draining
+         * on a flag rather than recursively keeps stack depth independent of queue depth, and keeps {@code sends}
+         * unheld while the delegate writes and while a caller's completion callback runs.
+         */
+        private void drain() {
+            synchronized (sends) {
+                if (draining) {
+                    drainAgain = true;
+                    return;
+                }
+                draining = true;
+            }
+            while (true) {
+                @Nullable PendingSend next = null;
+                synchronized (sends) {
+                    drainAgain = false;
+                    if (!closed && active == null && !pending.isEmpty()) {
+                        next = pending.removeFirst();
+                        active = next;
+                        next.started = true;
+                    }
+                }
+                if (next != null) {
+                    start(next);
+                }
+                synchronized (sends) {
+                    if (!drainAgain) {
+                        draining = false;
+                        return;
                     }
                 }
             }
-            if (next != null) {
-                start(next);
-            }
-        }
-
-        private PendingSend takeNext() {
-            PendingSend next = pending.removeFirst();
-            active = next;
-            return next;
         }
 
         private void start(PendingSend next) {
             try {
-                synchronized (sends) {
-                    if (closed || active != next) {
-                        return;
-                    }
-                    next.started = true;
-                    delegate.sendMessage(next.message)
-                            .subscribe(ignored -> {}, failure -> finish(next, failure), () -> finish(next, null));
-                }
+                delegate.sendMessage(next.message)
+                        .subscribe(ignored -> {}, failure -> finish(next, failure), () -> finish(next, null));
             } catch (RuntimeException | Error failure) {
                 finish(next, failure);
             }
         }
 
         private void finish(PendingSend completed, @Nullable Throwable failure) {
-            @Nullable PendingSend next = null;
             synchronized (sends) {
                 if (active != completed) {
                     return;
                 }
                 active = null;
                 release(completed);
-                if (!pending.isEmpty()) {
-                    next = takeNext();
-                }
             }
             if (failure == null) {
                 completed.sink.success();
             } else {
                 completed.sink.error(failure);
             }
-            if (next != null) {
-                start(next);
-            }
+            drain();
         }
 
         private void release(PendingSend released) {
