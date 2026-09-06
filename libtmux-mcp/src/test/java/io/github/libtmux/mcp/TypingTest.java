@@ -120,6 +120,106 @@ final class TypingTest {
     }
 
     @Test
+    void inconsistentCallerSessionRefusesPaneInput(Server server) {
+        var callerPane = server.panes().getFirst();
+        var otherSession = server.newSession("caller-session-mismatch");
+        var target = otherSession.windows().getFirst().panes().getFirst();
+        String socket = server.expand("#{socket_path}");
+        String sessionNumber = otherSession.id().value().substring(1);
+        Map<String, String> environment = Map.of(
+                "TMUX",
+                socket + "," + server.expand("#{pid}") + "," + sessionNumber,
+                "TMUX_PANE",
+                callerPane.id().value());
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> Typing.sendKeys(TestCalls.withEnvironment(
+                        server,
+                        environment,
+                        "pane_id",
+                        target.id().value(),
+                        "keys",
+                        List.of("caller-session-mismatch-marker"),
+                        "literal",
+                        true)));
+    }
+
+    @Test
+    void callerInAnotherSessionDoesNotBlockTheTarget(Server server) throws Exception {
+        var callerPane = server.panes().getFirst();
+        var otherSession = server.newSession("caller-other-session");
+        var target = otherSession.windows().getFirst().panes().getFirst();
+        String socket = server.expand("#{socket_path}");
+        String callerSession = callerPane.window().session().id().value().substring(1);
+        Map<String, String> environment = Map.of(
+                "TMUX",
+                socket + "," + server.expand("#{pid}") + "," + callerSession,
+                "TMUX_PANE",
+                callerPane.id().value());
+        String marker = "off-window-caller-marker";
+
+        Typing.sendKeys(TestCalls.withEnvironment(
+                server, environment, "pane_id", target.id().value(), "keys", List.of(marker), "literal", true));
+
+        assertTrue(await(() -> captureOf(server, target.id().value()).contains(marker)));
+    }
+
+    @Test
+    void freshPaneSnapshotRevalidatesTheCallerPid(Server server) {
+        var callerPane = server.panes().getFirst();
+        var target = callerPane.split(SplitSpec.builder().build());
+        String pid = server.expand("#{pid}");
+        String wrongPid = Long.toString(Long.parseLong(pid) + 1);
+        AtomicBoolean changed = new AtomicBoolean();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport changing = borrowing(request -> {
+                CommandResult result = processes.execute(request);
+                if (isPaneInputSnapshot(request) && changed.compareAndSet(false, true)) {
+                    return new CommandResult(
+                            result.exitCode(),
+                            result.stdout().stream()
+                                    .map(line -> line.replace(pid, wrongPid))
+                                    .toList(),
+                            result.stderr());
+                }
+                return result;
+            });
+            try (Server measured = Server.using(server.config(), changing)) {
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> Typing.sendKeys(TestCalls.asCaller(
+                                measured,
+                                callerPane.id().value(),
+                                "pane_id",
+                                target.id().value(),
+                                "keys",
+                                List.of("fresh-caller-pid-marker"),
+                                "literal",
+                                true)));
+            }
+        }
+
+        assertTrue(changed.get(), "the snapshot seam did not change the reported generation");
+        assertFalse(captureOf(server, target.id().value()).contains("fresh-caller-pid-marker"));
+    }
+
+    @Test
+    void inputDisabledConfiguredPaneRefusesKeys(Server server) {
+        var source = server.panes().getFirst();
+        var disabled = source.split(SplitSpec.builder().build());
+        source.window().setSynchronizePanes(true);
+        server.run(List.of("select-pane", "-t", disabled.id().value(), "-d"));
+        assertEquals("1", disabled.expand("#{pane_input_off}"));
+
+        try {
+            assertKeyRefused(server, source.id().value(), disabled.id().value(), "input-disabled-marker");
+        } finally {
+            server.run(List.of("select-pane", "-t", disabled.id().value(), "-e"));
+        }
+    }
+
+    @Test
     void batchProtectsACallerPeerInTheConfiguredCohort(Server server) {
         var source = server.panes().getFirst();
         var peer = source.split(SplitSpec.builder().build());

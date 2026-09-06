@@ -140,8 +140,8 @@ final class PaneInputCohortTest {
         var resolved = PaneInputCohort.parse(
                 source.id().value(),
                 answer(
-                        row(source.id().value(), "1", "0", "0", "sh"),
-                        row(peer.id().value(), "1", "0", "0", "sh")),
+                        liveRow(server, source.id().value(), "1", "0", "0", "sh"),
+                        liveRow(server, peer.id().value(), "1", "0", "0", "sh")),
                 answer(),
                 caller);
 
@@ -172,6 +172,15 @@ final class PaneInputCohortTest {
                 LibTmuxException.class,
                 () -> PaneInputCohort.parse("%0", answer(row("%0", "0", "0", "0", "sh")), clients, Caller.nowhere()),
                 label);
+    }
+
+    @Test
+    void unknownTerminalClientPaneFailsClosed() {
+        assertThrows(
+                TmuxFormatException.class,
+                () -> PaneInputCohort.parse(
+                        "%0",
+                        answer(row("%0", "0", "0", "0", "sh")), answer(clientRow("0", "%9", "0")), Caller.nowhere()));
     }
 
     @Test
@@ -217,11 +226,21 @@ final class PaneInputCohortTest {
                 .toList();
         assertEquals(2, commands.size());
         List<String> listing = commands.getFirst();
-        assertEquals(List.of("list-panes", "-t"), listing.subList(0, 2));
+        assertEquals(List.of("list-panes", "-a"), listing.subList(0, 2));
         assertTrue(listing.contains("-F"));
         String format = listing.get(listing.indexOf("-F") + 1);
-        for (String field :
-                List.of("pane_id", "pane_synchronized", "pane_in_mode", "pane_dead", "pane_current_command")) {
+        for (String field : List.of(
+                "pane_id",
+                "pane_synchronized",
+                "pane_in_mode",
+                "pane_dead",
+                "pane_current_command",
+                "pane_input_off",
+                "session_id",
+                "window_id",
+                "pid",
+                "start_time",
+                "socket_path")) {
             assertEquals(1, occurrences(format, "#{" + field + "}"));
         }
         List<String> clients = commands.get(1);
@@ -238,9 +257,11 @@ final class PaneInputCohortTest {
                 Arguments.of("no rows", "%0", answer()),
                 Arguments.of("source absent", "%0", answer(row("%1", "0", "0", "0", "sh"))),
                 Arguments.of(
-                        "source duplicated",
+                        "source duplicated inconsistently",
                         "%0",
-                        answer(row("%0", "0", "0", "0", "sh"), row("%0", "0", "0", "0", "sh"))));
+                        answer(
+                                row("%0", "0", "0", "0", "sh"),
+                                row("%0", "0", "0", "0", "sh", "0", "$0", "@1", "1", "1", "/tmp/test-tmux"))));
     }
 
     private static Stream<Arguments> malformedRows() {
@@ -258,7 +279,20 @@ final class PaneInputCohortTest {
                 Arguments.of("word mode", List.of(row("%0", "0", "on", "0", "sh"))),
                 Arguments.of("negative mode", List.of(row("%0", "0", "-1", "0", "sh"))),
                 Arguments.of("word synchronized", List.of(row("%0", "on", "0", "0", "sh"))),
-                Arguments.of("word dead", List.of(row("%0", "0", "0", "on", "sh"))));
+                Arguments.of("word dead", List.of(row("%0", "0", "0", "on", "sh"))),
+                Arguments.of("empty input-off", List.of(row("%0", "0", "0", "0", "sh", ""))),
+                Arguments.of("word input-off", List.of(row("%0", "0", "0", "0", "sh", "on"))),
+                Arguments.of(
+                        "generation mismatch",
+                        List.of(
+                                row("%0", "0", "0", "0", "sh"),
+                                row("%1", "0", "0", "0", "sh", "0", "$0", "@0", "1", "2", "/tmp/test-tmux"))),
+                Arguments.of(
+                        "noncanonical pid",
+                        List.of(row("%0", "0", "0", "0", "sh", "0", "$0", "@0", "01", "1", "/tmp/test-tmux"))),
+                Arguments.of(
+                        "relative socket",
+                        List.of(row("%0", "0", "0", "0", "sh", "0", "$0", "@0", "1", "1", "relative"))));
     }
 
     private static Stream<Arguments> malformedClientRows() {
@@ -278,11 +312,39 @@ final class PaneInputCohortTest {
     }
 
     private static String row(String... fields) {
+        if (fields.length == 5 || fields.length == 6) {
+            List<String> complete = new java.util.ArrayList<>(List.of(fields));
+            if (complete.size() == 5) {
+                complete.add("0");
+            }
+            complete.addAll(List.of("$0", "@0", "1", "1", "/tmp/test-tmux"));
+            return fields(complete.toArray(String[]::new)) + TERMINATOR;
+        }
         return fields(fields) + TERMINATOR;
     }
 
     private static String clientRow(String control, String activePane, String zoomed) {
         return row(control, activePane, zoomed);
+    }
+
+    private static String liveRow(
+            Server server, String pane, String synchronizedPane, String mode, String dead, String command) {
+        var handle = server.panes().stream()
+                .filter(candidate -> candidate.id().value().equals(pane))
+                .findFirst()
+                .orElseThrow();
+        return row(
+                pane,
+                synchronizedPane,
+                mode,
+                dead,
+                command,
+                "0",
+                handle.window().session().id().value(),
+                handle.window().id().value(),
+                server.expand("#{pid}"),
+                server.expand("#{start_time}"),
+                server.expand("#{socket_path}"));
     }
 
     private static String fields(String... fields) {

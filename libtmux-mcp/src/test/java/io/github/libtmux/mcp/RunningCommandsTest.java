@@ -800,7 +800,7 @@ final class RunningCommandsTest {
     }
 
     private static boolean isCohortListing(List<String> command) {
-        if (!command.getFirst().equals("list-panes") || !command.contains("-t") || !command.contains("-F")) {
+        if (!command.getFirst().equals("list-panes") || !command.contains("-a") || !command.contains("-F")) {
             return false;
         }
         String format = command.get(command.indexOf("-F") + 1);

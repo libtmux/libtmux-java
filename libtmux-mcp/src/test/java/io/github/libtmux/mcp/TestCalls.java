@@ -30,7 +30,7 @@ final class TestCalls {
         Map<String, String> environment = Map.of(
                 "TMUX",
                 socket(server) + "," + server.expand("#{pid}") + ","
-                        + server.sessions().get(0).id().value(),
+                        + server.sessions().get(0).id().value().substring(1),
                 "TMUX_PANE",
                 paneId);
         return withEnvironment(server, environment, plain.arguments());
