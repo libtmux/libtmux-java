@@ -143,6 +143,58 @@ final class ToolsAgainstTmuxTest {
         assertTrue(server.isAlive(), "uncertainty must not disable the destructive guard");
     }
 
+    @Test
+    void confirmationCannotOverrideUncertainCallerIdentity(Server server) {
+        String pane = server.sessions().get(0).windows().get(0).split().id().value();
+        String tmux = server.expand("#{socket_path},#{pid},0");
+        List<Map<String, String>> uncertain = List.of(
+                Map.of("TMUX", tmux),
+                Map.of("TMUX_PANE", pane),
+                Map.of("TMUX", "", "TMUX_PANE", pane),
+                Map.of("TMUX", tmux, "TMUX_PANE", ""),
+                Map.of("TMUX", "malformed", "TMUX_PANE", pane));
+
+        for (Map<String, String> environment : uncertain) {
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> Shaping.kill(
+                            TestCalls.withEnvironment(server, environment, "target", pane, "confirm_self", true)));
+        }
+
+        assertTrue(server.panes().stream()
+                .anyMatch(candidate -> candidate.id().value().equals(pane)));
+    }
+
+    @Test
+    void aCompleteForeignCallerDoesNotNeedSelfConfirmation(Server server) {
+        String pane = server.sessions().get(0).windows().get(0).split().id().value();
+        Map<String, String> foreign = Map.of("TMUX", "/dev/null,1,0", "TMUX_PANE", "%0");
+
+        Shaping.kill(TestCalls.withEnvironment(server, foreign, "target", pane, "confirm_self", true));
+
+        assertTrue(server.panes().stream()
+                .noneMatch(candidate -> candidate.id().value().equals(pane)));
+    }
+
+    @Test
+    void confirmationCannotOverrideAStaleCallerSession(Server server) {
+        String pane = server.sessions().get(0).windows().get(0).split().id().value();
+        Call confirmed = TestCalls.asCaller(server, pane, "target", pane, "confirm_self", true);
+        String destination = server.newSession("moved-caller")
+                .windows()
+                .get(0)
+                .panes()
+                .get(0)
+                .id()
+                .value();
+        server.cmd("move-pane", "-s", pane, "-t", destination);
+
+        assertThrows(IllegalStateException.class, () -> Shaping.kill(confirmed));
+
+        assertTrue(server.panes().stream()
+                .anyMatch(candidate -> candidate.id().value().equals(pane)));
+    }
+
     /** The window holding the caller's pane is as fatal as the pane itself. */
     @Test
     void killingAWindowHoldingTheCallersPaneIsRefusedToo(Server server) {

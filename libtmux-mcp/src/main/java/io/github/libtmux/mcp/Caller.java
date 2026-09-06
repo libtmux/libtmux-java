@@ -2,8 +2,11 @@ package io.github.libtmux.mcp;
 
 import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
+import io.github.libtmux.format.RowFormat;
+import io.github.libtmux.transport.CommandResult;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -20,6 +23,8 @@ import org.jspecify.annotations.Nullable;
  * within one server. Destructive tools refuse when that relationship cannot be proved.
  */
 final class Caller {
+
+    private static final RowFormat CURRENT = RowFormat.of("pane_id", "session_id", "pid", "socket_path");
 
     private enum Relation {
         OUTSIDE,
@@ -125,6 +130,38 @@ final class Caller {
     /** Whether the process is inside tmux but its relation to this server is unprovable. */
     boolean uncertain() {
         return relation == Relation.UNKNOWN;
+    }
+
+    /** Rechecks an inherited self claim in one tmux response immediately before confirmation. */
+    boolean freshlyAuthenticated(Server server) {
+        if (relation != Relation.SELF || claim == null) {
+            return false;
+        }
+        try {
+            CommandResult answer =
+                    server.cmd("display-message", "-p", "-t", claim.pane().value(), CURRENT.template());
+            if (!answer.succeeded() || answer.stdout().size() != 1) {
+                return false;
+            }
+            String terminator = CURRENT.template().substring(CURRENT.template().lastIndexOf('}') + 1);
+            if (!answer.stdout().getFirst().endsWith(terminator)) {
+                return false;
+            }
+            List<RowFormat.Row> rows = CURRENT.rows(answer.stdout());
+            if (rows.size() != 1) {
+                return false;
+            }
+            RowFormat.Row row = rows.getFirst();
+            String socket = row.text("socket_path");
+            RouteValue.requireSafe(socket, "caller tmux socket path");
+            return row.text("pane_id").equals(claim.pane().value())
+                    && row.text("session_id").equals(claim.sessionId())
+                    && row.text("pid").equals(Long.toString(claim.serverPid()))
+                    && Path.of(socket).isAbsolute()
+                    && sameFile(claim.socket(), Path.of(socket)) == FileRelation.SAME;
+        } catch (RuntimeException failure) {
+            return false;
+        }
     }
 
     /** tmux is asked which socket it is on, rather than the endpoint being reassembled from flags. */

@@ -200,19 +200,21 @@ final class Shaping {
      * that happened.
      */
     private static void guard(Call call, List<Pane> going, boolean confirmed, String kind) {
-        if (confirmed) {
-            return;
-        }
-        if (call.caller().uncertain()) {
+        Caller caller = call.caller();
+        if (caller.uncertain()) {
             throw new IllegalStateException(
                     "Refused. This process is inside tmux, but could not prove whether the target "
-                            + "contains its own pane. Pass confirm_self=true only if disconnecting "
-                            + "this conversation is the actual goal.");
+                            + "contains its own pane. Retry from a complete, current caller context; "
+                            + "confirm_self cannot override uncertainty.");
         }
-        Optional<PaneId> mine = call.caller().pane();
-        if (mine.isEmpty()
-                || (!"server".equals(kind)
-                        && going.stream().noneMatch(pane -> call.caller().isSelf(pane.id())))) {
+        Optional<PaneId> mine = caller.pane();
+        if (mine.isEmpty() || (!"server".equals(kind) && going.stream().noneMatch(pane -> caller.isSelf(pane.id())))) {
+            return;
+        }
+        if (confirmed) {
+            if (!caller.freshlyAuthenticated(call.server())) {
+                throw new IllegalStateException("Refused. confirm_self requires a freshly authenticated caller pane.");
+            }
             return;
         }
         List<String> others = going.stream()
