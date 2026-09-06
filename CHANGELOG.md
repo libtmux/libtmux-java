@@ -12,6 +12,8 @@ production.
 
 ## Unreleased
 
+## 0.0.1-alpha.10 — 2026-09-06
+
 ### Fixed
 
 - **Startup refuses a tmux socket path that names no file.** tmux 3.4 and 3.5

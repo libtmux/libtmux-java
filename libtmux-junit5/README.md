@@ -14,7 +14,7 @@ For testing *your* code against real tmux — not for testing libtmux.
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    testImplementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.9"))
+    testImplementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.10"))
     testImplementation("io.github.libtmux:libtmux-junit5")
 }
 ```
