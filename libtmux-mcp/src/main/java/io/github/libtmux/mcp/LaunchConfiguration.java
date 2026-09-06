@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -97,7 +99,7 @@ record LaunchConfiguration(
         if (socketPath.isBlank()) {
             throw new IllegalStateException("tmux returned an empty socket path during startup");
         }
-        return socketProfile("existing", "unknown", false, socketPath);
+        return socketProfile("existing", "unknown", false, reported(socketPath));
     }
 
     private SocketProfile dedicatedProfile(Server server) {
@@ -116,7 +118,30 @@ record LaunchConfiguration(
             throw new IllegalStateException("tmux returned malformed dedicated startup metadata");
         }
         boolean created = Objects.requireNonNull(ownerNonce, "ownerNonce").equals(fields[0]);
-        return socketProfile(created ? "created" : "existing", created ? "minimal" : "unknown", created, fields[1]);
+        return socketProfile(
+                created ? "created" : "existing", created ? "minimal" : "unknown", created, reported(fields[1]));
+    }
+
+    /**
+     * Accepts a socket path tmux reported only when it names a file.
+     *
+     * <p>tmux 3.4 and 3.5 escape a non-printable byte in the socket path when they store it at server
+     * start, so a format renders that path as printable text. The rendering carries no control byte
+     * for {@link RouteValue#requireSafe} to refuse, and it names no socket, which would freeze a
+     * {@code -S} argument that reaches nothing. The server answered over this socket, so the file
+     * exists whenever the answer is the path rather than a rendering of it — which is why existence
+     * separates the two without depending on which releases escape.
+     */
+    private static String reported(String socketPath) {
+        RouteValue.requireSafe(socketPath, "resolved tmux socket path");
+        try {
+            if (Files.exists(Path.of(socketPath), LinkOption.NOFOLLOW_LINKS)) {
+                return socketPath;
+            }
+        } catch (InvalidPathException malformed) {
+            throw new IllegalStateException("tmux reported an unusable socket path during startup", malformed);
+        }
+        throw new IllegalStateException("tmux reported a socket path that names no file during startup");
     }
 
     private SocketProfile socketProfile(
