@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import importlib.util
 import json
 import os
@@ -34,6 +35,7 @@ def swapper(
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(home / ".local" / "state"))
     name = f"mcp_swap_test_{tmp_path.name}"
     spec = importlib.util.spec_from_file_location(name, SCRIPT)
     assert spec is not None and spec.loader is not None
@@ -168,6 +170,666 @@ def test_all_eight_clients_commit_only_after_full_preflight(
         assert not _state_of(swapper, layer).exists()
 
 
+@pytest.mark.parametrize("alias_kind", ["symlink", "hardlink"])
+@pytest.mark.parametrize("dry_run", [False, True], ids=["use", "dry-run"])
+def test_config_alias_to_swap_lock_is_rejected(
+    swapper: types.ModuleType, alias_kind: str, dry_run: bool
+) -> None:
+    """A selected config cannot name the persistent transaction lock."""
+    originals = _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    swap_lock = _swap_lock(swapper)
+    swap_lock.parent.mkdir(parents=True)
+    swap_lock.write_bytes(originals[claude.cli])
+    swap_lock.chmod(0o600)
+    lock_state = _path_identity(swap_lock)
+    claude.path.unlink()
+    if alias_kind == "symlink":
+        claude.path.symlink_to(swap_lock)
+    else:
+        os.link(swap_lock, claude.path)
+    config_state = _path_identity(claude.path)
+    args = _use_args("--cli", claude.cli)
+    if dry_run:
+        args.append("--dry-run")
+
+    with pytest.raises(SystemExit, match="lock"):
+        swapper.main(args)
+
+    assert _path_identity(swap_lock) == lock_state
+    assert _path_identity(claude.path) == config_state
+    assert not swapper.backup_of(claude).exists()
+    assert not _state_of(swapper, claude).exists()
+
+
+@pytest.mark.parametrize("alias_kind", ["symlink", "hardlink"])
+@pytest.mark.parametrize("artifact", ["backup", "state"])
+@pytest.mark.parametrize(
+    "operation", ["use", "use-dry-run", "revert", "revert-dry-run"]
+)
+def test_recovery_alias_to_swap_lock_is_rejected(
+    swapper: types.ModuleType,
+    alias_kind: str,
+    artifact: str,
+    operation: str,
+) -> None:
+    """Neither owned recovery file can become the transaction lock."""
+    _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    assert swapper.main(_use_args("--cli", claude.cli)) == 0
+    swap_lock = _swap_lock(swapper)
+    recovery = (
+        swapper.backup_of(claude)
+        if artifact == "backup"
+        else _state_of(swapper, claude)
+    )
+    before = _owned_layer_state(swapper, claude)
+    swap_lock.unlink()
+    if alias_kind == "symlink":
+        swap_lock.symlink_to(recovery)
+    else:
+        os.link(recovery, swap_lock)
+    lock_state = _path_identity(swap_lock)
+    command = (
+        ["revert", "--cli", claude.cli]
+        if operation.startswith("revert")
+        else _use_args("--cli", claude.cli, "--bin", "/opt/next/libtmux-mcp")
+    )
+    if operation.endswith("dry-run"):
+        command.append("--dry-run")
+
+    with pytest.raises(SystemExit, match="lock"):
+        swapper.main(command)
+
+    assert _owned_layer_state(swapper, claude) == before
+    assert _path_identity(swap_lock) == lock_state
+
+
+@pytest.mark.parametrize("artifact", ["backup", "state"])
+def test_prospective_lock_alias_is_rejected_before_build_or_creation(
+    swapper: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    artifact: str,
+) -> None:
+    """An absent recovery path cannot become the lock before alias checks."""
+    originals = _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    swap_lock = _swap_lock(swapper)
+    swap_lock.parent.mkdir(parents=True)
+    built = False
+
+    if artifact == "backup":
+        monkeypatch.setattr(swapper, "backup_of", lambda _layer: swap_lock)
+    else:
+        monkeypatch.setattr(swapper, "state_of", lambda _layer: swap_lock)
+
+    def build(_args: object) -> None:
+        nonlocal built
+        built = True
+
+    monkeypatch.setattr(swapper, "build", build)
+    with pytest.raises(SystemExit, match="lock"):
+        swapper.main(_use_args("--cli", claude.cli))
+
+    assert not built
+    assert claude.path.read_bytes() == originals[claude.cli]
+    assert not os.path.lexists(swap_lock)
+    assert swap_lock.parent.is_dir()
+
+
+@pytest.mark.parametrize("dry_run", [False, True], ids=["use", "dry-run"])
+@pytest.mark.parametrize("defect", ["mode", "directory", "directory-symlink"])
+def test_unsafe_swap_lock_topology_is_rejected(
+    swapper: types.ModuleType, dry_run: bool, defect: str
+) -> None:
+    """Lock inspection rejects unsafe type, mode, and directory topology."""
+    originals = _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    swap_lock = _swap_lock(swapper)
+    if defect == "directory-symlink":
+        target = claude.path.parent / "lock-target"
+        target.mkdir()
+        swap_lock.parent.parent.mkdir(parents=True)
+        swap_lock.parent.symlink_to(target, target_is_directory=True)
+        (target / swap_lock.name).write_bytes(b"")
+        (target / swap_lock.name).chmod(0o600)
+    else:
+        swap_lock.parent.mkdir(parents=True)
+        if defect == "directory":
+            swap_lock.mkdir()
+        else:
+            swap_lock.write_bytes(b"")
+            swap_lock.chmod(0o640)
+    args = _use_args("--cli", claude.cli)
+    if dry_run:
+        args.append("--dry-run")
+
+    with pytest.raises(SystemExit, match="lock"):
+        swapper.main(args)
+
+    assert claude.path.read_bytes() == originals[claude.cli]
+    assert not swapper.backup_of(claude).exists()
+
+
+@pytest.mark.parametrize("operation", ["use", "revert"])
+def test_transaction_holds_and_revalidates_the_swap_lock(
+    swapper: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    """The lock stays exclusive and a same-path replacement stops the run."""
+    _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    if operation == "revert":
+        assert swapper.main(_use_args("--cli", claude.cli)) == 0
+    swap_lock = _swap_lock(swapper)
+    real_link = os.link
+    real_replace = os.replace
+    replacement_inode: int | None = None
+    observed_locked = False
+
+    def link(
+        source: object,
+        destination: object,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        nonlocal observed_locked, replacement_inode
+        source_path = pathlib.Path(source)
+        destination_path = pathlib.Path(destination)
+        if replacement_inode is None and ".mcp-swap-" in destination_path.name:
+            competitor = os.open(swap_lock, os.O_RDWR)
+            try:
+                with pytest.raises(BlockingIOError):
+                    fcntl.flock(competitor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                observed_locked = True
+            finally:
+                os.close(competitor)
+            human_lock = swap_lock.with_name("human-state.lock")
+            human_lock.write_bytes(b"human lock replacement\n")
+            human_lock.chmod(0o600)
+            real_replace(human_lock, swap_lock)
+            replacement_inode = swap_lock.stat().st_ino
+        real_link(source_path, destination_path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", link)
+    command = (
+        ["revert", "--cli", claude.cli]
+        if operation == "revert"
+        else _use_args("--cli", claude.cli)
+    )
+
+    with pytest.raises(SystemExit, match="lock"):
+        swapper.main(command)
+
+    assert observed_locked
+    assert replacement_inode is not None
+    assert swap_lock.stat().st_ino == replacement_inode
+    assert swap_lock.read_bytes() == b"human lock replacement\n"
+
+
+def test_lock_directory_replacement_after_file_open_is_rejected(
+    swapper: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An open descriptor cannot authenticate a disappeared lock path."""
+    originals = _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    swap_lock = _swap_lock(swapper)
+    displaced = swap_lock.parent.with_name("displaced-swap-lock")
+    real_flock = fcntl.flock
+    real_rename = os.rename
+    injected = False
+
+    def flock(descriptor: int, operation: int) -> None:
+        nonlocal injected
+        real_flock(descriptor, operation)
+        if injected or operation != fcntl.LOCK_EX:
+            return
+        real_rename(swap_lock.parent, displaced)
+        swap_lock.parent.mkdir()
+        injected = True
+
+    monkeypatch.setattr(fcntl, "flock", flock)
+    with pytest.raises(SystemExit, match="lock"):
+        swapper.main(_use_args("--cli", claude.cli))
+
+    assert injected
+    assert claude.path.read_bytes() == originals[claude.cli]
+    assert not swapper.backup_of(claude).exists()
+    assert (displaced / swap_lock.name).is_file()
+    assert not os.path.lexists(swap_lock)
+
+
+def test_use_and_revert_keep_one_private_persistent_lock(
+    swapper: types.ModuleType,
+) -> None:
+    """Successful mutations reuse a private single-link lock inode."""
+    _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    swap_lock = _swap_lock(swapper)
+
+    assert swapper.main(_use_args("--cli", claude.cli)) == 0
+    first = _path_identity(swap_lock)
+    assert stat.S_IMODE(swap_lock.stat().st_mode) == 0o600
+    assert swap_lock.stat().st_nlink == 1
+    assert swapper.main(["revert", "--cli", claude.cli]) == 0
+    assert _path_identity(swap_lock) == first
+    _assert_no_stages(swapper)
+
+
+def test_dry_run_does_not_acquire_an_existing_lock(
+    swapper: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dry-run inspects lock identity without creating a lock owner."""
+    _seed_configs(swapper)
+    swap_lock = _swap_lock(swapper)
+    swap_lock.parent.mkdir(parents=True)
+    swap_lock.write_bytes(b"")
+    swap_lock.chmod(0o600)
+    before = _path_identity(swap_lock)
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("dry-run acquired the swap lock")
+
+    monkeypatch.setattr(fcntl, "flock", forbidden)
+    assert swapper.main(_use_args("--cli", "claude", "--dry-run")) == 0
+    assert _path_identity(swap_lock) == before
+
+
+@pytest.mark.parametrize("timing", ["before-read", "inside-rename"])
+@pytest.mark.parametrize(
+    ("operation", "boundary"),
+    [
+        ("use", "backup-publish"),
+        ("use", "state-publish"),
+        ("use", "config-take-aside"),
+        ("use", "config-publish"),
+        ("repeat-use", "state-take-aside"),
+        ("revert", "config-take-aside"),
+        ("revert", "config-publish"),
+        ("revert", "backup-take-aside"),
+        ("revert", "state-take-aside"),
+    ],
+)
+def test_late_transition_source_replacement_survives(
+    swapper: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    boundary: str,
+    timing: str,
+) -> None:
+    """Every commit boundary rejects and retains a late source inode."""
+    _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    if operation in {"repeat-use", "revert"}:
+        assert swapper.main(_use_args("--cli", claude.cli)) == 0
+    backup = swapper.backup_of(claude)
+    state = _state_of(swapper, claude)
+    real_apply = swapper._apply_replace
+    real_publish = swapper._publish_absent
+    real_link = os.link
+    real_replace = os.replace
+    unexpected_inode: int | None = None
+
+    def selected(source: pathlib.Path, destination: pathlib.Path) -> bool:
+        if boundary == "backup-publish":
+            return destination == backup and ".mcp-swap-new-" in source.name
+        if boundary == "state-publish":
+            return destination == state and ".mcp-swap-state-" in source.name
+        if boundary == "config-take-aside":
+            return source == claude.path and ".mcp-swap-recovery-" in destination.name
+        if boundary == "config-publish":
+            role = "restore" if operation == "revert" else "output"
+            return destination == claude.path and f".mcp-swap-{role}-" in source.name
+        if boundary == "state-take-aside":
+            return source == state and ".mcp-swap-recovery-state-" in destination.name
+        if boundary == "backup-take-aside":
+            return source == backup and ".mcp-swap-recovery-" in destination.name
+        raise AssertionError(f"unknown boundary {boundary}")
+
+    def inject(source: pathlib.Path) -> None:
+        nonlocal unexpected_inode
+        human = source.with_name(f".{source.name}.human-{boundary}")
+        human.write_bytes(b"human boundary replacement\n")
+        human.chmod(0o600)
+        real_replace(human, source)
+        unexpected_inode = source.stat().st_ino
+
+    if timing == "before-read":
+
+        def apply(
+            source: pathlib.Path,
+            destination: pathlib.Path,
+            *args: object,
+            **kwargs: object,
+        ) -> tuple[object, object]:
+            source_path = pathlib.Path(source)
+            destination_path = pathlib.Path(destination)
+            if unexpected_inode is None and selected(source_path, destination_path):
+                inject(source_path)
+            return real_apply(source_path, destination_path, *args, **kwargs)
+
+        monkeypatch.setattr(swapper, "_apply_replace", apply)
+
+        def publish(
+            source: pathlib.Path,
+            destination: pathlib.Path,
+            *args: object,
+            **kwargs: object,
+        ) -> tuple[object, object]:
+            source_path = pathlib.Path(source)
+            destination_path = pathlib.Path(destination)
+            if unexpected_inode is None and selected(source_path, destination_path):
+                inject(source_path)
+            return real_publish(source_path, destination_path, *args, **kwargs)
+
+        monkeypatch.setattr(swapper, "_publish_absent", publish)
+    else:
+
+        def replace(source: object, destination: object) -> None:
+            source_path = pathlib.Path(source)
+            destination_path = pathlib.Path(destination)
+            if unexpected_inode is None and selected(source_path, destination_path):
+                inject(source_path)
+            real_replace(source_path, destination_path)
+
+        monkeypatch.setattr(os, "replace", replace)
+
+        def link(
+            source: object,
+            destination: object,
+            *args: object,
+            **kwargs: object,
+        ) -> None:
+            source_path = pathlib.Path(source)
+            destination_path = pathlib.Path(destination)
+            if unexpected_inode is None and selected(source_path, destination_path):
+                inject(source_path)
+            real_link(source_path, destination_path, *args, **kwargs)
+
+        monkeypatch.setattr(os, "link", link)
+
+    command = (
+        ["revert", "--cli", claude.cli]
+        if operation == "revert"
+        else _use_args(
+            "--cli",
+            claude.cli,
+            *(["--bin", "/opt/next/libtmux-mcp"] if operation == "repeat-use" else []),
+        )
+    )
+    with pytest.raises(SystemExit):
+        swapper.main(command)
+
+    assert unexpected_inode is not None
+    assert unexpected_inode in {
+        path.stat().st_ino for path in claude.path.parent.rglob("*") if path.is_file()
+    }
+
+
+@pytest.mark.parametrize(
+    ("operation", "boundary"),
+    [
+        ("use", "backup-publish"),
+        ("use", "state-publish"),
+        ("use", "config-take-aside"),
+        ("use", "config-publish"),
+        ("repeat-use", "state-take-aside"),
+        ("revert", "config-take-aside"),
+        ("revert", "config-publish"),
+        ("revert", "backup-take-aside"),
+        ("revert", "state-take-aside"),
+    ],
+)
+def test_transition_never_overwrites_a_late_destination(
+    swapper: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    boundary: str,
+) -> None:
+    """A file arriving at a transition destination survives failure."""
+    _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    if operation in {"repeat-use", "revert"}:
+        assert swapper.main(_use_args("--cli", claude.cli)) == 0
+    backup = swapper.backup_of(claude)
+    state = _state_of(swapper, claude)
+    real_link = os.link
+    real_replace = os.replace
+    unexpected_inode: int | None = None
+
+    def selected(source: pathlib.Path, destination: pathlib.Path) -> bool:
+        if boundary == "backup-publish":
+            return destination == backup and ".mcp-swap-new-" in source.name
+        if boundary == "state-publish":
+            return destination == state and ".mcp-swap-state-" in source.name
+        if boundary == "config-take-aside":
+            return source == claude.path and ".mcp-swap-recovery-" in destination.name
+        if boundary == "state-take-aside":
+            return source == state and ".mcp-swap-recovery-state-" in destination.name
+        if boundary == "backup-take-aside":
+            return source == backup and ".mcp-swap-recovery-" in destination.name
+        role = "restore" if operation == "revert" else "output"
+        return destination == claude.path and f".mcp-swap-{role}-" in source.name
+
+    def appear(destination: pathlib.Path) -> None:
+        nonlocal unexpected_inode
+        human = destination.with_name(f".{destination.name}.human-{boundary}")
+        human.write_bytes(b"human destination replacement\n")
+        human.chmod(0o600)
+        real_replace(human, destination)
+        unexpected_inode = destination.stat().st_ino
+
+    def link(
+        source: object, destination: object, *args: object, **kwargs: object
+    ) -> None:
+        source_path = pathlib.Path(source)
+        destination_path = pathlib.Path(destination)
+        if unexpected_inode is None and selected(source_path, destination_path):
+            appear(destination_path)
+        real_link(source, destination, *args, **kwargs)
+
+    def replace(source: object, destination: object) -> None:
+        source_path = pathlib.Path(source)
+        destination_path = pathlib.Path(destination)
+        if unexpected_inode is None and selected(source_path, destination_path):
+            appear(destination_path)
+        real_replace(source_path, destination_path)
+
+    monkeypatch.setattr(os, "link", link)
+    monkeypatch.setattr(os, "replace", replace)
+    command = (
+        ["revert", "--cli", claude.cli]
+        if operation == "revert"
+        else _use_args(
+            "--cli",
+            claude.cli,
+            *(["--bin", "/opt/next/libtmux-mcp"] if operation == "repeat-use" else []),
+        )
+    )
+
+    with pytest.raises(SystemExit):
+        swapper.main(command)
+
+    assert unexpected_inode is not None
+    assert unexpected_inode in {
+        path.stat().st_ino for path in claude.path.parent.rglob("*") if path.is_file()
+    }
+
+
+def test_exact_removal_retains_a_late_replacement(
+    swapper: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Removing an owned public path never deletes a substituted inode."""
+    _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    expected = swapper._regular_file_state(claude.path)
+    real_rename = os.rename
+    real_replace = os.replace
+    real_unlink = os.unlink
+    unexpected_inode: int | None = None
+
+    def inject(path: pathlib.Path) -> None:
+        nonlocal unexpected_inode
+        if unexpected_inode is not None or path != claude.path:
+            return
+        human = path.with_name("human-removal-replacement.json")
+        human.write_bytes(b"human removal replacement\n")
+        human.chmod(0o600)
+        real_replace(human, path)
+        unexpected_inode = path.stat().st_ino
+
+    def rename(
+        source: object,
+        destination: object,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        inject(pathlib.Path(source))
+        real_rename(source, destination, *args, **kwargs)
+
+    def unlink(path: object, *args: object, **kwargs: object) -> None:
+        inject(pathlib.Path(path))
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "rename", rename)
+    monkeypatch.setattr(os, "unlink", unlink)
+    with (
+        swapper._state_lock() as lock,
+        pytest.raises(RuntimeError, match="changed|retained"),
+    ):
+        swapper._apply_unlink(claude.path, expected=expected, lock=lock)
+
+    assert unexpected_inode is not None
+    assert unexpected_inode in {
+        path.stat().st_ino for path in claude.path.parent.rglob("*") if path.is_file()
+    }
+
+
+@pytest.mark.parametrize(
+    ("operation", "role"), [("use", "output"), ("revert", "restore")]
+)
+def test_cleanup_retains_a_late_owned_path_replacement(
+    swapper: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    role: str,
+) -> None:
+    """Use and revert cleanup retain a substituted task-owned inode."""
+    _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    if operation == "revert":
+        assert swapper.main(_use_args("--cli", claude.cli)) == 0
+    real_rename = os.rename
+    real_replace = os.replace
+    real_unlink = os.unlink
+    unexpected_inode: int | None = None
+
+    def inject(path: pathlib.Path) -> None:
+        nonlocal unexpected_inode
+        if unexpected_inode is not None or f".mcp-swap-{role}-" not in path.name:
+            return
+        human = path.with_name(f".{path.name}.human-cleanup")
+        human.write_bytes(b"human cleanup replacement\n")
+        human.chmod(0o600)
+        real_replace(human, path)
+        unexpected_inode = path.stat().st_ino
+
+    def rename(
+        source: object,
+        destination: object,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        inject(pathlib.Path(source))
+        real_rename(source, destination, *args, **kwargs)
+
+    def unlink(path: object, *args: object, **kwargs: object) -> None:
+        inject(pathlib.Path(path))
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "rename", rename)
+    monkeypatch.setattr(os, "unlink", unlink)
+    command = (
+        ["revert", "--cli", claude.cli]
+        if operation == "revert"
+        else _use_args("--cli", claude.cli)
+    )
+
+    with pytest.raises(SystemExit, match="cleanup|retained|task-owned"):
+        swapper.main(command)
+
+    assert unexpected_inode is not None
+    assert unexpected_inode in {
+        path.stat().st_ino for path in claude.path.parent.rglob("*") if path.is_file()
+    }
+
+
+@pytest.mark.parametrize(
+    ("operation", "role"), [("use", "output"), ("revert", "restore")]
+)
+def test_config_symlink_retargeted_during_publish_is_preserved(
+    swapper: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    operation: str,
+    role: str,
+) -> None:
+    """A late symlink retarget stops the transaction without touching its target."""
+    originals = _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    first = tmp_path / "first.json"
+    second = tmp_path / "human.json"
+    first.write_bytes(originals[claude.cli])
+    first.chmod(0o640)
+    second.write_bytes(b'{"human": "retargeted"}\n')
+    second.chmod(0o600)
+    human_identity = _path_identity(second)
+    claude.path.unlink()
+    claude.path.symlink_to(first)
+    if operation == "revert":
+        assert swapper.main(_use_args("--cli", claude.cli)) == 0
+    real_link = os.link
+    retargeted = False
+
+    def link(
+        source: object,
+        destination: object,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        nonlocal retargeted
+        source_path = pathlib.Path(source)
+        destination_path = pathlib.Path(destination)
+        if (
+            not retargeted
+            and destination_path == first
+            and f".mcp-swap-{role}-" in source_path.name
+        ):
+            claude.path.unlink()
+            claude.path.symlink_to(second)
+            retargeted = True
+        real_link(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", link)
+    command = (
+        ["revert", "--cli", claude.cli]
+        if operation == "revert"
+        else _use_args("--cli", claude.cli)
+    )
+    with pytest.raises(SystemExit, match="claude|symlink|target"):
+        swapper.main(command)
+
+    assert retargeted
+    assert claude.path.is_symlink() and claude.path.resolve() == second
+    assert _path_identity(second) == human_identity
+    assert swapper.backup_of(claude).is_file()
+    assert _state_of(swapper, claude).is_file()
+    assert [
+        path for path in first.parent.iterdir() if ".mcp-swap-recovery-" in path.name
+    ]
+
+
 def test_failed_late_config_preflight_writes_nothing(
     swapper: types.ModuleType,
 ) -> None:
@@ -252,16 +914,21 @@ def test_state_publication_failure_rolls_back_every_client(
     originals = _seed_configs(swapper)
     states = [_state_of(swapper, layer) for layer in swapper.LAYERS]
     destinations = _fail_first_replace_to(monkeypatch, states[-1])
-    real_unlink = os.unlink
+    real_rename = os.rename
     removed: list[pathlib.Path] = []
 
-    def track_state_removal(path: object, *args: object, **kwargs: object) -> None:
-        target = pathlib.Path(path)
+    def track_state_removal(
+        source: object,
+        destination: object,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        target = pathlib.Path(source)
         if target in states:
             removed.append(target)
-        real_unlink(path, *args, **kwargs)
+        real_rename(source, destination, *args, **kwargs)
 
-    monkeypatch.setattr(os, "unlink", track_state_removal)
+    monkeypatch.setattr(os, "rename", track_state_removal)
 
     with pytest.raises(SystemExit, match="synthetic replace failure"):
         swapper.main(_use_args())
@@ -326,13 +993,16 @@ def test_blocked_repeat_use_retains_prior_state_recovery(
     original_backup = swapper.backup_of(layer).read_bytes()
     human = b'{"human": true}\n'
     human_identity: tuple[int, int] | None = None
+    real_link = os.link
     real_replace = os.replace
 
-    def replace_then_human_edit(src: object, dst: object) -> None:
+    def publish_then_human_edit(
+        src: object, dst: object, *args: object, **kwargs: object
+    ) -> None:
         nonlocal human_identity
         source = pathlib.Path(src)
         destination = pathlib.Path(dst)
-        real_replace(source, destination)
+        real_link(source, destination, *args, **kwargs)
         if destination == layer.path and "mcp-swap-output" in source.name:
             replacement = destination.with_name(f".{destination.name}.human")
             replacement.write_bytes(human)
@@ -341,7 +1011,7 @@ def test_blocked_repeat_use_retains_prior_state_recovery(
             human_identity = (destination.stat().st_dev, destination.stat().st_ino)
             raise OSError("synthetic post-commit failure")
 
-    monkeypatch.setattr(os, "replace", replace_then_human_edit)
+    monkeypatch.setattr(os, "link", publish_then_human_edit)
     with pytest.raises(SystemExit, match="rollback incomplete"):
         swapper.main(
             _use_args(
@@ -441,11 +1111,14 @@ def test_state_removal_failure_restores_the_swapped_transaction(
     real_replace = swapper._apply_replace
 
     def fail_state_removal(
-        source: pathlib.Path, destination: pathlib.Path
+        source: pathlib.Path,
+        destination: pathlib.Path,
+        *args: object,
+        **kwargs: object,
     ) -> tuple[object, object]:
         if pathlib.Path(source) == blocked:
             raise OSError("synthetic state removal failure")
-        return real_replace(source, destination)
+        return real_replace(source, destination, *args, **kwargs)
 
     monkeypatch.setattr(swapper, "_apply_replace", fail_state_removal)
     with pytest.raises(SystemExit, match="synthetic state removal failure"):
@@ -803,9 +1476,13 @@ def test_dry_run_plans_without_building_or_writing(
         raise AssertionError("dry-run built the distribution")
 
     monkeypatch.setattr(swapper, "build", forbidden_build)
+    swap_lock = _swap_lock(swapper)
+    assert not os.path.lexists(swap_lock)
     assert swapper.main(_use_args("--dry-run")) == 0
     _assert_original_state(swapper, originals)
     _assert_no_stages(swapper)
+    assert not os.path.lexists(swap_lock)
+    assert not swap_lock.parent.exists()
 
 
 def test_staging_failure_cleans_up_before_any_destination_write(
@@ -841,14 +1518,14 @@ def test_use_cleanup_failure_is_not_reported_as_success(
     """A committed swap with retained private stages must return failure."""
     _seed_configs(swapper)
     claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
-    _fail_stage_cleanup(monkeypatch)
+    _fail_stage_cleanup(monkeypatch, "output")
 
     with pytest.raises(SystemExit, match="cleanup incomplete") as stopped:
         swapper.main(_use_args("--cli", claude.cli))
 
-    recovery = list(claude.path.parent.glob(f".{claude.path.name}.mcp-swap-recovery-*"))
-    assert len(recovery) == 1
-    assert str(recovery[0]) in str(stopped.value)
+    retained = list(claude.path.parent.glob(".*mcp-swap-output-*mcp-swap-retained-*"))
+    assert len(retained) == 1
+    assert str(retained[0]) in str(stopped.value)
     _assert_swapped(claude)
 
 
@@ -859,14 +1536,14 @@ def test_revert_cleanup_failure_is_not_reported_as_success(
     originals = _seed_configs(swapper)
     claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
     assert swapper.main(_use_args("--cli", claude.cli)) == 0
-    _fail_stage_cleanup(monkeypatch)
+    _fail_stage_cleanup(monkeypatch, "restore")
 
     with pytest.raises(SystemExit, match="cleanup incomplete") as stopped:
         swapper.main(["revert", "--cli", claude.cli])
 
-    recoveries = list(claude.path.parent.glob("*.mcp-swap-recovery-*"))
-    assert len(recoveries) == 3
-    assert all(str(path) in str(stopped.value) for path in recoveries)
+    retained = list(claude.path.parent.glob(".*mcp-swap-restore-*mcp-swap-retained-*"))
+    assert len(retained) == 1
+    assert str(retained[0]) in str(stopped.value)
     assert claude.path.read_bytes() == originals[claude.cli]
 
 
@@ -877,10 +1554,12 @@ def test_failed_rollback_preserves_backup_and_recovery_stage(
     originals = _seed_configs(swapper)
     claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
     cursor = next(layer for layer in swapper.LAYERS if layer.cli == "cursor")
-    real_replace = os.replace
+    real_link = os.link
     claude_writes = 0
 
-    def fail_commit_and_rollback(src: object, dst: object) -> None:
+    def fail_commit_and_rollback(
+        src: object, dst: object, *args: object, **kwargs: object
+    ) -> None:
         nonlocal claude_writes
         destination = pathlib.Path(dst)
         if destination == cursor.path:
@@ -889,9 +1568,9 @@ def test_failed_rollback_preserves_backup_and_recovery_stage(
             claude_writes += 1
             if claude_writes == 2:
                 raise OSError("synthetic rollback failure")
-        real_replace(src, dst)
+        real_link(src, dst, *args, **kwargs)
 
-    monkeypatch.setattr(os, "replace", fail_commit_and_rollback)
+    monkeypatch.setattr(os, "link", fail_commit_and_rollback)
     with pytest.raises(SystemExit, match="synthetic rollback failure"):
         swapper.main(_use_args())
 
@@ -913,19 +1592,31 @@ def test_failed_backup_rollback_preserves_its_recovery_copy(
     codex = next(layer for layer in swapper.LAYERS if layer.cli == "codex")
     claude_backup = swapper.backup_of(claude)
     codex_backup = swapper.backup_of(codex)
-    real_replace = os.replace
+    real_apply = swapper._apply_replace
+    real_link = os.link
     rollback_started = False
 
-    def fail_backup_restore(src: object, dst: object) -> None:
+    def fail_backup_removal(
+        src: pathlib.Path,
+        dst: pathlib.Path,
+        *args: object,
+        **kwargs: object,
+    ) -> tuple[object, object]:
         nonlocal rollback_started
         if pathlib.Path(src) == codex_backup:
             rollback_started = True
             raise OSError("synthetic backup removal failure")
+        return real_apply(src, dst, *args, **kwargs)
+
+    def fail_backup_restore(
+        src: object, dst: object, *args: object, **kwargs: object
+    ) -> None:
         if rollback_started and pathlib.Path(dst) == claude_backup:
             raise OSError("synthetic backup rollback failure")
-        real_replace(src, dst)
+        real_link(src, dst, *args, **kwargs)
 
-    monkeypatch.setattr(os, "replace", fail_backup_restore)
+    monkeypatch.setattr(swapper, "_apply_replace", fail_backup_removal)
+    monkeypatch.setattr(os, "link", fail_backup_restore)
     with pytest.raises(SystemExit, match="synthetic backup rollback failure"):
         swapper.main(["revert"])
 
@@ -1077,6 +1768,23 @@ def _state_of(swapper: types.ModuleType, layer: object) -> pathlib.Path:
     return backup.with_name(backup.name + ".state")
 
 
+def _swap_lock(swapper: types.ModuleType) -> pathlib.Path:
+    home = next(layer for layer in swapper.LAYERS if layer.cli == "claude").path.parent
+    return home / ".local" / "state" / "libtmux-mcp-dev" / "swap" / "state.lock"
+
+
+def _path_identity(path: pathlib.Path) -> tuple[object, ...]:
+    details = path.lstat()
+    return (
+        stat.S_ISLNK(details.st_mode),
+        os.readlink(path) if stat.S_ISLNK(details.st_mode) else None,
+        path.read_bytes(),
+        stat.S_IMODE(path.stat().st_mode),
+        path.stat().st_dev,
+        path.stat().st_ino,
+    )
+
+
 def _owned_layer_state(swapper: types.ModuleType, layer: object) -> tuple[object, ...]:
     return _layer_state(swapper, layer)
 
@@ -1087,11 +1795,11 @@ def _assert_no_stages(swapper: types.ModuleType) -> None:
     assert [path for path in home.rglob("*") if roles.search(path.name)] == []
 
 
-def _fail_stage_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+def _fail_stage_cleanup(monkeypatch: pytest.MonkeyPatch, role: str) -> None:
     real_unlink = pathlib.Path.unlink
 
     def refuse(path: pathlib.Path, *args: object, **kwargs: object) -> None:
-        if ".mcp-swap-" in path.name:
+        if f".mcp-swap-{role}-" in path.parent.name:
             raise OSError("synthetic cleanup failure")
         real_unlink(path, *args, **kwargs)
 
@@ -1101,6 +1809,7 @@ def _fail_stage_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
 def _fail_first_replace_to(
     monkeypatch: pytest.MonkeyPatch, destination: pathlib.Path
 ) -> list[pathlib.Path]:
+    real_link = os.link
     real_replace = os.replace
     real_rename = os.rename
     failed = False
@@ -1124,6 +1833,16 @@ def _fail_first_replace_to(
             raise OSError("synthetic replace failure")
         real_rename(src, dst, *args, **kwargs)
 
+    def link(src: object, dst: object, *args: object, **kwargs: object) -> None:
+        nonlocal failed
+        target = pathlib.Path(dst)
+        destinations.append(target)
+        if target == destination and not failed:
+            failed = True
+            raise OSError("synthetic replace failure")
+        real_link(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", link)
     monkeypatch.setattr(os, "replace", replace)
     monkeypatch.setattr(os, "rename", rename)
     return destinations
