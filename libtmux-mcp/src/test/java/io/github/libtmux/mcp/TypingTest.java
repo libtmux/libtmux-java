@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.SplitSpec;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -16,6 +17,8 @@ import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -24,9 +27,13 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @ExtendWith(TmuxExtension.class)
 final class TypingTest {
@@ -88,6 +95,221 @@ final class TypingTest {
                 TestCalls.on(server, "pane_id", source.id().value(), "keys", List.of("q"), "literal", true));
 
         assertEquals(Set.of(source.id().value(), other.id().value()), Set.copyOf(sent.resolvedPaneIds()));
+    }
+
+    @Test
+    void sendReservationCoversItsFinalPreflight(Server server) throws Exception {
+        String pane = server.panes().getFirst().id().value();
+        CountDownLatch checked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger snapshots = new AtomicInteger();
+        List<CommandRequest> requests = new ArrayList<>();
+        var owner = new java.util.concurrent.atomic.AtomicReference<Thread>();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport pausing = borrowing(request -> {
+                CommandResult result = processes.execute(request);
+                if (Thread.currentThread().equals(owner.get())) {
+                    requests.add(request);
+                }
+                if (isPaneInputSnapshot(request) && snapshots.incrementAndGet() == 2) {
+                    checked.countDown();
+                    await(release);
+                }
+                return result;
+            });
+            try (Server measured = Server.using(server.config(), pausing);
+                    var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+                var first = calls.submit(() -> {
+                    owner.set(Thread.currentThread());
+                    return Typing.sendKeys(
+                            TestCalls.on(measured, "pane_id", pane, "keys", List.of("first-lease"), "literal", true));
+                });
+                await(checked);
+                try {
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> Typing.sendKeys(TestCalls.on(
+                                    measured, "pane_id", pane, "keys", List.of("second-lease"), "literal", true)));
+                } finally {
+                    release.countDown();
+                }
+                first.get(10, TimeUnit.SECONDS);
+            }
+        }
+
+        List<Integer> preflights = indexes(requests, TypingTest::isPaneInputSnapshot);
+        List<Integer> sends = indexes(requests, request -> hasCommand(request, "send-keys"));
+        assertEquals(2, preflights.size());
+        assertEquals(1, sends.size());
+        assertEquals(preflights.getLast() + 1, sends.getFirst());
+    }
+
+    @Test
+    void pasteReservationCoversStagingAndEmptyPaste(Server server) throws Exception {
+        assumeTrue(server.version().atLeast(SAFE_PASTE_CLEANUP));
+        String pane = server.panes().getFirst().id().value();
+        CountDownLatch checked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger snapshots = new AtomicInteger();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport pausing = borrowing(request -> {
+                CommandResult result = processes.execute(request);
+                if (isPaneInputSnapshot(request) && snapshots.incrementAndGet() == 2) {
+                    checked.countDown();
+                    await(release);
+                }
+                return result;
+            });
+            try (Server measured = Server.using(server.config(), pausing);
+                    var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+                var first = calls.submit(
+                        () -> Typing.pasteText(TestCalls.on(measured, "pane_id", pane, "text", "held-paste")));
+                await(checked);
+                try {
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> Typing.pasteText(TestCalls.on(measured, "pane_id", pane, "text", "")));
+                } finally {
+                    release.countDown();
+                }
+                first.get(10, TimeUnit.SECONDS);
+            }
+        }
+
+        assertNoOwnedBuffers(server);
+    }
+
+    @ParameterizedTest(name = "{0} socket alias")
+    @ValueSource(strings = {"symbolic", "hard"})
+    void reservationsContendAcrossPhysicalSocketAliases(String kind, Server server, @TempDir Path temporary)
+            throws Exception {
+        String pane = server.panes().getFirst().id().value();
+        String socket = server.expand("#{socket_path}");
+        Path alias = temporary.resolve("tmux-socket-alias");
+        if (kind.equals("symbolic")) {
+            Files.createSymbolicLink(alias, Path.of(socket));
+        } else {
+            Files.createLink(alias, Path.of(socket));
+        }
+        CountDownLatch sending = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        try (ProcessTransport firstProcesses = new ProcessTransport();
+                ProcessTransport aliasProcesses = new ProcessTransport()) {
+            TmuxTransport blocked = borrowing(request -> {
+                if (hasCommand(request, "send-keys")) {
+                    sending.countDown();
+                    await(release);
+                }
+                return firstProcesses.execute(request);
+            });
+            TmuxTransport aliased = borrowing(request -> {
+                CommandResult result = aliasProcesses.execute(request);
+                return isPaneInputSnapshot(request)
+                        ? new CommandResult(
+                                result.exitCode(),
+                                result.stdout().stream()
+                                        .map(line -> line.replace(socket, alias.toString()))
+                                        .toList(),
+                                result.stderr())
+                        : result;
+            });
+            var aliasConfig = server.config().toBuilder()
+                    .endpoint(ServerEndpoint.socketPath(alias))
+                    .build();
+            try (Server first = Server.using(server.config(), blocked);
+                    Server second = Server.using(aliasConfig, aliased);
+                    var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+                var held = calls.submit(() -> Typing.sendKeys(
+                        TestCalls.on(first, "pane_id", pane, "keys", List.of("alias-held"), "literal", true)));
+                await(sending);
+                try {
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> Typing.sendKeys(TestCalls.on(
+                                    second, "pane_id", pane, "keys", List.of("alias-refused"), "literal", true)));
+                } finally {
+                    release.countDown();
+                }
+                held.get(10, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    @Test
+    void reservationCoversEveryInitiallyConfiguredMember(Server server) throws Exception {
+        var source = server.panes().getFirst();
+        var peer = source.split();
+        source.window().setSynchronizePanes(true);
+        CountDownLatch sending = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport blocked = borrowing(request -> {
+                if (hasCommand(request, "send-keys")) {
+                    sending.countDown();
+                    await(release);
+                }
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), blocked);
+                    var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+                var held = calls.submit(() -> Typing.sendKeys(TestCalls.on(
+                        measured, "pane_id", source.id().value(), "keys", List.of("cohort-held"), "literal", true)));
+                await(sending);
+                peer.options().set("synchronize-panes", "off");
+                try {
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> Typing.sendKeys(TestCalls.on(
+                                    server,
+                                    "pane_id",
+                                    peer.id().value(),
+                                    "keys",
+                                    List.of("peer-refused"),
+                                    "literal",
+                                    true)));
+                } finally {
+                    release.countDown();
+                }
+                held.get(10, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    @Test
+    void changedPanePlacementRefusesTheFinalSend(Server server) {
+        String pane = server.panes().getFirst().id().value();
+        String window = server.panes().getFirst().window().id().value();
+        AtomicInteger snapshots = new AtomicInteger();
+        AtomicBoolean sent = new AtomicBoolean();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport changing = borrowing(request -> {
+                CommandResult result = processes.execute(request);
+                if (isPaneInputSnapshot(request) && snapshots.incrementAndGet() == 2) {
+                    return new CommandResult(
+                            result.exitCode(),
+                            result.stdout().stream()
+                                    .map(line -> line.replace(window, "@4294967295"))
+                                    .toList(),
+                            result.stderr());
+                }
+                if (hasCommand(request, "send-keys")) {
+                    sent.set(true);
+                }
+                return result;
+            });
+            try (Server measured = Server.using(server.config(), changing)) {
+                IllegalStateException refused = assertThrows(
+                        IllegalStateException.class,
+                        () -> Typing.sendKeys(TestCalls.on(
+                                measured, "pane_id", pane, "keys", List.of("stale-placement"), "literal", true)));
+                assertTrue(String.valueOf(refused.getMessage()).contains("changed"), refused.getMessage());
+            }
+        }
+
+        assertEquals(2, snapshots.get());
+        assertFalse(sent.get());
+        Typing.sendKeys(
+                TestCalls.on(server, "pane_id", pane, "keys", List.of("released-after-stale"), "literal", true));
     }
 
     @Test
@@ -666,10 +888,18 @@ final class TypingTest {
                         && argv.stream().anyMatch(part -> part.contains("pane_in_mode")));
     }
 
+    private static List<Integer> indexes(
+            List<CommandRequest> requests, java.util.function.Predicate<CommandRequest> predicate) {
+        return java.util.stream.IntStream.range(0, requests.size())
+                .filter(index -> predicate.test(requests.get(index)))
+                .boxed()
+                .toList();
+    }
+
     private static void await(CountDownLatch latch) {
         try {
             if (!latch.await(5, TimeUnit.SECONDS)) {
-                throw new IllegalStateException("timed out arranging concurrent pastes");
+                throw new IllegalStateException("timed out arranging concurrent input");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

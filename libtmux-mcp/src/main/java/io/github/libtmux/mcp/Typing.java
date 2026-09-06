@@ -52,14 +52,17 @@ final class Typing {
     }
 
     static Sent sendKeys(Pane pane, List<String> keys, boolean literal, PaneInputCohort.Resolution cohort) {
-        List<String> resolved = cohort.requireKeyRecipients("send_keys");
-        pane.sendKeys(keys, literal);
-        return new Sent(
-                pane.id().value(),
-                keys.size(),
-                literal,
-                resolved,
-                "Sent, not waited for. Call capture_since or wait_for_text on this pane to see " + "what it did.");
+        try (PaneInputReservations.Lease lease = PaneInputReservations.keys(cohort, "send_keys")) {
+            PaneInputCohort.Resolution fresh = PaneInputCohort.resolve(pane, cohort.caller());
+            List<String> resolved = lease.requireSameKeys(fresh);
+            pane.sendKeys(keys, literal);
+            return new Sent(
+                    pane.id().value(),
+                    keys.size(),
+                    literal,
+                    resolved,
+                    "Sent, not waited for. Call capture_since or wait_for_text on this pane to see " + "what it did.");
+        }
     }
 
     /**
@@ -76,19 +79,21 @@ final class Typing {
         Pane pane = Targets.pane(call.server(), call.string("pane_id"));
         String text = call.stringIncludingEmpty("text");
         boolean enter = call.flag("enter", false);
-        PaneInputCohort.resolve(pane, call.caller()).requirePasteTarget("paste_text");
-        if (text.isEmpty() && !enter) {
-            return new Pasted(pane.id().value(), 0, 0, "Empty text without Enter; nothing was sent.");
+        PaneInputCohort.Resolution initial = PaneInputCohort.resolve(pane, call.caller());
+        try (PaneInputReservations.Lease lease = PaneInputReservations.paste(initial, "paste_text")) {
+            if (text.isEmpty() && !enter) {
+                return new Pasted(pane.id().value(), 0, 0, "Empty text without Enter; nothing was sent.");
+            }
+            // tmux turns the line feeds in a buffer into carriage returns as it pastes, so a trailing
+            // newline is what submits the text — there is no flag that means "and Enter".
+            pane.paste(
+                    enter ? text + "\n" : text,
+                    () -> lease.requireSamePaste(PaneInputCohort.resolve(pane, call.caller())));
+            return new Pasted(
+                    pane.id().value(),
+                    text.length(),
+                    (int) text.lines().count(),
+                    enter ? null : "Pasted without a trailing newline; pass 'enter' to submit it.");
         }
-        // tmux turns the line feeds in a buffer into carriage returns as it pastes, so a trailing
-        // newline is what submits the text — there is no flag that means "and Enter".
-        pane.paste(
-                enter ? text + "\n" : text,
-                () -> PaneInputCohort.resolve(pane, call.caller()).requirePasteTarget("paste_text"));
-        return new Pasted(
-                pane.id().value(),
-                text.length(),
-                (int) text.lines().count(),
-                enter ? null : "Pasted without a trailing newline; pass 'enter' to submit it.");
     }
 }
