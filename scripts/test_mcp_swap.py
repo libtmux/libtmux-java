@@ -272,22 +272,43 @@ def test_state_publication_failure_rolls_back_every_client(
     _assert_no_stages(swapper)
 
 
-def test_failed_repeat_use_preserves_existing_backups(
-    swapper: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("failure", ["state", "config"])
+def test_failed_repeat_use_restores_existing_recovery_identity(
+    swapper: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
 ) -> None:
-    """Rollback may not remove backups owned by an earlier successful swap."""
+    """Repeat-use rollback restores the owned recovery pair itself."""
     _seed_configs(swapper)
     assert swapper.main(_use_args()) == 0
     before = {layer.cli: _layer_state(swapper, layer) for layer in swapper.LAYERS}
+    state_inodes = {
+        layer.cli: (
+            _state_of(swapper, layer).stat().st_dev,
+            _state_of(swapper, layer).stat().st_ino,
+        )
+        for layer in swapper.LAYERS
+    }
     pi = next(layer for layer in swapper.LAYERS if layer.cli == "pi")
-    _fail_first_replace_to(monkeypatch, pi.path)
+    destination = _state_of(swapper, pi) if failure == "state" else pi.path
+    _fail_first_replace_to(monkeypatch, destination)
 
-    with pytest.raises((OSError, SystemExit), match="synthetic replace failure"):
+    with pytest.raises(
+        (OSError, SystemExit), match="synthetic replace failure"
+    ) as stopped:
         swapper.main(_use_args("--bin", "/opt/another/libtmux-mcp"))
 
+    assert "rollback incomplete" not in str(stopped.value)
     assert {
         layer.cli: _layer_state(swapper, layer) for layer in swapper.LAYERS
     } == before
+    assert {
+        layer.cli: (
+            _state_of(swapper, layer).stat().st_dev,
+            _state_of(swapper, layer).stat().st_ino,
+        )
+        for layer in swapper.LAYERS
+    } == state_inodes
     _assert_no_stages(swapper)
 
 

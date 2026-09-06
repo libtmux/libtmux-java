@@ -571,7 +571,7 @@ class BackupWrite(t.NamedTuple):
 class StateWrite(t.NamedTuple):
     state: StateFile
     backup: BackupState
-    committed: FileState
+    committed: FileState | None
     recovery: pathlib.Path | None
     cli: str
 
@@ -1439,17 +1439,30 @@ def _commit_use(staged: list[StagedUse], owned: set[pathlib.Path]) -> None:
             expected_backup = committed_backups.get(cli, plan.backup.file)
             _changed_backup(plan.backup, expected_backup, cli)
             _changed_state(plan.state, plan.state.file, cli)
+            if plan.state.file is not None:
+                recovery = t.cast(pathlib.Path, item.state_recovery)
+                removed, delayed = _apply_replace(plan.state.physical, recovery)
+                operations.append(
+                    StateWrite(plan.state, plan.backup, None, recovery, cli)
+                )
+                if removed != plan.state.file:
+                    raise RuntimeError(f"{cli} recovery state identity changed")
+                if delayed is not None:
+                    raise delayed
+                _verify_artifact(plan.state, None)
             committed, delayed = _apply_replace(item.state, plan.state.physical)
             owned.discard(item.state)
-            operations.append(
-                StateWrite(
-                    plan.state,
-                    plan.backup,
-                    committed,
-                    item.state_recovery,
-                    cli,
-                )
+            operation = StateWrite(
+                plan.state,
+                plan.backup,
+                committed,
+                item.state_recovery,
+                cli,
             )
+            if plan.state.file is None:
+                operations.append(operation)
+            else:
+                operations[-1] = operation
             committed_states[cli] = committed
             if delayed is not None:
                 raise delayed
