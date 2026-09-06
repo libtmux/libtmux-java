@@ -59,13 +59,16 @@ final class FileSnapshot {
             throw new IOException("file exceeds 16 MiB: " + normalized);
         }
         var posix = Files.readAttributes(normalized, PosixFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-        var rawLinks = Files.getAttribute(normalized, "unix:nlink", LinkOption.NOFOLLOW_LINKS);
-        var links = rawLinks instanceof Number number ? number.intValue() : 0;
+        var links = links(normalized);
         var data = Files.readAllBytes(normalized);
         var after = Files.readAttributes(normalized, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        var posixAfter = Files.readAttributes(normalized, PosixFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        var linksAfter = links(normalized);
         if (!String.valueOf(basic.fileKey()).equals(String.valueOf(after.fileKey()))
                 || basic.size() != after.size()
-                || !basic.lastModifiedTime().equals(after.lastModifiedTime())) {
+                || !basic.lastModifiedTime().equals(after.lastModifiedTime())
+                || !posix.permissions().equals(posixAfter.permissions())
+                || links != linksAfter) {
             throw new IOException("file changed while it was read: " + normalized);
         }
         return new FileSnapshot(
@@ -153,5 +156,10 @@ final class FileSnapshot {
         } catch (NoSuchAlgorithmException impossible) {
             throw new AssertionError(impossible);
         }
+    }
+
+    private static int links(Path path) throws IOException {
+        var raw = Files.getAttribute(path, "unix:nlink", LinkOption.NOFOLLOW_LINKS);
+        return raw instanceof Number number ? number.intValue() : 0;
     }
 }

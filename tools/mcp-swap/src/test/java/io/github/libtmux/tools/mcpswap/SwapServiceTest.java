@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -21,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 final class SwapServiceTest {
+    private static final ObjectMapper JSON = new ObjectMapper();
     private static final ServerSpec FIRST = new ServerSpec("/opt/first/libtmux-mcp", List.of("--socket", "/tmp/a"));
     private static final ServerSpec SECOND =
             new ServerSpec("/opt/second/libtmux-mcp", List.of("--socket-name", "demo"));
@@ -219,6 +222,29 @@ final class SwapServiceTest {
     }
 
     @Test
+    void rejectsARecoveryRecordWithAChecksummedWrongType() throws IOException {
+        seedAll();
+        var selected = clients.getFirst();
+        var service = new SwapService(home, environment);
+        service.use(List.of(selected), clients, "tmux", FIRST, false);
+        var state = SwapPaths.state(selected);
+        var root = (ObjectNode) JSON.readTree(state.toFile());
+        root.remove("checksum");
+        root.put("symbolicLink", "false");
+        root.put("checksum", FileSnapshot.sha256(JSON.writeValueAsBytes(root)));
+        Files.write(state, JSON.writeValueAsBytes(root));
+
+        assertThrows(IOException.class, () -> service.revert(List.of(selected), clients, "tmux", false));
+
+        assertEquals(
+                FIRST,
+                ConfigCodec.read(selected, Files.readAllBytes(selected.configPath()), "tmux")
+                        .orElseThrow());
+        assertTrue(Files.isRegularFile(SwapPaths.backup(selected)));
+        assertTrue(Files.isRegularFile(state));
+    }
+
+    @Test
     void keepsAConfigSymlinkAcrossUseAndRevert() throws IOException {
         var selected = clients.getFirst();
         Files.createDirectories(selected.configPath().getParent());
@@ -287,6 +313,27 @@ final class SwapServiceTest {
             assertThrows(IOException.class, () -> SwapLock.acquire(home, environment));
             first.verify();
         }
+    }
+
+    @Test
+    void dryRunRejectsAnUnsafeLockWithoutChangingIt() throws IOException {
+        seedAll();
+        var lockPath = SwapPaths.lock(home, environment);
+        var lockDirectory = Objects.requireNonNull(lockPath.getParent());
+        var stateDirectory = Objects.requireNonNull(lockDirectory.getParent());
+        Files.createDirectories(lockDirectory);
+        Files.setPosixFilePermissions(stateDirectory, PosixFilePermissions.fromString("rwx------"));
+        Files.setPosixFilePermissions(lockDirectory, PosixFilePermissions.fromString("rwx------"));
+        var target = home.resolve("lock-target");
+        Files.writeString(target, "not a lock");
+        Files.createSymbolicLink(lockPath, target);
+        var before = tree();
+
+        assertThrows(
+                IOException.class, () -> new SwapService(home, environment).use(clients, clients, "tmux", FIRST, true));
+
+        assertEquals(before, tree());
+        assertTrue(Files.isSymbolicLink(lockPath));
     }
 
     @Test

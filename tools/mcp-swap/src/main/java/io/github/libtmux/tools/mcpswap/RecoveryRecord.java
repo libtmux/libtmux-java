@@ -141,7 +141,7 @@ record RecoveryRecord(
         } catch (JsonProcessingException impossible) {
             throw new IOException("cannot verify recovery state", impossible);
         }
-        var version = root.path("version").asInt(-1);
+        var version = requiredInteger(root, "version");
         if (version != VERSION) {
             throw new IOException("unsupported recovery state version " + version);
         }
@@ -163,9 +163,9 @@ record RecoveryRecord(
                 requiredText(root, "logical"),
                 requiredText(root, "target"),
                 requiredText(root, "physicalParent"),
-                root.path("symbolicLink").asBoolean(),
+                requiredBoolean(root, "symbolicLink"),
                 requiredText(root, "linkTarget"),
-                root.path("originalExists").asBoolean(),
+                requiredBoolean(root, "originalExists"),
                 requiredText(root, "backupIdentity"),
                 requiredText(root, "originalDigest"),
                 requiredText(root, "originalPermissions"),
@@ -238,5 +238,21 @@ record RecoveryRecord(
             throw new IOException("recovery field " + name + " is not a string");
         }
         return value.textValue();
+    }
+
+    private static int requiredInteger(ObjectNode root, String name) throws IOException {
+        var value = root.get(name);
+        if (value == null || !value.isIntegralNumber() || !value.canConvertToInt()) {
+            throw new IOException("recovery field " + name + " is not an integer");
+        }
+        return value.intValue();
+    }
+
+    private static boolean requiredBoolean(ObjectNode root, String name) throws IOException {
+        var value = root.get(name);
+        if (value == null || !value.isBoolean()) {
+            throw new IOException("recovery field " + name + " is not a boolean");
+        }
+        return value.booleanValue();
     }
 }

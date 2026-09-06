@@ -23,6 +23,7 @@ final class TransactionGuard {
     }
 
     static void preflight(List<Client> clients, Path lockPath) throws IOException {
+        SwapLock.preflight(lockPath);
         rejectAliases(inspect(clients), lockPath);
     }
 

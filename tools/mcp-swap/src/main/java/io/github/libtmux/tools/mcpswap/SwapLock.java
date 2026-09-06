@@ -83,6 +83,18 @@ final class SwapLock implements AutoCloseable {
         }
     }
 
+    static void preflight(Path lockPath) throws IOException {
+        var path = lockPath.toAbsolutePath().normalize();
+        var parent = path.getParent();
+        if (parent == null) {
+            throw new IOException("swap lock has no parent");
+        }
+        validateDirectories(parent);
+        if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+            requireSafe(FileSnapshot.capture(path), path);
+        }
+    }
+
     Path path() {
         return state.path();
     }
@@ -124,14 +136,20 @@ final class SwapLock implements AutoCloseable {
                 // A concurrent creator still has to pass the same validation.
             }
         }
+        validateDirectories(directory);
+    }
+
+    private static void validateDirectories(Path directory) throws IOException {
         var checked = directory;
         for (int depth = 0; depth < 2; depth++) {
-            if (Files.isSymbolicLink(checked) || !Files.isDirectory(checked, LinkOption.NOFOLLOW_LINKS)) {
-                throw new IOException("unsafe swap lock directory: " + checked);
-            }
-            var permissions = Files.getPosixFilePermissions(checked, LinkOption.NOFOLLOW_LINKS);
-            if (!permissions.equals(DIRECTORY_MODE)) {
-                throw new IOException("swap lock directory must have mode 0700: " + checked);
+            if (Files.exists(checked, LinkOption.NOFOLLOW_LINKS)) {
+                if (Files.isSymbolicLink(checked) || !Files.isDirectory(checked, LinkOption.NOFOLLOW_LINKS)) {
+                    throw new IOException("unsafe swap lock directory: " + checked);
+                }
+                var permissions = Files.getPosixFilePermissions(checked, LinkOption.NOFOLLOW_LINKS);
+                if (!permissions.equals(DIRECTORY_MODE)) {
+                    throw new IOException("swap lock directory must have mode 0700: " + checked);
+                }
             }
             checked = checked.getParent();
             if (checked == null) {
