@@ -1,6 +1,7 @@
 package io.github.libtmux.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -16,6 +17,7 @@ import io.github.libtmux.transport.TmuxTransport;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -298,6 +300,78 @@ final class PaneInputCohortTest {
         for (String field :
                 List.of("client_control_mode", "session_id", "window_id", "pane_id", "window_zoomed_flag")) {
             assertEquals(1, occurrences(clientFormat, "#{" + field + "}"));
+        }
+    }
+
+    @Test
+    void retainedOwnershipNeedsAuthenticatedPaneOrGenerationAbsence(Server server) {
+        var source = server.panes().getFirst();
+        source.split();
+        try (var lease = PaneInputReservations.run(PaneInputCohort.resolve(source), "retained_test")) {
+            assertEquals(PaneInputCohort.Presence.PRESENT, lease.presence(source));
+
+            AtomicBoolean unavailable = new AtomicBoolean();
+            try (ProcessTransport processes = new ProcessTransport()) {
+                TmuxTransport ambiguous = new TmuxTransport() {
+                    @Override
+                    public CommandResult execute(CommandRequest request) {
+                        return unavailable.get()
+                                ? new CommandResult(1, List.of(), List.of("temporarily unavailable"))
+                                : processes.execute(request);
+                    }
+
+                    @Override
+                    public void close() {}
+                };
+                try (Server measured = Server.using(server.config(), ambiguous)) {
+                    var measuredSource = measured.panes().stream()
+                            .filter(pane -> pane.id().equals(source.id()))
+                            .findFirst()
+                            .orElseThrow();
+                    unavailable.set(true);
+
+                    assertEquals(PaneInputCohort.Presence.UNKNOWN, lease.presence(measuredSource));
+                }
+            }
+
+            server.cmd("kill-pane", "-t", source.id().value());
+            assertEquals(PaneInputCohort.Presence.GONE, lease.presence(source));
+        }
+
+        var survivor = server.panes().getFirst();
+        try (var lease = PaneInputReservations.run(PaneInputCohort.resolve(survivor), "retained_test")) {
+            server.killServer();
+
+            assertEquals(PaneInputCohort.Presence.GONE, lease.presence(survivor));
+        }
+    }
+
+    @Test
+    void tmuxSecondRoundingDoesNotImplyDaemonDisappearance() {
+        ProcessHandle process = ProcessHandle.current();
+        var started = process.info().startInstant().orElseThrow();
+        var roundedLater =
+                new PaneInputCohort.Authority("local", "/not-used", process.pid(), started.getEpochSecond() + 1);
+
+        var identity = PaneInputReservations.DaemonIdentity.capture(roundedLater);
+
+        assertEquals(java.util.Optional.of(started), identity.started());
+        assertFalse(identity.gone());
+    }
+
+    @Test
+    void successfulReplacementAuthorityIsGone(Server server) {
+        var source = server.panes().getFirst();
+        var live = PaneInputCohort.resolve(source).authority();
+        var replacements = List.of(
+                new PaneInputCohort.Authority("remote-test", live.socketPath(), live.serverPid(), live.startTime()),
+                new PaneInputCohort.Authority(live.realm(), "/different/socket", live.serverPid(), live.startTime()),
+                new PaneInputCohort.Authority(live.realm(), live.socketPath(), live.serverPid() + 1, live.startTime()),
+                new PaneInputCohort.Authority(live.realm(), live.socketPath(), live.serverPid(), live.startTime() + 1));
+
+        for (var replaced : replacements) {
+            assertEquals(
+                    PaneInputCohort.Presence.GONE, PaneInputCohort.presence(source, replaced), replaced.toString());
         }
     }
 

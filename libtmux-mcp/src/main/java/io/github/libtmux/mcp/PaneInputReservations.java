@@ -1,11 +1,14 @@
 package io.github.libtmux.mcp;
 
+import io.github.libtmux.Pane;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /** Process-wide ownership of the panes an MCP input operation may reach. */
@@ -26,28 +29,43 @@ final class PaneInputReservations {
         return acquire(initial, List.of(initial.source()), operation);
     }
 
+    static Lease run(PaneInputCohort.Resolution initial, String operation) {
+        initial.requireSingularCommandPane(operation);
+        return acquire(initial, initial.keyRecipients(), operation);
+    }
+
     private static Lease acquire(
             PaneInputCohort.Resolution initial, List<PaneInputCohort.Member> members, String operation) {
         Signature signature = Signature.capture(initial, members, operation);
         Set<PaneKey> panes = signature.keys(members);
+        DaemonIdentity daemon = DaemonIdentity.capture(initial.authority());
         synchronized (MONITOR) {
             if (panes.stream().anyMatch(HELD::contains)) {
                 throw new IllegalStateException(operation + " refuses pane input already owned by another operation");
             }
             HELD.addAll(panes);
         }
-        return new Lease(operation, signature, panes);
+        return new Lease(operation, initial.authority(), daemon, signature, panes);
     }
 
     static final class Lease implements AutoCloseable {
 
         private final String operation;
+        private final PaneInputCohort.Authority authority;
+        private final DaemonIdentity daemon;
         private final Signature initial;
         private final Set<PaneKey> panes;
         private boolean closed;
 
-        private Lease(String operation, Signature initial, Set<PaneKey> panes) {
+        private Lease(
+                String operation,
+                PaneInputCohort.Authority authority,
+                DaemonIdentity daemon,
+                Signature initial,
+                Set<PaneKey> panes) {
             this.operation = operation;
+            this.authority = authority;
+            this.daemon = daemon;
             this.initial = initial;
             this.panes = Set.copyOf(panes);
         }
@@ -61,6 +79,19 @@ final class PaneInputReservations {
         void requireSamePaste(PaneInputCohort.Resolution fresh) {
             fresh.requirePasteTarget(operation);
             requireSame(Signature.capture(fresh, List.of(fresh.source()), operation));
+        }
+
+        String requireSameRun(PaneInputCohort.Resolution fresh) {
+            String command = fresh.requireSingularCommandPane(operation);
+            requireSame(Signature.capture(fresh, fresh.keyRecipients(), operation));
+            return command;
+        }
+
+        PaneInputCohort.Presence presence(Pane pane) {
+            PaneInputCohort.Presence observed = PaneInputCohort.presence(pane, authority);
+            return observed == PaneInputCohort.Presence.UNKNOWN && daemon.gone()
+                    ? PaneInputCohort.Presence.GONE
+                    : observed;
         }
 
         private void requireSame(Signature fresh) {
@@ -115,6 +146,31 @@ final class PaneInputReservations {
     }
 
     private record PaneKey(Generation generation, String paneId) {}
+
+    record DaemonIdentity(String realm, long pid, Optional<Instant> started) {
+
+        static DaemonIdentity capture(PaneInputCohort.Authority authority) {
+            Optional<Instant> started = authority.realm().equals("local")
+                    ? ProcessHandle.of(authority.serverPid())
+                            .filter(ProcessHandle::isAlive)
+                            .flatMap(process -> process.info().startInstant())
+                    : Optional.empty();
+            return new DaemonIdentity(authority.realm(), authority.serverPid(), started);
+        }
+
+        boolean gone() {
+            if (!realm.equals("local")) {
+                return false;
+            }
+            Optional<ProcessHandle> current = ProcessHandle.of(pid).filter(ProcessHandle::isAlive);
+            if (current.isEmpty()) {
+                return true;
+            }
+            return started.flatMap(known ->
+                            current.orElseThrow().info().startInstant().map(observed -> !observed.equals(known)))
+                    .orElse(false);
+        }
+    }
 
     private record Generation(Endpoint endpoint, long serverPid, long startTime) {
 

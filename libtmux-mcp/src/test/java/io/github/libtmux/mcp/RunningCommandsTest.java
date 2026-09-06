@@ -35,7 +35,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -135,6 +137,7 @@ final class RunningCommandsTest {
         assertEquals(0, commandCount(requests, "send-keys"));
         assertEquals(0, commandCount(requests, "wait-for"));
         assertFalse(capture(server, pane.id().value()).contains(marker));
+        assertTrue(inputAvailable(server, pane.id().value()), "the refused run retained pane ownership");
     }
 
     @ParameterizedTest
@@ -311,6 +314,9 @@ final class RunningCommandsTest {
         assertTrue(server.panes().stream()
                 .flatMap(pane -> pane.options().all().keySet().stream())
                 .noneMatch(name -> name.startsWith("@st_")));
+        if (transition != RunTransition.DISAPPEAR) {
+            assertTrue(inputAvailable(server, source.id().value()), "the refused run retained pane ownership");
+        }
     }
 
     @Test
@@ -479,9 +485,105 @@ final class RunningCommandsTest {
     }
 
     @Test
+    void timedOutRunRetainsItsPaneUntilTheStatusMarker(Server server, @TempDir Path temporary) throws Exception {
+        String pane = server.panes().getFirst().id().value();
+        Path ready = temporary.resolve("ready");
+        Path release = temporary.resolve("release");
+        String command = ": > " + Shell.quote(ready.toString()) + "; while [ ! -e " + Shell.quote(release.toString())
+                + " ]; do sleep 0.05; done";
+
+        RunningCommands.Ran ran =
+                RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", command, "timeout", 0.1));
+        assertEquals("TIMED_OUT", ran.outcome());
+        assertTrue(await(() -> Files.exists(ready)), "the retained command did not start");
+        try {
+            assertInputOwned(server, pane);
+        } finally {
+            Files.writeString(release, "release");
+        }
+
+        assertTrue(await(() -> inputAvailable(server, pane)), "the valid status marker did not release the pane");
+    }
+
+    @Test
+    void aDeadPaneProvesRetainedOwnershipEnded(Server server) throws Exception {
+        Pane pane = server.panes().getFirst();
+        try (var lease = PaneInputReservations.run(PaneInputCohort.resolve(pane), "retained_test")) {
+            pane.options().set("remain-on-exit", "on");
+            pane.sendLine("exit");
+            assertTrue(await(() -> "1".equals(pane.expand("#{pane_dead}"))), "the pane did not become dead");
+
+            assertEquals(PaneInputCohort.Presence.GONE, lease.presence(pane));
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidCompletionStatuses")
+    void completionSignalWithoutAValidStatusRetainsThePane(
+            String label, String forgedStatus, Server server, @TempDir Path temporary) throws Exception {
+        String pane = server.panes().getFirst().id().value();
+        Path release = temporary.resolve("release");
+        AtomicBoolean signalled = new AtomicBoolean();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport premature = borrowing(request -> {
+                CommandResult result = processes.execute(request);
+                if (hasCommand(request, "send-keys") && signalled.compareAndSet(false, true)) {
+                    nonce(request).ifPresent(value -> {
+                        if (!forgedStatus.isEmpty()) {
+                            String marker = value + "-e:" + forgedStatus;
+                            server.cmd("send-keys", "-t", pane, "-l", marker);
+                            server.cmd("send-keys", "-t", pane, "Enter");
+                            awaitUnchecked(() -> capture(server, pane).contains(marker));
+                        }
+                        server.cmd("wait-for", "-S", "ch_" + value);
+                    });
+                }
+                return result;
+            });
+            try (Server measured = Server.using(server.config(), premature)) {
+                String command = "while [ ! -e " + Shell.quote(release.toString()) + " ]; do sleep 0.05; done";
+                RunningCommands.Ran ran =
+                        RunningCommands.run(TestCalls.on(measured, "pane_id", pane, "command", command));
+                assertEquals("SIGNALLED", ran.outcome(), label);
+                assertNull(ran.exitStatus(), label);
+                try {
+                    assertInputOwned(server, pane);
+                } finally {
+                    Files.writeString(release, "release");
+                }
+                assertTrue(await(() -> inputAvailable(server, pane)), "the eventual status marker did not release");
+            }
+        }
+    }
+
+    @Test
+    void cancelledRunRetainsItsPaneUntilTheStatusMarker(Server server, @TempDir Path temporary) throws Exception {
+        String pane = server.panes().getFirst().id().value();
+        Path ready = temporary.resolve("ready");
+        Path release = temporary.resolve("release");
+        String command = ": > " + Shell.quote(ready.toString()) + "; while [ ! -e " + Shell.quote(release.toString())
+                + " ]; do sleep 0.05; done";
+        try (ProcessTransport processes = new ProcessTransport();
+                Server measured = Server.using(server.config(), processes);
+                var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+            var running = calls.submit(() ->
+                    RunningCommands.run(TestCalls.on(measured, "pane_id", pane, "command", command, "timeout", 30)));
+            assertTrue(await(() -> Files.exists(ready)), "the cancellable command did not start");
+            assertTrue(running.cancel(true), "the run had already ended");
+            try {
+                assertInputOwned(server, pane);
+            } finally {
+                Files.writeString(release, "release");
+            }
+            assertTrue(await(() -> inputAvailable(server, pane)), "the cancelled run did not settle after its marker");
+        }
+    }
+
+    @Test
     void uncertainCommandDeliveryStillRunsTheAcceptedCommand(Server server, @TempDir Path temporary) throws Exception {
         String pane = server.panes().get(0).id().value();
         Path accepted = temporary.resolve("accepted");
+        Path release = temporary.resolve("release");
         try (ProcessTransport processes = new ProcessTransport()) {
             TmuxTransport uncertain = borrowing(request -> {
                 CommandResult result = processes.execute(request);
@@ -498,16 +600,41 @@ final class RunningCommandsTest {
                                 "pane_id",
                                 pane,
                                 "command",
-                                "printf ran > " + Shell.quote(accepted.toString()))));
-                server.panes().get(0).sendLine("printf 'uncertain-cleanup-%s\\n' finished");
+                                "printf ran > " + Shell.quote(accepted.toString()) + "; while [ ! -e "
+                                        + Shell.quote(release.toString()) + " ]; do sleep 0.05; done")));
 
                 assertTrue(
                         await(() -> Files.exists(accepted)), "an accepted command was lost after ambiguous delivery");
                 assertEquals("ran", Files.readString(accepted));
-                assertTrue(
-                        await(() -> server.panes().get(0).capture().stream()
-                                .anyMatch(line -> line.contains("uncertain-cleanup-finished"))),
-                        "an ambiguously delivered command left the pane's shell waiting for cleanup");
+                try {
+                    assertInputOwned(server, pane);
+                } finally {
+                    Files.writeString(release, "release");
+                }
+                assertTrue(await(() -> inputAvailable(server, pane)), "the ambiguous delivery did not settle");
+            }
+        }
+    }
+
+    @Test
+    void definitiveSendFailureReleasesPaneOwnership(Server server) {
+        String pane = server.panes().getFirst().id().value();
+        AtomicBoolean refused = new AtomicBoolean();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport notDispatched = borrowing(request -> {
+                if (nonce(request).isPresent() && refused.compareAndSet(false, true)) {
+                    throw new TmuxTransportException(
+                            "simulated refusal before delivery", DispatchOutcome.NOT_DISPATCHED, null);
+                }
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), notDispatched)) {
+                assertThrows(
+                        TmuxTransportException.class,
+                        () -> RunningCommands.run(
+                                TestCalls.on(measured, "pane_id", pane, "command", "printf 'must-not-run\\n'")));
+
+                assertTrue(inputAvailable(server, pane), "definitive non-delivery retained pane ownership");
             }
         }
     }
@@ -605,34 +732,61 @@ final class RunningCommandsTest {
     }
 
     @Test
-    void concurrentRunsDoNotMergeTheirCommandLines(Server server) throws Exception {
+    void aSecondRunRefusesRatherThanQueueingOrMerging(Server server) throws Exception {
         String pane = server.panes().get(0).id().value();
-        CountDownLatch bothLinesSent = new CountDownLatch(2);
+        CountDownLatch checked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger snapshots = new AtomicInteger();
+        AtomicReference<Thread> owner = new AtomicReference<>();
+        List<CommandRequest> requests = new CopyOnWriteArrayList<>();
         try (ProcessTransport processes = new ProcessTransport()) {
             TmuxTransport interleaving = borrowing(request -> {
                 CommandResult result = processes.execute(request);
-                String argv = String.join("\0", request.commands().get(0));
-                if (argv.contains("send-keys") && argv.contains("ch_lt")) {
-                    bothLinesSent.countDown();
-                    await(bothLinesSent);
+                if (Thread.currentThread().equals(owner.get())) {
+                    requests.add(request);
+                    if (isCohortListing(request) && snapshots.incrementAndGet() == 2) {
+                        checked.countDown();
+                        await(release);
+                    }
                 }
                 return result;
             });
             try (Server measured = Server.using(server.config(), interleaving);
                     var calls = Executors.newVirtualThreadPerTaskExecutor()) {
-                var first = calls.submit(() -> RunningCommands.run(
-                        TestCalls.on(measured, "pane_id", pane, "command", "printf 'first-run-marker\\n'")));
-                var second = calls.submit(() -> RunningCommands.run(
-                        TestCalls.on(measured, "pane_id", pane, "command", "printf 'second-run-marker\\n'")));
-
-                assertEquals(
-                        java.util.List.of("first-run-marker"),
-                        first.get(Waits.DEFAULT.toSeconds(), TimeUnit.SECONDS).output());
-                assertEquals(
-                        java.util.List.of("second-run-marker"),
-                        second.get(Waits.DEFAULT.toSeconds(), TimeUnit.SECONDS).output());
+                var first = calls.submit(() -> {
+                    owner.set(Thread.currentThread());
+                    return RunningCommands.run(
+                            TestCalls.on(measured, "pane_id", pane, "command", "printf 'first-run-marker\\n'"));
+                });
+                await(checked);
+                try {
+                    IllegalStateException refused = assertThrows(
+                            IllegalStateException.class,
+                            () -> RunningCommands.run(TestCalls.on(
+                                    measured, "pane_id", pane, "command", "printf 'second-run-marker\\n'")));
+                    assertTrue(String.valueOf(refused.getMessage()).contains("owned"), refused.getMessage());
+                } finally {
+                    release.countDown();
+                }
+                RunningCommands.Ran ran = first.get(Waits.DEFAULT.toSeconds(), TimeUnit.SECONDS);
+                assertEquals(java.util.List.of("first-run-marker"), ran.output());
             }
         }
+
+        List<Integer> preflights = requestIndexes(requests, RunningCommandsTest::isCohortListing);
+        List<Integer> sends = requestIndexes(requests, request -> hasCommand(request, "send-keys"));
+        assertEquals(2, preflights.size());
+        assertEquals(1, sends.size());
+        assertEquals(preflights.getLast() + 1, sends.getFirst());
+    }
+
+    private static java.util.stream.Stream<Arguments> invalidCompletionStatuses() {
+        return java.util.stream.Stream.of(
+                Arguments.of("missing status", ""),
+                Arguments.of("out-of-range status", "256"),
+                Arguments.of("leading plus", "+0"),
+                Arguments.of("negative zero", "-0"),
+                Arguments.of("leading zero", "01"));
     }
 
     private static void await(CountDownLatch latch) {
@@ -643,6 +797,24 @@ final class RunningCommandsTest {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("interrupted while arranging concurrent command delivery", e);
+        }
+    }
+
+    private static void assertInputOwned(Server server, String pane) {
+        IllegalStateException refused = assertThrows(
+                IllegalStateException.class, () -> Typing.pasteText(TestCalls.on(server, "pane_id", pane, "text", "")));
+        assertTrue(String.valueOf(refused.getMessage()).contains("owned"), refused.getMessage());
+    }
+
+    private static boolean inputAvailable(Server server, String pane) {
+        try {
+            Typing.pasteText(TestCalls.on(server, "pane_id", pane, "text", ""));
+            return true;
+        } catch (IllegalStateException refusal) {
+            if (String.valueOf(refusal.getMessage()).contains("owned")) {
+                return false;
+            }
+            throw refusal;
         }
     }
 

@@ -70,6 +70,52 @@ final class PaneInputCohort {
 
     private static Resolution parse(
             String realm, String sourcePaneId, CommandResult answer, CommandResult clientAnswer, Caller caller) {
+        PaneSnapshot paneSnapshot = panes(realm, sourcePaneId, answer);
+        Map<String, Member> members = paneSnapshot.members();
+        Authority generation = paneSnapshot.authority();
+        Member source = members.get(sourcePaneId);
+        if (source == null) {
+            throw new LibTmuxException("tmux returned no pane input state for " + sourcePaneId);
+        }
+        Map<String, Member> windowMembers = members.values().stream()
+                .filter(member -> member.windowId().equals(source.windowId()))
+                .collect(java.util.stream.Collectors.toMap(
+                        Member::paneId,
+                        java.util.function.Function.identity(),
+                        (left, right) -> left,
+                        LinkedHashMap::new));
+        List<Member> recipients = source.synchronizedPane()
+                ? windowMembers.values().stream()
+                        .filter(Member::synchronizedPane)
+                        .sorted(java.util.Comparator.comparing(Member::paneId))
+                        .toList()
+                : List.of(source);
+        Set<String> attended = attended(clientAnswer, members, source.windowId());
+        caller.requireConsistent(
+                generation.serverPid(),
+                generation.socketPath(),
+                members.values().stream()
+                        .collect(java.util.stream.Collectors.toMap(Member::paneId, Member::sessionIds)));
+        return new Resolution(generation, source, recipients, caller, attended);
+    }
+
+    static Presence presence(Pane pane, Authority expected) {
+        try {
+            CommandResult answer = pane.server().cmd("list-panes", "-a", "-F", PANES.template());
+            PaneSnapshot snapshot =
+                    panes(pane.server().identity().realm(), pane.id().value(), answer);
+            Authority observed = snapshot.authority();
+            if (!observed.equals(expected)) {
+                return Presence.GONE;
+            }
+            Member target = snapshot.members().get(pane.id().value());
+            return target == null || target.dead() ? Presence.GONE : Presence.PRESENT;
+        } catch (RuntimeException failure) {
+            return Presence.UNKNOWN;
+        }
+    }
+
+    private static PaneSnapshot panes(String realm, String sourcePaneId, CommandResult answer) {
         if (!answer.succeeded()) {
             throw new LibTmuxException("tmux could not resolve pane input state");
         }
@@ -100,31 +146,7 @@ final class PaneInputCohort {
                 members.put(member.paneId(), prior.withSessions(member.sessionIds()));
             }
         }
-        Member source = members.get(sourcePaneId);
-        if (source == null) {
-            throw new LibTmuxException("tmux returned no pane input state for " + sourcePaneId);
-        }
-        Map<String, Member> windowMembers = members.values().stream()
-                .filter(member -> member.windowId().equals(source.windowId()))
-                .collect(java.util.stream.Collectors.toMap(
-                        Member::paneId,
-                        java.util.function.Function.identity(),
-                        (left, right) -> left,
-                        LinkedHashMap::new));
-        List<Member> recipients = source.synchronizedPane()
-                ? windowMembers.values().stream()
-                        .filter(Member::synchronizedPane)
-                        .sorted(java.util.Comparator.comparing(Member::paneId))
-                        .toList()
-                : List.of(source);
-        Set<String> attended = attended(clientAnswer, members, source.windowId());
-        Authority generation = java.util.Objects.requireNonNull(authority);
-        caller.requireConsistent(
-                generation.serverPid(),
-                generation.socketPath(),
-                members.values().stream()
-                        .collect(java.util.stream.Collectors.toMap(Member::paneId, Member::sessionIds)));
-        return new Resolution(generation, source, recipients, caller, attended);
+        return new PaneSnapshot(java.util.Objects.requireNonNull(authority), Map.copyOf(members));
     }
 
     private static CommandResult result(OperationResult operation) {
@@ -270,6 +292,14 @@ final class PaneInputCohort {
     }
 
     record Authority(String realm, String socketPath, long serverPid, long startTime) {}
+
+    enum Presence {
+        PRESENT,
+        GONE,
+        UNKNOWN
+    }
+
+    private record PaneSnapshot(Authority authority, Map<String, Member> members) {}
 
     record Member(
             String paneId,

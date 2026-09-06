@@ -3,6 +3,8 @@ package io.github.libtmux.mcp;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.WakeReason;
+import io.github.libtmux.transport.DispatchOutcome;
+import io.github.libtmux.transport.TmuxTransportException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -75,45 +77,75 @@ final class RunningCommands {
         String command = call.string("command");
         Duration timeout = Waits.requested(call);
         boolean suppressHistory = call.flag("suppress_history", true);
-        String currentCommand =
-                PaneInputCohort.resolve(pane, call.caller()).requireSingularCommandPane("run_shell_command");
+        PaneInputCohort.Resolution initial = PaneInputCohort.resolve(pane, call.caller());
+        String currentCommand = initial.requireSingularCommandPane("run_shell_command");
         requirePosixShell(currentCommand);
-        PaneCommandFrame commandFrame = PaneCommandFrame.resolve(call);
+        PaneInputReservations.Lease lease = PaneInputReservations.run(initial, "run_shell_command");
+        boolean retained = false;
+        boolean possiblyDispatched = false;
+        Pane freshPane = pane;
+        String channel = "";
+        String endMark = "";
+        try {
+            PaneCommandFrame commandFrame = PaneCommandFrame.resolve(call);
 
-        String nonce = "lt" + HexFormat.of().formatHex(bytes());
-        String startMark = nonce + "-s";
-        String endMark = nonce + "-e";
-        String channel = "ch_" + nonce;
+            String nonce = "lt" + HexFormat.of().formatHex(bytes());
+            String startMark = nonce + "-s";
+            endMark = nonce + "-e";
+            channel = "ch_" + nonce;
 
-        Cursor before = Screen.from(pane).cursor();
-        String typed = payload(commandFrame, command, startMark, endMark, channel, suppressHistory);
-        Pane freshPane = Targets.pane(server, pane.id().value());
-        String freshCommand =
-                PaneInputCohort.resolve(freshPane, call.caller()).requireSingularCommandPane("run_shell_command");
-        requirePosixShell(freshCommand);
-        freshPane.sendLine(typed);
+            Cursor before = Screen.from(pane).cursor();
+            String typed = payload(commandFrame, command, startMark, endMark, channel, suppressHistory);
+            freshPane = Targets.pane(server, pane.id().value());
+            String freshCommand = lease.requireSameRun(PaneInputCohort.resolve(freshPane, call.caller()));
+            requirePosixShell(freshCommand);
+            possiblyDispatched = true;
+            try {
+                freshPane.sendLine(typed);
+            } catch (TmuxTransportException failure) {
+                if (failure.outcome() == DispatchOutcome.NOT_DISPATCHED) {
+                    possiblyDispatched = false;
+                }
+                throw failure;
+            }
 
-        long started = System.nanoTime();
-        WakeReason wake = server.channel(channel).await(timeout);
-        double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
+            long started = System.nanoTime();
+            WakeReason wake = server.channel(channel).await(timeout);
+            double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
 
-        Screen.Fresh fresh =
-                wake == WakeReason.SERVER_GONE ? null : Screen.since(freshPane, before, Trim.lineBudget(call));
-        Framed framed = fresh == null ? new Framed(List.of(), false, null) : frame(fresh.lines(), startMark, endMark);
-        Integer status = wake == WakeReason.SIGNALLED ? framed.status() : null;
-        Trim.Trimmed trimmed = Trim.tail(framed.lines(), Trim.lineBudget(call));
+            Screen.Fresh fresh =
+                    wake == WakeReason.SERVER_GONE ? null : Screen.since(freshPane, before, Trim.lineBudget(call));
+            Framed framed =
+                    fresh == null ? new Framed(List.of(), false, null) : frame(fresh.lines(), startMark, endMark);
+            Integer status = wake == WakeReason.SIGNALLED ? framed.status() : null;
+            Trim.Trimmed trimmed = Trim.tail(framed.lines(), Trim.lineBudget(call));
+            if (status == null) {
+                retained = true;
+                PaneRunSettlement.retain(lease, freshPane, channel, endMark);
+            }
 
-        return new Ran(
-                freshPane.id().value(),
-                wake.name(),
-                status,
-                trimmed.lines(),
-                trimmed.truncated(),
-                trimmed.dropped(),
-                framed.exact(),
-                Math.round(seconds * 100) / 100.0,
-                Waits.asSeconds(timeout),
-                note(wake, framed));
+            return new Ran(
+                    freshPane.id().value(),
+                    wake.name(),
+                    status,
+                    trimmed.lines(),
+                    trimmed.truncated(),
+                    trimmed.dropped(),
+                    framed.exact(),
+                    Math.round(seconds * 100) / 100.0,
+                    Waits.asSeconds(timeout),
+                    note(wake, framed));
+        } catch (RuntimeException failure) {
+            if (possiblyDispatched && !retained) {
+                retained = true;
+                PaneRunSettlement.retain(lease, freshPane, channel, endMark);
+            }
+            throw failure;
+        } finally {
+            if (!retained) {
+                lease.close();
+            }
+        }
     }
 
     private static @Nullable String note(WakeReason wake, Framed framed) {
@@ -193,21 +225,16 @@ final class RunningCommands {
 
         int end = -1;
         Integer status = null;
-        String endPrefix = endMark + ":";
         for (int index = start < 0 ? 0 : start + 1; index < lines.size(); index++) {
             String line = lines.get(index).trim();
-            if (!line.startsWith(endPrefix)) {
+            Integer candidate = parseStatus(line, endMark);
+            if (candidate == null) {
                 continue;
             }
-            try {
-                int candidate = Integer.parseInt(line.substring(endPrefix.length()));
-                end = index;
-                status = candidate;
-                if (start >= 0) {
-                    break;
-                }
-            } catch (NumberFormatException ignored) {
-                // A wrapped echo can begin with the prefix; only the numeric marker is plumbing.
+            end = index;
+            status = candidate;
+            if (start >= 0) {
+                break;
             }
         }
         if (start < 0) {
@@ -222,6 +249,24 @@ final class RunningCommands {
         }
         int last = end < 0 ? lines.size() : end;
         return new Framed(List.copyOf(lines.subList(start + 1, last)), end >= 0, status);
+    }
+
+    static @Nullable Integer parseStatus(String line, String endMarker) {
+        String prefix = endMarker + ":";
+        if (!line.startsWith(prefix)) {
+            return null;
+        }
+        String encoded = line.substring(prefix.length());
+        if (encoded.isEmpty() || encoded.chars().anyMatch(value -> value < '0' || value > '9')) {
+            return null;
+        }
+        try {
+            int status = Integer.parseInt(encoded);
+            return status <= 255 && Integer.toString(status).equals(encoded) ? status : null;
+        } catch (NumberFormatException ignored) {
+            // A wrapped echo can begin with the prefix; only the numeric marker is plumbing.
+            return null;
+        }
     }
 
     private static byte[] bytes() {
