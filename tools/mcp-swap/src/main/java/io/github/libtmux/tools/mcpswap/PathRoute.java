@@ -12,6 +12,8 @@ record PathRoute(
         Path physicalParent,
         Path anchor,
         String anchorIdentity,
+        Path logicalAnchor,
+        String logicalAnchorIdentity,
         boolean exists,
         boolean symbolicLink,
         String linkTarget,
@@ -27,6 +29,8 @@ record PathRoute(
                     parent(prospective.target()),
                     prospective.anchor(),
                     directoryIdentity(prospective.anchor()),
+                    prospective.anchor(),
+                    directoryIdentity(prospective.anchor()),
                     false,
                     false,
                     "",
@@ -38,12 +42,15 @@ record PathRoute(
             var target = logical.toRealPath();
             requireRegular(target);
             var physicalParent = parent(target);
+            var logicalParent = parent(logical).toRealPath();
             return new PathRoute(
                     logical,
                     target,
                     physicalParent,
                     physicalParent,
                     directoryIdentity(physicalParent),
+                    logicalParent,
+                    directoryIdentity(logicalParent),
                     true,
                     true,
                     link,
@@ -54,12 +61,15 @@ record PathRoute(
         }
         var target = logical.toRealPath();
         var physicalParent = parent(target);
+        var logicalParent = parent(logical).toRealPath();
         return new PathRoute(
                 logical,
                 target,
                 physicalParent,
                 physicalParent,
                 directoryIdentity(physicalParent),
+                logicalParent,
+                directoryIdentity(logicalParent),
                 true,
                 false,
                 "",
@@ -70,6 +80,19 @@ record PathRoute(
         if (!equals(inspect(logical))) {
             throw new IOException("path route changed: " + logical);
         }
+    }
+
+    boolean sameTopology(PathRoute other) {
+        return logical.equals(other.logical)
+                && target.equals(other.target)
+                && physicalParent.equals(other.physicalParent)
+                && anchor.equals(other.anchor)
+                && anchorIdentity.equals(other.anchorIdentity)
+                && logicalAnchor.equals(other.logicalAnchor)
+                && logicalAnchorIdentity.equals(other.logicalAnchorIdentity)
+                && symbolicLink == other.symbolicLink
+                && linkTarget.equals(other.linkTarget)
+                && linkIdentity.equals(other.linkIdentity);
     }
 
     private static ProspectiveTarget prospectiveTarget(Path logical) throws IOException {

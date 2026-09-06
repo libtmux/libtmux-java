@@ -18,21 +18,26 @@ final class TransactionGuard {
 
     static TransactionGuard capture(List<Client> clients, SwapLock lock) throws IOException {
         var paths = inspect(clients);
-        rejectAliases(paths, lock.path());
+        rejectAliases(paths, lock.path(), lock.identity());
         return new TransactionGuard(lock, paths);
     }
 
     static void preflight(List<Client> clients, Path lockPath) throws IOException {
         SwapLock.preflight(lockPath);
-        rejectAliases(inspect(clients), lockPath);
+        var lockSnapshot = FileSnapshot.capture(PathRoute.inspect(lockPath).target());
+        rejectAliases(inspect(clients), lockPath, lockSnapshot.identity());
     }
 
     private static List<ProtectedPath> inspect(List<Client> clients) throws IOException {
         List<ProtectedPath> paths = new ArrayList<>();
+        var configs = new java.util.HashSet<Path>();
         for (var client : clients) {
-            paths.add(capture(client.name() + " config", client.configPath(), true, true));
-            paths.add(capture(client.name() + " backup", SwapPaths.backup(client), false, true));
-            paths.add(capture(client.name() + " state", SwapPaths.state(client), false, true));
+            var config = client.configPath().toAbsolutePath().normalize();
+            if (configs.add(config)) {
+                paths.add(capture(client.name() + " config", config, true, true));
+            }
+            paths.add(capture(client.label() + " backup", SwapPaths.backup(client), false, true));
+            paths.add(capture(client.label() + " state", SwapPaths.state(client), false, true));
         }
         return paths;
     }
@@ -52,26 +57,20 @@ final class TransactionGuard {
         lock.verify();
     }
 
-    void update(Path logical) throws IOException {
+    void update(Path logical, FileSnapshot expected) throws IOException {
         for (int index = 0; index < paths.size(); index++) {
             var path = paths.get(index);
             if (!path.route().logical().equals(logical.toAbsolutePath().normalize())) {
                 continue;
             }
-            paths.set(index, capture(path.label(), logical, path.config(), false));
+            var updated = capture(path.label(), logical, path.config(), false);
+            if (!path.route().sameTopology(updated.route()) || !expected.same(updated.snapshot())) {
+                throw new IOException("transaction path changed before update: " + logical);
+            }
+            paths.set(index, updated);
             return;
         }
         throw new IOException("transaction path is not protected: " + logical);
-    }
-
-    void updateTarget(Path target) throws IOException {
-        var normalized = target.toAbsolutePath().normalize();
-        for (int index = 0; index < paths.size(); index++) {
-            var path = paths.get(index);
-            if (path.route().target().equals(normalized)) {
-                paths.set(index, capture(path.label(), path.route().logical(), path.config(), false));
-            }
-        }
     }
 
     FileSnapshot snapshot(Path logical) throws IOException {
@@ -97,7 +96,8 @@ final class TransactionGuard {
         return new ProtectedPath(label, config, route, snapshot);
     }
 
-    private static void rejectAliases(List<ProtectedPath> paths, Path lockPath) throws IOException {
+    private static void rejectAliases(List<ProtectedPath> paths, Path lockPath, String lockIdentity)
+            throws IOException {
         Map<Path, String> targets = new HashMap<>();
         Map<String, String> identities = new HashMap<>();
         for (var path : paths) {
@@ -117,8 +117,7 @@ final class TransactionGuard {
         if (previous != null) {
             throw new IOException(previous + " aliases the swap lock");
         }
-        var lockSnapshot = FileSnapshot.capture(lockRoute.target());
-        previous = identities.putIfAbsent(lockSnapshot.identity(), "swap lock");
+        previous = identities.putIfAbsent(lockIdentity, "swap lock");
         if (previous != null) {
             throw new IOException(previous + " is hard linked to the swap lock");
         }

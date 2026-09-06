@@ -16,13 +16,14 @@ record ServerSpec(String command, List<String> arguments, Map<String, String> en
     }
 
     ServerSpec withEnvironment(Map<String, String> existing) {
-        Map<String, String> merged = new LinkedHashMap<>(existing);
-        var retired = merged.remove("LIBTMUX_SAFETY") != null;
-        merged.putAll(environment);
-        retired |= merged.remove("LIBTMUX_SAFETY") != null;
-        if (retired && !merged.containsKey("LIBTMUX_TOOLSETS")) {
-            throw new IllegalArgumentException("LIBTMUX_SAFETY has been removed; supply LIBTMUX_TOOLSETS explicitly");
+        if (environment.containsKey("LIBTMUX_SAFETY")) {
+            throw new IllegalArgumentException("LIBTMUX_SAFETY has been removed; use LIBTMUX_TOOLSETS");
         }
+        Map<String, String> merged = new LinkedHashMap<>(existing);
+        if (environment.containsKey("LIBTMUX_TOOLSETS")) {
+            merged.remove("LIBTMUX_SAFETY");
+        }
+        merged.putAll(environment);
         return new ServerSpec(command, arguments, merged);
     }
 }

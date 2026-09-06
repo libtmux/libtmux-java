@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 final class ClientRegistryTest {
     private static final List<String> NAMES =
             List.of("claude", "codex", "cursor", "gemini", "grok", "agy", "opencode", "pi");
+    private static final List<String> BINARIES =
+            List.of("claude", "codex", "cursor-agent", "gemini", "grok", "agy", "opencode", "pi");
 
     @Test
     void resolvesEveryClientUnderTheSuppliedHome() {
@@ -19,6 +21,7 @@ final class ClientRegistryTest {
         var clients = ClientRegistry.knownClients(home, Map.of("XDG_CONFIG_HOME", "/test/config"));
 
         assertEquals(NAMES, clients.stream().map(Client::name).toList());
+        assertEquals(BINARIES, clients.stream().map(Client::binary).toList());
         assertEquals(home.resolve(".claude.json"), clients.getFirst().configPath());
         assertEquals(
                 Path.of("/test/config/opencode/opencode.jsonc"), clients.get(6).configPath());

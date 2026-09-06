@@ -3,12 +3,15 @@ package io.github.libtmux.tools.mcpswap;
 import java.nio.file.Path;
 
 final class SwapPaths {
-    private static final String BACKUP_SUFFIX = ".mcp-swap-backup";
+    private static final String BACKUP_SUFFIX = ".mcp-swap-java-backup";
 
     private SwapPaths() {}
 
     static Path backup(Client client) {
-        return sibling(client.configPath(), client.configPath().getFileName() + BACKUP_SUFFIX);
+        var suffix = client.name().equals("claude")
+                ? ".mcp-swap-java-" + client.scope().value() + "-backup"
+                : BACKUP_SUFFIX;
+        return sibling(client.configPath(), client.configPath().getFileName() + suffix);
     }
 
     static Path state(Client client) {

@@ -17,25 +17,35 @@ final class TomlEditor {
 
     private TomlEditor() {}
 
-    static byte[] update(byte[] original, String tableName, String serverName, ServerSpec server) {
+    static byte[] update(
+            byte[] original, String tableName, String serverName, ServerSpec server, boolean mergeEnvironment) {
         var text = ConfigCodec.decodeUtf8(original, "TOML config");
+        var parsed = requireValid(text);
         var existing = read(original, tableName, serverName)
                 .map(ServerSpec::environment)
                 .orElseGet(Map::of);
-        var merged = server.withEnvironment(existing);
+        var merged = mergeEnvironment ? server.withEnvironment(existing) : server;
+        var inline = inlineValue(text, parsed, tableName, serverName);
+        if (inline != null) {
+            var updated = text.substring(0, inline.start()) + inlineEntry(merged) + text.substring(inline.end());
+            requireValid(updated);
+            return updated.getBytes(StandardCharsets.UTF_8);
+        }
+        var dotted = dottedAssignments(text, parsed, tableName, serverName);
+        if (!dotted.isEmpty()) {
+            var edited = new StringBuilder(text);
+            for (var range : dotted.reversed()) {
+                edited.delete(range.start(), range.end());
+            }
+            text = edited.toString();
+        }
         var newline = text.contains("\r\n") ? "\r\n" : "\n";
         var sections = sections(text);
         var target = List.of(tableName, serverName);
-        var start = -1;
-        var end = -1;
+        List<Section> matches = new ArrayList<>();
         for (var section : sections) {
             if (startsWith(section.path(), target)) {
-                if (start == -1) {
-                    start = section.start();
-                }
-                end = section.end();
-            } else if (start != -1) {
-                break;
+                matches.add(section);
             }
         }
         var body = "command = " + string(merged.command()) + newline + "args = " + array(merged.arguments()) + newline;
@@ -46,18 +56,24 @@ final class TomlEditor {
             }
         }
         String updated;
-        if (start == -1) {
+        if (matches.isEmpty()) {
             var separator = text.isEmpty() || text.endsWith(newline + newline)
                     ? ""
                     : text.endsWith(newline) ? newline : newline + newline;
             updated = text + separator + "[" + tableName + "." + string(serverName) + "]" + newline + body;
         } else {
-            var comments = commentsOnly(text.substring(start, end));
-            var replacement = "[" + tableName + "." + string(serverName) + "]" + newline + body + comments;
-            if (!replacement.endsWith(newline)) {
-                replacement += newline;
+            var replacement = "[" + tableName + "." + string(serverName) + "]" + newline + body;
+            var edited = new StringBuilder(text);
+            for (int index = matches.size() - 1; index >= 0; index--) {
+                var section = matches.get(index);
+                var comments = commentsOnly(text.substring(section.start(), section.end()));
+                var contents = index == 0 ? replacement + comments : comments;
+                if (index == 0 && !contents.endsWith(newline)) {
+                    contents += newline;
+                }
+                edited.replace(section.start(), section.end(), contents);
             }
-            updated = text.substring(0, start) + replacement + text.substring(end);
+            updated = edited.toString();
         }
         requireValid(updated);
         return updated.getBytes(StandardCharsets.UTF_8);
@@ -109,6 +125,242 @@ final class TomlEditor {
                     "config is not valid TOML: " + result.errors().getFirst());
         }
         return result;
+    }
+
+    private static @Nullable Range inlineValue(
+            String text, TomlParseResult parsed, String tableName, String serverName) {
+        var position = parsed.inputPositionOf(List.of(tableName, serverName));
+        if (position == null) {
+            return null;
+        }
+        var start = offset(text, position.line(), position.column());
+        var keyEnd = simpleKeyEnd(text, start);
+        if (keyEnd == start || !decodeKey(text.substring(start, keyEnd)).equals(serverName)) {
+            return null;
+        }
+        var equals = skipWhitespace(text, keyEnd);
+        if (equals >= text.length() || text.charAt(equals) != '=') {
+            return null;
+        }
+        var valueStart = skipWhitespace(text, equals + 1);
+        if (valueStart >= text.length() || text.charAt(valueStart) != '{') {
+            return null;
+        }
+        return new Range(valueStart, closingDelimiter(text, valueStart, '{', '}') + 1);
+    }
+
+    private static List<Range> dottedAssignments(
+            String text, TomlParseResult parsed, String tableName, String serverName) {
+        var table = parsed.getTable(tableName);
+        var server = table == null ? null : table.getTable(List.of(serverName));
+        if (server == null) {
+            return List.of();
+        }
+        Map<Integer, Range> found = new java.util.TreeMap<>();
+        for (var suffix : server.keyPathSet(true)) {
+            List<String> path = new ArrayList<>(List.of(tableName, serverName));
+            path.addAll(suffix);
+            var position = parsed.inputPositionOf(path);
+            if (position == null) {
+                continue;
+            }
+            var start = offset(text, position.line(), position.column());
+            var equals = assignmentEquals(text, start);
+            if (equals == -1
+                    || !startsWith(dottedKeys(text.substring(start, equals)), List.of(tableName, serverName))) {
+                continue;
+            }
+            found.put(start, new Range(start, statementEnd(text, equals + 1)));
+        }
+        return List.copyOf(found.values());
+    }
+
+    private static int assignmentEquals(String text, int start) {
+        var quote = '\0';
+        var escaped = false;
+        for (int offset = start; offset < text.length(); offset++) {
+            var character = text.charAt(offset);
+            if (escaped) {
+                escaped = false;
+            } else if (quote == '"' && character == '\\') {
+                escaped = true;
+            } else if (quote != '\0' && character == quote) {
+                quote = '\0';
+            } else if (quote == '\0' && (character == '"' || character == '\'')) {
+                quote = character;
+            } else if (quote == '\0' && character == '=') {
+                return offset;
+            } else if (quote == '\0' && (character == '\n' || character == '[')) {
+                return -1;
+            }
+        }
+        return -1;
+    }
+
+    private static int statementEnd(String text, int start) {
+        var nesting = 0;
+        var quote = '\0';
+        var triple = false;
+        var escaped = false;
+        for (int offset = start; offset < text.length(); offset++) {
+            var character = text.charAt(offset);
+            if (quote != '\0') {
+                if (escaped) {
+                    escaped = false;
+                } else if (quote == '"' && character == '\\') {
+                    escaped = true;
+                } else if (character == quote
+                        && (!triple
+                                || (offset + 2 < text.length()
+                                        && text.charAt(offset + 1) == quote
+                                        && text.charAt(offset + 2) == quote))) {
+                    if (triple) {
+                        offset += 2;
+                    }
+                    quote = '\0';
+                    triple = false;
+                }
+                continue;
+            }
+            if (character == '#') {
+                var newline = text.indexOf('\n', offset);
+                return newline == -1 ? text.length() : newline + 1;
+            }
+            if (character == '"' || character == '\'') {
+                quote = character;
+                triple = offset + 2 < text.length()
+                        && text.charAt(offset + 1) == character
+                        && text.charAt(offset + 2) == character;
+                if (triple) {
+                    offset += 2;
+                }
+            } else if (character == '[' || character == '{') {
+                nesting++;
+            } else if (character == ']' || character == '}') {
+                nesting--;
+            } else if (character == '\n' && nesting == 0) {
+                return offset + 1;
+            }
+        }
+        return text.length();
+    }
+
+    private static int offset(String text, int line, int column) {
+        var offset = 0;
+        for (int current = 1; current < line; current++) {
+            var newline = text.indexOf('\n', offset);
+            if (newline == -1) {
+                throw new IllegalArgumentException("TOML position is outside the document");
+            }
+            offset = newline + 1;
+        }
+        return offset + column - 1;
+    }
+
+    private static int simpleKeyEnd(String text, int start) {
+        if (start >= text.length()) {
+            return start;
+        }
+        var quote = text.charAt(start);
+        if (quote != '"' && quote != '\'') {
+            var offset = start;
+            while (offset < text.length()) {
+                var character = text.charAt(offset);
+                if (!(Character.isLetterOrDigit(character) || character == '_' || character == '-')) {
+                    break;
+                }
+                offset++;
+            }
+            return offset;
+        }
+        var escaped = false;
+        for (int offset = start + 1; offset < text.length(); offset++) {
+            var character = text.charAt(offset);
+            if (escaped) {
+                escaped = false;
+            } else if (quote == '"' && character == '\\') {
+                escaped = true;
+            } else if (character == quote) {
+                return offset + 1;
+            }
+        }
+        throw new IllegalArgumentException("unterminated quoted TOML key");
+    }
+
+    private static int skipWhitespace(String text, int start) {
+        var offset = start;
+        while (offset < text.length() && Character.isWhitespace(text.charAt(offset))) {
+            offset++;
+        }
+        return offset;
+    }
+
+    private static int closingDelimiter(String text, int start, char opening, char closing) {
+        var depth = 0;
+        var quote = '\0';
+        var triple = false;
+        var escaped = false;
+        for (int offset = start; offset < text.length(); offset++) {
+            var character = text.charAt(offset);
+            if (quote != '\0') {
+                if (escaped) {
+                    escaped = false;
+                } else if (quote == '"' && character == '\\') {
+                    escaped = true;
+                } else if (character == quote
+                        && (!triple
+                                || (offset + 2 < text.length()
+                                        && text.charAt(offset + 1) == quote
+                                        && text.charAt(offset + 2) == quote))) {
+                    if (triple) {
+                        offset += 2;
+                    }
+                    quote = '\0';
+                    triple = false;
+                }
+                continue;
+            }
+            if (character == '#') {
+                var newline = text.indexOf('\n', offset);
+                if (newline == -1) {
+                    break;
+                }
+                offset = newline;
+            } else if (character == '"' || character == '\'') {
+                quote = character;
+                triple = offset + 2 < text.length()
+                        && text.charAt(offset + 1) == character
+                        && text.charAt(offset + 2) == character;
+                if (triple) {
+                    offset += 2;
+                }
+            } else if (character == opening) {
+                depth++;
+            } else if (character == closing && --depth == 0) {
+                return offset;
+            }
+        }
+        throw new IllegalArgumentException("unterminated TOML value");
+    }
+
+    private static String inlineEntry(ServerSpec server) {
+        var entry = new StringBuilder("{ command = ")
+                .append(string(server.command()))
+                .append(", args = ")
+                .append(array(server.arguments()));
+        if (!server.environment().isEmpty()) {
+            entry.append(", env = { ");
+            var separator = "";
+            for (var value : server.environment().entrySet()) {
+                entry.append(separator)
+                        .append(string(value.getKey()))
+                        .append(" = ")
+                        .append(string(value.getValue()));
+                separator = ", ";
+            }
+            entry.append(" }");
+        }
+        return entry.append(" }").toString();
     }
 
     private static List<Section> sections(String text) {
@@ -261,4 +513,6 @@ final class TomlEditor {
             path = List.copyOf(path);
         }
     }
+
+    private record Range(int start, int end) {}
 }

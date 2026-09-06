@@ -105,6 +105,6 @@ val kotlinStaysDownstream =
 tasks.register("check") {
     group = "verification"
     description = "Every gate that must hold before publication."
-    dependsOn(subprojects.map { "${it.path}:check" })
+    dependsOn(subprojects.filter { it.buildFile.exists() }.map { "${it.path}:check" })
     dependsOn(platformCoversEveryPublishedModule, kotlinStaysDownstream)
 }

@@ -154,8 +154,97 @@ final class ConfigCodecTest {
     }
 
     @Test
-    void replacesRetiredSafetyWithoutDroppingJsonEnvironment() throws Exception {
+    void replacesAnInlineTomlEntryWithoutChangingItsNeighbors() {
+        var client = client("codex", ConfigFormat.TOML, false);
+        var neighbor = "other = { command = \"echo\", args = [\"keep\"] }";
+        var original = "title = \"keep\"\n"
+                + "mcp_servers = { "
+                + neighbor
+                + ", tmux = { command = \"old\", args = [\"server\"], env = { KEEP = \"yes\" } } }"
+                + " # keep inline rationale\n";
+
+        var updated = new String(
+                ConfigCodec.update(client, original.getBytes(StandardCharsets.UTF_8), "tmux", SERVER),
+                StandardCharsets.UTF_8);
+
+        assertTrue(updated.contains(neighbor));
+        assertTrue(updated.contains("# keep inline rationale"));
+        assertEquals(SERVER.command(), Toml.parse(updated).getString("mcp_servers.tmux.command"));
+        assertEquals("yes", Toml.parse(updated).getString("mcp_servers.tmux.env.KEEP"));
+    }
+
+    @Test
+    void addsAnEntryToAnInlineTomlServerTable() {
+        var client = client("codex", ConfigFormat.TOML, false);
+        var neighbor = "other = { command = \"echo\", args = [\"keep\"] }";
+        var original = "mcp_servers = { " + neighbor + " } # keep inline rationale\n";
+
+        var updated = new String(
+                ConfigCodec.update(client, original.getBytes(StandardCharsets.UTF_8), "tmux", SERVER),
+                StandardCharsets.UTF_8);
+
+        assertTrue(updated.contains(neighbor));
+        assertTrue(updated.contains("# keep inline rationale"));
+        assertEquals(SERVER.command(), Toml.parse(updated).getString("mcp_servers.tmux.command"));
+    }
+
+    @Test
+    void replacesInterleavedTomlChildTablesAndKeepsUnrelatedSections() {
+        var client = client("codex", ConfigFormat.TOML, false);
+        var original = """
+                [mcp_servers.tmux]
+                command = "old"
+                args = ["server"]
+
+                [mcp_servers.other]
+                # keep this unrelated server
+                command = "echo"
+                args = ["keep"]
+
+                [mcp_servers.tmux.env]
+                # keep this environment rationale
+                KEEP = "yes"
+                """;
+
+        var updated = new String(
+                ConfigCodec.update(client, original.getBytes(StandardCharsets.UTF_8), "tmux", SERVER),
+                StandardCharsets.UTF_8);
+
+        assertTrue(updated.contains("# keep this unrelated server"));
+        assertTrue(updated.contains("# keep this environment rationale"));
+        assertEquals("echo", Toml.parse(updated).getString("mcp_servers.other.command"));
+        assertEquals(SERVER.command(), Toml.parse(updated).getString("mcp_servers.tmux.command"));
+        assertEquals("yes", Toml.parse(updated).getString("mcp_servers.tmux.env.KEEP"));
+    }
+
+    @Test
+    void replacesDottedTomlAssignmentsAndKeepsTheirComments() {
+        var client = client("codex", ConfigFormat.TOML, false);
+        var original = """
+                # keep target rationale
+                mcp_servers.tmux.command = "old"
+                mcp_servers.tmux.args = ["server"]
+                mcp_servers.tmux.env.KEEP = "yes"
+                # keep unrelated server
+                mcp_servers.other.command = "echo"
+                """;
+
+        var updated = new String(
+                ConfigCodec.update(client, original.getBytes(StandardCharsets.UTF_8), "tmux", SERVER),
+                StandardCharsets.UTF_8);
+
+        assertTrue(updated.contains("# keep target rationale"));
+        assertTrue(updated.contains("# keep unrelated server"));
+        assertEquals("echo", Toml.parse(updated).getString("mcp_servers.other.command"));
+        assertEquals(SERVER.command(), Toml.parse(updated).getString("mcp_servers.tmux.command"));
+        assertEquals("yes", Toml.parse(updated).getString("mcp_servers.tmux.env.KEEP"));
+    }
+
+    @Test
+    void explicitToolsetsRetiresSafetyWithoutDroppingJsonEnvironment() throws Exception {
         var client = client("claude", ConfigFormat.JSON, false);
+        var replacement =
+                new ServerSpec(SERVER.command(), SERVER.arguments(), Map.of("LIBTMUX_TOOLSETS", "inspect,execute"));
         var original = """
                 {
                   "mcpServers": {
@@ -172,7 +261,7 @@ final class ConfigCodecTest {
                 }
                 """;
 
-        var updated = ConfigCodec.update(client, original.getBytes(StandardCharsets.UTF_8), "tmux", SERVER);
+        var updated = ConfigCodec.update(client, original.getBytes(StandardCharsets.UTF_8), "tmux", replacement);
 
         var entry = new ObjectMapper().readTree(updated).path("mcpServers").path("tmux");
         assertFalse(entry.path("env").has("LIBTMUX_SAFETY"));
@@ -182,7 +271,7 @@ final class ConfigCodecTest {
     }
 
     @Test
-    void preservesTomlEnvironmentAndItsCommentsWhileRemovingSafety() {
+    void preservesInheritedSafetyAndTomlEnvironmentUntilItIsExplicitlyReplaced() {
         var client = client("codex", ConfigFormat.TOML, false);
         var original = """
                 [mcp_servers.tmux]
@@ -206,24 +295,27 @@ final class ConfigCodecTest {
 
         var parsed = Toml.parse(updated);
         assertTrue(updated.contains("# keep this environment rationale"));
-        assertFalse(updated.contains("LIBTMUX_SAFETY"));
+        assertEquals("readonly", parsed.getString("mcp_servers.tmux.env.LIBTMUX_SAFETY"));
         assertEquals("inspect", parsed.getString("mcp_servers.tmux.env.LIBTMUX_TOOLSETS"));
         assertEquals("yes", parsed.getString("mcp_servers.tmux.env.KEEP"));
         assertEquals("echo", parsed.getString("mcp_servers.other.command"));
     }
 
     @Test
-    void refusesToGuessAToolsetWhenOnlyRetiredSafetyExists() {
+    void preservesRetiredSafetyWhenNoReplacementToolsetsWereRequested() {
         var client = client("cursor", ConfigFormat.JSON, false);
         var original = """
                 {"mcpServers":{"tmux":{"command":"old","args":[],"env":{"LIBTMUX_SAFETY":"destructive"}}}}
                 """;
 
-        var failure = org.junit.jupiter.api.Assertions.assertThrows(
-                IllegalArgumentException.class,
-                () -> ConfigCodec.update(client, original.getBytes(StandardCharsets.UTF_8), "tmux", SERVER));
+        var updated = ConfigCodec.update(client, original.getBytes(StandardCharsets.UTF_8), "tmux", SERVER);
 
-        assertTrue(String.valueOf(failure.getMessage()).contains("LIBTMUX_TOOLSETS"));
+        assertEquals(
+                "destructive",
+                ConfigCodec.read(client, updated, "tmux")
+                        .orElseThrow()
+                        .environment()
+                        .get("LIBTMUX_SAFETY"));
     }
 
     @Test
@@ -261,6 +353,35 @@ final class ConfigCodecTest {
             var malformed = malformedUtf8(prefixes.get(index), suffixes.get(index));
             assertThrows(IllegalArgumentException.class, () -> ConfigCodec.update(client, malformed, "tmux", SERVER));
             assertThrows(IllegalArgumentException.class, () -> ConfigCodec.read(client, malformed, "tmux"));
+        }
+    }
+
+    @Test
+    void rejectsTrailingJsonDocuments() {
+        var clients = List.of(client("claude", ConfigFormat.JSON, false), client("opencode", ConfigFormat.JSONC, true));
+
+        for (var client : clients) {
+            var malformed = "{\"keep\":true} {\"tail\":true}\n".getBytes(StandardCharsets.UTF_8);
+
+            assertThrows(IllegalArgumentException.class, () -> ConfigCodec.update(client, malformed, "tmux", SERVER));
+            assertThrows(IllegalArgumentException.class, () -> ConfigCodec.read(client, malformed, "tmux"));
+        }
+    }
+
+    @Test
+    void rejectsDuplicateJsonAndJsoncObjectKeys() {
+        var inputs = Map.of(
+                client("claude", ConfigFormat.JSON, false),
+                "{\"mcpServers\":{},\"mcpServers\":{}}",
+                client("opencode", ConfigFormat.JSONC, true),
+                "{\"mcp\":{},/* keep */\"mcp\":{},}");
+
+        for (var input : inputs.entrySet()) {
+            var malformed = input.getValue().getBytes(StandardCharsets.UTF_8);
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> ConfigCodec.update(input.getKey(), malformed, "tmux", SERVER));
+            assertThrows(IllegalArgumentException.class, () -> ConfigCodec.read(input.getKey(), malformed, "tmux"));
         }
     }
 

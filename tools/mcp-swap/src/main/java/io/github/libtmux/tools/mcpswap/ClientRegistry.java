@@ -14,15 +14,55 @@ final class ClientRegistry {
         var configHome =
                 xdg != null && !xdg.isBlank() && Path.of(xdg).isAbsolute() ? Path.of(xdg) : home.resolve(".config");
         return List.of(
-                new Client("claude", home.resolve(".claude.json"), "mcpServers", ConfigFormat.JSON, false),
-                new Client("codex", home.resolve(".codex/config.toml"), "mcp_servers", ConfigFormat.TOML, false),
-                new Client("cursor", home.resolve(".cursor/mcp.json"), "mcpServers", ConfigFormat.JSON, false),
-                new Client("gemini", home.resolve(".gemini/settings.json"), "mcpServers", ConfigFormat.JSON, false),
-                new Client("grok", home.resolve(".grok/config.toml"), "mcp_servers", ConfigFormat.TOML, false),
+                client("claude", "claude", home.resolve(".claude.json"), "mcpServers", ConfigFormat.JSON, false),
+                client("codex", "codex", home.resolve(".codex/config.toml"), "mcp_servers", ConfigFormat.TOML, false),
+                client(
+                        "cursor",
+                        "cursor-agent",
+                        home.resolve(".cursor/mcp.json"),
+                        "mcpServers",
+                        ConfigFormat.JSON,
+                        false),
+                client(
+                        "gemini",
+                        "gemini",
+                        home.resolve(".gemini/settings.json"),
+                        "mcpServers",
+                        ConfigFormat.JSON,
+                        false),
+                client("grok", "grok", home.resolve(".grok/config.toml"), "mcp_servers", ConfigFormat.TOML, false),
                 new Client(
-                        "agy", home.resolve(".gemini/config/mcp_config.json"), "mcpServers", ConfigFormat.JSON, false),
-                new Client("opencode", configHome.resolve("opencode/opencode.jsonc"), "mcp", ConfigFormat.JSONC, true),
-                new Client("pi", home.resolve(".pi/agent/mcp.json"), "mcpServers", ConfigFormat.JSONC, false));
+                        "agy",
+                        "agy",
+                        home.resolve(".gemini/config/mcp_config.json"),
+                        "mcpServers",
+                        ConfigFormat.JSON,
+                        false,
+                        Scope.USER,
+                        home),
+                client(
+                        "opencode",
+                        "opencode",
+                        configHome.resolve("opencode/opencode.jsonc"),
+                        "mcp",
+                        ConfigFormat.JSONC,
+                        true),
+                client("pi", "pi", home.resolve(".pi/agent/mcp.json"), "mcpServers", ConfigFormat.JSONC, false));
+    }
+
+    static List<Client> scoped(List<Client> clients, Scope requested, Path repository) {
+        return clients.stream()
+                .map(client -> client.scoped(requested, repository))
+                .toList();
+    }
+
+    static List<Client> allScopes(List<Client> clients, Path repository) {
+        return clients.stream()
+                .flatMap(client -> client.name().equals("claude")
+                        ? java.util.stream.Stream.of(
+                                client.scoped(Scope.USER, repository), client.scoped(Scope.PROJECT, repository))
+                        : java.util.stream.Stream.of(client.scoped(Scope.USER, repository)))
+                .toList();
     }
 
     static List<Client> select(List<Client> clients, List<String> selectors) {
@@ -48,5 +88,18 @@ final class ClientRegistry {
             }
         }
         return clients.stream().filter(client -> wanted.contains(client.name())).toList();
+    }
+
+    private static Client client(
+            String name, String binary, Path path, String table, ConfigFormat format, boolean openCode) {
+        return new Client(
+                name,
+                binary,
+                path,
+                table,
+                format,
+                openCode,
+                Scope.USER,
+                path.toAbsolutePath().getRoot());
     }
 }
