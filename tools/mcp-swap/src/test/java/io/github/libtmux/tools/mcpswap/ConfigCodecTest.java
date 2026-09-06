@@ -225,6 +225,27 @@ final class ConfigCodecTest {
         assertTrue(String.valueOf(failure.getMessage()).contains("LIBTMUX_TOOLSETS"));
     }
 
+    @Test
+    void readsTheOptionalArgumentListAsEmpty() {
+        var json = client("cursor", ConfigFormat.JSON, false);
+        var toml = client("codex", ConfigFormat.TOML, false);
+
+        assertEquals(
+                new ServerSpec("server", List.of()),
+                ConfigCodec.read(
+                                json,
+                                "{\"mcpServers\":{\"tmux\":{\"command\":\"server\"}}}".getBytes(StandardCharsets.UTF_8),
+                                "tmux")
+                        .orElseThrow());
+        assertEquals(
+                new ServerSpec("server", List.of()),
+                ConfigCodec.read(
+                                toml,
+                                "[mcp_servers.tmux]\ncommand = \"server\"\n".getBytes(StandardCharsets.UTF_8),
+                                "tmux")
+                        .orElseThrow());
+    }
+
     private static Client client(String name, ConfigFormat format, boolean openCode) {
         var table = openCode ? "mcp" : format == ConfigFormat.TOML ? "mcp_servers" : "mcpServers";
         return new Client(name, Path.of("/test/config"), table, format, openCode);

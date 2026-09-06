@@ -75,16 +75,18 @@ final class TomlEditor {
         }
         var command = server.getString("command");
         var arguments = server.getArray("args");
-        if (command == null || arguments == null) {
-            throw new IllegalArgumentException("server command and args must be present");
+        if (command == null) {
+            throw new IllegalArgumentException("server command must be present");
         }
         List<String> values = new ArrayList<>();
-        for (int index = 0; index < arguments.size(); index++) {
-            var value = arguments.getString(index);
-            if (value == null) {
-                throw new IllegalArgumentException("server args must contain only strings");
+        if (arguments != null) {
+            for (int index = 0; index < arguments.size(); index++) {
+                var value = arguments.getString(index);
+                if (value == null) {
+                    throw new IllegalArgumentException("server args must contain only strings");
+                }
+                values.add(value);
             }
-            values.add(value);
         }
         Map<String, String> environment = new LinkedHashMap<>();
         var rawEnvironment = server.getTable("env");

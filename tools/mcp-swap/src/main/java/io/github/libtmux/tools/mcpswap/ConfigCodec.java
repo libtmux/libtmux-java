@@ -152,15 +152,17 @@ final class ConfigCodec {
                         environment(client, entry)));
             }
             var command = text(entry.get("command"), client);
-            var arguments = entry.path("args");
-            if (!arguments.isArray()) {
+            var arguments = entry.get("args");
+            if (arguments != null && !arguments.isArray()) {
                 throw new IllegalArgumentException(client.name() + " server args is not an array");
             }
             return Optional.of(new ServerSpec(
                     command,
-                    java.util.stream.IntStream.range(0, arguments.size())
-                            .mapToObj(index -> text(arguments.get(index), client))
-                            .toList(),
+                    arguments == null
+                            ? java.util.List.of()
+                            : java.util.stream.IntStream.range(0, arguments.size())
+                                    .mapToObj(index -> text(arguments.get(index), client))
+                                    .toList(),
                     environment(client, entry)));
         } catch (IOException error) {
             throw new IllegalArgumentException(client.name() + " config is not valid JSON", error);
