@@ -1047,8 +1047,22 @@ def _cleanup_owned(
         try:
             path.unlink(missing_ok=True)
         except OSError as error:
-            errors.append(f"could not remove task-owned stage {path}: {error}")
+            if os.path.lexists(path):
+                errors.append(f"could not remove task-owned stage {path}: {error}")
     return errors
+
+
+def _require_cleanup(action: str, owned: set[pathlib.Path]) -> None:
+    errors = _cleanup_owned(owned)
+    if not errors:
+        return
+    retained = {path for path in owned if os.path.lexists(path)}
+    detail = f"{action} committed but cleanup incomplete: " + "; ".join(errors)
+    if retained:
+        detail += "; recovery artifacts: " + ", ".join(
+            str(path) for path in sorted(retained, key=str)
+        )
+    raise SystemExit(detail)
 
 
 def _transaction_failure(
@@ -1500,9 +1514,7 @@ def _commit_use(staged: list[StagedUse], owned: set[pathlib.Path]) -> None:
         cleanup_errors = _cleanup_owned(owned, preserved)
         _transaction_failure("swap", error, rollback_errors, cleanup_errors, preserved)
 
-    cleanup_errors = _cleanup_owned(owned)
-    for error in cleanup_errors:
-        print(f"warning: {error}", file=sys.stderr)
+    _require_cleanup("swap", owned)
 
 
 def _rollback_revert(
@@ -1622,9 +1634,7 @@ def _commit_revert(staged: list[StagedRevert], owned: set[pathlib.Path]) -> None
             "revert", error, rollback_errors, cleanup_errors, preserved
         )
 
-    cleanup_errors = _cleanup_owned(owned)
-    for error in cleanup_errors:
-        print(f"warning: {error}", file=sys.stderr)
+    _require_cleanup("revert", owned)
 
 
 # ------------------------------------------------------------------ what to point at

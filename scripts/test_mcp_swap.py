@@ -835,6 +835,41 @@ def test_staging_failure_cleans_up_before_any_destination_write(
     _assert_no_stages(swapper)
 
 
+def test_use_cleanup_failure_is_not_reported_as_success(
+    swapper: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A committed swap with retained private stages must return failure."""
+    _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    _fail_stage_cleanup(monkeypatch)
+
+    with pytest.raises(SystemExit, match="cleanup incomplete") as stopped:
+        swapper.main(_use_args("--cli", claude.cli))
+
+    recovery = list(claude.path.parent.glob(f".{claude.path.name}.mcp-swap-recovery-*"))
+    assert len(recovery) == 1
+    assert str(recovery[0]) in str(stopped.value)
+    _assert_swapped(claude)
+
+
+def test_revert_cleanup_failure_is_not_reported_as_success(
+    swapper: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A committed revert with retained private stages must return failure."""
+    originals = _seed_configs(swapper)
+    claude = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    assert swapper.main(_use_args("--cli", claude.cli)) == 0
+    _fail_stage_cleanup(monkeypatch)
+
+    with pytest.raises(SystemExit, match="cleanup incomplete") as stopped:
+        swapper.main(["revert", "--cli", claude.cli])
+
+    recoveries = list(claude.path.parent.glob("*.mcp-swap-recovery-*"))
+    assert len(recoveries) == 3
+    assert all(str(path) in str(stopped.value) for path in recoveries)
+    assert claude.path.read_bytes() == originals[claude.cli]
+
+
 def test_failed_rollback_preserves_backup_and_recovery_stage(
     swapper: types.ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1050,6 +1085,17 @@ def _assert_no_stages(swapper: types.ModuleType) -> None:
     home = next(layer for layer in swapper.LAYERS if layer.cli == "claude").path.parent
     roles = re.compile(r"\.mcp-swap-(?:new|output|recovery|restore|state)-")
     assert [path for path in home.rglob("*") if roles.search(path.name)] == []
+
+
+def _fail_stage_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_unlink = pathlib.Path.unlink
+
+    def refuse(path: pathlib.Path, *args: object, **kwargs: object) -> None:
+        if ".mcp-swap-" in path.name:
+            raise OSError("synthetic cleanup failure")
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "unlink", refuse)
 
 
 def _fail_first_replace_to(
