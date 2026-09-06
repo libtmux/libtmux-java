@@ -83,10 +83,24 @@ final class ConfigCodec {
 
     private static Optional<ServerSpec> readJson(Client client, byte[] raw, String serverName, ObjectMapper mapper) {
         try {
-            var root = mapper.readTree(raw);
-            var entry = root.path(client.serverTable()).path(serverName);
-            if (entry.isMissingNode()) {
+            var text = new String(raw, StandardCharsets.UTF_8);
+            JsonNode parsed = text.isBlank() ? mapper.createObjectNode() : mapper.readTree(text);
+            if (!(parsed instanceof ObjectNode root)) {
+                throw new IllegalArgumentException(client.name() + " config root is not an object");
+            }
+            var table = root.get(client.serverTable());
+            if (table == null) {
                 return Optional.empty();
+            }
+            if (!(table instanceof ObjectNode servers)) {
+                throw new IllegalArgumentException(client.name() + " server table is not an object");
+            }
+            var entry = servers.get(serverName);
+            if (entry == null) {
+                return Optional.empty();
+            }
+            if (!(entry instanceof ObjectNode)) {
+                throw new IllegalArgumentException(client.name() + " server entry is not an object");
             }
             if (client.openCode()) {
                 var command = entry.path("command");
