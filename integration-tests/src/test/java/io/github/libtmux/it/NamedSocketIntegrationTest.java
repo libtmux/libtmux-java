@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.junit5.NamedServerFixture;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,10 +23,7 @@ final class NamedSocketIntegrationTest {
 
     private static final String TMUX = System.getProperty("libtmux.tmux", "tmux");
 
-    /**
-     * Short because {@code TMUX_TMPDIR} already spends about eighty of the ~104 bytes a unix socket
-     * path may hold. The pid keeps concurrent runs — Gradle's workers, the matrix's lanes — apart.
-     */
+    /** The pid keeps concurrent Gradle workers and matrix lanes apart inside their quarantine. */
     private static final String NAMESPACE = "ltj-" + ProcessHandle.current().pid();
 
     @Test
@@ -33,11 +31,12 @@ final class NamedSocketIntegrationTest {
         String name = NAMESPACE + "-a";
 
         try (Server server = openNamed(name, directory)) {
-            try {
-                server.newSession("named");
+            server.newSession("named");
+            try (NamedServerFixture owned = NamedServerFixture.own(server, name, tmuxTmpDir())) {
 
                 Path socket = Path.of(reportedSocket(server));
 
+                assertEquals(socket, owned.socket());
                 assertEquals(name, socket.getFileName().toString(), "tmux resolved a different name");
                 assertTrue(
                         socket.startsWith(tmuxTmpDir()),
@@ -46,28 +45,26 @@ final class NamedSocketIntegrationTest {
                 assertTrue(
                         socket.toString().length() <= 104,
                         "the socket path is at the limit a unix socket can carry: " + socket);
-            } finally {
-                server.killServer();
             }
         }
     }
 
     @Test
     void twoNamesAreTwoServers(@TempDir Path directory) throws Exception {
-        try (Server first = openNamed(NAMESPACE + "-b", directory);
-                Server second = openNamed(NAMESPACE + "-c", directory)) {
-            try {
-                first.newSession("in-first");
-                second.newSession("in-second");
+        String firstName = NAMESPACE + "-b";
+        String secondName = NAMESPACE + "-c";
+        try (Server first = openNamed(firstName, directory);
+                Server second = openNamed(secondName, directory)) {
+            first.newSession("in-first");
+            second.newSession("in-second");
+            try (NamedServerFixture firstOwned = NamedServerFixture.own(first, firstName, tmuxTmpDir());
+                    NamedServerFixture secondOwned = NamedServerFixture.own(second, secondName, tmuxTmpDir())) {
 
                 assertTrue(first.hasSession("in-first"));
                 assertTrue(second.hasSession("in-second"));
                 assertTrue(!first.hasSession("in-second"), "the first server can see the second's session");
                 assertTrue(!second.hasSession("in-first"), "the second server can see the first's session");
-                assertNotEquals(reportedSocket(first), reportedSocket(second), "both names resolved to one socket");
-            } finally {
-                first.killServer();
-                second.killServer();
+                assertNotEquals(firstOwned.socket(), secondOwned.socket(), "both names resolved to one socket");
             }
         }
     }

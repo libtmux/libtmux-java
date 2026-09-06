@@ -6,13 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.libtmux.Pane;
-import io.github.libtmux.Pane_;
 import io.github.libtmux.Server;
-import io.github.libtmux.jackson.FilterJson;
-import io.github.libtmux.jackson.LibTmuxModels;
+import io.github.libtmux.ServerConfig;
 import io.github.libtmux.junit5.TmuxExtension;
-import io.github.libtmux.query.FilterExpr;
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.TmuxTransport;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
@@ -26,7 +25,8 @@ import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -44,47 +44,140 @@ import reactor.core.publisher.Mono;
 final class TmuxMcpServerTest {
 
     @Test
-    void theFilterExampleShownToAModelIsOneTheLibraryReads() {
-        FilterExpr<Pane> parsed = FilterJson.readString(Catalog.EXAMPLE_FILTER, LibTmuxModels.pane());
+    void readBatchBoundsTheCompleteJsonRpcLine() throws Exception {
+        String payload = "x".repeat(140_000);
+        TmuxTransport environment = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return new CommandResult(0, List.of("VALUE=" + payload), List.of());
+            }
 
-        assertEquals(
-                Pane_.command().startsWith("nvim").describe(),
-                parsed.describe(),
-                "the example must mean what it appears to mean");
-    }
+            @Override
+            public void close() {}
+        };
+        ToolSurface surface = ToolSurface.resolve(
+                Map.of(ToolSurface.TOOLSETS_ENV, "", ToolSurface.TOOLS_ENV, "call_read_tools_batch"));
+        String requestId = "batch-response";
+        byte[] request = (Answers.JSON.writeValueAsString(Map.of(
+                                "jsonrpc",
+                                "2.0",
+                                "id",
+                                requestId,
+                                "method",
+                                "tools/call",
+                                "params",
+                                Map.of(
+                                        "name",
+                                        "call_read_tools_batch",
+                                        "arguments",
+                                        Map.of(
+                                                "operations",
+                                                List.of(
+                                                        Map.of("tool", "show_environment"),
+                                                        Map.of("tool", "show_environment"))))))
+                        + "\n")
+                .getBytes(StandardCharsets.UTF_8);
+        WireOutput output = new WireOutput();
 
-    /** And it has to select on a real server, not merely parse. */
-    @Test
-    void theFilterExampleSelectsAgainstRealTmux(Server server) {
-        FilterExpr<Pane> parsed = FilterJson.readString(Catalog.EXAMPLE_FILTER, LibTmuxModels.pane());
-
-        assertTrue(
-                server.panes().stream().noneMatch(parsed),
-                "the fixture runs a shell, so nothing should match a filter for nvim");
-        assertEquals(1, server.panes().size(), "and the unfiltered listing still sees the pane");
-    }
-
-    @Test
-    void closingAnEmbeddedMcpServerClosesItsWatcher(Server server) throws Exception {
-        PipedInputStream input = new PipedInputStream();
-        try (PipedOutputStream client = new PipedOutputStream(input)) {
-            client.flush();
-            StdioServerTransportProvider transport = new StdioServerTransportProvider(
-                    new JacksonMcpJsonMapper(new ObjectMapper()), input, new ByteArrayOutputStream());
-            McpSyncServer mcp = TmuxMcpServer.serving(server, Safety.MUTATING, true, transport);
+        try (Server server = Server.using(ServerConfig.builder().build(), environment);
+                PipedInputStream input = new PipedInputStream();
+                PipedOutputStream client = new PipedOutputStream(input)) {
+            McpSyncServer mcp = TmuxMcpServer.overStdio(server, input, output, surface, () -> {});
             try {
-                assertTrue(await(() -> !server.clients().isEmpty()), "the watcher never attached");
+                client.write(initialize());
+                client.flush();
+                assertTrue(output.first.await(3, TimeUnit.SECONDS), "initialization did not answer");
 
-                mcp.close();
-
-                assertTrue(await(() -> server.clients().isEmpty()), "closing MCP left its watcher attached");
+                client.write("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
+                        .getBytes(StandardCharsets.UTF_8));
+                client.write(request);
+                client.flush();
+                assertTrue(output.second.await(5, TimeUnit.SECONDS), "read batch did not answer");
             } finally {
                 mcp.close();
-                for (var attached : server.clients()) {
-                    server.cmd("detach-client", "-t", attached.name());
-                }
             }
         }
+
+        String response = output.lines().stream()
+                .filter(line -> line.contains(requestId))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("read batch response is absent"));
+        assertTrue(
+                response.getBytes(StandardCharsets.UTF_8).length + 1 <= 1_000_000,
+                "the complete JSON-RPC response, including its newline, exceeds 1,000,000 bytes");
+
+        var result = Answers.JSON.readTree(response).path("result").path("structuredContent");
+        assertEquals(2, result.path("results").size(), "an executed row was dropped");
+        boolean explicitlyTruncated = false;
+        for (var row : result.path("results")) {
+            assertEquals(true, row.path("success").asBoolean());
+            if (row.path("resultTruncated").asBoolean()) {
+                explicitlyTruncated = true;
+                assertTrue(row.path("result").isNull());
+            }
+        }
+        assertTrue(explicitlyTruncated, "the oversized nested payloads were not marked as truncated");
+        assertEquals(true, result.path("truncated").asBoolean());
+        assertTrue(result.path("truncatedBytes").asInt() > 0);
+    }
+
+    @Test
+    void oversizedRequestIdFailsBeforeToolDispatch() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        TmuxTransport environment = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                calls.incrementAndGet();
+                return new CommandResult(0, List.of("VALUE=kept"), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+        ToolSurface surface =
+                ToolSurface.resolve(Map.of(ToolSurface.TOOLSETS_ENV, "", ToolSurface.TOOLS_ENV, "show_environment"));
+        String acceptedId = "i".repeat(StdioRequestFilter.REQUEST_ID_MAX_BYTES - 2);
+        assertEquals(StdioRequestFilter.REQUEST_ID_MAX_BYTES, Answers.JSON.writeValueAsBytes(acceptedId).length);
+        WireOutput output = new WireOutput();
+
+        try (Server server = Server.using(ServerConfig.builder().build(), environment);
+                PipedInputStream input = new PipedInputStream();
+                PipedOutputStream client = new PipedOutputStream(input)) {
+            McpSyncServer mcp = TmuxMcpServer.overStdio(server, input, output, surface, () -> {});
+            try {
+                client.write(initialize());
+                client.flush();
+                assertTrue(output.first.await(3, TimeUnit.SECONDS), "initialization did not answer");
+                calls.set(0);
+
+                client.write("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
+                        .getBytes(StandardCharsets.UTF_8));
+                client.write(toolCall(acceptedId));
+                client.flush();
+                assertTrue(output.second.await(5, TimeUnit.SECONDS), "near-bound request ID did not answer");
+                assertEquals(1, calls.get(), "near-bound request ID did not dispatch exactly once");
+                assertEquals(
+                        acceptedId,
+                        Answers.JSON.readTree(output.lines().get(1)).path("id").textValue(),
+                        "near-bound request ID did not round trip");
+
+                client.write(toolCall("i".repeat(1_000_000)));
+                client.flush();
+                assertTrue(output.awaitLines(3, 5, TimeUnit.SECONDS), "oversized request ID did not answer");
+            } finally {
+                mcp.close();
+            }
+        }
+
+        String rejectedLine = output.lines().get(2);
+        var rejected = Answers.JSON.readTree(rejectedLine);
+        boolean idNull = rejected.has("id") && rejected.path("id").isNull();
+        int code = rejected.path("error").path("code").asInt();
+        int wireBytes = rejectedLine.getBytes(StandardCharsets.UTF_8).length + 1;
+        assertTrue(
+                idNull && code == -32600 && wireBytes <= 1_000_000 && calls.get() == 1,
+                () -> "oversized response = (" + wireBytes + " bytes, id null " + idNull + ", code " + code + ", calls "
+                        + calls.get() + ")");
     }
 
     @Test
@@ -94,7 +187,7 @@ final class TmuxMcpServerTest {
         PipedInputStream input = new PipedInputStream();
         try (PipedOutputStream client = new PipedOutputStream(input);
                 PrintStream output = new PrintStream(brokenOutput(), true, StandardCharsets.UTF_8)) {
-            McpSyncServer mcp = TmuxMcpServer.overStdio(server, input, output, Safety.MUTATING, false, () -> {
+            McpSyncServer mcp = TmuxMcpServer.overStdio(server, input, output, ToolSurface.defaults(), () -> {
                 endCalls.incrementAndGet();
                 ended.countDown();
             });
@@ -114,7 +207,7 @@ final class TmuxMcpServerTest {
     void closingAStdioServerUnblocksItsInputReader(Server server) throws Exception {
         BlockingInput input = new BlockingInput();
         McpSyncServer mcp =
-                TmuxMcpServer.overStdio(server, input, new ByteArrayOutputStream(), Safety.MUTATING, false, () -> {});
+                TmuxMcpServer.overStdio(server, input, new ByteArrayOutputStream(), ToolSurface.defaults(), () -> {});
         try {
             assertTrue(input.reading.await(3, TimeUnit.SECONDS), "the protocol reader never started");
 
@@ -129,75 +222,36 @@ final class TmuxMcpServerTest {
     }
 
     @Test
-    void failedStdioStartupClosesItsOwnedInput(Server server) throws Exception {
-        server.sessions().getFirst().kill();
-        BlockingInput input = new BlockingInput();
-        try {
-            assertThrows(
-                    IllegalStateException.class,
-                    () -> TmuxMcpServer.overStdio(
-                            server, input, new ByteArrayOutputStream(), Safety.MUTATING, true, () -> {}));
-
-            assertTrue(input.closed.await(1, TimeUnit.SECONDS), "failed startup left its input stream open");
-        } finally {
-            input.close();
-        }
-    }
-
-    @Test
     void failedStartupClosesAnyAcceptedTransport(Server server) throws Exception {
-        for (boolean watching : new boolean[] {false, true}) {
-            AtomicInteger closes = new AtomicInteger();
-            IllegalStateException startupFailure = new IllegalStateException("session factory failed");
-            McpServerTransportProvider transport = new McpServerTransportProvider() {
-                @Override
-                public void setSessionFactory(McpServerSession.Factory factory) {
-                    throw startupFailure;
-                }
-
-                @Override
-                public Mono<Void> notifyClients(String method, Object params) {
-                    return Mono.empty();
-                }
-
-                @Override
-                public Mono<Void> closeGracefully() {
-                    return Mono.empty();
-                }
-
-                @Override
-                public void close() {
-                    closes.incrementAndGet();
-                }
-            };
-
-            IllegalStateException thrown = assertThrows(
-                    IllegalStateException.class,
-                    () -> TmuxMcpServer.serving(server, Safety.MUTATING, watching, transport),
-                    "watching=" + watching);
-
-            assertSame(startupFailure, thrown);
-            assertEquals(1, closes.get(), "accepted transport was not closed exactly once");
-            assertTrue(await(() -> server.clients().isEmpty()), "failed startup left a watcher attached");
-        }
-    }
-
-    @Test
-    void brokenOutputDetachesTheOwnedWatcherWhileInputRemainsOpen(Server server) throws Exception {
-        PipedInputStream input = new PipedInputStream();
-        try (PipedOutputStream client = new PipedOutputStream(input);
-                PrintStream output = new PrintStream(brokenOutput(), true, StandardCharsets.UTF_8)) {
-            McpSyncServer mcp = TmuxMcpServer.overStdio(server, input, output, Safety.MUTATING, true, () -> {});
-            try {
-                assertTrue(await(() -> !server.clients().isEmpty()), "the watcher never attached");
-                client.write(initialize());
-                client.flush();
-
-                assertTrue(await(() -> server.clients().isEmpty()), "stdout failed but the watcher stayed attached");
-            } finally {
-                mcp.close();
+        AtomicInteger closes = new AtomicInteger();
+        IllegalStateException startupFailure = new IllegalStateException("session factory failed");
+        McpServerTransportProvider transport = new McpServerTransportProvider() {
+            @Override
+            public void setSessionFactory(McpServerSession.Factory factory) {
+                throw startupFailure;
             }
-        }
+
+            @Override
+            public Mono<Void> notifyClients(String method, Object params) {
+                return Mono.empty();
+            }
+
+            @Override
+            public Mono<Void> closeGracefully() {
+                return Mono.empty();
+            }
+
+            @Override
+            public void close() {
+                closes.incrementAndGet();
+            }
+        };
+
+        IllegalStateException thrown = assertThrows(
+                IllegalStateException.class, () -> TmuxMcpServer.serving(server, ToolSurface.defaults(), transport));
+
+        assertSame(startupFailure, thrown);
+        assertEquals(1, closes.get(), "accepted transport was not closed exactly once");
     }
 
     @Test
@@ -208,7 +262,7 @@ final class TmuxMcpServerTest {
         try (PipedOutputStream client = new PipedOutputStream(input)) {
             var transport = new StdioServerTransportProvider(
                     new JacksonMcpJsonMapper(new ObjectMapper()), input, new ByteArrayOutputStream(), 64);
-            McpSyncServer mcp = TmuxMcpServer.serving(server, Safety.MUTATING, lifetime.observe(transport));
+            McpSyncServer mcp = TmuxMcpServer.serving(server, ToolSurface.defaults(), lifetime.observe(transport));
             try {
                 client.write("x".repeat(65).getBytes(StandardCharsets.UTF_8));
                 client.flush();
@@ -234,6 +288,20 @@ final class TmuxMcpServerTest {
                 + "\"protocolVersion\":\"" + ProtocolVersions.MCP_2025_11_25
                 + "\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}\n";
         return request.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static byte[] toolCall(String id) throws IOException {
+        return (Answers.JSON.writeValueAsString(Map.of(
+                                "jsonrpc",
+                                "2.0",
+                                "id",
+                                id,
+                                "method",
+                                "tools/call",
+                                "params",
+                                Map.of("name", "show_environment", "arguments", Map.of())))
+                        + "\n")
+                .getBytes(StandardCharsets.UTF_8);
     }
 
     private static final class BlockingInput extends java.io.InputStream {
@@ -271,14 +339,52 @@ final class TmuxMcpServerTest {
         }
     }
 
-    private static boolean await(java.util.function.BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-        while (System.nanoTime() < deadline) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(25);
+    private static final class WireOutput extends OutputStream {
+
+        private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        private final CountDownLatch first = new CountDownLatch(1);
+        private final CountDownLatch second = new CountDownLatch(1);
+        private int lines;
+
+        @Override
+        public synchronized void write(int value) {
+            bytes.write(value);
+            count(value);
         }
-        return condition.getAsBoolean();
+
+        @Override
+        public synchronized void write(byte[] values, int offset, int length) {
+            bytes.write(values, offset, length);
+            for (int index = offset; index < offset + length; index++) {
+                count(values[index]);
+            }
+        }
+
+        synchronized List<String> lines() {
+            return bytes.toString(StandardCharsets.UTF_8).lines().toList();
+        }
+
+        synchronized boolean awaitLines(int expected, long timeout, TimeUnit unit) throws InterruptedException {
+            long remaining = unit.toNanos(timeout);
+            long end = System.nanoTime() + remaining;
+            while (lines < expected && remaining > 0) {
+                TimeUnit.NANOSECONDS.timedWait(this, remaining);
+                remaining = end - System.nanoTime();
+            }
+            return lines >= expected;
+        }
+
+        private void count(int value) {
+            if (value != '\n') {
+                return;
+            }
+            lines++;
+            notifyAll();
+            if (lines == 1) {
+                first.countDown();
+            } else if (lines == 2) {
+                second.countDown();
+            }
+        }
     }
 }

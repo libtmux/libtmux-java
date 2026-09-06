@@ -118,6 +118,14 @@ public final class Session {
         return Hooks.session(server, snapshot, state.id());
     }
 
+    /** Sets the scrollback retained by panes created in this session. */
+    public void setHistoryLimit(int lines) {
+        if (lines < 0) {
+            throw new IllegalArgumentException("history limit is negative: " + lines);
+        }
+        options().set("history-limit", Integer.toString(lines));
+    }
+
     /** This session's windows, in tmux's order. A pure read of the capture. */
     public List<Window> windows() {
         return snapshot.windowsOf(state.id()).stream()
@@ -206,7 +214,7 @@ public final class Session {
 
     /** Renames this session and returns a handle on it as it is now. */
     public Session rename(String name) {
-        server.run(snapshot, List.of("rename-session", "-t", state.id().value(), name));
+        server.run(snapshot, List.of("rename-session", "-t", state.id().value(), TmuxFormats.literal(name)));
         return refresh();
     }
 

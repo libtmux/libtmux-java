@@ -173,7 +173,7 @@ public final class Window {
      * both. Unlike a session name, a window name is never rewritten.
      */
     public Window rename(String name) {
-        server.run(snapshot, List.of("rename-window", "-t", target(), name));
+        server.run(snapshot, List.of("rename-window", "-t", target(), TmuxFormats.literal(name)));
         return refresh();
     }
 
@@ -203,6 +203,39 @@ public final class Window {
                 snapshot,
                 state.context(),
                 List.of("move-window", "-s", linkTarget(), "-t", session.id().value()));
+    }
+
+    /** Moves this window to an exact index in another session. */
+    public void moveTo(Session session, int index) {
+        if (index < 0) {
+            throw new IllegalArgumentException("window index is negative: " + index);
+        }
+        Objects.requireNonNull(session, "session");
+        server.requireSameIncarnation(snapshot, session.server(), session.snapshot());
+        server.run(
+                snapshot,
+                state.context(),
+                List.of("move-window", "-s", linkTarget(), "-t", session.id().value() + ":" + index));
+    }
+
+    /** Resizes this window in terminal cells. */
+    public void resizeTo(Dimensions size) {
+        Objects.requireNonNull(size, "size");
+        server.run(
+                snapshot,
+                List.of(
+                        "resize-window",
+                        "-t",
+                        target(),
+                        "-x",
+                        Integer.toString(size.width()),
+                        "-y",
+                        Integer.toString(size.height())));
+    }
+
+    /** Controls whether input to one pane is copied to every pane in this window. */
+    public void setSynchronizePanes(boolean enabled) {
+        options().set("synchronize-panes", enabled ? "on" : "off");
     }
 
     /** Rotates the panes within this window. */

@@ -1,7 +1,6 @@
 package io.github.libtmux.mcp;
 
 import io.github.libtmux.Pane;
-import java.util.ArrayList;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 
@@ -20,6 +19,7 @@ final class Typing {
             String paneId,
             int keys,
             boolean literal,
+            List<String> resolvedPaneIds,
             @Nullable String note) {}
 
     record Pasted(
@@ -43,19 +43,26 @@ final class Typing {
                     "'keys' is empty; give the key names to send, such as [\"C-c\"] or [\"q\"]");
         }
         boolean literal = call.flag("literal", false);
-        List<String> argv = new ArrayList<>(List.of("send-keys"));
-        if (literal) {
-            argv.add("-l");
+        return sendKeys(pane, keys, literal, PaneInputCohort.resolve(pane, call.caller()));
+    }
+
+    static Sent sendKeys(Pane pane, List<String> keys, boolean literal) {
+        PaneInputCohort.Resolution cohort = PaneInputCohort.resolve(pane);
+        return sendKeys(pane, keys, literal, cohort);
+    }
+
+    static Sent sendKeys(Pane pane, List<String> keys, boolean literal, PaneInputCohort.Resolution cohort) {
+        try (PaneInputReservations.Lease lease = PaneInputReservations.keys(cohort, "send_keys")) {
+            PaneInputCohort.Resolution fresh = PaneInputCohort.resolve(pane, cohort.caller());
+            List<String> resolved = lease.requireSameKeys(fresh);
+            pane.sendKeys(keys, literal);
+            return new Sent(
+                    pane.id().value(),
+                    keys.size(),
+                    literal,
+                    resolved,
+                    "Sent, not waited for. Call capture_since or wait_for_text on this pane to see " + "what it did.");
         }
-        argv.addAll(List.of("-t", pane.id().value()));
-        argv.addAll(keys);
-        call.server().run(argv);
-        return new Sent(
-                pane.id().value(),
-                keys.size(),
-                literal,
-                "Sent, not waited for. Call tmux_capture_since or tmux_wait_for_text on this pane to see "
-                        + "what it did.");
     }
 
     /**
@@ -70,15 +77,23 @@ final class Typing {
      */
     static Pasted pasteText(Call call) {
         Pane pane = Targets.pane(call.server(), call.string("pane_id"));
-        String text = call.string("text");
+        String text = call.stringIncludingEmpty("text");
         boolean enter = call.flag("enter", false);
-        // tmux turns the line feeds in a buffer into carriage returns as it pastes, so a trailing
-        // newline is what submits the text — there is no flag that means "and Enter".
-        pane.paste(enter ? text + "\n" : text);
-        return new Pasted(
-                pane.id().value(),
-                text.length(),
-                (int) text.lines().count(),
-                enter ? null : "Pasted without a trailing newline; pass 'enter' to submit it.");
+        PaneInputCohort.Resolution initial = PaneInputCohort.resolve(pane, call.caller());
+        try (PaneInputReservations.Lease lease = PaneInputReservations.paste(initial, "paste_text")) {
+            if (text.isEmpty() && !enter) {
+                return new Pasted(pane.id().value(), 0, 0, "Empty text without Enter; nothing was sent.");
+            }
+            // tmux turns the line feeds in a buffer into carriage returns as it pastes, so a trailing
+            // newline is what submits the text — there is no flag that means "and Enter".
+            pane.paste(
+                    enter ? text + "\n" : text,
+                    () -> lease.requireSamePaste(PaneInputCohort.resolve(pane, call.caller())));
+            return new Pasted(
+                    pane.id().value(),
+                    text.length(),
+                    (int) text.lines().count(),
+                    enter ? null : "Pasted without a trailing newline; pass 'enter' to submit it.");
+        }
     }
 }

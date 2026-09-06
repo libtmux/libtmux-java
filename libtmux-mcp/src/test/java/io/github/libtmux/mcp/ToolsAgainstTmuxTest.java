@@ -1,23 +1,16 @@
 package io.github.libtmux.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.ObjectDoesNotExist;
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerConfig;
 import io.github.libtmux.WakeReason;
 import io.github.libtmux.junit5.TmuxExtension;
-import io.github.libtmux.transport.CommandRequest;
-import io.github.libtmux.transport.CommandResult;
-import io.github.libtmux.transport.ProcessTransport;
-import io.github.libtmux.transport.TmuxTransport;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -38,63 +31,6 @@ final class ToolsAgainstTmuxTest {
         assertNull(panes.panes().get(0).caller(), "this process is not running inside the fixture");
     }
 
-    /**
-     * A filter that selects nothing is the case a model cannot tell from an empty server, so the
-     * answer says which it was.
-     */
-    @Test
-    void aFilterMatchingNothingSaysHowManyThereWere(Server server) {
-        Object filter = java.util.Map.of(
-                "schema",
-                "libtmux.filter/1",
-                "model",
-                "pane",
-                "expr",
-                java.util.Map.of(
-                        "node", "compare", "field", "pane_current_command", "op", "starts_with", "value", "nvim"));
-
-        Listings.Panes panes = Listings.panes(TestCalls.on(server, "filter", filter));
-
-        assertEquals(0, panes.count());
-        assertTrue(String.valueOf(panes.note()).contains("without 'filter'"), String.valueOf(panes.note()));
-    }
-
-    /**
-     * A model that guesses the filter's shape gets told the shape, not only that its guess was
-     * wrong. Measured against a real agent, which guessed a plain field map first and had to spend a
-     * call finding out.
-     */
-    @Test
-    void aFilterThatWillNotReadSaysWhatOneLooksLike(Server server) {
-        IllegalArgumentException refused = assertThrows(
-                IllegalArgumentException.class,
-                () -> Listings.panes(TestCalls.on(server, "filter", java.util.Map.of("window_name", "build"))));
-
-        String message = String.valueOf(refused.getMessage());
-        assertTrue(message.contains("libtmux.filter/1"), message);
-        assertTrue(message.contains("\"node\":\"compare\""), "the shape to copy has to be in it: " + message);
-        assertTrue(message.contains("pane_current_command"), "and the fields it may name: " + message);
-    }
-
-    /** A field the pane model does not have is named alongside the ones it does. */
-    @Test
-    void aFieldThePaneModelLacksSaysWhichItHas(Server server) {
-        Object document = java.util.Map.of(
-                "schema",
-                "libtmux.filter/1",
-                "model",
-                "pane",
-                "expr",
-                java.util.Map.of("node", "compare", "field", "window_name", "op", "equals", "value", "build"));
-
-        IllegalArgumentException refused = assertThrows(
-                IllegalArgumentException.class, () -> Listings.panes(TestCalls.on(server, "filter", document)));
-
-        String message = String.valueOf(refused.getMessage());
-        assertTrue(message.contains("pane_active"), message);
-        assertTrue(message.contains("list the panes"), "and where to look instead: " + message);
-    }
-
     /** Ending a container that holds the caller's pane names the ones that could be ended instead. */
     @Test
     void refusingToEndAContainerNamesWhatCanBeEnded(Server server) {
@@ -111,17 +47,6 @@ final class ToolsAgainstTmuxTest {
         assertEquals(2, server.panes().size());
     }
 
-    @Test
-    void whoamiOnAServerThatIsNotRunningSaysSoRatherThanFailing(Server server) {
-        server.killServer();
-
-        Listings.Whoami whoami = Listings.whoami(server, Caller.nowhere(), Safety.MUTATING);
-
-        assertTrue(whoami.note().contains("No tmux server is running"), whoami.note());
-        assertTrue(whoami.note().contains("tmux_list_servers"), "and where to look instead: " + whoami.note());
-        assertEquals(0, whoami.panes());
-    }
-
     /** An empty listing has to say whether the server was empty or absent; a count cannot. */
     @Test
     void anEmptyListingSaysWhetherThereIsAServerAtAll(Server server) {
@@ -133,76 +58,6 @@ final class ToolsAgainstTmuxTest {
         assertEquals(null, running.note(), "a listing that found something says nothing extra");
         assertEquals(0, gone.count());
         assertTrue(String.valueOf(gone.note()).contains("No tmux server is running"), String.valueOf(gone.note()));
-    }
-
-    @Test
-    void whoamiSaysWhichServerAndThatNoPaneIsSpecial(Server server) {
-        Listings.Whoami whoami = Listings.whoami(server, Caller.nowhere(), Safety.MUTATING);
-
-        assertEquals(1, whoami.sessions());
-        assertEquals(1, whoami.panes());
-        assertEquals("mutating", whoami.safety());
-        assertNull(whoami.callerPane());
-        assertTrue(whoami.note().contains("no pane here is special"), whoami.note());
-        assertNotNull(whoami.socket());
-    }
-
-    @Test
-    void serverDiscoveryReservesTheLiveSocketForAnAmbientEndpoint() {
-        String liveSocket = "/tmp/libtmux-java-test/ambient-custom";
-        TmuxTransport reportsSocket = new TmuxTransport() {
-            @Override
-            public CommandResult execute(CommandRequest request) {
-                return new CommandResult(0, List.of(liveSocket), List.of());
-            }
-
-            @Override
-            public void close() {}
-        };
-        ServerConfig config = ServerConfig.builder().binary("/bin/false").build();
-
-        try (Server ambient = Server.using(config, reportsSocket)) {
-            Listings.Servers servers = Listings.servers(ambient);
-
-            assertTrue(
-                    servers.servers().stream().anyMatch(found -> found.socket().equals(liveSocket)));
-            assertTrue(servers.note().contains(liveSocket), servers.note());
-        }
-    }
-
-    @Test
-    void whoamiCapturesTheHierarchyOnceInsteadOfTraversingLiveHandles(Server server) {
-        AtomicInteger commands = new AtomicInteger();
-        try (ProcessTransport processes = new ProcessTransport()) {
-            TmuxTransport counting = new TmuxTransport() {
-                @Override
-                public CommandResult execute(CommandRequest request) {
-                    commands.incrementAndGet();
-                    return processes.execute(request);
-                }
-
-                @Override
-                public void close() {}
-            };
-            try (Server measured = Server.using(server.config(), counting)) {
-                Listings.Whoami whoami = Listings.whoami(measured, Caller.nowhere(), Safety.MUTATING);
-
-                assertEquals(1, whoami.sessions());
-                assertEquals(3, commands.get(), "one identity read, the listings as one group, one socket path");
-            }
-        }
-    }
-
-    /** And when this process really is inside a pane, that pane is named as the one to protect. */
-    @Test
-    void whoamiNamesTheCallersOwnPaneWhenThereIsOne(Server server) {
-        String pane = server.panes().get(0).id().value();
-        Call call = TestCalls.asCaller(server, pane);
-
-        Listings.Whoami whoami = Listings.whoami(server, call.caller(), Safety.DESTRUCTIVE);
-
-        assertEquals(pane, whoami.callerPane());
-        assertTrue(whoami.note().contains("confirm_self"), whoami.note());
     }
 
     @Test
@@ -228,11 +83,16 @@ final class ToolsAgainstTmuxTest {
     }
 
     @Test
-    void nothingAttachedIsReportedAsNobodyWatching(Server server) {
-        Listings.Clients clients = Listings.clients(TestCalls.on(server));
+    void validatedTmuxVariablesCanUseOnePaneContext(Server server) {
+        String pane = server.panes().getFirst().id().value();
 
-        assertEquals(0, clients.count());
-        assertTrue(String.valueOf(clients.note()).contains("no person is watching"), String.valueOf(clients.note()));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = (Map<String, Object>) Operations.tmuxVariables(
+                TestCalls.on(server, "names", List.of("pane_id", "session_name"), "pane", pane));
+        @SuppressWarnings("unchecked")
+        Map<String, String> values = (Map<String, String>) result.get("values");
+
+        assertEquals(Map.of("pane_id", pane, "session_name", "libtmux"), values);
     }
 
     // ---------------------------------------------------------------- refusing to end the conversation
@@ -281,6 +141,58 @@ final class ToolsAgainstTmuxTest {
         String message = String.valueOf(refused.getMessage());
         assertTrue(message.contains("could not prove"), message);
         assertTrue(server.isAlive(), "uncertainty must not disable the destructive guard");
+    }
+
+    @Test
+    void confirmationCannotOverrideUncertainCallerIdentity(Server server) {
+        String pane = server.sessions().get(0).windows().get(0).split().id().value();
+        String tmux = server.expand("#{socket_path},#{pid},0");
+        List<Map<String, String>> uncertain = List.of(
+                Map.of("TMUX", tmux),
+                Map.of("TMUX_PANE", pane),
+                Map.of("TMUX", "", "TMUX_PANE", pane),
+                Map.of("TMUX", tmux, "TMUX_PANE", ""),
+                Map.of("TMUX", "malformed", "TMUX_PANE", pane));
+
+        for (Map<String, String> environment : uncertain) {
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> Shaping.kill(
+                            TestCalls.withEnvironment(server, environment, "target", pane, "confirm_self", true)));
+        }
+
+        assertTrue(server.panes().stream()
+                .anyMatch(candidate -> candidate.id().value().equals(pane)));
+    }
+
+    @Test
+    void aCompleteForeignCallerDoesNotNeedSelfConfirmation(Server server) {
+        String pane = server.sessions().get(0).windows().get(0).split().id().value();
+        Map<String, String> foreign = Map.of("TMUX", "/dev/null,1,0", "TMUX_PANE", "%0");
+
+        Shaping.kill(TestCalls.withEnvironment(server, foreign, "target", pane, "confirm_self", true));
+
+        assertTrue(server.panes().stream()
+                .noneMatch(candidate -> candidate.id().value().equals(pane)));
+    }
+
+    @Test
+    void confirmationCannotOverrideAStaleCallerSession(Server server) {
+        String pane = server.sessions().get(0).windows().get(0).split().id().value();
+        Call confirmed = TestCalls.asCaller(server, pane, "target", pane, "confirm_self", true);
+        String destination = server.newSession("moved-caller")
+                .windows()
+                .get(0)
+                .panes()
+                .get(0)
+                .id()
+                .value();
+        server.cmd("move-pane", "-s", pane, "-t", destination);
+
+        assertThrows(IllegalStateException.class, () -> Shaping.kill(confirmed));
+
+        assertTrue(server.panes().stream()
+                .anyMatch(candidate -> candidate.id().value().equals(pane)));
     }
 
     /** The window holding the caller's pane is as fatal as the pane itself. */
@@ -383,42 +295,6 @@ final class ToolsAgainstTmuxTest {
         assertTrue(String.valueOf(refused.getMessage()).contains("below"), refused.getMessage());
     }
 
-    /** One document, one call, and the ids of everything it built. */
-    @Test
-    void aWholeSessionIsBuiltFromOneDocument(Server server) {
-        String document = """
-                session_name: built-from-a-document
-                windows:
-                  - window_name: editor
-                    panes:
-                      - echo editing
-                  - window_name: services
-                    layout: even-horizontal
-                    panes:
-                      - echo one
-                      - echo two
-                """;
-
-        Workspaces.Built built = Workspaces.apply(TestCalls.on(server, "workspace", document));
-
-        assertEquals("built-from-a-document", built.session());
-        assertEquals(2, built.windows());
-        assertEquals(3, built.panes());
-        assertTrue(built.paneIds().stream().allMatch(pane -> pane.id().startsWith("%")));
-        assertTrue(server.hasSession("built-from-a-document"));
-    }
-
-    @Test
-    void aWorkspaceNamingASessionThatExistsIsRefusedBeforeAnythingIsBuilt(Server server) {
-        String document = "session_name: libtmux\nwindows:\n  - window_name: w\n    panes:\n      - echo hi\n";
-
-        IllegalArgumentException refused = assertThrows(
-                IllegalArgumentException.class, () -> Workspaces.apply(TestCalls.on(server, "workspace", document)));
-
-        assertTrue(String.valueOf(refused.getMessage()).contains("already there"), refused.getMessage());
-        assertEquals(1, server.sessions().size());
-    }
-
     // ---------------------------------------------------------------- channels
 
     /** A signal outlives the moment it was sent, which is what draining exists to undo. */
@@ -482,7 +358,7 @@ final class ToolsAgainstTmuxTest {
     void aTargetThatIsNotThereNamesTheToolThatFindsOne(Server server) {
         ObjectDoesNotExist missing = assertThrows(ObjectDoesNotExist.class, () -> Targets.window(server, "@999"));
 
-        assertTrue(String.valueOf(missing.getMessage()).contains("tmux_list_windows"), missing.getMessage());
+        assertTrue(String.valueOf(missing.getMessage()).contains("list_windows"), missing.getMessage());
     }
 
     /** tmux would read a bare number as an index, acting on a real but unintended pane. */

@@ -14,7 +14,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -24,12 +23,9 @@ import org.jspecify.annotations.Nullable;
  * what gets tested against real tmux; this class describes them to a client and turns their answers
  * into protocol.
  *
- * <p>Synchronous, and deliberately. The SDK runs a synchronous handler on
- * {@code Schedulers.boundedElastic} rather than on the thread reading the transport, so a tool that
- * blocks for a minute does not stop the connection answering anything else — measured at twenty
- * interleaved calls served during one six-second call. Writing the same handlers as reactive
- * pipelines measured worse: a {@code Mono.fromCallable} that blocks pins the single reactor thread
- * and serves nothing at all until it lets go.
+ * <p>The SDK dispatches synchronous handlers on its bounded worker scheduler, not the transport I/O
+ * thread. Core operations remain typed and synchronous; wait and channel operations retain their
+ * own cancellation and timeout contracts.
  */
 public final class TmuxMcpServer {
 
@@ -49,7 +45,7 @@ public final class TmuxMcpServer {
 
     /** Serves a tmux server over stdin and stdout, which is how an MCP client launches a tool. */
     public static McpSyncServer overStdio(Server server) {
-        return overStdio(server, System.in, Safety.MUTATING, false);
+        return overStdio(server, System.in, ToolSurface.resolve(System.getenv()), () -> {});
     }
 
     /**
@@ -61,26 +57,27 @@ public final class TmuxMcpServer {
      * <p>The returned server owns and closes the input when startup fails, either protocol stream
      * disconnects, or the server closes.
      *
-     * @param watching whether to attach a control client and push notifications as tmux changes
      */
-    public static McpSyncServer overStdio(Server server, InputStream in, Safety ceiling, boolean watching) {
-        return overStdio(server, in, ceiling, watching, () -> {});
+    static McpSyncServer overStdio(Server server, InputStream in, ToolSurface surface) {
+        return overStdio(server, in, surface, () -> {});
+    }
+
+    static McpSyncServer overStdio(Server server, InputStream in, ToolSurface surface, Runnable onSessionEnd) {
+        return overStdio(server, in, System.out, surface, onSessionEnd);
     }
 
     static McpSyncServer overStdio(
-            Server server, InputStream in, Safety ceiling, boolean watching, Runnable onSessionEnd) {
-        return overStdio(server, in, System.out, ceiling, watching, onSessionEnd);
-    }
-
-    static McpSyncServer overStdio(
-            Server server, InputStream in, OutputStream out, Safety ceiling, boolean watching, Runnable onSessionEnd) {
+            Server server, InputStream in, OutputStream out, ToolSurface surface, Runnable onSessionEnd) {
         SessionLifetime lifetime = new SessionLifetime(onSessionEnd);
         lifetime.own(in);
         try {
+            OutputStream protocolOutput = lifetime.observe(out);
             var provider = new StdioServerTransportProvider(
-                    new JacksonMcpJsonMapper(new ObjectMapper()), in, lifetime.observe(out));
+                    new JacksonMcpJsonMapper(new ObjectMapper()),
+                    new StdioRequestFilter(in, protocolOutput),
+                    protocolOutput);
             lifetime.own(provider::close);
-            return serving(server, ceiling, watching, lifetime.observe(provider), lifetime);
+            return serving(server, surface, lifetime.observe(provider), lifetime);
         } catch (RuntimeException | Error failure) {
             lifetime.endAfter(failure);
             throw failure;
@@ -93,52 +90,28 @@ public final class TmuxMcpServer {
      * <p>The returned server owns the transport. Ownership transfers on entry, so failed startup
      * closes it too.
      */
-    public static McpSyncServer serving(Server server, Safety ceiling, McpServerTransportProvider transport) {
-        return serving(server, ceiling, false, transport);
+    public static McpSyncServer serving(Server server, McpServerTransportProvider transport) {
+        return serving(server, ToolSurface.resolve(System.getenv()), transport);
     }
 
-    /**
-     * Serves a tmux server over a caller-supplied transport, optionally watching it for changes.
-     *
-     * <p>The returned server owns the transport. Ownership transfers on entry, so failed startup
-     * closes it too.
-     */
-    public static McpSyncServer serving(
-            Server server, Safety ceiling, boolean watching, McpServerTransportProvider transport) {
-        return serving(server, ceiling, watching, transport, null);
+    static McpSyncServer serving(Server server, ToolSurface surface, McpServerTransportProvider transport) {
+        return serving(server, surface, transport, null);
     }
 
     private static McpSyncServer serving(
             Server server,
-            Safety ceiling,
-            boolean watching,
+            ToolSurface surface,
             McpServerTransportProvider transport,
             @Nullable SessionLifetime lifetime) {
         Objects.requireNonNull(transport, "transport");
-        @Nullable Watches watches = null;
         @Nullable McpSyncServer built = null;
         try {
-            Connection connection = Connection.to(server, ceiling);
-            if (watching) {
-                watches = Watches.prepare(connection);
-                if (lifetime != null) {
-                    lifetime.own(watches);
-                }
-            }
-            built = build(connection, watching, transport);
-            if (watches == null) {
-                return built;
-            }
-            WatchedMcpServer owned = new WatchedMcpServer(built, watches);
-            watches.start(new McpNotifier(owned));
-            return owned;
+            Connection connection = Connection.to(server, surface);
+            built = build(connection, transport);
+            return built;
         } catch (RuntimeException | Error failure) {
             Cleanup cleanup = new Cleanup(failure);
             if (lifetime == null) {
-                if (watches != null) {
-                    Watches prepared = watches;
-                    cleanup.run(prepared::close);
-                }
                 if (built == null) {
                     cleanup.run(transport::close);
                 } else {
@@ -153,70 +126,22 @@ public final class TmuxMcpServer {
         }
     }
 
-    private static McpSyncServer build(Connection connection, boolean watching, McpServerTransportProvider transport) {
+    private static McpSyncServer build(Connection connection, McpServerTransportProvider transport) {
         var specification = McpServer.sync(new SerializedTransportProvider(transport))
                 .serverInfo("libtmux", version())
-                .instructions(Instructions.forServer(connection.ceiling(), watching))
+                .instructions(Instructions.forServer(connection))
                 .capabilities(McpSchema.ServerCapabilities.builder()
-                        .tools(true)
-                        // Subscription is offered only when something is actually watching tmux.
-                        // Advertising it otherwise invites a client to subscribe and wait forever for
-                        // an update nothing will ever send.
-                        .resources(watching, false)
-                        .prompts(false)
-                        .completions()
+                        .tools(false)
+                        .resources(false, false)
                         .logging()
                         .build())
-                .resources(Resources.fixed(connection))
-                .resourceTemplates(Resources.templated(connection))
-                .prompts(Prompts.all())
-                .completions(Completions.all(connection));
+                .resources(Resources.fixed(connection));
 
-        for (ToolSpec tool : Catalog.offered(connection.ceiling()).values()) {
+        for (ToolSpec tool : connection.surface().tools().values()) {
             specification = specification.toolCall(
                     tool.describe(), (exchange, request) -> answer(connection, tool, exchange, request));
         }
         return specification.build();
-    }
-
-    /** Sends watcher output only after the owned MCP server exists. */
-    private record McpNotifier(McpSyncServer target) implements Watches.Notifier {
-
-        @Override
-        public void updated(String uri) {
-            target.notifyResourcesUpdated(new McpSchema.ResourcesUpdatedNotification(uri));
-        }
-    }
-
-    /** Couples the watcher lifecycle to the MCP server lifecycle for embedded callers. */
-    private static final class WatchedMcpServer extends McpSyncServer {
-
-        private final Watches watches;
-        private final AtomicBoolean closed = new AtomicBoolean();
-
-        WatchedMcpServer(McpSyncServer delegate, Watches watches) {
-            super(delegate.getAsyncServer());
-            this.watches = watches;
-        }
-
-        @Override
-        public void closeGracefully() {
-            closeBoth(() -> super.closeGracefully());
-        }
-
-        @Override
-        public void close() {
-            closeBoth(() -> super.close());
-        }
-
-        private void closeBoth(Runnable closeServer) {
-            if (closed.compareAndSet(false, true)) {
-                Cleanup cleanup = new Cleanup();
-                cleanup.run(watches::close);
-                cleanup.run(closeServer);
-                cleanup.throwIfFailed();
-            }
-        }
     }
 
     /**
@@ -229,9 +154,13 @@ public final class TmuxMcpServer {
     private static McpSchema.CallToolResult answer(
             Connection connection, ToolSpec tool, McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
         try {
+            connection.surface().require(tool.name());
             Map<String, Object> arguments = request.arguments() == null ? Map.of() : request.arguments();
+            tool.validateArguments(arguments);
             Call call = connection.call(arguments, progress(exchange, request));
-            return Answers.ok(tool.answer().apply(call));
+            Object value = tool.answer().apply(call);
+            tool.validateOutput(value);
+            return Answers.ok(value);
         } catch (LibTmuxException | IllegalArgumentException | IllegalStateException e) {
             return Answers.failure(String.valueOf(e.getMessage()));
         }

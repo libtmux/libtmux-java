@@ -1,0 +1,563 @@
+package io.github.libtmux.mcp;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.github.libtmux.LibTmuxException;
+import io.github.libtmux.Server;
+import io.github.libtmux.format.RowFormat;
+import io.github.libtmux.format.TmuxFormatException;
+import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.ProcessTransport;
+import io.github.libtmux.transport.TmuxTransport;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
+
+@ExtendWith(TmuxExtension.class)
+final class PaneInputCohortTest {
+
+    private static final RowFormat TOKENS = RowFormat.of("separator");
+    private static final String SEPARATOR = TOKENS.separator();
+    private static final String TERMINATOR = TOKENS.template().substring("#{separator}".length());
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("authorityFailures")
+    void commandAndSourceFailuresFailClosed(String label, String source, CommandResult result) {
+        assertThrows(LibTmuxException.class, () -> PaneInputCohort.parse(source, result), label);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("malformedRows")
+    void malformedAuthoritativeRowsFailClosed(String label, List<String> stdout) {
+        assertThrows(
+                TmuxFormatException.class,
+                () -> PaneInputCohort.parse("%0", new CommandResult(0, stdout, List.of())),
+                label);
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "junk",
+                "$1",
+                " %1",
+                "\n%1",
+                "%00",
+                "%01",
+                "%4294967296",
+                "%9999999999999999999999999999999999999999"
+            })
+    void noncanonicalPaneIdsFailClosed(String paneId) {
+        assertThrows(
+                TmuxFormatException.class,
+                () -> PaneInputCohort.parse(
+                        "%0", answer(row("%0", "1", "0", "0", "sh"), row(paneId, "1", "0", "0", "sh"))));
+    }
+
+    @Test
+    void strayPhysicalLineCannotBecomePaneId() {
+        assertThrows(
+                TmuxFormatException.class,
+                () -> PaneInputCohort.parse(
+                        "%0", answer(row("%0", "1", "0", "0", "sh"), "junk", row("%1", "1", "0", "0", "sh"))));
+    }
+
+    @Test
+    void maximumPaneIdPeerIsAccepted() {
+        var resolved = PaneInputCohort.parse(
+                "%0", answer(row("%0", "1", "0", "0", "sh"), row("%4294967295", "1", "0", "0", "sh")));
+
+        assertEquals(List.of("%0", "%4294967295"), resolved.configuredKeyRecipientIds());
+    }
+
+    @Test
+    void sourceFlagDeterminesTheEffectiveCohort() {
+        var sourceOff =
+                PaneInputCohort.parse("%10", answer(row("%1", "1", "0", "0", "sh"), row("%10", "0", "0", "0", "sh")));
+        var sourceOn = PaneInputCohort.parse(
+                "%10",
+                answer(
+                        row("%10", "1", "0", "0", "sh"),
+                        row("%1", "0", "0", "0", "sh"),
+                        row("%0", "1", "0", "0", "sh")));
+
+        assertEquals(List.of("%10"), sourceOff.configuredKeyRecipientIds());
+        assertEquals(List.of("%0", "%10"), sourceOn.configuredKeyRecipientIds());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"00", "1", "2"})
+    void noncanonicalOrPositiveModesAreModal(String mode) {
+        var resolved = PaneInputCohort.parse("%0", answer(row("%0", "0", mode, "0", "sh")));
+
+        IllegalStateException refused =
+                assertThrows(IllegalStateException.class, () -> resolved.requireKeyRecipients("send_keys"));
+        assertTrue(String.valueOf(refused.getMessage()).contains("%0"));
+    }
+
+    @Test
+    void deadConfiguredMembersFailButDeadNonmembersDoNot() {
+        var deadSource = PaneInputCohort.parse("%0", answer(row("%0", "0", "0", "1", "sh")));
+        var deadPeer =
+                PaneInputCohort.parse("%0", answer(row("%0", "1", "0", "0", "sh"), row("%1", "1", "0", "1", "sh")));
+        var outside =
+                PaneInputCohort.parse("%0", answer(row("%0", "0", "0", "0", "sh"), row("%1", "1", "0", "1", "sh")));
+
+        assertThrows(IllegalStateException.class, () -> deadSource.requireKeyRecipients("send_keys"));
+        assertThrows(IllegalStateException.class, () -> deadPeer.requireKeyRecipients("send_keys"));
+        assertEquals(List.of("%0"), outside.requireKeyRecipients("send_keys"));
+    }
+
+    @Test
+    void pasteChecksOnlyTheSourceWhileCommandsRequireOneRecipient() {
+        var sourceOnly = PaneInputCohort.parse(
+                "%0", answer(row("%0", "0", "0", "0", "/bin/sh"), row("%1", "1", "2", "1", "cat")));
+        var plural = PaneInputCohort.parse(
+                "%0", answer(row("%0", "1", "0", "0", "/bin/sh"), row("%1", "1", "0", "0", "sh")));
+
+        sourceOnly.requirePasteTarget("paste_text");
+        assertEquals("/bin/sh", sourceOnly.requireSingularCommandPane("run_shell_command"));
+        assertThrows(IllegalStateException.class, () -> plural.requireSingularCommandPane("run_shell_command"));
+    }
+
+    @Test
+    void callerProtectionCoversEveryConfiguredMember(Server server) {
+        var panes = server.panes();
+        var source = panes.getFirst();
+        var peer = source.split();
+        Caller caller = TestCalls.asCaller(server, peer.id().value()).caller();
+        var resolved = PaneInputCohort.parse(
+                source.id().value(),
+                answer(
+                        liveRow(server, source.id().value(), "1", "0", "0", "sh"),
+                        liveRow(server, peer.id().value(), "1", "0", "0", "sh")),
+                answer(),
+                caller);
+
+        IllegalStateException refused =
+                assertThrows(IllegalStateException.class, () -> resolved.requireKeyRecipients("send_keys"));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains(peer.id().value()), refused.getMessage());
+    }
+
+    @Test
+    void attendedProtectionCoversEveryConfiguredMember() {
+        var resolved = PaneInputCohort.parse(
+                "%0",
+                answer(row("%0", "1", "0", "0", "sh"), row("%1", "1", "0", "0", "sh")),
+                answer(clientRow("0", "$0", "@0", "%1", "1")),
+                Caller.nowhere());
+
+        IllegalStateException refused =
+                assertThrows(IllegalStateException.class, () -> resolved.requireKeyRecipients("send_keys"));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains("%1"), refused.getMessage());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("malformedClientRows")
+    void malformedClientAttentionFailsClosed(String label, CommandResult clients) {
+        assertThrows(
+                LibTmuxException.class,
+                () -> PaneInputCohort.parse("%0", answer(row("%0", "0", "0", "0", "sh")), clients, Caller.nowhere()),
+                label);
+    }
+
+    @Test
+    void unknownTerminalClientPaneFailsClosed() {
+        assertThrows(
+                TmuxFormatException.class,
+                () -> PaneInputCohort.parse(
+                        "%0",
+                        answer(row("%0", "0", "0", "0", "sh")),
+                        answer(clientRow("0", "$0", "@0", "%9", "0")),
+                        Caller.nowhere()));
+    }
+
+    @Test
+    void controlClientsAreExcludedBeforeTheirOtherFieldsAreParsed() {
+        var resolved = PaneInputCohort.parse(
+                "%0", answer(row("%0", "0", "0", "0", "sh")), answer(clientRow("1", "", "", "", "")), Caller.nowhere());
+
+        assertEquals(List.of("%0"), resolved.requireKeyRecipients("send_keys"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidTerminalClientPlacements")
+    void terminalClientPlacementMustMatchThePaneSnapshot(String label, String client) {
+        assertThrows(
+                TmuxFormatException.class,
+                () -> PaneInputCohort.parse(
+                        "%0", answer(row("%0", "0", "0", "0", "sh")), answer(client), Caller.nowhere()),
+                label);
+    }
+
+    @Test
+    void linkedPanePlacementIsAcceptedForTheClientsSession() {
+        var resolved = PaneInputCohort.parse(
+                "%0",
+                answer(
+                        row("%0", "0", "0", "0", "sh"),
+                        row("%0", "0", "0", "0", "sh", "0", "$1", "@0", "7", "1", "1", "/tmp/test-tmux")),
+                answer(clientRow("0", "$1", "@0", "7", "%0", "1")),
+                Caller.nowhere());
+
+        IllegalStateException refused =
+                assertThrows(IllegalStateException.class, () -> resolved.requirePasteTarget("paste_text"));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains("attended"), refused.getMessage());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "-1", "+0", "01", "4294967296"})
+    void windowIndexesMustBeCanonicalUnsigned32BitValues(String index) {
+        assertThrows(
+                TmuxFormatException.class,
+                () -> PaneInputCohort.parse(
+                        "%0",
+                        answer(row("%0", "0", "0", "0", "sh", "0", "$0", "@0", index, "1", "1", "/tmp/test-tmux"))));
+        assertThrows(
+                TmuxFormatException.class,
+                () -> PaneInputCohort.parse(
+                        "%0",
+                        answer(row("%0", "0", "0", "0", "sh")),
+                        answer(clientRow("0", "$0", "@0", index, "%0", "0")),
+                        Caller.nowhere()));
+    }
+
+    @Test
+    void everyPaneInALinkedWindowNeedsTheSamePlacementRectangle() {
+        assertThrows(
+                TmuxFormatException.class,
+                () -> PaneInputCohort.parse(
+                        "%0",
+                        answer(
+                                row("%0", "1", "0", "0", "sh"),
+                                row("%0", "1", "0", "0", "sh", "0", "$1", "@0", "7", "1", "1", "/tmp/test-tmux"),
+                                row("%1", "1", "0", "0", "sh"))));
+    }
+
+    @Test
+    void aWindowIndexMoveChangesTheGuardedResolution() {
+        var initial = PaneInputCohort.parse(
+                "%0", answer(row("%0", "0", "0", "0", "sh", "0", "$0", "@0", "0", "1", "1", "/tmp/test-tmux")));
+        var moved = PaneInputCohort.parse(
+                "%0", answer(row("%0", "0", "0", "0", "sh", "0", "$0", "@0", "9", "1", "1", "/tmp/test-tmux")));
+
+        assertFalse(initial.equals(moved));
+    }
+
+    @Test
+    void aTerminalClientMoveBetweenValidLinksChangesTheGuard(Server server) {
+        String pid = server.expand("#{pid}");
+        String started = server.expand("#{start_time}");
+        String socket = server.expand("#{socket_path}");
+        CommandResult panes = answer(
+                row("%0", "0", "0", "0", "sh", "0", "$0", "@0", "0", pid, started, socket),
+                row("%1", "0", "0", "0", "sh", "0", "$0", "@1", "1", pid, started, socket),
+                row("%1", "0", "0", "0", "sh", "0", "$1", "@1", "7", pid, started, socket));
+        var initial = PaneInputCohort.parse(
+                "%0", panes, answer(clientRow("0", "$0", "@1", "1", "%1", "0")), Caller.nowhere());
+        var moved = PaneInputCohort.parse(
+                "%0", panes, answer(clientRow("0", "$1", "@1", "7", "%1", "0")), Caller.nowhere());
+
+        try (var lease = PaneInputReservations.run(initial, "run_shell_command")) {
+            assertThrows(IllegalStateException.class, () -> lease.requireSameRun(moved));
+        }
+    }
+
+    @Test
+    void validClientInAnotherWindowDoesNotAttendTheTarget() {
+        var resolved = PaneInputCohort.parse(
+                "%0",
+                answer(
+                        row("%0", "0", "0", "0", "sh"),
+                        row("%1", "0", "0", "0", "sh", "0", "$0", "@1", "1", "1", "/tmp/test-tmux")),
+                answer(clientRow("0", "$0", "@1", "%1", "0")),
+                Caller.nowhere());
+
+        assertEquals(List.of("%0"), resolved.requireKeyRecipients("send_keys"));
+    }
+
+    @Test
+    void uncertainCallerIdentityFailsClosed(Server server) {
+        Caller uncertain = TestCalls.withEnvironment(server, Map.of("TMUX", "malformed", "TMUX_PANE", "%0"))
+                .caller();
+        var resolved = PaneInputCohort.parse("%0", answer(row("%0", "0", "0", "0", "sh")), answer(), uncertain);
+
+        IllegalStateException refused =
+                assertThrows(IllegalStateException.class, () -> resolved.requirePasteTarget("paste_text"));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains("caller"), refused.getMessage());
+    }
+
+    @Test
+    void resolutionUsesOnePaneAndClientSnapshot(Server server) {
+        CopyOnWriteArrayList<CommandRequest> requests = new CopyOnWriteArrayList<>();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport recording = new TmuxTransport() {
+                @Override
+                public CommandResult execute(CommandRequest request) {
+                    requests.add(request);
+                    return processes.execute(request);
+                }
+
+                @Override
+                public void close() {}
+            };
+            try (Server measured = Server.using(server.config(), recording)) {
+                var pane = measured.panes().getFirst();
+                requests.clear();
+
+                var resolved = PaneInputCohort.resolve(pane, Caller.nowhere());
+
+                assertEquals(List.of(pane.id().value()), resolved.configuredKeyRecipientIds());
+            }
+        }
+
+        assertEquals(1, requests.size());
+        List<List<String>> commands = requests.stream()
+                .flatMap(request -> request.commands().stream())
+                .filter(command -> command.getFirst().startsWith("list-"))
+                .toList();
+        assertEquals(2, commands.size());
+        List<String> listing = commands.getFirst();
+        assertEquals(List.of("list-panes", "-a"), listing.subList(0, 2));
+        assertTrue(listing.contains("-F"));
+        String format = listing.get(listing.indexOf("-F") + 1);
+        for (String field : List.of(
+                "pane_id",
+                "pane_synchronized",
+                "pane_in_mode",
+                "pane_dead",
+                "pane_current_command",
+                "pane_input_off",
+                "window_index",
+                "session_id",
+                "window_id",
+                "pid",
+                "start_time",
+                "socket_path")) {
+            assertEquals(1, occurrences(format, "#{" + field + "}"));
+        }
+        List<String> clients = commands.get(1);
+        assertEquals("list-clients", clients.getFirst());
+        String clientFormat = clients.get(clients.indexOf("-F") + 1);
+        for (String field : List.of(
+                "client_control_mode", "session_id", "window_id", "window_index", "pane_id", "window_zoomed_flag")) {
+            assertEquals(1, occurrences(clientFormat, "#{" + field + "}"));
+        }
+    }
+
+    @Test
+    void retainedOwnershipNeedsAuthenticatedPaneOrGenerationAbsence(Server server) {
+        var source = server.panes().getFirst();
+        source.split();
+        try (var lease = PaneInputReservations.run(PaneInputCohort.resolve(source), "retained_test")) {
+            assertEquals(PaneInputCohort.Presence.PRESENT, lease.presence(source));
+
+            AtomicBoolean unavailable = new AtomicBoolean();
+            try (ProcessTransport processes = new ProcessTransport()) {
+                TmuxTransport ambiguous = new TmuxTransport() {
+                    @Override
+                    public CommandResult execute(CommandRequest request) {
+                        return unavailable.get()
+                                ? new CommandResult(1, List.of(), List.of("temporarily unavailable"))
+                                : processes.execute(request);
+                    }
+
+                    @Override
+                    public void close() {}
+                };
+                try (Server measured = Server.using(server.config(), ambiguous)) {
+                    var measuredSource = measured.panes().stream()
+                            .filter(pane -> pane.id().equals(source.id()))
+                            .findFirst()
+                            .orElseThrow();
+                    unavailable.set(true);
+
+                    assertEquals(PaneInputCohort.Presence.UNKNOWN, lease.presence(measuredSource));
+                }
+            }
+
+            server.cmd("kill-pane", "-t", source.id().value());
+            assertEquals(PaneInputCohort.Presence.GONE, lease.presence(source));
+        }
+
+        var survivor = server.panes().getFirst();
+        try (var lease = PaneInputReservations.run(PaneInputCohort.resolve(survivor), "retained_test")) {
+            server.killServer();
+
+            assertEquals(PaneInputCohort.Presence.GONE, lease.presence(survivor));
+        }
+    }
+
+    @Test
+    void tmuxSecondRoundingDoesNotImplyDaemonDisappearance() {
+        ProcessHandle process = ProcessHandle.current();
+        var started = process.info().startInstant().orElseThrow();
+        var roundedLater =
+                new PaneInputCohort.Authority("local", "/not-used", process.pid(), started.getEpochSecond() + 1);
+
+        var identity = PaneInputReservations.DaemonIdentity.capture(roundedLater);
+
+        assertEquals(java.util.Optional.of(started), identity.started());
+        assertFalse(identity.gone());
+    }
+
+    @Test
+    void successfulReplacementAuthorityIsGone(Server server) {
+        var source = server.panes().getFirst();
+        var live = PaneInputCohort.resolve(source).authority();
+        var replacements = List.of(
+                new PaneInputCohort.Authority("remote-test", live.socketPath(), live.serverPid(), live.startTime()),
+                new PaneInputCohort.Authority(live.realm(), "/different/socket", live.serverPid(), live.startTime()),
+                new PaneInputCohort.Authority(live.realm(), live.socketPath(), live.serverPid() + 1, live.startTime()),
+                new PaneInputCohort.Authority(live.realm(), live.socketPath(), live.serverPid(), live.startTime() + 1));
+
+        for (var replaced : replacements) {
+            assertEquals(
+                    PaneInputCohort.Presence.GONE, PaneInputCohort.presence(source, replaced), replaced.toString());
+        }
+    }
+
+    private static Stream<Arguments> authorityFailures() {
+        return Stream.of(
+                Arguments.of("command failed", "%0", new CommandResult(1, List.of(), List.of("gone"))),
+                Arguments.of("no rows", "%0", answer()),
+                Arguments.of("source absent", "%0", answer(row("%1", "0", "0", "0", "sh"))),
+                Arguments.of(
+                        "source duplicated inconsistently",
+                        "%0",
+                        answer(
+                                row("%0", "0", "0", "0", "sh"),
+                                row("%0", "0", "0", "0", "sh", "0", "$0", "@1", "1", "1", "/tmp/test-tmux"))));
+    }
+
+    private static Stream<Arguments> malformedRows() {
+        String complete = row("%0", "0", "0", "0", "sh");
+        String peerWithoutTerminator = fields("%1", "0", "0", "0", "sh");
+        return Stream.of(
+                Arguments.of("empty pane id", List.of(row("", "0", "0", "0", "sh"))),
+                Arguments.of("empty current command", List.of(row("%0", "0", "0", "0", ""))),
+                Arguments.of("too few fields", List.of(fields("%0", "0", "0", "0") + TERMINATOR)),
+                Arguments.of("no terminator", List.of(fields("%0", "0", "0", "0", "sh"))),
+                Arguments.of("unterminated final row", List.of(complete, peerWithoutTerminator)),
+                Arguments.of("data after terminator", List.of(complete + "tail")),
+                Arguments.of("extra physical data", List.of(complete, "tail")),
+                Arguments.of("empty mode", List.of(row("%0", "0", "", "0", "sh"))),
+                Arguments.of("word mode", List.of(row("%0", "0", "on", "0", "sh"))),
+                Arguments.of("negative mode", List.of(row("%0", "0", "-1", "0", "sh"))),
+                Arguments.of("word synchronized", List.of(row("%0", "on", "0", "0", "sh"))),
+                Arguments.of("word dead", List.of(row("%0", "0", "0", "on", "sh"))),
+                Arguments.of("empty input-off", List.of(row("%0", "0", "0", "0", "sh", ""))),
+                Arguments.of("word input-off", List.of(row("%0", "0", "0", "0", "sh", "on"))),
+                Arguments.of(
+                        "generation mismatch",
+                        List.of(
+                                row("%0", "0", "0", "0", "sh"),
+                                row("%1", "0", "0", "0", "sh", "0", "$0", "@0", "1", "2", "/tmp/test-tmux"))),
+                Arguments.of(
+                        "noncanonical pid",
+                        List.of(row("%0", "0", "0", "0", "sh", "0", "$0", "@0", "01", "1", "/tmp/test-tmux"))),
+                Arguments.of(
+                        "relative socket",
+                        List.of(row("%0", "0", "0", "0", "sh", "0", "$0", "@0", "1", "1", "relative"))));
+    }
+
+    private static Stream<Arguments> malformedClientRows() {
+        return Stream.of(
+                Arguments.of("listing failed", new CommandResult(1, List.of(), List.of("gone"))),
+                Arguments.of("empty control flag", answer(clientRow("", "$0", "@0", "%0", "0"))),
+                Arguments.of("word control flag", answer(clientRow("on", "$0", "@0", "%0", "0"))),
+                Arguments.of("missing active pane", answer(clientRow("0", "$0", "@0", "", "0"))),
+                Arguments.of("invalid active pane", answer(clientRow("0", "$0", "@0", "0", "0"))),
+                Arguments.of("empty zoom flag", answer(clientRow("0", "$0", "@0", "%0", ""))),
+                Arguments.of("word zoom flag", answer(clientRow("0", "$0", "@0", "%0", "on"))),
+                Arguments.of("unterminated row", answer(fields("0", "$0", "@0", "%0", "0"))));
+    }
+
+    private static Stream<Arguments> invalidTerminalClientPlacements() {
+        return Stream.of(
+                Arguments.of("missing session", clientRow("0", "", "@0", "%0", "0")),
+                Arguments.of("invalid session", clientRow("0", "0", "@0", "%0", "0")),
+                Arguments.of("missing window", clientRow("0", "$0", "", "%0", "0")),
+                Arguments.of("invalid window", clientRow("0", "$0", "0", "%0", "0")),
+                Arguments.of("session mismatch", clientRow("0", "$1", "@0", "%0", "0")),
+                Arguments.of("window mismatch", clientRow("0", "$0", "@1", "%0", "0")),
+                Arguments.of("window index mismatch", clientRow("0", "$0", "@0", "7", "%0", "0")));
+    }
+
+    private static CommandResult answer(String... rows) {
+        return new CommandResult(0, List.of(rows), List.of());
+    }
+
+    private static String row(String... fields) {
+        if (fields.length == 5 || fields.length == 6) {
+            List<String> complete = new java.util.ArrayList<>(List.of(fields));
+            if (complete.size() == 5) {
+                complete.add("0");
+            }
+            complete.addAll(List.of("$0", "@0", "0", "1", "1", "/tmp/test-tmux"));
+            return fields(complete.toArray(String[]::new)) + TERMINATOR;
+        }
+        if (fields.length == 11) {
+            List<String> complete = new java.util.ArrayList<>(List.of(fields));
+            complete.add(8, "0");
+            return fields(complete.toArray(String[]::new)) + TERMINATOR;
+        }
+        return fields(fields) + TERMINATOR;
+    }
+
+    private static String clientRow(
+            String control, String sessionId, String windowId, String activePane, String zoomed) {
+        return clientRow(control, sessionId, windowId, "0", activePane, zoomed);
+    }
+
+    private static String clientRow(
+            String control, String sessionId, String windowId, String windowIndex, String activePane, String zoomed) {
+        return fields(control, sessionId, windowId, windowIndex, activePane, zoomed) + TERMINATOR;
+    }
+
+    private static String liveRow(
+            Server server, String pane, String synchronizedPane, String mode, String dead, String command) {
+        var handle = server.panes().stream()
+                .filter(candidate -> candidate.id().value().equals(pane))
+                .findFirst()
+                .orElseThrow();
+        return row(
+                pane,
+                synchronizedPane,
+                mode,
+                dead,
+                command,
+                "0",
+                handle.window().session().id().value(),
+                handle.window().id().value(),
+                handle.window().index().toString(),
+                server.expand("#{pid}"),
+                server.expand("#{start_time}"),
+                server.expand("#{socket_path}"));
+    }
+
+    private static String fields(String... fields) {
+        return String.join(SEPARATOR, fields);
+    }
+
+    private static int occurrences(String value, String wanted) {
+        return (value.length() - value.replace(wanted, "").length()) / wanted.length();
+    }
+}

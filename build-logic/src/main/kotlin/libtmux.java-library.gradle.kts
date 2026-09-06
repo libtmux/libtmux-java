@@ -1,4 +1,10 @@
 // Shared Java conventions. A module script then declares only what makes it different.
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Path
+import java.security.MessageDigest
+import java.util.HexFormat
 import net.ltgt.gradle.errorprone.errorprone
 
 plugins {
@@ -94,8 +100,7 @@ tasks.withType<Test>().configureEach {
     // a real server and can kill it. Two environment values decide where a bare client lands: tmux
     // resolves its default socket under TMUX_TMPDIR when it execs, and $TMUX takes precedence over
     // that for a client started inside a pane — which the Gradle daemon may well have been.
-    val tmuxTmpDir = layout.buildDirectory.dir("tmux-tmpdir").get().asFile
-    environment("TMUX_TMPDIR", tmuxTmpDir.absolutePath)
+    // TMUX_TMPDIR is set per invocation in doFirst below, under the same root as the named sockets.
     environment.remove("TMUX")
     environment.remove("TMUX_PANE")
 
@@ -113,7 +118,34 @@ tasks.withType<Test>().configureEach {
         require(socketRoot.length <= 40) {
             "libtmuxSocketRoot is $socketRoot, too long to leave room for a socket under it"
         }
-        tmuxTmpDir.mkdirs()
+        // The quarantine shares the configured root, so overriding libtmuxSocketRoot moves the
+        // bare-client sockets along with the named ones instead of splitting them across two roots.
+        // Owner identity separates concurrent invocations; 16 hex digits leave AF_UNIX room.
+        val quarantineIdentity = listOf(
+            rootProject.rootDir.canonicalPath,
+            path,
+            ProcessHandle.current().pid().toString(),
+        ).joinToString("\u0000")
+        val quarantineDigest = MessageDigest.getInstance("SHA-256")
+            .digest(quarantineIdentity.toByteArray(StandardCharsets.UTF_8))
+        val quarantineName = HexFormat.of().formatHex(quarantineDigest, 0, 8)
+        val tmuxTmpDir = Path.of(socketRoot, quarantineName)
+
+        if (Files.exists(tmuxTmpDir, LinkOption.NOFOLLOW_LINKS)) {
+            require(Files.isDirectory(tmuxTmpDir, LinkOption.NOFOLLOW_LINKS)) {
+                "tmux quarantine is not a directory: $tmuxTmpDir"
+            }
+            val entries = Files.walk(tmuxTmpDir).use { paths -> paths.toList() }
+            val stale = entries.firstOrNull {
+                it != tmuxTmpDir && !Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS)
+            }
+            require(stale == null) {
+                "tmux quarantine contains a stale entry: $stale"
+            }
+            entries.asReversed().filter { it != tmuxTmpDir }.forEach(Files::delete)
+        }
+        Files.createDirectories(tmuxTmpDir)
+        environment("TMUX_TMPDIR", tmuxTmpDir.toString())
         File(socketRoot).mkdirs()
     }
 

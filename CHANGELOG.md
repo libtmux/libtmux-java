@@ -14,6 +14,19 @@ production.
 
 ### Added
 
+- **`tools/mcp-swap` configures all eight supported agent clients.** It replaces
+  the retired `scripts/mcp_swap.py`, builds through
+  `./gradlew :tools:mcp-swap:installDist`, and decodes JSON, JSONC, and TOML
+  with strict UTF-8. OpenCode edits preserve JSONC comments and trailing commas,
+  Pi reports its adapter prerequisite, and `antigravity` selects canonical
+  `agy`. Multi-client use and revert preflight and stage one transaction,
+  preserve config symlinks, reverse proven writes on failure, and keep
+  `--dry-run` fully observational. Persistent, versioned recovery records bind
+  each backup to the exact swapped config, path topology, and server route;
+  drift fails closed without deleting recovery.
+- **`NamedServerFixture` safely owns explicitly named test servers.** It binds
+  teardown to the reported process, socket path, and inode, then fails closed if
+  any of that identity changes before cleanup.
 - **`Pane.findWindow` searches by name, title, or content, with
   case-insensitive and regular-expression matching.** Build a `FindSpec` or
   configure one inline. (#6)
@@ -26,6 +39,32 @@ production.
 
 ### Changed
 
+- **`libtmux-mcp` now exposes a fixed 45-tool capability surface.** One native
+  registry drives tool registration, schemas, trust metadata, selection, and
+  the static `tmux://capabilities` resource. Unordered toolsets and named
+  include/exclude lists replace safety tiers; the retired `LIBTMUX_SAFETY`
+  variable and `--safety` option now fail with migration guidance. The retired
+  `LIBTMUX_WATCH` variable and `--watch` option also fail; use bounded wait and
+  capture tools instead of dynamic resource notifications. The server defaults
+  to the dedicated `libtmux-mcp` socket, supports separate socket-name and
+  absolute socket-path selectors, and enables teardown by default only for a
+  newly created minimal daemon.
+- **Copy-mode entry and exit remain library-only.** The MCP surface reads pane
+  text through `capture_pane` history, `snapshot_pane`, `search_panes`, or
+  `capture_since` without taking ownership of an attached client's modal
+  interface. Java callers retain `Pane.copyMode` and `Pane.exitMode`.
+- **The MCP guide maps every earlier public tool, resource URI, prompt workflow,
+  and completion path.** Each retired name now points to its current typed
+  route, composed workflow, or explicit no-replacement boundary.
+- **MCP searches and read batches now have fixed work ceilings.** Search stops
+  after 200 panes, 20,000 lines, 1,000,000 bytes of matching input, or five
+  seconds. Read batches validate each nested call and cap the complete JSON-RPC
+  response, including line framing, at 1,000,000 bytes without dropping an
+  executed row. Request IDs over 512 KiB now fail before dispatch rather than
+  consuming that response budget.
+- **`capture_since` and `call_read_tools_batch` now advertise observe-only tmux
+  effects.** Cursor capture and every batch-eligible inspect operation leave
+  tmux state unchanged.
 - **`Pane.findWindowByName` and `Pane.findWindowByContent` are removed.** Use
   `findWindow` with `inName()` or `inContent()`. (#6)
 - **`Server.waitFor`, `waitForWithSignalCapacity`, `signal`, and `drain` move
@@ -60,6 +99,31 @@ production.
 
 ### Fixed
 
+- **`Pane.sendKeys` preserves option-shaped input.** It ends tmux option parsing
+  before caller keys, so values such as `-X`, `-R`, and `-N` reach pane programs
+  through the core API and MCP single or batch routes.
+- **`Pane.breakOut` preserves literal `#` in requested window names.** The
+  `break-pane -n` path receives the raw name; only the tmux 3.7 rename fallback
+  applies tmux format literalization.
+- **MCP capability rows disclose both output risk dimensions.** Pane text,
+  environment and configured-command values, and names, titles, paths, or
+  current commands now advertise both secret and untrusted-content risk;
+  strictly structural results remain false for both.
+- **MCP pane input now refuses effective recipients in a human-owned mode.**
+  `send_keys` and each `send_keys_batch` operation resolve pane-level
+  `synchronize-panes` overrides before dispatch; `paste_text` remains
+  target-only, dead configured recipients fail closed, and
+  `run_shell_command` checks a singular cohort before setup and again before
+  input because its completion, output, and status are singular.
+- **`run_shell_command` no longer relies on mutable pane-shell framing state.**
+  Completion markers and signalling run in an isolated outer subshell through
+  an absolute selected tmux executable and the server's resolved `-S` socket,
+  so ordinary output-command aliases/functions, pane `PATH`/socket variables,
+  inherited `errexit`, and a readonly nonce name cannot lose completion or
+  close the pane; the frame also leaves no status variable behind. This assumes
+  the parent shell has not replaced the exact client word or
+  `trap`/`eval`/`exit` with functions, and marker commands honor trusted server
+  hooks.
 - **Destructive MCP tools fail closed when caller-pane identity cannot be
   proven.** Uncertain socket, server, or pane identity now requires explicit
   self-confirmation instead of bypassing the guard. (#6)
@@ -128,6 +192,9 @@ production.
 
 ### Removed
 
+- **MCP prompts, completions, watches, dynamic resources, per-call server
+  discovery, and workspace tools are removed.** Use the fixed tool surface and
+  its static `tmux://capabilities` resource.
 - **`ExecutionMode`, `ControlTransport`, `VirtualThreadTransport`,
   `LIBTMUX_MODE`, and their benchmark surface are removed.** `Server` uses
   process execution; use `ControlClient` for event streams and batches or

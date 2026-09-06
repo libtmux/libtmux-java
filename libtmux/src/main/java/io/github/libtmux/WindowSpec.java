@@ -135,11 +135,11 @@ public final class WindowSpec {
         }
         if (name != null) {
             argv.add("-n");
-            argv.add(name);
+            argv.add(TmuxFormats.literal(name));
         }
         if (directory != null) {
             argv.add("-c");
-            argv.add(directory.toString());
+            argv.add(TmuxFormats.literal(directory.toString()));
         }
         for (Map.Entry<String, String> variable : environment.entrySet()) {
             argv.add("-e");

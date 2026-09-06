@@ -1,501 +1,1300 @@
 package io.github.libtmux.mcp;
 
+import static io.github.libtmux.mcp.Argument.boundedObjects;
+import static io.github.libtmux.mcp.Argument.boundedRequired;
+import static io.github.libtmux.mcp.Argument.boundedStrings;
 import static io.github.libtmux.mcp.Argument.flag;
 import static io.github.libtmux.mcp.Argument.number;
+import static io.github.libtmux.mcp.Argument.objects;
 import static io.github.libtmux.mcp.Argument.optional;
 import static io.github.libtmux.mcp.Argument.paneId;
 import static io.github.libtmux.mcp.Argument.required;
+import static io.github.libtmux.mcp.Argument.requiredNumber;
 import static io.github.libtmux.mcp.Argument.seconds;
 import static io.github.libtmux.mcp.Argument.strings;
-import static io.github.libtmux.mcp.ToolSpec.Effect.DESTRUCTIVE;
-import static io.github.libtmux.mcp.ToolSpec.Effect.READ_ONLY;
+import static io.github.libtmux.mcp.OutputSchema.ValueType.ARRAY;
+import static io.github.libtmux.mcp.OutputSchema.ValueType.BOOLEAN;
+import static io.github.libtmux.mcp.OutputSchema.ValueType.INTEGER;
+import static io.github.libtmux.mcp.OutputSchema.ValueType.OBJECT;
+import static io.github.libtmux.mcp.OutputSchema.ValueType.STRING;
+import static io.github.libtmux.mcp.ToolSpec.InputSink.REGEX;
+import static io.github.libtmux.mcp.ToolSpec.InputSink.SHELL_COMMAND;
+import static io.github.libtmux.mcp.ToolSpec.InputSink.TMUX_FORMAT;
+import static io.github.libtmux.mcp.ToolSpec.InputSink.TMUX_LOOKUP;
+import static io.github.libtmux.mcp.ToolSpec.InputSink.TMUX_STATE;
+import static io.github.libtmux.mcp.ToolSpec.OutputClass.CONFIGURED_COMMAND;
+import static io.github.libtmux.mcp.ToolSpec.OutputClass.PROCESS_ENVIRONMENT;
+import static io.github.libtmux.mcp.ToolSpec.OutputClass.TERMINAL_CONTENT;
+import static io.github.libtmux.mcp.ToolSpec.OutputClass.TMUX_METADATA;
+import static io.github.libtmux.mcp.ToolSpec.ProcessReach.CONFIGURED_PROCESS;
+import static io.github.libtmux.mcp.ToolSpec.ProcessReach.NONE;
+import static io.github.libtmux.mcp.ToolSpec.ProcessReach.PANE_COMMAND;
+import static io.github.libtmux.mcp.ToolSpec.ProcessReach.PANE_INPUT;
+import static io.github.libtmux.mcp.ToolSpec.TmuxEffect.CHANGE;
+import static io.github.libtmux.mcp.ToolSpec.TmuxEffect.DELETE;
+import static io.github.libtmux.mcp.ToolSpec.TmuxEffect.OBSERVE;
+import static io.github.libtmux.mcp.ToolSpec.Toolset.EXECUTE;
+import static io.github.libtmux.mcp.ToolSpec.Toolset.INSPECT;
+import static io.github.libtmux.mcp.ToolSpec.Toolset.MANAGE;
+import static io.github.libtmux.mcp.ToolSpec.Toolset.TEARDOWN;
 
-import io.github.libtmux.jackson.FilterJson;
-import io.github.libtmux.jackson.LibTmuxModels;
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
-/**
- * Every tool this server can offer, in the order a model meets them.
- *
- * <p>Declared in one list so the surface can be read at a glance and so nothing can be added
- * without stating what it may destroy. What a launcher actually serves is this list narrowed to a
- * {@link Safety} ceiling.
- *
- * <p>The descriptions are written for a model rather than a person: each says what the tool is for
- * and, where a cheaper tool exists, points at it. That is the only documentation a model gets.
- */
+/** Every public structured tool, declared once in deterministic registration order. */
 final class Catalog {
 
-    /** The filter document shown to a model, and the only one it is given to copy. */
-    static final String EXAMPLE_FILTER = "{\"schema\":\"" + FilterJson.SCHEMA + "\",\"model\":\"pane\","
-            + "\"expr\":{\"node\":\"compare\",\"field\":\"pane_current_command\","
-            + "\"op\":\"starts_with\",\"value\":\"nvim\"}}";
+    private static final OutputSchema SESSION_OUTPUT =
+            shape(field("id", STRING), field("name", STRING), field("attached", BOOLEAN), field("windows", INTEGER));
+    private static final OutputSchema WINDOW_OUTPUT = shape(
+            field("id", STRING),
+            field("index", INTEGER),
+            field("name", STRING),
+            field("session_id", STRING),
+            field("active", BOOLEAN),
+            field("panes", INTEGER),
+            field("size", STRING));
+    private static final OutputSchema PANE_OUTPUT = shape(
+            field("id", STRING),
+            field("index", INTEGER),
+            field("window_id", STRING),
+            field("session_id", STRING),
+            field("active", BOOLEAN),
+            field("command", STRING),
+            field("path", STRING),
+            field("title", STRING),
+            field("size", STRING));
+
+    private static final List<ToolSpec> TOOLS = build();
 
     private Catalog() {}
 
     static List<ToolSpec> tools() {
-        List<ToolSpec> tools = new ArrayList<>();
-        discovery(tools);
-        reading(tools);
-        waiting(tools);
-        typing(tools);
-        shaping(tools);
-        settings(tools);
-        ending(tools);
-        return List.copyOf(tools);
+        return TOOLS;
     }
 
-    // ------------------------------------------------------------------ what is there
-
-    private static void discovery(List<ToolSpec> tools) {
-        tools.add(ToolSpec.of(
-                "tmux_whoami",
-                "Which tmux, and which pane is mine",
-                "Describes the tmux server this connection acts on, and names the pane this MCP server is "
-                        + "itself running in when there is one. Call this first in an unfamiliar session: it is "
-                        + "the only way to learn which pane belongs to this conversation, and that pane is the "
-                        + "one never to kill or type into.",
-                Safety.READONLY,
-                READ_ONLY,
-                List.of(),
-                call -> Listings.whoami(call.server(), call.caller(), call.ceiling())));
-
-        tools.add(ToolSpec.of(
-                "tmux_list_servers",
-                "List tmux servers",
-                "Inspects a bounded set of this user's tmux sockets and reports whether each is running, "
-                        + "unreachable, timed out, or could not be probed. Use it when the sessions you expected "
-                        + "are not on this server: separate sockets cannot see each other. A truncated answer says "
-                        + "the scan cap left directory entries uninspected.",
-                Safety.READONLY,
-                READ_ONLY,
-                List.of(),
-                call -> Listings.servers(call.server())));
-
-        tools.add(ToolSpec.of(
-                "tmux_list_sessions",
-                "List sessions",
-                "Lists sessions on this server with the windows in each.",
-                Safety.READONLY,
-                READ_ONLY,
-                List.of(),
-                call -> Listings.sessions(call.connection())));
-
-        tools.add(ToolSpec.of(
-                "tmux_list_windows",
-                "List windows",
-                "Lists windows with the id other tools take, optionally only those in one session.",
-                Safety.READONLY,
-                READ_ONLY,
-                List.of(optional("session", "Only windows in this session. Omit for every window on the server.")),
-                Listings::windows));
-
-        tools.add(ToolSpec.of(
-                "tmux_list_panes",
-                "List panes",
-                "Lists panes with the id every other tool takes as a target, what is running in each, and "
-                        + "where. Optionally narrowed by a filter document. This reads metadata, not screen "
-                        + "contents: to find a pane by what it is showing, use tmux_search_panes.",
-                Safety.READONLY,
-                READ_ONLY,
-                List.of(new Argument(
-                        "filter",
-                        "object",
-                        "A " + FilterJson.SCHEMA + " document over the pane model, for example " + EXAMPLE_FILTER
-                                + ". Field names are tmux's own format names, and these are the only ones a pane "
-                                + "document may compare: "
-                                + String.join(", ", LibTmuxModels.pane().fieldNames())
-                                + ". Anything else — a window's name, a pane's path — is in the answer rather "
-                                + "than the filter, so list the panes and choose from what comes back. Omit it "
-                                + "to list every pane.",
-                        false,
-                        null)),
-                Listings::panes));
-
-        tools.add(ToolSpec.of(
-                "tmux_list_clients",
-                "List attached clients",
-                "Lists the terminals attached to this server. Use it to find out whether a person is "
-                        + "watching a session before changing what it is showing.",
-                Safety.READONLY,
-                READ_ONLY,
-                List.of(),
-                Listings::clients));
+    static ToolSpec named(String name) {
+        return TOOLS.stream()
+                .filter(tool -> tool.name().equals(name))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("unknown catalog tool '" + name + "'"));
     }
 
-    // ------------------------------------------------------------------ what panes show
-
-    private static void reading(List<ToolSpec> tools) {
-        tools.add(ToolSpec.of(
-                "tmux_capture_pane",
-                "Read a pane",
-                "Returns what a pane is showing, newest last, together with a cursor. To watch the same "
-                        + "pane again, pass that cursor to tmux_capture_since instead of calling this repeatedly "
-                        + "— this returns the whole screen every time.",
-                Safety.READONLY,
-                READ_ONLY,
-                List.of(
-                        paneId(),
-                        flag("history", "Include the pane's scrollback, not only the visible screen.", false),
-                        number("max_lines", "How many lines at most, keeping the newest.", Trim.DEFAULT_LINES)),
-                Reading::capture));
-
-        tools.add(ToolSpec.of(
-                "tmux_capture_since",
-                "Read what is new in a pane",
-                "Returns only the lines a pane has produced since a cursor, and a new cursor. This is how "
-                        + "to watch something without paying for it repeatedly: the tenth look at a build log "
-                        + "costs the few lines it added, not the nine screens already read. Omit the cursor to "
-                        + "start from what the pane shows now.",
-                Safety.READONLY,
-                READ_ONLY,
-                List.of(
-                        paneId(),
-                        optional("cursor", "The cursor from a previous call on this pane. Omit to start here."),
-                        number("max_lines", "How many lines at most, keeping the newest.", Trim.DEFAULT_LINES)),
-                Reading::since));
-
-        tools.add(ToolSpec.of(
-                "tmux_search_panes",
-                "Find panes by what they show",
-                "Searches what every pane is currently showing and returns the panes that match. Use it to "
-                        + "answer \"which pane has the server in it\". Searches the visible screen, not "
-                        + "scrollback, so text that has scrolled away is not found.",
-                Safety.READONLY,
-                READ_ONLY,
-                List.of(
-                        required("pattern", "The text to look for."),
-                        flag("regex", "Treat the pattern as a regular expression rather than plain text.", false),
-                        number("max_matches_per_pane", "How many matching lines to keep from each pane.", 5),
-                        number("max_lines", "How many matches at most, across all panes.", Trim.DEFAULT_LINES)),
-                Reading::search));
-    }
-
-    // ------------------------------------------------------------------ waiting
-
-    private static void waiting(List<ToolSpec> tools) {
-        tools.add(ToolSpec.of(
-                "tmux_run",
-                "Run a command and wait for it",
-                "Runs a shell command in a pane with a POSIX-compatible shell, waits for it to finish, and returns its output and exit "
-                        + "status in one call. Use this whenever you wrote the command yourself. Do not send a "
-                        + "command and then poll tmux_capture_pane to guess whether it finished: that costs a "
-                        + "call per look and still cannot tell a finished command from a stalled one. The "
-                        + "command runs in a subshell of the pane's shell, so it sees that shell's environment "
-                        + "but a 'cd' or an export in it does not outlive the call — and neither does an 'exit'.",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(
-                        paneId(),
-                        required("command", "The shell command, run in the pane's own interactive shell."),
-                        seconds(
-                                "timeout",
-                                "Seconds to wait before giving up and reporting what it printed so far.",
-                                30),
-                        number(
-                                "max_lines",
-                                "How many lines of output at most, keeping the newest.",
-                                Trim.DEFAULT_LINES),
-                        flag(
-                                "suppress_history",
-                                "Prefix the line with a space so a shell configured to ignore such lines keeps it "
-                                        + "out of its history. Best-effort: a shell not configured that way records it.",
-                                true)),
-                RunningCommands::run));
-
-        tools.add(ToolSpec.of(
-                "tmux_wait_for_text",
-                "Wait for text to appear in a pane",
-                "Waits until text appears in a pane you did not start — a dev server, a daemon, a build "
-                        + "someone else launched. Only output that arrives after this call counts, so text "
-                        + "already on screen does not satisfy it. Always pass 'stop' with the failure text when "
-                        + "there is one: without it a run that fails is waited on until the deadline. If you "
-                        + "wrote the command, use tmux_run instead.",
-                Safety.READONLY,
-                READ_ONLY,
-                List.of(
-                        paneId(),
-                        strings(
-                                "patterns",
-                                "Text to wait for; any one of them ends the wait. Omit to wait for "
-                                        + "any new output at all."),
-                        strings(
-                                "stop",
-                                "Text that means it has failed. Matching one ends the wait at once and "
-                                        + "reports STOPPED."),
-                        flag("regex", "Treat patterns and stops as regular expressions rather than plain text.", false),
-                        seconds("timeout", "Seconds to wait before giving up.", 30),
-                        optional("cursor", "Carry on from a cursor a previous call returned."),
-                        number("max_lines", "How many lines of what it saw to return.", Trim.DEFAULT_LINES)),
-                WaitingForText::waitFor));
-
-        tools.add(ToolSpec.of(
-                "tmux_wait_for_channel",
-                "Wait on a tmux channel",
-                "Consumes the next signal on a tmux channel, blocking until one exists. This is the only wait "
-                        + "that infers nothing "
-                        + "from the screen: compose a command as 'mycommand; tmux wait-for -S mychannel' with "
-                        + "tmux_send_keys, then wait here. The answer says why the wait ended, because tmux "
-                        + "reports a server that died under a waiter as a successful wake.",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(
-                        required("channel", "The channel name, which everything on this server shares."),
-                        seconds("timeout", "Seconds to wait before giving up.", 30),
-                        flag(
-                                "drain_first",
-                                "Consume a signal left over from before this call, so the wait starts from a "
-                                        + "known state.",
-                                false)),
-                Channels::waitFor));
-
-        tools.add(ToolSpec.of(
-                "tmux_signal_channel",
-                "Signal a tmux channel",
-                "Wakes whatever is waiting on a tmux channel. A signal sent when nothing is waiting is "
-                        + "remembered and satisfies the next wait.",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(required("channel", "The channel name.")),
-                Channels::signal));
-
-        tools.add(ToolSpec.of(
-                "tmux_drain_channel",
-                "Clear a stale channel signal",
-                "Consumes a signal already waiting on a channel, so a leftover one cannot satisfy a wait "
-                        + "that has not happened yet.",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(required("channel", "The channel name.")),
-                Channels::drain));
-    }
-
-    // ------------------------------------------------------------------ input
-
-    private static void typing(List<ToolSpec> tools) {
-        tools.add(ToolSpec.of(
-                "tmux_send_keys",
-                "Send keys to a pane",
-                "Sends keypresses by tmux's names for them — 'C-c' to interrupt, 'q' to quit a pager, "
-                        + "'Up' for the previous command. This is for controlling a program, not for running "
-                        + "commands: a command you wrote belongs in tmux_run, which waits for it.",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(
-                        paneId(),
-                        strings("keys", "The keys, as tmux names them, for example [\"C-c\"] or [\"y\", \"Enter\"]."),
-                        flag("literal", "Send the strings as text rather than looking them up as key names.", false)),
-                Typing::sendKeys));
-
-        tools.add(ToolSpec.of(
-                "tmux_paste_text",
-                "Paste text into a pane",
-                "Puts text into a pane as a paste rather than as keystrokes, so brackets, newlines and "
-                        + "anything that spells a key name arrive as the characters they are. Use it for an "
-                        + "editor, a REPL, or a here-document. Requires tmux 3.4 or newer so a failed paste "
-                        + "can remove only its own temporary buffer.",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(
-                        paneId(),
-                        required("text", "The text to paste."),
-                        flag("enter", "End the paste with a newline, submitting it.", false)),
-                Typing::pasteText));
-    }
-
-    // ------------------------------------------------------------------ structure
-
-    private static void shaping(List<ToolSpec> tools) {
-        tools.add(ToolSpec.of(
-                "tmux_new_session",
-                "Create a session",
-                "Creates a detached session and returns its first pane's id.",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(
-                        required("name", "The session name."),
-                        optional("path", "The directory its first pane starts in."),
-                        optional("command", "A command to run in it instead of a shell.")),
-                Shaping::newSession));
-
-        tools.add(ToolSpec.of(
-                "tmux_new_window",
-                "Create a window",
-                "Creates a window in a session without switching to it, and returns its first pane's id.",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(
-                        required("session", "The session to create it in."),
-                        optional("name", "The window name. Omit to let tmux name it after what runs in it."),
-                        optional("path", "The directory it starts in."),
-                        optional("command", "A command to run in it instead of a shell.")),
-                Shaping::newWindow));
-
-        tools.add(ToolSpec.of(
-                "tmux_split_pane",
-                "Split a pane",
-                "Splits a pane in two and returns the id of the new one. The direction says where the new "
-                        + "pane goes.",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(
-                        paneId(),
-                        optional("direction", "Where the new pane goes: below, above, left or right."),
-                        number("percent", "How much of the space the new pane takes, 1 to 99.", 50),
-                        optional("path", "The directory it starts in."),
-                        optional("command", "A command to run in it instead of a shell.")),
-                Shaping::splitPane));
-
-        tools.add(ToolSpec.of(
-                "tmux_apply_workspace",
-                "Build a session from a description",
-                "Builds a whole session — windows, panes, layouts and the commands to start in them — from "
-                        + "one YAML document in the shape tmuxp uses. One call instead of a dozen, and a "
-                        + "description tmux would refuse is refused before anything is half-built. Example:\n"
-                        + Workspaces.example(),
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(required("workspace", "The YAML document describing the session.")),
-                Workspaces::apply));
-
-        tools.add(ToolSpec.of(
-                "tmux_rename",
-                "Rename a window or session",
-                "Renames a window or session given its stable id.",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(
-                        required("target", "A window id such as @1, or a session id such as $1."),
-                        required("name", "The new name.")),
-                Shaping::rename));
-
-        tools.add(ToolSpec.of(
-                "tmux_select",
-                "Bring a pane or window to the front",
-                "Makes a pane or window the active one, which is what a person attached to the session then "
-                        + "sees. Not needed to read or act on something: every other tool takes an id and works "
-                        + "whether or not the target is active.",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(required("target", "A pane id such as %1, or a window id such as @1.")),
-                Shaping::select));
-
-        tools.add(ToolSpec.of(
-                "tmux_select_layout",
-                "Rearrange a window's panes",
-                "Applies one of tmux's layouts to a window: " + String.join(", ", Shaping.layoutNames()) + ".",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(required("window_id", "The window id, such as @1."), required("layout", "The layout name.")),
-                Shaping::selectLayout));
-
-        tools.add(ToolSpec.of(
-                "tmux_resize_pane",
-                "Resize a pane",
-                "Sets a pane's size in cells. A pane cannot grow past its window, and its neighbours have to "
-                        + "give up what it takes, so the size that results may not be the one asked for — the "
-                        + "answer says what it actually became.",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(
-                        paneId(),
-                        number("width", "Width in cells. Omit to leave it.", 0),
-                        number("height", "Height in cells. Omit to leave it.", 0)),
-                Shaping::resizePane));
-    }
-
-    // ------------------------------------------------------------------ configuration
-
-    private static void settings(List<ToolSpec> tools) {
-        tools.add(ToolSpec.of(
-                "tmux_show_options",
-                "Read tmux options",
-                "Reads a set of tmux options. tmux keeps four sets and lets a lower one override the one "
-                        + "above, so say which scope you mean: global, server, session, window or pane.",
-                Safety.READONLY,
-                READ_ONLY,
-                List.of(
-                        optional("scope", "global, server, session, window or pane. Defaults to global."),
-                        optional("target", "Which session, window or pane, when the scope is one of those."),
-                        flag(
-                                "effective",
-                                "Include values inherited from a wider scope, not only those set here.",
-                                false)),
-                Settings::showOptions));
-
-        tools.add(ToolSpec.of(
-                "tmux_set_option",
-                "Set a tmux option",
-                "Sets one tmux option in one scope. Setting it globally changes it for everything that has "
-                        + "not overridden it, including panes a person is using, so prefer the narrowest scope "
-                        + "that does what you need.",
-                Safety.MUTATING,
-                DESTRUCTIVE,
-                List.of(
-                        required("name", "The option name."),
-                        required("value", "The value to set."),
-                        optional("scope", "global, server, session, window or pane. Defaults to global."),
-                        optional("target", "Which session, window or pane, when the scope is one of those.")),
-                Settings::setOption));
-
-        tools.add(ToolSpec.of(
-                "tmux_show_hooks",
-                "Read tmux hooks",
-                "Reads the hooks set in a scope. Read-only: a hook set over MCP would be gone when this "
-                        + "server restarts, so one that should last belongs in a tmux config file.",
-                Safety.READONLY,
-                READ_ONLY,
-                List.of(
-                        optional("scope", "global, server, session, window or pane. Defaults to global."),
-                        optional("target", "Which session, window or pane, when the scope is one of those.")),
-                Settings::showHooks));
-
-        tools.add(ToolSpec.of(
-                "tmux_show_environment",
-                "Read the tmux environment",
-                "Reads the environment tmux passes to programs it starts, globally or for one session. This "
-                        + "is what a new pane will inherit, not what a running program currently has.",
-                Safety.READONLY,
-                READ_ONLY,
-                List.of(optional("session", "The session to read. Omit for the global environment.")),
-                Settings::environment));
-    }
-
-    // ------------------------------------------------------------------ ending things
-
-    private static void ending(List<ToolSpec> tools) {
-        tools.add(ToolSpec.of(
-                "tmux_kill",
-                "Destroy a pane, window, session or the server",
-                "Ends something and everything running in it. This cannot be undone: the processes inside "
-                        + "are killed, and unsaved work in them is gone. Refuses to end the pane this "
-                        + "conversation is running through unless confirm_self is set — call tmux_whoami to see "
-                        + "which pane that is.",
-                Safety.DESTRUCTIVE,
-                DESTRUCTIVE,
-                List.of(
-                        required(
-                                "target",
-                                "A pane id such as %1, a window id such as @1, a session id such as $1, or the "
-                                        + "word 'server' to end the whole server."),
-                        flag(
-                                "confirm_self",
-                                "Go ahead even though the target holds the pane this MCP server runs in.",
-                                false)),
-                Shaping::kill));
-    }
-
-    /** The tools a server at this ceiling offers, keyed by name. */
-    static Map<String, ToolSpec> offered(Safety ceiling) {
-        Map<String, ToolSpec> offered = new LinkedHashMap<>();
-        for (ToolSpec tool : tools()) {
-            if (ceiling.allows(tool.safety())) {
-                offered.put(tool.name(), tool);
+    static void validate(List<ToolSpec> tools) {
+        Set<String> names = new LinkedHashSet<>();
+        Map<String, ToolSpec> byName = new LinkedHashMap<>();
+        for (ToolSpec tool : tools) {
+            if (!names.add(tool.name())) {
+                throw new IllegalArgumentException("duplicate tool '" + tool.name() + "'");
+            }
+            byName.put(tool.name(), tool);
+        }
+        for (ToolSpec tool : tools) {
+            validateSchema(tool);
+            validateReach(tool);
+            if (tool.outputClasses().isEmpty()) {
+                throw new IllegalArgumentException(tool.name() + " has no output class");
+            }
+            if (!tool.description().startsWith(tool.controlledOpener() + " ")) {
+                throw new IllegalArgumentException(tool.name() + " does not begin with its controlled opener");
+            }
+            if (tool.processReach() == ToolSpec.ProcessReach.HOST_COMMAND) {
+                throw new IllegalArgumentException(tool.name() + " exposes prohibited host-command reach");
+            }
+            Set<String> formatInputs = tool.inputSinks().entrySet().stream()
+                    .filter(entry -> entry.getValue().contains(TMUX_FORMAT))
+                    .map(Map.Entry::getKey)
+                    .collect(java.util.stream.Collectors.toSet());
+            if (!formatInputs.equals(tool.inputLiteralization().keySet())
+                    || tool.inputLiteralization().values().stream()
+                            .anyMatch(strategy -> !Set.of("double-hash-once", "validated-variable-name")
+                                    .contains(strategy))) {
+                throw new IllegalArgumentException(tool.name() + " has inconsistent tmux-format controls");
+            }
+            for (Map.Entry<String, String> control : tool.inputLiteralization().entrySet()) {
+                ToolSpec.InputSink classified =
+                        control.getValue().equals("double-hash-once") ? TMUX_STATE : TMUX_LOOKUP;
+                if (!Objects.requireNonNull(tool.inputSinks().get(control.getKey()), control.getKey())
+                        .contains(classified)) {
+                    throw new IllegalArgumentException(
+                            tool.name() + " understates the sink for '" + control.getKey() + "'");
+                }
+            }
+            if (tool.amplifiesFutureInput() != tool.name().equals("set_synchronize_panes")) {
+                throw new IllegalArgumentException(tool.name() + " has incorrect future-input amplification");
+            }
+            if (!tool.annotations().equals(conservativeAnnotations())) {
+                throw new IllegalArgumentException(
+                        tool.name() + " is not conservative under unknown configuration provenance");
+            }
+            for (String nested : tool.nestedAuthority()) {
+                if (nested.equals(tool.name()) || !names.contains(nested)) {
+                    throw new IllegalArgumentException(tool.name() + " has invalid nested authority '" + nested + "'");
+                }
+            }
+            if (!tool.nestedAuthority().isEmpty()) {
+                ToolSpec derived = tool.withNestedAuthority(tool.nestedAuthority(), byName);
+                if (!tool.effects().equals(derived.effects())
+                        || !tool.outputClasses().equals(derived.outputClasses())
+                        || tool.mayExposeSecrets() != derived.mayExposeSecrets()
+                        || tool.mayReturnUntrustedContent() != derived.mayReturnUntrustedContent()) {
+                    throw new IllegalArgumentException(tool.name() + " understates its nested capability union");
+                }
             }
         }
-        return offered;
+    }
+
+    private static List<ToolSpec> build() {
+        List<ToolSpec> tools = new ArrayList<>();
+        inspect(tools);
+        manage(tools);
+        execute(tools);
+        teardown(tools);
+        List<ToolSpec> built = List.copyOf(tools);
+        validate(built);
+        return built;
+    }
+
+    private static void inspect(List<ToolSpec> tools) {
+        tools.add(tool(
+                "list_sessions",
+                "List sessions",
+                "Lists sessions on the pinned tmux server.",
+                INSPECT,
+                NONE,
+                effects(OBSERVE),
+                outputs(TMUX_METADATA),
+                true,
+                true,
+                List.of(),
+                Map.of(),
+                record(Listings.Sessions.class, "note"),
+                call -> Listings.sessions(call.connection())));
+        tools.add(tool(
+                "list_windows",
+                "List windows",
+                "Lists windows, optionally only those in one named session.",
+                INSPECT,
+                NONE,
+                effects(OBSERVE),
+                outputs(TMUX_METADATA),
+                true,
+                true,
+                List.of(optional("session", "Only windows in this session name.")),
+                sinks(input("session", TMUX_LOOKUP)),
+                record(Listings.Windows.class, "note"),
+                Listings::windows));
+        tools.add(tool(
+                "list_panes",
+                "List panes",
+                "Lists pane metadata and stable pane IDs.",
+                INSPECT,
+                NONE,
+                effects(OBSERVE),
+                outputs(TMUX_METADATA),
+                true,
+                true,
+                List.of(),
+                Map.of(),
+                record(Listings.Panes.class, "note")
+                        .withPropertySchema(
+                                "panes",
+                                arrayOf(record(Listings.PaneSummary.class, "caller")
+                                        .wireSchema())),
+                Listings::panes));
+
+        tools.add(inspectRichMetadata(
+                "get_server_info",
+                "Get server info",
+                "Reports whether the pinned server exists and its version.",
+                List.of(),
+                Map.of(),
+                shape(
+                        field("running", BOOLEAN),
+                        field("identity", STRING),
+                        field("version", STRING),
+                        field("sessions", INTEGER)),
+                Operations::serverInfo));
+        tools.add(inspectRichMetadata(
+                "get_session_info",
+                "Get session info",
+                "Returns metadata for one session.",
+                List.of(required("session_id", "The session ID, such as $1.")),
+                sinks(input("session_id", TMUX_LOOKUP)),
+                SESSION_OUTPUT,
+                Operations::sessionInfo));
+        tools.add(inspectRichMetadata(
+                "get_window_info",
+                "Get window info",
+                "Returns metadata for one window.",
+                List.of(required("window_id", "The window ID, such as @1.")),
+                sinks(input("window_id", TMUX_LOOKUP)),
+                WINDOW_OUTPUT,
+                Operations::windowInfo));
+        tools.add(inspectRichMetadata(
+                "get_pane_info",
+                "Get pane info",
+                "Returns metadata for one pane.",
+                List.of(paneId()),
+                sinks(input("pane_id", TMUX_LOOKUP)),
+                PANE_OUTPUT,
+                Operations::paneInfo));
+
+        List<Argument> capture = List.of(
+                paneId(),
+                flag("history", "Include scrollback rather than only the visible screen.", false),
+                number("max_lines", "Maximum lines, keeping the newest.", Trim.DEFAULT_LINES));
+        Map<String, Set<ToolSpec.InputSink>> captureSinks = sinks(
+                input("pane_id", TMUX_LOOKUP),
+                input("history", ToolSpec.InputSink.NONE),
+                input("max_lines", ToolSpec.InputSink.NONE));
+        tools.add(tool(
+                "capture_pane",
+                "Capture a pane",
+                "Returns bounded pane content and a cursor.",
+                INSPECT,
+                NONE,
+                effects(OBSERVE),
+                outputs(TERMINAL_CONTENT, TMUX_METADATA),
+                true,
+                true,
+                capture,
+                captureSinks,
+                record(Reading.Captured.class, "note"),
+                Reading::capture));
+        List<Argument> since = List.of(
+                paneId(),
+                optional("cursor", "A cursor returned by an earlier capture."),
+                number("max_lines", "Maximum new lines, keeping the newest.", Trim.DEFAULT_LINES));
+        tools.add(tool(
+                "capture_since",
+                "Capture new pane output",
+                "Returns pane output produced after a cursor.",
+                INSPECT,
+                NONE,
+                effects(OBSERVE),
+                outputs(TERMINAL_CONTENT, TMUX_METADATA),
+                true,
+                true,
+                since,
+                sinks(
+                        input("pane_id", TMUX_LOOKUP),
+                        input("cursor", ToolSpec.InputSink.NONE),
+                        input("max_lines", ToolSpec.InputSink.NONE)),
+                record(Reading.Since.class, "note"),
+                Reading::since));
+        tools.add(tool(
+                "snapshot_pane",
+                "Snapshot a pane",
+                "Returns pane metadata and bounded terminal content together.",
+                INSPECT,
+                NONE,
+                effects(OBSERVE),
+                outputs(TERMINAL_CONTENT, TMUX_METADATA),
+                true,
+                true,
+                capture,
+                captureSinks,
+                shape(
+                                field("pane", OBJECT),
+                                field("content", ARRAY),
+                                field("cursor", STRING),
+                                field("truncated", BOOLEAN),
+                                field("lines_dropped", INTEGER))
+                        .withPropertySchema("content", arrayOf(Map.of("type", "string"))),
+                Operations::snapshotPane));
+
+        List<Argument> search = List.of(
+                boundedRequired(
+                        "pattern",
+                        "The bounded text or regular expression to search for.",
+                        TextPatterns.MAX_PATTERN_BYTES),
+                flag("regex", "Treat pattern as a regular expression.", false),
+                number("max_matches_per_pane", "Maximum matching lines per pane.", 5),
+                number("max_lines", "Maximum matches across all panes.", Trim.DEFAULT_LINES));
+        tools.add(tool(
+                "search_panes",
+                "Search panes",
+                "Searches the visible output of every pane.",
+                INSPECT,
+                NONE,
+                effects(OBSERVE),
+                outputs(TERMINAL_CONTENT, TMUX_METADATA),
+                true,
+                true,
+                search,
+                sinks(
+                        input("pattern", REGEX),
+                        input("regex", ToolSpec.InputSink.NONE),
+                        input("max_matches_per_pane", ToolSpec.InputSink.NONE),
+                        input("max_lines", ToolSpec.InputSink.NONE)),
+                record(Reading.Found.class, "note"),
+                Reading::search));
+        tools.add(inspectRichMetadata(
+                "find_pane_by_position",
+                "Find pane by position",
+                "Finds a pane at one of a window's four corners.",
+                List.of(
+                        required("window_id", "The window ID, such as @1."),
+                        required("position", "top-left, top-right, bottom-left or bottom-right.")),
+                sinks(input("window_id", TMUX_LOOKUP), input("position", TMUX_LOOKUP)),
+                PANE_OUTPUT,
+                Operations::findPaneByPosition));
+
+        List<Argument> waitText = List.of(
+                paneId(),
+                boundedStrings(
+                        "patterns",
+                        "Text to wait for; any one ends the wait.",
+                        TextPatterns.MAX_PATTERN_BYTES,
+                        TextPatterns.MAX_PATTERNS),
+                boundedStrings(
+                        "stop",
+                        "Failure text; any one ends the wait.",
+                        TextPatterns.MAX_PATTERN_BYTES,
+                        TextPatterns.MAX_PATTERNS),
+                flag("regex", "Treat patterns and stops as regular expressions.", false),
+                seconds("timeout", "Seconds to wait before giving up.", 30),
+                optional("cursor", "A cursor returned by an earlier capture."),
+                number("max_lines", "Maximum observed lines to return.", Trim.DEFAULT_LINES));
+        tools.add(tool(
+                "wait_for_text",
+                "Wait for pane text",
+                "Waits for new pane output without accepting executable input.",
+                INSPECT,
+                NONE,
+                effects(OBSERVE),
+                outputs(TERMINAL_CONTENT, TMUX_METADATA),
+                true,
+                true,
+                waitText,
+                sinks(
+                        input("pane_id", TMUX_LOOKUP),
+                        input("patterns", REGEX),
+                        input("stop", REGEX),
+                        input("regex", ToolSpec.InputSink.NONE),
+                        input("timeout", ToolSpec.InputSink.NONE),
+                        input("cursor", ToolSpec.InputSink.NONE),
+                        input("max_lines", ToolSpec.InputSink.NONE)),
+                record(WaitingForText.Waited.class, "matched", "matched_line", "note"),
+                WaitingForText::waitFor));
+
+        tools.add(tool(
+                        "get_tmux_variables",
+                        "Get tmux variables",
+                        "Reads a capped list of validated tmux variable names, not free-form formats.",
+                        INSPECT,
+                        NONE,
+                        effects(OBSERVE),
+                        outputs(TMUX_METADATA, CONFIGURED_COMMAND),
+                        true,
+                        true,
+                        List.of(
+                                new Argument(
+                                        "names",
+                                        "array",
+                                        "One to thirty-two variable names matching [A-Za-z][A-Za-z0-9_]*.",
+                                        true,
+                                        null,
+                                        128,
+                                        32),
+                                optional("pane", "An optional pane context.")),
+                        sinks(input("names", TMUX_LOOKUP, TMUX_FORMAT), input("pane", TMUX_LOOKUP)),
+                        shape(field("values", OBJECT)),
+                        Operations::tmuxVariables)
+                .withInputLiteralization(Map.of("names", "validated-variable-name")));
+
+        List<Argument> option = List.of(
+                required("name", "The exact option name."),
+                optional("scope", "global, server, session, window or pane."),
+                optional("target", "The target required by session, window and pane scopes."),
+                flag("effective", "Include an inherited value.", true));
+        tools.add(tool(
+                "show_option",
+                "Show one option",
+                "Reads one named tmux option.",
+                INSPECT,
+                NONE,
+                effects(OBSERVE),
+                outputs(TMUX_METADATA, CONFIGURED_COMMAND),
+                true,
+                true,
+                option,
+                sinks(
+                        input("name", TMUX_LOOKUP),
+                        input("scope", TMUX_LOOKUP),
+                        input("target", TMUX_LOOKUP),
+                        input("effective", ToolSpec.InputSink.NONE)),
+                shape(field("scope", STRING), field("target", STRING), field("name", STRING), field("value", STRING)),
+                Operations::showOption));
+        tools.add(tool(
+                "show_environment",
+                "Show tmux environment",
+                "Reads the environment tmux passes to processes.",
+                INSPECT,
+                NONE,
+                effects(OBSERVE),
+                outputs(PROCESS_ENVIRONMENT),
+                true,
+                true,
+                List.of(optional("session", "A session name; omit for the global environment.")),
+                sinks(input("session", TMUX_LOOKUP)),
+                record(Settings.Environment.class),
+                Settings::environment));
+
+        List<Argument> hooks = List.of(
+                optional("scope", "global, server, session, window or pane."),
+                optional("target", "The target required by session, window and pane scopes."),
+                optional("name", "One hook name; omit to read all hooks in the scope."));
+        tools.add(tool(
+                "show_hooks",
+                "Show hooks",
+                "Reads configured tmux hooks.",
+                INSPECT,
+                NONE,
+                effects(OBSERVE),
+                outputs(CONFIGURED_COMMAND),
+                true,
+                true,
+                hooks,
+                sinks(input("scope", TMUX_LOOKUP), input("target", TMUX_LOOKUP), input("name", TMUX_LOOKUP)),
+                shape(field("scope", STRING), field("target", STRING), field("count", INTEGER), field("hooks", OBJECT)),
+                Operations::showHooks));
+
+        Set<String> nested = new LinkedHashSet<>(List.of(
+                "list_sessions",
+                "list_windows",
+                "list_panes",
+                "get_server_info",
+                "get_session_info",
+                "get_window_info",
+                "get_pane_info",
+                "capture_pane",
+                "capture_since",
+                "snapshot_pane",
+                "search_panes",
+                "find_pane_by_position",
+                "get_tmux_variables",
+                "show_option",
+                "show_environment",
+                "show_hooks"));
+        tools.add(tool(
+                "call_read_tools_batch",
+                "Call read tools in a batch",
+                "Calls up to sixteen eligible inspect tools serially; inner tools receive no separate approval, and its nested authority is disclosed. The complete JSON-RPC response is capped at 1,000,000 bytes; a removed nested envelope is marked on its row and counted in truncatedBytes.",
+                INSPECT,
+                NONE,
+                effects(OBSERVE),
+                outputs(TMUX_METADATA, TERMINAL_CONTENT, PROCESS_ENVIRONMENT, CONFIGURED_COMMAND),
+                true,
+                true,
+                List.of(
+                        objects("operations", "Objects with tool and optional arguments fields."),
+                        optional("onError", "stop or continue; defaults to stop.")),
+                sinks(input("operations", ToolSpec.InputSink.NESTED_TOOL), input("onError", ToolSpec.InputSink.NONE)),
+                nested,
+                readBatchOutput(),
+                Operations::callReadToolsBatch));
+    }
+
+    private static void manage(List<ToolSpec> tools) {
+        tools.add(literalized(
+                manageTool(
+                        "rename_session",
+                        "Rename a session",
+                        "Replaces a session's name.",
+                        List.of(
+                                required("session_id", "The session ID, such as $1."),
+                                required("new_name", "The literal new session name.")),
+                        sinks(input("session_id", TMUX_LOOKUP), input("new_name", TMUX_FORMAT)),
+                        true,
+                        SESSION_OUTPUT,
+                        Operations::renameSession),
+                "new_name"));
+        tools.add(literalized(
+                manageTool(
+                        "rename_window",
+                        "Rename a window",
+                        "Replaces a window's name.",
+                        List.of(
+                                required("window_id", "The window ID, such as @1."),
+                                required("new_name", "The literal new window name.")),
+                        sinks(input("window_id", TMUX_LOOKUP), input("new_name", TMUX_FORMAT)),
+                        true,
+                        WINDOW_OUTPUT,
+                        Operations::renameWindow),
+                "new_name"));
+        tools.add(manageTool(
+                "select_window",
+                "Select a window",
+                "Makes one window active.",
+                List.of(required("window_id", "The window ID, such as @1.")),
+                sinks(input("window_id", TMUX_LOOKUP)),
+                true,
+                WINDOW_OUTPUT,
+                Operations::selectWindow));
+        tools.add(manageTool(
+                "select_pane",
+                "Select a pane",
+                "Makes one pane active.",
+                List.of(paneId()),
+                sinks(input("pane_id", TMUX_LOOKUP)),
+                true,
+                PANE_OUTPUT,
+                Operations::selectPane));
+        tools.add(manageTool(
+                "select_layout",
+                "Select a layout",
+                "Applies one built-in tmux layout.",
+                List.of(
+                        required("window_id", "The window ID, such as @1."),
+                        required("layout", "A built-in layout name.")),
+                sinks(input("window_id", TMUX_LOOKUP), input("layout", TMUX_STATE)),
+                false,
+                record(Shaping.Changed.class, "note"),
+                Shaping::selectLayout));
+        tools.add(manageTool(
+                "resize_window",
+                "Resize a window",
+                "Sets a window's width, height or both.",
+                List.of(
+                        required("window_id", "The window ID, such as @1."),
+                        number("width", "Width in terminal cells; omit to retain it.", 0),
+                        number("height", "Height in terminal cells; omit to retain it.", 0)),
+                sinks(input("window_id", TMUX_LOOKUP), input("width", TMUX_STATE), input("height", TMUX_STATE)),
+                true,
+                WINDOW_OUTPUT,
+                Operations::resizeWindow));
+        tools.add(manageTool(
+                "resize_pane",
+                "Resize a pane",
+                "Sets a pane's width, height or both.",
+                List.of(
+                        paneId(),
+                        number("width", "Width in terminal cells; omit to retain it.", 0),
+                        number("height", "Height in terminal cells; omit to retain it.", 0)),
+                sinks(input("pane_id", TMUX_LOOKUP), input("width", TMUX_STATE), input("height", TMUX_STATE)),
+                false,
+                record(Shaping.Changed.class, "note"),
+                Shaping::resizePane));
+        tools.add(manageTool(
+                "move_window",
+                "Move a window",
+                "Moves a window to another session, optionally at an index.",
+                List.of(
+                        required("window_id", "The window ID, such as @1."),
+                        required("session_id", "The destination session ID, such as $1."),
+                        number("index", "A destination window index; omit for tmux's choice.", -1)),
+                sinks(input("window_id", TMUX_LOOKUP), input("session_id", TMUX_LOOKUP), input("index", TMUX_STATE)),
+                false,
+                shape(field("window_id", STRING), field("session_id", STRING), field("index", INTEGER)),
+                Operations::moveWindow));
+        tools.add(manageTool(
+                "swap_pane",
+                "Swap panes",
+                "Swaps the positions of two panes.",
+                List.of(paneId(), required("other_pane_id", "The other pane ID, such as %2.")),
+                sinks(input("pane_id", TMUX_LOOKUP), input("other_pane_id", TMUX_LOOKUP)),
+                false,
+                shape(field("pane_id", STRING), field("other_pane_id", STRING)),
+                Operations::swapPane));
+        tools.add(literalized(
+                manageTool(
+                        "set_pane_title",
+                        "Set pane title",
+                        "Replaces a pane's literal title.",
+                        List.of(paneId(), required("title", "The literal title.")),
+                        sinks(input("pane_id", TMUX_LOOKUP), input("title", TMUX_FORMAT)),
+                        true,
+                        PANE_OUTPUT,
+                        Operations::setPaneTitle),
+                "title"));
+        List<Argument> channelWait = List.of(
+                required("channel", "A server-wide tmux channel name."),
+                seconds("timeout", "Seconds to wait before giving up.", 30),
+                flag("drain_first", "Consume a pending signal before waiting.", false));
+        tools.add(tool(
+                "wait_for_channel",
+                "Wait for a channel",
+                "Waits on tmux's channel state with a bounded timeout.",
+                MANAGE,
+                NONE,
+                effects(CHANGE),
+                outputs(TMUX_METADATA),
+                true,
+                true,
+                channelWait,
+                sinks(
+                        input("channel", TMUX_STATE),
+                        input("timeout", ToolSpec.InputSink.NONE),
+                        input("drain_first", TMUX_STATE)),
+                record(Channels.Woke.class, "note"),
+                Channels::waitFor));
+        tools.add(changeOnlyTool(
+                "signal_channel",
+                "Signal a channel",
+                "Signals one server-wide tmux channel.",
+                List.of(required("channel", "The channel name.")),
+                sinks(input("channel", TMUX_STATE)),
+                true,
+                record(Channels.Signalled.class),
+                Channels::signal));
+        tools.add(changeOnlyTool(
+                "set_mouse_enabled",
+                "Set mouse handling",
+                "Enables or disables tmux mouse handling.",
+                List.of(flag("enabled", "Whether mouse handling is enabled.", false)),
+                sinks(input("enabled", TMUX_STATE)),
+                false,
+                shape(field("enabled", BOOLEAN)),
+                Operations::setMouseEnabled));
+        tools.add(changeOnlyTool(
+                "set_history_limit",
+                "Set history limit",
+                "Sets a bounded integer scrollback limit for future panes in a session.",
+                List.of(
+                        required("session_id", "The session ID, such as $1."),
+                        requiredNumber("lines", "The nonnegative retained line count.")),
+                sinks(input("session_id", TMUX_LOOKUP), input("lines", TMUX_STATE)),
+                false,
+                shape(field("session_id", STRING), field("lines", INTEGER)),
+                Operations::setHistoryLimit));
+    }
+
+    private static void execute(List<ToolSpec> tools) {
+        tools.add(literalized(
+                tool(
+                        "create_session",
+                        "Create a session",
+                        "Creates a detached session whose first pane runs the configured process.",
+                        EXECUTE,
+                        CONFIGURED_PROCESS,
+                        effects(OBSERVE, CHANGE),
+                        outputs(TMUX_METADATA),
+                        true,
+                        true,
+                        List.of(
+                                optional("session_name", "A literal session name."),
+                                optional("window_name", "A literal first-window name."),
+                                optional("start_directory", "An absolute literal start directory."),
+                                number("width", "Initial width; supply with height.", -1),
+                                number("height", "Initial height; supply with width.", -1)),
+                        sinks(
+                                input("session_name", TMUX_FORMAT),
+                                input("window_name", TMUX_FORMAT),
+                                input("start_directory", TMUX_FORMAT),
+                                input("width", TMUX_STATE),
+                                input("height", TMUX_STATE)),
+                        SESSION_OUTPUT,
+                        Operations::createSession),
+                "session_name",
+                "window_name",
+                "start_directory"));
+        tools.add(literalized(
+                tool(
+                        "create_window",
+                        "Create a window",
+                        "Creates a window whose first pane runs the configured process.",
+                        EXECUTE,
+                        CONFIGURED_PROCESS,
+                        effects(OBSERVE, CHANGE),
+                        outputs(TMUX_METADATA),
+                        true,
+                        true,
+                        List.of(
+                                required("session_id", "The session ID, such as $1."),
+                                optional("window_name", "A literal window name."),
+                                optional("start_directory", "An absolute literal start directory."),
+                                flag("attach", "Make the new window active.", false),
+                                optional("direction", "before or after.")),
+                        sinks(
+                                input("session_id", TMUX_LOOKUP),
+                                input("window_name", TMUX_FORMAT),
+                                input("start_directory", TMUX_FORMAT),
+                                input("attach", TMUX_STATE),
+                                input("direction", TMUX_STATE)),
+                        WINDOW_OUTPUT,
+                        Operations::createWindow),
+                "window_name",
+                "start_directory"));
+        tools.add(literalized(
+                tool(
+                        "split_window",
+                        "Split a window",
+                        "Creates a pane whose configured process starts after the split.",
+                        EXECUTE,
+                        CONFIGURED_PROCESS,
+                        effects(OBSERVE, CHANGE),
+                        outputs(TMUX_METADATA),
+                        true,
+                        true,
+                        List.of(
+                                paneId(),
+                                optional("direction", "below, above, left or right."),
+                                number("percent", "Share of the split occupied by the new pane.", 50),
+                                optional("start_directory", "An absolute literal start directory.")),
+                        sinks(
+                                input("pane_id", TMUX_LOOKUP),
+                                input("direction", TMUX_STATE),
+                                input("percent", TMUX_STATE),
+                                input("start_directory", TMUX_FORMAT)),
+                        PANE_OUTPUT,
+                        Operations::splitWindow),
+                "start_directory"));
+        tools.add(literalized(
+                tool(
+                        "respawn_pane",
+                        "Respawn a pane",
+                        "Kills the pane's current process and starts its configured process again.",
+                        EXECUTE,
+                        CONFIGURED_PROCESS,
+                        effects(OBSERVE, CHANGE, DELETE),
+                        outputs(TMUX_METADATA),
+                        false,
+                        false,
+                        List.of(paneId(), optional("start_directory", "An absolute literal start directory.")),
+                        sinks(input("pane_id", TMUX_LOOKUP), input("start_directory", TMUX_FORMAT)),
+                        shape(field("pane_id", STRING), field("restarted", BOOLEAN)),
+                        Operations::respawnPane),
+                "start_directory"));
+
+        List<Argument> run = List.of(
+                paneId(),
+                required("command", "The shell command, run in the pane's interactive shell."),
+                seconds("timeout", "Seconds to wait before giving up.", 30),
+                number("max_lines", "Maximum output lines, keeping the newest.", Trim.DEFAULT_LINES),
+                flag("suppress_history", "Best-effort persistent history suppression.", true));
+        tools.add(tool(
+                "run_shell_command",
+                "Run a shell command",
+                "Runs one authored command in a trusted pane shell and waits for singular framed output and "
+                        + "completion. Its two preflights refuse caller or attended panes and an effective cohort "
+                        + "larger than one. "
+                        + "Pre-existing exact-client-path, trap, eval, or exit functions are outside the supported "
+                        + "boundary; marker display-message commands honor the trusted server's command aliases "
+                        + "and hooks.",
+                EXECUTE,
+                PANE_COMMAND,
+                effects(OBSERVE, CHANGE),
+                outputs(TERMINAL_CONTENT, TMUX_METADATA),
+                true,
+                true,
+                run,
+                sinks(
+                        input("pane_id", TMUX_LOOKUP),
+                        input("command", ToolSpec.InputSink.PANE_INPUT, SHELL_COMMAND),
+                        input("timeout", ToolSpec.InputSink.NONE),
+                        input("max_lines", ToolSpec.InputSink.NONE),
+                        input("suppress_history", ToolSpec.InputSink.NONE)),
+                record(RunningCommands.Ran.class, "exit_status", "note"),
+                RunningCommands::run));
+
+        List<Argument> keys = List.of(
+                paneId(),
+                strings("keys", "The key names or literal strings to send."),
+                flag("literal", "Send strings literally instead of as key names.", false));
+        tools.add(tool(
+                "send_keys",
+                "Send keys",
+                "Sends input to the target's configured effective synchronized cohort without waiting for output. "
+                        + "Every configured member must be live, nonmodal, and neither caller nor attended. Reports "
+                        + "configured pane ids observed before dispatch, not delivery receipts.",
+                EXECUTE,
+                PANE_INPUT,
+                effects(OBSERVE, CHANGE),
+                outputs(TMUX_METADATA),
+                false,
+                false,
+                keys,
+                sinks(
+                        input("pane_id", TMUX_LOOKUP),
+                        input("keys", ToolSpec.InputSink.PANE_INPUT),
+                        input("literal", ToolSpec.InputSink.NONE)),
+                record(Typing.Sent.class, "note"),
+                Typing::sendKeys));
+        tools.add(tool(
+                "send_keys_batch",
+                "Send keys in a batch",
+                "Sends up to sixty-four ordered pane-input operations, resolving and guarding the configured "
+                        + "effective cohort separately for each ordered operation. A later policy or dispatch "
+                        + "failure retains observed membership.",
+                EXECUTE,
+                PANE_INPUT,
+                effects(OBSERVE, CHANGE),
+                outputs(TMUX_METADATA),
+                true,
+                true,
+                List.of(
+                        boundedObjects("operations", "Objects with pane_id, keys and optional literal fields.", 64),
+                        optional("onError", "stop or continue; defaults to stop.")),
+                sinks(
+                        input("operations", TMUX_LOOKUP, ToolSpec.InputSink.PANE_INPUT),
+                        input("onError", ToolSpec.InputSink.NONE)),
+                sendBatchOutput(),
+                Operations::sendKeysBatch));
+        tools.add(tool(
+                "paste_text",
+                "Paste text",
+                "Pastes one literal text block into one target pane through an ephemeral buffer; paste-buffer "
+                        + "input does not fan out to synchronized peers. The target cannot be caller or attended.",
+                EXECUTE,
+                PANE_INPUT,
+                effects(OBSERVE, CHANGE),
+                outputs(TMUX_METADATA),
+                false,
+                false,
+                List.of(
+                        paneId(),
+                        required("text", "The literal text to paste."),
+                        flag("enter", "Append a newline that submits the text.", false)),
+                sinks(
+                        input("pane_id", TMUX_LOOKUP),
+                        input("text", ToolSpec.InputSink.PANE_INPUT),
+                        input("enter", ToolSpec.InputSink.PANE_INPUT)),
+                record(Typing.Pasted.class, "note"),
+                Typing::pasteText));
+        tools.add(amplifying(tool(
+                "set_synchronize_panes",
+                "Set synchronized panes",
+                "When enabled, sets the inherited window default; pane-level overrides determine each pane's "
+                        + "effective synchronized value.",
+                EXECUTE,
+                NONE,
+                effects(CHANGE),
+                outputs(TMUX_METADATA),
+                false,
+                false,
+                List.of(
+                        required("window_id", "The window ID, such as @1."),
+                        flag("enabled", "Whether pane input is synchronized.", false)),
+                sinks(input("window_id", TMUX_LOOKUP), input("enabled", TMUX_STATE)),
+                shape(field("window_id", STRING), field("enabled", BOOLEAN)),
+                Operations::setSynchronizePanes)));
+    }
+
+    private static void teardown(List<ToolSpec> tools) {
+        tools.add(deleteOnlyTool(
+                "clear_pane_scrollback",
+                "Clear pane scrollback",
+                "Deletes retained scrollback from one pane.",
+                List.of(paneId()),
+                sinks(input("pane_id", TMUX_LOOKUP)),
+                shape(field("pane_id", STRING), field("cleared", BOOLEAN)),
+                Operations::clearPaneScrollback));
+        tools.add(teardownTool(
+                "kill_pane",
+                "Kill a pane",
+                "Deletes one pane and ends its process.",
+                killArguments("pane_id", "The pane ID, such as %1."),
+                sinks(input("pane_id", TMUX_LOOKUP), input("confirm_self", ToolSpec.InputSink.NONE)),
+                record(Shaping.Ended.class, "note"),
+                Operations::killPane));
+        tools.add(teardownTool(
+                "kill_window",
+                "Kill a window",
+                "Deletes one window and every pane in it.",
+                killArguments("window_id", "The window ID, such as @1."),
+                sinks(input("window_id", TMUX_LOOKUP), input("confirm_self", ToolSpec.InputSink.NONE)),
+                record(Shaping.Ended.class, "note"),
+                Operations::killWindow));
+        tools.add(teardownTool(
+                "kill_session",
+                "Kill a session",
+                "Deletes one session and every window and pane in it.",
+                killArguments("session_id", "The session ID, such as $1."),
+                sinks(input("session_id", TMUX_LOOKUP), input("confirm_self", ToolSpec.InputSink.NONE)),
+                record(Shaping.Ended.class, "note"),
+                Operations::killSession));
+    }
+
+    private static List<Argument> killArguments(String name, String description) {
+        return List.of(
+                required(name, description),
+                flag("confirm_self", "Permit ending the pane this MCP process runs in.", false));
+    }
+
+    private static ToolSpec inspectRichMetadata(
+            String name,
+            String title,
+            String details,
+            List<Argument> arguments,
+            Map<String, Set<ToolSpec.InputSink>> sinks,
+            OutputSchema output,
+            java.util.function.Function<Call, Object> answer) {
+        return tool(
+                name,
+                title,
+                details,
+                INSPECT,
+                NONE,
+                effects(OBSERVE),
+                outputs(TMUX_METADATA),
+                true,
+                true,
+                arguments,
+                sinks,
+                output,
+                answer);
+    }
+
+    private static ToolSpec manageTool(
+            String name,
+            String title,
+            String details,
+            List<Argument> arguments,
+            Map<String, Set<ToolSpec.InputSink>> sinks,
+            boolean richOutput,
+            OutputSchema output,
+            java.util.function.Function<Call, Object> answer) {
+        return tool(
+                name,
+                title,
+                details,
+                MANAGE,
+                NONE,
+                effects(OBSERVE, CHANGE),
+                outputs(TMUX_METADATA),
+                richOutput,
+                richOutput,
+                arguments,
+                sinks,
+                output,
+                answer);
+    }
+
+    private static ToolSpec changeOnlyTool(
+            String name,
+            String title,
+            String details,
+            List<Argument> arguments,
+            Map<String, Set<ToolSpec.InputSink>> sinks,
+            boolean richOutput,
+            OutputSchema output,
+            java.util.function.Function<Call, Object> answer) {
+        return tool(
+                name,
+                title,
+                details,
+                MANAGE,
+                NONE,
+                effects(CHANGE),
+                outputs(TMUX_METADATA),
+                richOutput,
+                richOutput,
+                arguments,
+                sinks,
+                output,
+                answer);
+    }
+
+    private static ToolSpec teardownTool(
+            String name,
+            String title,
+            String details,
+            List<Argument> arguments,
+            Map<String, Set<ToolSpec.InputSink>> sinks,
+            OutputSchema output,
+            java.util.function.Function<Call, Object> answer) {
+        return tool(
+                name,
+                title,
+                details,
+                TEARDOWN,
+                NONE,
+                effects(OBSERVE, DELETE),
+                outputs(TMUX_METADATA),
+                false,
+                false,
+                arguments,
+                sinks,
+                output,
+                answer);
+    }
+
+    private static ToolSpec deleteOnlyTool(
+            String name,
+            String title,
+            String details,
+            List<Argument> arguments,
+            Map<String, Set<ToolSpec.InputSink>> sinks,
+            OutputSchema output,
+            java.util.function.Function<Call, Object> answer) {
+        return tool(
+                name,
+                title,
+                details,
+                TEARDOWN,
+                NONE,
+                effects(DELETE),
+                outputs(TMUX_METADATA),
+                false,
+                false,
+                arguments,
+                sinks,
+                output,
+                answer);
+    }
+
+    private static ToolSpec tool(
+            String name,
+            String title,
+            String details,
+            ToolSpec.Toolset toolset,
+            ToolSpec.ProcessReach processReach,
+            Set<ToolSpec.TmuxEffect> effects,
+            Set<ToolSpec.OutputClass> outputs,
+            boolean mayExposeSecrets,
+            boolean mayReturnUntrustedContent,
+            List<Argument> arguments,
+            Map<String, Set<ToolSpec.InputSink>> sinks,
+            OutputSchema output,
+            java.util.function.Function<Call, Object> answer) {
+        return tool(
+                name,
+                title,
+                details,
+                toolset,
+                processReach,
+                effects,
+                outputs,
+                mayExposeSecrets,
+                mayReturnUntrustedContent,
+                arguments,
+                sinks,
+                Set.of(),
+                output,
+                answer);
+    }
+
+    private static ToolSpec tool(
+            String name,
+            String title,
+            String details,
+            ToolSpec.Toolset toolset,
+            ToolSpec.ProcessReach processReach,
+            Set<ToolSpec.TmuxEffect> effects,
+            Set<ToolSpec.OutputClass> outputs,
+            boolean mayExposeSecrets,
+            boolean mayReturnUntrustedContent,
+            List<Argument> arguments,
+            Map<String, Set<ToolSpec.InputSink>> sinks,
+            Set<String> nestedAuthority,
+            OutputSchema output,
+            java.util.function.Function<Call, Object> answer) {
+        return ToolSpec.define(
+                name,
+                title,
+                details,
+                toolset,
+                processReach,
+                effects,
+                outputs,
+                mayExposeSecrets,
+                mayReturnUntrustedContent,
+                conservativeAnnotations(),
+                arguments,
+                sinks,
+                nestedAuthority,
+                output,
+                answer);
+    }
+
+    private static ToolSpec.Annotations conservativeAnnotations() {
+        return new ToolSpec.Annotations(false, true, false, true);
+    }
+
+    private static ToolSpec literalized(ToolSpec tool, String... fields) {
+        Map<String, String> claims = new LinkedHashMap<>();
+        for (String field : fields) {
+            claims.put(field, "double-hash-once");
+        }
+        return tool.withInputLiteralization(claims);
+    }
+
+    private static ToolSpec amplifying(ToolSpec tool) {
+        return tool.amplifyingFutureInput();
+    }
+
+    @SafeVarargs
+    private static <E extends Enum<E>> Set<E> enums(E first, E... rest) {
+        Set<E> values = EnumSet.noneOf(first.getDeclaringClass());
+        values.add(first);
+        for (E value : rest) {
+            values.add(value);
+        }
+        return values;
+    }
+
+    private static Set<ToolSpec.TmuxEffect> effects(ToolSpec.TmuxEffect first, ToolSpec.TmuxEffect... rest) {
+        return enums(first, rest);
+    }
+
+    private static Set<ToolSpec.OutputClass> outputs(ToolSpec.OutputClass first, ToolSpec.OutputClass... rest) {
+        return enums(first, rest);
+    }
+
+    private static Input input(String name, ToolSpec.InputSink first, ToolSpec.InputSink... rest) {
+        return new Input(name, enums(first, rest));
+    }
+
+    private static Map<String, Set<ToolSpec.InputSink>> sinks(Input... inputs) {
+        Map<String, Set<ToolSpec.InputSink>> sinks = new LinkedHashMap<>();
+        for (Input input : inputs) {
+            if (sinks.put(input.name(), input.sinks()) != null) {
+                throw new IllegalArgumentException("duplicate sink declaration for '" + input.name() + "'");
+            }
+        }
+        return sinks;
+    }
+
+    private static OutputSchema shape(OutputSchema.Field first, OutputSchema.Field... rest) {
+        return OutputSchema.of(first, rest);
+    }
+
+    private static OutputSchema record(Class<?> type, String... optionalFields) {
+        return OutputSchema.ofRecord(type).withOptionalFields(optionalFields);
+    }
+
+    private static OutputSchema.Field field(String name, OutputSchema.ValueType type) {
+        return new OutputSchema.Field(name, type);
+    }
+
+    private static OutputSchema readBatchOutput() {
+        OutputSchema envelope = shape(
+                        field("_meta", OBJECT),
+                        field("content", ARRAY),
+                        field("structuredContent", OBJECT),
+                        field("isError", BOOLEAN))
+                .withOptionalFields("_meta", "structuredContent")
+                .withPropertySchema("content", arrayOf(Map.of("type", "object")));
+        OutputSchema row = shape(
+                        field("index", INTEGER),
+                        field("tool", STRING),
+                        field("success", BOOLEAN),
+                        field("error", STRING),
+                        field("result", OBJECT),
+                        field("resultTruncated", BOOLEAN))
+                .withPropertySchema("error", nullable(Map.of("type", "string")))
+                .withPropertySchema("result", nullable(envelope.wireSchema()));
+        return shape(
+                        field("results", ARRAY),
+                        field("succeeded", INTEGER),
+                        field("failed", INTEGER),
+                        field("stoppedAt", INTEGER),
+                        field("truncated", BOOLEAN),
+                        field("truncatedBytes", INTEGER),
+                        field("onError", STRING))
+                .withPropertySchema("results", arrayOf(row.wireSchema()))
+                .withPropertySchema("stoppedAt", nullable(Map.of("type", "integer")));
+    }
+
+    private static OutputSchema sendBatchOutput() {
+        OutputSchema row = shape(
+                        field("index", INTEGER),
+                        field("pane_id", STRING),
+                        field("resolved_pane_ids", ARRAY),
+                        field("success", BOOLEAN),
+                        field("error", STRING))
+                .withOptionalFields("error")
+                .withPropertySchema("resolved_pane_ids", arrayOf(Map.of("type", "string")));
+        return shape(field("results", ARRAY), field("completed", INTEGER))
+                .withPropertySchema("results", arrayOf(row.wireSchema()));
+    }
+
+    private static Map<String, Object> arrayOf(Map<String, Object> item) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "array");
+        schema.put("items", item);
+        return java.util.Collections.unmodifiableMap(schema);
+    }
+
+    private static Map<String, Object> nullable(Map<String, Object> value) {
+        return Map.of("oneOf", List.of(value, Map.of("type", "null")));
+    }
+
+    private static void validateSchema(ToolSpec tool) {
+        Set<String> schema = new LinkedHashSet<>();
+        for (Argument argument : tool.arguments()) {
+            if (!schema.add(argument.name())) {
+                throw new IllegalArgumentException(
+                        tool.name() + " has duplicate schema field '" + argument.name() + "'");
+            }
+            if (Set.of("socket", "socket_name", "socket_path").contains(argument.name())) {
+                throw new IllegalArgumentException(tool.name() + " exposes a per-call socket selector");
+            }
+        }
+        if (!schema.equals(tool.inputSinks().keySet())) {
+            Set<String> missing = new HashSet<>(schema);
+            missing.removeAll(tool.inputSinks().keySet());
+            Set<String> extra = new HashSet<>(tool.inputSinks().keySet());
+            extra.removeAll(schema);
+            throw new IllegalArgumentException(
+                    tool.name() + " sink/schema mismatch; missing=" + missing + ", extra=" + extra);
+        }
+    }
+
+    private static void validateReach(ToolSpec tool) {
+        Set<ToolSpec.InputSink> sinks = tool.inputSinks().values().stream()
+                .flatMap(Set::stream)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        boolean paneInput = sinks.contains(ToolSpec.InputSink.PANE_INPUT);
+        boolean shellCommand = sinks.contains(SHELL_COMMAND);
+        boolean processArgv = sinks.contains(ToolSpec.InputSink.PROCESS_ARGV);
+        switch (tool.processReach()) {
+            case NONE -> {
+                if (paneInput || shellCommand || processArgv) {
+                    throw new IllegalArgumentException(tool.name() + " has executable sinks with reach none");
+                }
+            }
+            case CONFIGURED_PROCESS -> {
+                if (paneInput || shellCommand || processArgv) {
+                    throw new IllegalArgumentException(tool.name() + " misstates configured-process reach");
+                }
+            }
+            case PANE_INPUT -> {
+                if (!paneInput || shellCommand || processArgv) {
+                    throw new IllegalArgumentException(tool.name() + " pane-input reach disagrees with its sinks");
+                }
+            }
+            case PANE_COMMAND -> {
+                if (!shellCommand || processArgv) {
+                    throw new IllegalArgumentException(
+                            tool.name() + " pane-command reach disagrees with its shell-command sink");
+                }
+            }
+            case HOST_COMMAND -> throw new IllegalArgumentException(tool.name() + " exposes host-command reach");
+        }
+        if (tool.toolset() == INSPECT
+                && (tool.processReach() != NONE
+                        || !tool.effects().contains(OBSERVE)
+                        || tool.effects().contains(DELETE))) {
+            throw new IllegalArgumentException(tool.name() + " is not observational inspect authority");
+        }
+        if (tool.toolset() == MANAGE && tool.processReach() != NONE) {
+            throw new IllegalArgumentException(tool.name() + " manage authority reaches a workload process");
+        }
+        if (tool.toolset() == EXECUTE
+                && tool.processReach() == NONE
+                && !tool.name().equals("set_synchronize_panes")) {
+            throw new IllegalArgumentException(tool.name() + " execute authority has no process reach");
+        }
+        if (tool.toolset() == TEARDOWN
+                && (tool.processReach() != NONE || !tool.effects().contains(DELETE))) {
+            throw new IllegalArgumentException(tool.name() + " is not direct teardown authority");
+        }
+    }
+
+    private record Input(String name, Set<ToolSpec.InputSink> sinks) {
+        Input {
+            Objects.requireNonNull(name, "name");
+            sinks = Set.copyOf(sinks);
+        }
     }
 }

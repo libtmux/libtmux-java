@@ -4,8 +4,6 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -43,6 +41,10 @@ final class Reading {
     record Found(
             int count,
             int panesSearched,
+            int linesSearched,
+            int bytesSearched,
+            double workSeconds,
+            boolean limited,
             List<Hit> matches,
             @Nullable String note) {}
 
@@ -112,21 +114,31 @@ final class Reading {
         Server server = call.server();
         String pattern = call.string("pattern");
         boolean regex = call.flag("regex", false);
-        Pattern compiled = compile(pattern, regex);
+        TextPatterns.Matcher matcher = TextPatterns.compileOne(pattern, regex);
+        TextPatterns.WorkBudget work = TextPatterns.searchBudget();
         int perPane = Math.clamp(call.integer("max_matches_per_pane", 5), 1, 50);
 
         List<Pane> panes = server.panes();
         List<Hit> hits = new ArrayList<>();
+        int panesSearched = 0;
+        boolean workLimited = false;
+        search:
         for (Pane pane : panes) {
+            if (!work.tryStartPane()) {
+                workLimited = true;
+                break;
+            }
+            panesSearched = work.panes();
             int kept = 0;
             for (String line : Screen.withoutTrailingBlanks(pane.capture())) {
                 if (kept >= perPane) {
                     break;
                 }
-                boolean matched = compiled == null
-                        ? line.contains(pattern)
-                        : compiled.matcher(line).find();
-                if (matched) {
+                if (!work.trySpend(line)) {
+                    workLimited = true;
+                    break search;
+                }
+                if (matcher.matches(line)) {
                     hits.add(new Hit(
                             pane.id().value(),
                             pane.window().session().name(),
@@ -135,6 +147,10 @@ final class Reading {
                     kept++;
                 }
             }
+            if (work.expired()) {
+                workLimited = true;
+                break;
+            }
         }
         Trim.Trimmed budget = Trim.tail(hits.stream().map(Hit::line).toList(), Trim.lineBudget(call));
         List<Hit> shown = hits.size() > budget.lines().size()
@@ -142,23 +158,17 @@ final class Reading {
                 : List.copyOf(hits);
         return new Found(
                 shown.size(),
-                panes.size(),
+                panesSearched,
+                work.lines(),
+                work.bytes(),
+                work.seconds(),
+                workLimited,
                 shown,
-                shown.isEmpty()
-                        ? "No pane is currently showing that. This searches what panes show now, not their "
-                                + "history — text that has scrolled away will not be found."
-                        : null);
-    }
-
-    private static @Nullable Pattern compile(String pattern, boolean regex) {
-        if (!regex) {
-            return null;
-        }
-        try {
-            return Pattern.compile(pattern);
-        } catch (PatternSyntaxException e) {
-            throw new IllegalArgumentException("'" + pattern + "' is not a valid regular expression: "
-                    + e.getDescription() + ". Omit 'regex' to search for it as plain text instead");
-        }
+                workLimited
+                        ? "Search stopped at the fixed pane, line, byte or five-second work limit."
+                        : shown.isEmpty()
+                                ? "No pane is currently showing that. This searches what panes show now, not their "
+                                        + "history — text that has scrolled away will not be found."
+                                : null);
     }
 }

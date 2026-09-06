@@ -15,7 +15,7 @@ import java.util.List;
  * Finds the thing a model asked for, or says what to do about not finding it.
  *
  * <p>Every failure here names the tool that produces a working target. A model that reads "no pane
- * %9" can guess; one that reads "call tmux_list_panes for the ids that exist" cannot get stuck.
+ * %9" can guess; one that reads "call list_panes for the ids that exist" cannot get stuck.
  *
  * <p>Object targets are ids, never positions. A model works from a listing it read some turns ago,
  * and indexes move as neighbours come and go, so a positional target would quietly act on a pane
@@ -32,8 +32,8 @@ final class Targets {
         return panes.stream()
                 .filter(pane -> pane.id().equals(wanted))
                 .findFirst()
-                .orElseThrow(() -> new ObjectDoesNotExist("no pane " + id
-                        + " on this server; call tmux_list_panes for the " + panes.size() + " that exist"));
+                .orElseThrow(() -> new ObjectDoesNotExist(
+                        "no pane " + id + " on this server; call list_panes for the " + panes.size() + " that exist"));
     }
 
     static Window window(Server server, String id) {
@@ -43,7 +43,7 @@ final class Targets {
                 .filter(window -> window.id().equals(wanted))
                 .findFirst()
                 .orElseThrow(() -> new ObjectDoesNotExist("no window " + id
-                        + " on this server; call tmux_list_windows for the " + windows.size() + " that exist"));
+                        + " on this server; call list_windows for the " + windows.size() + " that exist"));
     }
 
     static Session sessionNamed(Server server, String name) {
@@ -62,7 +62,7 @@ final class Targets {
                 .filter(session -> session.id().equals(wanted))
                 .findFirst()
                 .orElseThrow(() -> new ObjectDoesNotExist("no session " + id
-                        + " on this server; call tmux_list_sessions for the " + sessions.size() + " that exist"));
+                        + " on this server; call list_sessions for the " + sessions.size() + " that exist"));
     }
 
     /**

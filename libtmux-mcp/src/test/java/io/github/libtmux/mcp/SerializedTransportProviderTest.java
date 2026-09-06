@@ -2,13 +2,18 @@ package io.github.libtmux.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.modelcontextprotocol.json.TypeRef;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpServerTransport;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -172,8 +177,69 @@ final class SerializedTransportProviderTest {
         refused.dispose();
     }
 
+    @Test
+    void aSynchronousDelegateDoesNotHoldTheLockAcrossCompletion() throws InterruptedException {
+        ImmediateTransport delegate = new ImmediateTransport();
+        McpServerTransport transport = SerializedTransportProvider.serialize(delegate);
+        CountDownLatch completing = new CountDownLatch(1);
+        CountDownLatch enqueued = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+
+        Thread contender = Thread.ofPlatform().start(() -> {
+            try {
+                if (!completing.await(2, TimeUnit.SECONDS)) {
+                    return;
+                }
+                transport.sendMessage(notification("contender")).subscribe();
+                enqueued.countDown();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } catch (RuntimeException error) {
+                failure.set(error);
+            }
+        });
+
+        AtomicBoolean progressed = new AtomicBoolean();
+        Disposable first = transport.sendMessage(notification("first")).subscribe(ignored -> {}, failure::set, () -> {
+            completing.countDown();
+            try {
+                progressed.set(enqueued.await(2, TimeUnit.SECONDS));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        contender.join(4000);
+        assertNull(failure.get());
+        assertTrue(progressed.get(), "another thread could not enqueue while a completion callback was running");
+
+        first.dispose();
+    }
+
     private static McpSchema.JSONRPCNotification notification(String value) {
         return new McpSchema.JSONRPCNotification("test/notification", value);
+    }
+
+    /** Completes on subscribe, the way the pinned SDK's stdio transport does once its sinks are ready. */
+    private static final class ImmediateTransport implements McpServerTransport {
+
+        @Override
+        public Mono<Void> sendMessage(McpSchema.JSONRPCMessage message) {
+            return Mono.empty();
+        }
+
+        @Override
+        public <T> T unmarshalFrom(Object value, TypeRef<T> type) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Mono<Void> closeGracefully() {
+            return Mono.empty();
+        }
+
+        @Override
+        public void close() {}
     }
 
     private static final class PausingTransport implements McpServerTransport {

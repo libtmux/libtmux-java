@@ -45,10 +45,11 @@ final class PaneOperationsIntegrationTest {
     @Test
     void breakingOutWithAChosenNameUsesIt(Server server) {
         Pane split = server.sessions().get(0).windows().get(0).split();
+        String requested = "chosen-#S";
 
-        Window broken = split.breakOut("chosen");
+        Window broken = split.breakOut(requested);
 
-        assertEquals("chosen", broken.name());
+        assertEquals(requested, broken.name());
         assertTrue(server.isAlive());
     }
 
@@ -120,5 +121,28 @@ final class PaneOperationsIntegrationTest {
         pane.clearHistory();
 
         assertEquals(pane.id(), pane.refresh().id(), "the pane survives having its scrollback dropped");
+    }
+
+    @Test
+    void leadingOptionNamesAreLiteralCallerInput(Server server) throws Exception {
+        Window window = server.sessions().getFirst().windows().getFirst();
+
+        for (String input : List.of("-X", "-R", "-N")) {
+            Pane pane = window.split();
+
+            pane.sendKeys(List.of(input), true);
+
+            assertTrue(awaitText(pane, input), "tmux parsed caller input as an option: " + input);
+        }
+    }
+
+    private static boolean awaitText(Pane pane, String text) throws InterruptedException {
+        for (int attempt = 0; attempt < 100; attempt++) {
+            if (String.join("\n", pane.capture()).contains(text)) {
+                return true;
+            }
+            Thread.sleep(20);
+        }
+        return String.join("\n", pane.capture()).contains(text);
     }
 }

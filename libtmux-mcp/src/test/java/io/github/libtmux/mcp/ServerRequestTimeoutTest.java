@@ -32,7 +32,7 @@ final class ServerRequestTimeoutTest {
     @Test
     void serverRequestsRetainTheSdkDefaultBound(Server server) {
         CapturingProvider provider = new CapturingProvider();
-        McpSyncServer mcp = TmuxMcpServer.serving(server, Safety.MUTATING, provider);
+        McpSyncServer mcp = TmuxMcpServer.serving(server, provider);
         RecordingScheduler scheduler = new RecordingScheduler();
         Schedulers.Snapshot snapshot = Schedulers.setFactoryWithSnapshot(scheduler);
         try {

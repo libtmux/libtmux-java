@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -64,8 +65,22 @@ final class Answers {
                 .build();
     }
 
+    /** The complete nested MCP result, preserving structured data, content, metadata and error state. */
+    static Map<String, Object> envelope(McpSchema.CallToolResult result) {
+        Map<String, Object> envelope = new LinkedHashMap<>();
+        if (result.meta() != null) {
+            envelope.put("_meta", result.meta());
+        }
+        envelope.put("content", result.content());
+        if (result.structuredContent() != null) {
+            envelope.put("structuredContent", result.structuredContent());
+        }
+        envelope.put("isError", Boolean.TRUE.equals(result.isError()));
+        return Map.copyOf(envelope);
+    }
+
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> asObject(Object value) {
+    static Map<String, Object> asObject(Object value) {
         if (value instanceof Map<?, ?> already) {
             return (Map<String, Object>) already;
         }

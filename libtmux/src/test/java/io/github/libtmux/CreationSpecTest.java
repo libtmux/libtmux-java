@@ -202,6 +202,22 @@ final class CreationSpecTest {
     }
 
     @Test
+    void callerDirectoriesAreLiteralizedExactlyOnceAtEverySpawnBoundary() {
+        Path supplied = Path.of("/srv/#one/##two");
+        String literal = "/srv/##one/####two";
+
+        List<String> session = SessionSpec.builder().in(supplied).build().argv(FORMAT, () -> V37B);
+        List<String> window = WindowSpec.builder().in(supplied).build().argv("$1", FORMAT, V37B);
+        List<String> split = SplitSpec.builder().in(supplied).build().argv("%1", FORMAT, V37B);
+        List<String> respawn = Pane.respawnArgv(new PaneId("%1"), supplied);
+
+        assertEquals(literal, session.get(session.indexOf("-c") + 1));
+        assertEquals(literal, window.get(window.indexOf("-c") + 1));
+        assertEquals(literal, split.get(split.indexOf("-c") + 1));
+        assertEquals(literal, respawn.get(respawn.indexOf("-c") + 1));
+    }
+
+    @Test
     void anEmptyCommandIsRefusedWhereItIsWritten() {
         assertThrows(IllegalArgumentException.class, () -> WindowSpec.builder().running());
         assertThrows(IllegalArgumentException.class, () -> SessionSpec.builder().running());

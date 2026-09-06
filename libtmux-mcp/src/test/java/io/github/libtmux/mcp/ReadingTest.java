@@ -65,7 +65,7 @@ final class ReadingTest {
      * Reads until the pane stops producing lines and answers the cursor that reached that point.
      *
      * <p>A command's own output is not the last thing a pane draws: the shell redraws its prompt
-     * afterwards, and tmux_run returns on the completion signal rather than waiting for that. So a
+     * afterwards, and run_shell_command returns on the completion signal rather than waiting for that. So a
      * cursor taken the instant a command finishes legitimately has one more line coming.
      */
     private static String settled(Server server, String pane) {
@@ -285,6 +285,12 @@ final class ReadingTest {
         assertEquals(4, captured.content().size());
         assertTrue(captured.truncated());
         assertTrue(String.valueOf(captured.note()).contains("most recent"), String.valueOf(captured.note()));
+    }
+
+    @Test
+    void cursorRecoveryHasAFixedHistoryCeiling() {
+        assertEquals(20_000, Screen.cursorRecoveryLines());
+        assertTrue(Screen.cursorRecoveryLines() < Integer.MAX_VALUE);
     }
 
     @Test

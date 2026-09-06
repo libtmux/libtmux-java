@@ -98,8 +98,8 @@ Java names. The `matches` operand is the exception: its syntax and numeric flags
 are those of `java.util.regex.Pattern`. A non-Java consumer must reproduce those
 semantics or reject that operator.
 
-`libtmux-mcp` is the worked example. Its `tmux_list_panes` tool takes an optional
-`filter`, which is one of these documents:
+An application that stores a pane predicate is the worked example. The wire
+form is one of these documents:
 
 ```json
 {"schema": "libtmux.filter/1", "model": "pane",
@@ -107,9 +107,10 @@ semantics or reject that operator.
           "op": "starts_with", "value": "nvim"}}
 ```
 
-A model cannot write Java, so this is the only way it can say what it wants
-narrowed. What it gets back costs the same one capture the unfiltered listing
-would have, because the filter runs over what that capture returned.
+Java applications can read that document with the matching `FilterModel` and
+apply it to a captured hierarchy. `libtmux-mcp` deliberately does not accept
+this open expression format: `list_panes` returns bounded typed metadata for a
+client to filter, while `search_panes` searches only rendered terminal text.
 
 ## Filters that arrive as strings
 

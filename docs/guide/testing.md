@@ -42,9 +42,15 @@ left behind — a test cannot watch its own teardown.
 
 ## Isolation from your own tmux
 
-Every test task runs with a build-local `TMUX_TMPDIR` and with `TMUX` and
-`TMUX_PANE` removed. A command that omits its `-S` therefore cannot reach the
-tmux you are working in.
+Every test task runs with a short `TMUX_TMPDIR` under
+`/tmp/libtmux-java-test/`, and with `TMUX` and `TMUX_PANE` removed. Its
+16-character hexadecimal namespace hashes the canonical worktree, task path,
+and Gradle daemon process. That separates concurrent invocations without
+spending the socket path's limited bytes. Before use, the task prunes empty
+directory scaffolding but refuses to remove a stale file or socket. A command
+that omits its `-S` therefore cannot reach the tmux you are working in.
+Explicitly named-socket tests capture the server process and reported inode,
+then reclaim only that inode after the process has exited.
 
 This is enforced by the build rather than by every test remembering, because the
 code under test is exactly what is allowed to be wrong. The suite asserts the

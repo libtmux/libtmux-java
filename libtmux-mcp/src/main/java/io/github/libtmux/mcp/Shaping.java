@@ -6,7 +6,6 @@ import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
-import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -40,8 +39,6 @@ final class Shaping {
         }
         Session session = server.newSession(spec -> {
             spec.named(name);
-            call.maybe("path").ifPresent(path -> spec.in(Path.of(path)));
-            call.maybe("command").ifPresent(command -> spec.running("sh", "-c", command));
         });
         Pane first = session.windows().get(0).panes().get(0);
         return new Made(
@@ -56,8 +53,6 @@ final class Shaping {
         Session session = Targets.sessionNamed(call.server(), call.string("session"));
         Window window = session.newWindow(spec -> {
             call.maybe("name").ifPresent(spec::named);
-            call.maybe("path").ifPresent(path -> spec.in(Path.of(path)));
-            call.maybe("command").ifPresent(command -> spec.running("sh", "-c", command));
             spec.detached();
         });
         Pane first = window.panes().get(0);
@@ -92,8 +87,6 @@ final class Shaping {
             if (percent > 0) {
                 spec.percent(Math.clamp(percent, 1, 99));
             }
-            call.maybe("path").ifPresent(path -> spec.in(Path.of(path)));
-            call.maybe("command").ifPresent(command -> spec.running("sh", "-c", command));
         });
         return new Made(
                 "pane",
@@ -207,19 +200,21 @@ final class Shaping {
      * that happened.
      */
     private static void guard(Call call, List<Pane> going, boolean confirmed, String kind) {
-        if (confirmed) {
-            return;
-        }
-        if (call.caller().uncertain()) {
+        Caller caller = call.caller();
+        if (caller.uncertain()) {
             throw new IllegalStateException(
                     "Refused. This process is inside tmux, but could not prove whether the target "
-                            + "contains its own pane. Pass confirm_self=true only if disconnecting "
-                            + "this conversation is the actual goal.");
+                            + "contains its own pane. Retry from a complete, current caller context; "
+                            + "confirm_self cannot override uncertainty.");
         }
-        Optional<PaneId> mine = call.caller().pane();
-        if (mine.isEmpty()
-                || (!"server".equals(kind)
-                        && going.stream().noneMatch(pane -> call.caller().isSelf(pane.id())))) {
+        Optional<PaneId> mine = caller.pane();
+        if (mine.isEmpty() || (!"server".equals(kind) && going.stream().noneMatch(pane -> caller.isSelf(pane.id())))) {
+            return;
+        }
+        if (confirmed) {
+            if (!caller.freshlyAuthenticated(call.server())) {
+                throw new IllegalStateException("Refused. confirm_self requires a freshly authenticated caller pane.");
+            }
             return;
         }
         List<String> others = going.stream()
