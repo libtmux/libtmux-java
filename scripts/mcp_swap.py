@@ -1369,6 +1369,8 @@ def _rollback_use(
             cli = operation.cli
             if cli in blocked:
                 preserved.update((operation.state.path, operation.backup.path))
+                if operation.recovery is not None:
+                    preserved.add(operation.recovery)
                 continue
             try:
                 _verify_artifact(operation.state, operation.committed)

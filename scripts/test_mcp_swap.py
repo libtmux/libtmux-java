@@ -312,6 +312,62 @@ def test_failed_repeat_use_restores_existing_recovery_identity(
     _assert_no_stages(swapper)
 
 
+def test_blocked_repeat_use_retains_prior_state_recovery(
+    swapper: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A human replacement must not discard the prior recovery state."""
+    _seed_configs(swapper)
+    layer = next(layer for layer in swapper.LAYERS if layer.cli == "claude")
+    assert swapper.main(_use_args("--cli", layer.cli)) == 0
+    state = _state_of(swapper, layer)
+    prior_config = layer.path.read_bytes()
+    prior_state = state.read_bytes()
+    prior_identity = (state.stat().st_dev, state.stat().st_ino)
+    original_backup = swapper.backup_of(layer).read_bytes()
+    human = b'{"human": true}\n'
+    human_identity: tuple[int, int] | None = None
+    real_replace = os.replace
+
+    def replace_then_human_edit(src: object, dst: object) -> None:
+        nonlocal human_identity
+        source = pathlib.Path(src)
+        destination = pathlib.Path(dst)
+        real_replace(source, destination)
+        if destination == layer.path and "mcp-swap-output" in source.name:
+            replacement = destination.with_name(f".{destination.name}.human")
+            replacement.write_bytes(human)
+            replacement.chmod(0o640)
+            real_replace(replacement, destination)
+            human_identity = (destination.stat().st_dev, destination.stat().st_ino)
+            raise OSError("synthetic post-commit failure")
+
+    monkeypatch.setattr(os, "replace", replace_then_human_edit)
+    with pytest.raises(SystemExit, match="rollback incomplete"):
+        swapper.main(
+            _use_args(
+                "--cli",
+                layer.cli,
+                "--bin",
+                "/opt/another/libtmux-mcp",
+            )
+        )
+
+    assert layer.path.read_bytes() == human
+    assert (layer.path.stat().st_dev, layer.path.stat().st_ino) == human_identity
+    assert swapper.backup_of(layer).read_bytes() == original_backup
+    config_recoveries = list(
+        layer.path.parent.glob(f".{layer.path.name}.mcp-swap-recovery-*")
+    )
+    assert len(config_recoveries) == 1
+    assert config_recoveries[0].read_bytes() == prior_config
+    recoveries = list(state.parent.glob(f".{state.name}.mcp-swap-recovery-state-*"))
+    assert len(recoveries) == 1
+    assert recoveries[0].read_bytes() == prior_state
+    assert (recoveries[0].stat().st_dev, recoveries[0].stat().st_ino) == (
+        prior_identity
+    )
+
+
 def test_repeat_use_refuses_an_unowned_config_edit(
     swapper: types.ModuleType,
 ) -> None:
