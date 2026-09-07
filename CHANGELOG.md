@@ -12,6 +12,12 @@ production.
 
 ## Unreleased
 
+### Development
+
+- **Every CI job carries a timeout.** The `tmux 3.3a` lane ran for six hours
+  against a median under two minutes before GitHub's ceiling stopped it. Each
+  job now fails in minutes instead. (#14)
+
 ## 0.0.1-alpha.10 — 2026-09-06
 
 ### Fixed
