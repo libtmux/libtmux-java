@@ -27,6 +27,7 @@ jobs:
   lanes:
     name: tmux ${{ matrix.tmux }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:

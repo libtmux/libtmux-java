@@ -22,6 +22,7 @@ jobs:
   check:
     name: check (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
