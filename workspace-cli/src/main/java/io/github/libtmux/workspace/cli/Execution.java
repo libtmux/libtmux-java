@@ -77,7 +77,7 @@ final class Execution {
                 effects.putArray("pane_ids");
                 report.event("workspace-started", effects.deepCopy());
                 try {
-                    last = build(context, server, plan, append, report, effects);
+                    last = build(context, server, plans.subList(index, plans.size()), append, report, effects);
                     results.add(effects);
                     report.event("workspace-completed", effects.deepCopy());
                 } catch (RuntimeException | IOException | InterruptedException failure) {
@@ -118,11 +118,13 @@ final class Execution {
     private static Session build(
             Main.Context context,
             Server server,
-            WorkspacePlan plan,
+            List<WorkspacePlan> pending,
             boolean append,
             Reporter report,
             ObjectNode effects)
             throws IOException, InterruptedException {
+        WorkspacePlan plan = pending.getFirst();
+        List<WorkspacePlan> reservations = append ? pending : List.of(plan);
         Optional<Session> existing = server.isAlive()
                 ? server.sessions().stream()
                         .filter(session -> session.name().equals(plan.name()))
@@ -165,7 +167,7 @@ final class Execution {
             effects.put("stage", "windows_preflight");
             Set<Integer> occupied = new HashSet<>();
             for (Window window : session.windows()) occupied.add(window.index().value());
-            reserveIndexes(plan, occupied);
+            for (WorkspacePlan reserved : reservations) reserveIndexes(reserved, occupied);
         }
         if (!append) report.event("session-created", effects.deepCopy());
         effects.put("stage", "before_script");
@@ -203,7 +205,7 @@ final class Execution {
         for (Window window : current.windows())
             if (bootstrap == null || !window.id().equals(bootstrap.id()))
                 occupied.add(window.index().value());
-        reserveIndexes(plan, occupied);
+        for (WorkspacePlan reserved : reservations) reserveIndexes(reserved, occupied);
         int next = plan.windows().stream().anyMatch(window -> window.index() < 0)
                 ? Integer.parseInt(session.options().get("base-index").orElse("0"))
                 : 0;
