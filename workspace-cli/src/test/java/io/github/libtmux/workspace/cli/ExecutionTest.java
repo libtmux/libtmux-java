@@ -3,6 +3,7 @@ package io.github.libtmux.workspace.cli;
 import static java.util.stream.Collectors.toSet;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -559,6 +560,143 @@ final class ExecutionTest {
                                 .options()
                                 .get("renumber-windows")
                                 .orElseThrow());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void versionSensitiveLayoutsUseColdAndEmptyEndpointsWithoutCreatingSessions() throws Exception {
+        Path socket = directory.resolve("layout-version");
+        try (Server server = server(socket)) {
+            try {
+                String client = server.cmd("-V").stdout().getFirst().replace("tmux ", "");
+                boolean mirrors =
+                        io.github.libtmux.TmuxVersion.parse(client).atLeast(io.github.libtmux.TmuxVersion.parse("3.5"));
+                String layout = mirrors ? "main-horizontal-m" : "main-h";
+                String expected = mirrors ? "main-horizontal-mirrored" : "main-horizontal";
+                assertEquals(expected, io.github.libtmux.Layouts.require(layout, server, 1));
+                assertFalse(server.isAlive(), "cold version lookup must not create a daemon");
+                var keeper = server.newSession("keeper");
+                server.cmd("set-option", "-s", "exit-empty", "off");
+                String pid = server.expand("#{pid}");
+                keeper.kill();
+                assertEquals(expected, io.github.libtmux.Layouts.require(layout, server, 1));
+                assertEquals(pid, server.expand("#{pid}"));
+                assertTrue(server.sessions().isEmpty());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void layoutCorpusPreservesAnIndependentSession() throws Exception {
+        var mapper = new ObjectMapper();
+        try (var resource = ExecutionTest.class.getResourceAsStream("/layout-preflight.json")) {
+            assertNotNull(resource);
+            var cases = mapper.readTree(resource);
+            Path source = directory.resolve("layout.json");
+            Path socket = directory.resolve("layout-corpus");
+            try (Server server = server(socket)) {
+                try {
+                    var keeper = server.newSession("keeper");
+                    String pid = server.expand("#{pid}");
+                    var windows = keeper.windows().stream()
+                            .map(io.github.libtmux.Window::id)
+                            .toList();
+                    var panes = keeper.windows().getFirst().panes().stream()
+                            .map(io.github.libtmux.Pane::id)
+                            .toList();
+                    String version = server.version().atLeast(io.github.libtmux.TmuxVersion.parse("3.5"))
+                            ? "3.7c"
+                            : server.version().atLeast(io.github.libtmux.TmuxVersion.parse("3.3")) ? "3.3a" : "3.2a";
+                    for (var item : cases) {
+                        String id = item.path("id").asText();
+                        var workspace = mapper.createObjectNode().put("session_name", "layout-" + id);
+                        var window = workspace
+                                .putArray("windows")
+                                .addObject()
+                                .put("layout", item.path("layout").asText());
+                        var requested = window.putArray("panes");
+                        for (int pane = 0; pane < item.path("pane_count").asInt(); pane++) requested.addNull();
+                        Files.writeString(source, mapper.writeValueAsString(workspace));
+                        Result result = invoke("load", source.toString(), "-d", "-S", socket.toString(), "--json");
+                        assertEquals(
+                                item.path("expected_valid").path(version).asBoolean(),
+                                result.code() == 0,
+                                id + ": " + result);
+                        assertEquals(pid, server.expand("#{pid}"), id);
+                        assertEquals(
+                                windows,
+                                keeper.refresh().windows().stream()
+                                        .map(io.github.libtmux.Window::id)
+                                        .toList(),
+                                id);
+                        assertEquals(
+                                panes,
+                                keeper.windows().getFirst().panes().stream()
+                                        .map(io.github.libtmux.Pane::id)
+                                        .toList(),
+                                id);
+                        for (var session : server.sessions()) if (!session.id().equals(keeper.id())) session.kill();
+                    }
+                } finally {
+                    if (server.isAlive()) server.killServer();
+                }
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void allLayoutsAreCheckedBeforeScriptsOrBorrowedStateChange(boolean append) throws Exception {
+        Path first = directory.resolve("first.yaml");
+        Path second = directory.resolve("second.yaml");
+        Path socket = directory.resolve("layout-socket");
+        Path marker = directory.resolve("layout-script");
+        Files.writeString(
+                first,
+                "session_name: first\nbefore_script: /usr/bin/touch " + marker
+                        + "\noptions:\n  '@changed': yes\nwindows:\n  - window_name: first\n");
+        Files.writeString(
+                second, "session_name: second\nwindows:\n  - layout: 'b25d,80x24,0,0,0'\n    panes: [null, null]\n");
+        try (Server server = server(socket)) {
+            try {
+                var keeper = server.newSession("keeper");
+                String pid = server.expand("#{pid}");
+                var windows = server.windows().stream()
+                        .map(io.github.libtmux.Window::id)
+                        .toList();
+                var panes =
+                        server.panes().stream().map(io.github.libtmux.Pane::id).toList();
+                Result result = invoke(
+                        append ? inherited(server, socket) : java.util.Map.of(),
+                        "load",
+                        first.toString(),
+                        second.toString(),
+                        append ? "--append" : "-d",
+                        "-S",
+                        socket.toString(),
+                        "--json");
+                assertEquals(1, result.code(), result.toString());
+                assertFalse(Files.exists(marker), "no earlier input may run a script");
+                assertEquals(pid, server.expand("#{pid}"));
+                assertEquals(
+                        java.util.List.of(keeper.id()),
+                        server.sessions().stream()
+                                .map(io.github.libtmux.Session::id)
+                                .toList());
+                assertEquals(
+                        windows,
+                        server.windows().stream()
+                                .map(io.github.libtmux.Window::id)
+                                .toList());
+                assertEquals(
+                        panes,
+                        server.panes().stream().map(io.github.libtmux.Pane::id).toList());
+                assertFalse(keeper.options().all().containsKey("@changed"));
             } finally {
                 if (server.isAlive()) server.killServer();
             }

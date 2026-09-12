@@ -79,6 +79,12 @@ files even if a script moves the pane. Socket aliases are accepted when
 they reach that same daemon. Failures report retained changes rather than
 claiming rollback.
 
+All input layouts are checked before scripts run or sessions change. Named
+layouts accept unique abbreviations; version-sensitive names use the running
+daemon, or the selected client when no daemon is listening. Saved layouts must
+have a valid checksum, a nonempty tree and enough pane cells. tmux still owns
+geometry correction and pruning, and can reject a layout during application.
+
 Explicit window indexes are reserved before implicit windows receive free
 indexes from `base-index`. Append reserves indexes from later input files and
 rejects collisions across all remaining inputs before running scripts or
