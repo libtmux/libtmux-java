@@ -34,9 +34,20 @@ final class ExamplesRunTest {
     }
 
     @Test
-    void findingPanesSelectsOnWhatIsRunning(Server server, TmuxSocketPath socket) {
-        // The fixture's pane runs a shell, so the shell's own name is the one thing certain to match.
-        String running = server.panes().get(0).currentCommand();
+    void findingPanesSelectsOnWhatIsRunning(Server server, TmuxSocketPath socket) throws InterruptedException {
+        // The fixture's pane runs a shell, so the shell's own name is the one thing certain to match —
+        // once it has settled. While the shell starts, tmux reports whatever its startup files are
+        // running, locale for one, and a name read then matches nothing a moment later.
+        Pane shell = server.panes().get(0);
+        String[] previous = {shell.currentCommand()};
+        shell.await(
+                fresh -> {
+                    boolean settled = fresh.currentCommand().equals(previous[0]);
+                    previous[0] = fresh.currentCommand();
+                    return settled;
+                },
+                Duration.ofSeconds(10));
+        String running = previous[0];
 
         List<Pane> found = FindPanesRunning.run(socket.path(), running);
 
