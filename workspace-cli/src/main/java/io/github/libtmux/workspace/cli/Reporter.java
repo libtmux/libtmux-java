@@ -80,12 +80,17 @@ final class Reporter {
                 document(value);
             } else document(records);
         } else {
-            if (tree) line("heading", "Workspaces", directories.size() + " directories");
+            String previousDirectory = "";
             for (JsonNode record : records) {
-                line(
-                        "subject",
-                        record.path("name").asText(),
-                        record.path("path").asText());
+                String path = record.path("path").asText();
+                String name = record.path("name").asText();
+                if (tree) {
+                    int separator = path.lastIndexOf('/');
+                    String directory = separator < 0 ? "." : path.substring(0, separator);
+                    if (!directory.equals(previousDirectory)) line("heading", directory, "");
+                    previousDirectory = directory;
+                    line("subject", "  |-- " + name, path.substring(separator + 1));
+                } else line("subject", name, path);
                 if (record.has("config")) context.output().write(Documents.encode(record.path("config"), "yaml"));
             }
         }

@@ -104,6 +104,21 @@ final class MainTest {
     }
 
     @Test
+    void treeGroupsWorkspacesByDirectoryWithoutChangingMachineRecords() throws Exception {
+        Path global = Files.createDirectory(directory.resolve(".tmuxp"));
+        Files.writeString(global.resolve("first.yaml"), "session_name: one\nwindows: []\n");
+        Files.writeString(global.resolve("second.yaml"), "session_name: two\nwindows: []\n");
+        Result tree = invoke("ls", "--tree");
+        assertEquals(0, tree.code(), tree.err());
+        assertEquals(
+                1, tree.out().lines().filter(line -> line.contains("~/.tmuxp")).count(), tree.out());
+        assertTrue(tree.out().contains("|-- first"), tree.out());
+        assertTrue(tree.out().contains("|-- second"), tree.out());
+        assertEquals(
+                invoke("ls", "--json").out(), invoke("ls", "--tree", "--json").out());
+    }
+
+    @Test
     void conversionKeepsExtensionFieldsAndProtectsExistingDestinations() throws Exception {
         Path source = directory.resolve("source.yaml");
         Files.writeString(source, "session_name: demo\nwindows: []\ncustom:\n  values: [true, null, 雪]\n");
