@@ -71,7 +71,9 @@ claiming rollback.
 
 Explicit window indexes are reserved before implicit windows receive free
 indexes from `base-index`. Append rejects existing index collisions before
-running scripts or changing options.
+running scripts or changing options. Temporary-window removal preserves
+requested indexes when `renumber-windows` is enabled, then restores its local
+or inherited setting. Restoration failures appear in the partial result.
 
 `workspace_builder_options.pane_readiness` accepts `auto` (the default),
 `always`, `never`, or boolean aliases. Automatic readiness waits for zsh;
