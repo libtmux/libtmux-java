@@ -16,9 +16,11 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import picocli.CommandLine.ParseResult;
 
 final class Execution {
@@ -156,6 +158,12 @@ final class Execution {
         effects.put("session_id", session.id().value())
                 .put("session_name", session.name())
                 .put("reused", false);
+        if (append) {
+            effects.put("stage", "windows_preflight");
+            Set<Integer> occupied = new HashSet<>();
+            for (Window window : session.windows()) occupied.add(window.index().value());
+            reserveIndexes(plan, occupied);
+        }
         if (!append) report.event("session-created", effects.deepCopy());
         effects.put("stage", "before_script");
         if (!plan.beforeScript().isEmpty()) {
@@ -187,21 +195,36 @@ final class Execution {
                     .orElse(context.environment().getOrDefault("SHELL", ""));
             readiness = shell.equals("zsh") || shell.endsWith("/zsh");
         }
+        Set<Integer> occupied = new HashSet<>();
+        Session current = plan.beforeScript().isEmpty() ? session : session.refresh();
+        for (Window window : current.windows())
+            if (bootstrap == null || !window.id().equals(bootstrap.id()))
+                occupied.add(window.index().value());
+        reserveIndexes(plan, occupied);
+        int next = plan.windows().stream().anyMatch(window -> window.index() < 0)
+                ? Integer.parseInt(session.options().get("base-index").orElse("0"))
+                : 0;
+        List<Integer> indexes = new ArrayList<>();
+        for (WorkspacePlan.Window window : plan.windows()) {
+            if (window.index() >= 0) indexes.add(window.index());
+            else {
+                next = freeIndex(occupied, next);
+                indexes.add(next);
+                occupied.add(next);
+            }
+        }
         if (bootstrap != null) {
-            int highest = plan.windows().stream()
-                    .mapToInt(WorkspacePlan.Window::index)
-                    .max()
-                    .orElse(0);
-            if (highest == Integer.MAX_VALUE) throw Main.usage("window_index leaves no temporary slot");
-            bootstrap.moveTo(session, Math.max(1000, highest + 1));
+            int temporary = freeIndex(occupied, 0);
+            if (bootstrap.index().value() != temporary) bootstrap.moveTo(session, temporary);
         }
         Window focused = null;
+        int ordinal = 0;
         for (WorkspacePlan.Window spec : plan.windows()) {
             effects.put("stage", "windows");
             WorkspacePlan.Pane first = spec.panes().getFirst();
             var create = WindowSpec.builder().detached().in(first.directory()).environment(first.environment());
             if (!spec.name().isEmpty()) create.named(spec.name());
-            if (spec.index() >= 0) create.atIndex(spec.index());
+            create.atIndex(indexes.get(ordinal++));
             if (!first.shell().isEmpty()) create.running(first.shell());
             Window window = session.newWindow(create.build());
             effects.put("changed", true);
@@ -268,6 +291,21 @@ final class Execution {
         if (focused != null) focused.select();
         effects.put("stage", "completed");
         return session.refresh();
+    }
+
+    private static void reserveIndexes(WorkspacePlan plan, Set<Integer> occupied) {
+        for (WorkspacePlan.Window window : plan.windows())
+            if (window.index() >= 0 && !occupied.add(window.index()))
+                throw Main.usage("window_index " + window.index() + " already exists in the selected session");
+    }
+
+    private static int freeIndex(Set<Integer> occupied, int first) {
+        int index = first;
+        while (occupied.contains(index)) {
+            if (index == Integer.MAX_VALUE) throw Main.usage("no free window index at or above " + first);
+            index++;
+        }
+        return index;
     }
 
     private static boolean ready(Pane pane) throws InterruptedException {

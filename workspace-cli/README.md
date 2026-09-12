@@ -69,6 +69,10 @@ daemon before resolving the current pane; socket aliases are accepted when
 they reach that same daemon. Failures report retained changes rather than
 claiming rollback.
 
+Explicit window indexes are reserved before implicit windows receive free
+indexes from `base-index`. Append rejects existing index collisions before
+running scripts or changing options.
+
 `workspace_builder_options.pane_readiness` accepts `auto` (the default),
 `always`, `never`, or boolean aliases. Automatic readiness waits for zsh;
 `always` also waits for other shells. The check waits up to two seconds for the
