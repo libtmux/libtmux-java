@@ -238,4 +238,86 @@ final class ProcessTest {
             }
         }
     }
+
+    @Test
+    void attachedLoadSwitchesOnlyTheInvokingClientWithRedirectedStreams() throws Exception {
+        Path source = directory.resolve("switch.yaml");
+        Path socket = directory.resolve("switch");
+        Files.writeString(source, "session_name: switched\nwindows:\n  - panes: [null]\n");
+        String script = """
+                import fcntl, os, pty, shlex, subprocess, sys, termios, time
+                launcher, source, socket, tmux, scratch = sys.argv[1:]
+                env = dict(os.environ, TERM='xterm', LIBTMUX_TEST_TMUX=tmux)
+                env.pop('TMUX', None)
+                env.pop('TMUX_PANE', None)
+                prefix = [tmux, '-S', socket]
+                clients = []
+                try:
+                    for name in ('origin', 'other'):
+                        master, slave = pty.openpty()
+                        os.set_blocking(master, False)
+                        def terminal(slave=slave):
+                            os.setsid()
+                            fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+                        child = subprocess.Popen(prefix + ['attach-session', '-t', name],
+                            stdin=slave, stdout=slave, stderr=slave, env=env, preexec_fn=terminal)
+                        clients.append((master, slave, os.ttyname(slave), child))
+                    def attached():
+                        for master, slave, tty, child in clients:
+                            try: os.read(master, 65536)
+                            except (BlockingIOError, OSError): pass
+                        rows = subprocess.check_output(prefix + ['list-clients', '-F', '#{client_name} #{session_name}'], text=True)
+                        return dict(row.rsplit(' ', 1) for row in rows.splitlines())
+                    until = time.monotonic() + 4
+                    while len(attached()) != 2 and time.monotonic() < until:
+                        time.sleep(.025)
+                    assert len(attached()) == 2
+                    pane = subprocess.check_output(prefix + ['display-message', '-p', '-t', 'origin:', '#{pane_id}'], text=True).strip()
+                    status = os.path.join(scratch, 'exit-status')
+                    command = shlex.join([launcher, 'load', source, '-S', socket])
+                    command += ' </dev/null >' + shlex.quote(os.path.join(scratch, 'stdout'))
+                    command += ' 2>' + shlex.quote(os.path.join(scratch, 'stderr'))
+                    command += '; printf %s $? >' + shlex.quote(status)
+                    subprocess.run(prefix + ['send-keys', '-t', pane, '-l', command], check=True)
+                    subprocess.run(prefix + ['send-keys', '-t', pane, 'Enter'], check=True)
+                    until = time.monotonic() + 5
+                    while not os.path.exists(status) and time.monotonic() < until:
+                        attached()
+                        time.sleep(.025)
+                    assert open(status).read() == '0'
+                    state = attached()
+                    assert state[clients[0][2]] == 'switched', state
+                    assert state[clients[1][2]] == 'other', state
+                finally:
+                    subprocess.run(prefix + ['kill-server'], capture_output=True)
+                    for master, slave, tty, child in clients:
+                        if child.poll() is None: child.wait(timeout=2)
+                        os.close(slave)
+                        os.close(master)
+                """;
+        try (Server server = Server.builder()
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .binary(System.getProperty("libtmux.tmux", "tmux"))
+                .build()) {
+            server.newSession("origin");
+            server.newSession("other");
+            try {
+                Process child = new ProcessBuilder(
+                                "python3",
+                                "-c",
+                                script,
+                                System.getProperty("workspace.cli.launcher"),
+                                source.toString(),
+                                socket.toString(),
+                                System.getProperty("libtmux.tmux", "tmux"),
+                                directory.toString())
+                        .redirectError(ProcessBuilder.Redirect.INHERIT)
+                        .start();
+                assertTrue(child.waitFor(12, TimeUnit.SECONDS));
+                assertEquals(0, child.exitValue());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
 }
