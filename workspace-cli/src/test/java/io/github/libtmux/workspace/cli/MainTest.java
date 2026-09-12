@@ -259,6 +259,57 @@ final class MainTest {
     }
 
     @Test
+    void paneCommandDefaultsCarryUntilAnExplicitOverride() throws Exception {
+        Path source = directory.resolve("defaults.yaml");
+        Files.writeString(source, """
+                session_name: defaults
+                windows:
+                  - panes:
+                      - enter: false
+                        sleep_before: 0.02
+                        sleep_after: 0.03
+                        shell_command:
+                          - first
+                          - cmd: second
+                            sleep_before: null
+                          - cmd: third
+                            enter: true
+                            sleep_after: 0
+                          - fourth
+                """);
+        Main.Context context = new Main.Context(
+                Map.of("HOME", directory.toString()),
+                directory,
+                InputStream.nullInputStream(),
+                OutputStream.nullOutputStream(),
+                OutputStream.nullOutputStream());
+        var commands = WorkspacePlan.read(context, source, "")
+                .windows()
+                .getFirst()
+                .panes()
+                .getFirst()
+                .commands();
+        assertEquals(
+                List.of(false, false, true, true),
+                commands.stream().map(WorkspacePlan.Command::enter).toList());
+        assertEquals(
+                List.of(20L, 0L, 0L, 0L),
+                commands.stream().map(command -> command.before().toMillis()).toList());
+        assertEquals(
+                List.of(30L, 30L, 0L, 0L),
+                commands.stream().map(command -> command.after().toMillis()).toList());
+        for (String invalid : List.of("enter: 1", "sleep_before: -1", "sleep_after: []")) {
+            Files.writeString(source, "session_name: invalid\nwindows:\n  - panes:\n      - " + invalid + "\n");
+            Result result = invoke("load", source.toString(), "-d", "--json");
+            assertEquals(1, result.code());
+            assertEquals("", result.out());
+            assertEquals(
+                    "invalid_config",
+                    new ObjectMapper().readTree(result.err()).path("code").asText());
+        }
+    }
+
+    @Test
     void shellVariablesRemainForThePaneToExpand() throws Exception {
         Path source = directory.resolve("commands.yaml");
         Files.writeString(source, "session_name: vars\nwindows:\n  - panes:\n      - 'echo $WORKSPACE_TEST'\n");

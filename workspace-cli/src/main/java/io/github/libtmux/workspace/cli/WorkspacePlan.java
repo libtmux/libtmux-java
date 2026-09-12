@@ -120,6 +120,9 @@ record WorkspacePlan(
                                     "environment",
                                     "focus",
                                     "suppress_history",
+                                    "enter",
+                                    "sleep_before",
+                                    "sleep_after",
                                     "shell",
                                     "pane_shell"),
                             "pane");
@@ -149,7 +152,7 @@ record WorkspacePlan(
                                 "shell",
                                 optionalText(context, pane.path("pane_shell"), "pane_shell", shell)),
                         bool(pane.path("focus"), false),
-                        commands(raw, paneSuppress)));
+                        commands(raw, paneSuppress, pane)));
             }
             windows.add(new Window(
                     optionalText(context, node.path("window_name"), "window_name", ""),
@@ -193,11 +196,11 @@ record WorkspacePlan(
         else if (!value.isMissingNode() && !value.isNull()) target.add(value);
     }
 
-    private static List<Command> commands(List<JsonNode> raw, boolean suppress) {
+    private static List<Command> commands(List<JsonNode> raw, boolean suppress, JsonNode pane) {
         var result = new ArrayList<Command>();
-        boolean enter = true;
-        Duration before = Duration.ZERO;
-        Duration after = Duration.ZERO;
+        boolean enter = bool(pane.path("enter"), true);
+        Duration before = delay(pane.path("sleep_before"));
+        Duration after = delay(pane.path("sleep_after"));
         for (JsonNode command : raw) {
             if (command.isNull()) continue;
             JsonNode text = command;
@@ -217,7 +220,7 @@ record WorkspacePlan(
     }
 
     private static Duration delay(JsonNode value) {
-        if (value.isNull()) return Duration.ZERO;
+        if (value.isMissingNode() || value.isNull()) return Duration.ZERO;
         if (!value.isNumber() || !Double.isFinite(value.asDouble()) || value.asDouble() < 0)
             throw invalid("command sleep must be a nonnegative finite number");
         return Duration.ofNanos((long) (value.asDouble() * 1_000_000_000));

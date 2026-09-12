@@ -219,6 +219,34 @@ final class ExecutionTest {
     }
 
     @Test
+    void paneEnterFalseLeavesTheCommandForManualExecution() throws Exception {
+        Path source = directory.resolve("typed.yaml");
+        Path socket = directory.resolve("typed-socket");
+        Path marker = directory.resolve("executed");
+        Files.writeString(
+                source,
+                "session_name: typed\noptions:\n  default-shell: /bin/sh\nwindows:\n  - panes:\n"
+                        + "      - enter: false\n        shell_command: printf executed > " + marker + "\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, result.code(), result.err());
+                var pane = server.panes().getFirst();
+                assertTrue(String.join("\n", pane.capture()).contains("printf executed"));
+                assertFalse(Files.exists(marker));
+                pane.sendKeys(java.util.List.of("Enter"));
+                long deadline =
+                        System.nanoTime() + java.time.Duration.ofSeconds(2).toNanos();
+                while (!Files.exists(marker) && System.nanoTime() < deadline) Thread.sleep(10);
+                assertEquals("executed", Files.readString(marker));
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
     void loadLogsBothScriptStreamsWithoutContaminatingItsJsonResult() throws Exception {
         Path source = directory.resolve("logged.yaml");
         Path socket = directory.resolve("logged-socket");
