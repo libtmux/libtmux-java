@@ -175,6 +175,18 @@ final class Execution {
         if (!plan.options().isEmpty()
                 || !plan.globalOptions().isEmpty()
                 || !plan.environment().isEmpty()) effects.put("changed", true);
+        boolean readiness = plan.readiness() != WorkspacePlan.Readiness.NEVER
+                && plan.windows().stream()
+                        .flatMap(window -> window.panes().stream())
+                        .anyMatch(pane ->
+                                pane.shell().isEmpty() && !pane.commands().isEmpty());
+        if (readiness && plan.readiness() == WorkspacePlan.Readiness.AUTO) {
+            effects.put("stage", "readiness");
+            String shell = session.options()
+                    .get("default-shell")
+                    .orElse(context.environment().getOrDefault("SHELL", ""));
+            readiness = shell.equals("zsh") || shell.endsWith("/zsh");
+        }
         if (bootstrap != null) {
             int highest = plan.windows().stream()
                     .mapToInt(WorkspacePlan.Window::index)
@@ -227,6 +239,19 @@ final class Execution {
             for (int index = 0; index < panes.size(); index++) {
                 Pane pane = panes.get(index);
                 WorkspacePlan.Pane config = spec.panes().get(index);
+                if (readiness && config.shell().isEmpty() && !config.commands().isEmpty()) {
+                    effects.put("stage", "readiness");
+                    if (!ready(pane))
+                        report.event(
+                                "warning",
+                                Documents.JSON
+                                        .createObjectNode()
+                                        .put("code", "pane_readiness_timeout")
+                                        .put(
+                                                "message",
+                                                "pane cursor stayed at origin for 2 seconds; sending configured commands")
+                                        .put("pane_id", pane.id().value()));
+                }
                 effects.put("stage", "commands");
                 for (WorkspacePlan.Command command : config.commands()) {
                     Thread.sleep(command.before());
@@ -243,6 +268,16 @@ final class Execution {
         if (focused != null) focused.select();
         effects.put("stage", "completed");
         return session.refresh();
+    }
+
+    private static boolean ready(Pane pane) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+        do {
+            String cursor = pane.expand("#{cursor_x}:#{cursor_y}");
+            if (!cursor.isEmpty() && !cursor.equals("0:0")) return true;
+            Thread.sleep(50);
+        } while (System.nanoTime() < deadline);
+        return false;
     }
 
     private static void apply(Options target, Map<String, String> values, ObjectNode effects) {

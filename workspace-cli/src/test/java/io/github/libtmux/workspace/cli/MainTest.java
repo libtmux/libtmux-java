@@ -197,6 +197,68 @@ final class MainTest {
     }
 
     @Test
+    void readinessPoliciesValidateBeforeTheBackendIsResolved() throws Exception {
+        Path source = directory.resolve("readiness.yaml");
+        Main.Context context = new Main.Context(
+                Map.of("HOME", directory.toString()),
+                directory,
+                InputStream.nullInputStream(),
+                OutputStream.nullOutputStream(),
+                OutputStream.nullOutputStream());
+        for (String policy :
+                List.of("auto", "always", "never", "true", "false", "1", "0", "' YES '", "'off'", "null")) {
+            Files.writeString(
+                    source,
+                    "session_name: readiness\nworkspace_builder_options:\n  pane_readiness: " + policy
+                            + "\nwindows:\n  - panes: [null]\n");
+            WorkspacePlan.read(context, source, "");
+        }
+        for (String catalog :
+                List.of("[]", "false", "{pane_readiness: sometimes}", "{pane_readiness: []}", "{unknown: true}")) {
+            Files.writeString(
+                    source,
+                    "session_name: readiness\nworkspace_builder_options: " + catalog
+                            + "\nwindows:\n  - panes: [null]\n");
+            Result result = invoke("load", source.toString(), "-d", "--json");
+            assertEquals(1, result.code());
+            assertEquals("", result.out());
+            assertEquals(
+                    "invalid_config",
+                    new ObjectMapper().readTree(result.err()).path("code").asText());
+            assertTrue(result.err().contains("workspace_builder_options"), result.err());
+        }
+    }
+
+    @Test
+    void paneShellAliasWorksWithoutAmbiguousLaunchCommands() throws Exception {
+        Path source = directory.resolve("shell.yaml");
+        Main.Context context = new Main.Context(
+                Map.of("HOME", directory.toString()),
+                directory,
+                InputStream.nullInputStream(),
+                OutputStream.nullOutputStream(),
+                OutputStream.nullOutputStream());
+        for (String key : List.of("shell", "pane_shell")) {
+            Files.writeString(source, "session_name: shell\nwindows:\n  - panes:\n      - " + key + ": /bin/cat\n");
+            assertEquals(
+                    "/bin/cat",
+                    WorkspacePlan.read(context, source, "")
+                            .windows()
+                            .getFirst()
+                            .panes()
+                            .getFirst()
+                            .shell());
+        }
+        Files.writeString(
+                source,
+                "session_name: shell\nwindows:\n  - panes:\n      - shell: /bin/cat\n        pane_shell: /bin/sh\n");
+        Result result = invoke("load", source.toString(), "-d", "--json");
+        assertEquals(1, result.code());
+        assertEquals("", result.out());
+        assertTrue(result.err().contains("cannot both be set"), result.err());
+    }
+
+    @Test
     void shellVariablesRemainForThePaneToExpand() throws Exception {
         Path source = directory.resolve("commands.yaml");
         Files.writeString(source, "session_name: vars\nwindows:\n  - panes:\n      - 'echo $WORKSPACE_TEST'\n");
