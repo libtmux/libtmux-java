@@ -98,6 +98,26 @@ An expression is a value, so it can also say what it is — which a lambda canno
 Window_.name().startsWith("edit").describe();   // → window_name starts-with edit
 ```
 
+### Find one thing
+
+One read answers, and absence is a value rather than an exception, so the caller
+says whether it is a bug:
+
+```java
+server.newSession("build");
+
+server.session("build").orElseThrow().name();   // → build
+server.session("absent").isPresent();           // → false
+```
+
+Which is how "this session, or a new one" stays a single read:
+
+```java
+Session work = server.session("work").orElseGet(() -> server.newSession("work"));
+
+work.name();                         // → work
+```
+
 ### Say how many you expect
 
 ```java

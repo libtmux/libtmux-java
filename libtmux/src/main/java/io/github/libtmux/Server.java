@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -236,6 +237,10 @@ public final class Server implements AutoCloseable {
      * why the two are separate.
      *
      * @param command run by the user's shell, so it may redirect and pipe
+     *
+     * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
+     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
+     * mean it to be expanded.
      */
     public void runShell(String command) {
         Objects.requireNonNull(command, "command");
@@ -250,6 +255,10 @@ public final class Server implements AutoCloseable {
      * output would silently get none, so this one refuses rather than answering emptily.
      *
      * @throws UnsupportedTmuxVersion on the releases that lose the output
+     *
+     * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
+     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
+     * mean it to be expanded.
      */
     public List<String> runShellCapturing(String command) {
         Objects.requireNonNull(command, "command");
@@ -273,6 +282,10 @@ public final class Server implements AutoCloseable {
      * <p>The choosing happens inside tmux rather than here, which is the point: the condition and
      * both outcomes go out as one request, so nothing can change between asking and acting.
      *
+     *
+     * <p>tmux expands {@code #(...)} in the condition before a shell sees it, and shell quoting does
+     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
+     * mean it to be expanded.
      * @param condition a shell command, judged by its exit status
      * @param whenTrue the tmux command to run when the condition succeeds
      */
@@ -598,6 +611,64 @@ public final class Server implements AutoCloseable {
         ServerSnapshot captured = lenient();
         return captured.panes().stream()
                 .map(pane -> new Pane(this, captured, pane))
+                .toList();
+    }
+
+    /**
+     * The session with this name, captured now.
+     *
+     * <p>One read, so the handle carries a capture the way {@link #sessions()} does. The name is
+     * matched exactly; tmux would otherwise take a prefix, so asking for {@code build} could answer
+     * with {@code build-cache}.
+     *
+     * <p>Empty rather than raising, because whether a missing session is a bug belongs to the
+     * caller: {@code orElseThrow} says it is, and {@code orElseGet} says it is not.
+     */
+    public Optional<Session> session(String name) {
+        Objects.requireNonNull(name, "name");
+        ServerSnapshot captured = lenient();
+        return captured.session(name).map(session -> new Session(this, captured, session));
+    }
+
+    /** The session with this id, captured now. */
+    public Optional<Session> session(SessionId id) {
+        Objects.requireNonNull(id, "id");
+        ServerSnapshot captured = lenient();
+        return captured.session(id).map(session -> new Session(this, captured, session));
+    }
+
+    /** The pane with this id, captured now. */
+    public Optional<Pane> pane(PaneId id) {
+        Objects.requireNonNull(id, "id");
+        ServerSnapshot captured = lenient();
+        return captured.panes().stream()
+                .filter(pane -> pane.id().equals(id))
+                .findFirst()
+                .map(pane -> new Pane(this, captured, pane));
+    }
+
+    /** The winlink at this exact position, captured now. */
+    public Optional<Window> window(WindowContext context) {
+        Objects.requireNonNull(context, "context");
+        ServerSnapshot captured = lenient();
+        return captured.window(context).map(window -> new Window(this, captured, window));
+    }
+
+    /**
+     * Every winlink of the window with this id, captured now.
+     *
+     * <p>A list, not an {@link Optional}, and that is the whole point. One window can be linked into
+     * several sessions, and each link is a separate handle with its own index and its own active
+     * flag. A finder that answered with the first would quietly act on whichever link tmux happened
+     * to list first — so this hands back all of them and lets the caller say which it meant, or use
+     * {@link #window(WindowContext)} to name one exactly.
+     */
+    public List<Window> windows(WindowId id) {
+        Objects.requireNonNull(id, "id");
+        ServerSnapshot captured = lenient();
+        return captured.windows().stream()
+                .filter(window -> window.context().window().equals(id))
+                .map(window -> new Window(this, captured, window))
                 .toList();
     }
 

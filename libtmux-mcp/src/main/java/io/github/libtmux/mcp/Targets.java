@@ -6,7 +6,6 @@ import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.SessionId;
-import io.github.libtmux.Session_;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowId;
 import java.util.List;
@@ -27,42 +26,39 @@ final class Targets {
     private Targets() {}
 
     static Pane pane(Server server, String id) {
-        PaneId wanted = paneId(id);
-        List<Pane> panes = server.panes();
-        return panes.stream()
-                .filter(pane -> pane.id().equals(wanted))
-                .findFirst()
-                .orElseThrow(() -> new ObjectDoesNotExist(
-                        "no pane " + id + " on this server; call list_panes for the " + panes.size() + " that exist"));
+        return server.pane(paneId(id))
+                .orElseThrow(() -> new ObjectDoesNotExist("no pane " + id + " on this server; call list_panes for the "
+                        + server.panes().size() + " that exist"));
     }
 
+    /**
+     * A window by id, taking the first link when one window is linked into several sessions.
+     *
+     * <p>First-match is what this has always done, and it is kept deliberately rather than changed
+     * here: every operation this resolves for acts on the underlying window, where any link
+     * addresses it. An index-sensitive operation would need the caller to say which link it meant.
+     */
     static Window window(Server server, String id) {
-        WindowId wanted = windowId(id);
-        List<Window> windows = server.windows();
-        return windows.stream()
-                .filter(window -> window.id().equals(wanted))
-                .findFirst()
-                .orElseThrow(() -> new ObjectDoesNotExist("no window " + id
-                        + " on this server; call list_windows for the " + windows.size() + " that exist"));
+        List<Window> links = server.windows(windowId(id));
+        if (links.isEmpty()) {
+            throw new ObjectDoesNotExist("no window " + id + " on this server; call list_windows for the "
+                    + server.windows().size() + " that exist");
+        }
+        return links.getFirst();
     }
 
     static Session sessionNamed(Server server, String name) {
-        List<Session> sessions = server.sessions();
-        return sessions.stream()
-                .filter(Session_.name().is(name))
-                .findFirst()
+        return server.session(name)
                 .orElseThrow(() -> new ObjectDoesNotExist("no session named '" + name + "'; this server has "
-                        + sessions.stream().map(Session::name).toList()));
+                        + server.sessions().stream().map(Session::name).toList()));
     }
 
     static Session sessionById(Server server, String id) {
-        SessionId wanted = new SessionId(id);
-        List<Session> sessions = server.sessions();
-        return sessions.stream()
-                .filter(session -> session.id().equals(wanted))
-                .findFirst()
+        return server.session(new SessionId(id))
                 .orElseThrow(() -> new ObjectDoesNotExist("no session " + id
-                        + " on this server; call list_sessions for the " + sessions.size() + " that exist"));
+                        + " on this server; call list_sessions for the "
+                        + server.sessions().size()
+                        + " that exist"));
     }
 
     /**
