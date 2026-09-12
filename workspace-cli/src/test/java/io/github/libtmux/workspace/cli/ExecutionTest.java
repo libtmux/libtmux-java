@@ -311,6 +311,46 @@ final class ExecutionTest {
     }
 
     @Test
+    void booleanOptionsUseTmuxValuesWhileEnvironmentRemainsText() throws Exception {
+        Path source = directory.resolve("booleans.yaml");
+        Path socket = directory.resolve("booleans-socket");
+        Files.writeString(source, """
+                session_name: booleans
+                options:
+                  renumber-windows: true
+                global_options:
+                  mouse: false
+                environment:
+                  FLAG: true
+                windows:
+                  - options:
+                      remain-on-exit: true
+                    options_after:
+                      synchronize-panes: false
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, result.code(), result.err());
+                var session = server.sessions().getFirst();
+                assertEquals("on", session.options().get("renumber-windows").orElseThrow());
+                assertEquals("off", server.globalOptions().get("mouse").orElseThrow());
+                var options = session.windows().getFirst().options();
+                assertEquals("on", options.get("remain-on-exit").orElseThrow());
+                assertEquals("off", options.get("synchronize-panes").orElseThrow());
+                assertEquals(
+                        java.util.List.of("FLAG=true"),
+                        server.run(java.util.List.of(
+                                        "show-environment", "-t", session.id().value(), "FLAG"))
+                                .stdout());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
     void loadLogsBothScriptStreamsWithoutContaminatingItsJsonResult() throws Exception {
         Path source = directory.resolve("logged.yaml");
         Path socket = directory.resolve("logged-socket");

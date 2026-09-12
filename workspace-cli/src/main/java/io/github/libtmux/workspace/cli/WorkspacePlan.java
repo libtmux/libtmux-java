@@ -269,7 +269,9 @@ record WorkspacePlan(
                 throw invalid("invalid environment or option key");
             if (value.isContainerNode() || value.isNull())
                 throw invalid("environment and option values must be scalar");
-            String text = Catalog.expand(context, value.asText());
+            String text = !environment && value.isBoolean()
+                    ? value.asBoolean() ? "on" : "off"
+                    : Catalog.expand(context, value.asText());
             if (text.indexOf('\0') >= 0) throw invalid("environment and option values cannot contain NUL");
             result.put(key, text);
         });
