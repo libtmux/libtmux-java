@@ -59,6 +59,11 @@ final class Arguments {
                 value("Progress preset or template; TMUXP_PROGRESS_FORMAT supplies the default.", "--progress-format"));
         load.addOption(OptionSpec.builder("--progress-lines")
                 .type(Integer.class)
+                .converters(value -> {
+                    int lines = Integer.parseInt(value);
+                    if (lines < -1) throw new CommandLine.TypeConversionException("progress lines must be at least -1");
+                    return lines;
+                })
                 .description("Script panel lines: 3 by default, 0 hides, -1 fits the terminal.")
                 .build());
         load.addOption(flag("Disable progress; TMUXP_PROGRESS=0 also disables it.", "--no-progress"));

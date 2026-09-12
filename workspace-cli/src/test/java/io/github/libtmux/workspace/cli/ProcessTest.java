@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 final class ProcessTest {
@@ -73,6 +74,108 @@ final class ProcessTest {
             assertEquals(0, probe.exitValue());
         } finally {
             if (probe.isAlive()) probe.destroyForcibly().waitFor();
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "true,false,0,false",
+        "false,false,0,false",
+        "true,true,0,false",
+        "true,false,2,false",
+        "true,false,2,true"
+    })
+    void progressUsesOnlyTerminalStderrAndHonorsDisable(
+            boolean terminalError, boolean disabled, int panelLines, boolean cancelled) throws Exception {
+        Path source = directory.resolve("progress.yaml");
+        Path socket = directory.resolve("progress-socket");
+        Path output = directory.resolve("stdout");
+        Path error = directory.resolve("stderr");
+        Path terminal = directory.resolve("terminal");
+        Files.writeString(source, """
+                session_name: progress
+                before_script: /bin/sh -c 'printf "bootstrap-out\\n"; %sprintf "bootstrap-err\\n" >&2%s'
+                windows:
+                  - panes: [null, null]
+                """.formatted(cancelled ? "sleep .08; " : "", cancelled ? "; sleep 30" : ""));
+        String script = """
+                import fcntl, os, pty, select, signal, struct, subprocess, sys, termios, time
+                (launcher, source, socket, output, error, capture,
+                    terminal_error, disabled, panel_lines, cancelled) = sys.argv[1:]
+                master, slave = pty.openpty()
+                fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 100, 0, 0))
+                def terminal():
+                    os.setsid()
+                    fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+                args = [launcher, 'load', source, '-d', '-S', socket, '-f', '/dev/null',
+                    '--progress-format', 'PROGRESS_{session}_{window_total}_{session_pane_total}',
+                    '--progress-lines', panel_lines]
+                if disabled == 'true': args.append('--no-progress')
+                chunks = []
+                sent = False
+                with open(output, 'wb') as out, open(error, 'wb') as err:
+                    child = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=out,
+                        stderr=slave if terminal_error == 'true' else err,
+                        preexec_fn=terminal, pass_fds=(slave,))
+                    try:
+                        until = time.monotonic() + 5
+                        while child.poll() is None and time.monotonic() < until:
+                            if select.select([master], [], [], .025)[0]: chunks.append(os.read(master, 65536))
+                            if cancelled == 'true' and not sent and b''.join(chunks).count(b'PROGRESS_progress_1_2') >= 3:
+                                child.send_signal(signal.SIGINT)
+                                sent = True
+                        assert child.wait(timeout=1) == (130 if cancelled == 'true' else 0)
+                        while select.select([master], [], [], 0)[0]: chunks.append(os.read(master, 65536))
+                    finally:
+                        if child.poll() is None:
+                            child.kill()
+                            child.wait()
+                        os.close(slave)
+                        os.close(master)
+                with open(capture, 'wb') as target: target.write(b''.join(chunks))
+                """;
+        var builder = command();
+        builder.command(
+                "python3",
+                "-c",
+                script,
+                System.getProperty("workspace.cli.launcher"),
+                source.toString(),
+                socket.toString(),
+                output.toString(),
+                error.toString(),
+                terminal.toString(),
+                Boolean.toString(terminalError),
+                Boolean.toString(disabled),
+                Integer.toString(panelLines),
+                Boolean.toString(cancelled));
+        builder.environment().put("TERM", "xterm");
+        builder.environment().put("NO_COLOR", "1");
+        builder.environment().remove("TMUXP_PROGRESS");
+        builder.redirectError(ProcessBuilder.Redirect.INHERIT);
+        try (Server server = Server.builder()
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .binary(System.getProperty("libtmux.tmux", "tmux"))
+                .build()) {
+            Process probe = builder.start();
+            try {
+                assertTrue(probe.waitFor(7, TimeUnit.SECONDS));
+                assertEquals(0, probe.exitValue());
+                String stdout = Files.readString(output);
+                String stderr = Files.readString(terminalError ? terminal : error);
+                assertTrue(stdout.contains("bootstrap-out"), stdout);
+                assertEquals(!cancelled, stdout.contains("Loaded"), stdout);
+                assertFalse(stdout.contains("PROGRESS_"), stdout);
+                assertTrue(stderr.contains("bootstrap-err"), stderr);
+                assertEquals(terminalError && !disabled, stderr.contains("PROGRESS_progress_1_2"), stderr);
+                if (cancelled) {
+                    assertTrue(stderr.contains("interrupted"), stderr);
+                    assertTrue(stderr.lastIndexOf("\u001b[0J") > stderr.lastIndexOf("PROGRESS_"), stderr);
+                }
+            } finally {
+                if (probe.isAlive()) probe.destroyForcibly().waitFor();
+                if (server.isAlive()) server.killServer();
+            }
         }
     }
 
