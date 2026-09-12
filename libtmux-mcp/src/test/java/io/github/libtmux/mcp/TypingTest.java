@@ -89,7 +89,7 @@ final class TypingTest {
     void synchronizedInputDisclosesEveryResolvedPane(Server server) {
         var source = server.panes().getFirst();
         var other = source.split(SplitSpec.builder().build());
-        source.window().setSynchronizePanes(true);
+        source.window().synchronizePanes();
 
         Typing.Sent sent = Typing.sendKeys(
                 TestCalls.on(server, "pane_id", source.id().value(), "keys", List.of("q"), "literal", true));
@@ -239,7 +239,7 @@ final class TypingTest {
     void reservationCoversEveryInitiallyConfiguredMember(Server server) throws Exception {
         var source = server.panes().getFirst();
         var peer = source.split();
-        source.window().setSynchronizePanes(true);
+        source.window().synchronizePanes();
         CountDownLatch sending = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         try (ProcessTransport processes = new ProcessTransport()) {
@@ -430,7 +430,7 @@ final class TypingTest {
     void inputDisabledConfiguredPaneRefusesKeys(Server server) {
         var source = server.panes().getFirst();
         var disabled = source.split(SplitSpec.builder().build());
-        source.window().setSynchronizePanes(true);
+        source.window().synchronizePanes();
         server.run(List.of("select-pane", "-t", disabled.id().value(), "-d"));
         assertEquals("1", disabled.expand("#{pane_input_off}"));
 
@@ -445,7 +445,7 @@ final class TypingTest {
     void batchProtectsACallerPeerInTheConfiguredCohort(Server server) {
         var source = server.panes().getFirst();
         var peer = source.split(SplitSpec.builder().build());
-        source.window().setSynchronizePanes(true);
+        source.window().synchronizePanes();
         String marker = "caller-batch-peer-marker";
 
         Map<String, Object> batch = map(Operations.sendKeysBatch(TestCalls.asCaller(
@@ -466,7 +466,7 @@ final class TypingTest {
         var source = server.panes().getFirst();
         var effective = source.split(SplitSpec.builder().build());
         var disabled = source.split(SplitSpec.builder().build());
-        source.window().setSynchronizePanes(true);
+        source.window().synchronizePanes();
         disabled.options().set("synchronize-panes", "off");
         String marker = "effective-cohort-marker";
 
@@ -482,7 +482,7 @@ final class TypingTest {
     void sourceOffIgnoresATruePeer(Server server) throws Exception {
         var source = server.panes().getFirst();
         var peer = source.split(SplitSpec.builder().build());
-        source.window().setSynchronizePanes(true);
+        source.window().synchronizePanes();
         source.options().set("synchronize-panes", "off");
         String marker = "source-off-marker";
 
@@ -497,7 +497,7 @@ final class TypingTest {
     void modalRecipientRefusesBeforeDelivery(Server server) {
         var source = server.panes().getFirst();
         var modal = source.split(SplitSpec.builder().build());
-        source.window().setSynchronizePanes(true);
+        source.window().synchronizePanes();
         modal.copyMode();
         assertTrue(modal.mode().isPresent(), "the refusal fixture did not enter a mode");
         String marker = "modal-refusal-marker";
@@ -510,7 +510,7 @@ final class TypingTest {
         var source = server.panes().getFirst();
         var recipient = source.split(SplitSpec.builder().build());
         var modal = source.split(SplitSpec.builder().build());
-        source.window().setSynchronizePanes(true);
+        source.window().synchronizePanes();
         modal.options().set("synchronize-panes", "off");
         modal.copyMode();
         String marker = "outside-modal-marker";
@@ -530,7 +530,7 @@ final class TypingTest {
         dead.options().set("remain-on-exit", "on");
         dead.sendLine("exit");
         assertTrue(await(() -> "1".equals(dead.expand("#{pane_dead}"))), "the pane did not become dead");
-        source.window().setSynchronizePanes(true);
+        source.window().synchronizePanes();
         String marker = "dead-refusal-marker";
 
         assertKeyRefused(server, source.id().value(), dead.id().value(), marker);
@@ -540,11 +540,11 @@ final class TypingTest {
     void batchResolvesAndGuardsEveryOperationFresh(Server server) throws Exception {
         var first = server.panes().getFirst();
         var firstPeer = first.split(SplitSpec.builder().build());
-        first.window().setSynchronizePanes(true);
+        first.window().synchronizePanes();
         var second =
                 server.sessions().getFirst().newWindow("batch-modal").panes().getFirst();
         var modal = second.split(SplitSpec.builder().build());
-        second.window().setSynchronizePanes(true);
+        second.window().synchronizePanes();
         modal.copyMode();
 
         Map<String, Object> batch = map(Operations.sendKeysBatch(TestCalls.on(
@@ -649,7 +649,7 @@ final class TypingTest {
         assumeTrue(server.version().atLeast(SAFE_PASTE_CLEANUP));
         var source = server.panes().getFirst();
         var modal = source.split(SplitSpec.builder().build());
-        source.window().setSynchronizePanes(true);
+        source.window().synchronizePanes();
         modal.copyMode();
         String marker = "target-only-paste-marker";
 

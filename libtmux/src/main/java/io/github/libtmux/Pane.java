@@ -313,8 +313,27 @@ public final class Pane {
         server.run(snapshot, List.of("send-keys", "-t", state.id().value(), keys));
     }
 
-    /** Sends an ordered group of key names, or literal strings, to this pane. */
-    public void sendKeys(List<String> keys, boolean literal) {
+    /**
+     * Sends an ordered group of key names to this pane, as tmux resolves them.
+     *
+     * <p>Each entry is a key name, so {@code C-c} interrupts rather than typing three characters.
+     * {@link #sendLiteral} is the other reading of the same list; they are separate methods for the
+     * reason {@link #send} and {@link #sendLine} are.
+     */
+    public void sendKeys(List<String> keys) {
+        server.run(snapshot, sendKeysArgv(keys, false));
+    }
+
+    /**
+     * Sends an ordered group of strings to this pane as the characters they spell.
+     *
+     * <p>Nothing is resolved as a key name, so {@code C-c} types those three characters.
+     */
+    public void sendLiteral(List<String> keys) {
+        server.run(snapshot, sendKeysArgv(keys, true));
+    }
+
+    private List<String> sendKeysArgv(List<String> keys, boolean literal) {
         Objects.requireNonNull(keys, "keys");
         if (keys.isEmpty()) {
             throw new IllegalArgumentException("keys are empty");
@@ -325,7 +344,7 @@ public final class Pane {
         }
         argv.addAll(List.of("-t", state.id().value(), "--"));
         argv.addAll(keys);
-        server.run(snapshot, argv);
+        return argv;
     }
 
     /** Sends a line to this pane and presses Enter, which is how a command gets run. */

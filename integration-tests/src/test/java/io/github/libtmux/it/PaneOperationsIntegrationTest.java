@@ -130,10 +130,35 @@ final class PaneOperationsIntegrationTest {
         for (String input : List.of("-X", "-R", "-N")) {
             Pane pane = window.split();
 
-            pane.sendKeys(List.of(input), true);
+            pane.sendLiteral(List.of(input));
 
             assertTrue(awaitText(pane, input), "tmux parsed caller input as an option: " + input);
         }
+    }
+
+    /**
+     * The two readings of one list, which is why they are two methods rather than a boolean.
+     *
+     * <p>{@code C-c} is the case that shows it: as a key name it interrupts, and as literal text it
+     * types three characters. A single method taking {@code literal} put that difference in an
+     * argument a reader of the call site could not see.
+     */
+    @Test
+    void sendKeysResolvesKeyNamesAndSendLiteralDoesNot(Server server) throws Exception {
+        Window window = server.sessions().getFirst().windows().getFirst();
+        Pane typed = window.split();
+        Pane interrupted = window.split();
+
+        typed.sendLiteral(List.of("C-c"));
+        interrupted.sendLine("sleep 97");
+        assertTrue(awaitText(interrupted, "sleep 97"), "the command has to be running to be interrupted");
+        interrupted.sendKeys(List.of("C-c"));
+
+        assertTrue(awaitText(typed, "C-c"), "literal input is the characters it spells");
+        assertTrue(
+                awaitText(interrupted, "^C")
+                        || !interrupted.refresh().currentCommand().contains("sleep"),
+                "a key name is resolved by tmux, so the pane stops running sleep");
     }
 
     private static boolean awaitText(Pane pane, String text) throws InterruptedException {

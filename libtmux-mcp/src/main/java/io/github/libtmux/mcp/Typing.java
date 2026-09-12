@@ -55,7 +55,13 @@ final class Typing {
         try (PaneInputReservations.Lease lease = PaneInputReservations.keys(cohort, "send_keys")) {
             PaneInputCohort.Resolution fresh = PaneInputCohort.resolve(pane, cohort.caller());
             List<String> resolved = lease.requireSameKeys(fresh);
-            pane.sendKeys(keys, literal);
+            // A boolean is right here and wrong on Pane: this one is a tool argument off the wire,
+            // not a choice a reader of this file makes.
+            if (literal) {
+                pane.sendLiteral(keys);
+            } else {
+                pane.sendKeys(keys);
+            }
             return new Sent(
                     pane.id().value(),
                     keys.size(),

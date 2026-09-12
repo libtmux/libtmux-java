@@ -241,7 +241,7 @@ final class RunningCommandsTest {
     void aSynchronizedCommandIsRefusedBeforeTyping(Server server) {
         Pane source = server.panes().getFirst();
         Pane peer = source.split();
-        source.window().setSynchronizePanes(true);
+        source.window().synchronizePanes();
         String marker = "synchronized-run-marker";
 
         IllegalStateException refused = assertThrows(
@@ -260,7 +260,7 @@ final class RunningCommandsTest {
     void aModalEffectiveCommandRecipientIsRefusedBeforeBaselineOrTyping(Server server) {
         Pane source = server.panes().getFirst();
         Pane modal = source.split();
-        source.window().setSynchronizePanes(true);
+        source.window().synchronizePanes();
         modal.copyMode();
 
         assertRefusedBeforeRunWork(
@@ -991,7 +991,7 @@ final class RunningCommandsTest {
             case DEAD, NON_SHELL -> source.options().set("remain-on-exit", "on");
             case PLURAL -> {
                 source.split();
-                source.window().setSynchronizePanes(true);
+                source.window().synchronizePanes();
                 source.options().set("synchronize-panes", "off");
             }
             case DISAPPEAR -> source.split();
@@ -1022,7 +1022,7 @@ final class RunningCommandsTest {
                 source.options().unset("remain-on-exit");
             }
             case PLURAL -> {
-                source.window().setSynchronizePanes(false);
+                source.window().stopSynchronizingPanes();
                 source.options().unset("synchronize-panes");
             }
             case DISAPPEAR -> {}
