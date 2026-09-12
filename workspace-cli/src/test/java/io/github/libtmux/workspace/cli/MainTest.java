@@ -14,6 +14,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -111,6 +115,157 @@ final class MainTest {
         assertFalse(value.path("global_workspace_dirs").isEmpty());
         assertEquals("", invoke("ls", "--ndjson").out());
         assertEquals("[]\n", invoke("search", "missing", "--json").out());
+    }
+
+    @Test
+    void interruptedOutputReturnsWithoutClosingTheBorrowedSink() throws Exception {
+        Path global = Files.createDirectory(directory.resolve(".tmuxp"));
+        Files.writeString(global.resolve("one.yaml"), "session_name: one\nwindows: []\n");
+        for (var arguments : List.of(
+                List.of("ls"),
+                List.of("ls", "--json"),
+                List.of("ls", "--ndjson"),
+                List.of("--help"),
+                List.of("--generate", "bash"),
+                List.of("missing-command", "--json"))) {
+            var sink = new BlockedOutput();
+            var status = new AtomicInteger(-1);
+            var interrupted = new AtomicBoolean();
+            boolean diagnostic = arguments.getFirst().equals("missing-command");
+            Thread owner = Thread.ofPlatform().unstarted(() -> {
+                status.set(Main.run(
+                        arguments.toArray(String[]::new),
+                        Map.of("HOME", directory.toString(), "PATH", ""),
+                        directory,
+                        InputStream.nullInputStream(),
+                        diagnostic ? OutputStream.nullOutputStream() : sink,
+                        diagnostic ? sink : OutputStream.nullOutputStream()));
+                interrupted.set(Thread.currentThread().isInterrupted());
+            });
+            try {
+                owner.start();
+                assertTrue(sink.entered.await(2, TimeUnit.SECONDS), arguments.toString());
+                owner.interrupt();
+                owner.join(1_000);
+                assertFalse(owner.isAlive(), arguments.toString());
+                assertEquals(130, status.get(), arguments.toString());
+                assertTrue(interrupted.get(), arguments.toString());
+                assertTrue(sink.virtual.get(), arguments.toString());
+                assertFalse(sink.closed.get(), arguments.toString());
+            } finally {
+                sink.release.countDown();
+                owner.join(2_000);
+                assertTrue(sink.finished.await(2, TimeUnit.SECONDS));
+            }
+        }
+    }
+
+    static final class BlockedOutput extends OutputStream {
+        private final String marker;
+        final CountDownLatch entered = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final CountDownLatch finished = new CountDownLatch(1);
+        final AtomicBoolean virtual = new AtomicBoolean();
+        final AtomicBoolean closed = new AtomicBoolean();
+
+        BlockedOutput() {
+            this("");
+        }
+
+        BlockedOutput(String marker) {
+            this.marker = marker;
+        }
+
+        @Override
+        public void write(int value) {
+            write(new byte[] {(byte) value}, 0, 1);
+        }
+
+        @Override
+        public void write(byte[] bytes, int offset, int length) {
+            if (entered.getCount() != 0 && !new String(bytes, offset, length, StandardCharsets.UTF_8).contains(marker))
+                return;
+            virtual.set(Thread.currentThread().isVirtual());
+            entered.countDown();
+            boolean ready = false;
+            while (!ready) {
+                try {
+                    release.await();
+                    ready = true;
+                } catch (InterruptedException ignored) {
+                    // The caller, not cancellation, releases this borrowed sink.
+                }
+            }
+            finished.countDown();
+        }
+
+        @Override
+        public void close() {
+            closed.set(true);
+        }
+    }
+
+    @Test
+    void alreadyInterruptedInvocationDoesNotOpenItsLog() throws Exception {
+        Path log = directory.resolve("interrupted.jsonl");
+        var result = new java.util.concurrent.atomic.AtomicReference<Result>();
+        Thread owner = Thread.ofPlatform().start(() -> {
+            Thread.currentThread().interrupt();
+            result.set(invoke("load", "missing.yaml", "-d", "--json", "--log-file", log.toString()));
+        });
+        owner.join(2_000);
+        assertFalse(owner.isAlive());
+        assertEquals(130, result.get().code(), result.get().toString());
+        assertFalse(Files.exists(log));
+        assertEquals("", result.get().out());
+        assertEquals(
+                "interrupted",
+                new ObjectMapper().readTree(result.get().err()).path("code").asText());
+    }
+
+    @Test
+    void cancelledChildWritersCannotConsumeTheFinalResultAllowance() throws Exception {
+        var sink = new BlockedOutput();
+        var result = new ByteArrayOutputStream();
+        var firstCancelled = new AtomicBoolean();
+        var secondCancelled = new AtomicBoolean();
+        try (var streams = new BorrowedOutput(result, sink)) {
+            Thread first = Thread.ofPlatform().unstarted(() -> {
+                try {
+                    streams.error().write('a');
+                } catch (java.io.IOException failure) {
+                    firstCancelled.set(failure instanceof java.io.InterruptedIOException);
+                }
+            });
+            Thread second = Thread.ofPlatform().unstarted(() -> {
+                Thread.currentThread().interrupt();
+                try {
+                    streams.error().write('b');
+                } catch (java.io.IOException failure) {
+                    secondCancelled.set(failure instanceof java.io.InterruptedIOException);
+                }
+            });
+            try {
+                first.start();
+                assertTrue(sink.entered.await(2, TimeUnit.SECONDS));
+                first.interrupt();
+                first.join(1_000);
+                assertFalse(first.isAlive());
+                second.start();
+                second.join(1_000);
+                assertFalse(second.isAlive());
+                assertTrue(firstCancelled.get());
+                assertTrue(secondCancelled.get());
+                streams.output().write("partial\n".getBytes(StandardCharsets.UTF_8));
+                assertEquals("partial\n", result.toString(StandardCharsets.UTF_8));
+            } finally {
+                sink.release.countDown();
+                first.join(1_000);
+                if (second.getState() != Thread.State.NEW) second.join(1_000);
+                assertTrue(sink.finished.await(2, TimeUnit.SECONDS));
+            }
+        }
+        assertFalse(sink.closed.get());
     }
 
     @Test

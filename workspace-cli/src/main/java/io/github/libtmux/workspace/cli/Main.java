@@ -2,6 +2,7 @@ package io.github.libtmux.workspace.cli;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.UncheckedIOException;
@@ -105,16 +106,34 @@ public final class Main {
             InputStream input,
             OutputStream output,
             OutputStream error) {
-        Context context = new Context(environment, directory, input, output, error);
+        try (var streams = new BorrowedOutput(output, error)) {
+            Context context = new Context(environment, directory, input, streams.output(), streams.error());
+            int status = execute(args, context);
+            if (streams.interrupted()) {
+                Thread.currentThread().interrupt();
+                return 130;
+            }
+            return status;
+        }
+    }
+
+    private static int execute(String[] args, Context context) {
+        OutputStream output = context.output();
+        OutputStream error = context.error();
         boolean machine = Arrays.stream(args)
                 .takeWhile(value -> !value.equals("--"))
                 .anyMatch(value -> value.equals("--json") || value.equals("--ndjson"));
         try {
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedException("operation interrupted");
             CommandLine command = Arguments.create()
                     .setOut(new PrintWriter(output, true, StandardCharsets.UTF_8))
                     .setErr(new PrintWriter(error, true, StandardCharsets.UTF_8));
             ParseResult parsed = command.parseArgs(args);
-            if (CommandLine.printHelpIfRequested(parsed)) return 0;
+            if (CommandLine.printHelpIfRequested(parsed)) {
+                if (command.getOut().checkError() || command.getErr().checkError())
+                    throw new IOException("help output failed");
+                return 0;
+            }
             try (Reporter report = new Reporter(context, parsed)) {
                 try {
                     report.record("debug", "command-started", Documents.JSON.createObjectNode(), true);
@@ -168,6 +187,8 @@ public final class Main {
                                         .createObjectNode()
                                         .put("message", Objects.toString(failure.getMessage(), "command failed")),
                                 false);
+                    } catch (InterruptedIOException loggingInterrupted) {
+                        Thread.currentThread().interrupt();
                     } catch (IOException | Failure loggingFailure) {
                         failure.addSuppressed(loggingFailure);
                         diagnostic(
@@ -185,7 +206,7 @@ public final class Main {
         } catch (Failure failure) {
             diagnostic(context, machine, failure.code, Objects.toString(failure.getMessage(), "command failed"));
             return failure.status;
-        } catch (InterruptedException failure) {
+        } catch (InterruptedException | InterruptedIOException failure) {
             Thread.currentThread().interrupt();
             diagnostic(context, machine, "interrupted", "operation interrupted");
             return 130;
