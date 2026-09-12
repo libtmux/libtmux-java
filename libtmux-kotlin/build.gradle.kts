@@ -69,8 +69,9 @@ val documentedKotlin =
         // The same set Documentation.readable finds on the Java side, so a document is either
         // checked in both languages or neither. A file tree rather than a computed list, so a
         // document appearing later changes this task's inputs instead of being invisible to it.
+        val documentationRoot = rootProject.projectDir
         val documents =
-            rootProject.fileTree(rootProject.projectDir) {
+            rootProject.fileTree(documentationRoot) {
                 include("README.md", "*/README.md", "docs/guide/*.md")
                 exclude("**/build/**")
             }
@@ -92,7 +93,7 @@ val documentedKotlin =
             // Sorted, so the generated file does not depend on the order of a directory scan.
             documents.sorted().forEach { document ->
                 val text = document.readText()
-                val where = document.relativeTo(rootProject.projectDir).path
+                val where = document.relativeTo(documentationRoot).path
                 fence.findAll(text).forEach { match ->
                     val directive = match.groupValues[1]
                     if (directive.startsWith("skip:")) return@forEach
