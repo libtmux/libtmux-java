@@ -320,4 +320,64 @@ final class ProcessTest {
             }
         }
     }
+
+    @Test
+    void aFullLogCannotReplaceTheOriginalPartialLoadResult() throws Exception {
+        Path source = directory.resolve("failed.yaml");
+        Path socket = directory.resolve("failed-log");
+        Files.writeString(
+                source,
+                "session_name: partial-log\nwindows:\n  - options:\n      not-a-tmux-option: invalid\n    panes: [null]\n");
+        String script = """
+                import resource, signal, subprocess, sys
+                def limited():
+                    signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+                    resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))
+                child = subprocess.run(sys.argv[1:], capture_output=True, preexec_fn=limited)
+                sys.stdout.buffer.write(child.stdout)
+                sys.stderr.buffer.write(child.stderr)
+                sys.exit(child.returncode)
+                """;
+        var builder = command(
+                "load",
+                source.toString(),
+                "-d",
+                "-S",
+                socket.toString(),
+                "-f",
+                "/dev/null",
+                "--ndjson",
+                "--log-file",
+                directory.resolve("full.jsonl").toString());
+        var arguments = new ArrayList<>(List.of("python3", "-c", script));
+        arguments.addAll(builder.command());
+        builder.command(arguments);
+        builder.environment().remove("JAVA_TOOL_OPTIONS");
+        builder.environment().put("JAVA_OPTS", "-XX:-UsePerfData -XX:ActiveProcessorCount=2");
+        Process process = builder.start();
+        try (Server server = Server.builder()
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .binary(System.getProperty("libtmux.tmux", "tmux"))
+                .build()) {
+            try {
+                assertTrue(process.waitFor(8, TimeUnit.SECONDS));
+                assertEquals(1, process.exitValue());
+                String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                String error = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+                var terminal =
+                        new ObjectMapper().readTree(output.lines().toList().getLast());
+                assertEquals("failed", terminal.path("event").asText(), output + error);
+                assertEquals("partial", terminal.path("status").asText());
+                var effects = terminal.path("errors").path(0).path("effects");
+                assertEquals("windows", effects.path("stage").asText());
+                assertEquals(1, effects.path("window_ids").size());
+                assertEquals(1, effects.path("pane_ids").size());
+                assertTrue(error.contains("not-a-tmux-option"), error);
+                assertTrue(error.contains("\"code\":\"log_file\""), error);
+            } finally {
+                if (process.isAlive()) process.destroyForcibly().waitFor();
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
 }

@@ -115,48 +115,70 @@ public final class Main {
                     .setErr(new PrintWriter(error, true, StandardCharsets.UTF_8));
             ParseResult parsed = command.parseArgs(args);
             if (CommandLine.printHelpIfRequested(parsed)) return 0;
-            Reporter report = new Reporter(context, parsed);
-            if (parsed.hasMatchedOption("--generate")) {
-                if (parsed.hasSubcommand()) throw usage("--generate cannot accompany a command");
-                if (parsed.matchedOptionValue("--generate", "schema").equals("bash")) {
-                    output.write(
-                            picocli.AutoComplete.bash("tmux-workspace", command).getBytes(StandardCharsets.UTF_8));
-                } else report.document(Reporter.metadata(command.getCommandSpec()));
-                return 0;
+            try (Reporter report = new Reporter(context, parsed)) {
+                try {
+                    report.record("debug", "command-started", Documents.JSON.createObjectNode(), true);
+                    if (parsed.hasMatchedOption("--generate")) {
+                        if (parsed.hasSubcommand()) throw usage("--generate cannot accompany a command");
+                        if (parsed.matchedOptionValue("--generate", "schema").equals("bash")) {
+                            output.write(picocli.AutoComplete.bash("tmux-workspace", command)
+                                    .getBytes(StandardCharsets.UTF_8));
+                        } else report.document(Reporter.metadata(command.getCommandSpec()));
+                        return 0;
+                    }
+                    ParseResult leaf = parsed;
+                    while (leaf.hasSubcommand()) leaf = leaf.subcommand();
+                    String name = leaf.commandSpec().name();
+                    switch (name) {
+                        case "ls" ->
+                            report.records(
+                                    Catalog.records(context, flag(leaf, "--full")),
+                                    true,
+                                    Catalog.directories(context),
+                                    flag(leaf, "--tree"));
+                        case "search" ->
+                            report.records(
+                                    new Search(leaf).run(Catalog.records(context, true)),
+                                    false,
+                                    Documents.JSON.createArrayNode(),
+                                    false);
+                        case "convert", "teamocil", "tmuxinator" -> Documents.convert(context, leaf, report);
+                        case "load" -> Execution.load(context, leaf, report);
+                        case "freeze" -> Execution.freeze(context, leaf, report);
+                        case "edit" -> Children.edit(context, leaf, report);
+                        case "shell" -> Children.shell(context, leaf, report);
+                        case "debug-info" ->
+                            report.document(Documents.JSON
+                                    .createObjectNode()
+                                    .put("port", "java")
+                                    .put("version", version())
+                                    .put("java_version", System.getProperty("java.version"))
+                                    .put("working_directory", Catalog.mask(context, context.directory()))
+                                    .set("global_workspace_dirs", Catalog.directories(context)));
+                        default -> throw usage("select a workspace command; use --help");
+                    }
+                    output.flush();
+                    return 0;
+                } catch (Exception failure) {
+                    try {
+                        report.record(
+                                "error",
+                                "command-failed",
+                                Documents.JSON
+                                        .createObjectNode()
+                                        .put("message", Objects.toString(failure.getMessage(), "command failed")),
+                                false);
+                    } catch (IOException | Failure loggingFailure) {
+                        failure.addSuppressed(loggingFailure);
+                        diagnostic(
+                                context,
+                                machine,
+                                "log_file",
+                                Objects.toString(loggingFailure.getMessage(), "logging failed"));
+                    }
+                    throw failure;
+                }
             }
-            ParseResult leaf = parsed;
-            while (leaf.hasSubcommand()) leaf = leaf.subcommand();
-            String name = leaf.commandSpec().name();
-            switch (name) {
-                case "ls" ->
-                    report.records(
-                            Catalog.records(context, flag(leaf, "--full")),
-                            true,
-                            Catalog.directories(context),
-                            flag(leaf, "--tree"));
-                case "search" ->
-                    report.records(
-                            new Search(leaf).run(Catalog.records(context, true)),
-                            false,
-                            Documents.JSON.createArrayNode(),
-                            false);
-                case "convert", "teamocil", "tmuxinator" -> Documents.convert(context, leaf, report);
-                case "load" -> Execution.load(context, leaf, report);
-                case "freeze" -> Execution.freeze(context, leaf, report);
-                case "edit" -> Children.edit(context, leaf, report);
-                case "shell" -> Children.shell(context, leaf, report);
-                case "debug-info" ->
-                    report.document(Documents.JSON
-                            .createObjectNode()
-                            .put("port", "java")
-                            .put("version", version())
-                            .put("java_version", System.getProperty("java.version"))
-                            .put("working_directory", Catalog.mask(context, context.directory()))
-                            .set("global_workspace_dirs", Catalog.directories(context)));
-                default -> throw usage("select a workspace command; use --help");
-            }
-            output.flush();
-            return 0;
         } catch (CommandLine.ParameterException failure) {
             diagnostic(context, machine, "usage", Objects.toString(failure.getMessage(), "invalid arguments"));
             return 2;

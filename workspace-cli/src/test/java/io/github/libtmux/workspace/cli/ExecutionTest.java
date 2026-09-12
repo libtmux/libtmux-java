@@ -47,6 +47,58 @@ final class ExecutionTest {
                 .build();
     }
 
+    @Test
+    void loadLogsBothScriptStreamsWithoutContaminatingItsJsonResult() throws Exception {
+        Path source = directory.resolve("logged.yaml");
+        Path socket = directory.resolve("logged-socket");
+        Path log = directory.resolve("operations.jsonl");
+        Files.writeString(source, """
+                session_name: logged
+                before_script: /bin/sh -c 'printf stdout; printf stderr >&2'
+                windows:
+                  - panes: [null]
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke(
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json",
+                        "--log-file",
+                        log.toString(),
+                        "--log-level",
+                        "info",
+                        "--color",
+                        "always");
+                assertEquals(0, result.code(), result.err());
+                assertEquals(
+                        "ok",
+                        new ObjectMapper().readTree(result.out()).path("status").asText());
+                boolean stdout = false;
+                boolean stderr = false;
+                for (String line : Files.readAllLines(log)) {
+                    var record = new ObjectMapper().readTree(line);
+                    if (record.path("event").asText().equals("script-output")) {
+                        stdout |= record.path("stream").asText().equals("stdout")
+                                && record.path("text").asText().equals("stdout");
+                        stderr |= record.path("stream").asText().equals("stderr")
+                                && record.path("text").asText().equals("stderr");
+                    }
+                }
+                assertTrue(stdout && stderr, Files.readString(log));
+                assertFalse(result.out().contains("\u001b") || result.err().contains("\u001b"));
+                for (String line : result.err().lines().toList()) new ObjectMapper().readTree(line);
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     private static java.util.Map<String, String> inherited(Server server, Path socket) {
         return java.util.Map.of(
                 "TMUX",
