@@ -331,6 +331,53 @@ final class ExecutionTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void appendReservesLaterFilesBeforeAnyMutation(boolean conflict) throws Exception {
+        Path first = directory.resolve("first.yaml");
+        Path second = directory.resolve("second.yaml");
+        Path socket = directory.resolve("append-files-socket");
+        Path marker = directory.resolve("append-script");
+        Files.writeString(
+                first,
+                "session_name: ignored-first\nbefore_script: /usr/bin/touch " + marker
+                        + "\noptions:\n  '@changed': yes\nwindows:\n  - window_name: implicit\n");
+        Files.writeString(
+                second,
+                "session_name: ignored-second\nwindows:\n  - window_name: reserved\n    window_index: "
+                        + (conflict ? 0 : 1) + "\n");
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("borrowed");
+                Result result = invoke(
+                        inherited(server, socket),
+                        "load",
+                        first.toString(),
+                        second.toString(),
+                        "--append",
+                        "-S",
+                        socket.toString(),
+                        "--json");
+                assertEquals(conflict ? 2 : 0, result.code(), result.toString());
+                assertEquals(!conflict, Files.exists(marker));
+                assertEquals(
+                        !conflict, server.sessions().getFirst().options().all().containsKey("@changed"));
+                if (conflict) assertEquals(1, server.windows().size());
+                else {
+                    var indexes = server.windows().stream()
+                            .collect(java.util.stream.Collectors.toMap(
+                                    io.github.libtmux.Window::name,
+                                    window -> window.index().value()));
+                    assertEquals(2, indexes.get("implicit"));
+                    assertEquals(1, indexes.get("reserved"));
+                    assertEquals(3, indexes.size());
+                }
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     @Test
     void booleanOptionsUseTmuxValuesWhileEnvironmentRemainsText() throws Exception {
         Path source = directory.resolve("booleans.yaml");

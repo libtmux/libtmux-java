@@ -70,8 +70,9 @@ they reach that same daemon. Failures report retained changes rather than
 claiming rollback.
 
 Explicit window indexes are reserved before implicit windows receive free
-indexes from `base-index`. Append rejects existing index collisions before
-running scripts or changing options. Temporary-window removal preserves
+indexes from `base-index`. Append reserves indexes from later input files and
+rejects collisions across all remaining inputs before running scripts or
+changing options. Temporary-window removal preserves
 requested indexes when `renumber-windows` is enabled, then restores its local
 or inherited setting. Restoration failures appear in the partial result.
 
