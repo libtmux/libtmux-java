@@ -13,6 +13,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.ParseResult;
 
@@ -25,9 +26,10 @@ final class Reporter implements AutoCloseable {
     private int sequence;
     private final OutputStream log;
     private final int logLevel;
+    private final @Nullable LoadProgress progress;
     private boolean logFailed;
 
-    Reporter(Main.Context context, ParseResult parsed) throws IOException {
+    Reporter(Main.Context context, ParseResult parsed) throws IOException, InterruptedException {
         this.context = context;
         boolean jsonMode = false;
         boolean ndjsonMode = false;
@@ -42,17 +44,20 @@ final class Reporter implements AutoCloseable {
         command = leaf.commandSpec().name();
         logLevel = severity(parsed.commandSpec().findOption("--log-level").getValue());
         String destination = leaf.matchedOptionValue("--log-file", "");
-        log = openLog(context, destination);
         String policy = parsed.commandSpec().findOption("--color").getValue();
-        var env = context.environment();
-        color = !machine()
-                && env.getOrDefault("NO_COLOR", "").isEmpty()
+        color = !machine() && colorEnabled(context.environment(), policy, Main.terminal());
+        progress = !machine() && command.equals("load") ? LoadProgress.create(context, leaf, policy) : null;
+        log = openLog(context, destination);
+    }
+
+    static boolean colorEnabled(java.util.Map<String, String> env, String policy, boolean terminal) {
+        return env.getOrDefault("NO_COLOR", "").isEmpty()
                 && !policy.equals("never")
                 && (policy.equals("always")
                         || !env.getOrDefault("FORCE_COLOR", "").isEmpty()
                         || (!env.getOrDefault("CLICOLOR_FORCE", "0").equals("0")
                                 && !env.getOrDefault("CLICOLOR_FORCE", "").isEmpty())
-                        || (!env.getOrDefault("CLICOLOR", "1").equals("0") && Main.terminal()));
+                        || (!env.getOrDefault("CLICOLOR", "1").equals("0") && terminal));
     }
 
     private static OutputStream openLog(Main.Context context, String destination) throws IOException {
@@ -105,6 +110,7 @@ final class Reporter implements AutoCloseable {
             log.write(encoded);
             log.flush();
             if (echo) {
+                if (progress != null) progress.clear();
                 if (machine()) context.error().write(encoded);
                 else
                     line(
@@ -125,6 +131,13 @@ final class Reporter implements AutoCloseable {
 
     @Override
     public void close() {
+        if (progress != null) {
+            try {
+                progress.clear();
+            } catch (IOException ignored) {
+                // A failed terminal cannot display its cleanup diagnostic.
+            }
+        }
         try {
             log.close();
         } catch (IOException failure) {
@@ -155,10 +168,12 @@ final class Reporter implements AutoCloseable {
                     default -> "debug";
                 };
         record(level, name, data, !name.equals("failed") && !(name.equals("script-output") && !machine()));
+        if (progress != null) progress.event(name, data);
         if (!machine() && name.equals("script-output")) {
             OutputStream stream = data.path("stream").asText().equals("stderr") ? context.error() : context.output();
             stream.write(data.path("text").asText().getBytes(StandardCharsets.UTF_8));
             stream.flush();
+            if (progress != null) progress.scriptWritten(data.path("text").asText());
         }
         if (ndjson) {
             ObjectNode event = Documents.JSON
@@ -204,6 +219,11 @@ final class Reporter implements AutoCloseable {
     }
 
     private void line(OutputStream output, String role, String subject, String detail) throws IOException {
+        output.write((style(role, subject, color) + "  " + style("info", detail, color) + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+    }
+
+    static String style(String role, String text, boolean color) {
         String code =
                 switch (role) {
                     case "heading" -> "1;96";
@@ -213,10 +233,7 @@ final class Reporter implements AutoCloseable {
                     case "error" -> "31";
                     default -> "36";
                 };
-        String text = color
-                ? "\u001b[" + code + "m" + safe(subject) + "\u001b[0m  \u001b[36m" + safe(detail) + "\u001b[0m\n"
-                : safe(subject) + "  " + safe(detail) + "\n";
-        output.write(text.getBytes(StandardCharsets.UTF_8));
+        return color ? "\u001b[" + code + "m" + safe(text) + "\u001b[0m" : safe(text);
     }
 
     static String safe(String text) {

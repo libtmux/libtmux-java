@@ -79,6 +79,7 @@ final class MainTest {
                 List.of("load", "x", "--unknown"),
                 List.of("load", "x", "-2", "-8"),
                 List.of("load", "x", "--progress-lines", "bad"),
+                List.of("load", "x", "-d", "--progress-lines=-3"),
                 List.of("shell", "--ipython", "--code"),
                 List.of("freeze", "-f", "toml"),
                 List.of("--color", "purple", "ls"),

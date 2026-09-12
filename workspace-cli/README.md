@@ -10,8 +10,8 @@ workspace lookup because supported tmux versions removed 88-color mode.
 
 This branch is an implementation checkpoint. Native loading, capture,
 conversion, imports, discovery, search, editor execution and Python shell
-execution are available. Python plugins, custom builders and progress templates
-still need implementation and validation.
+execution are available. Python plugins and custom builders still need
+implementation and validation.
 Native loading rejects unsupported configuration keys before contacting tmux.
 YAML anchors and merge keys expand into ordinary workspace values. Date-like
 scalars remain text. Documents must contain one mapping; duplicate keys,
@@ -116,6 +116,28 @@ shells use the controlling terminal while their result remains on stdout.
 Human output uses semantic colors. `NO_COLOR` disables styling, followed by the
 explicit `--color` policy. Automatic color also recognizes `FORCE_COLOR`,
 `CLICOLOR_FORCE` and `CLICOLOR`.
+
+Terminal stderr displays event-driven load progress. `--progress-format` accepts
+the `default`, `minimal`, `window`, `pane` and `verbose` presets, or a template.
+`TMUXP_PROGRESS_FORMAT` supplies its default. Templates accept these fields:
+
+- Identity: `session`, `workspace_path`, `window`.
+- Position: `window_index`, `window_total`, `window_progress`, `pane_index`,
+  `pane_total`, `pane_progress`, `progress`.
+- Completion: `windows_done`, `windows_remaining`, `window_progress_rel`,
+  `pane_done`, `pane_remaining`, `pane_progress_rel`, `session_pane_total`,
+  `session_panes_done`, `session_panes_remaining`, `session_pane_progress`,
+  `overall_percent`, `summary`.
+- Bars: `bar`, `pane_bar`, `window_bar`. `status_icon` is empty.
+
+Unknown fields stay literal; `{{` and `}}` escape braces. The script panel shows
+the latest output while preserving its original stdout/stderr destination.
+`--progress-lines` or `TMUXP_PROGRESS_LINES` sets its rows: 3 by default, 0 hides
+the panel, and -1 uses the available initial terminal height. Retained panel
+text is bounded to 65,536 characters. Terminal dimensions are sampled once;
+the display does not track resizing, and Unicode clipping is conservative.
+`--no-progress`, `TMUXP_PROGRESS=0`, `TERM=dumb`, redirected stderr and machine
+output disable the display. Completion and interruption clear its frame.
 
 `--log-level` filters diagnostics from debug through critical, defaulting to
 warning. Load accepts `--log-file` for appended JSON log records. New files use

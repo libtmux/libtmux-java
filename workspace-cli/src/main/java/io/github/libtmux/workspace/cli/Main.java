@@ -76,7 +76,17 @@ public final class Main {
             Path directory,
             InputStream input,
             OutputStream output,
-            OutputStream error) {
+            OutputStream error,
+            boolean processError) {
+        Context(
+                Map<String, String> environment,
+                Path directory,
+                InputStream input,
+                OutputStream output,
+                OutputStream error) {
+            this(environment, directory, input, output, error, false);
+        }
+
         Context {
             environment = Map.copyOf(environment);
             directory = directory.toAbsolutePath().normalize();
@@ -107,7 +117,8 @@ public final class Main {
             OutputStream output,
             OutputStream error) {
         try (var streams = new BorrowedOutput(output, error)) {
-            Context context = new Context(environment, directory, input, streams.output(), streams.error());
+            Context context = new Context(
+                    environment, directory, input, streams.output(), streams.error(), System.err.equals(error));
             int status = execute(args, context);
             if (streams.interrupted()) {
                 Thread.currentThread().interrupt();

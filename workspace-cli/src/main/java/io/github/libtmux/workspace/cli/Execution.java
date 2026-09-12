@@ -77,6 +77,13 @@ final class Execution {
                         .createObjectNode()
                         .put("input_index", index)
                         .put("input", Catalog.mask(context, plan.source()))
+                        .put("session_name", borrowed.map(Session::name).orElse(plan.name()))
+                        .put("window_total", plan.windows().size())
+                        .put(
+                                "session_pane_total",
+                                plan.windows().stream()
+                                        .mapToInt(window -> window.panes().size())
+                                        .sum())
                         .put("owned_session", false)
                         .put("stage", "resolve");
                 effects.putArray("window_ids");
@@ -249,6 +256,7 @@ final class Execution {
                             .createObjectNode()
                             .put("window_id", window.id().value())
                             .put("window_index", window.index().value())
+                            .put("pane_total", spec.panes().size())
                             .put("window_name", window.name()));
             created(panes.getFirst(), window, report);
             if (bootstrap != null) {
@@ -302,9 +310,19 @@ final class Execution {
                     Thread.sleep(command.after());
                 }
                 if (config.focus()) pane.select();
+                report.event(
+                        "pane-completed",
+                        Documents.JSON
+                                .createObjectNode()
+                                .put("pane_id", pane.id().value()));
             }
             apply(window.options(), spec.optionsAfter(), effects);
             if (focused == null || spec.focus()) focused = window;
+            report.event(
+                    "window-completed",
+                    Documents.JSON
+                            .createObjectNode()
+                            .put("window_id", window.id().value()));
         }
         effects.put("stage", "finalize");
         if (focused != null) focused.select();
