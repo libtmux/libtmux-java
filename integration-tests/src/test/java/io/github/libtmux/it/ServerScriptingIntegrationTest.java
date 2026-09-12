@@ -9,6 +9,7 @@ import io.github.libtmux.Server;
 import io.github.libtmux.TmuxFormats;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.UnsupportedTmuxVersion;
+import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -86,14 +87,18 @@ final class ServerScriptingIntegrationTest {
         Path expanded = directory.resolve("expanded");
         Path literal = directory.resolve("literal");
 
-        // The literalized command goes first, so by the time the expanded one has landed the
-        // literal one has had at least as long to fire. Asserting its absence straight after
-        // dispatching it would pass even if literalization did nothing, because #() is asynchronous.
-        server.runShell(TmuxFormats.literal("echo '#(touch " + literal + ")' > /dev/null"));
-        server.runShell("echo '#(touch " + expanded + ")' > /dev/null");
+        // tmux cancels a client's asynchronous format jobs when that client disconnects.
+        // Keep the client alive through observation; a short-lived command races job cleanup.
+        try (ControlClient client =
+                ControlClient.attach(server.config(), server.sessions().get(0).id())) {
+            assertTrue(client.send("run-shell", TmuxFormats.literal("echo '#(touch " + literal + ")' > /dev/null"))
+                    .succeeded());
+            assertTrue(client.send("run-shell", "echo '#(touch " + expanded + ")' > /dev/null")
+                    .succeeded());
 
-        assertTrue(Await.until(() -> Files.exists(expanded)), "tmux expands a format inside shell quotes");
-        assertFalse(Files.exists(literal), "a literalized value must reach the shell as text");
+            assertTrue(Await.until(() -> Files.exists(expanded)), "tmux expands a format inside shell quotes");
+            assertFalse(Files.exists(literal), "a literalized value must reach the shell as text");
+        }
     }
 
     @Test
