@@ -15,6 +15,12 @@ Typed, blocking access to [tmux](https://github.com/tmux/tmux) from the JVM.
 A sibling of the Python [libtmux](https://libtmux.git-pull.com/), targeting
 practical parity while reading as Java rather than as a translation.
 
+`socket` below is a `java.nio.file.Path` naming the tmux socket to drive, for
+example `Path.of("/tmp/my-tool.sock")`. Giving the program a socket of its own
+keeps it away from a tmux someone is working in; `ServerEndpoint.defaultSocket()`
+reaches the one a person means by "my tmux". The snippet tests bind `socket` for
+you, which is why it appears here without being declared.
+
 <!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
 ServerConfig config = ServerConfig.builder()
