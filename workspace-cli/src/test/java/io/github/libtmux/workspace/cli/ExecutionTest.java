@@ -169,16 +169,18 @@ final class ExecutionTest {
     }
 
     @Test
-    void pythonBuilderCannotClaimAnExistingSessionOrItsObjects() throws Exception {
+    void customBuilderWithoutWindowsKeepsExpansionAndObservedOwnership() throws Exception {
         String python = System.getenv("TMUX_WORKSPACE_TEST_PYTHON");
         org.junit.jupiter.api.Assumptions.assumeTrue(
                 python != null, "set TMUX_WORKSPACE_TEST_PYTHON for bridge fixtures");
         Path source = directory.resolve("existing-extension.yaml");
         Path socket = directory.resolve("existing-extension-socket");
         Files.writeString(directory.resolve("existing_extension.py"), """
+                from pathlib import Path
                 class Builder:
                     def __init__(self, session_config, server, plugins):
-                        self.session = server.sessions.get(session_name='existing')
+                        assert session_config['start_directory'] == str(Path(__file__).parent)
+                        self.session = server.sessions.get(session_name=session_config['custom_session'])
                         self.plugins = plugins
                     def build(self, session=None, append=False): pass
                 """);
@@ -186,7 +188,8 @@ final class ExecutionTest {
                 session_name: requested
                 workspace_builder: existing_extension:Builder
                 workspace_builder_paths: [.]
-                windows: []
+                start_directory: .
+                custom_session: existing
                 """);
         try (Server server = server(socket)) {
             try {
