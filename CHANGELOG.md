@@ -12,6 +12,8 @@ production.
 
 ## Unreleased
 
+## 0.0.1-alpha.11 — 2026-09-12
+
 ### Added
 
 - **`Server` finds one object without a stream.** `server.session(String)`,
