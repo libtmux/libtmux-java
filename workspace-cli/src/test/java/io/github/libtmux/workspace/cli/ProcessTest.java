@@ -417,8 +417,16 @@ final class ProcessTest {
                         time.sleep(.025)
                     assert len(attached()) == 2
                     pane = subprocess.check_output(prefix + ['display-message', '-p', '-t', 'origin:', '#{pane_id}'], text=True).strip()
+                    until = time.monotonic() + 4
+                    while time.monotonic() < until:
+                        attached()
+                        screen = subprocess.check_output(prefix + ['capture-pane', '-p', '-t', pane], text=True)
+                        if 'workspace-ready>' in screen: break
+                        time.sleep(.025)
+                    assert 'workspace-ready>' in screen, screen
                     status = os.path.join(scratch, 'exit-status')
-                    command = shlex.join([launcher, 'load', source, '-S', socket])
+                    command = shlex.join(['env', 'LIBTMUX_TEST_TMUX=' + tmux,
+                        launcher, 'load', source, '-S', socket])
                     command += ' </dev/null >' + shlex.quote(os.path.join(scratch, 'stdout'))
                     command += ' 2>' + shlex.quote(os.path.join(scratch, 'stderr'))
                     command += '; printf %s $? >' + shlex.quote(status)
@@ -435,7 +443,7 @@ final class ProcessTest {
                         for name in ('stdout', 'stderr'):
                             path = os.path.join(scratch, name)
                             if os.path.exists(path): print(name, open(path).read(), file=sys.stderr)
-                    assert open(status).read() == '0'
+                    assert open(status).read() == '0', open(os.path.join(scratch, 'stderr')).read()
                     state = attached()
                     assert state[clients[0][2]] == 'switched', state
                     assert state[clients[1][2]] == 'other', state
@@ -450,7 +458,8 @@ final class ProcessTest {
                 .endpoint(ServerEndpoint.socketPath(socket))
                 .binary(System.getProperty("libtmux.tmux", "tmux"))
                 .build()) {
-            server.newSession("origin");
+            server.newSession(spec ->
+                    spec.named("origin").running("/bin/sh", "-i").env("ENV", "").env("PS1", "workspace-ready> "));
             server.newSession("other");
             try {
                 Process child = new ProcessBuilder(
