@@ -413,6 +413,57 @@ final class ExecutionTest {
     }
 
     @Test
+    void appendKeepsItsBorrowedSessionWhenTheInvokingWindowMoves() throws Exception {
+        Path first = directory.resolve("first.yaml");
+        Path second = directory.resolve("second.yaml");
+        Path script = directory.resolve("move-window.sh");
+        Path socket = directory.resolve("stable-append-socket");
+        Files.writeString(
+                first,
+                "session_name: ignored-first\nbefore_script: /bin/sh " + script
+                        + "\nwindows:\n  - window_name: first\n");
+        Files.writeString(
+                second, "session_name: ignored-second\nwindows:\n  - window_name: second\n    window_index: 4\n");
+        try (Server server = server(socket)) {
+            try {
+                var borrowed = server.newSession("borrowed");
+                var invoking = borrowed.windows().getFirst();
+                borrowed.newWindow("keep");
+                var other = server.newSession("other");
+                var environment = inherited(server, socket);
+                Files.writeString(
+                        script,
+                        "exec '" + System.getProperty("libtmux.tmux", "tmux") + "' -S '" + socket
+                                + "' move-window -s '" + invoking.id().value() + "' -t '"
+                                + other.id().value()
+                                + ":3'\n");
+                Result result = invoke(
+                        environment,
+                        "load",
+                        first.toString(),
+                        second.toString(),
+                        "--append",
+                        "-S",
+                        socket.toString(),
+                        "--json");
+                assertEquals(0, result.code(), result.toString());
+                var results = new ObjectMapper().readTree(result.out()).path("results");
+                assertEquals(2, results.size());
+                for (var item : results)
+                    assertEquals(borrowed.id().value(), item.path("session_id").asText(), result.out());
+                assertEquals(
+                        java.util.Set.of("keep", "first", "second"),
+                        borrowed.refresh().windows().stream()
+                                .map(io.github.libtmux.Window::name)
+                                .collect(toSet()));
+                assertEquals(2, other.refresh().windows().size());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
     void booleanOptionsUseTmuxValuesWhileEnvironmentRemainsText() throws Exception {
         Path source = directory.resolve("booleans.yaml");
         Path socket = directory.resolve("booleans-socket");
