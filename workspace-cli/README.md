@@ -6,8 +6,8 @@ The CLI requires JDK 21 or newer and targets tmux 3.2a or newer.
 
 This branch is an implementation checkpoint. Native loading, capture,
 conversion, imports, discovery, search, editor execution and Python shell
-execution are available. Python plugins, custom builders, pane readiness,
-progress templates and log controls still need implementation and validation.
+execution are available. Python plugins, custom builders, pane readiness and progress templates still
+need implementation and validation.
 Native loading rejects unsupported configuration keys before contacting tmux.
 
 ## Installation
@@ -85,6 +85,14 @@ shells use the controlling terminal while their result remains on stdout.
 Human output uses semantic colors. `NO_COLOR` disables styling, followed by the
 explicit `--color` policy. Automatic color also recognizes `FORCE_COLOR`,
 `CLICOLOR_FORCE` and `CLICOLOR`.
+
+`--log-level` filters diagnostics from debug through critical, defaulting to
+warning. Load accepts `--log-file` for appended JSON log records. New files use
+private permissions on POSIX filesystems; existing permissions are preserved.
+Info-level logs include both captured bootstrap streams. Diagnostics use stderr
+and preserve machine stdout. Invalid log destinations fail before tmux changes.
+Runtime append or close failures produce a separate logging diagnostic and
+preserve the workspace result and exit status; a failed logger stops recording.
 
 Python shell commands require `TMUX_WORKSPACE_PYTHON` to name an interpreter
 with tmuxp 1.74.0 installed. The version is checked before execution. Ordinary

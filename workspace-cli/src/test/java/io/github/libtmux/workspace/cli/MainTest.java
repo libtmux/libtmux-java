@@ -104,6 +104,35 @@ final class MainTest {
     }
 
     @Test
+    void loggingAppendsPreflightErrorsWithoutTouchingMachineStdout() throws Exception {
+        Path log = directory.resolve("operations.jsonl");
+        Result failed = invoke("load", "missing.yaml", "-d", "--json", "--log-file", log.toString());
+        assertEquals(1, failed.code());
+        assertEquals("", failed.out());
+        assertTrue(Files.isRegularFile(log), failed.toString());
+        var records = Files.readAllLines(log);
+        assertEquals(1, records.size());
+        var record = new ObjectMapper().readTree(records.getFirst());
+        assertEquals("error", record.path("level").asText());
+        assertEquals("command-failed", record.path("event").asText());
+        assertEquals(
+                java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"),
+                Files.getPosixFilePermissions(log));
+        failed = invoke("load", "missing.yaml", "-d", "--json", "--log-file", log.toString(), "--log-level", "debug");
+        assertEquals(1, failed.code());
+        assertEquals(3, Files.readAllLines(log).size());
+        assertEquals("", failed.out());
+        for (Path invalidPath : List.of(directory, directory.resolve("missing/log.jsonl"))) {
+            Result invalid = invoke("load", "missing.yaml", "-d", "--json", "--log-file", invalidPath.toString());
+            assertEquals(1, invalid.code());
+            assertEquals("", invalid.out());
+            assertEquals(
+                    "log_file",
+                    new ObjectMapper().readTree(invalid.err()).path("code").asText());
+        }
+    }
+
+    @Test
     void treeGroupsWorkspacesByDirectoryWithoutChangingMachineRecords() throws Exception {
         Path global = Files.createDirectory(directory.resolve(".tmuxp"));
         Files.writeString(global.resolve("first.yaml"), "session_name: one\nwindows: []\n");
