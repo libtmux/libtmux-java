@@ -625,6 +625,83 @@ final class ExecutionTest {
         }
     }
 
+    @Test
+    void cancellationReleasesChildDrainsAndPreservesPartialJson() throws Exception {
+        Path source = directory.resolve("blocked-output.json");
+        Path socket = directory.resolve("blocked-output-socket");
+        Path script = directory.resolve("bootstrap.sh");
+        Path pids = directory.resolve("child-pids");
+        Files.writeString(
+                script,
+                "sleep 30 &\nprintf '%s\\n%s\\n' \"$$\" \"$!\" > '" + pids
+                        + "'\nprintf bootstrap-out\nprintf bootstrap-err >&2\nwait\n");
+        var config = new ObjectMapper()
+                .createObjectNode()
+                .put("session_name", "blocked-output")
+                .put("before_script", "/bin/sh " + script);
+        config.putArray("windows").addObject();
+        Files.writeString(source, config.toString());
+        var output = new ByteArrayOutputStream();
+        var error = new MainTest.BlockedOutput("\"event\":\"script-output\"");
+        var status = new java.util.concurrent.atomic.AtomicInteger(-1);
+        var environment = new HashMap<>(System.getenv());
+        environment.remove("TMUX");
+        environment.remove("TMUX_PANE");
+        environment.put("HOME", directory.toString());
+        environment.put("LIBTMUX_TEST_TMUX", System.getProperty("libtmux.tmux", "tmux"));
+        Thread owner = Thread.ofPlatform()
+                .unstarted(() -> status.set(Main.run(
+                        new String[] {
+                            "load",
+                            source.toString(),
+                            "-d",
+                            "-S",
+                            socket.toString(),
+                            "-f",
+                            "/dev/null",
+                            "--json",
+                            "--log-level",
+                            "info"
+                        },
+                        environment,
+                        directory,
+                        InputStream.nullInputStream(),
+                        output,
+                        error)));
+        try (Server server = server(socket)) {
+            try {
+                owner.start();
+                assertTrue(error.entered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+                owner.interrupt();
+                owner.join(1_000);
+                assertFalse(owner.isAlive(), "child drains retained the invocation");
+                assertEquals(130, status.get());
+                var result = new ObjectMapper().readTree(output.toString(StandardCharsets.UTF_8));
+                assertTrue(result != null, "missing partial JSON");
+                assertEquals("partial", result.path("status").asText());
+                var failure = result.path("errors").path(0);
+                assertEquals("interrupted", failure.path("code").asText());
+                assertReportedObjects(server, failure.path("effects"));
+                for (String pid : Files.readAllLines(pids)) {
+                    Process probe = new ProcessBuilder("ps", "-o", "stat=", "-p", pid).start();
+                    String state = new String(probe.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
+                    probe.waitFor();
+                    assertTrue(state.isEmpty() || state.startsWith("Z"), "owned child is running: " + state);
+                }
+                assertFalse(error.closed.get());
+            } finally {
+                error.release.countDown();
+                owner.join(2_000);
+                assertTrue(error.finished.await(2, java.util.concurrent.TimeUnit.SECONDS));
+                if (Files.exists(pids)) {
+                    for (String pid : Files.readAllLines(pids))
+                        ProcessHandle.of(Long.parseLong(pid)).ifPresent(ProcessHandle::destroyForcibly);
+                }
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     private static java.util.Map<String, String> inherited(Server server, Path socket) {
         return java.util.Map.of(
                 "TMUX",

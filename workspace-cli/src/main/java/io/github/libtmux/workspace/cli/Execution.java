@@ -90,7 +90,12 @@ final class Execution {
                     boolean partial = effects.path("changed").asBoolean() || !results.isEmpty();
                     ObjectNode error = Documents.JSON
                             .createObjectNode()
-                            .put("code", failure instanceof InterruptedException ? "interrupted" : "load_failed")
+                            .put(
+                                    "code",
+                                    failure instanceof InterruptedException
+                                                    || failure instanceof java.io.InterruptedIOException
+                                            ? "interrupted"
+                                            : "load_failed")
                             .put("message", String.valueOf(failure.getMessage()))
                             .put("input_index", index)
                             .put("partial_effects", partial);

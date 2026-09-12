@@ -124,6 +124,12 @@ and preserve machine stdout. Invalid log destinations fail before tmux changes.
 Runtime append or close failures produce a separate logging diagnostic and
 preserve the workspace result and exit status; a failed logger stops recording.
 
+Interrupting a command returns exit 130. Writes retain their order within each
+stream. Final output has a bounded delivery allowance after interruption;
+an undrained pipe can leave that output incomplete. Caller-supplied output
+streams remain open. If a stream ignores interruption, its pending write can
+finish later when the caller drains it; cancellation does not reap that write.
+
 Python shell commands require `TMUX_WORKSPACE_PYTHON` to name an interpreter
 with tmuxp 1.74.0 installed. The version is checked before execution. Ordinary
 native loading and read commands do not require Python. Search uses Java regex

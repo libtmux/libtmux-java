@@ -117,6 +117,7 @@ final class Reporter implements AutoCloseable {
                 context.error().flush();
             }
         } catch (IOException failure) {
+            if (failure instanceof java.io.InterruptedIOException) throw failure;
             logFailed = true;
             Main.diagnostic(context, machine(), "log_file", "logging failed: " + failure.getMessage());
         }

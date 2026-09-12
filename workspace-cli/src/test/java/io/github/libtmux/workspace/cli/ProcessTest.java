@@ -36,6 +36,47 @@ final class ProcessTest {
     }
 
     @Test
+    void interruptionExitsWhileTheInstalledStdoutPipeIsUndrained() throws Exception {
+        Path global = Files.createDirectory(directory.resolve(".tmuxp"));
+        Files.writeString(global.resolve("large.yaml"), "session_name: large\ntext: " + "x".repeat(100_000) + "\n");
+        String script = """
+                import array, fcntl, os, signal, subprocess, sys, termios, time
+                reader, writer = os.pipe()
+                capacity = fcntl.fcntl(writer, fcntl.F_SETPIPE_SZ, 4096)
+                child = subprocess.Popen(sys.argv[1:], stdout=writer, stderr=subprocess.PIPE,
+                    stdin=subprocess.DEVNULL)
+                os.close(writer)
+                try:
+                    size = array.array('i', [0])
+                    until = time.monotonic() + 4
+                    while child.poll() is None and time.monotonic() < until:
+                        fcntl.ioctl(reader, termios.FIONREAD, size, True)
+                        if size[0] == capacity: break
+                        time.sleep(.01)
+                    assert size[0] == capacity and child.poll() is None, size[0]
+                    child.send_signal(signal.SIGINT)
+                    assert child.wait(timeout=1.5) == 130
+                finally:
+                    if child.poll() is None:
+                        child.kill()
+                        child.wait()
+                    os.close(reader)
+                    child.stderr.close()
+                """;
+        var builder = command("ls", "--full", "--json");
+        var argv = new ArrayList<>(List.of("python3", "-c", script));
+        argv.addAll(builder.command());
+        builder.command(argv).redirectError(ProcessBuilder.Redirect.INHERIT);
+        Process probe = builder.start();
+        try {
+            assertTrue(probe.waitFor(7, TimeUnit.SECONDS), "undrained pipe probe did not finish");
+            assertEquals(0, probe.exitValue());
+        } finally {
+            if (probe.isAlive()) probe.destroyForcibly().waitFor();
+        }
+    }
+
+    @Test
     void interruptionEmitsActualPartialEffectsAfterStreamingOutput() throws Exception {
         Path source = directory.resolve("workspace.yaml");
         Path socket = directory.resolve("socket");
