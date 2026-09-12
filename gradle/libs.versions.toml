@@ -15,6 +15,7 @@ maven-publish-plugin = "0.37.0"
 palantir-format = "2.97.0"
 cyclonedx-plugin = "3.4.1"
 japicmp = "0.23.1"
+picocli = "4.7.7"
 
 [libraries]
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
@@ -34,6 +35,7 @@ errorprone-annotations = { module = "com.google.errorprone:error_prone_annotatio
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
 nullaway = { module = "com.uber.nullaway:nullaway", version.ref = "nullaway" }
 japicmp = { module = "com.github.siom79.japicmp:japicmp", version.ref = "japicmp" }
+picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
