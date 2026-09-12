@@ -6,13 +6,16 @@ import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * One tmux pane, as one capture saw it.
@@ -21,6 +24,15 @@ import java.util.function.Consumer;
  * and go.
  */
 public final class Pane {
+
+    /**
+     * How often a wait looks again.
+     *
+     * <p>Short enough that a wait reports promptly, long enough that a wait held open for minutes
+     * is not thousands of tmux invocations. A caller who needs an exact moment wants a signal on a
+     * {@link Channel}, not a shorter interval here.
+     */
+    private static final Duration POLL = Duration.ofMillis(50);
 
     private static final RowFormat BROKEN_OUT = RowFormat.of("session_id", "window_id", "window_index");
 
@@ -275,6 +287,100 @@ public final class Pane {
     /** This pane's visible content, one element per line. */
     public List<String> capture() {
         return capture(CaptureSpec.builder().build());
+    }
+
+    /**
+     * Waits until this pane's text contains something, and says why the wait ended.
+     *
+     * <p><strong>Reach for this last.</strong> It reads the screen on a timer, which is a heuristic
+     * about a program's output rather than a fact about it, and the cheaper waits are exact:
+     *
+     * <ol>
+     *   <li>If you wrote the command, append {@code ; tmux wait-for -S name} to it and block on
+     *       {@link Server#channel}. tmux blocks server-side and returns on the signal itself, so
+     *       nothing is inferred from the screen and one tmux process covers the whole wait. That is
+     *       the only deterministic wait here, and it is the right one whenever the command is yours.
+     *   <li>If you did not write the command — a daemon printing that it is ready, a build somebody
+     *       else started — this is the case polling is for.
+     * </ol>
+     *
+     * <p>Waiting longer is also less reliable, not more: tmux frees the oldest scrollback once
+     * {@code history-limit} is reached, so a long wait on a productive pane can end up reading past
+     * the lines it was watching for.
+     *
+     * @param text the text to wait for, matched anywhere in a captured line
+     * @param timeout how long to keep looking
+     * @return {@link WakeReason#SIGNALLED} when the text appeared, {@link WakeReason#TIMED_OUT} when
+     *     it did not, {@link WakeReason#SERVER_GONE} when the server went away underneath the wait
+     */
+    public WakeReason awaitText(String text, Duration timeout) {
+        Objects.requireNonNull(text, "text");
+        return awaitCondition(() -> capture().stream().anyMatch(line -> line.contains(text)), timeout);
+    }
+
+    /**
+     * Waits until a condition holds for this pane as tmux reports it, and says why the wait ended.
+     *
+     * <p>The pane is captured again before each test, so the condition reads fresh state rather than
+     * the capture this handle was built from. The same ordering as {@link #awaitText} applies: a
+     * signal on a {@link Server#channel} is exact, and this is what to use when nothing signals.
+     *
+     * <pre>{@code
+     * pane.await(fresh -> !fresh.currentCommand().equals("zsh"), Duration.ofSeconds(5));
+     * }</pre>
+     *
+     * @param settled receives this pane as it is now
+     * @param timeout how long to keep looking
+     * @return why the wait ended
+     * @throws ObjectDoesNotExist if the pane itself is killed while waiting, which is not a timeout
+     */
+    public WakeReason await(Predicate<Pane> settled, Duration timeout) {
+        Objects.requireNonNull(settled, "settled");
+        return awaitCondition(() -> settled.test(refresh()), timeout);
+    }
+
+    /**
+     * One deadline, one liveness check, for both public waits.
+     *
+     * <p>A wait that ends without its condition holding asks the server whether it is still there,
+     * because "nothing printed in ten seconds" and "the server died three seconds in" call for
+     * opposite recovery and tmux does not distinguish them. The same reason {@link Channel} reports
+     * a {@link WakeReason} rather than a boolean.
+     *
+     * <p>A read that fails is the other way the server can go away mid-wait, and it is the common
+     * one: {@code capture-pane} against a dead server raises rather than answering emptily. That is
+     * reported at once rather than after the deadline, because a caller waiting twenty seconds for a
+     * server that is already gone learns nothing by waiting the rest of them. A failure while the
+     * server is still answering is a real one — a killed pane, an unsupported capture — and
+     * propagates.
+     */
+    private WakeReason awaitCondition(BooleanSupplier condition, Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout");
+        if (timeout.isNegative()) {
+            throw new IllegalArgumentException("timeout is negative: " + timeout);
+        }
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (true) {
+            try {
+                if (condition.getAsBoolean()) {
+                    return WakeReason.SIGNALLED;
+                }
+            } catch (LibTmuxException unreadable) {
+                if (server.isAlive()) {
+                    throw unreadable;
+                }
+                return WakeReason.SERVER_GONE;
+            }
+            if (System.nanoTime() >= deadline) {
+                return server.isAlive() ? WakeReason.TIMED_OUT : WakeReason.SERVER_GONE;
+            }
+            try {
+                Thread.sleep(POLL.toMillis());
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return server.isAlive() ? WakeReason.TIMED_OUT : WakeReason.SERVER_GONE;
+            }
+        }
     }
 
     /**

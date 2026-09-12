@@ -132,7 +132,7 @@ final class PaneOperationsIntegrationTest {
 
             pane.sendLiteral(List.of(input));
 
-            assertTrue(awaitText(pane, input), "tmux parsed caller input as an option: " + input);
+            assertTrue(Await.output(pane, input), "tmux parsed caller input as an option: " + input);
         }
     }
 
@@ -151,23 +151,13 @@ final class PaneOperationsIntegrationTest {
 
         typed.sendLiteral(List.of("C-c"));
         interrupted.sendLine("sleep 97");
-        assertTrue(awaitText(interrupted, "sleep 97"), "the command has to be running to be interrupted");
+        assertTrue(Await.output(interrupted, "sleep 97"), "the command has to be running to be interrupted");
         interrupted.sendKeys(List.of("C-c"));
 
-        assertTrue(awaitText(typed, "C-c"), "literal input is the characters it spells");
+        assertTrue(Await.output(typed, "C-c"), "literal input is the characters it spells");
         assertTrue(
-                awaitText(interrupted, "^C")
+                Await.output(interrupted, "^C")
                         || !interrupted.refresh().currentCommand().contains("sleep"),
                 "a key name is resolved by tmux, so the pane stops running sleep");
-    }
-
-    private static boolean awaitText(Pane pane, String text) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            if (String.join("\n", pane.capture()).contains(text)) {
-                return true;
-            }
-            Thread.sleep(20);
-        }
-        return String.join("\n", pane.capture()).contains(text);
     }
 }
