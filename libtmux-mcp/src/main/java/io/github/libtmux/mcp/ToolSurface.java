@@ -210,7 +210,7 @@ final class ToolSurface {
         connection.put("resolvedSocketPath", path);
         connection.put("serverState", socket.get("serverState"));
         connection.put("configurationProvenance", socket.get("configurationProvenance"));
-        connection.put("attachCommand", SocketProfile.attachCommand(server.config()));
+        connection.put("attachCommand", SocketProfile.attachCommand(server.config(), path));
         return Collections.unmodifiableMap(connection);
     }
 

@@ -153,7 +153,7 @@ record LaunchConfiguration(
                 serverState,
                 configurationProvenance,
                 resolvedSocketPath,
-                SocketProfile.attachCommand(config),
+                SocketProfile.attachCommand(config, resolvedSocketPath),
                 defaultTeardown);
     }
 

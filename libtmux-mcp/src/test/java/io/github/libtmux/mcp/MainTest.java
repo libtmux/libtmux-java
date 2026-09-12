@@ -142,12 +142,29 @@ final class MainTest {
     }
 
     /**
+     * A socket path tmux reported wins over the name that found it.
+     *
+     * <p>{@code -L} is resolved again under whoever runs the command, whose {@code TMUX_TMPDIR} may
+     * name a different directory and so a different server with the same name. The absolute path tmux
+     * reported reaches this one from anywhere.
+     */
+    @Test
+    void aReportedSocketPathWinsOverTheNameThatFoundIt() {
+        ServerConfig named = ServerConfig.builder()
+                .endpoint(ServerEndpoint.namedSocket("work"))
+                .build();
+        String whole = SocketProfile.attachCommand(named, "/tmp/libtmux-java-dev/elsewhere/work");
+
+        assertEquals(" -N -S /tmp/libtmux-java-dev/elsewhere/work attach", whole.substring(whole.indexOf(" -N")));
+    }
+
+    /**
      * The attach command from {@code -N} onwards, so an assertion is about the endpoint rather than
      * about where tmux happens to be installed on the machine running the suite.
      */
     private static String attachFlags(ServerEndpoint endpoint) {
         ServerConfig config = ServerConfig.builder().endpoint(endpoint).build();
-        String whole = SocketProfile.attachCommand(config);
+        String whole = SocketProfile.attachCommand(config, "");
         assertTrue(whole.contains(config.binaryPath()), whole);
         return whole.substring(whole.indexOf(" -N"));
     }

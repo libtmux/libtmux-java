@@ -3,6 +3,7 @@ package io.github.libtmux.mcp;
 import io.github.libtmux.ServerConfig;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -20,16 +21,25 @@ record SocketProfile(
     private static final Pattern ALREADY_SAFE = Pattern.compile("[\\w@%+=:,./-]+");
 
     /**
-     * The command an operator runs to attach to the server this configuration names.
+     * The command an operator runs to attach to the server this process is using.
      *
-     * <p>Built from {@link io.github.libtmux.ServerEndpoint#flags()} rather than by re-deriving
-     * {@code -S} and {@code -L} here. An endpoint already knows the flags that select it, and one
-     * kind that this method had never heard of would otherwise be silently left out of the command
-     * an operator is told to run.
+     * <p>The socket path tmux itself reported wins whenever there is one. {@code -S} with an absolute
+     * path reaches that one server from any shell, while {@code -L name} is resolved again under the
+     * operator's own {@code TMUX_TMPDIR} and user — possibly a different directory, and so a different
+     * server that happens to share the name. The socket path is the access boundary {@code
+     * SECURITY.md} describes, which makes it the thing to hand over.
+     *
+     * <p>Without a reported path, because the server was not running at startup, the command is
+     * built from {@link io.github.libtmux.ServerEndpoint#flags()}, so every kind of endpoint selects
+     * its server and none is left out by a branch that did not know about it.
+     *
+     * @param resolvedSocketPath the path tmux reported for its socket, or empty when it reported none
      */
-    static String attachCommand(ServerConfig config) {
+    static String attachCommand(ServerConfig config, String resolvedSocketPath) {
         StringBuilder command = new StringBuilder(quote(config.binaryPath())).append(" -N");
-        config.endpoint().flags().forEach(flag -> command.append(' ').append(quote(flag)));
+        List<String> selector =
+                resolvedSocketPath.isBlank() ? config.endpoint().flags() : List.of("-S", resolvedSocketPath);
+        selector.forEach(flag -> command.append(' ').append(quote(flag)));
         return command.append(" attach").toString();
     }
 
