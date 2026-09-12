@@ -298,9 +298,9 @@ final class Execution {
         Options options = session.options();
         boolean renumber = options.get("renumber-windows").orElse("off").equals("on");
         String previous = renumber ? options.all().get("renumber-windows") : null;
-        if (renumber) options.set("renumber-windows", "off");
         RuntimeException failed = null;
         try {
+            if (renumber) options.set("renumber-windows", "off");
             bootstrap.kill();
         } catch (RuntimeException failure) {
             failed = failure;

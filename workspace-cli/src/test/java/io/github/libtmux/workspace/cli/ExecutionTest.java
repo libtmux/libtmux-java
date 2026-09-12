@@ -361,9 +361,9 @@ final class ExecutionTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"true,false", "false,true", "true,true"})
-    void bootstrapCleanupPreservesPrimaryFailuresAndSettings(boolean failRemoval, boolean failRestore)
-            throws Exception {
+    @CsvSource({"true,false,false", "false,true,false", "true,true,false", "false,false,true"})
+    void bootstrapCleanupPreservesPrimaryFailuresAndSettings(
+            boolean failRemoval, boolean failRestore, boolean failDisable) throws Exception {
         Path source = directory.resolve("cleanup.yaml");
         Path socket = directory.resolve("cleanup-socket");
         Path wrapper = directory.resolve("tmux-failed-cleanup");
@@ -371,11 +371,16 @@ final class ExecutionTest {
         Files.writeString(wrapper, """
                 #!/bin/sh
                 case "$*" in
+                  %s
                   *kill-window*) : > '%s'; %s;;
                   *renumber-windows*) if test -f '%s'; then %s; fi;;
                 esac
                 exec '%s' "$@"
                 """.formatted(
+                        failDisable
+                                ? "*set-option*renumber-windows*off*) '%s' \"$@\"; printf injected-disable-failure >&2; exit 1;;"
+                                        .formatted(System.getProperty("libtmux.tmux", "tmux"))
+                                : "",
                         removing,
                         failRemoval ? "printf injected-cleanup-failure >&2; exit 1" : ":",
                         removing,
@@ -401,7 +406,10 @@ final class ExecutionTest {
                         new ObjectMapper().readTree(result.out()).path("errors").path(0);
                 assertTrue(failure.path("message")
                         .asText()
-                        .contains(failRemoval ? "injected-cleanup-failure" : "injected-restore-failure"));
+                        .contains(
+                                failDisable
+                                        ? "injected-disable-failure"
+                                        : failRemoval ? "injected-cleanup-failure" : "injected-restore-failure"));
                 assertEquals("finalize", failure.path("effects").path("stage").asText());
                 assertEquals(
                         failRestore,
