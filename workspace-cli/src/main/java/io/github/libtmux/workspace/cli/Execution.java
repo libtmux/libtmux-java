@@ -3,6 +3,7 @@ package io.github.libtmux.workspace.cli;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.libtmux.Layout;
+import io.github.libtmux.Layouts;
 import io.github.libtmux.Options;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
@@ -74,6 +75,12 @@ final class Execution {
         String python =
                 plans.stream().anyMatch(plan -> plan.extension() != null) ? Children.python(context, report) : "";
         try (Server server = server(context, args)) {
+            for (WorkspacePlan plan : plans) {
+                for (WorkspacePlan.Window window : plan.windows()) {
+                    if (!window.layout().isEmpty())
+                        Layouts.require(window.layout(), server, window.panes().size());
+                }
+            }
             Optional<Session> borrowed = append ? Optional.of(appendTarget(context, server)) : Optional.empty();
             Optional<io.github.libtmux.Client> invoking =
                     detached || append ? Optional.empty() : invokingClient(context, server);
@@ -298,11 +305,12 @@ final class Execution {
                 window.selectLayout(Layout.TILED);
             }
             if (!spec.layout().isEmpty()) {
+                String canonical = Layouts.require(spec.layout(), server, panes.size());
                 Optional<Layout> layout = java.util.Arrays.stream(Layout.values())
-                        .filter(value -> value.tmuxName().equals(spec.layout()))
+                        .filter(value -> value.tmuxName().equals(canonical))
                         .findFirst();
                 if (layout.isPresent()) window.selectLayout(layout.orElseThrow());
-                else window.applyLayout(spec.layout());
+                else window.applyLayout(canonical);
             }
             for (int index = 0; index < panes.size(); index++) {
                 Pane pane = panes.get(index);

@@ -12,6 +12,13 @@ production.
 
 ## Unreleased
 
+### Fixed
+
+- **Workspace layouts accept tmux abbreviations and prunable geometry.** Layout
+  validation checks names against the running daemon and checks serialized
+  checksums, tree structure and pane counts before any input runs scripts or
+  changes sessions. tmux remains responsible for geometry and pruning.
+
 ## 0.0.1-alpha.11 — 2026-09-12
 
 ### Added
