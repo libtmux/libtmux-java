@@ -22,7 +22,14 @@ record WorkspacePlan(
         Map<String, String> options,
         Map<String, String> globalOptions,
         List<String> beforeScript,
+        Readiness readiness,
         List<Window> windows) {
+    enum Readiness {
+        AUTO,
+        ALWAYS,
+        NEVER
+    }
+
     record Command(String text, boolean enter, Duration before, Duration after) {}
 
     record Pane(Path directory, Map<String, String> environment, String shell, boolean focus, List<Command> commands) {}
@@ -50,6 +57,7 @@ record WorkspacePlan(
                         "before_script",
                         "shell_command_before",
                         "suppress_history",
+                        "workspace_builder_options",
                         "plugins",
                         "workspace_builder",
                         "workspace_builder_paths"),
@@ -66,6 +74,7 @@ record WorkspacePlan(
         Map<String, String> environment = mapping(context, root.path("environment"), true);
         Map<String, String> options = mapping(context, root.path("options"), false);
         Map<String, String> globalOptions = mapping(context, root.path("global_options"), false);
+        Readiness readiness = readiness(root.path("workspace_builder_options"));
         JsonNode windowNodes = root.path("windows");
         if (!windowNodes.isArray() || windowNodes.isEmpty()) throw invalid("windows must be a nonempty array");
         List<Window> windows = new ArrayList<>();
@@ -111,12 +120,15 @@ record WorkspacePlan(
                                     "environment",
                                     "focus",
                                     "suppress_history",
+                                    "shell",
                                     "pane_shell"),
                             "pane");
                 Path paneDirectory = directory(context, pane, windowDirectory);
                 Map<String, String> paneEnvironment =
                         pane.has("environment") ? mapping(context, pane.path("environment"), true) : windowEnvironment;
                 boolean paneSuppress = bool(pane.path("suppress_history"), suppress);
+                if (pane.hasNonNull("shell") && pane.hasNonNull("pane_shell"))
+                    throw invalid("pane.shell and pane.pane_shell cannot both be set");
                 List<JsonNode> raw = new ArrayList<>();
                 append(raw, root.path("shell_command_before"));
                 append(raw, node.path("shell_command_before"));
@@ -131,7 +143,11 @@ record WorkspacePlan(
                 panes.add(new Pane(
                         paneDirectory,
                         paneEnvironment,
-                        optionalText(context, pane.path("pane_shell"), "pane_shell", shell),
+                        optionalText(
+                                context,
+                                pane.path("shell"),
+                                "shell",
+                                optionalText(context, pane.path("pane_shell"), "pane_shell", shell)),
                         bool(pane.path("focus"), false),
                         commands(raw, paneSuppress)));
             }
@@ -154,7 +170,22 @@ record WorkspacePlan(
                 options,
                 globalOptions,
                 script.isEmpty() ? List.of() : Children.words(script),
+                readiness,
                 List.copyOf(windows));
+    }
+
+    private static Readiness readiness(JsonNode catalog) {
+        if (catalog.isMissingNode() || catalog.isNull()) return Readiness.AUTO;
+        keys(catalog, Set.of("pane_readiness"), "workspace_builder_options");
+        JsonNode value = catalog.path("pane_readiness");
+        if (value.isMissingNode() || value.isNull()) return Readiness.AUTO;
+        return switch (value.asText().strip().toLowerCase(java.util.Locale.ROOT)) {
+            case "auto" -> Readiness.AUTO;
+            case "always", "true", "on", "yes", "1" -> Readiness.ALWAYS;
+            case "never", "false", "off", "no", "0" -> Readiness.NEVER;
+            default ->
+                throw invalid("workspace_builder_options.pane_readiness must be auto, always or never (or a boolean)");
+        };
     }
 
     private static void append(List<JsonNode> target, JsonNode value) {

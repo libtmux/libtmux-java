@@ -6,8 +6,8 @@ The CLI requires JDK 21 or newer and targets tmux 3.2a or newer.
 
 This branch is an implementation checkpoint. Native loading, capture,
 conversion, imports, discovery, search, editor execution and Python shell
-execution are available. Python plugins, custom builders, pane readiness and progress templates still
-need implementation and validation.
+execution are available. Python plugins, custom builders and progress templates
+still need implementation and validation.
 Native loading rejects unsupported configuration keys before contacting tmux.
 
 ## Installation
@@ -68,6 +68,15 @@ loading creates or reuses a session. Append authenticates the inherited tmux
 daemon before resolving the current pane; socket aliases are accepted when
 they reach that same daemon. Failures report retained changes rather than
 claiming rollback.
+
+`workspace_builder_options.pane_readiness` accepts `auto` (the default),
+`always`, `never`, or boolean aliases. Automatic readiness waits for zsh;
+`always` also waits for other shells. The check waits up to two seconds for the
+pane cursor to move from its origin before sending commands. Cursor movement is
+a heuristic, not a guarantee that the shell is ready. A timeout warns and
+continues. Blank panes and explicit launch commands never wait or query
+the shell policy. A pane's `shell` overrides `window_shell`; `pane_shell` is an
+alias. Setting both pane keys is an error.
 
 Use `--help` on any command for its arguments. Discovery checks local project
 files and the first existing global directory from `TMUXP_CONFIGDIR`, XDG and

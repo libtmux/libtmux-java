@@ -15,6 +15,8 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 final class ExecutionTest {
     @TempDir
@@ -45,6 +47,175 @@ final class ExecutionTest {
                 .binary(System.getProperty("libtmux.tmux", "tmux"))
                 .configFile(Path.of("/dev/null"))
                 .build();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"always", "auto"})
+    void readinessWaitsUntilACommandConsumerDrawsItsPrompt(String policy) throws Exception {
+        Path source = directory.resolve("readiness.yaml");
+        Path socket = directory.resolve("readiness-socket");
+        Path consumer = directory.resolve("consumer.sh");
+        Path marker = directory.resolve("received");
+        Path shell = directory.resolve("zsh");
+        Files.createSymbolicLink(shell, Path.of("/bin/sh"));
+        Files.writeString(consumer, """
+                stty -echo
+                sleep 0.2
+                while IFS= read -r -t 0.02 line; do :; done
+                printf READY
+                IFS= read -r line
+                eval "$line"
+                exec sleep 30
+                """);
+        Files.writeString(
+                source,
+                "session_name: readiness\nworkspace_builder_options:\n  pane_readiness: " + policy + "\n"
+                        + "options:\n  default-shell: " + shell + "\n  default-command: /bin/bash " + consumer
+                        + "\nwindows:\n  - panes:\n      - 'printf received > " + marker + "'\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, result.code(), result.err());
+                long deadline =
+                        System.nanoTime() + java.time.Duration.ofSeconds(2).toNanos();
+                while (!Files.exists(marker) && System.nanoTime() < deadline) Thread.sleep(10);
+                assertTrue(Files.exists(marker), "command was discarded before the consumer became ready");
+                assertEquals("received", Files.readString(marker));
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void blankPanesAndExplicitLaunchersSkipReadinessQueries() throws Exception {
+        Path source = directory.resolve("blank.yaml");
+        Path socket = directory.resolve("blank-socket");
+        Path trace = directory.resolve("tmux-arguments");
+        Path wrapper = directory.resolve("tmux-wrapper");
+        String binary = System.getProperty("libtmux.tmux", "tmux");
+        Files.writeString(
+                wrapper, "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '" + trace + "'\nexec '" + binary + "' \"$@\"\n");
+        assertTrue(wrapper.toFile().setExecutable(true));
+        try (Server server = server(socket)) {
+            try {
+                for (String policy : java.util.List.of("always", "auto")) {
+                    Files.writeString(
+                            source,
+                            "session_name: blank-" + policy
+                                    + "\nworkspace_builder_options:\n  pane_readiness: " + policy
+                                    + "\noptions:\n  default-command: sleep 30\nwindows:\n  - panes: [null, blank]\n");
+                    Result result = invoke(
+                            java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString()),
+                            "load",
+                            source.toString(),
+                            "-d",
+                            "-S",
+                            socket.toString(),
+                            "-f",
+                            "/dev/null",
+                            "--json");
+                    assertEquals(0, result.code(), result.err());
+                }
+                Files.writeString(source, """
+                        session_name: never
+                        workspace_builder_options:
+                          pane_readiness: never
+                        options:
+                          default-command: /bin/cat
+                        windows:
+                          - panes: ['printed']
+                        """);
+                assertEquals(
+                        0,
+                        invoke(
+                                        java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString()),
+                                        "load",
+                                        source.toString(),
+                                        "-d",
+                                        "-S",
+                                        socket.toString(),
+                                        "-f",
+                                        "/dev/null",
+                                        "--json")
+                                .code());
+                Files.writeString(source, """
+                        session_name: launched
+                        workspace_builder_options:
+                          pane_readiness: always
+                        windows:
+                          - panes:
+                              - shell: /bin/cat
+                                shell_command: printed
+                        """);
+                Result result = invoke(
+                        java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString()),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(0, result.code(), result.err());
+                String commands = Files.readString(trace);
+                assertFalse(commands.contains("#{cursor_x}:#{cursor_y}"), commands);
+                assertFalse(commands.contains("default-shell"), commands);
+                var launched = server.sessions().stream()
+                        .filter(session -> session.name().equals("launched"))
+                        .findFirst()
+                        .orElseThrow();
+                assertEquals(
+                        "cat", launched.windows().getFirst().panes().getFirst().currentCommand());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void readinessTimeoutWarnsAndStillSendsCommands() throws Exception {
+        Path source = directory.resolve("timeout.yaml");
+        Path socket = directory.resolve("timeout-socket");
+        Files.writeString(source, """
+                session_name: timeout
+                workspace_builder_options:
+                  pane_readiness: always
+                options:
+                  default-command: /bin/cat
+                windows:
+                  - panes: ['after-timeout']
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--ndjson");
+                assertEquals(0, result.code(), result.err());
+                var records = result.out()
+                        .lines()
+                        .map(line -> {
+                            try {
+                                return new ObjectMapper().readTree(line);
+                            } catch (java.io.IOException error) {
+                                throw new AssertionError(error);
+                            }
+                        })
+                        .toList();
+                assertTrue(
+                        records.stream()
+                                .anyMatch(
+                                        record -> record.path("event").asText().equals("warning")
+                                                && record.path("code").asText().equals("pane_readiness_timeout")),
+                        result.out());
+                assertEquals("completed", records.getLast().path("event").asText());
+                assertTrue(
+                        String.join("\n", server.panes().getFirst().capture()).contains("after-timeout"));
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
     }
 
     @Test
