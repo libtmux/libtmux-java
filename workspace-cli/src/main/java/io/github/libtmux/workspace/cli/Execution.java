@@ -64,6 +64,15 @@ final class Execution {
             plans.add(WorkspacePlan.read(
                     context, source, index == sources.length - 1 ? args.matchedOptionValue("-s", "") : ""));
         }
+        for (WorkspacePlan plan : plans) {
+            if (append && plan.extension() != null && plan.extension().has("before_script"))
+                throw new Main.Failure(
+                        "unsupported_combination",
+                        2,
+                        "Python extension append cannot use before_script: tmuxp can delete the borrowed session on failure");
+        }
+        String python =
+                plans.stream().anyMatch(plan -> plan.extension() != null) ? Children.python(context, report) : "";
         try (Server server = server(context, args)) {
             Optional<Session> borrowed = append ? Optional.of(appendTarget(context, server)) : Optional.empty();
             Optional<io.github.libtmux.Client> invoking =
@@ -90,7 +99,8 @@ final class Execution {
                 effects.putArray("pane_ids");
                 report.event("workspace-started", effects.deepCopy());
                 try {
-                    last = build(context, server, plans.subList(index, plans.size()), borrowed, report, effects);
+                    last = build(
+                            context, server, plans.subList(index, plans.size()), borrowed, python, report, effects);
                     results.add(effects);
                     report.event("workspace-completed", effects.deepCopy());
                 } catch (RuntimeException | IOException | InterruptedException failure) {
@@ -138,6 +148,7 @@ final class Execution {
             Server server,
             List<WorkspacePlan> pending,
             Optional<Session> borrowed,
+            String python,
             Reporter report,
             ObjectNode effects)
             throws IOException, InterruptedException {
@@ -156,6 +167,13 @@ final class Execution {
                     .put("reused", true)
                     .put("stage", "reused");
             return session;
+        }
+        if (plan.extension() != null) {
+            if (append) {
+                authenticate(context, server);
+                borrowed = Optional.of(borrowed.orElseThrow().refresh());
+            }
+            return PythonExtensions.build(context, server, plan, borrowed, python, report, effects);
         }
         Session session;
         Window bootstrap = null;

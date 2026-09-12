@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 
 record WorkspacePlan(
         Path source,
@@ -23,7 +24,8 @@ record WorkspacePlan(
         Map<String, String> globalOptions,
         List<String> beforeScript,
         Readiness readiness,
-        List<Window> windows) {
+        List<Window> windows,
+        @Nullable ObjectNode extension) {
     enum Readiness {
         AUTO,
         ALWAYS,
@@ -45,6 +47,29 @@ record WorkspacePlan(
 
     static WorkspacePlan read(Main.Context context, Path source, String rename) throws java.io.IOException {
         ObjectNode root = Documents.read(source);
+        String name = rename.isEmpty() ? text(context, root.path("session_name"), "session_name") : rename;
+        if (name.isEmpty() || name.indexOf('\0') >= 0) throw invalid("session_name must be nonempty text without NUL");
+        Path parent = source.getParent();
+        if (parent == null) throw invalid("workspace source has no parent");
+        Path directory = directory(context, root, parent);
+        Path scriptDirectory = root.hasNonNull("start_directory") ? directory : context.directory();
+        String script = optionalText(context, root.path("before_script"), "before_script", "");
+        List<String> beforeScript = script.isEmpty() ? List.of() : Children.words(script);
+        if (PythonExtensions.required(context, source, root)) {
+            root.put("session_name", name);
+            return new WorkspacePlan(
+                    source,
+                    name,
+                    directory,
+                    scriptDirectory,
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    beforeScript,
+                    Readiness.NEVER,
+                    List.of(),
+                    root);
+        }
         keys(
                 root,
                 Set.of(
@@ -62,15 +87,6 @@ record WorkspacePlan(
                         "workspace_builder",
                         "workspace_builder_paths"),
                 "workspace");
-        if (root.has("plugins") || root.has("workspace_builder") || root.has("workspace_builder_paths")) {
-            throw new Main.Failure("python_runtime", 1, "Python workspace extensions require the tmuxp 1.74.0 bridge");
-        }
-        String name = rename.isEmpty() ? text(context, root.path("session_name"), "session_name") : rename;
-        if (name.isEmpty() || name.indexOf('\0') >= 0) throw invalid("session_name must be nonempty text without NUL");
-        Path parent = source.getParent();
-        if (parent == null) throw invalid("workspace source has no parent");
-        Path directory = directory(context, root, parent);
-        Path scriptDirectory = root.hasNonNull("start_directory") ? directory : context.directory();
         Map<String, String> environment = mapping(context, root.path("environment"), true);
         Map<String, String> options = mapping(context, root.path("options"), false);
         Map<String, String> globalOptions = mapping(context, root.path("global_options"), false);
@@ -163,7 +179,6 @@ record WorkspacePlan(
                     mapping(context, node.path("options_after"), false),
                     List.copyOf(panes)));
         }
-        String script = optionalText(context, root.path("before_script"), "before_script", "");
         return new WorkspacePlan(
                 source,
                 name,
@@ -172,9 +187,10 @@ record WorkspacePlan(
                 environment,
                 options,
                 globalOptions,
-                script.isEmpty() ? List.of() : Children.words(script),
+                beforeScript,
                 readiness,
-                List.copyOf(windows));
+                List.copyOf(windows),
+                null);
     }
 
     private static Readiness readiness(JsonNode catalog) {
