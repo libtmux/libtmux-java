@@ -5,14 +5,18 @@ import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
+import io.github.libtmux.transport.TmuxTimeoutException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * One tmux pane, as one capture saw it.
@@ -21,6 +25,24 @@ import java.util.function.Consumer;
  * and go.
  */
 public final class Pane {
+
+    /**
+     * How often a wait looks again.
+     *
+     * <p>Short enough that a wait reports promptly, long enough that a wait held open for minutes
+     * is not thousands of tmux invocations. A caller who needs an exact moment wants a signal on a
+     * {@link Channel}, not a shorter interval here.
+     */
+    private static final Duration POLL = Duration.ofMillis(50);
+
+    /**
+     * The least a wait's first read is given, and the budget for telling a dead server from a read
+     * that failed.
+     *
+     * <p>A quarter of a second, what {@link Channel#drain} gives a pending signal to come straight
+     * back: long enough for tmux to answer, short enough not to be a wait.
+     */
+    private static final Duration SHORTEST_READ = Duration.ofMillis(250);
 
     private static final RowFormat BROKEN_OUT = RowFormat.of("session_id", "window_id", "window_index");
 
@@ -278,6 +300,144 @@ public final class Pane {
     }
 
     /**
+     * Waits until this pane's text contains something, and says why the wait ended.
+     *
+     * <p><strong>Reach for this last.</strong> It reads the screen on a timer, which is a heuristic
+     * about a program's output rather than a fact about it, and the cheaper waits are exact:
+     *
+     * <ol>
+     *   <li>If you wrote the command, append {@code ; tmux wait-for -S name} to it and block on
+     *       {@link Server#channel}. tmux blocks server-side and returns on the signal itself, so
+     *       nothing is inferred from the screen and one tmux process covers the whole wait. That is
+     *       the only deterministic wait here, and it is the right one whenever the command is yours.
+     *   <li>If you did not write the command — a daemon printing that it is ready, a build somebody
+     *       else started — this is the case polling is for.
+     * </ol>
+     *
+     * <p>The timeout bounds the whole wait, reads included. Each read is given only what is left of
+     * it, so a slow tmux cannot stretch a short wait out to the server's default deadline, and text
+     * that first appears after the deadline is not reported. The first read alone is allowed at least
+     * a quarter of a second, so a timeout shorter than one read can still answer that the text is
+     * already there.
+     *
+     * <p>Waiting longer is also less reliable, not more: tmux frees the oldest scrollback once
+     * {@code history-limit} is reached, so a long wait on a productive pane can end up reading past
+     * the lines it was watching for.
+     *
+     * @param text the text to wait for, matched anywhere in a captured line
+     * @param timeout how long to keep looking
+     * @return {@link WakeReason#SIGNALLED} when the text appeared, {@link WakeReason#TIMED_OUT} when
+     *     it did not, {@link WakeReason#SERVER_GONE} when the server went away underneath the wait
+     * @throws LibTmuxException if a read fails while the server is still answering — most often
+     *     because this pane was killed, which is not a timeout
+     * @throws InterruptedException if the waiting thread is interrupted, which is a cancellation
+     *     rather than a timeout and so is not reported as one
+     */
+    public WakeReason awaitText(String text, Duration timeout) throws InterruptedException {
+        Objects.requireNonNull(text, "text");
+        return awaitCondition(bounded -> bounded.capture().stream().anyMatch(line -> line.contains(text)), timeout);
+    }
+
+    /**
+     * Waits until a condition holds for this pane as tmux reports it, and says why the wait ended.
+     *
+     * <p>The pane is captured again before each test, so the condition reads fresh state rather than
+     * the capture this handle was built from. What the condition receives is an ordinary handle on
+     * this pane's server and can be kept. The ordering {@link #awaitText} describes applies here too —
+     * a signal on a {@link Server#channel} is exact, and this is for when nothing signals — and so do
+     * its deadline rules.
+     *
+     * <pre>{@code
+     * pane.await(fresh -> !fresh.currentCommand().equals("zsh"), Duration.ofSeconds(5));
+     * }</pre>
+     *
+     * @param settled receives this pane as it is now
+     * @param timeout how long to keep looking
+     * @return why the wait ended
+     * @throws ObjectDoesNotExist if this pane is killed while its server stays up, which is not a
+     *     timeout
+     * @throws InterruptedException if the waiting thread is interrupted
+     */
+    public WakeReason await(Predicate<Pane> settled, Duration timeout) throws InterruptedException {
+        Objects.requireNonNull(settled, "settled");
+        return awaitCondition(bounded -> settled.test(bounded.refresh().through(server)), timeout);
+    }
+
+    /**
+     * One deadline for both public waits, applied to the reads as well as to the gaps between them.
+     *
+     * <p>Each read goes through {@link Server#within} with what is left of the deadline, so a read
+     * cannot outlast the wait. A read that runs out of that budget has reached the wait's own
+     * deadline, and is a timeout. Once the deadline has passed no further read starts, which is what
+     * keeps text that arrives late from being reported.
+     *
+     * <p>An ordinary timeout asks tmux nothing more. The last read answered, so the server was there
+     * a poll interval ago, and a liveness probe after the deadline would only spend time the caller
+     * did not give. A read that <em>failed</em> is different: tmux reports "no server" and "no such
+     * pane" the same way, so that one gets a second look to tell {@link WakeReason#SERVER_GONE} from a
+     * failure that belongs to the caller.
+     */
+    private WakeReason awaitCondition(Predicate<Pane> poll, Duration timeout) throws InterruptedException {
+        Objects.requireNonNull(timeout, "timeout");
+        if (timeout.isNegative()) {
+            throw new IllegalArgumentException("timeout is negative: " + timeout);
+        }
+        long deadline = System.nanoTime() + timeout.toNanos();
+        boolean first = true;
+        while (true) {
+            if (Thread.interrupted()) {
+                throw new InterruptedException(
+                        "interrupted while waiting on pane " + state.id().value());
+            }
+            Duration left = Duration.ofNanos(Math.max(1, deadline - System.nanoTime()));
+            Duration budget = first && left.compareTo(SHORTEST_READ) < 0 ? SHORTEST_READ : left;
+            first = false;
+            try {
+                if (poll.test(through(server.within(budget)))) {
+                    return WakeReason.SIGNALLED;
+                }
+            } catch (TmuxTimeoutException expired) {
+                return WakeReason.TIMED_OUT;
+            } catch (LibTmuxException unreadable) {
+                return afterFailedRead(unreadable);
+            }
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) {
+                return WakeReason.TIMED_OUT;
+            }
+            TimeUnit.NANOSECONDS.sleep(Math.min(POLL.toNanos(), remaining));
+            if (System.nanoTime() >= deadline) {
+                return WakeReason.TIMED_OUT;
+            }
+        }
+    }
+
+    /**
+     * Tells a server that went away from a read that failed for a reason of the caller's.
+     *
+     * <p>A probe that cannot get an answer in time proves nothing either way, so the original failure
+     * is what the caller sees, carrying the probe's.
+     */
+    private WakeReason afterFailedRead(LibTmuxException unreadable) {
+        boolean alive;
+        try {
+            alive = server.isAlive(SHORTEST_READ);
+        } catch (TmuxTimeoutException unanswered) {
+            unreadable.addSuppressed(unanswered);
+            throw unreadable;
+        }
+        if (alive) {
+            throw unreadable;
+        }
+        return WakeReason.SERVER_GONE;
+    }
+
+    /** This pane's captured state, addressed through another view of the same server. */
+    private Pane through(Server via) {
+        return new Pane(via, snapshot, state);
+    }
+
+    /**
      * Reads part of this pane, described by a lambda.
      *
      * <pre>{@code
@@ -313,8 +473,27 @@ public final class Pane {
         server.run(snapshot, List.of("send-keys", "-t", state.id().value(), keys));
     }
 
-    /** Sends an ordered group of key names, or literal strings, to this pane. */
-    public void sendKeys(List<String> keys, boolean literal) {
+    /**
+     * Sends an ordered group of key names to this pane, as tmux resolves them.
+     *
+     * <p>Each entry is a key name, so {@code C-c} interrupts rather than typing three characters.
+     * {@link #sendLiteral} is the other reading of the same list; they are separate methods for the
+     * reason {@link #send} and {@link #sendLine} are.
+     */
+    public void sendKeys(List<String> keys) {
+        server.run(snapshot, sendKeysArgv(keys, false));
+    }
+
+    /**
+     * Sends an ordered group of strings to this pane as the characters they spell.
+     *
+     * <p>Nothing is resolved as a key name, so {@code C-c} types those three characters.
+     */
+    public void sendLiteral(List<String> keys) {
+        server.run(snapshot, sendKeysArgv(keys, true));
+    }
+
+    private List<String> sendKeysArgv(List<String> keys, boolean literal) {
         Objects.requireNonNull(keys, "keys");
         if (keys.isEmpty()) {
             throw new IllegalArgumentException("keys are empty");
@@ -325,7 +504,7 @@ public final class Pane {
         }
         argv.addAll(List.of("-t", state.id().value(), "--"));
         argv.addAll(keys);
-        server.run(snapshot, argv);
+        return argv;
     }
 
     /** Sends a line to this pane and presses Enter, which is how a command gets run. */
@@ -425,6 +604,10 @@ public final class Pane {
      * <p>A second call replaces the first: tmux keeps one pipe per pane, not a list.
      *
      * @param shellCommand run by the user's shell, so it may redirect and pipe
+     *
+     * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
+     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
+     * mean it to be expanded.
      */
     public void pipeTo(String shellCommand) {
         Objects.requireNonNull(shellCommand, "shellCommand");

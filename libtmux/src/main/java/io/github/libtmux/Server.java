@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -125,7 +126,20 @@ public final class Server implements AutoCloseable {
      * both "no sessions" and "no server", and this is how a caller tells the two apart.
      */
     public boolean isAlive() {
-        return cmd("display-message", "-p", "#{pid}").succeeded();
+        return isAlive(config.defaultTimeout());
+    }
+
+    /**
+     * Whether the server is running and answering, within a deadline of the caller's choosing.
+     *
+     * <p>The deadline is per call rather than per handle, because a probe that has to finish — a
+     * test fixture confirming its server is gone, a shutdown path that cannot hang — is not bound
+     * by the same budget as ordinary work through the same {@code Server}.
+     *
+     * @param timeout how long to wait for an answer before treating the server as unreachable
+     */
+    public boolean isAlive(Duration timeout) {
+        return cmd(List.of("display-message", "-p", "#{pid}"), timeout).succeeded();
     }
 
     /**
@@ -153,8 +167,20 @@ public final class Server implements AutoCloseable {
      * a second look cannot answer better.
      */
     public void killServer() {
-        CommandResult result = cmd("kill-server");
-        if (result.succeeded() || !isAlive()) {
+        killServer(config.defaultTimeout());
+    }
+
+    /**
+     * Ends the tmux server and every session on it, within a deadline of the caller's choosing.
+     *
+     * <p>Bounds both halves — the kill and the second look that confirms it — because a teardown
+     * that hangs is worse than one that reports it could not finish.
+     *
+     * @param timeout how long to allow for each of the two commands
+     */
+    public void killServer(Duration timeout) {
+        CommandResult result = cmd(List.of("kill-server"), timeout);
+        if (result.succeeded() || !isAlive(timeout)) {
             return;
         }
         throw new LibTmuxException("could not kill the server: " + String.join("; ", result.stderr()));
@@ -211,6 +237,10 @@ public final class Server implements AutoCloseable {
      * why the two are separate.
      *
      * @param command run by the user's shell, so it may redirect and pipe
+     *
+     * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
+     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
+     * mean it to be expanded.
      */
     public void runShell(String command) {
         Objects.requireNonNull(command, "command");
@@ -225,6 +255,10 @@ public final class Server implements AutoCloseable {
      * output would silently get none, so this one refuses rather than answering emptily.
      *
      * @throws UnsupportedTmuxVersion on the releases that lose the output
+     *
+     * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
+     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
+     * mean it to be expanded.
      */
     public List<String> runShellCapturing(String command) {
         Objects.requireNonNull(command, "command");
@@ -248,6 +282,10 @@ public final class Server implements AutoCloseable {
      * <p>The choosing happens inside tmux rather than here, which is the point: the condition and
      * both outcomes go out as one request, so nothing can change between asking and acting.
      *
+     *
+     * <p>tmux expands {@code #(...)} in the condition before a shell sees it, and shell quoting does
+     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
+     * mean it to be expanded.
      * @param condition a shell command, judged by its exit status
      * @param whenTrue the tmux command to run when the condition succeeds
      */
@@ -472,6 +510,18 @@ public final class Server implements AutoCloseable {
         return new Server(config, transport, false);
     }
 
+    /**
+     * This server, with every command bounded by a deadline of the caller's choosing.
+     *
+     * <p>Shares this server's transport, so it has the same identity and every handle taken through
+     * it is interchangeable with this server's; closing it releases nothing. {@link #toBuilder} is not
+     * how to spell this: a server that owns its transport hands a derived server a transport of its
+     * own, which a wait polling every fifty milliseconds would multiply.
+     */
+    Server within(Duration timeout) {
+        return new Server(config.toBuilder().defaultTimeout(timeout).build(), transport, false);
+    }
+
     /** A builder holding the documented defaults. */
     public static Builder builder() {
         return new Builder(ServerConfig.builder(), null);
@@ -573,6 +623,64 @@ public final class Server implements AutoCloseable {
         ServerSnapshot captured = lenient();
         return captured.panes().stream()
                 .map(pane -> new Pane(this, captured, pane))
+                .toList();
+    }
+
+    /**
+     * The session with this name, captured now.
+     *
+     * <p>One read, so the handle carries a capture the way {@link #sessions()} does. The name is
+     * matched exactly; tmux would otherwise take a prefix, so asking for {@code build} could answer
+     * with {@code build-cache}.
+     *
+     * <p>Empty rather than raising, because whether a missing session is a bug belongs to the
+     * caller: {@code orElseThrow} says it is, and {@code orElseGet} says it is not.
+     */
+    public Optional<Session> session(String name) {
+        Objects.requireNonNull(name, "name");
+        ServerSnapshot captured = lenient();
+        return captured.session(name).map(session -> new Session(this, captured, session));
+    }
+
+    /** The session with this id, captured now. */
+    public Optional<Session> session(SessionId id) {
+        Objects.requireNonNull(id, "id");
+        ServerSnapshot captured = lenient();
+        return captured.session(id).map(session -> new Session(this, captured, session));
+    }
+
+    /** The pane with this id, captured now. */
+    public Optional<Pane> pane(PaneId id) {
+        Objects.requireNonNull(id, "id");
+        ServerSnapshot captured = lenient();
+        return captured.panes().stream()
+                .filter(pane -> pane.id().equals(id))
+                .findFirst()
+                .map(pane -> new Pane(this, captured, pane));
+    }
+
+    /** The winlink at this exact position, captured now. */
+    public Optional<Window> window(WindowContext context) {
+        Objects.requireNonNull(context, "context");
+        ServerSnapshot captured = lenient();
+        return captured.window(context).map(window -> new Window(this, captured, window));
+    }
+
+    /**
+     * Every winlink of the window with this id, captured now.
+     *
+     * <p>A list, not an {@link Optional}, and that is the whole point. One window can be linked into
+     * several sessions, and each link is a separate handle with its own index and its own active
+     * flag. A finder that answered with the first would quietly act on whichever link tmux happened
+     * to list first — so this hands back all of them and lets the caller say which it meant, or use
+     * {@link #window(WindowContext)} to name one exactly.
+     */
+    public List<Window> windows(WindowId id) {
+        Objects.requireNonNull(id, "id");
+        ServerSnapshot captured = lenient();
+        return captured.windows().stream()
+                .filter(window -> window.context().window().equals(id))
+                .map(window -> new Window(this, captured, window))
                 .toList();
     }
 

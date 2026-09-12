@@ -1,6 +1,8 @@
 package io.github.libtmux.it;
 
 import io.github.libtmux.Pane;
+import io.github.libtmux.WakeReason;
+import java.time.Duration;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -34,8 +36,19 @@ final class Await {
         return false;
     }
 
-    /** Whether the pane showed the text within the budget. */
+    /**
+     * Whether the pane showed the text within the budget.
+     *
+     * <p>The library's own wait, not another copy of one. It reports why it ended; this suite only
+     * ever needs whether the text arrived, so the reason is collapsed here rather than at every
+     * call site.
+     */
     static boolean output(Pane pane, String expected) {
-        return until(() -> pane.capture().stream().anyMatch(line -> line.contains(expected)));
+        try {
+            return pane.awaitText(expected, Duration.ofMillis(ATTEMPTS * INTERVAL_MILLIS)) == WakeReason.SIGNALLED;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 }

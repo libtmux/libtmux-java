@@ -1,10 +1,12 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Server;
+import io.github.libtmux.TmuxFormats;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.UnsupportedTmuxVersion;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -68,6 +70,30 @@ final class ServerScriptingIntegrationTest {
         server.runShell("touch " + touched);
 
         assertTrue(Await.until(() -> Files.exists(touched)), "the command never ran");
+    }
+
+    /**
+     * A caller's own value can carry a second command, and only {@code TmuxFormats.literal} stops it.
+     *
+     * <p>tmux expands {@code #(...)} before handing the string to a shell, so the single quotes
+     * below — the quoting any careful caller would apply — do not contain it. Both halves are
+     * asserted: the hazard is real, and the published escape closes it. Without the first half the
+     * second proves nothing, and without the second the first is just a complaint.
+     */
+    @Test
+    void aFormatInAnInterpolatedValueRunsUnlessItIsMadeLiteral(Server server, @TempDir Path directory)
+            throws Exception {
+        Path expanded = directory.resolve("expanded");
+        Path literal = directory.resolve("literal");
+
+        // The literalized command goes first, so by the time the expanded one has landed the
+        // literal one has had at least as long to fire. Asserting its absence straight after
+        // dispatching it would pass even if literalization did nothing, because #() is asynchronous.
+        server.runShell(TmuxFormats.literal("echo '#(touch " + literal + ")' > /dev/null"));
+        server.runShell("echo '#(touch " + expanded + ")' > /dev/null");
+
+        assertTrue(Await.until(() -> Files.exists(expanded)), "tmux expands a format inside shell quotes");
+        assertFalse(Files.exists(literal), "a literalized value must reach the shell as text");
     }
 
     @Test

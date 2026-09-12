@@ -22,6 +22,19 @@ ending any argument, so an argument built from untrusted text can add a command.
 author as data: pass it as a single argument, and do not concatenate it into
 one.
 
+**tmux expands formats before any shell runs.** tmux expands `#{...}` and
+`#(...)` in many argument positions, and `#(...)` runs a command. The expansion
+happens before `/bin/sh` sees the string, so shell quoting does not contain it —
+measured on tmux 3.7d, a `#(...)` inside single quotes ran through both
+`run-shell` and `pipe-pane`. Every argument this library composes itself passes
+through `TmuxFormats.literal`, which doubles `#`. The commands a *caller*
+composes cannot be neutralized for them, because expansion there is sometimes
+the point: `Pane.pipeTo`, `Window.displayPopup`, `Server.runShell`,
+`Server.runShellCapturing`, `Server.ifShell` and `Options.setExpanded` take
+caller-authored text, and a value interpolated into one of those needs
+`TmuxFormats.literal` applied to it. No MCP tool reaches these positions with
+model-supplied text.
+
 **Diagnostics are redacted.** `CommandRequest.toString` reports argument counts
 and a timeout, never argument values, because argv carries pane content, socket
 paths and whatever a caller sent to a shell. A failure message or log line

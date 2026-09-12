@@ -38,6 +38,16 @@ import org.junit.jupiter.api.io.TempDir;
 @ExtendWith(TmuxExtension.class)
 final class McpLauncherTest {
 
+    /**
+     * How long a launcher gets to exit once its session has ended.
+     *
+     * <p>These cases prove the launcher does not wait for an end of input that never comes, so any
+     * finite bound proves it; stdin is never closed. Five seconds was a claim about how fast a JVM
+     * starts on a loaded machine, and it failed on the first, coldest run on a clean checkout as
+     * often as on a changed one.
+     */
+    private static final long EXIT_BUDGET_SECONDS = 60;
+
     /** Named explicitly: a child resolving tmux from PATH would answer about a different build. */
     private static final String TMUX = System.getProperty("libtmux.tmux", "tmux");
 
@@ -71,7 +81,7 @@ final class McpLauncherTest {
             launcher.getOutputStream().flush();
 
             assertTrue(
-                    launcher.waitFor(5, TimeUnit.SECONDS),
+                    launcher.waitFor(EXIT_BUDGET_SECONDS, TimeUnit.SECONDS),
                     "the protocol session ended, but the launcher was still waiting for stdin EOF");
         } finally {
             stop(launcher);
@@ -92,7 +102,7 @@ final class McpLauncherTest {
             launcher.getOutputStream().flush();
 
             assertTrue(
-                    launcher.waitFor(5, TimeUnit.SECONDS),
+                    launcher.waitFor(EXIT_BUDGET_SECONDS, TimeUnit.SECONDS),
                     "stdout failed, but the launcher was still waiting for stdin EOF");
             assertEquals(0, launcher.exitValue());
         } finally {

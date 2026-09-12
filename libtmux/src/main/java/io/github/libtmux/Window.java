@@ -233,9 +233,20 @@ public final class Window {
                         Integer.toString(size.height())));
     }
 
-    /** Controls whether input to one pane is copied to every pane in this window. */
-    public void setSynchronizePanes(boolean enabled) {
-        options().set("synchronize-panes", enabled ? "on" : "off");
+    /**
+     * Copies input to one pane into every pane in this window, until {@link #stopSynchronizingPanes}.
+     *
+     * <p>A verb pair rather than a boolean parameter, so a call site says which it means — as
+     * {@link Pane#pipeTo} and {@link Pane#stopPiping} already do for the other state a window
+     * carries.
+     */
+    public void synchronizePanes() {
+        options().set("synchronize-panes", "on");
+    }
+
+    /** Stops copying input between this window's panes. */
+    public void stopSynchronizingPanes() {
+        options().set("synchronize-panes", "off");
     }
 
     /** Rotates the panes within this window. */
@@ -284,6 +295,10 @@ public final class Window {
      *
      * <p>tmux draws a popup for a client, so this needs one attached; on a detached session tmux
      * reports that it has no current client.
+     *
+     * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
+     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
+     * mean it to be expanded.
      */
     public void displayPopup(String shellCommand) {
         server.run(snapshot, List.of("display-popup", "-E", "-t", target(), shellCommand));

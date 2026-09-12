@@ -21,6 +21,10 @@ import java.util.List;
  * and indexes move as neighbours come and go, so a positional target would quietly act on a pane
  * that was not the one it meant. Session names are resolved only where an argument explicitly asks
  * for one.
+ *
+ * <p>Each lookup reads one listing and phrases its failure from that same listing. Reading again to
+ * count what exists would cost a second round trip, and could report a count from a moment the lookup
+ * never saw.
  */
 final class Targets {
 
@@ -36,6 +40,13 @@ final class Targets {
                         "no pane " + id + " on this server; call list_panes for the " + panes.size() + " that exist"));
     }
 
+    /**
+     * A window by id, taking the first link when one window is linked into several sessions.
+     *
+     * <p>First-match is kept deliberately: every operation this resolves for acts on the underlying
+     * window, where any link addresses it. An index-sensitive operation would need the caller to say
+     * which link it meant.
+     */
     static Window window(Server server, String id) {
         WindowId wanted = windowId(id);
         List<Window> windows = server.windows();

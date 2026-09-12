@@ -1,6 +1,7 @@
 package io.github.libtmux.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -368,5 +369,24 @@ final class ToolsAgainstTmuxTest {
                 assertThrows(IllegalArgumentException.class, () -> Targets.pane(server, "1"));
 
         assertTrue(String.valueOf(refused.getMessage()).contains("%1"), refused.getMessage());
+    }
+
+    /**
+     * A variable removed from the environment is reported as removed, not left out.
+     *
+     * <p>tmux prints it as {@code -NAME} with no {@code =}, which a parser keeping only {@code
+     * NAME=value} lines dropped without a word, so a removed variable read exactly like one never set.
+     */
+    @Test
+    void aRemovedVariableIsReportedRatherThanDropped(Server server) {
+        server.cmd("set-environment", "-g", "LIBTMUX_JAVA_KEPT", "a=b");
+        server.cmd("set-environment", "-g", "-r", "LIBTMUX_JAVA_REMOVED");
+
+        Settings.Environment global = Settings.environment(TestCalls.on(server));
+
+        assertEquals("a=b", global.variables().get("LIBTMUX_JAVA_KEPT"), "only the first = separates");
+        assertTrue(global.unset().contains("LIBTMUX_JAVA_REMOVED"), "tmux said so as -NAME: " + global.unset());
+        assertFalse(global.variables().containsKey("LIBTMUX_JAVA_REMOVED"));
+        assertFalse(global.variables().keySet().stream().anyMatch(key -> key.startsWith("-")));
     }
 }

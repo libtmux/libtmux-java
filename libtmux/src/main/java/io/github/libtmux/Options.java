@@ -178,6 +178,10 @@ public final class Options {
      *
      * <p>{@code setExpanded("status-left", "in #{session_name}")} stores {@code in base}. The
      * expansion happens once, when this is called; the option does not stay live.
+     *
+     * <p>Because tmux expands the format when this is called, a {@code #(...)} in it runs a command
+     * at that moment. Pass any interpolated value through {@link TmuxFormats#literal} unless you mean
+     * it to be expanded.
      */
     public void setExpanded(String name, String format) {
         run(argv("set-option", List.of("-F", name, format)));

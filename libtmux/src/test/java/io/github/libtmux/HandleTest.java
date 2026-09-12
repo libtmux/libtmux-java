@@ -230,6 +230,70 @@ final class HandleTest {
         }
     }
 
+    // -------------------------------------------------------------------------------- finders
+
+    /**
+     * A finder reads once, like the listing it stands in for.
+     *
+     * <p>The shape it replaces asked twice — {@code hasSession} and then a scan of
+     * {@code sessions()} — and a session can arrive or leave between the two.
+     */
+    @Test
+    void aFinderCostsOneReadAndAnswersWithAHandle() {
+        CountingTransport transport = new CountingTransport("alpha");
+        try (Server server = Server.using(config(ServerEndpoint.namedSocket("fixture")), transport)) {
+            server.sessions();
+            int beforeListing = transport.calls.get();
+            server.sessions();
+            int listingCost = transport.calls.get() - beforeListing;
+
+            int beforeFinder = transport.calls.get();
+            Session found = server.session("alpha").orElseThrow();
+            int finderCost = transport.calls.get() - beforeFinder;
+
+            assertEquals(new SessionId("$0"), found.id());
+            assertEquals(listingCost, finderCost, "a finder costs one capture, the same as the listing it replaces");
+            assertEquals(found, server.session(new SessionId("$0")).orElseThrow(), "by name and by id agree");
+        }
+    }
+
+    @Test
+    void aFinderIsEmptyRatherThanRaisingWhenNothingMatches() {
+        try (Server server = canned()) {
+            assertTrue(server.session("absent").isEmpty());
+            assertTrue(server.pane(new PaneId("%99")).isEmpty());
+            assertTrue(server.windows(new WindowId("@99")).isEmpty());
+        }
+    }
+
+    /**
+     * One window linked into two sessions is two handles, and a finder must hand back both.
+     *
+     * <p>{@code @7} is linked into {@code $0} at index 0 and {@code $1} at index 3. Answering with
+     * the first would act on whichever link tmux happened to list first — a different window
+     * position than the caller meant, silently. This is why the window finder returns a list while
+     * the session and pane finders return an {@link java.util.Optional}: only those two ids are
+     * unique.
+     */
+    @Test
+    void everyLinkOfALinkedWindowIsFound() {
+        try (Server server = canned()) {
+            List<Window> links = server.windows(new WindowId("@7"));
+
+            assertEquals(2, links.size(), "a linked window is one window and two winlinks");
+            assertEquals(
+                    List.of(new WindowIndex(0), new WindowIndex(3)),
+                    links.stream().map(Window::index).toList());
+            assertEquals(
+                    1,
+                    Set.copyOf(links.stream().map(Window::id).toList()).size(),
+                    "both links are the same underlying window");
+
+            Window exact = server.window(links.get(1).context()).orElseThrow();
+            assertEquals(new WindowIndex(3), exact.index(), "naming the context picks one link exactly");
+        }
+    }
+
     // ------------------------------------------------------------------------------- fixtures
 
     private static ServerConfig config(ServerEndpoint endpoint) {

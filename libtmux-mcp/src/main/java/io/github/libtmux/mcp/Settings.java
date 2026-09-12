@@ -3,6 +3,8 @@ package io.github.libtmux.mcp;
 import io.github.libtmux.Hooks;
 import io.github.libtmux.Options;
 import io.github.libtmux.Server;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -29,7 +31,11 @@ final class Settings {
 
     record HookValues(String scope, @Nullable String target, int count, Map<String, List<String>> hooks, String note) {}
 
-    record Environment(String session, int count, Map<String, String> variables) {}
+    /**
+     * @param unset names removed with {@code set-environment -r}, which is not the same as never set:
+     *     a removed name is withheld from processes that would otherwise inherit it
+     */
+    record Environment(String session, int count, Map<String, String> variables, List<String> unset) {}
 
     static OptionValues showOptions(Call call) {
         String scope = call.maybe("scope").orElse("global").toLowerCase(Locale.ROOT);
@@ -63,25 +69,33 @@ final class Settings {
 
     static Environment environment(Call call) {
         String name = call.maybe("session").orElse(null);
-        if (name == null) {
-            Map<String, String> global = readEnvironment(call.server(), null);
-            return new Environment("(global)", global.size(), global);
-        }
-        var session = Targets.sessionNamed(call.server(), name);
-        Map<String, String> variables = readEnvironment(call.server(), session.name());
-        return new Environment(session.name(), variables.size(), variables);
+        String scope = name == null
+                ? "(global)"
+                : Targets.sessionNamed(call.server(), name).name();
+        List<String> argv = name == null ? List.of("show-environment", "-g") : List.of("show-environment", "-t", scope);
+        return parseEnvironment(scope, call.server().cmd(argv).stdout());
     }
 
-    private static Map<String, String> readEnvironment(Server server, @Nullable String session) {
-        List<String> argv =
-                session == null ? List.of("show-environment", "-g") : List.of("show-environment", "-t", session);
-        return server.cmd(argv).stdout().stream()
-                .filter(line -> line.indexOf('=') > 0)
-                .collect(java.util.stream.Collectors.toMap(
-                        line -> line.substring(0, line.indexOf('=')),
-                        line -> line.substring(line.indexOf('=') + 1),
-                        (first, second) -> second,
-                        java.util.LinkedHashMap::new));
+    /**
+     * Reads {@code show-environment}, keeping a removed variable rather than dropping it.
+     *
+     * <p>tmux prints a set variable as {@code NAME=value} and one removed with {@code set-environment
+     * -r} as {@code -NAME}, with no {@code =} at all. Keeping only lines with an {@code =} discarded
+     * the second form silently, so a removed variable could not be told from one never set. Only the
+     * first {@code =} separates, because a value may contain more.
+     */
+    static Environment parseEnvironment(String scope, List<String> lines) {
+        Map<String, String> variables = new LinkedHashMap<>();
+        List<String> unset = new ArrayList<>();
+        for (String line : lines) {
+            int equals = line.indexOf('=');
+            if (equals > 0) {
+                variables.put(line.substring(0, equals), line.substring(equals + 1));
+            } else if (line.length() > 1 && line.charAt(0) == '-') {
+                unset.add(line.substring(1));
+            }
+        }
+        return new Environment(scope, variables.size(), variables, List.copyOf(unset));
     }
 
     private static Options optionsFor(Server server, String scope, @Nullable String target) {

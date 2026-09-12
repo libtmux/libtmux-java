@@ -386,7 +386,11 @@ final class Operations {
     static Object setSynchronizePanes(Call call) {
         Window window = Targets.window(call.server(), call.string("window_id"));
         boolean enabled = call.flag("enabled", false);
-        window.setSynchronizePanes(enabled);
+        if (enabled) {
+            window.synchronizePanes();
+        } else {
+            window.stopSynchronizingPanes();
+        }
         return values("window_id", window.id().value(), "enabled", enabled);
     }
 

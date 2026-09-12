@@ -33,12 +33,10 @@ public final class BuildAWorkspace {
         // Closing a server closes this client. The tmux server, and the session, outlive the program
         // — which is the whole point of tmux and the reason nothing here kills it.
         try (Server server = Server.open(config)) {
-            Session session = server.hasSession("work")
-                    ? server.sessions().stream()
-                            .filter(candidate -> candidate.name().equals("work"))
-                            .findFirst()
-                            .orElseThrow()
-                    : server.newSession("work");
+            // One read decides and answers. Asking whether the session exists and then going to
+            // look for it is two reads with a gap in between, and the session can arrive or leave
+            // inside that gap.
+            Session session = server.session("work").orElseGet(() -> server.newSession("work"));
 
             Window editor = session.newWindow(window -> window.named("editor").detached());
             Pane shell = editor.split(split -> split.toRight());

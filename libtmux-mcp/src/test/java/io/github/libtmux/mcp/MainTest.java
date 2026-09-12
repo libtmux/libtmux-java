@@ -109,6 +109,66 @@ final class MainTest {
         assertTrue(String.valueOf(refused.getMessage()).contains("LIBTMUX_TOOLSETS"));
     }
 
+    /**
+     * The attach command an operator is handed comes from the endpoint's own flags.
+     *
+     * <p>It used to be re-derived in two places, each an {@code instanceof} chain that named
+     * {@code -S} and {@code -L} itself. A kind of endpoint those chains had not heard of produced a
+     * command missing the flag that selects the server — that is, one that attaches to the wrong
+     * tmux. Deriving it from {@link ServerEndpoint#flags()} is what makes every kind covered by
+     * construction, so every kind is asserted here rather than only the two that existed.
+     */
+    @Test
+    void everyKindOfEndpointReachesTheAttachCommand() {
+        assertEquals(" -N attach", attachFlags(ServerEndpoint.defaultSocket()));
+        assertEquals(" -N -L work attach", attachFlags(ServerEndpoint.namedSocket("work")));
+        assertEquals(
+                " -N -S /tmp/libtmux-java-dev/probe/s attach",
+                attachFlags(ServerEndpoint.socketPath(Path.of("/tmp/libtmux-java-dev/probe/s"))));
+
+        assertEquals(
+                List.of("-S", "/tmp/libtmux-java-dev/probe/s"),
+                ServerEndpoint.socketPath(Path.of("/tmp/libtmux-java-dev/probe/s"))
+                        .flags(),
+                "the command is these flags, so a change to them has to show up above");
+    }
+
+    /** A path a shell would mangle is quoted; one it reads as itself is left legible. */
+    @Test
+    void onlyAnUnsafePathIsQuotedInTheAttachCommand() {
+        assertEquals(
+                " -N -S '/tmp/libtmux-java-dev/od(d)/s' attach",
+                attachFlags(ServerEndpoint.socketPath(Path.of("/tmp/libtmux-java-dev/od(d)/s"))));
+    }
+
+    /**
+     * A socket path tmux reported wins over the name that found it.
+     *
+     * <p>{@code -L} is resolved again under whoever runs the command, whose {@code TMUX_TMPDIR} may
+     * name a different directory and so a different server with the same name. The absolute path tmux
+     * reported reaches this one from anywhere.
+     */
+    @Test
+    void aReportedSocketPathWinsOverTheNameThatFoundIt() {
+        ServerConfig named = ServerConfig.builder()
+                .endpoint(ServerEndpoint.namedSocket("work"))
+                .build();
+        String whole = SocketProfile.attachCommand(named, "/tmp/libtmux-java-dev/elsewhere/work");
+
+        assertEquals(" -N -S /tmp/libtmux-java-dev/elsewhere/work attach", whole.substring(whole.indexOf(" -N")));
+    }
+
+    /**
+     * The attach command from {@code -N} onwards, so an assertion is about the endpoint rather than
+     * about where tmux happens to be installed on the machine running the suite.
+     */
+    private static String attachFlags(ServerEndpoint endpoint) {
+        ServerConfig config = ServerConfig.builder().endpoint(endpoint).build();
+        String whole = SocketProfile.attachCommand(config, "");
+        assertTrue(whole.contains(config.binaryPath()), whole);
+        return whole.substring(whole.indexOf(" -N"));
+    }
+
     @Test
     void socketAndConfigurationEnvironmentAreResolvedOnceAtStartup() {
         LaunchConfiguration named =
