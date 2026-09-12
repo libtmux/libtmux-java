@@ -709,11 +709,13 @@ final class ExecutionTest {
                 environment:
                   WORKSPACE_TEST: inherited
                 windows:
-                  - window_name: main
+                  - &main
+                    window_name: main
                     window_index: 0
                     layout: even-horizontal
                     panes: [null, null]
-                  - window_name: other
+                  - <<: *main
+                    window_name: other
                     window_index: 4
                     panes: [null]
                 """);

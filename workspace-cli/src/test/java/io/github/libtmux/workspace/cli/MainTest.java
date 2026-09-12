@@ -158,6 +158,87 @@ final class MainTest {
     }
 
     @Test
+    void yamlAliasesAndMergesPreserveNestedValuesAndTextDates() throws Exception {
+        Path source = directory.resolve("aliases.yaml");
+        Files.writeString(source, """
+                session_name: aliases
+                windows:
+                  - &window
+                    window_name: first
+                    shell_command_before: &setup [echo ready]
+                    panes: [null]
+                  - <<: *window
+                    window_name: second
+                    shell_command_before: *setup
+                date: 2026-09-09
+                """);
+        Result result = invoke("convert", source.toString(), "--json");
+        assertEquals(0, result.code(), result.toString());
+        var document = new ObjectMapper().readTree(result.out());
+        assertTrue(document.path("windows").path(1).path("panes").isArray(), result.out());
+        assertEquals(
+                document.path("windows").path(0).path("shell_command_before"),
+                document.path("windows").path(1).path("shell_command_before"));
+        assertEquals(
+                "first", document.path("windows").path(0).path("window_name").asText());
+        assertEquals(
+                "second", document.path("windows").path(1).path("window_name").asText());
+        assertEquals("2026-09-09", document.path("date").asText());
+        assertFalse(document.path("windows").path(1).has("<<"));
+    }
+
+    @Test
+    void documentParsingRejectsNonJsonAndUnrepresentableYaml() throws Exception {
+        for (var fixture : Map.of(
+                        "yaml-in-json.json", "session_name: invalid\n",
+                        "duplicate.json", "{\"name\":1,\"name\":2}",
+                        "duplicate.yaml", "name: one\nname: two\n",
+                        "multiple.yaml", "name: one\n---\nname: two\n",
+                        "multiple.json", "{} {}",
+                        "cycle.yaml", "cycle: &cycle [*cycle]\n",
+                        "typed.yaml", "value: !!java.net.URL ['https://invalid.example']\n",
+                        "keys.yaml", "true: value\n",
+                        "nonfinite.yaml", "value: .nan\n")
+                .entrySet()) {
+            Path source = directory.resolve(fixture.getKey());
+            Files.writeString(source, fixture.getValue());
+            Result result = invoke("convert", source.toString(), "--json");
+            assertEquals(1, result.code(), fixture.getKey() + ": " + result);
+            assertEquals("", result.out());
+            assertEquals(
+                    "invalid_config",
+                    new ObjectMapper().readTree(result.err()).path("code").asText());
+        }
+    }
+
+    @Test
+    void aliasExpansionHasABoundedJsonRepresentation() throws Exception {
+        Path source = directory.resolve("expansion.yaml");
+        StringBuilder yaml = new StringBuilder("a0: &a0 [text, text, text]\n");
+        for (int index = 1; index <= 10; index++)
+            yaml.append("a")
+                    .append(index)
+                    .append(": &a")
+                    .append(index)
+                    .append(" [*a")
+                    .append(index - 1)
+                    .append(", *a")
+                    .append(index - 1)
+                    .append(", *a")
+                    .append(index - 1)
+                    .append("]\n");
+        Files.writeString(source, yaml);
+        Result result = invoke("convert", source.toString(), "--json");
+        assertEquals(1, result.code());
+        assertEquals("", result.out());
+        assertTrue(new ObjectMapper()
+                .readTree(result.err())
+                .path("message")
+                .asText()
+                .contains("100000 values"));
+    }
+
+    @Test
     void conversionKeepsExtensionFieldsAndProtectsExistingDestinations() throws Exception {
         Path source = directory.resolve("source.yaml");
         Files.writeString(source, "session_name: demo\nwindows: []\ncustom:\n  values: [true, null, 雪]\n");

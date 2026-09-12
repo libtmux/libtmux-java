@@ -1,5 +1,6 @@
 package io.github.libtmux.workspace.cli;
 
+import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.MappingIterator;
@@ -11,11 +12,23 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import org.jspecify.annotations.Nullable;
+import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
+import org.yaml.snakeyaml.error.YAMLException;
+import org.yaml.snakeyaml.nodes.Tag;
 import picocli.CommandLine.ParseResult;
 
 final class Documents {
-    static final ObjectMapper JSON = new ObjectMapper();
+    static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
+            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+            .build());
     private static final ObjectMapper YAML = new ObjectMapper(YAMLFactory.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .build());
@@ -23,12 +36,75 @@ final class Documents {
     private Documents() {}
 
     static ObjectNode read(Path source) throws IOException {
-        try (MappingIterator<JsonNode> iterator = YAML.readerFor(JsonNode.class).readValues(source.toFile())) {
+        if (!Catalog.extension(source).equals("json")) return readYaml(source);
+        try (MappingIterator<JsonNode> iterator = JSON.readerFor(JsonNode.class).readValues(source.toFile())) {
             List<JsonNode> documents = iterator.readAll();
             if (documents.size() != 1 || !documents.getFirst().isObject()) {
                 throw new IllegalArgumentException("workspace must contain exactly one mapping document");
             }
             return (ObjectNode) documents.getFirst();
+        }
+    }
+
+    private static ObjectNode readYaml(Path source) throws IOException {
+        LoaderOptions options = new LoaderOptions();
+        options.setAllowDuplicateKeys(false);
+        options.setWarnOnDuplicateKeys(false);
+        options.setNestingDepthLimit(100);
+        try (var input = Files.newBufferedReader(source)) {
+            var documents =
+                    new Yaml(new WorkspaceConstructor(options)).loadAll(input).iterator();
+            if (!documents.hasNext()) throw new IllegalArgumentException("workspace must contain one mapping document");
+            Object value = documents.next();
+            if (documents.hasNext()) throw new IllegalArgumentException("workspace must contain one mapping document");
+            JsonNode tree = new YamlTree().convert(value);
+            if (!(tree instanceof ObjectNode mapping))
+                throw new IllegalArgumentException("workspace must contain one mapping document");
+            return mapping;
+        } catch (YAMLException failure) {
+            throw new IllegalArgumentException("invalid YAML: " + failure.getMessage(), failure);
+        }
+    }
+
+    private static final class WorkspaceConstructor extends SafeConstructor {
+        WorkspaceConstructor(LoaderOptions options) {
+            super(options);
+            yamlConstructors.put(Tag.TIMESTAMP, new ConstructYamlStr());
+        }
+    }
+
+    private static final class YamlTree {
+        private final Set<Object> active = Collections.newSetFromMap(new IdentityHashMap<>());
+        private int remaining = 100_000;
+
+        JsonNode convert(@Nullable Object value) {
+            if (--remaining < 0) throw new IllegalArgumentException("expanded YAML exceeds 100000 values");
+            if (value instanceof Double number && !Double.isFinite(number))
+                throw new IllegalArgumentException("YAML numbers must be finite");
+            if (value == null || value instanceof String || value instanceof Number || value instanceof Boolean)
+                return JSON.valueToTree(value);
+            if (active.size() >= 100)
+                throw new IllegalArgumentException("expanded YAML is nested more than 100 levels");
+            if (!active.add(value)) throw new IllegalArgumentException("YAML aliases cannot form cycles");
+            try {
+                if (value instanceof Map<?, ?> mapping) {
+                    ObjectNode result = JSON.createObjectNode();
+                    for (var entry : mapping.entrySet()) {
+                        if (!(entry.getKey() instanceof String key))
+                            throw new IllegalArgumentException("YAML mapping keys must be strings");
+                        result.set(key, convert(entry.getValue()));
+                    }
+                    return result;
+                }
+                if (value instanceof List<?> sequence) {
+                    ArrayNode result = JSON.createArrayNode();
+                    for (Object item : sequence) result.add(convert(item));
+                    return result;
+                }
+                throw new IllegalArgumentException("YAML value cannot be represented in JSON");
+            } finally {
+                active.remove(value);
+            }
         }
     }
 

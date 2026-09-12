@@ -18,6 +18,7 @@ dependencies {
     implementation(libs.jackson.databind)
     implementation(libs.jackson.yaml)
     implementation(libs.picocli)
+    implementation(libs.snakeyaml)
 
     testImplementation(project(":libtmux-junit5"))
 }
