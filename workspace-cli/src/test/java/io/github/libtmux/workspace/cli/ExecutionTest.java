@@ -61,6 +61,40 @@ final class ExecutionTest {
                 effects.path("pane_ids").valueStream().map(JsonNode::asText).collect(toSet()));
     }
 
+    @Test
+    void loadPasses256ColorsToNativeTmuxInvocations() throws Exception {
+        Path source = directory.resolve("colors.yaml");
+        Path socket = directory.resolve("colors-socket");
+        Path trace = directory.resolve("colors-arguments");
+        Path wrapper = directory.resolve("tmux-colors");
+        Files.writeString(
+                wrapper,
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '" + trace + "'\nexec '"
+                        + System.getProperty("libtmux.tmux", "tmux") + "' \"$@\"\n");
+        assertTrue(wrapper.toFile().setExecutable(true));
+        Files.writeString(source, "session_name: colors\nwindows: [{}]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke(
+                        java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString()),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-2",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(0, result.code(), result.toString());
+                assertTrue(Files.readString(trace).lines().anyMatch("-2"::equals), "256-color flag was not sent");
+                assertEquals(1, server.windows().size());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"always", "auto"})
     void readinessWaitsUntilACommandConsumerDrawsItsPrompt(String policy) throws Exception {

@@ -92,6 +92,16 @@ final class MainTest {
     }
 
     @Test
+    void legacyColorModeIsRejectedBeforeWorkspaceOrBackendLookup() throws Exception {
+        Result result = invoke("load", "missing.yaml", "-d", "-8", "--json");
+        assertEquals(2, result.code(), result.toString());
+        assertEquals("", result.out());
+        var diagnostic = new ObjectMapper().readTree(result.err());
+        assertEquals("unsupported_color_mode", diagnostic.path("code").asText());
+        assertTrue(diagnostic.path("message").asText().contains("tmux 3.2a"));
+    }
+
+    @Test
     void emptyDiscoveryUsesStableRecordsAndNeverExecutesTmux() throws Exception {
         Result json = invoke("ls", "--json");
         assertEquals(0, json.code(), json.err());
