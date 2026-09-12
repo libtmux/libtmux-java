@@ -20,6 +20,8 @@ import org.junit.jupiter.api.Test;
 final class CreationSpecTest {
 
     private static final TmuxVersion V32A = new TmuxVersion(3, 2, "a");
+    private static final TmuxVersion V33 = new TmuxVersion(3, 3, "");
+    private static final TmuxVersion V33A = new TmuxVersion(3, 3, "a");
     private static final TmuxVersion V37B = new TmuxVersion(3, 7, "b");
     private static final String FORMAT = "#{window_id}";
 
