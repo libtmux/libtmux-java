@@ -247,6 +247,70 @@ final class ExecutionTest {
     }
 
     @Test
+    void implicitWindowsReserveLaterExplicitIndexesAndTheMaximumIndex() throws Exception {
+        Path source = directory.resolve("indexes.yaml");
+        Path socket = directory.resolve("indexes-socket");
+        Files.writeString(source, """
+                session_name: indexes
+                options:
+                  base-index: 3
+                windows:
+                  - window_name: implicit
+                  - window_name: reserved
+                    window_index: 3
+                  - window_name: maximum
+                    window_index: 2147483647
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, result.code(), result.err());
+                var indexes = server.windows().stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                io.github.libtmux.Window::name,
+                                window -> window.index().value()));
+                assertEquals(java.util.Map.of("implicit", 4, "reserved", 3, "maximum", Integer.MAX_VALUE), indexes);
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void appendIndexConflictsFailBeforeScriptsOrOptionsRun() throws Exception {
+        Path source = directory.resolve("collision.yaml");
+        Path socket = directory.resolve("collision-socket");
+        Path marker = directory.resolve("script-ran");
+        Files.writeString(
+                source,
+                "session_name: ignored\nbefore_script: /usr/bin/touch " + marker
+                        + "\noptions:\n  '@changed': yes\nwindows:\n  - window_index: 0\n");
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("borrowed");
+                Result result = invoke(
+                        inherited(server, socket),
+                        "load",
+                        source.toString(),
+                        "--append",
+                        "-S",
+                        socket.toString(),
+                        "--json");
+                assertEquals(2, result.code(), result.toString());
+                assertFalse(Files.exists(marker));
+                assertFalse(server.sessions().getFirst().options().all().containsKey("@changed"));
+                assertEquals(1, server.windows().size());
+                assertEquals(
+                        "error",
+                        new ObjectMapper().readTree(result.out()).path("status").asText());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
     void loadLogsBothScriptStreamsWithoutContaminatingItsJsonResult() throws Exception {
         Path source = directory.resolve("logged.yaml");
         Path socket = directory.resolve("logged-socket");
