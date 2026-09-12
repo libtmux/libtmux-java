@@ -28,6 +28,7 @@ final class Execution {
 
     static Server server(Main.Context context, ParseResult args) {
         var server = Server.builder()
+                .force256Colors(Main.flag(args, "-2"))
                 .binary(Children.executable(context, context.environment().getOrDefault("LIBTMUX_TEST_TMUX", "tmux")));
         String socket = args.matchedOptionValue("-S", "");
         String name = args.matchedOptionValue("-L", "");
@@ -44,6 +45,11 @@ final class Execution {
     }
 
     static void load(Main.Context context, ParseResult args, Reporter report) throws IOException, InterruptedException {
+        if (Main.flag(args, "-8"))
+            throw new Main.Failure(
+                    "unsupported_color_mode",
+                    2,
+                    "tmux 3.2a and newer do not support legacy 88-color mode (-8); use -2 or terminal detection");
         boolean append = Main.flag(args, "--append");
         boolean detached = Main.flag(args, "-d");
         if (report.machine() && !detached && !append) throw Main.usage("machine load requires -d or --append");

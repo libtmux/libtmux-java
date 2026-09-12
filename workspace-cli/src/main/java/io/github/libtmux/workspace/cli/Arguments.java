@@ -52,7 +52,7 @@ final class Arguments {
                 .exclusive(true)
                 .multiplicity("0..1")
                 .addArg(flag("Use 256 terminal colors.", "-2"))
-                .addArg(flag("Use 88 terminal colors.", "-8"))
+                .addArg(flag("Legacy 88-color mode; rejected because tmux 3.2a and newer removed it.", "-8"))
                 .build());
         load.addOption(value("Write operation diagnostics to this file.", "--log-file"));
         load.addOption(
