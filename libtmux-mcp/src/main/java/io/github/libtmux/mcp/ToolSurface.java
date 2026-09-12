@@ -167,25 +167,25 @@ final class ToolSurface {
         return tool.capability();
     }
 
+    /**
+     * How this process came to be pointed at its socket, as a model is told it.
+     *
+     * <p>A switch over the sealed {@link ServerEndpoint} rather than a chain of
+     * {@code instanceof}, so a fourth kind of endpoint is a compile error here instead of an
+     * {@code IllegalStateException} a model would meet at runtime.
+     */
+    private record Selection(String provenance, String selector) {}
+
     static Map<String, Object> socket(Server server) {
-        ServerEndpoint endpoint = server.config().endpoint();
-        String selection;
-        String selector;
-        if (endpoint instanceof ServerEndpoint.Default) {
-            selection = "inherited";
-            selector = "inherit";
-        } else if (endpoint instanceof ServerEndpoint.NamedSocket named) {
-            selection = "operator-current";
-            selector = "name:" + named.name();
-        } else if (endpoint instanceof ServerEndpoint.SocketPath path) {
-            selection = "operator-current";
-            selector = "path:" + path.path();
-        } else {
-            throw new IllegalStateException("unrecognized server endpoint " + endpoint);
-        }
+        Selection chosen =
+                switch (server.config().endpoint()) {
+                    case ServerEndpoint.Default unused -> new Selection("inherited", "inherit");
+                    case ServerEndpoint.NamedSocket named -> new Selection("operator-current", "name:" + named.name());
+                    case ServerEndpoint.SocketPath path -> new Selection("operator-current", "path:" + path.path());
+                };
         Map<String, Object> socket = new LinkedHashMap<>();
-        socket.put("selector", selector);
-        socket.put("selectionProvenance", selection);
+        socket.put("selector", chosen.selector());
+        socket.put("selectionProvenance", chosen.provenance());
         socket.put("serverState", server.isAlive() ? "existing" : "unknown");
         socket.put("configurationProvenance", "unknown");
         socket.put("namespaceBoundary", "tmux-objects-only");
@@ -204,25 +204,14 @@ final class ToolSurface {
         String path = endpoint instanceof ServerEndpoint.SocketPath selected
                 ? selected.path().toString()
                 : "";
-        StringBuilder attach = new StringBuilder(shellQuote(server.config().binaryPath())).append(" -N");
-        if (!path.isBlank()) {
-            attach.append(" -S ").append(shellQuote(path));
-        } else if (endpoint instanceof ServerEndpoint.NamedSocket named) {
-            attach.append(" -L ").append(shellQuote(named.name()));
-        }
-        attach.append(" attach");
         Map<String, Object> connection = new LinkedHashMap<>();
         connection.put("socketSelector", socket.get("selector"));
         connection.put("socketProvenance", socket.get("selectionProvenance"));
         connection.put("resolvedSocketPath", path);
         connection.put("serverState", socket.get("serverState"));
         connection.put("configurationProvenance", socket.get("configurationProvenance"));
-        connection.put("attachCommand", attach.toString());
+        connection.put("attachCommand", SocketProfile.attachCommand(server.config()));
         return Collections.unmodifiableMap(connection);
-    }
-
-    private static String shellQuote(String value) {
-        return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 
     private static Set<ToolSpec.Toolset> defaults(@Nullable SocketProfile socketProfile) {

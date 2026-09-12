@@ -153,7 +153,7 @@ record LaunchConfiguration(
                 serverState,
                 configurationProvenance,
                 resolvedSocketPath,
-                attachCommand(resolvedSocketPath),
+                SocketProfile.attachCommand(config),
                 defaultTeardown);
     }
 
@@ -213,16 +213,6 @@ record LaunchConfiguration(
         return "";
     }
 
-    private String attachCommand(String resolvedSocketPath) {
-        StringBuilder command = new StringBuilder(shellQuote(config.binaryPath())).append(" -N");
-        if (!resolvedSocketPath.isBlank()) {
-            command.append(" -S ").append(shellQuote(resolvedSocketPath));
-        } else if (config.endpoint() instanceof ServerEndpoint.NamedSocket named) {
-            command.append(" -L ").append(shellQuote(named.name()));
-        }
-        return command.append(" attach").toString();
-    }
-
     private static String oneLine(CommandResult result, String field) {
         if (result.stdout().size() != 1) {
             throw new IllegalStateException("tmux returned no unambiguous " + field);
@@ -233,10 +223,6 @@ record LaunchConfiguration(
     private static boolean serverAbsent(CommandResult result) {
         String diagnostic = String.join("\n", result.stderr()).toLowerCase(java.util.Locale.ROOT);
         return diagnostic.contains("no server running on") || diagnostic.contains("no such file or directory");
-    }
-
-    private static String shellQuote(String value) {
-        return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 
     private static Path absolute(String value, String source) {
