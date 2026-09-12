@@ -10,8 +10,8 @@ workspace lookup because supported tmux versions removed 88-color mode.
 
 This branch is an implementation checkpoint. Native loading, capture,
 conversion, imports, discovery, search, editor execution and Python shell
-execution are available. Python plugins and custom builders still need
-implementation and validation.
+execution are available. Python plugins and custom builders use an explicit
+tmuxp bridge; their effects remain outside the native builder's guarantees.
 Native loading rejects unsupported configuration keys before contacting tmux.
 YAML anchors and merge keys expand into ordinary workspace values. Date-like
 scalars remain text. Documents must contain one mapping; duplicate keys,
@@ -153,10 +153,36 @@ an undrained pipe can leave that output incomplete. Caller-supplied output
 streams remain open. If a stream ignores interruption, its pending write can
 finish later when the caller drains it; cancellation does not reap that write.
 
-Python shell commands require `TMUX_WORKSPACE_PYTHON` to name an interpreter
-with tmuxp 1.74.0 installed. The version is checked before execution. Ordinary
-native loading and read commands do not require Python. Search uses Java regex
-syntax; it does not launch Python or promise identical Python `re` semantics.
+Python shell commands and extension workspaces use `TMUX_WORKSPACE_PYTHON`
+(default `python3`) with tmuxp 1.74.0 installed. The version is checked before
+any input workspace changes. Nonempty `plugins`, `workspace_builder`, or
+`workspace_builder_paths` select the bridge. Builder paths resolve relative to
+the workspace file; custom builders receive their own configuration keys.
+Plugin import or version failures stop the load instead of prompting to skip
+the plugin. Ordinary native loading and read commands do not require Python.
+Search uses Java regex syntax; it does not launch Python or promise identical
+Python `re` semantics.
+
+Extension append receives the originally authenticated session ID, even if an
+earlier input moves the invoking pane. Combining extension append with
+`before_script` fails before Python or tmux starts: the pinned Python builder
+can delete a borrowed session when that script fails. Native scripted append
+and extension append without a script remain available.
+
+Bridge results identify `engine: python`, `effects_scope: observed`, and
+`effects_unknown: true`. The bridge keeps `owned_session: false`: observing a
+session does not establish ownership. Reported window and pane IDs were absent
+from the selected daemon's pre-child snapshot and appear in the target session
+after the child exits or is interrupted. They do not
+describe arbitrary plugin actions, transient objects, or changes to other
+sessions. Child output remains separate from native build events; the bridge
+does not produce native pane progress. Java retains observed sessions after
+extension failure. Python builders and plugins remain executable user code
+with their own mutation and cleanup behavior.
+
+On tmux 3.2a, the Python classic builder can fail after tmux rewrites a session
+name containing `$`. Use a name without `$` for extension workspaces on that
+version; the bridge does not alter tmux's naming behavior.
 
 Captured subprocesses retain bounded output and report truncation. Linux uses
 an owned `setsid` session to terminate descendants retaining captured output;
@@ -189,5 +215,7 @@ $ ./gradlew :workspace-cli:check \
 
 The tests use isolated sockets under the Java test root. PTY regressions use
 Python 3 standard-library helpers; native application commands do not require
-Python. The repository-wide `check` remains the full gate; a focused CLI check
-does not replace it.
+Python. Set `TMUX_WORKSPACE_TEST_PYTHON` to an interpreter with tmuxp 1.74.0 to
+enable the extension fixtures. Tests replace `HOME`; user-installed Python
+packages also need an explicit `PYTHONUSERBASE`. The repository-wide `check`
+remains the full gate; a focused CLI check does not replace it.

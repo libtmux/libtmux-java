@@ -107,6 +107,51 @@ final class MainTest {
     }
 
     @Test
+    void scriptedExtensionAppendIsRejectedAcrossAllInputsBeforeRuntimeLookup() throws Exception {
+        Path first = directory.resolve("first.yaml");
+        Path second = directory.resolve("second.yaml");
+        Files.writeString(first, "session_name: first\nwindows: [{}]\n");
+        Files.writeString(second, """
+                session_name: second
+                plugins: [example.Plugin]
+                before_script: /bin/false
+                windows: [{}]
+                """);
+        Result result =
+                invoke(Map.of("TMUX_PANE", "%0"), "load", first.toString(), second.toString(), "--append", "--json");
+        assertEquals(2, result.code(), result.toString());
+        assertEquals("", result.out());
+        assertEquals(
+                "unsupported_combination",
+                new ObjectMapper().readTree(result.err()).path("code").asText());
+    }
+
+    @Test
+    void extensionRuntimeIsCheckedBeforeTheFirstNativeInputCanLoad() throws Exception {
+        Path first = directory.resolve("first.yaml");
+        Path second = directory.resolve("second.yaml");
+        Path python = directory.resolve("python");
+        Path marker = directory.resolve("version-checked");
+        Files.writeString(first, "session_name: first\nwindows: [{}]\n");
+        Files.writeString(second, "session_name: second\nplugins: [example.Plugin]\nwindows: [{}]\n");
+        Files.writeString(python, "#!/bin/sh\nprintf checked > '" + marker + "'\nprintf '0.0\\n'\n");
+        assertTrue(python.toFile().setExecutable(true));
+        Result result = invoke(
+                Map.of("TMUX_WORKSPACE_PYTHON", python.toString()),
+                "load",
+                first.toString(),
+                second.toString(),
+                "-d",
+                "--json");
+        assertEquals(1, result.code(), result.toString());
+        assertEquals("", result.out());
+        assertTrue(Files.exists(marker));
+        assertEquals(
+                "python_runtime",
+                new ObjectMapper().readTree(result.err()).path("code").asText());
+    }
+
+    @Test
     void emptyDiscoveryUsesStableRecordsAndNeverExecutesTmux() throws Exception {
         Result json = invoke("ls", "--json");
         assertEquals(0, json.code(), json.err());

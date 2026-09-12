@@ -61,6 +61,233 @@ final class ExecutionTest {
                 effects.path("pane_ids").valueStream().map(JsonNode::asText).collect(toSet()));
     }
 
+    @ParameterizedTest
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void pythonExtensionsUseTheSelectedServerAndReportObservedEffects(boolean append, boolean fail) throws Exception {
+        String python = System.getenv("TMUX_WORKSPACE_TEST_PYTHON");
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                python != null, "set TMUX_WORKSPACE_TEST_PYTHON for bridge fixtures");
+        Path source = directory.resolve("extension.yaml");
+        Path socket = directory.resolve("extension-socket");
+        Files.writeString(directory.resolve("extensions.py"), """
+                import sys
+                from tmuxp.workspace.builder.classic import ClassicWorkspaceBuilder
+                class Plugin:
+                    def before_workspace_builder(self, session): pass
+                    def on_window_create(self, window): window.set_option('@plugin', 'called')
+                    def on_pane_create(self, pane): pass
+                    def after_window_finished(self, window): pass
+                    def before_script(self, session): pass
+                class Builder(ClassicWorkspaceBuilder):
+                    def build(self, session=None, append=False):
+                        assert append == self.session_config['custom_append']
+                        super().build(session=session, append=append)
+                        print('extension-out\\x1b', flush=True)
+                        print('extension-err', file=sys.stderr, flush=True)
+                        if self.session_config['custom_fail']: raise RuntimeError('extension failed')
+                """);
+        Files.writeString(
+                source,
+                "session_name: extension\nworkspace_builder: extensions:Builder\n"
+                        + "workspace_builder_paths: [.]\nplugins: [extensions.Plugin]\n"
+                        + "custom_append: " + append + "\ncustom_fail: " + fail
+                        + "\nwindows:\n  - window_name: built\n    panes: [null, null]\n");
+        try (Server server = server(socket)) {
+            try {
+                var environment = new HashMap<String, String>();
+                environment.put("TMUX_WORKSPACE_PYTHON", java.util.Objects.requireNonNull(python));
+                String sessionId = "";
+                var arguments = new java.util.ArrayList<String>(java.util.List.of("load"));
+                if (append) {
+                    var original = server.newSession("borrowed");
+                    sessionId = original.id().value();
+                    environment.putAll(inherited(server, socket));
+                    var invoking = original.windows().getFirst();
+                    original.newWindow("keep");
+                    var other = server.newSession("other");
+                    Path move = directory.resolve("move.sh");
+                    Files.writeString(
+                            move,
+                            "exec '" + System.getProperty("libtmux.tmux", "tmux") + "' -S '" + socket
+                                    + "' move-window -s '" + invoking.id().value() + "' -t '"
+                                    + other.id().value() + ":4'\n");
+                    Path first = directory.resolve("first.yaml");
+                    Files.writeString(
+                            first, "session_name: native-first\nbefore_script: /bin/sh " + move + "\nwindows: [{}]\n");
+                    arguments.add(first.toString());
+                }
+                arguments.addAll(java.util.List.of(
+                        source.toString(),
+                        append ? "--append" : "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "-s",
+                        "~",
+                        "--json"));
+                Result result = invoke(environment, arguments.toArray(String[]::new));
+                assertEquals(fail ? 1 : 0, result.code(), result.toString());
+                JsonNode output = new ObjectMapper().readTree(result.out());
+                JsonNode effects = fail
+                        ? output.path("errors").path(0).path("effects")
+                        : output.path("results").path(append ? 1 : 0);
+                assertEquals("python", effects.path("engine").asText());
+                assertEquals("observed", effects.path("effects_scope").asText());
+                assertEquals(
+                        append ? "borrowed" : "~", effects.path("session_name").asText());
+                assertEquals(
+                        "extension-out\u001b\n",
+                        effects.path("script_output").path("stdout").asText());
+                assertTrue(effects.path("script_output").path("stderr").asText().contains("extension-err"));
+                assertEquals(
+                        append ? sessionId : server.sessions().getFirst().id().value(),
+                        effects.path("session_id").asText());
+                var window = server.windows().stream()
+                        .filter(value -> value.name().equals("built"))
+                        .findFirst()
+                        .orElseThrow();
+                assertEquals("called", window.options().get("@plugin").orElseThrow());
+                if (append) assertEquals(sessionId, window.session().id().value());
+                assertEquals(
+                        java.util.Set.of(window.id().value()),
+                        effects.path("window_ids")
+                                .valueStream()
+                                .map(JsonNode::asText)
+                                .collect(toSet()));
+                assertEquals(
+                        window.panes().stream().map(pane -> pane.id().value()).collect(toSet()),
+                        effects.path("pane_ids")
+                                .valueStream()
+                                .map(JsonNode::asText)
+                                .collect(toSet()));
+                assertTrue(server.isAlive(), "extension failure must not trigger native cleanup");
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void pythonBuilderCannotClaimAnExistingSessionOrItsObjects() throws Exception {
+        String python = System.getenv("TMUX_WORKSPACE_TEST_PYTHON");
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                python != null, "set TMUX_WORKSPACE_TEST_PYTHON for bridge fixtures");
+        Path source = directory.resolve("existing-extension.yaml");
+        Path socket = directory.resolve("existing-extension-socket");
+        Files.writeString(directory.resolve("existing_extension.py"), """
+                class Builder:
+                    def __init__(self, session_config, server, plugins):
+                        self.session = server.sessions.get(session_name='existing')
+                        self.plugins = plugins
+                    def build(self, session=None, append=False): pass
+                """);
+        Files.writeString(source, """
+                session_name: requested
+                workspace_builder: existing_extension:Builder
+                workspace_builder_paths: [.]
+                windows: []
+                """);
+        try (Server server = server(socket)) {
+            try {
+                var existing = server.newSession("existing");
+                Result result = invoke(
+                        java.util.Map.of("TMUX_WORKSPACE_PYTHON", java.util.Objects.requireNonNull(python)),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "--json");
+                assertEquals(0, result.code(), result.toString());
+                JsonNode effects = new ObjectMapper()
+                        .readTree(result.out())
+                        .path("results")
+                        .path(0);
+                assertEquals(existing.id().value(), effects.path("session_id").asText());
+                assertFalse(effects.path("owned_session").asBoolean(), effects.toString());
+                assertTrue(effects.path("window_ids").isEmpty(), effects.toString());
+                assertTrue(effects.path("pane_ids").isEmpty(), effects.toString());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"--json", "--ndjson"})
+    void cancelledPythonExtensionsKeepObservedTopologyAndStopTheirChild(String mode) throws Exception {
+        String python = System.getenv("TMUX_WORKSPACE_TEST_PYTHON");
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                python != null, "set TMUX_WORKSPACE_TEST_PYTHON for bridge fixtures");
+        Path source = directory.resolve("cancel-extension.yaml");
+        Path socket = directory.resolve("cancel-extension-socket");
+        Path marker = directory.resolve("extension-pid");
+        Files.writeString(directory.resolve("cancel_extension.py"), """
+                import os, time
+                from pathlib import Path
+                from tmuxp.workspace.builder.classic import ClassicWorkspaceBuilder
+                class Builder(ClassicWorkspaceBuilder):
+                    def build(self, session=None, append=False):
+                        super().build(session=session, append=append)
+                        print('bridge-ready\\x1b', flush=True)
+                        Path(self.session_config['marker']).write_text(str(os.getpid()))
+                        time.sleep(30)
+                """);
+        Files.writeString(
+                source,
+                "session_name: cancelled-extension\nworkspace_builder: cancel_extension:Builder\n"
+                        + "workspace_builder_paths: [.]\nmarker: " + marker + "\nwindows: [{}]\n");
+        var result = new java.util.concurrent.atomic.AtomicReference<>(new Result(-1, "", ""));
+        Thread owner = Thread.ofPlatform()
+                .unstarted(() -> result.set(invoke(
+                        java.util.Map.of("TMUX_WORKSPACE_PYTHON", java.util.Objects.requireNonNull(python)),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        mode)));
+        try (Server server = server(socket)) {
+            try {
+                owner.start();
+                long deadline =
+                        System.nanoTime() + java.time.Duration.ofSeconds(5).toNanos();
+                while (!Files.exists(marker) && owner.isAlive() && System.nanoTime() < deadline) Thread.sleep(10);
+                assertTrue(Files.exists(marker), result.get().toString());
+                owner.interrupt();
+                owner.join(1_000);
+                assertFalse(owner.isAlive(), "Python bridge retained the cancelled invocation");
+                assertEquals(130, result.get().code(), result.get().toString());
+                String output = result.get().out();
+                assertFalse(output.contains("\u001b"), output);
+                JsonNode summary = mode.equals("--json")
+                        ? new ObjectMapper().readTree(output)
+                        : new ObjectMapper()
+                                .readTree(output.lines()
+                                        .reduce((before, after) -> after)
+                                        .orElseThrow());
+                assertEquals("partial", summary.path("status").asText(), output);
+                JsonNode failure = summary.path("errors").path(0);
+                assertEquals("interrupted", failure.path("code").asText());
+                assertTrue(failure.path("effects").path("effects_unknown").asBoolean());
+                assertReportedObjects(server, failure.path("effects"));
+                long pid = Long.parseLong(Files.readString(marker));
+                assertFalse(
+                        ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "Python child is still alive");
+            } finally {
+                owner.interrupt();
+                owner.join(2_000);
+                if (Files.exists(marker))
+                    ProcessHandle.of(Long.parseLong(Files.readString(marker)))
+                            .ifPresent(ProcessHandle::destroyForcibly);
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     @Test
     void loadPasses256ColorsToNativeTmuxInvocations() throws Exception {
         Path source = directory.resolve("colors.yaml");
@@ -72,11 +299,14 @@ final class ExecutionTest {
                 "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '" + trace + "'\nexec '"
                         + System.getProperty("libtmux.tmux", "tmux") + "' \"$@\"\n");
         assertTrue(wrapper.toFile().setExecutable(true));
-        Files.writeString(source, "session_name: colors\nwindows: [{}]\n");
+        Files.writeString(
+                source,
+                "session_name: colors\nplugins: []\nworkspace_builder: null\nworkspace_builder_paths: []\nwindows: [{}]\n");
         try (Server server = server(socket)) {
             try {
                 Result result = invoke(
-                        java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString()),
+                        java.util.Map.of(
+                                "LIBTMUX_TEST_TMUX", wrapper.toString(), "TMUX_WORKSPACE_PYTHON", "/missing/python"),
                         "load",
                         source.toString(),
                         "-d",
