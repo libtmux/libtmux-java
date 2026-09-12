@@ -284,6 +284,11 @@ final class ProcessTest {
                     while not os.path.exists(status) and time.monotonic() < until:
                         attached()
                         time.sleep(.025)
+                    if not os.path.exists(status):
+                        print(subprocess.check_output(prefix + ['capture-pane', '-p', '-t', pane], text=True), file=sys.stderr)
+                        for name in ('stdout', 'stderr'):
+                            path = os.path.join(scratch, name)
+                            if os.path.exists(path): print(name, open(path).read(), file=sys.stderr)
                     assert open(status).read() == '0'
                     state = attached()
                     assert state[clients[0][2]] == 'switched', state
