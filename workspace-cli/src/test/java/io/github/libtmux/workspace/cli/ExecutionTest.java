@@ -602,6 +602,29 @@ final class ExecutionTest {
         }
     }
 
+    @Test
+    void humanBootstrapOutputStaysOnItsOriginalStream() throws Exception {
+        Path source = directory.resolve("human-output.yaml");
+        Path socket = directory.resolve("human-output-socket");
+        Files.writeString(source, """
+                session_name: human-output
+                before_script: /bin/sh -c 'printf "bootstrap-out\\n"; printf "bootstrap-err\\n" >&2'
+                windows: [{}]
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke(
+                        "load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--no-progress");
+                assertEquals(0, result.code(), result.toString());
+                assertTrue(result.out().contains("bootstrap-out\n"), result.out());
+                assertFalse(result.out().contains("bootstrap-err"), result.out());
+                assertEquals("bootstrap-err\n", result.err());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     private static java.util.Map<String, String> inherited(Server server, Path socket) {
         return java.util.Map.of(
                 "TMUX",

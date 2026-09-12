@@ -154,6 +154,11 @@ final class Reporter implements AutoCloseable {
                     default -> "debug";
                 };
         record(level, name, data, !name.equals("failed") && !(name.equals("script-output") && !machine()));
+        if (!machine() && name.equals("script-output")) {
+            OutputStream stream = data.path("stream").asText().equals("stderr") ? context.error() : context.output();
+            stream.write(data.path("text").asText().getBytes(StandardCharsets.UTF_8));
+            stream.flush();
+        }
         if (ndjson) {
             ObjectNode event = Documents.JSON
                     .createObjectNode()
