@@ -295,6 +295,10 @@ public final class Window {
      *
      * <p>tmux draws a popup for a client, so this needs one attached; on a detached session tmux
      * reports that it has no current client.
+     *
+     * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
+     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
+     * mean it to be expanded.
      */
     public void displayPopup(String shellCommand) {
         server.run(snapshot, List.of("display-popup", "-E", "-t", target(), shellCommand));

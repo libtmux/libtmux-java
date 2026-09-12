@@ -444,6 +444,10 @@ public final class Pane {
      * <p>A second call replaces the first: tmux keeps one pipe per pane, not a list.
      *
      * @param shellCommand run by the user's shell, so it may redirect and pipe
+     *
+     * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
+     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
+     * mean it to be expanded.
      */
     public void pipeTo(String shellCommand) {
         Objects.requireNonNull(shellCommand, "shellCommand");
