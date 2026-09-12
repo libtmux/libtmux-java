@@ -78,6 +78,11 @@ continues. Blank panes and explicit launch commands never wait or query
 the shell policy. A pane's `shell` overrides `window_shell`; `pane_shell` is an
 alias. Setting both pane keys is an error.
 
+Pane-level `enter`, `sleep_before` and `sleep_after` set command defaults.
+Command mappings can override them; each override carries to later commands in
+the same pane. A null sleep resets that delay to zero. `enter: false` types the
+command without executing it.
+
 Use `--help` on any command for its arguments. Discovery checks local project
 files and the first existing global directory from `TMUXP_CONFIGDIR`, XDG and
 the legacy directory. Conversion preserves extension fields and never executes
