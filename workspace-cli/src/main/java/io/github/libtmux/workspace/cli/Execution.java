@@ -65,7 +65,7 @@ final class Execution {
                     context, source, index == sources.length - 1 ? args.matchedOptionValue("-s", "") : ""));
         }
         try (Server server = server(context, args)) {
-            if (append) authenticate(context, server);
+            Optional<Session> borrowed = append ? Optional.of(appendTarget(context, server)) : Optional.empty();
             Optional<io.github.libtmux.Client> invoking =
                     detached || append ? Optional.empty() : invokingClient(context, server);
             ArrayNode results = Documents.JSON.createArrayNode();
@@ -83,7 +83,7 @@ final class Execution {
                 effects.putArray("pane_ids");
                 report.event("workspace-started", effects.deepCopy());
                 try {
-                    last = build(context, server, plans.subList(index, plans.size()), append, report, effects);
+                    last = build(context, server, plans.subList(index, plans.size()), borrowed, report, effects);
                     results.add(effects);
                     report.event("workspace-completed", effects.deepCopy());
                 } catch (RuntimeException | IOException | InterruptedException failure) {
@@ -130,11 +130,12 @@ final class Execution {
             Main.Context context,
             Server server,
             List<WorkspacePlan> pending,
-            boolean append,
+            Optional<Session> borrowed,
             Reporter report,
             ObjectNode effects)
             throws IOException, InterruptedException {
         WorkspacePlan plan = pending.getFirst();
+        boolean append = borrowed.isPresent();
         List<WorkspacePlan> reservations = append ? pending : List.of(plan);
         Optional<Session> existing = server.isAlive()
                 ? server.sessions().stream()
@@ -153,13 +154,7 @@ final class Execution {
         Window bootstrap = null;
         if (append) {
             authenticate(context, server);
-            String current = context.environment().getOrDefault("TMUX_PANE", "");
-            session = server.panes().stream()
-                    .filter(pane -> pane.id().value().equals(current))
-                    .findFirst()
-                    .orElseThrow(() -> Main.usage("TMUX_PANE does not resolve on the selected server"))
-                    .window()
-                    .session();
+            session = borrowed.orElseThrow().refresh();
         } else {
             session = server.newSession(SessionSpec.builder()
                     .named(plan.name())
@@ -386,6 +381,17 @@ final class Execution {
                         .createObjectNode()
                         .put("pane_id", pane.id().value())
                         .put("window_id", window.id().value()));
+    }
+
+    private static Session appendTarget(Main.Context context, Server server) {
+        authenticate(context, server);
+        String current = context.environment().getOrDefault("TMUX_PANE", "");
+        return server.panes().stream()
+                .filter(pane -> pane.id().value().equals(current))
+                .findFirst()
+                .orElseThrow(() -> Main.usage("TMUX_PANE does not resolve on the selected server"))
+                .window()
+                .session();
     }
 
     private static void authenticate(Main.Context context, Server selected) {

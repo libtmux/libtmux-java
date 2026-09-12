@@ -74,7 +74,8 @@ $ tmux-workspace freeze dev \
 Capture recovers topology, directories, focus and configured options. It cannot
 recover original command history, bootstrap scripts or plugin intent. Ordinary
 loading creates or reuses a session. Append authenticates the inherited tmux
-daemon before resolving the current pane; socket aliases are accepted when
+daemon before resolving the current pane, then keeps that session across input
+files even if a script moves the pane. Socket aliases are accepted when
 they reach that same daemon. Failures report retained changes rather than
 claiming rollback.
 
