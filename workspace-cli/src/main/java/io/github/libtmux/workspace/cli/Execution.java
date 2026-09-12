@@ -154,6 +154,9 @@ final class Execution {
                     .build());
             bootstrap = session.windows().getFirst();
             effects.put("owned_session", true).put("changed", true);
+            effects.withArray("window_ids").add(bootstrap.id().value());
+            for (Pane pane : bootstrap.panes())
+                effects.withArray("pane_ids").add(pane.id().value());
         }
         effects.put("session_id", session.id().value())
                 .put("session_name", session.name())
@@ -229,6 +232,9 @@ final class Execution {
             Window window = session.newWindow(create.build());
             effects.put("changed", true);
             effects.withArray("window_ids").add(window.id().value());
+            List<Pane> panes = new ArrayList<>();
+            panes.add(window.panes().getFirst());
+            effects.withArray("pane_ids").add(panes.getFirst().id().value());
             report.event(
                     "window-created",
                     Documents.JSON
@@ -236,9 +242,13 @@ final class Execution {
                             .put("window_id", window.id().value())
                             .put("window_index", window.index().value())
                             .put("window_name", window.name()));
-            List<Pane> panes = new ArrayList<>();
-            panes.add(window.panes().getFirst());
-            created(panes.getFirst(), window, report, effects);
+            created(panes.getFirst(), window, report);
+            if (bootstrap != null) {
+                effects.put("stage", "finalize");
+                removeBootstrap(session, bootstrap, effects);
+                bootstrap = null;
+                effects.put("stage", "windows");
+            }
             apply(window.options(), spec.options(), effects);
             for (int index = 1; index < spec.panes().size(); index++) {
                 WorkspacePlan.Pane pane = spec.panes().get(index);
@@ -249,7 +259,8 @@ final class Execution {
                         .environment(pane.environment());
                 if (!pane.shell().isEmpty()) split.running(pane.shell());
                 panes.add(panes.getLast().split(split.build()));
-                created(panes.getLast(), window, report, effects);
+                effects.withArray("pane_ids").add(panes.getLast().id().value());
+                created(panes.getLast(), window, report);
                 window.selectLayout(Layout.TILED);
             }
             if (!spec.layout().isEmpty()) {
@@ -288,7 +299,6 @@ final class Execution {
             if (focused == null || spec.focus()) focused = window;
         }
         effects.put("stage", "finalize");
-        if (bootstrap != null) removeBootstrap(session, bootstrap, effects);
         if (focused != null) focused.select();
         effects.put("stage", "completed");
         return session.refresh();
@@ -302,6 +312,11 @@ final class Execution {
         try {
             if (renumber) options.set("renumber-windows", "off");
             bootstrap.kill();
+            effects.withArray("window_ids")
+                    .removeIf(value -> value.asText().equals(bootstrap.id().value()));
+            Set<String> paneIds = new HashSet<>();
+            for (Pane pane : bootstrap.panes()) paneIds.add(pane.id().value());
+            effects.withArray("pane_ids").removeIf(value -> paneIds.contains(value.asText()));
         } catch (RuntimeException failure) {
             failed = failure;
         } finally {
@@ -351,8 +366,7 @@ final class Execution {
         });
     }
 
-    private static void created(Pane pane, Window window, Reporter report, ObjectNode effects) throws IOException {
-        effects.withArray("pane_ids").add(pane.id().value());
+    private static void created(Pane pane, Window window, Reporter report) throws IOException {
         report.event(
                 "pane-created",
                 Documents.JSON
