@@ -287,10 +287,36 @@ final class Execution {
             apply(window.options(), spec.optionsAfter(), effects);
             if (focused == null || spec.focus()) focused = window;
         }
-        if (bootstrap != null) bootstrap.kill();
+        effects.put("stage", "finalize");
+        if (bootstrap != null) removeBootstrap(session, bootstrap, effects);
         if (focused != null) focused.select();
         effects.put("stage", "completed");
         return session.refresh();
+    }
+
+    private static void removeBootstrap(Session session, Window bootstrap, ObjectNode effects) {
+        Options options = session.options();
+        boolean renumber = options.get("renumber-windows").orElse("off").equals("on");
+        String previous = renumber ? options.all().get("renumber-windows") : null;
+        if (renumber) options.set("renumber-windows", "off");
+        RuntimeException failed = null;
+        try {
+            bootstrap.kill();
+        } catch (RuntimeException failure) {
+            failed = failure;
+        } finally {
+            if (renumber) {
+                try {
+                    if (previous == null) options.unset("renumber-windows");
+                    else options.set("renumber-windows", previous);
+                } catch (RuntimeException restoreFailure) {
+                    effects.put("renumber_restore_error", String.valueOf(restoreFailure.getMessage()));
+                    if (failed == null) failed = restoreFailure;
+                    else failed.addSuppressed(restoreFailure);
+                }
+            }
+        }
+        if (failed != null) throw failed;
     }
 
     private static void reserveIndexes(WorkspacePlan plan, Set<Integer> occupied) {

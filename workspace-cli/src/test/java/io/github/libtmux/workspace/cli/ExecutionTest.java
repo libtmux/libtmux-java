@@ -16,6 +16,7 @@ import java.util.HashMap;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 final class ExecutionTest {
@@ -246,21 +247,23 @@ final class ExecutionTest {
         }
     }
 
-    @Test
-    void implicitWindowsReserveLaterExplicitIndexesAndTheMaximumIndex() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void implicitWindowsReserveLaterExplicitIndexesAndTheMaximumIndex(boolean renumber) throws Exception {
         Path source = directory.resolve("indexes.yaml");
         Path socket = directory.resolve("indexes-socket");
         Files.writeString(source, """
                 session_name: indexes
                 options:
                   base-index: 3
+                  renumber-windows: %s
                 windows:
                   - window_name: implicit
                   - window_name: reserved
                     window_index: 3
                   - window_name: maximum
                     window_index: 2147483647
-                """);
+                """.formatted(renumber));
         try (Server server = server(socket)) {
             try {
                 Result result =
@@ -271,6 +274,13 @@ final class ExecutionTest {
                                 io.github.libtmux.Window::name,
                                 window -> window.index().value()));
                 assertEquals(java.util.Map.of("implicit", 4, "reserved", 3, "maximum", Integer.MAX_VALUE), indexes);
+                assertEquals(
+                        renumber ? "on" : "off",
+                        server.sessions()
+                                .getFirst()
+                                .options()
+                                .get("renumber-windows")
+                                .orElseThrow());
             } finally {
                 if (server.isAlive()) server.killServer();
             }
@@ -344,6 +354,95 @@ final class ExecutionTest {
                         server.run(java.util.List.of(
                                         "show-environment", "-t", session.id().value(), "FLAG"))
                                 .stdout());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"true,false", "false,true", "true,true"})
+    void bootstrapCleanupPreservesPrimaryFailuresAndSettings(boolean failRemoval, boolean failRestore)
+            throws Exception {
+        Path source = directory.resolve("cleanup.yaml");
+        Path socket = directory.resolve("cleanup-socket");
+        Path wrapper = directory.resolve("tmux-failed-cleanup");
+        Path removing = directory.resolve("removing");
+        Files.writeString(wrapper, """
+                #!/bin/sh
+                case "$*" in
+                  *kill-window*) : > '%s'; %s;;
+                  *renumber-windows*) if test -f '%s'; then %s; fi;;
+                esac
+                exec '%s' "$@"
+                """.formatted(
+                        removing,
+                        failRemoval ? "printf injected-cleanup-failure >&2; exit 1" : ":",
+                        removing,
+                        failRestore ? "printf injected-restore-failure >&2; exit 1" : ":",
+                        System.getProperty("libtmux.tmux", "tmux")));
+        assertTrue(wrapper.toFile().setExecutable(true));
+        Files.writeString(
+                source, "session_name: cleanup\noptions:\n  renumber-windows: true\nwindows:\n  - window_index: 4\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke(
+                        java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString()),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(1, result.code());
+                var failure =
+                        new ObjectMapper().readTree(result.out()).path("errors").path(0);
+                assertTrue(failure.path("message")
+                        .asText()
+                        .contains(failRemoval ? "injected-cleanup-failure" : "injected-restore-failure"));
+                assertEquals("finalize", failure.path("effects").path("stage").asText());
+                assertEquals(
+                        failRestore,
+                        failure.path("effects")
+                                .path("renumber_restore_error")
+                                .asText()
+                                .contains("injected-restore-failure"));
+                assertEquals(
+                        failRestore ? "off" : "on",
+                        server.sessions()
+                                .getFirst()
+                                .options()
+                                .get("renumber-windows")
+                                .orElseThrow());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void bootstrapCleanupPreservesInheritedRenumbering() throws Exception {
+        Path source = directory.resolve("inherited-renumber.yaml");
+        Path socket = directory.resolve("inherited-renumber-socket");
+        Files.writeString(
+                source,
+                "session_name: inherited\nglobal_options:\n  renumber-windows: true\nwindows:\n  - window_index: 4\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, result.code(), result.err());
+                assertEquals(4, server.windows().getFirst().index().value());
+                server.globalOptions().set("renumber-windows", "off");
+                assertEquals(
+                        "off",
+                        server.sessions()
+                                .getFirst()
+                                .options()
+                                .get("renumber-windows")
+                                .orElseThrow());
             } finally {
                 if (server.isAlive()) server.killServer();
             }
