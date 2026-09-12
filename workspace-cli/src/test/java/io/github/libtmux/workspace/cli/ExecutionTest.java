@@ -1,9 +1,11 @@
 package io.github.libtmux.workspace.cli;
 
+import static java.util.stream.Collectors.toSet;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
@@ -48,6 +50,15 @@ final class ExecutionTest {
                 .binary(System.getProperty("libtmux.tmux", "tmux"))
                 .configFile(Path.of("/dev/null"))
                 .build();
+    }
+
+    private static void assertReportedObjects(Server server, JsonNode effects) {
+        assertEquals(
+                server.windows().stream().map(window -> window.id().value()).collect(toSet()),
+                effects.path("window_ids").valueStream().map(JsonNode::asText).collect(toSet()));
+        assertEquals(
+                server.panes().stream().map(pane -> pane.id().value()).collect(toSet()),
+                effects.path("pane_ids").valueStream().map(JsonNode::asText).collect(toSet()));
     }
 
     @ParameterizedTest
@@ -411,6 +422,7 @@ final class ExecutionTest {
                                         ? "injected-disable-failure"
                                         : failRemoval ? "injected-cleanup-failure" : "injected-restore-failure"));
                 assertEquals("finalize", failure.path("effects").path("stage").asText());
+                assertReportedObjects(server, failure.path("effects"));
                 assertEquals(
                         failRestore,
                         failure.path("effects")
@@ -576,13 +588,16 @@ final class ExecutionTest {
         }
     }
 
-    @Test
-    void failedWindowSetupRetainsItsAutomaticallyCreatedPane() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void failedSetupReportsEveryCreatedObject(boolean sessionOptions) throws Exception {
         Path socket = directory.resolve("partial");
         Path source = directory.resolve("partial.yaml");
         Files.writeString(
                 source,
-                "session_name: partial\nwindows:\n  - options:\n      not-a-tmux-option: invalid\n    panes: [null]\n");
+                sessionOptions
+                        ? "session_name: partial\noptions:\n  not-a-tmux-option: invalid\nwindows: [{}]\n"
+                        : "session_name: partial\nwindows:\n  - options:\n      not-a-tmux-option: invalid\n    panes: [null]\n");
         try (Server server = server(socket)) {
             try {
                 Result failed =
@@ -595,6 +610,7 @@ final class ExecutionTest {
                         .path("effects");
                 assertEquals(1, effects.path("window_ids").size());
                 assertEquals(1, effects.path("pane_ids").size(), failed.toString());
+                assertReportedObjects(server, effects);
             } finally {
                 if (server.isAlive()) server.killServer();
             }
