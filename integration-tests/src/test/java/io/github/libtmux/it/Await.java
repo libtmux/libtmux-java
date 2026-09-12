@@ -44,6 +44,11 @@ final class Await {
      * call site.
      */
     static boolean output(Pane pane, String expected) {
-        return pane.awaitText(expected, Duration.ofMillis(ATTEMPTS * INTERVAL_MILLIS)) == WakeReason.SIGNALLED;
+        try {
+            return pane.awaitText(expected, Duration.ofMillis(ATTEMPTS * INTERVAL_MILLIS)) == WakeReason.SIGNALLED;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 }

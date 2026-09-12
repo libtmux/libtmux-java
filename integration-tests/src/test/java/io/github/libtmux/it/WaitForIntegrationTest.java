@@ -104,7 +104,7 @@ final class WaitForIntegrationTest {
     // ------------------------------------------------------------------------------ pane waits
 
     @Test
-    void aPaneWaitSeesTextThePaneProduces(Server server) {
+    void aPaneWaitSeesTextThePaneProduces(Server server) throws InterruptedException {
         Pane pane = server.sessions().getFirst().windows().getFirst().panes().getFirst();
 
         pane.sendLine("echo waited-for-this");
@@ -113,7 +113,7 @@ final class WaitForIntegrationTest {
     }
 
     @Test
-    void aPaneWaitForTextThatNeverComesIsATimeout(Server server) {
+    void aPaneWaitForTextThatNeverComesIsATimeout(Server server) throws InterruptedException {
         Pane pane = server.sessions().getFirst().windows().getFirst().panes().getFirst();
 
         assertEquals(WakeReason.TIMED_OUT, pane.awaitText("nothing-prints-this", Duration.ofMillis(600)));
@@ -126,7 +126,7 @@ final class WaitForIntegrationTest {
      * wait that tested its own captured state would never see the new one and would time out.
      */
     @Test
-    void aPaneWaitReadsFreshStateRatherThanTheCaptureItStartedFrom(Server server) {
+    void aPaneWaitReadsFreshStateRatherThanTheCaptureItStartedFrom(Server server) throws InterruptedException {
         Pane stale = server.sessions().getFirst().windows().getFirst().panes().getFirst();
         stale.retitle("waited-for-title");
 

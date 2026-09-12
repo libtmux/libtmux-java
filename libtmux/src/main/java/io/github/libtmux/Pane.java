@@ -5,6 +5,7 @@ import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
+import io.github.libtmux.transport.TmuxTimeoutException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -13,7 +14,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.BooleanSupplier;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -33,6 +34,15 @@ public final class Pane {
      * {@link Channel}, not a shorter interval here.
      */
     private static final Duration POLL = Duration.ofMillis(50);
+
+    /**
+     * The least a wait's first read is given, and the budget for telling a dead server from a read
+     * that failed.
+     *
+     * <p>A quarter of a second, what {@link Channel#drain} gives a pending signal to come straight
+     * back: long enough for tmux to answer, short enough not to be a wait.
+     */
+    private static final Duration SHORTEST_READ = Duration.ofMillis(250);
 
     private static final RowFormat BROKEN_OUT = RowFormat.of("session_id", "window_id", "window_index");
 
@@ -304,6 +314,12 @@ public final class Pane {
      *       else started — this is the case polling is for.
      * </ol>
      *
+     * <p>The timeout bounds the whole wait, reads included. Each read is given only what is left of
+     * it, so a slow tmux cannot stretch a short wait out to the server's default deadline, and text
+     * that first appears after the deadline is not reported. The first read alone is allowed at least
+     * a quarter of a second, so a timeout shorter than one read can still answer that the text is
+     * already there.
+     *
      * <p>Waiting longer is also less reliable, not more: tmux frees the oldest scrollback once
      * {@code history-limit} is reached, so a long wait on a productive pane can end up reading past
      * the lines it was watching for.
@@ -312,18 +328,24 @@ public final class Pane {
      * @param timeout how long to keep looking
      * @return {@link WakeReason#SIGNALLED} when the text appeared, {@link WakeReason#TIMED_OUT} when
      *     it did not, {@link WakeReason#SERVER_GONE} when the server went away underneath the wait
+     * @throws LibTmuxException if a read fails while the server is still answering — most often
+     *     because this pane was killed, which is not a timeout
+     * @throws InterruptedException if the waiting thread is interrupted, which is a cancellation
+     *     rather than a timeout and so is not reported as one
      */
-    public WakeReason awaitText(String text, Duration timeout) {
+    public WakeReason awaitText(String text, Duration timeout) throws InterruptedException {
         Objects.requireNonNull(text, "text");
-        return awaitCondition(() -> capture().stream().anyMatch(line -> line.contains(text)), timeout);
+        return awaitCondition(bounded -> bounded.capture().stream().anyMatch(line -> line.contains(text)), timeout);
     }
 
     /**
      * Waits until a condition holds for this pane as tmux reports it, and says why the wait ended.
      *
      * <p>The pane is captured again before each test, so the condition reads fresh state rather than
-     * the capture this handle was built from. The same ordering as {@link #awaitText} applies: a
-     * signal on a {@link Server#channel} is exact, and this is what to use when nothing signals.
+     * the capture this handle was built from. What the condition receives is an ordinary handle on
+     * this pane's server and can be kept. The ordering {@link #awaitText} describes applies here too —
+     * a signal on a {@link Server#channel} is exact, and this is for when nothing signals — and so do
+     * its deadline rules.
      *
      * <pre>{@code
      * pane.await(fresh -> !fresh.currentCommand().equals("zsh"), Duration.ofSeconds(5));
@@ -332,55 +354,87 @@ public final class Pane {
      * @param settled receives this pane as it is now
      * @param timeout how long to keep looking
      * @return why the wait ended
-     * @throws ObjectDoesNotExist if the pane itself is killed while waiting, which is not a timeout
+     * @throws ObjectDoesNotExist if this pane is killed while its server stays up, which is not a
+     *     timeout
+     * @throws InterruptedException if the waiting thread is interrupted
      */
-    public WakeReason await(Predicate<Pane> settled, Duration timeout) {
+    public WakeReason await(Predicate<Pane> settled, Duration timeout) throws InterruptedException {
         Objects.requireNonNull(settled, "settled");
-        return awaitCondition(() -> settled.test(refresh()), timeout);
+        return awaitCondition(bounded -> settled.test(bounded.refresh().through(server)), timeout);
     }
 
     /**
-     * One deadline, one liveness check, for both public waits.
+     * One deadline for both public waits, applied to the reads as well as to the gaps between them.
      *
-     * <p>A wait that ends without its condition holding asks the server whether it is still there,
-     * because "nothing printed in ten seconds" and "the server died three seconds in" call for
-     * opposite recovery and tmux does not distinguish them. The same reason {@link Channel} reports
-     * a {@link WakeReason} rather than a boolean.
+     * <p>Each read goes through {@link Server#within} with what is left of the deadline, so a read
+     * cannot outlast the wait. A read that runs out of that budget has reached the wait's own
+     * deadline, and is a timeout. Once the deadline has passed no further read starts, which is what
+     * keeps text that arrives late from being reported.
      *
-     * <p>A read that fails is the other way the server can go away mid-wait, and it is the common
-     * one: {@code capture-pane} against a dead server raises rather than answering emptily. That is
-     * reported at once rather than after the deadline, because a caller waiting twenty seconds for a
-     * server that is already gone learns nothing by waiting the rest of them. A failure while the
-     * server is still answering is a real one — a killed pane, an unsupported capture — and
-     * propagates.
+     * <p>An ordinary timeout asks tmux nothing more. The last read answered, so the server was there
+     * a poll interval ago, and a liveness probe after the deadline would only spend time the caller
+     * did not give. A read that <em>failed</em> is different: tmux reports "no server" and "no such
+     * pane" the same way, so that one gets a second look to tell {@link WakeReason#SERVER_GONE} from a
+     * failure that belongs to the caller.
      */
-    private WakeReason awaitCondition(BooleanSupplier condition, Duration timeout) {
+    private WakeReason awaitCondition(Predicate<Pane> poll, Duration timeout) throws InterruptedException {
         Objects.requireNonNull(timeout, "timeout");
         if (timeout.isNegative()) {
             throw new IllegalArgumentException("timeout is negative: " + timeout);
         }
         long deadline = System.nanoTime() + timeout.toNanos();
+        boolean first = true;
         while (true) {
+            if (Thread.interrupted()) {
+                throw new InterruptedException(
+                        "interrupted while waiting on pane " + state.id().value());
+            }
+            Duration left = Duration.ofNanos(Math.max(1, deadline - System.nanoTime()));
+            Duration budget = first && left.compareTo(SHORTEST_READ) < 0 ? SHORTEST_READ : left;
+            first = false;
             try {
-                if (condition.getAsBoolean()) {
+                if (poll.test(through(server.within(budget)))) {
                     return WakeReason.SIGNALLED;
                 }
+            } catch (TmuxTimeoutException expired) {
+                return WakeReason.TIMED_OUT;
             } catch (LibTmuxException unreadable) {
-                if (server.isAlive()) {
-                    throw unreadable;
-                }
-                return WakeReason.SERVER_GONE;
+                return afterFailedRead(unreadable);
             }
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) {
+                return WakeReason.TIMED_OUT;
+            }
+            TimeUnit.NANOSECONDS.sleep(Math.min(POLL.toNanos(), remaining));
             if (System.nanoTime() >= deadline) {
-                return server.isAlive() ? WakeReason.TIMED_OUT : WakeReason.SERVER_GONE;
-            }
-            try {
-                Thread.sleep(POLL.toMillis());
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-                return server.isAlive() ? WakeReason.TIMED_OUT : WakeReason.SERVER_GONE;
+                return WakeReason.TIMED_OUT;
             }
         }
+    }
+
+    /**
+     * Tells a server that went away from a read that failed for a reason of the caller's.
+     *
+     * <p>A probe that cannot get an answer in time proves nothing either way, so the original failure
+     * is what the caller sees, carrying the probe's.
+     */
+    private WakeReason afterFailedRead(LibTmuxException unreadable) {
+        boolean alive;
+        try {
+            alive = server.isAlive(SHORTEST_READ);
+        } catch (TmuxTimeoutException unanswered) {
+            unreadable.addSuppressed(unanswered);
+            throw unreadable;
+        }
+        if (alive) {
+            throw unreadable;
+        }
+        return WakeReason.SERVER_GONE;
+    }
+
+    /** This pane's captured state, addressed through another view of the same server. */
+    private Pane through(Server via) {
+        return new Pane(via, snapshot, state);
     }
 
     /**

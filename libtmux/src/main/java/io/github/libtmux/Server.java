@@ -510,6 +510,18 @@ public final class Server implements AutoCloseable {
         return new Server(config, transport, false);
     }
 
+    /**
+     * This server, with every command bounded by a deadline of the caller's choosing.
+     *
+     * <p>Shares this server's transport, so it has the same identity and every handle taken through
+     * it is interchangeable with this server's; closing it releases nothing. {@link #toBuilder} is not
+     * how to spell this: a server that owns its transport hands a derived server a transport of its
+     * own, which a wait polling every fifty milliseconds would multiply.
+     */
+    Server within(Duration timeout) {
+        return new Server(config.toBuilder().defaultTimeout(timeout).build(), transport, false);
+    }
+
     /** A builder holding the documented defaults. */
     public static Builder builder() {
         return new Builder(ServerConfig.builder(), null);
