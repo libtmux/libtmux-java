@@ -313,7 +313,7 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
             boolean exited = true;
             if (current != null) {
                 try {
-                    current.cmd(List.of("kill-server"), PROBE);
+                    current.killServer(PROBE);
                 } catch (RuntimeException e) {
                     // A server that already exited is the outcome teardown wanted.
                 }
@@ -339,7 +339,9 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
             long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
             while (System.nanoTime() < deadline) {
                 try {
-                    if (!server.cmd(List.of("list-sessions"), PROBE).succeeded()) {
+                    // isAlive rather than list-sessions: the latter also fails on a live server
+                    // that has no sessions left, which teardown must not read as an exit.
+                    if (!server.isAlive(PROBE)) {
                         return true;
                     }
                 } catch (RuntimeException e) {

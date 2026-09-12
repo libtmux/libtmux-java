@@ -19,7 +19,9 @@ import io.github.libtmux.transport.TmuxTransportException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -136,6 +138,52 @@ final class ServerTest {
 
         assertEquals(0, transport.closes.get(), "a transport the caller owns is the caller's to close");
         assertEquals(1, transport.executions.get());
+    }
+
+    /**
+     * A deadline the caller chose binds that call, and the handle's own default binds the rest.
+     *
+     * <p>The overload exists for a caller that has to finish — a fixture proving its server is gone,
+     * a shutdown path that cannot hang — so what is asserted is that the chosen bound actually
+     * reaches tmux rather than being dropped for {@code defaultTimeout}.
+     */
+    @Test
+    void aChosenDeadlineBindsOnlyTheCallThatChoseIt(@TempDir Path directory) throws IOException {
+        Duration chosen = Duration.ofMillis(250);
+        RecordingTransport transport = new RecordingTransport();
+
+        try (Server server = Server.using(config(directory), transport)) {
+            server.isAlive(chosen);
+            server.killServer(chosen);
+            server.isAlive();
+
+            assertEquals(
+                    List.of(chosen, chosen, server.config().defaultTimeout()),
+                    transport.requests.stream().map(CommandRequest::timeout).toList());
+        }
+    }
+
+    /**
+     * Both commands {@code killServer} issues are bounded, not just the kill.
+     *
+     * <p>It kills and then looks again, because tmux reports a doomed request inconsistently. A
+     * bound covering only the first would leave the confirming look on the handle default, which is
+     * exactly the hang the overload was added to prevent. The refusing transport is what makes the
+     * second command happen at all.
+     */
+    @Test
+    void theConfirmingLookIsBoundedToo(@TempDir Path directory) throws IOException {
+        Duration chosen = Duration.ofMillis(250);
+        RecordingTransport refusing = new RecordingTransport(1);
+
+        try (Server server = Server.using(config(directory), refusing)) {
+            server.killServer(chosen);
+
+            assertEquals(
+                    List.of(chosen, chosen),
+                    refusing.requests.stream().map(CommandRequest::timeout).toList(),
+                    "the kill and the look that confirms it");
+        }
     }
 
     @Test
@@ -449,7 +497,7 @@ final class ServerTest {
     void killingAnAbsentServerIsNotAFailureWhicheverWayTmuxSaysItIsAbsent(@TempDir Path directory) throws IOException {
         for (String refusal : List.of("no server running on /tmp/s", "server exited unexpectedly")) {
             try (Server server = Server.using(config(directory), new RefusingTransport(refusal))) {
-                assertDoesNotThrow(server::killServer, "tmux said: " + refusal);
+                assertDoesNotThrow(() -> server.killServer(), "tmux said: " + refusal);
             }
         }
     }
@@ -457,7 +505,7 @@ final class ServerTest {
     @Test
     void aServerThatSurvivesTheKillIsReportedRatherThanIgnored(@TempDir Path directory) throws IOException {
         try (Server server = Server.using(config(directory), new SurvivingTransport())) {
-            LibTmuxException raised = assertThrows(LibTmuxException.class, server::killServer);
+            LibTmuxException raised = assertThrows(LibTmuxException.class, () -> server.killServer());
 
             assertTrue(String.valueOf(raised.getMessage()).contains("could not kill the server"));
         }
@@ -512,11 +560,23 @@ final class ServerTest {
 
         private final AtomicInteger executions = new AtomicInteger();
         private final AtomicInteger closes = new AtomicInteger();
+        private final List<CommandRequest> requests = new CopyOnWriteArrayList<>();
+        private final int exitCode;
+
+        RecordingTransport() {
+            this(0);
+        }
+
+        /** @param exitCode what every command answers with, so a caller can choose the branch taken */
+        RecordingTransport(int exitCode) {
+            this.exitCode = exitCode;
+        }
 
         @Override
         public CommandResult execute(CommandRequest request) {
             executions.incrementAndGet();
-            return new CommandResult(0, List.of("ok"), List.of());
+            requests.add(request);
+            return new CommandResult(exitCode, List.of("ok"), List.of());
         }
 
         @Override

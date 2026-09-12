@@ -125,7 +125,20 @@ public final class Server implements AutoCloseable {
      * both "no sessions" and "no server", and this is how a caller tells the two apart.
      */
     public boolean isAlive() {
-        return cmd("display-message", "-p", "#{pid}").succeeded();
+        return isAlive(config.defaultTimeout());
+    }
+
+    /**
+     * Whether the server is running and answering, within a deadline of the caller's choosing.
+     *
+     * <p>The deadline is per call rather than per handle, because a probe that has to finish — a
+     * test fixture confirming its server is gone, a shutdown path that cannot hang — is not bound
+     * by the same budget as ordinary work through the same {@code Server}.
+     *
+     * @param timeout how long to wait for an answer before treating the server as unreachable
+     */
+    public boolean isAlive(Duration timeout) {
+        return cmd(List.of("display-message", "-p", "#{pid}"), timeout).succeeded();
     }
 
     /**
@@ -153,8 +166,20 @@ public final class Server implements AutoCloseable {
      * a second look cannot answer better.
      */
     public void killServer() {
-        CommandResult result = cmd("kill-server");
-        if (result.succeeded() || !isAlive()) {
+        killServer(config.defaultTimeout());
+    }
+
+    /**
+     * Ends the tmux server and every session on it, within a deadline of the caller's choosing.
+     *
+     * <p>Bounds both halves — the kill and the second look that confirms it — because a teardown
+     * that hangs is worse than one that reports it could not finish.
+     *
+     * @param timeout how long to allow for each of the two commands
+     */
+    public void killServer(Duration timeout) {
+        CommandResult result = cmd(List.of("kill-server"), timeout);
+        if (result.succeeded() || !isAlive(timeout)) {
             return;
         }
         throw new LibTmuxException("could not kill the server: " + String.join("; ", result.stderr()));
