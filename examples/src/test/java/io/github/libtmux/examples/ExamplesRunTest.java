@@ -2,6 +2,7 @@ package io.github.libtmux.examples;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,8 +21,12 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Every example, run against a real tmux.
@@ -134,10 +139,54 @@ final class ExamplesRunTest {
         String controls = "\u0000\b\f\n\r\t\u001f\"\\";
         String supplementary = "\ud83d\ude03";
 
-        assertEquals(controls, JSON.readValue(BuildAWorkspace.jsonString(controls), String.class));
-        assertEquals(supplementary, JSON.readValue(BuildAWorkspace.jsonString(supplementary), String.class));
-        assertThrows(IllegalArgumentException.class, () -> BuildAWorkspace.jsonString("\ud800"));
-        assertThrows(IllegalArgumentException.class, () -> BuildAWorkspace.jsonString("\udc00"));
+        assertEquals(controls, JSON.readValue(ArenaSupport.jsonString(controls), String.class));
+        assertEquals(supplementary, JSON.readValue(ArenaSupport.jsonString(supplementary), String.class));
+        assertThrows(IllegalArgumentException.class, () -> ArenaSupport.jsonString("\ud800"));
+        assertThrows(IllegalArgumentException.class, () -> ArenaSupport.jsonString("\udc00"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("arenaArtifacts")
+    void arenaRefusesEveryArtifactWithoutTouchingAnyServerWhenTheSocketIsMissing(
+            String artifact, Class<?> exampleClass, TmuxSocketPath socket) throws Exception {
+        Path output = socket.path().resolveSibling("arena-missing-socket-" + artifact);
+        ProcessBuilder builder = new ProcessBuilder(
+                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-classpath",
+                System.getProperty("java.class.path"),
+                exampleClass.getName());
+        builder.redirectErrorStream(true);
+        builder.redirectOutput(output.toFile());
+        builder.environment().remove("TMUX");
+        builder.environment().remove("TMUX_PANE");
+        builder.environment().put("LIBTMUX_ARENA_DESCRIPTOR", "arena");
+        builder.environment().put("LIBTMUX_ARENA_ARTIFACT", artifact);
+        builder.environment().put("LIBTMUX_TMUX_BIN", "tmux");
+        // LIBTMUX_SOCKET_PATH is deliberately absent.
+
+        Process process = builder.start();
+        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            process.waitFor(30, TimeUnit.SECONDS);
+        }
+        List<String> lines = Files.readAllLines(output);
+
+        assertTrue(finished, () -> "the arena main did not finish; it said " + lines);
+        assertNotEquals(
+                0, process.exitValue(), () -> "expected a nonzero exit for a missing socket path; it said " + lines);
+        assertTrue(
+                lines.stream().noneMatch(line -> line.startsWith(ARENA_EVIDENCE_PREFIX)),
+                () -> "expected no evidence line; main said " + lines);
+    }
+
+    private static Stream<Arguments> arenaArtifacts() {
+        return Stream.of(
+                Arguments.of("java-build-a-workspace", BuildAWorkspace.class),
+                Arguments.of("java-find-panes-running", FindPanesRunning.class),
+                Arguments.of("java-serve-tmux-over-mcp", ServeTmuxOverMcp.class),
+                Arguments.of("java-watch-pane-output", WatchPaneOutput.class),
+                Arguments.of("java-watch-what-changes", WatchWhatChanges.class));
     }
 
     @Test
@@ -164,10 +213,13 @@ final class ExamplesRunTest {
     }
 
     @Test
-    void watchingAPaneSeesWhatItPrints(TmuxSocketPath socket) {
+    void watchingAPaneSeesWhatItPrints(Server server, TmuxSocketPath socket) {
         List<PaneOutput> seen = WatchPaneOutput.run(socket.path(), Duration.ofSeconds(30), output -> {});
 
         assertFalse(seen.isEmpty(), "attaching is what makes tmux push output, and none arrived");
+        assertTrue(
+                server.hasSession("watch-pane-output"),
+                "the example must seed its own session rather than reuse whichever session came first");
     }
 
     @Test
@@ -183,12 +235,15 @@ final class ExamplesRunTest {
     }
 
     @Test
-    void watchingAServerIsToldWhenAWindowAppears(TmuxSocketPath socket) {
+    void watchingAServerIsToldWhenAWindowAppears(Server server, TmuxSocketPath socket) {
         List<ControlEvent> seen = WatchWhatChanges.run(socket.path(), Duration.ofSeconds(30), event -> {});
 
         assertTrue(
                 WatchWhatChanges.sawTheNewWindow(seen),
                 "tmux compares a watched format itself and reports the difference: " + seen);
+        assertTrue(
+                server.hasSession("watch-what-changes"),
+                "the example must seed its own session rather than reuse whichever session came first");
     }
 
     private static Map<String, String> arenaEnvironment(Server server, TmuxSocketPath socket) {
