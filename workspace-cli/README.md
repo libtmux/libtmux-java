@@ -160,6 +160,9 @@ any input workspace changes. Nonempty `plugins`, `workspace_builder`, or
 the workspace file; custom builders receive their own configuration keys.
 Plugin import or version failures stop the load instead of prompting to skip
 the plugin. Ordinary native loading and read commands do not require Python.
+This CLI also permits an explicit custom builder to omit `windows`. Common
+fields still receive tmuxp expansion, and present windows receive inherited
+defaults. The builder supplies its own topology when it omits that field.
 Search uses Java regex syntax; it does not launch Python or promise identical
 Python `re` semantics.
 

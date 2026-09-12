@@ -25,7 +25,11 @@ final class PythonExtensions {
             from tmuxp.workspace import loader
             from tmuxp.workspace.builder import prepended_sys_path, resolve_builder_class, resolve_builder_paths
             request = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
-            config = loader.trickle(loader.expand(request['config'], cwd=str(Path(request['source']).parent)))
+            config = request['config']
+            custom_builder = bool(str(config.get('workspace_builder') or '').strip())
+            config = loader.expand(config, cwd=str(Path(request['source']).parent))
+            if not custom_builder or 'windows' in config:
+                config = loader.trickle(config)
             config['session_name'] = request['session_name']
             server = Server(**request['server'])
             if request.get('daemon') and server.cmd('display-message', '-p', '#{pid}:#{start_time}').stdout != [request['daemon']]:
