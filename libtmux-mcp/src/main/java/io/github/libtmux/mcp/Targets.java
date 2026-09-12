@@ -6,6 +6,7 @@ import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.SessionId;
+import io.github.libtmux.Session_;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowId;
 import java.util.List;
@@ -20,45 +21,59 @@ import java.util.List;
  * and indexes move as neighbours come and go, so a positional target would quietly act on a pane
  * that was not the one it meant. Session names are resolved only where an argument explicitly asks
  * for one.
+ *
+ * <p>Each lookup reads one listing and phrases its failure from that same listing. Reading again to
+ * count what exists would cost a second round trip, and could report a count from a moment the lookup
+ * never saw.
  */
 final class Targets {
 
     private Targets() {}
 
     static Pane pane(Server server, String id) {
-        return server.pane(paneId(id))
-                .orElseThrow(() -> new ObjectDoesNotExist("no pane " + id + " on this server; call list_panes for the "
-                        + server.panes().size() + " that exist"));
+        PaneId wanted = paneId(id);
+        List<Pane> panes = server.panes();
+        return panes.stream()
+                .filter(pane -> pane.id().equals(wanted))
+                .findFirst()
+                .orElseThrow(() -> new ObjectDoesNotExist(
+                        "no pane " + id + " on this server; call list_panes for the " + panes.size() + " that exist"));
     }
 
     /**
      * A window by id, taking the first link when one window is linked into several sessions.
      *
-     * <p>First-match is what this has always done, and it is kept deliberately rather than changed
-     * here: every operation this resolves for acts on the underlying window, where any link
-     * addresses it. An index-sensitive operation would need the caller to say which link it meant.
+     * <p>First-match is kept deliberately: every operation this resolves for acts on the underlying
+     * window, where any link addresses it. An index-sensitive operation would need the caller to say
+     * which link it meant.
      */
     static Window window(Server server, String id) {
-        List<Window> links = server.windows(windowId(id));
-        if (links.isEmpty()) {
-            throw new ObjectDoesNotExist("no window " + id + " on this server; call list_windows for the "
-                    + server.windows().size() + " that exist");
-        }
-        return links.getFirst();
+        WindowId wanted = windowId(id);
+        List<Window> windows = server.windows();
+        return windows.stream()
+                .filter(window -> window.id().equals(wanted))
+                .findFirst()
+                .orElseThrow(() -> new ObjectDoesNotExist("no window " + id
+                        + " on this server; call list_windows for the " + windows.size() + " that exist"));
     }
 
     static Session sessionNamed(Server server, String name) {
-        return server.session(name)
+        List<Session> sessions = server.sessions();
+        return sessions.stream()
+                .filter(Session_.name().is(name))
+                .findFirst()
                 .orElseThrow(() -> new ObjectDoesNotExist("no session named '" + name + "'; this server has "
-                        + server.sessions().stream().map(Session::name).toList()));
+                        + sessions.stream().map(Session::name).toList()));
     }
 
     static Session sessionById(Server server, String id) {
-        return server.session(new SessionId(id))
+        SessionId wanted = new SessionId(id);
+        List<Session> sessions = server.sessions();
+        return sessions.stream()
+                .filter(session -> session.id().equals(wanted))
+                .findFirst()
                 .orElseThrow(() -> new ObjectDoesNotExist("no session " + id
-                        + " on this server; call list_sessions for the "
-                        + server.sessions().size()
-                        + " that exist"));
+                        + " on this server; call list_sessions for the " + sessions.size() + " that exist"));
     }
 
     /**
