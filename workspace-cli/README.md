@@ -204,6 +204,27 @@ Generate Bash completion:
 $ tmux-workspace --generate bash
 ```
 
+For repeated CLI execution while editing, keep Gradle watching the sources:
+
+```console
+$ ./gradlew :workspace-cli:runDevelopment \
+    --args='--help' \
+    --continuous \
+    --configuration-cache \
+    --max-workers=2 \
+    --no-parallel \
+    -Dorg.gradle.continuous.quietperiod=50
+```
+
+Replace `--help` with the command to exercise. This task compiles separate
+development classes with javac and uses the JVM's first compilation tier for
+startup. It skips Error Prone and NullAway for the CLI classes and does not run
+tests. Published libraries, normal compilation, installation and `check` keep
+their full checks and never consume these development classes. The initial
+build includes setup; later edits reuse Gradle and the compiler. This JVM
+setting also limits later optimization in long-running commands. Use normal
+`run` or installation tasks for representative runtime benchmarks.
+
 Run the CLI checks with cached Gradle configuration:
 
 ```console
