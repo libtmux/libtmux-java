@@ -285,6 +285,8 @@ final class ProcessTest {
                         attached()
                         time.sleep(.025)
                     if not os.path.exists(status):
+                        print(subprocess.check_output(prefix + ['display-message', '-p', '-t', pane,
+                            '#{pane_current_command}:#{pane_dead}:#{pane_in_mode}:#{cursor_x},#{cursor_y}'], text=True), file=sys.stderr)
                         print(subprocess.check_output(prefix + ['capture-pane', '-p', '-t', pane], text=True), file=sys.stderr)
                         for name in ('stdout', 'stderr'):
                             path = os.path.join(scratch, name)
