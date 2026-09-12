@@ -16,6 +16,7 @@ palantir-format = "2.97.0"
 cyclonedx-plugin = "3.4.1"
 japicmp = "0.23.1"
 picocli = "4.7.7"
+snakeyaml = "2.5"
 
 [libraries]
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
@@ -36,6 +37,7 @@ errorprone-core = { module = "com.google.errorprone:error_prone_core", version.r
 nullaway = { module = "com.uber.nullaway:nullaway", version.ref = "nullaway" }
 japicmp = { module = "com.github.siom79.japicmp:japicmp", version.ref = "japicmp" }
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
+snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

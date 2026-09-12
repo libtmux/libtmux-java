@@ -13,6 +13,11 @@ conversion, imports, discovery, search, editor execution and Python shell
 execution are available. Python plugins, custom builders and progress templates
 still need implementation and validation.
 Native loading rejects unsupported configuration keys before contacting tmux.
+YAML anchors and merge keys expand into ordinary workspace values. Date-like
+scalars remain text. Documents must contain one mapping; duplicate keys,
+cyclic aliases, nonfinite numbers and nonstring mapping keys are rejected.
+Files ending in `.json` require JSON syntax. YAML expansion is limited to
+100 levels and 100,000 values.
 
 ## Installation
 
