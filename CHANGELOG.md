@@ -12,7 +12,99 @@ production.
 
 ## Unreleased
 
+### Added
+
+- **`Server` finds one object without a stream.** `server.session(String)`,
+  `session(SessionId)` and `pane(PaneId)` answer with an `Optional`, and
+  `window(WindowContext)` names one winlink exactly. Each costs one capture, so
+  `server.session("work").orElseGet(() -> server.newSession("work"))` replaces
+  asking `hasSession` and then scanning `sessions()` — two reads with a gap in
+  which the session can arrive or leave. Absence is empty rather than an
+  exception, because whether a miss is a bug belongs to the caller. (#15)
+
+- **`Server.windows(WindowId)` answers with every link of one window.** A window
+  linked into several sessions is one window and several winlinks, each with its
+  own index, so this returns all of them rather than whichever tmux listed
+  first. Name one exactly with `Server.window(WindowContext)`. (#15)
+
+- **`Pane.awaitText(String, Duration)` and `Pane.await(Predicate, Duration)`
+  wait for a pane.** Both answer with a `WakeReason`, so a server that went away
+  mid-wait stays distinguishable from nothing having printed. The timeout bounds
+  the whole wait, reads included: each read is given only what is left of it,
+  no read starts after the deadline, and text that appears late is not reported.
+  The first read alone is allowed at least 250 ms, so a zero timeout can still
+  answer that the text is already there. An interrupt throws
+  `InterruptedException` rather than reading as a timeout. `await` captures the
+  pane again before each test and hands the condition an ordinary handle on the
+  caller's server. Reach for `Server.channel` first: a signal is exact, and
+  reading the screen is a guess. (#15)
+
+- **`Server.isAlive(Duration)` and `Server.killServer(Duration)` bound one
+  call.** The only per-call deadline was `Server.cmd(List, Duration)`, so a
+  caller that has to finish — a fixture confirming its server is gone, a
+  shutdown path that cannot hang — left the typed API to get one. Both commands
+  `killServer` issues are bounded, including the second look that confirms the
+  kill. These overloads make `server::isAlive` and `server::killServer` inexact
+  method references: a call site passing one where two functional interfaces are
+  applicable now needs an explicit lambda. (#15)
+
+### Changed
+
+- **`Pane.sendKeys(List, boolean)` is replaced by `Pane.sendKeys(List)` and
+  `Pane.sendLiteral(List)`.** The boolean chose whether tmux resolved each entry
+  as a key name, so `pane.sendKeys(keys, true)` did not say at the call site
+  whether `C-c` interrupted the pane or typed three characters. Write
+  `sendKeys(keys)` for key names and `sendLiteral(keys)` for the characters they
+  spell. (#15)
+
+- **`Window.setSynchronizePanes(boolean)` is replaced by
+  `Window.synchronizePanes()` and `Window.stopSynchronizingPanes()`.** Write
+  whichever one the call site means, as `Pane.pipeTo` and `Pane.stopPiping`
+  already do. (#15)
+
+### Fixed
+
+- **The attach command an MCP client is handed covers every kind of tmux
+  socket.** It was re-derived in two places, each naming `-S` and `-L` itself,
+  so an endpoint kind those branches did not enumerate produced a command
+  missing the flag that selects the server. The socket path tmux reported still
+  wins whenever there is one, since `-L name` is resolved again under the
+  operator's own `TMUX_TMPDIR`; otherwise the command comes from
+  `ServerEndpoint.flags()`. Only a path a shell would mangle is quoted. (#15)
+
+- **`show_environment` reports a removed variable instead of dropping it.** tmux
+  prints a variable removed with `set-environment -r` as `-NAME`, with no `=`,
+  and those lines were discarded, so a removed variable read exactly like one
+  never set. They now arrive in a new `unset` list beside `variables`. (#15)
+
+### Documented
+
+- **The streaming guide orders the waits, cheapest first.** `Server.channel` and
+  tmux's `wait-for` appeared in no guide, so the deterministic server-side wait
+  went unused while its heuristic alternative was written by hand three times.
+  `docs/guide/streaming.md` now names each rung and what it costs, and says why
+  a longer text wait is less reliable rather than more. (#15)
+
+### Security
+
+- **`TmuxFormats` is public, so a caller can make its own values literal.** tmux
+  expands `#{...}` and `#(...)` before any shell sees a command, and `#(...)`
+  runs one: measured on tmux 3.7d, a `#(...)` inside single quotes ran through
+  both `run-shell` and `pipe-pane`, so shell quoting does not contain it. The
+  library applies `TmuxFormats.literal` to every argument it composes itself,
+  but `Pane.pipeTo`, `Window.displayPopup`, `Server.runShell`,
+  `Server.runShellCapturing`, `Server.ifShell` and `Options.setExpanded` take
+  text the caller composes, where expansion is sometimes the point. Apply
+  `TmuxFormats.literal` to any value interpolated into one of those. No MCP tool
+  reaches one of those positions with model-supplied text; `SECURITY.md` records
+  the rule. (#15)
+
 ### Development
+
+- **Two real-tmux tests no longer fail on a loaded machine.**
+  `ExamplesRunTest` read a pane's command while its shell's startup files were
+  still running, and `McpLauncherTest` gave a launcher JVM five seconds to exit
+  when the property under test is that it exits at all. (#15)
 
 - **Every CI job carries a timeout.** The `tmux 3.3a` lane ran for six hours
   against a median under two minutes before GitHub's ceiling stopped it. Each
