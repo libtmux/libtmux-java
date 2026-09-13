@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
 import java.io.BufferedReader;
@@ -34,6 +35,75 @@ final class ProcessTest {
         process.environment().put("HOME", directory.toString());
         process.environment().put("LIBTMUX_TEST_TMUX", System.getProperty("libtmux.tmux", "tmux"));
         return process;
+    }
+
+    @Test
+    void installedCaptureReloadPreservesOptionLineEndings() throws Exception {
+        Path socket = directory.resolve("capture-socket");
+        Path captured = directory.resolve("captured.json");
+        Path output = directory.resolve("result.json");
+        Path error = directory.resolve("error.log");
+        var values = java.util.Map.of(
+                "@cr", "first\rsecond",
+                "@crlf", "first\r\nsecond\r",
+                "@mixed", "\r\nfirst\rsecond\n\n",
+                "@cr-only", "\r");
+        try (Server server = Server.builder()
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .binary(System.getProperty("libtmux.tmux", "tmux"))
+                .configFile(Path.of("/dev/null"))
+                .build()) {
+            Process process = null;
+            try {
+                var keeper = server.newSession("keeper");
+                var keeperWindow = keeper.windows().getFirst();
+                var source = server.newSession("source");
+                var sourceWindow = source.windows().getFirst();
+                values.forEach(source.options()::set);
+                values.forEach(sourceWindow.options()::set);
+
+                process = command("freeze", "source", "-S", socket.toString(), "--json")
+                        .redirectOutput(captured.toFile())
+                        .redirectError(error.toFile())
+                        .start();
+                assertTrue(process.waitFor(10, TimeUnit.SECONDS), "capture did not finish");
+                assertEquals(0, process.exitValue(), Files.readString(error));
+                var mapper = new ObjectMapper();
+                var document = (ObjectNode) mapper.readTree(Files.readString(captured));
+                values.forEach((name, value) -> {
+                    assertEquals(value, document.path("options").path(name).asText(), name);
+                    assertEquals(
+                            value,
+                            document.path("windows")
+                                    .path(0)
+                                    .path("options_after")
+                                    .path(name)
+                                    .asText(),
+                            name);
+                });
+                document.put("session_name", "restored");
+                Files.writeString(captured, mapper.writeValueAsString(document));
+                process = command("load", captured.toString(), "-d", "-S", socket.toString(), "--json")
+                        .redirectOutput(output.toFile())
+                        .redirectError(error.toFile())
+                        .start();
+                assertTrue(process.waitFor(10, TimeUnit.SECONDS), "reload did not finish");
+                assertEquals(0, process.exitValue(), Files.readString(error));
+                var restored = server.session("restored").orElseThrow();
+                var sessionOptions = restored.options().all();
+                var windowOptions = restored.windows().getFirst().options().all();
+                values.forEach((name, value) -> {
+                    assertEquals(value, sessionOptions.get(name), name);
+                    assertEquals(value, windowOptions.get(name), name);
+                });
+                assertEquals(keeper.id(), keeper.refresh().id());
+                assertEquals(keeperWindow.id(), keeper.windows().getFirst().id());
+            } finally {
+                if (process != null && process.isAlive())
+                    process.destroyForcibly().waitFor();
+                if (server.isAlive()) server.killServer();
+            }
+        }
     }
 
     @Test
