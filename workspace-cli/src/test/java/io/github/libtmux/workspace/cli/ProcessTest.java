@@ -45,6 +45,8 @@ final class ProcessTest {
         Path error = directory.resolve("error.log");
         var values = java.util.Map.of(
                 "@cr", "first\rsecond",
+                "@cr*", "one star",
+                "@cr**", "two stars",
                 "@crlf", "first\r\nsecond\r",
                 "@mixed", "\r\nfirst\rsecond\n\n",
                 "@cr-only", "\r");

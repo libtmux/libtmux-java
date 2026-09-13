@@ -143,6 +143,31 @@ final class OptionsIntegrationTest {
                 "an array option keeps the subscript that addresses it");
     }
 
+    @Test
+    void customOptionNamesKeepTheirTrailingStars(Server server) {
+        Session session = server.sessions().getFirst();
+        Window window = session.windows().getFirst();
+        server.globalOptions().set("base-index", "4");
+        Map<String, String> written = Map.of("@name", "plain", "@name*", "one star", "@name**", "two stars");
+        for (var options : List.of(
+                server.options(),
+                server.globalOptions(),
+                session.options(),
+                window.options(),
+                window.panes().getFirst().options())) {
+            written.forEach(options::set);
+            var local = options.all();
+            var effective = options.effective();
+            written.forEach((name, value) -> {
+                assertEquals(value, local.get(name), name + " local");
+                assertEquals(value, effective.get(name), name + " effective");
+            });
+        }
+        assertFalse(session.options().all().containsKey("base-index"));
+        assertTrue(session.options().effective().containsKey("base-index"));
+        assertFalse(session.options().effective().containsKey("base-index*"));
+    }
+
     /**
      * tmux escapes a listed value with {@code vis(3)} and changes its mind about which characters
      * that reaches across the supported range, so a listing reports the value itself rather than
