@@ -245,32 +245,4 @@ pinned.configFile().isPresent();           // → true
 | watch output as it happens        | [streaming](streaming.md)                     |
 | test your own code against tmux   | [testing](testing.md)                         |
 
-## Migrating from earlier alphas
-
-The exception and guard names now follow Java spelling. Replace the old imports,
-catch types and calls, then recompile against the new alpha:
-
-| Previous name | Current name |
-| --- | --- |
-| `ObjectDoesNotExist` | `ObjectDoesNotExistException` |
-| `UnsupportedTmuxVersion` | `UnsupportedTmuxVersionException` |
-| `server.raiseIfDead()` | `server.requireAlive()` |
-
-Both exceptions still extend `LibTmuxException`. `requireAlive()` still throws
-when tmux refuses the probe and preserves transport failures. These are direct
-renames under the alpha compatibility policy; the old names are removed.
-
-```java
-server.requireAlive();
-server.isAlive();                      // → true
-```
-
-Live listings, finders and snapshot capture now throw when a read fails,
-including an absent daemon. A missing object in a successful capture still
-produces an empty `Optional`. Catch `LibTmuxException` when failed reads require
-recovery; do not treat them as an empty server. `server.cmd(...)` still returns a
-completed nonzero exit as result data, while `server.run(...)` throws.
-
-A finder requires a running daemon. `server.newSession("build")` can start one;
-[`BuildAWorkspace`](../../examples/src/main/java/io/github/libtmux/examples/BuildAWorkspace.java)
-shows how to handle both an existing session and an endpoint with no daemon.
+See the [migration notes](../../MIGRATION) when upgrading.

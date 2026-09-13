@@ -139,7 +139,7 @@ final class DocumentationFactsTest {
 
     /** Everything a reader is expected to act on, which is what Documentation.readable also covers. */
     private static List<String> readerFacing() {
-        List<String> found = new ArrayList<>(List.of("README.md"));
+        List<String> found = new ArrayList<>(List.of("README.md", "MIGRATION"));
         PUBLISHED.forEach(module -> found.add(module + "/README.md"));
         found.add("libtmux-bom/README.md");
         try (Stream<Path> guides = Files.list(ROOT.resolve("docs/guide"))) {
