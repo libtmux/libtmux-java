@@ -273,6 +273,9 @@ Generate Bash completion:
 $ tmux-workspace --generate bash
 ```
 
+Generated Bash completion suggests commands, option names and accepted choice
+values. It does not query running sessions or discover saved workspace names.
+
 Add `--json` to receive a `schema_version: 1` artifact with `command: generate`,
 `format: bash`, the exact completion text in `script`, and `status: ok`.
 `--ndjson` returns that artifact as one `completed` event with `sequence: 1`;
