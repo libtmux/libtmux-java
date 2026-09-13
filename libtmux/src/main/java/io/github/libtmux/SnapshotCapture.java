@@ -83,8 +83,8 @@ final class SnapshotCapture {
 
     /** One attempt, empty when the server was replaced under it. */
     Optional<ServerSnapshot> attempt() {
-        ServerProcess process =
-                process().orElseThrow(() -> new LibTmuxException("no tmux server is answering on this endpoint"));
+        ServerProcess process = process()
+                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
         try {
             return Optional.of(capture(process));
         } catch (ObjectDoesNotExistException replaced) {
@@ -109,7 +109,7 @@ final class SnapshotCapture {
     Optional<ServerProcess> process() {
         CommandResult result = server.cmd("display-message", "-p", PROCESS.template());
         if (!result.succeeded()) {
-            if (result.stderr().stream().anyMatch(SnapshotCapture::serverAbsent)) {
+            if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
                 return Optional.empty();
             }
             throw new LibTmuxException("tmux display-message failed: " + String.join("; ", result.stderr()));
@@ -212,12 +212,6 @@ final class SnapshotCapture {
                 new SessionId(row.text("session_id")),
                 new WindowIndex(row.number("window_index")),
                 new WindowId(row.text("window_id")));
-    }
-
-    private static boolean serverAbsent(String message) {
-        return message.contains("no server running")
-                || message.contains("server exited unexpectedly")
-                || message.contains("(No such file or directory)");
     }
 
     private static String[] withFloating() {

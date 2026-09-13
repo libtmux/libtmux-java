@@ -11,6 +11,7 @@ import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.UnsupportedTmuxVersionException;
@@ -74,6 +75,13 @@ final class BuffersAndClientIntegrationTest {
     @Test
     void aBufferThatIsNotThereSaysSo(Server server) {
         assertThrows(ObjectDoesNotExistException.class, () -> server.buffers().show("never-set"));
+    }
+
+    @Test
+    void anAbsentDaemonIsNotReportedAsAMissingBuffer(Server server) {
+        server.killServer();
+
+        assertThrows(ServerNotRunningException.class, () -> server.buffers().show("never-set"));
     }
 
     @Test

@@ -16,6 +16,11 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
 
 ### Added
 
+- **`ServerNotRunningException` names an absent daemon.** Every read that used
+  to throw a plain `LibTmuxException` for a missing tmux server —
+  `requireAlive`, `version`, live listings, finders, snapshots and
+  `Buffers.show` — now throws this subtype instead. Catch it specifically to
+  tell "nothing is there" from any other failed capture. (#17)
 - **Error Prone flags discarded replacement handles.** `Session.rename`,
   `Window.rename`, `Pane.retitle` and entity `refresh` methods carry
   `@CheckReturnValue`. Retain the returned capture to read updated state; the

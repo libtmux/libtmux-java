@@ -316,7 +316,9 @@ public final class Window {
     /**
      * Takes a new capture and returns this winlink as it is now.
      *
-     * @throws ObjectDoesNotExistException if this window is no longer linked here
+     * @throws ObjectDoesNotExistException if this window is no longer linked here, from a server
+     *     that still answers
+     * @throws ServerNotRunningException if no daemon is running
      */
     @CheckReturnValue
     public Window refresh() {
