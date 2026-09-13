@@ -242,6 +242,13 @@ Generate Bash completion:
 $ tmux-workspace --generate bash
 ```
 
+Add `--json` to receive a `schema_version: 1` artifact with `command: generate`,
+`format: bash`, the exact completion text in `script`, and `status: ok`.
+`--ndjson` returns that artifact as one `completed` event with `sequence: 1`;
+it takes precedence when both machine flags are present. Without either flag,
+stdout contains the Bash script. Schema generation keeps its metadata document
+in every output mode.
+
 For repeated CLI execution while editing, keep Gradle watching the sources:
 
 ```console
