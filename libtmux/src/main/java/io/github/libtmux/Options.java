@@ -153,7 +153,7 @@ public final class Options {
         Map<String, String> options = new LinkedHashMap<>();
         for (int from = 0; from < names.size(); ) {
             int to = from;
-            // -q so an option unset between the two requests reads as empty rather than ending the batch.
+            // -q keeps an option unset between the two requests from ending the batch.
             Batch batch = snapshot == null ? server.batch() : server.batch(snapshot);
             do {
                 List<String> arguments = new ArrayList<>(flags);
