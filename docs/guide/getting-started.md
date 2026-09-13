@@ -270,3 +270,7 @@ including an absent daemon. A missing object in a successful capture still
 produces an empty `Optional`. Catch `LibTmuxException` when failed reads require
 recovery; do not treat them as an empty server. `server.cmd(...)` still returns a
 completed nonzero exit as result data, while `server.run(...)` throws.
+
+A finder requires a running daemon. `server.newSession("build")` can start one;
+[`BuildAWorkspace`](../../examples/src/main/java/io/github/libtmux/examples/BuildAWorkspace.java)
+shows how to handle both an existing session and an endpoint with no daemon.

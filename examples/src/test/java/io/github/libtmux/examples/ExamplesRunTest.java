@@ -34,6 +34,19 @@ final class ExamplesRunTest {
     }
 
     @Test
+    void buildingAWorkspaceStartsADaemonWhenAbsent(Server server, TmuxSocketPath socket) {
+        server.killServer();
+        try {
+            String reported = BuildAWorkspace.run(socket.path());
+
+            assertTrue(reported.startsWith("session work has "), reported);
+            assertTrue(server.hasSession("work"));
+        } finally {
+            server.killServer();
+        }
+    }
+
+    @Test
     void findingPanesSelectsOnWhatIsRunning(Server server, TmuxSocketPath socket) throws InterruptedException {
         // The fixture's pane runs a shell, so the shell's own name is the one thing certain to match —
         // once it has settled. While the shell starts, tmux reports whatever its startup files are
