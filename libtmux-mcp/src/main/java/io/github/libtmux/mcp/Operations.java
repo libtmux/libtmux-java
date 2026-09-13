@@ -1,15 +1,16 @@
 package io.github.libtmux.mcp;
 
 import io.github.libtmux.Dimensions;
+import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.SessionSpec;
 import io.github.libtmux.SplitSpec;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowSpec;
 import io.github.libtmux.snapshot.ServerSnapshot;
+import io.github.libtmux.transport.TmuxTransportException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -25,7 +26,12 @@ final class Operations {
 
     private Operations() {}
 
-    /** One capture decides and answers every field, so a daemon dying mid-call cannot split them. */
+    /**
+     * One capture decides and answers every field, so a daemon dying mid-call cannot split them.
+     *
+     * <p>{@link TmuxTransportException} still throws: it means the transport could not even run the
+     * probe, which {@code isAlive()} never absorbed into {@code running: false} either.
+     */
     static Object serverInfo(Call call) {
         Server server = call.server();
         try {
@@ -39,7 +45,9 @@ final class Operations {
                     snapshot.serverVersion().orElseThrow().toString(),
                     "sessions",
                     snapshot.sessions().size());
-        } catch (ServerNotRunningException absent) {
+        } catch (TmuxTransportException transportFailure) {
+            throw transportFailure;
+        } catch (LibTmuxException captureFailed) {
             return values(
                     "running", false, "identity", server.identity().toString(), "version", "unknown", "sessions", 0);
         }
