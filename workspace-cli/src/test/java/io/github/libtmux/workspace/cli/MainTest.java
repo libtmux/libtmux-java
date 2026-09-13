@@ -164,6 +164,79 @@ final class MainTest {
     }
 
     @Test
+    void bashGenerationUsesTheSelectedMachineArtifact() throws Exception {
+        String script = picocli.AutoComplete.bash("tmux-workspace", Arguments.create());
+        Result plain = invoke("--generate", "bash");
+        assertEquals(0, plain.code(), plain.err());
+        assertEquals(script, plain.out());
+        assertEquals("", plain.err());
+        for (var arguments : List.of(
+                List.of("--generate", "bash", "--json"),
+                List.of("--json", "--generate", "bash"),
+                List.of("--generate", "bash", "--ndjson"),
+                List.of("--ndjson", "--generate", "bash"),
+                List.of("--json", "--generate", "bash", "--ndjson"),
+                List.of("--ndjson", "--generate", "bash", "--json"))) {
+            Result result = invoke(arguments.toArray(String[]::new));
+            assertEquals(0, result.code(), result.err());
+            assertTrue(result.out().startsWith("{"), arguments.toString());
+            assertEquals(1, result.out().lines().count());
+            var artifact = new ObjectMapper().readTree(result.out());
+            assertEquals(1, artifact.path("schema_version").asInt());
+            assertEquals("generate", artifact.path("command").asText());
+            assertEquals("bash", artifact.path("format").asText());
+            assertEquals(script, artifact.path("script").asText());
+            assertEquals("ok", artifact.path("status").asText());
+            if (arguments.contains("--ndjson")) {
+                assertEquals("completed", artifact.path("event").asText());
+                assertEquals(1, artifact.path("sequence").asInt());
+            } else {
+                assertFalse(artifact.has("event"));
+                assertFalse(artifact.has("sequence"));
+            }
+            assertEquals("", result.err());
+        }
+    }
+
+    @Test
+    void schemaGenerationRetainsItsMetadataDocument() {
+        Result plain = invoke("--generate", "schema");
+        assertEquals(0, plain.code(), plain.err());
+        for (String mode : List.of("--json", "--ndjson")) {
+            Result result = invoke("--generate", "schema", mode);
+            assertEquals(0, result.code(), result.err());
+            assertEquals(plain.out(), result.out());
+            assertEquals("", result.err());
+        }
+    }
+
+    @Test
+    void generationReportsClosedOutputThroughTheExistingDiagnostic() throws Exception {
+        for (var arguments : List.of(
+                List.of("--generate", "bash"),
+                List.of("--generate", "bash", "--json"),
+                List.of("--generate", "bash", "--ndjson"))) {
+            var closed = OutputStream.nullOutputStream();
+            closed.close();
+            var error = new ByteArrayOutputStream();
+            int status = Main.run(
+                    arguments.toArray(String[]::new),
+                    Map.of("HOME", directory.toString(), "PATH", ""),
+                    directory,
+                    InputStream.nullInputStream(),
+                    closed,
+                    error);
+            assertEquals(1, status, arguments.toString());
+            String diagnostic = error.toString(StandardCharsets.UTF_8);
+            if (arguments.size() > 2) {
+                var value = new ObjectMapper().readTree(diagnostic);
+                assertEquals("invalid_config", value.path("code").asText());
+                assertTrue(value.path("message").asText().contains("closed"));
+            } else assertTrue(diagnostic.contains("closed"));
+        }
+    }
+
+    @Test
     void interruptedOutputReturnsWithoutClosingTheBorrowedSink() throws Exception {
         Path global = Files.createDirectory(directory.resolve(".tmuxp"));
         Files.writeString(global.resolve("one.yaml"), "session_name: one\nwindows: []\n");
@@ -173,6 +246,8 @@ final class MainTest {
                 List.of("ls", "--ndjson"),
                 List.of("--help"),
                 List.of("--generate", "bash"),
+                List.of("--generate", "bash", "--json"),
+                List.of("--generate", "bash", "--ndjson"),
                 List.of("missing-command", "--json"))) {
             var sink = new BlockedOutput();
             var status = new AtomicInteger(-1);
