@@ -43,14 +43,31 @@ orders and addresses those separately.
 
 ```java
 Session before = server.sessions().get(0);
+String originalName = before.name();
 Session renamed = before.rename("something-else");
 
 renamed.name();                    // → something-else
 before.equals(renamed);            // → true
+before.name().equals(originalName); // → true
 ```
 
-The name changed; the session did not. Identity is the id tmux assigned, which a
-user cannot edit, so a handle stays valid across a rename.
+Retain the returned handle to read the changed name. The earlier handle keeps
+its original captured state, even after a successful mutation or `refresh()`.
+Equality still compares identity, so the two handles above compare equal.
+
+`Session.rename`, `Window.rename`, `Pane.retitle`, and each handle's `refresh`
+carry `@CheckReturnValue`. Error Prone rejects a call that discards their results.
+If the effect alone is needed, make that choice explicit:
+
+```java
+var unused = session.rename("effect-only");
+```
+
+`Client.refresh()` returns an `Optional<Client>` because a client can detach
+while its daemon stays reachable. Empty means that client is gone; a failed
+capture still throws. The other handles' `refresh()` methods return a replacement
+or throw `ObjectDoesNotExistException` when their target is gone. None changes
+the previous handle.
 
 `Window.id()` compares the underlying window across links.
 

@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import com.google.errorprone.annotations.CheckReturnValue;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.SessionState;
@@ -213,7 +214,12 @@ public final class Session {
         return String.join("\n", reported);
     }
 
-    /** Renames this session and returns a handle on it as it is now. */
+    /**
+     * Renames this session and returns its replacement capture.
+     *
+     * <p>Retain the result to read the changed name. This handle keeps its original captured state.
+     */
+    @CheckReturnValue
     public Session rename(String name) {
         server.run(snapshot, List.of("rename-session", "-t", state.id().value(), TmuxFormats.literal(name)));
         return refresh();
@@ -227,8 +233,11 @@ public final class Session {
     /**
      * Takes a new capture and returns this session as it is now.
      *
+     * <p>This handle remains unchanged. Use the returned handle for subsequent state reads.
+     *
      * @throws ObjectDoesNotExistException if the session is gone
      */
+    @CheckReturnValue
     public Session refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.session(state.id())

@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import com.google.errorprone.annotations.CheckReturnValue;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.snapshot.WindowState;
@@ -166,12 +167,15 @@ public final class Window {
     }
 
     /**
-     * Renames this window and returns a handle on it as it is now.
+     * Renames this window and returns its replacement capture.
+     *
+     * <p>Retain the result to read the changed name. This handle keeps its original captured state.
      *
      * <p>A {@code :} or {@code .} is kept as written on every supported release but 3.7, which
      * refuses the name. A kept delimiter cannot then address the window, since a target splits on
      * both. Unlike a session name, a window name is never rewritten.
      */
+    @CheckReturnValue
     public Window rename(String name) {
         server.run(snapshot, List.of("rename-window", "-t", target(), TmuxFormats.literal(name)));
         return refresh();
@@ -314,6 +318,7 @@ public final class Window {
      *
      * @throws ObjectDoesNotExistException if this window is no longer linked here
      */
+    @CheckReturnValue
     public Window refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.window(state.context())
