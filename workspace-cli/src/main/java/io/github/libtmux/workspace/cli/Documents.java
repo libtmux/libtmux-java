@@ -182,8 +182,9 @@ final class Documents {
     }
 
     private static ObjectNode importSource(Main.Context context, Path source, ObjectNode document, String kind) {
-        if (document.toString().contains("<%")) throw importError("ERB templates are not supported");
         boolean tmuxinator = kind.equals("tmuxinator");
+        if (tmuxinator && document.toString().contains("<%"))
+            throw importError("tmuxinator ERB templates are unsupported; expand them before import");
         JsonNode input = document;
         if (!tmuxinator && document.hasNonNull("session")) {
             importKeys(document, Set.of("session"), "document");
