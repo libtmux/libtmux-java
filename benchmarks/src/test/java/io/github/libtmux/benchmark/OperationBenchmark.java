@@ -277,8 +277,9 @@ final class OperationBenchmark {
                 .append("`, ")
                 .append(ROUNDS)
                 .append(" rounds per scenario, on one machine at one moment. ")
-                .append("Each `ProcessTransport` dispatch starts a tmux process. ")
-                .append("The timings describe this run.\n\n");
+                .append("Each `ProcessTransport` dispatch starts a tmux process, so the dispatch count ")
+                .append("is the cost and the milliseconds are one machine's rendering of it. Read the ")
+                .append("shape.\n\n");
 
         out.append("## Collapsing round trips\n\n")
                 .append("The same ")
