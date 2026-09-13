@@ -11,7 +11,6 @@ import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -44,10 +43,6 @@ final class LifecycleIntegrationTest {
         assertFalse(server.hasSession("never-made"));
     }
 
-    /**
-     * The distinction the lenient list accessors deliberately do not make: they return an empty list
-     * for both "no sessions" and "no server", and these are how a caller tells them apart.
-     */
     @Test
     void anEmptyServerAndAnAbsentOneAreDistinguishable(Server server) {
         assertTrue(server.isAlive());
@@ -57,7 +52,7 @@ final class LifecycleIntegrationTest {
 
         assertFalse(server.isAlive(), "the server is gone");
         assertThrows(LibTmuxException.class, server::raiseIfDead);
-        assertEquals(List.of(), server.sessions(), "and the lenient accessor still answers with nothing");
+        assertThrows(LibTmuxException.class, server::sessions);
     }
 
     @Test

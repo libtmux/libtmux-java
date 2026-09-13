@@ -83,11 +83,8 @@ final class SnapshotCapture {
 
     /** One attempt, empty when the server was replaced under it. */
     Optional<ServerSnapshot> attempt() {
-        Optional<ServerProcess> observed = process();
-        if (observed.isEmpty()) {
-            return Optional.of(ServerSnapshot.of(Instant.now(), List.of(), List.of(), List.of(), List.of()));
-        }
-        ServerProcess process = observed.orElseThrow();
+        ServerProcess process =
+                process().orElseThrow(() -> new LibTmuxException("no tmux server is answering on this endpoint"));
         try {
             return Optional.of(capture(process));
         } catch (ObjectDoesNotExist replaced) {

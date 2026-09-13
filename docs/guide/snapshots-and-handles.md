@@ -27,9 +27,12 @@ inside the server, the rows cannot come from two of them, and a server replaced
 under the capture is refused rather than half-read. What that costs is measured in
 [`docs/benchmarks/operations.md`](../benchmarks/operations.md).
 
-`refresh()` is how to look again. `server.snapshot()` is the strict form: it
-raises when a listing failed, where the list accessors answer with an empty list.
-Use `isAlive()` or `raiseIfDead()` to tell an empty server from an absent one.
+`refresh()` is how to look again. Every live listing, finder and snapshot capture
+throws `LibTmuxException` when capture fails, including an absent daemon. Empty
+collections and optionals mean a successful capture contained no matches. This
+changes the earlier alpha behavior that hid failed reads behind empty results.
+Use `isAlive()` when you only need to probe whether a daemon answers; transport
+failures still throw.
 
 ## Identity is what a user cannot change
 

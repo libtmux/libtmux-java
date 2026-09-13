@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
@@ -284,7 +286,7 @@ final class ServerTest {
     }
 
     @Test
-    void malformedOrInconsistentListingsRespectStrictAndLenientBoundaries(@TempDir Path directory) throws IOException {
+    void liveReadsPreserveMalformedOrInconsistentCaptures(@TempDir Path directory) throws IOException {
         String separator = RowFormat.of("field").separator();
         for (String sessionRow : List.of(
                 String.join(separator, "$0", "alpha", "maybe", "0"),
@@ -294,7 +296,10 @@ final class ServerTest {
                 LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
 
                 assertTrue(failure.getCause() instanceof IllegalArgumentException, failure.toString());
-                assertEquals(List.of(), server.sessions(), "lenient listings collapse hydration failures to empty");
+                assertAll(liveReads(server).stream().map(read -> () -> {
+                    LibTmuxException rejected = assertThrows(LibTmuxException.class, read);
+                    assertTrue(rejected.getCause() instanceof IllegalArgumentException, rejected.toString());
+                }));
             }
         }
     }
@@ -310,20 +315,112 @@ final class ServerTest {
     }
 
     @Test
-    void snapshotDistinguishesAnAbsentServerFromAnIdentityProbeFailure(@TempDir Path directory) throws IOException {
-        try (Server server = Server.using(config(directory), new RefusingTransport("permission denied"))) {
-            LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
-
-            assertTrue(String.valueOf(failure.getMessage()).contains("permission denied"));
-        }
-        for (String absent : List.of(
-                "no server running on /tmp/s",
+    void liveReadsRejectFailedIdentityProbes(@TempDir Path directory) throws IOException {
+        for (String refusal : List.of(
+                "permission denied",
+                "no server running on /tmp/libtmux-java-test/missing",
                 "server exited unexpectedly",
-                "error connecting to /tmp/s (No such file or directory)")) {
-            try (Server server = Server.using(config(directory), new RefusingTransport(absent))) {
-                assertTrue(server.snapshot().sessions().isEmpty(), absent);
+                "error connecting to /tmp/libtmux-java-test/missing (No such file or directory)")) {
+            try (Server server = Server.using(config(directory), new RefusingTransport(refusal))) {
+                assertAll(
+                        refusal,
+                        liveReads(server).stream().map(read -> () -> assertThrows(LibTmuxException.class, read)));
             }
         }
+    }
+
+    @Test
+    void liveReadsKeepTransportAndTimeoutDiagnostics(@TempDir Path directory) throws IOException {
+        IOException cause = new IOException("reader failed");
+        for (TmuxTransportException failure : List.of(
+                new TmuxTransportException("capture pipe failed", DispatchOutcome.UNKNOWN, cause),
+                new TmuxTimeoutException("admission timed out", DispatchOutcome.NOT_DISPATCHED, cause))) {
+            TmuxTransport transport = new TmuxTransport() {
+                @Override
+                public CommandResult execute(CommandRequest request) {
+                    throw failure;
+                }
+
+                @Override
+                public void close() {}
+            };
+            try (Server server = Server.using(config(directory), transport)) {
+                assertAll(liveReads(server).stream()
+                        .map(read -> () -> assertSame(failure, assertThrows(TmuxTransportException.class, read))));
+            }
+        }
+    }
+
+    @Test
+    void liveReadsRejectAMissingOrNonExecutableBinary(@TempDir Path directory) throws IOException {
+        Path binary = directory.resolve("not-executable");
+        Files.writeString(binary, "#!/bin/sh\nexit 0\n");
+        for (Path unavailable : List.of(directory.resolve("missing-binary"), binary)) {
+            try (Server server = Server.open(
+                    config(directory).toBuilder().binary(unavailable.toString()).build())) {
+                assertAll(liveReads(server).stream().map(read -> () -> {
+                    TmuxTransportException failure = assertThrows(TmuxTransportException.class, read);
+                    assertEquals(DispatchOutcome.NOT_DISPATCHED, failure.outcome());
+                    assertTrue(failure.getCause() instanceof IOException);
+                }));
+            }
+        }
+    }
+
+    @Test
+    void liveReadsRejectAnAbsentDaemon(@TempDir Path directory) throws IOException {
+        try (Server server = Server.open(config(directory))) {
+            assertAll(liveReads(server).stream().map(read -> () -> assertThrows(LibTmuxException.class, read)));
+        }
+    }
+
+    @Test
+    void aLiveServerCanSuccessfullyReportNoSessions(@TempDir Path directory) throws IOException {
+        try (Server server = Server.open(config(directory))) {
+            try {
+                server.run(List.of("new-session", "-d", "-s", "temporary"));
+                server.run(List.of("set-option", "-s", "exit-empty", "off"));
+                server.run(List.of("kill-session", "-t", "=temporary"));
+
+                assertTrue(server.isAlive());
+                assertTrue(server.snapshot().serverPid().isPresent());
+                assertEquals(List.of(), server.sessions());
+                assertEquals(List.of(), server.clients());
+                assertTrue(server.session("temporary").isEmpty());
+            } finally {
+                server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void bufferListingsPreserveFailures(@TempDir Path directory) throws IOException {
+        for (String refusal : List.of("permission denied", "no server running", "list-buffers failed")) {
+            try (Server server = Server.using(config(directory), new RefusingTransport(refusal))) {
+                LibTmuxException failure = assertThrows(
+                        LibTmuxException.class, () -> server.buffers().list());
+                assertTrue(String.valueOf(failure.getMessage()).contains(refusal));
+            }
+        }
+        try (Server server = Server.open(config(directory))) {
+            assertThrows(LibTmuxException.class, () -> server.buffers().list());
+        }
+    }
+
+    private static List<Executable> liveReads(Server server) {
+        return List.of(
+                server::snapshot,
+                server::sessions,
+                server::windows,
+                server::panes,
+                server::clients,
+                server::attachedSessions,
+                () -> server.session("missing"),
+                () -> server.session(new SessionId("$99")),
+                () -> server.pane(new PaneId("%99")),
+                () -> server.window(new io.github.libtmux.snapshot.WindowContext(
+                        new SessionId("$99"), new WindowIndex(0), new WindowId("@99"))),
+                () -> server.windows(new WindowId("@99")));
     }
 
     @Test
@@ -357,6 +454,18 @@ final class ServerTest {
             assertTrue(snapshot.panes().isEmpty());
             assertTrue(snapshot.clients().isEmpty());
             assertEquals(2, requests.get(), "tmux refused the rest of the group, which cost no further request");
+            assertEquals(List.of(), server.sessions());
+            assertEquals(List.of(), server.windows());
+            assertEquals(List.of(), server.panes());
+            assertEquals(List.of(), server.clients());
+            assertEquals(List.of(), server.attachedSessions());
+            assertTrue(server.session("missing").isEmpty());
+            assertTrue(server.session(new SessionId("$99")).isEmpty());
+            assertTrue(server.pane(new PaneId("%99")).isEmpty());
+            assertTrue(server.window(new io.github.libtmux.snapshot.WindowContext(
+                            new SessionId("$99"), new WindowIndex(0), new WindowId("@99")))
+                    .isEmpty());
+            assertEquals(List.of(), server.windows(new WindowId("@99")));
         }
     }
 

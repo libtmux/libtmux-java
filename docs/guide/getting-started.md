@@ -135,10 +135,10 @@ That is deliberate. tmux offers no transaction across separate listings, so a
 traversal that re-queried could observe a hierarchy that never existed. To see
 newer state, take a new capture with `refresh()`.
 
-`server.snapshot()` is the strict form: it raises when a listing fails. The list
-accessors are lenient and answer with an empty list, which is the long-standing
-libtmux contract. Use `isAlive()` or `raiseIfDead()` when you need to tell an
-empty server from an absent one.
+Live listings, finders and `server.snapshot()` throw `LibTmuxException` when a
+capture fails, including when no daemon is running. Empty lists and optionals
+mean a successful capture found no matches. Use `isAlive()` when you only need a
+liveness probe; transport failures still throw.
 
 ## Identity survives change
 
