@@ -151,8 +151,18 @@ public final class Main {
                     if (parsed.hasMatchedOption("--generate")) {
                         if (parsed.hasSubcommand()) throw usage("--generate cannot accompany a command");
                         if (parsed.matchedOptionValue("--generate", "schema").equals("bash")) {
-                            output.write(picocli.AutoComplete.bash("tmux-workspace", command)
-                                    .getBytes(StandardCharsets.UTF_8));
+                            String script = picocli.AutoComplete.bash("tmux-workspace", command);
+                            if (report.machine()) {
+                                var artifact = Documents.JSON
+                                        .createObjectNode()
+                                        .put("schema_version", 1)
+                                        .put("command", "generate")
+                                        .put("format", "bash")
+                                        .put("script", script)
+                                        .put("status", "ok");
+                                if (report.streaming()) report.event("completed", artifact);
+                                else report.document(artifact);
+                            } else output.write(script.getBytes(StandardCharsets.UTF_8));
                         } else report.document(Reporter.metadata(command.getCommandSpec()));
                         return 0;
                     }
