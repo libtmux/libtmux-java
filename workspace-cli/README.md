@@ -116,6 +116,31 @@ the legacy directory. Conversion preserves extension fields and never executes
 workspace commands. Explicit file saves protect existing files unless `--force`
 is supplied. `--yes` controls confirmation separately.
 
+## Inspect a workspace through MCP
+
+Loaded workspaces are ordinary tmux sessions. Build the separate
+[MCP server](../libtmux-mcp/README.md) from the repository root:
+
+```console
+$ ./gradlew :libtmux-mcp:installDist \
+    --max-workers=2 \
+    --no-parallel
+```
+
+Configure your MCP client to launch
+`libtmux-mcp/build/install/libtmux-mcp/bin/libtmux-mcp` with arguments
+`--socket /tmp/libtmux-java-dev/workspace-example.sock` and environment variable
+`LIBTMUX_TOOLSETS=inspect`. This selects the same socket as the detached load
+above. Use `--socket-name` when loading with `-L`; the endpoint is selected once
+at MCP startup.
+
+Discover tools with `tools/list`, then call `list_sessions`, `list_windows`
+with `session: dev`, and `list_panes`. Use returned pane IDs with
+`capture_pane` or `wait_for_text`; bound `max_lines` and the wait's `timeout`
+in seconds. A pending text wait allows other inspection calls on the same
+connection. The `tmux://capabilities` resource reports the selected endpoint
+and available tools.
+
 ## Output and Python
 
 `--json` returns one document; `--ndjson` takes precedence when both are present.
