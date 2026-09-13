@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Server;
 import io.github.libtmux.WakeReason;
@@ -48,17 +49,31 @@ final class ToolsAgainstTmuxTest {
         assertEquals(2, server.panes().size());
     }
 
-    /** An empty listing has to say whether the server was empty or absent; a count cannot. */
     @Test
-    void anEmptyListingSaysWhetherThereIsAServerAtAll(Server server) {
+    void anAbsentDaemonFailsTheListing(Server server) {
         Listings.Sessions running = Listings.sessions(server);
         server.killServer();
-        Listings.Sessions gone = Listings.sessions(server);
 
         assertEquals(1, running.count());
-        assertEquals(null, running.note(), "a listing that found something says nothing extra");
-        assertEquals(0, gone.count());
-        assertTrue(String.valueOf(gone.note()).contains("No tmux server is running"), String.valueOf(gone.note()));
+        assertNull(running.note(), "a listing that found something says nothing extra");
+        assertThrows(LibTmuxException.class, () -> Listings.sessions(server));
+        assertThrows(LibTmuxException.class, () -> Listings.windows(TestCalls.on(server)));
+        assertThrows(LibTmuxException.class, () -> Listings.panes(TestCalls.on(server)));
+    }
+
+    @Test
+    void emptyListingsDescribeCapturedState(Server server) {
+        server.run(List.of("set-option", "-s", "exit-empty", "off"));
+        server.sessions().getFirst().kill();
+
+        assertEquals(
+                "The capture contains no sessions.", Listings.sessions(server).note());
+        assertEquals(
+                "The capture contains no windows.",
+                Listings.windows(TestCalls.on(server)).note());
+        assertEquals(
+                "The capture contains no panes.",
+                Listings.panes(TestCalls.on(server)).note());
     }
 
     @Test

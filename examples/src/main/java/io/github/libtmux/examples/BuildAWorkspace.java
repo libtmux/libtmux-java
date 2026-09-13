@@ -8,6 +8,7 @@ import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import java.nio.file.Path;
+import java.util.Optional;
 
 /**
  * Lays out a session the way you would set one up by hand before starting work.
@@ -28,15 +29,14 @@ public final class BuildAWorkspace {
     public static String run(Path socket) {
         ServerConfig config = ServerConfig.builder()
                 .endpoint(ServerEndpoint.socketPath(socket))
+                .configFile(Path.of("/dev/null"))
                 .build();
 
         // Closing a server closes this client. The tmux server, and the session, outlive the program
         // — which is the whole point of tmux and the reason nothing here kills it.
         try (Server server = Server.open(config)) {
-            // One read decides and answers. Asking whether the session exists and then going to
-            // look for it is two reads with a gap in between, and the session can arrive or leave
-            // inside that gap.
-            Session session = server.session("work").orElseGet(() -> server.newSession("work"));
+            Optional<Session> existing = server.isAlive() ? server.session("work") : Optional.empty();
+            Session session = existing.orElseGet(() -> server.newSession("work"));
 
             Window editor = session.newWindow(window -> window.named("editor").detached());
             Pane shell = editor.split(split -> split.toRight());
