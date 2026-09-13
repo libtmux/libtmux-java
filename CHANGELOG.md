@@ -12,6 +12,55 @@ production.
 
 ## Unreleased
 
+### Added
+
+- **`tmux-workspace` is a native application module.** It discovers, loads,
+  captures, converts and imports tmuxp workspaces, with JSON and NDJSON output,
+  terminal load progress and generated Bash completion. (#16)
+
+### Fixed
+
+- **Tmuxinator imports refuse unexpanded ERB markup before output or
+  overwrite.** Teamocil sources, which no template engine reads, keep such
+  text literal. (#16)
+
+- **Bash completion keeps each option's choices.** Distinct native parameter
+  labels prevent color, log-level, format and generation values from replacing
+  one another in the generated script, including inherited options. (#16)
+
+- **Imports validate translated workspaces before publishing them.** Tmuxinator
+  command arrays remain in one pane; Teamocil command groups, options and first
+  focus survive native loading. Imported directories retain their invocation
+  context when the saved file moves. Unsupported lifecycle, runtime and
+  before-synchronization behavior is rejected instead of silently discarded or
+  saved as a configuration the native loader cannot use. (#16)
+
+- **Bash completion generation supports machine output.** `--generate bash`
+  with `--json` returns the script in a structured artifact; `--ndjson` emits
+  one completed event. Plain generation retains the original Bash bytes. (#16)
+
+- **Custom option names retain trailing stars.** `Options.all()`,
+  `Options.effective()` and workspace capture keep `@name`, `@name*` and
+  `@name**` distinct. Inherited built-in options retain their plain
+  names. (#16)
+
+- **`Options.effective()` reads inherited built-in values.** Framed value reads
+  retain the listing's inheritance flag instead of returning an empty value
+  for an option set only at a parent scope. (#16)
+
+- **Option reads recover values on tmux 3.4 and 3.5.** Those daemons escape
+  value-only output ambiguously. Reads decode the normal listing instead,
+  preserving control characters and literal escape sequences. Encoding follows
+  the captured daemon version or a checked query to the selected daemon. (#16)
+
+- **Option capture preserves carriage returns.** Subprocess stdout now splits
+  only at LF, retaining CR and CRLF data in option reads and workspace capture.
+  Diagnostic stderr keeps its existing newline normalization. (#16)
+
+- **Saved layout input can exceed tmux's dump buffer.** The core, workspace
+  loader and MCP accept valid trees with bodies longer than 8191 characters.
+  tmux still owns geometry, pruning and command transport limits. (#16)
+
 ## 0.0.1-alpha.11 — 2026-09-12
 
 ### Added
