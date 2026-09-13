@@ -12,6 +12,28 @@ production.
 
 ## Unreleased
 
+See the [migration notes](MIGRATION) for upgrade instructions.
+
+### Added
+
+- **Error Prone flags discarded replacement handles.** `Session.rename`,
+  `Window.rename`, `Pane.retitle` and entity `refresh` methods carry
+  `@CheckReturnValue`. Retain the returned capture to read updated state; the
+  original capture stays unchanged. (#17)
+
+### Changed
+
+- **Live listings, lookups and snapshots throw when a read fails.** This
+  includes an absent daemon and buffer-list failures. Empty results now mean a
+  successful capture found no objects; MCP listings also surface failed reads.
+  (#17)
+- **`Server.raiseIfDead` is renamed to `requireAlive`.** Update callers to the
+  new name; this alpha rename has no forwarding alias. (#17)
+- **Public exception names gain the Java `Exception` suffix.** Replace
+  `ObjectDoesNotExist` with `ObjectDoesNotExistException` and
+  `UnsupportedTmuxVersion` with `UnsupportedTmuxVersionException` in imports and
+  catch clauses. The old names have no aliases. (#17)
+
 ## 0.0.1-alpha.11 — 2026-09-12
 
 ### Added
