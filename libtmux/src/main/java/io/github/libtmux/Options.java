@@ -250,15 +250,9 @@ public final class Options {
         }
     }
 
-    /**
-     * Drops the marker tmux puts on an option a wide listing found on a parent scope.
-     *
-     * <p>{@code show-options -A} prints {@code status-left*} for a value this scope inherits rather
-     * than sets. Keeping the star would mean the name a caller looks up is not the name they get
-     * back, and it carries nothing {@link #all()} does not already answer.
-     */
+    /** Wide listings mark inherited built-ins; custom names retain every literal star. */
     private static String inherited(String name) {
-        return name.endsWith("*") ? name.substring(0, name.length() - 1) : name;
+        return !name.startsWith("@") && name.endsWith("*") ? name.substring(0, name.length() - 1) : name;
     }
 
     /**
