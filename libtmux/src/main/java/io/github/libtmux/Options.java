@@ -23,6 +23,10 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Array options keep the subscript tmux prints — {@code command-alias[0]} — because that is what
  * addresses the individual entry when setting it back.
+ *
+ * <p>Reads use the captured daemon version when available; otherwise they query the selected
+ * daemon before reading values. tmux 3.4 and 3.5 require decoding their escaped listing because
+ * their value-only output loses the distinction between control characters and literal escapes.
  */
 public final class Options {
 
@@ -75,9 +79,18 @@ public final class Options {
      *     declined to answer rather than an option it does not have
      */
     public Optional<String> get(String name) {
-        var result = cmd(argv("show-options", List.of("-A", "-v", "--", name)));
+        TmuxVersion version = listingVersion();
+        var result = cmd(argv("show-options", version == null
+                ? List.of("-A", "-v", "--", name)
+                : List.of("-A", "--", name)));
         if (result.succeeded()) {
-            return Optional.of(String.join("\n", result.stdout()));
+            if (version == null) return Optional.of(String.join("\n", result.stdout()));
+            List<String> values = new ArrayList<>();
+            for (String line : result.stdout()) {
+                int split = line.indexOf(' ');
+                values.add(split < 0 ? "" : listedValue(line.substring(split + 1), version));
+            }
+            return Optional.of(String.join("\n", values));
         }
         // The documented meaning of empty, in tmux's own words on every supported release. Any
         // other failure is a failed read, and answering it with "tmux does not know that option"
@@ -115,10 +128,20 @@ public final class Options {
      *
      * <p>A listed value is escaped with {@code vis(3)} and wrapped in whichever quotes that release
      * chose, and which characters it reaches changed inside the supported range — {@code a$b} prints
-     * as {@code "a\$b"} on 3.2a and {@code "a\\$b"} on 3.4. {@code -v} prints the value itself on
-     * every release, which is also what {@link #get} reads, so the two agree.
+     * as {@code "a\$b"} on 3.2a and {@code "a\\$b"} on 3.4. Releases 3.4 and 3.5 also escape
+     * {@code -v} output ambiguously, so those daemons require the normal listing's quoted spelling.
      */
     private Map<String, String> read(List<String> flags) {
+        TmuxVersion version = listingVersion();
+        if (version != null) {
+            Map<String, String> values = new LinkedHashMap<>();
+            for (String line : run(argv("show-options", flags)).stdout()) {
+                int split = line.indexOf(' ');
+                String name = inherited(split < 0 ? line : line.substring(0, split));
+                values.put(name, split < 0 ? "" : listedValue(line.substring(split + 1), version));
+            }
+            return Collections.unmodifiableMap(values);
+        }
         List<String> names = new ArrayList<>();
         for (String line : run(argv("show-options", flags)).stdout()) {
             int split = line.indexOf(' ');
@@ -141,6 +164,78 @@ public final class Options {
             from = to;
         }
         return Collections.unmodifiableMap(options);
+    }
+
+    /** The selected daemon decides output encoding; a client binary may be a different release. */
+    private @Nullable TmuxVersion listingVersion() {
+        TmuxVersion version = snapshot == null ? null : snapshot.serverVersion().orElse(null);
+        if (version == null) {
+            var result = run(List.of("display-message", "-p", "#{version}"));
+            try {
+                version = TmuxVersion.parse(String.join("\n", result.stdout()));
+            } catch (IllegalArgumentException invalid) {
+                throw new LibTmuxException("could not establish tmux option output encoding", invalid);
+            }
+        }
+        return version.major() == 3 && (version.minor() == 4 || version.minor() == 5) ? version : null;
+    }
+
+    /** Inverts args_escape for the releases whose outer print pass loses raw-value boundaries. */
+    private static String listedValue(String text, TmuxVersion version) {
+        if (!text.isEmpty() && text.charAt(0) != '\'' && text.charAt(0) != '"' && text.indexOf(' ') >= 0) {
+            // String options with spaces are quoted. Hook command lists retain their tmux syntax.
+            return text;
+        }
+        if (version.minor() == 4) {
+            text = text.replaceAll("\\\\(?=\\$[A-Za-z_{])", "");
+        }
+        int start = 0;
+        int end = text.length();
+        if (end > 0 && (text.charAt(0) == '\'' || text.charAt(0) == '"')) {
+            if (end < 2 || text.charAt(end - 1) != text.charAt(0)) {
+                throw new LibTmuxException("tmux returned an unterminated quoted option value");
+            }
+            start++;
+            end--;
+        }
+        StringBuilder value = new StringBuilder();
+        for (int index = start; index < end; index++) {
+            char ch = text.charAt(index);
+            if (ch != '\\') {
+                value.append(ch);
+                continue;
+            }
+            if (++index == end) throw new LibTmuxException("tmux returned an incomplete option escape");
+            char escaped = text.charAt(index);
+            if (escaped >= '0' && escaped <= '7') {
+                int octal = escaped - '0';
+                for (int digits = 1; digits < 3 && index + 1 < end; digits++) {
+                    char next = text.charAt(index + 1);
+                    if (next < '0' || next > '7') break;
+                    octal = octal * 8 + next - '0';
+                    index++;
+                }
+                if (octal > 255) throw new LibTmuxException("tmux returned an invalid octal option escape");
+                if (octal >= 128)
+                    value.append("\\x").append(java.util.HexFormat.of().toHexDigits((byte) octal));
+                else value.append((char) octal);
+            } else {
+                value.append(
+                        switch (escaped) {
+                            case 'a' -> '\u0007';
+                            case 'b' -> '\b';
+                            case 'f' -> '\f';
+                            case 'n' -> '\n';
+                            case 'r' -> '\r';
+                            case 's' -> ' ';
+                            case 't' -> '\t';
+                            case 'v' -> '\u000b';
+                            case '\\', '\'', '"', '$', '~', '#', ';', '{', '}', '%' -> escaped;
+                            default -> throw new LibTmuxException("tmux returned an unknown option escape");
+                        });
+            }
+        }
+        return value.toString();
     }
 
     private static void record(List<String> names, Batch batch, Map<String, String> into) {
