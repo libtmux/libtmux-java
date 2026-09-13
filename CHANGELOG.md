@@ -12,7 +12,7 @@ production.
 
 ## Unreleased
 
-See the [migration notes](MIGRATION) for upgrade instructions.
+See the [migration notes](MIGRATION.md) for upgrade instructions.
 
 ### Added
 

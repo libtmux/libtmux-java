@@ -315,7 +315,7 @@ $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds
 
 ## Documentation
 
-See the [migration notes](MIGRATION) when upgrading.
+See the [migration notes](MIGRATION.md) when upgrading.
 
 - [Getting started](docs/guide/getting-started.md)
 - [Filtering](docs/guide/filtering.md)

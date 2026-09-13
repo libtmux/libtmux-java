@@ -62,7 +62,7 @@ final class DocumentationSnippetsTest {
                 "the core's own README contributed nothing");
         assertTrue(
                 found.stream()
-                        .anyMatch(snippet -> snippet.file().equals(Path.of("MIGRATION"))
+                        .anyMatch(snippet -> snippet.file().equals(Path.of("MIGRATION.md"))
                                 && snippet.expectation() == Snippet.Expectation.RUNS),
                 "migration examples are not being compiled and run");
         assertTrue(
