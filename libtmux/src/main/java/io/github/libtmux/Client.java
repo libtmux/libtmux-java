@@ -111,7 +111,7 @@ public final class Client {
      * remained reachable; failed capture still throws.
      *
      * @throws ObjectDoesNotExistException if a different daemon answers on the endpoint
-     * @throws LibTmuxException if capture fails, including when no daemon is running
+     * @throws ServerNotRunningException if no daemon is running
      */
     @CheckReturnValue
     public Optional<Client> refresh() {

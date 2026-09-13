@@ -38,9 +38,9 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
   exited between the two failed the whole call instead of reporting itself
   gone. It now reports `running: false` for that case rather than failing.
   (#17)
-- **`Buffers.show` throws `ServerNotRunningException` for an absent daemon
-  instead of `ObjectDoesNotExistException`.** It no longer reports a dead
-  server as a buffer that was never there. (#17)
+- **`Buffers.show` and `Buffers.delete` throw `ServerNotRunningException` for
+  an absent daemon instead of `ObjectDoesNotExistException`.** Neither report
+  a dead server as a buffer that was never there. (#17)
 - **Live listings, lookups and snapshots throw when a read fails.** This
   includes an absent daemon and buffer-list failures. Empty results now mean a
   successful capture found no objects; MCP listings also surface failed reads.
@@ -62,13 +62,6 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
   refuses `:` and `.` in a session or window name depending on the release; the
   reply named the requested string instead of the handle's actual name. (#17)
 
-### Documented
-
-- **The operation benchmark report says its milliseconds are noisy again.**
-  The caveat that dispatch count is the cost and wall clock is one machine's
-  rendering of it was dropped while rewording this report for strict reads.
-  Restored, and the table regenerated. (#17)
-
 ### Removed
 
 - **`ServerSnapshot.of` no longer has a pid-only overload.** Removing
@@ -76,6 +69,13 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
   taking no identity at all is now package-private: a handle built from either
   fails at its first real operation, so neither belonged in the public API.
   (#17)
+
+### Documented
+
+- **The operation benchmark report says its milliseconds are noisy again.**
+  The caveat that dispatch count is the cost and wall clock is one machine's
+  rendering of it was dropped while rewording this report for strict reads.
+  Restored, and the table regenerated. (#17)
 
 ## 0.0.1-alpha.11 — 2026-09-12
 

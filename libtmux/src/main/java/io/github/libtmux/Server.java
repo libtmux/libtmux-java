@@ -599,7 +599,9 @@ public final class Server implements AutoCloseable {
      * <p>A failed read throws, including when no daemon is running. An empty graph means a live
      * server successfully reported no sessions.
      *
-     * @throws LibTmuxException if a listing fails or the listings cannot form one valid snapshot
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if a listing otherwise fails or the listings cannot form one valid
+     *     snapshot
      */
     public ServerSnapshot snapshot() {
         requireOpen();
@@ -619,7 +621,8 @@ public final class Server implements AutoCloseable {
      *
      * <p>Returns an immutable list in tmux order. Empty means a live server reported no sessions.
      *
-     * @throws LibTmuxException if capture fails, including when no daemon is running
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
      */
     public List<Session> sessions() {
         ServerSnapshot captured = snapshot();
@@ -632,7 +635,8 @@ public final class Server implements AutoCloseable {
      * Captures every winlink, preserving each session and index placement.
      *
      * @return an immutable list in tmux order
-     * @throws LibTmuxException if capture fails, including when no daemon is running
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
      */
     public List<Window> windows() {
         ServerSnapshot captured = snapshot();
@@ -645,7 +649,8 @@ public final class Server implements AutoCloseable {
      * Captures every pane on the server.
      *
      * @return an immutable list in tmux order
-     * @throws LibTmuxException if capture fails, including when no daemon is running
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
      */
     public List<Pane> panes() {
         ServerSnapshot captured = snapshot();
@@ -663,7 +668,8 @@ public final class Server implements AutoCloseable {
      *
      * <p>Empty means a successful capture did not contain that name. Capture failures throw.
      *
-     * @throws LibTmuxException if capture fails, including when no daemon is running
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
      */
     public Optional<Session> session(String name) {
         Objects.requireNonNull(name, "name");
@@ -675,7 +681,8 @@ public final class Server implements AutoCloseable {
      * The session with this id, captured now.
      *
      * @return empty only when a successful capture contains no match
-     * @throws LibTmuxException if capture fails, including when no daemon is running
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
      */
     public Optional<Session> session(SessionId id) {
         Objects.requireNonNull(id, "id");
@@ -687,7 +694,8 @@ public final class Server implements AutoCloseable {
      * The pane with this id, captured now.
      *
      * @return empty only when a successful capture contains no match
-     * @throws LibTmuxException if capture fails, including when no daemon is running
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
      */
     public Optional<Pane> pane(PaneId id) {
         Objects.requireNonNull(id, "id");
@@ -702,7 +710,8 @@ public final class Server implements AutoCloseable {
      * The winlink at this exact position, captured now.
      *
      * @return empty only when a successful capture contains no match
-     * @throws LibTmuxException if capture fails, including when no daemon is running
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
      */
     public Optional<Window> window(WindowContext context) {
         Objects.requireNonNull(context, "context");
@@ -720,7 +729,8 @@ public final class Server implements AutoCloseable {
      * {@link #window(WindowContext)} to name one exactly.
      *
      * @return an immutable list in tmux order, empty if the window was not found
-     * @throws LibTmuxException if capture fails, including when no daemon is running
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
      */
     public List<Window> windows(WindowId id) {
         Objects.requireNonNull(id, "id");
@@ -735,7 +745,8 @@ public final class Server implements AutoCloseable {
      * Captures every attached client.
      *
      * @return an immutable list in tmux order
-     * @throws LibTmuxException if capture fails, including when no daemon is running
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
      */
     public List<Client> clients() {
         ServerSnapshot captured = snapshot();
@@ -748,7 +759,8 @@ public final class Server implements AutoCloseable {
      * Captures every session a client is attached to.
      *
      * @return an immutable list in tmux order
-     * @throws LibTmuxException if capture fails, including when no daemon is running
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
      */
     public List<Session> attachedSessions() {
         return sessions().stream().filter(Session::attached).toList();
