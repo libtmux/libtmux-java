@@ -5,6 +5,7 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import java.nio.file.Path;
@@ -35,7 +36,14 @@ public final class BuildAWorkspace {
         // Closing a server closes this client. The tmux server, and the session, outlive the program
         // — which is the whole point of tmux and the reason nothing here kills it.
         try (Server server = Server.open(config)) {
-            Optional<Session> existing = server.isAlive() ? server.session("work") : Optional.empty();
+            // One read decides and answers. An absent daemon means the name cannot be taken, so
+            // that specific failure is the other way this resolves to "not found".
+            Optional<Session> existing;
+            try {
+                existing = server.session("work");
+            } catch (ServerNotRunningException absent) {
+                existing = Optional.empty();
+            }
             Session session = existing.orElseGet(() -> server.newSession("work"));
 
             Window editor = session.newWindow(window -> window.named("editor").detached());
