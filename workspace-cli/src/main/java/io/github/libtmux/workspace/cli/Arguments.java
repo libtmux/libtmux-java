@@ -1,6 +1,7 @@
 package io.github.libtmux.workspace.cli;
 
 import java.util.List;
+import java.util.Locale;
 import picocli.CommandLine;
 import picocli.CommandLine.Model.ArgGroupSpec;
 import picocli.CommandLine.Model.CommandSpec;
@@ -164,6 +165,10 @@ final class Arguments {
     private static OptionSpec choice(String help, List<String> choices, String... names) {
         return OptionSpec.builder(names)
                 .type(String.class)
+                .paramLabel(names[names.length - 1]
+                        .replaceFirst("^-+", "")
+                        .replace('-', '_')
+                        .toUpperCase(Locale.ROOT))
                 .completionCandidates(choices)
                 .description(help)
                 .converters(value -> {

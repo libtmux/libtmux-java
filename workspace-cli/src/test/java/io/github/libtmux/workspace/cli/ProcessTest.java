@@ -37,6 +37,107 @@ final class ProcessTest {
         return process;
     }
 
+    @Test
+    void generatedCompletionKeepsEachChoiceInTheActualBashEditor() throws Exception {
+        Path completion = directory.resolve("completion.bash");
+        Process generator = command("--generate", "bash")
+                .redirectOutput(completion.toFile())
+                .redirectError(ProcessBuilder.Redirect.INHERIT)
+                .start();
+        try {
+            assertTrue(generator.waitFor(5, TimeUnit.SECONDS));
+            assertEquals(0, generator.exitValue());
+        } finally {
+            if (generator.isAlive()) generator.destroyForcibly().waitFor();
+        }
+        String script = """
+                import errno, os, pty, select, shlex, signal, sys, time
+                root, completion = sys.argv[1:]
+                buffers, ready = root + '/buffers', root + '/ready'
+                cases = [
+                    ('tmux-workspace imp', 'tmux-workspace import '),
+                    ('tmux-workspace import team', 'tmux-workspace import teamocil '),
+                    ('tmux-workspace --color al', 'tmux-workspace --color always '),
+                    ('tmux-workspace --color n', 'tmux-workspace --color never '),
+                    ('tmux-workspace --log-level de', 'tmux-workspace --log-level debug '),
+                    ('tmux-workspace --generate ba', 'tmux-workspace --generate bash '),
+                    ('tmux-workspace load --color al', 'tmux-workspace load --color always '),
+                    ('tmux-workspace load --log-level de', 'tmux-workspace load --log-level debug '),
+                    ('tmux-workspace freeze -f j', 'tmux-workspace freeze -f json '),
+                    ('tmux-workspace freeze --workspace-format y', 'tmux-workspace freeze --workspace-format yaml '),
+                    ('tmux-workspace --color b', 'tmux-workspace --color b'),
+                    ('tmux-workspace --generate al', 'tmux-workspace --generate al'),
+                ]
+                setup = 'source ' + shlex.quote(completion) + "; bind 'set keyseq-timeout 1'; "
+                setup += '''_capture() { printf '%s\\\\0' "$READLINE_LINE" >> ''' + shlex.quote(buffers)
+                setup += '''; READLINE_LINE=; READLINE_POINT=0; }; bind -x '"\\\\C-x":_capture'; '''
+                setup += "PS1='prompt> '; : > " + shlex.quote(ready)
+                pid, fd = pty.fork()
+                if pid == 0:
+                    os.chdir(root)
+                    os.execve('/bin/bash', ['bash', '--noprofile', '--norc'],
+                        dict(os.environ, TERM='xterm', HISTFILE='/dev/null'))
+                trace = bytearray()
+                joined = False
+                exit_status = None
+                def until(predicate):
+                    end = time.monotonic() + 4
+                    while time.monotonic() < end:
+                        if predicate(): return
+                        if select.select([fd], [], [], .01)[0]:
+                            try: trace.extend(os.read(fd, 65536))
+                            except OSError as error:
+                                if error.errno != errno.EIO: raise
+                                time.sleep(.01)
+                    raise AssertionError('completion observation timed out: ' + repr(trace[-2000:]))
+                def values():
+                    try:
+                        with open(buffers, 'rb') as stream: return stream.read().split(b'\\0')[:-1]
+                    except FileNotFoundError: return []
+                def exited():
+                    global joined, exit_status
+                    child, current = os.waitpid(pid, os.WNOHANG)
+                    if child:
+                        joined, exit_status = True, current
+                    return joined
+                try:
+                    os.write(fd, (setup + '\\n').encode())
+                    until(lambda: os.path.exists(ready))
+                    for i, (line, expected) in enumerate(cases):
+                        os.write(fd, (line + '\\t\\x18').encode())
+                        until(lambda: len(values()) > i)
+                        actual = values()[i].decode()
+                        assert actual == expected, (line, actual, expected)
+                    os.write(fd, b'exit\\n')
+                    until(exited)
+                    assert os.waitstatus_to_exitcode(exit_status) == 0
+                finally:
+                    if not joined:
+                        try: os.killpg(pid, signal.SIGKILL)
+                        except ProcessLookupError: pass
+                        os.waitpid(pid, 0)
+                    os.close(fd)
+                    with open(root + '/terminal.raw', 'wb') as stream: stream.write(trace)
+                """;
+        Process probe = new ProcessBuilder("python3", "-c", script, directory.toString(), completion.toString())
+                .redirectError(ProcessBuilder.Redirect.INHERIT)
+                .start();
+        try {
+            assertTrue(probe.waitFor(15, TimeUnit.SECONDS));
+            assertEquals(0, probe.exitValue());
+        } finally {
+            if (probe.isAlive()) {
+                var descendants = probe.descendants().toList();
+                descendants.forEach(ProcessHandle::destroyForcibly);
+                try {
+                    for (var descendant : descendants) descendant.onExit().get(2, TimeUnit.SECONDS);
+                } finally {
+                    probe.destroyForcibly().waitFor();
+                }
+            }
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"tmuxinator", "teamocil"})
     void installedImportsLoadCommandsInOrderWithNativeFocusAndOptions(String kind) throws Exception {
