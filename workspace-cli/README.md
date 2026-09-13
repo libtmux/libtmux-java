@@ -42,8 +42,11 @@ Missing session names use the source filename without its extension. Conflicting
 non-null aliases and malformed scalar or command shapes are rejected.
 
 Lifecycle hooks, project `pre`/`post`, endpoint/runtime overrides, named pane
-titles, ERB templates, Teamocil `clear`/filters and other unsupported fields are
-rejected before output. Java creates all panes before sending commands, so
+titles, Teamocil `clear`/filters and other unsupported fields are rejected
+before output. Tmuxinator expands ERB templates through Ruby before parsing,
+so unexpanded `<%` markup is refused before output or overwrite; Teamocil
+evaluates no templates, so the same markup in a Teamocil source is ordinary
+text and is preserved. Java creates all panes before sending commands, so
 before-command synchronization cannot preserve the source delivery order and is
 rejected. Tmuxinator `synchronize: after` uses native `options_after` instead.
 Window `pre` requires explicit nonempty panes; otherwise Tmuxinator would omit
