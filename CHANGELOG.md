@@ -62,6 +62,14 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
   refuses `:` and `.` in a session or window name depending on the release; the
   reply named the requested string instead of the handle's actual name. (#17)
 
+### Removed
+
+- **`ServerSnapshot.of` no longer has a pid-only overload.** Removing
+  `Server.lenient()` left it with no caller, production or test. The overload
+  taking no identity at all is now package-private: a handle built from either
+  fails at its first real operation, so neither belonged in the public API.
+  (#17)
+
 ## 0.0.1-alpha.11 — 2026-09-12
 
 ### Added
