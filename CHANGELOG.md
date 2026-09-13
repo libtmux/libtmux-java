@@ -33,6 +33,11 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
   rest of this release stopped doing everywhere else. The MCP `new_session`
   tool catches the new exception and starts a daemon on demand, as it already
   did. (#17)
+- **The MCP `get_server_info` tool answers from one capture.** It used to
+  probe `isAlive()` and then read `sessions()` separately; a daemon that
+  exited between the two failed the whole call instead of reporting itself
+  gone. It now reports `running: false` for that case rather than failing.
+  (#17)
 - **`Buffers.show` throws `ServerNotRunningException` for an absent daemon
   instead of `ObjectDoesNotExistException`.** It no longer reports a dead
   server as a buffer that was never there. (#17)

@@ -61,6 +61,28 @@ final class ToolsAgainstTmuxTest {
         assertThrows(LibTmuxException.class, () -> Listings.panes(TestCalls.on(server)));
     }
 
+    /** One capture answers every field, so a dead daemon fails the whole answer, not part of it. */
+    @Test
+    void serverInfoReportsARunningServerFromOneCapture(Server server) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) Operations.serverInfo(TestCalls.on(server));
+
+        assertEquals(true, info.get("running"));
+        assertEquals(1, info.get("sessions"));
+    }
+
+    @Test
+    void serverInfoReportsAnAbsentDaemonRatherThanFailing(Server server) {
+        server.killServer();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) Operations.serverInfo(TestCalls.on(server));
+
+        assertEquals(false, info.get("running"));
+        assertEquals("unknown", info.get("version"));
+        assertEquals(0, info.get("sessions"));
+    }
+
     /** No daemon means no name can already be taken, so this starts one instead of failing. */
     @Test
     void newSessionStartsADaemonRatherThanFailingOnAnAbsentOne(Server server) {
