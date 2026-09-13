@@ -49,11 +49,18 @@ public final class Buffers {
      * What a buffer holds.
      *
      * @throws ObjectDoesNotExistException if the server has no buffer by that name
+     * @throws ServerNotRunningException if no daemon is running
      */
     public String show(String name) {
-        var result = server.cmd(List.of("show-buffer", "-b", name));
-        if (!result.succeeded()) {
+        CommandResult result = server.cmd(List.of("show-buffer", "-b", name));
+        if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.equals("no buffer " + name))) {
             throw new ObjectDoesNotExistException("no buffer named '" + name + "'");
+        }
+        if (!result.succeeded() && result.stderr().stream().anyMatch(Server::serverAbsent)) {
+            throw new ServerNotRunningException("no tmux server is answering on this endpoint");
+        }
+        if (!result.succeeded()) {
+            throw new LibTmuxException("tmux show-buffer failed: " + String.join("; ", result.stderr()));
         }
         return String.join("\n", result.stdout());
     }
@@ -62,6 +69,7 @@ public final class Buffers {
      * Removes a buffer by its exact name.
      *
      * @throws ObjectDoesNotExistException if the server has no buffer by that name
+     * @throws ServerNotRunningException if no daemon is running
      * @throws UnsupportedTmuxVersionException before tmux 3.4, whose named deletion silently removes the top
      *     buffer when the name is absent
      */
@@ -73,6 +81,9 @@ public final class Buffers {
         CommandResult result = server.cmd(List.of("delete-buffer", "-b", name));
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.equals("unknown buffer: " + name))) {
             throw new ObjectDoesNotExistException("no buffer named '" + name + "'");
+        }
+        if (!result.succeeded() && result.stderr().stream().anyMatch(Server::serverAbsent)) {
+            throw new ServerNotRunningException("no tmux server is answering on this endpoint");
         }
         if (!result.succeeded()) {
             throw new LibTmuxException("tmux delete-buffer failed: " + String.join("; ", result.stderr()));

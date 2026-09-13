@@ -143,12 +143,19 @@ public final class Server implements AutoCloseable {
     /**
      * Requires a running tmux daemon that answers the liveness probe.
      *
-     * @throws LibTmuxException if the server is not running or not answering
+     * @throws ServerNotRunningException if the server is not running or not answering
      */
     public void requireAlive() {
         if (!isAlive()) {
-            throw new LibTmuxException("no tmux server is answering on this endpoint");
+            throw new ServerNotRunningException("no tmux server is answering on this endpoint");
         }
+    }
+
+    /** Whether a failed command's stderr says the daemon itself is gone, rather than refusing the request. */
+    static boolean serverAbsent(String message) {
+        return message.contains("no server running")
+                || message.contains("server exited unexpectedly")
+                || message.contains("(No such file or directory)");
     }
 
     /**
@@ -459,11 +466,13 @@ public final class Server implements AutoCloseable {
      *
      * <p>Asked of the running server rather than of the binary, because the server may have been
      * started by a different build than the one this client is invoking.
+     *
+     * @throws ServerNotRunningException if no daemon is running
      */
     public TmuxVersion version() {
         return capture.process()
                 .map(SnapshotCapture.ServerProcess::version)
-                .orElseThrow(() -> new LibTmuxException("no tmux server is answering on this endpoint"));
+                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
     }
 
     TmuxVersion version(ServerSnapshot snapshot) {

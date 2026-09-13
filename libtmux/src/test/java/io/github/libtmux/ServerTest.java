@@ -316,15 +316,21 @@ final class ServerTest {
 
     @Test
     void liveReadsRejectFailedIdentityProbes(@TempDir Path directory) throws IOException {
-        for (String refusal : List.of(
-                "permission denied",
+        try (Server server = Server.using(config(directory), new RefusingTransport("permission denied"))) {
+            assertAll(liveReads(server).stream().map(read -> () -> {
+                LibTmuxException failure = assertThrows(LibTmuxException.class, read);
+                assertFalse(failure instanceof ServerNotRunningException, "not a missing daemon: " + failure);
+            }));
+        }
+        for (String absent : List.of(
                 "no server running on /tmp/libtmux-java-test/missing",
                 "server exited unexpectedly",
                 "error connecting to /tmp/libtmux-java-test/missing (No such file or directory)")) {
-            try (Server server = Server.using(config(directory), new RefusingTransport(refusal))) {
+            try (Server server = Server.using(config(directory), new RefusingTransport(absent))) {
                 assertAll(
-                        refusal,
-                        liveReads(server).stream().map(read -> () -> assertThrows(LibTmuxException.class, read)));
+                        absent,
+                        liveReads(server).stream()
+                                .map(read -> () -> assertThrows(ServerNotRunningException.class, read)));
             }
         }
     }
@@ -370,7 +376,8 @@ final class ServerTest {
     @Test
     void liveReadsRejectAnAbsentDaemon(@TempDir Path directory) throws IOException {
         try (Server server = Server.open(config(directory))) {
-            assertAll(liveReads(server).stream().map(read -> () -> assertThrows(LibTmuxException.class, read)));
+            assertAll(
+                    liveReads(server).stream().map(read -> () -> assertThrows(ServerNotRunningException.class, read)));
         }
     }
 
@@ -404,6 +411,17 @@ final class ServerTest {
         }
         try (Server server = Server.open(config(directory))) {
             assertThrows(LibTmuxException.class, () -> server.buffers().list());
+        }
+    }
+
+    /** {@code show} must not fold an absent daemon into "no buffer named that", as it once did. */
+    @Test
+    void showingABufferDistinguishesAnAbsentDaemonFromAMissingName(@TempDir Path directory) throws IOException {
+        try (Server server = Server.using(config(directory), new RefusingTransport("no buffer never-set"))) {
+            assertThrows(ObjectDoesNotExistException.class, () -> server.buffers().show("never-set"));
+        }
+        try (Server server = Server.using(config(directory), new RefusingTransport("no server running"))) {
+            assertThrows(ServerNotRunningException.class, () -> server.buffers().show("never-set"));
         }
     }
 

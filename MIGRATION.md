@@ -15,9 +15,10 @@ Replace the old imports, catch types and calls, then recompile:
 | `UnsupportedTmuxVersion` | `UnsupportedTmuxVersionException` |
 | `server.raiseIfDead()` | `server.requireAlive()` |
 
-Both exceptions still extend `LibTmuxException`. `requireAlive()` still throws
-when tmux refuses the probe and preserves transport failures. The old names
-have no forwarding aliases.
+Both exceptions still extend `LibTmuxException`. `requireAlive()` now throws
+`ServerNotRunningException`, a `LibTmuxException` subtype, when no daemon
+answers; it still preserves transport failures. The old names have no
+forwarding aliases.
 
 ```java
 server.requireAlive();
@@ -26,15 +27,23 @@ server.isAlive();                      // → true
 
 ### Failed live reads
 
-Live listings, finders and snapshot capture throw when a read fails, including
-an absent daemon. A missing object in a successful capture still produces an
-empty `Optional`. Catch `LibTmuxException` when failed reads require recovery;
-do not treat them as an empty server. `server.cmd(...)` still returns a
-completed nonzero exit as result data, while `server.run(...)` throws.
+Live listings, finders and snapshot capture throw when a read fails. An
+absent daemon throws `ServerNotRunningException`; any other failed capture
+throws `LibTmuxException`. A missing object in a successful capture still
+produces an empty `Optional`. Catch `ServerNotRunningException` to start a
+daemon on demand, and `LibTmuxException` for any other failed read; do not
+treat either as an empty server. `server.cmd(...)` still returns a completed
+nonzero exit as result data, while `server.run(...)` throws.
 
-A finder requires a running daemon. `server.newSession("build")` can start one;
-[`BuildAWorkspace`](examples/src/main/java/io/github/libtmux/examples/BuildAWorkspace.java)
-shows how to handle both an existing session and an endpoint with no daemon.
+`Server.hasSession` and `Buffers.show` follow the same rule: both now throw
+`ServerNotRunningException` for an absent daemon instead of answering as
+though nothing matched.
+
+A finder requires a running daemon. `server.newSession("build")` can start
+one; [`BuildAWorkspace`][workspace-example] shows how to handle both an
+existing session and an endpoint with no daemon.
+
+[workspace-example]: examples/src/main/java/io/github/libtmux/examples/BuildAWorkspace.java
 
 ### Discarded replacement handles
 

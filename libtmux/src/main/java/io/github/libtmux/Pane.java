@@ -844,7 +844,8 @@ public final class Pane {
      *
      * <p>This handle remains unchanged. Use the returned handle for subsequent state reads.
      *
-     * @throws ObjectDoesNotExistException if the pane is gone
+     * @throws ObjectDoesNotExistException if the pane is gone from a server that still answers
+     * @throws ServerNotRunningException if no daemon is running
      */
     @CheckReturnValue
     public Pane refresh() {

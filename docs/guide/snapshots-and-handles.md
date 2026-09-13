@@ -27,12 +27,13 @@ inside the server, the rows cannot come from two of them, and a server replaced
 under the capture is refused rather than half-read. What that costs is measured in
 [`docs/benchmarks/operations.md`](../benchmarks/operations.md).
 
-`refresh()` is how to look again. Every live listing, finder and snapshot capture
-throws `LibTmuxException` when capture fails, including an absent daemon. Empty
-collections and optionals mean a successful capture contained no matches. This
-changes the earlier alpha behavior that hid failed reads behind empty results.
-Use `isAlive()` when you only need to probe whether a daemon answers; transport
-failures still throw.
+`refresh()` is how to look again. Every live listing, finder and snapshot
+capture throws when it fails. An absent daemon throws
+`ServerNotRunningException`; any other failed capture throws
+`LibTmuxException`. Empty collections and optionals mean a successful capture
+contained no matches. This changes the earlier alpha behavior that hid failed
+reads behind empty results. Use `isAlive()` when you only need to probe
+whether a daemon answers; transport failures still throw.
 
 ## Identity is what a user cannot change
 
@@ -65,9 +66,11 @@ var unused = session.rename("effect-only");
 
 `Client.refresh()` returns an `Optional<Client>` because a client can detach
 while its daemon stays reachable. Empty means that client is gone; a failed
-capture still throws. The other handles' `refresh()` methods return a replacement
-or throw `ObjectDoesNotExistException` when their target is gone. None changes
-the previous handle.
+capture still throws. The other handles' `refresh()` methods return a
+replacement or throw `ObjectDoesNotExistException` when their target is gone
+from a server that still answers. An absent daemon throws
+`ServerNotRunningException` there too, like every other read. None changes the
+previous handle.
 
 `Window.id()` compares the underlying window across links.
 
