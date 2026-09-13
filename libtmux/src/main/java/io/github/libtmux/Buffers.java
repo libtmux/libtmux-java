@@ -24,14 +24,15 @@ public final class Buffers {
         this.server = server;
     }
 
-    /** Every buffer the server holds, in tmux's order. */
+    /**
+     * Captures every buffer the server holds, in tmux's order.
+     *
+     * @return an immutable list, empty if the live server holds no buffers
+     * @throws LibTmuxException if the listing fails, including when no daemon is running
+     */
     public List<BufferInfo> list() {
         List<BufferInfo> buffers = new ArrayList<>();
-        var result = server.cmd(List.of("list-buffers", "-F", LISTING.template()));
-        if (!result.succeeded()) {
-            // An empty stack is not a failure worth raising for, and tmux says so with an error.
-            return List.of();
-        }
+        var result = server.run(List.of("list-buffers", "-F", LISTING.template()));
         for (String row : result.stdout()) {
             List<String> fields = LISTING.split(row);
             buffers.add(new BufferInfo(fields.get(0), Integer.parseInt(fields.get(1))));

@@ -11,7 +11,6 @@ import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -122,8 +121,7 @@ public final class Server implements AutoCloseable {
     /**
      * Whether the server is running and answering.
      *
-     * <p>The explicit primitive behind the lenient list accessors: those return an empty list for
-     * both "no sessions" and "no server", and this is how a caller tells the two apart.
+     * <p>Returns false when tmux refuses the probe. Transport failures still throw.
      */
     public boolean isAlive() {
         return isAlive(config.defaultTimeout());
@@ -578,8 +576,8 @@ public final class Server implements AutoCloseable {
      * <p>One server-wide listing per kind of object, so ordering and membership stay tmux's decision
      * rather than being re-derived from another listing's rows.
      *
-     * <p>Strict, unlike the lenient list accessors: a capture that failed raises instead of
-     * returning an apparently valid empty graph, because a caller cannot tell those apart.
+     * <p>A failed read throws, including when no daemon is running. An empty graph means a live
+     * server successfully reported no sessions.
      *
      * @throws LibTmuxException if a listing fails or the listings cannot form one valid snapshot
      */
@@ -599,28 +597,38 @@ public final class Server implements AutoCloseable {
     /**
      * Every session, captured now.
      *
-     * <p>Lenient, by the libtmux contract these accessors have always had: a tmux failure produces
-     * an empty list rather than raising, because "no sessions" is the ordinary answer and callers
-     * mostly cannot act on the difference. Those that can use {@link #snapshot()}, which is strict.
+     * <p>Returns an immutable list in tmux order. Empty means a live server reported no sessions.
+     *
+     * @throws LibTmuxException if capture fails, including when no daemon is running
      */
     public List<Session> sessions() {
-        ServerSnapshot captured = lenient();
+        ServerSnapshot captured = snapshot();
         return captured.sessions().stream()
                 .map(session -> new Session(this, captured, session))
                 .toList();
     }
 
-    /** Every winlink on the server, captured now, including a linked window once per session. */
+    /**
+     * Captures every winlink, preserving each session and index placement.
+     *
+     * @return an immutable list in tmux order
+     * @throws LibTmuxException if capture fails, including when no daemon is running
+     */
     public List<Window> windows() {
-        ServerSnapshot captured = lenient();
+        ServerSnapshot captured = snapshot();
         return captured.windows().stream()
                 .map(window -> new Window(this, captured, window))
                 .toList();
     }
 
-    /** Every pane on the server, captured now. */
+    /**
+     * Captures every pane on the server.
+     *
+     * @return an immutable list in tmux order
+     * @throws LibTmuxException if capture fails, including when no daemon is running
+     */
     public List<Pane> panes() {
-        ServerSnapshot captured = lenient();
+        ServerSnapshot captured = snapshot();
         return captured.panes().stream()
                 .map(pane -> new Pane(this, captured, pane))
                 .toList();
@@ -633,36 +641,52 @@ public final class Server implements AutoCloseable {
      * matched exactly; tmux would otherwise take a prefix, so asking for {@code build} could answer
      * with {@code build-cache}.
      *
-     * <p>Empty rather than raising, because whether a missing session is a bug belongs to the
-     * caller: {@code orElseThrow} says it is, and {@code orElseGet} says it is not.
+     * <p>Empty means a successful capture did not contain that name. Capture failures throw.
+     *
+     * @throws LibTmuxException if capture fails, including when no daemon is running
      */
     public Optional<Session> session(String name) {
         Objects.requireNonNull(name, "name");
-        ServerSnapshot captured = lenient();
+        ServerSnapshot captured = snapshot();
         return captured.session(name).map(session -> new Session(this, captured, session));
     }
 
-    /** The session with this id, captured now. */
+    /**
+     * The session with this id, captured now.
+     *
+     * @return empty only when a successful capture contains no match
+     * @throws LibTmuxException if capture fails, including when no daemon is running
+     */
     public Optional<Session> session(SessionId id) {
         Objects.requireNonNull(id, "id");
-        ServerSnapshot captured = lenient();
+        ServerSnapshot captured = snapshot();
         return captured.session(id).map(session -> new Session(this, captured, session));
     }
 
-    /** The pane with this id, captured now. */
+    /**
+     * The pane with this id, captured now.
+     *
+     * @return empty only when a successful capture contains no match
+     * @throws LibTmuxException if capture fails, including when no daemon is running
+     */
     public Optional<Pane> pane(PaneId id) {
         Objects.requireNonNull(id, "id");
-        ServerSnapshot captured = lenient();
+        ServerSnapshot captured = snapshot();
         return captured.panes().stream()
                 .filter(pane -> pane.id().equals(id))
                 .findFirst()
                 .map(pane -> new Pane(this, captured, pane));
     }
 
-    /** The winlink at this exact position, captured now. */
+    /**
+     * The winlink at this exact position, captured now.
+     *
+     * @return empty only when a successful capture contains no match
+     * @throws LibTmuxException if capture fails, including when no daemon is running
+     */
     public Optional<Window> window(WindowContext context) {
         Objects.requireNonNull(context, "context");
-        ServerSnapshot captured = lenient();
+        ServerSnapshot captured = snapshot();
         return captured.window(context).map(window -> new Window(this, captured, window));
     }
 
@@ -674,25 +698,38 @@ public final class Server implements AutoCloseable {
      * flag. A finder that answered with the first would quietly act on whichever link tmux happened
      * to list first — so this hands back all of them and lets the caller say which it meant, or use
      * {@link #window(WindowContext)} to name one exactly.
+     *
+     * @return an immutable list in tmux order, empty if the window was not found
+     * @throws LibTmuxException if capture fails, including when no daemon is running
      */
     public List<Window> windows(WindowId id) {
         Objects.requireNonNull(id, "id");
-        ServerSnapshot captured = lenient();
+        ServerSnapshot captured = snapshot();
         return captured.windows().stream()
                 .filter(window -> window.context().window().equals(id))
                 .map(window -> new Window(this, captured, window))
                 .toList();
     }
 
-    /** Every attached client, captured now. */
+    /**
+     * Captures every attached client.
+     *
+     * @return an immutable list in tmux order
+     * @throws LibTmuxException if capture fails, including when no daemon is running
+     */
     public List<Client> clients() {
-        ServerSnapshot captured = lenient();
+        ServerSnapshot captured = snapshot();
         return captured.clients().stream()
                 .map(client -> new Client(this, captured, client))
                 .toList();
     }
 
-    /** Every session a client is attached to, captured now. */
+    /**
+     * Captures every session a client is attached to.
+     *
+     * @return an immutable list in tmux order
+     * @throws LibTmuxException if capture fails, including when no daemon is running
+     */
     public List<Session> attachedSessions() {
         return sessions().stream().filter(Session::attached).toList();
     }
@@ -813,14 +850,6 @@ public final class Server implements AutoCloseable {
             throw new ObjectDoesNotExist("the tmux server this handle belonged to has ended");
         }
         return fresh;
-    }
-
-    private ServerSnapshot lenient() {
-        try {
-            return snapshot();
-        } catch (LibTmuxException e) {
-            return ServerSnapshot.of(Instant.now(), List.of(), List.of(), List.of(), List.of());
-        }
     }
 
     /** A builder holding every configuration and ownership choice this server made. */
