@@ -9,7 +9,7 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.SplitSpec;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.io.IOException;
@@ -178,8 +178,8 @@ final class SplitIntegrationTest {
             assertEquals(2, created.window().panes().size(), "the pane exists");
             assertEquals(0, created.pid(), "and nothing is running in it");
         } else {
-            UnsupportedTmuxVersion refused =
-                    assertThrows(UnsupportedTmuxVersion.class, () -> original.split(s -> s.empty()));
+            UnsupportedTmuxVersionException refused =
+                    assertThrows(UnsupportedTmuxVersionException.class, () -> original.split(s -> s.empty()));
 
             assertTrue(String.valueOf(refused.getMessage()).contains("an empty pane"));
             assertEquals(1, original.window().panes().size(), "and nothing was created");
@@ -197,7 +197,7 @@ final class SplitIntegrationTest {
                     Await.until(() -> created.window().panes().size() == 2),
                     "the pane closed even though it was asked to stay");
         } else {
-            assertThrows(UnsupportedTmuxVersion.class, () -> original.split(s -> s.keepOnExit()));
+            assertThrows(UnsupportedTmuxVersionException.class, () -> original.split(s -> s.keepOnExit()));
         }
     }
 
@@ -213,7 +213,7 @@ final class SplitIntegrationTest {
                     .get(0)
                     .contains("fg=red"));
         } else {
-            assertThrows(UnsupportedTmuxVersion.class, () -> original.split(s -> s.style("fg=red")));
+            assertThrows(UnsupportedTmuxVersionException.class, () -> original.split(s -> s.style("fg=red")));
         }
     }
 
@@ -233,7 +233,7 @@ final class SplitIntegrationTest {
             return;
         }
 
-        assertThrows(UnsupportedTmuxVersion.class, () -> original.split(s -> s.empty()));
+        assertThrows(UnsupportedTmuxVersionException.class, () -> original.split(s -> s.empty()));
 
         assertTrue(server.isAlive(), "a refusal is not a reason to lose the server");
         assertEquals(before, original.window().panes().size(), "no pane was created");

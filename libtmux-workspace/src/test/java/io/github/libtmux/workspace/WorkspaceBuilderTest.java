@@ -10,7 +10,7 @@ import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
-import io.github.libtmux.UnsupportedTmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -346,7 +346,7 @@ final class WorkspaceBuilderTest {
                         "one", Optional.of("main-horizontal-mirrored"), List.of(new PaneSpec(List.of())))));
 
         try (Server old = Server.using(testConfig(), transport)) {
-            assertThrows(UnsupportedTmuxVersion.class, () -> WorkspaceBuilder.build(old, workspace));
+            assertThrows(UnsupportedTmuxVersionException.class, () -> WorkspaceBuilder.build(old, workspace));
         }
         assertFalse(effected.get(), "version preflight must happen before new-session");
     }

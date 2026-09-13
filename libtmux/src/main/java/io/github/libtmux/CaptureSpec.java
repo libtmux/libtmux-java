@@ -64,7 +64,7 @@ public final class CaptureSpec {
     /**
      * The command that reads the pane.
      *
-     * @throws UnsupportedTmuxVersion if the spec asks for something {@code running} does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something {@code running} does not have
      */
     List<String> argv(String target, TmuxVersion running) {
         require(trimTrailing, TRIM_SINCE, running, "trimming trailing space");
@@ -106,7 +106,7 @@ public final class CaptureSpec {
 
     private static void require(boolean wanted, TmuxVersion since, TmuxVersion running, String feature) {
         if (wanted && !running.atLeast(since)) {
-            throw new UnsupportedTmuxVersion(feature, since, running);
+            throw new UnsupportedTmuxVersionException(feature, since, running);
         }
     }
 

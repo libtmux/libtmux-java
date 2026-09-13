@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.ObjectDoesNotExist;
+import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Server;
 import io.github.libtmux.WakeReason;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -357,7 +357,8 @@ final class ToolsAgainstTmuxTest {
 
     @Test
     void aTargetThatIsNotThereNamesTheToolThatFindsOne(Server server) {
-        ObjectDoesNotExist missing = assertThrows(ObjectDoesNotExist.class, () -> Targets.window(server, "@999"));
+        ObjectDoesNotExistException missing =
+                assertThrows(ObjectDoesNotExistException.class, () -> Targets.window(server, "@999"));
 
         assertTrue(String.valueOf(missing.getMessage()).contains("list_windows"), missing.getMessage());
     }

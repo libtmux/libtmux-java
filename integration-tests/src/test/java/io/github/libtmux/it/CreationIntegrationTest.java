@@ -7,13 +7,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Dimensions;
-import io.github.libtmux.ObjectDoesNotExist;
+import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.SessionSpec;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowSpec;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -113,7 +113,7 @@ final class CreationIntegrationTest {
         other.select();
 
         assertAll(
-                () -> assertThrows(ObjectDoesNotExist.class, stale::select),
+                () -> assertThrows(ObjectDoesNotExistException.class, stale::select),
                 () -> assertEquals(
                         other.id(),
                         session.refresh().activeWindow().orElseThrow().id(),
@@ -141,7 +141,7 @@ final class CreationIntegrationTest {
                     "the window did not start where it was told");
         } else {
             assertThrows(
-                    UnsupportedTmuxVersion.class,
+                    UnsupportedTmuxVersionException.class,
                     () -> session.newWindow(w -> w.named("elsewhere").in(real)));
             assertTrue(
                     session.refresh().windows().stream().noneMatch(window -> "elsewhere".equals(window.name())),
@@ -186,7 +186,7 @@ final class CreationIntegrationTest {
             assertEquals(wanted, sized.windows().get(0).size());
         } else {
             assertThrows(
-                    UnsupportedTmuxVersion.class,
+                    UnsupportedTmuxVersionException.class,
                     () -> server.newSession(s -> s.named("sized").sized(wanted)));
             assertTrue(
                     server.sessions().stream().noneMatch(session -> "sized".equals(session.name())),

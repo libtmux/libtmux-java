@@ -130,7 +130,7 @@ public final class Window {
      *
      * @param configure receives a builder holding tmux's defaults
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Pane split(Consumer<SplitSpec.Builder> configure) {
         SplitSpec.Builder builder = SplitSpec.builder();
@@ -142,7 +142,7 @@ public final class Window {
      * Splits this window's active pane according to a spec, which may be reused across windows.
      *
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Pane split(SplitSpec spec) {
         return Pane.created(server, snapshot, spec.argv(target(), Pane.createdFormat(), server.version(snapshot)));
@@ -257,7 +257,7 @@ public final class Window {
     /**
      * Rearranges this window's panes into one of tmux's built-in layouts.
      *
-     * @throws UnsupportedTmuxVersion if the layout arrived after the release this server runs
+     * @throws UnsupportedTmuxVersionException if the layout arrived after the release this server runs
      */
     public void selectLayout(Layout layout) {
         Objects.requireNonNull(layout, "layout");
@@ -312,13 +312,13 @@ public final class Window {
     /**
      * Takes a new capture and returns this winlink as it is now.
      *
-     * @throws ObjectDoesNotExist if this window is no longer linked here
+     * @throws ObjectDoesNotExistException if this window is no longer linked here
      */
     public Window refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.window(state.context())
                 .map(window -> new Window(server, fresh, window))
-                .orElseThrow(() -> new ObjectDoesNotExist("window " + id() + " no longer exists here"));
+                .orElseThrow(() -> new ObjectDoesNotExistException("window " + id() + " no longer exists here"));
     }
 
     /** Addresses the underlying window, which every link to it shares. */

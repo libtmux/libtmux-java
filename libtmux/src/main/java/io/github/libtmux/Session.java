@@ -155,7 +155,7 @@ public final class Session {
      *
      * @param configure receives a builder holding tmux's defaults
      * @return a handle on the created window, from a fresh capture
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Window newWindow(Consumer<WindowSpec.Builder> configure) {
         WindowSpec.Builder builder = WindowSpec.builder();
@@ -167,7 +167,7 @@ public final class Session {
      * Creates a window in this session according to a spec, which may be reused across sessions.
      *
      * @return a handle on the created window, from a fresh capture
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Window newWindow(WindowSpec spec) {
         List<String> reported = server.run(
@@ -182,7 +182,8 @@ public final class Session {
                             .windows().stream()
                                     .filter(window -> wanted.equals(window.name()))
                                     .findFirst())
-                    .orElseThrow(() -> new ObjectDoesNotExist("tmux reported no window and none carries that name"));
+                    .orElseThrow(() ->
+                            new ObjectDoesNotExistException("tmux reported no window and none carries that name"));
         }
         List<String> fields = CREATED.split(reported.get(0));
         WindowContext created = new WindowContext(
@@ -191,7 +192,7 @@ public final class Session {
                 new WindowId(fields.get(1)));
         return fresh.window(created)
                 .map(window -> new Window(server, fresh, window))
-                .orElseThrow(() -> new ObjectDoesNotExist("the window just created is already gone"));
+                .orElseThrow(() -> new ObjectDoesNotExistException("the window just created is already gone"));
     }
 
     /**
@@ -226,13 +227,13 @@ public final class Session {
     /**
      * Takes a new capture and returns this session as it is now.
      *
-     * @throws ObjectDoesNotExist if the session is gone
+     * @throws ObjectDoesNotExistException if the session is gone
      */
     public Session refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.session(state.id())
                 .map(session -> new Session(server, fresh, session))
-                .orElseThrow(() -> new ObjectDoesNotExist("session " + state.id() + " no longer exists"));
+                .orElseThrow(() -> new ObjectDoesNotExistException("session " + state.id() + " no longer exists"));
     }
 
     @Override

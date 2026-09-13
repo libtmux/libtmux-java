@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Layout;
 import io.github.libtmux.Server;
-import io.github.libtmux.UnsupportedTmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
 import org.junit.jupiter.api.Test;
@@ -48,7 +48,8 @@ final class LayoutIntegrationTest {
             window.selectLayout(Layout.MAIN_VERTICAL_MIRRORED);
             assertTrue(server.isAlive());
         } else {
-            assertThrows(UnsupportedTmuxVersion.class, () -> window.selectLayout(Layout.MAIN_VERTICAL_MIRRORED));
+            assertThrows(
+                    UnsupportedTmuxVersionException.class, () -> window.selectLayout(Layout.MAIN_VERTICAL_MIRRORED));
             assertTrue(server.isAlive(), "a refusal must not have reached tmux");
         }
     }

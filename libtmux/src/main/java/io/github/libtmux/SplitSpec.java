@@ -147,7 +147,7 @@ public final class SplitSpec {
      * @param target what to split, as a tmux target
      * @param format the row format the caller will read the result back with
      * @param running the version of the server about to run this
-     * @throws UnsupportedTmuxVersion if the spec asks for something {@code running} does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something {@code running} does not have
      */
     List<String> argv(String target, String format, TmuxVersion running) {
         requireVersion(running);
@@ -251,7 +251,7 @@ public final class SplitSpec {
             wanted = "pane styling on split";
         }
         if (wanted != null) {
-            throw new UnsupportedTmuxVersion(wanted, PANE_EXTRAS_SINCE, running);
+            throw new UnsupportedTmuxVersionException(wanted, PANE_EXTRAS_SINCE, running);
         }
     }
 

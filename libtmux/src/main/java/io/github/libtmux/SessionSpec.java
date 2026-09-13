@@ -122,13 +122,13 @@ public final class SessionSpec {
      *
      * @param format the row format the caller will read the result back with
      * @param running what the server about to run this is, asked only if it matters
-     * @throws UnsupportedTmuxVersion if the spec asks for something {@code running} does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something {@code running} does not have
      */
     List<String> argv(String format, Supplier<TmuxVersion> running) {
         if (size != null) {
             TmuxVersion version = running.get();
             if (!version.atLeast(SIZE_SINCE)) {
-                throw new UnsupportedTmuxVersion("a size for a detached session", SIZE_SINCE, version);
+                throw new UnsupportedTmuxVersionException("a size for a detached session", SIZE_SINCE, version);
             }
         }
         List<String> argv = new ArrayList<>(24);

@@ -102,8 +102,8 @@ final class CreationSpecTest {
     void aStartDirectoryForAWindowIsRefusedOnTheReleaseThatIgnoresIt() {
         WindowSpec spec = WindowSpec.builder().in(Path.of("/srv")).build();
 
-        UnsupportedTmuxVersion refused =
-                assertThrows(UnsupportedTmuxVersion.class, () -> spec.argv("$1", FORMAT, V32A));
+        UnsupportedTmuxVersionException refused =
+                assertThrows(UnsupportedTmuxVersionException.class, () -> spec.argv("$1", FORMAT, V32A));
 
         assertEquals(
                 "a start directory for a new window requires tmux 3.3a, but this server runs 3.2a",
@@ -139,8 +139,8 @@ final class CreationSpecTest {
     void aSizeIsRefusedOnTheReleaseThatIgnoresIt() {
         SessionSpec spec = SessionSpec.builder().sized(new Dimensions(120, 40)).build();
 
-        UnsupportedTmuxVersion refused =
-                assertThrows(UnsupportedTmuxVersion.class, () -> spec.argv(FORMAT, () -> V32A));
+        UnsupportedTmuxVersionException refused =
+                assertThrows(UnsupportedTmuxVersionException.class, () -> spec.argv(FORMAT, () -> V32A));
 
         assertEquals(
                 "a size for a detached session requires tmux 3.3a, but this server runs 3.2a", refused.getMessage());

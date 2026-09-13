@@ -8,7 +8,7 @@ import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.junit5.TmuxExtension;
 import org.junit.jupiter.api.Test;
@@ -118,12 +118,13 @@ final class ServerControlIntegrationTest {
             server.clearPromptHistory();
             assertTrue(server.isAlive(), "clearing it is not a reason to lose the server");
         } else {
-            UnsupportedTmuxVersion refused = assertThrows(UnsupportedTmuxVersion.class, server::promptHistory);
+            UnsupportedTmuxVersionException refused =
+                    assertThrows(UnsupportedTmuxVersionException.class, server::promptHistory);
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("3.3a"),
                     "the refusal names the release that has it: " + refused.getMessage());
-            assertThrows(UnsupportedTmuxVersion.class, server::clearPromptHistory);
+            assertThrows(UnsupportedTmuxVersionException.class, server::clearPromptHistory);
         }
     }
 

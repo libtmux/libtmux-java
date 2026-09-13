@@ -166,29 +166,29 @@ final class SplitSpecTest {
     @Test
     void theThreeSevenOptionsAreRefusedBeforeTmuxIsAsked() {
         assertThrows(
-                UnsupportedTmuxVersion.class,
+                UnsupportedTmuxVersionException.class,
                 () -> argv(SplitSpec.builder().empty().build(), V36));
         assertThrows(
-                UnsupportedTmuxVersion.class,
+                UnsupportedTmuxVersionException.class,
                 () -> argv(SplitSpec.builder().keepOnExit().build(), V36));
         assertThrows(
-                UnsupportedTmuxVersion.class,
+                UnsupportedTmuxVersionException.class,
                 () -> argv(SplitSpec.builder().keepOnExit("done").build(), V36));
         assertThrows(
-                UnsupportedTmuxVersion.class,
+                UnsupportedTmuxVersionException.class,
                 () -> argv(SplitSpec.builder().style("fg=red").build(), V36));
         assertThrows(
-                UnsupportedTmuxVersion.class,
+                UnsupportedTmuxVersionException.class,
                 () -> argv(SplitSpec.builder().activeBorderStyle("fg=red").build(), V36));
         assertThrows(
-                UnsupportedTmuxVersion.class,
+                UnsupportedTmuxVersionException.class,
                 () -> argv(SplitSpec.builder().inactiveBorderStyle("fg=red").build(), V36));
     }
 
     @Test
     void theRefusalNamesTheFeatureAndBothVersions() {
-        UnsupportedTmuxVersion refused = assertThrows(
-                UnsupportedTmuxVersion.class,
+        UnsupportedTmuxVersionException refused = assertThrows(
+                UnsupportedTmuxVersionException.class,
                 () -> argv(SplitSpec.builder().empty().build(), new TmuxVersion(3, 2, "a")));
 
         assertEquals("an empty pane requires tmux 3.7, but this server runs 3.2a", refused.getMessage());

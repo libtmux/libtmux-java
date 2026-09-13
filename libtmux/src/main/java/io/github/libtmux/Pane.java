@@ -354,7 +354,7 @@ public final class Pane {
      * @param settled receives this pane as it is now
      * @param timeout how long to keep looking
      * @return why the wait ended
-     * @throws ObjectDoesNotExist if this pane is killed while its server stays up, which is not a
+     * @throws ObjectDoesNotExistException if this pane is killed while its server stays up, which is not a
      *     timeout
      * @throws InterruptedException if the waiting thread is interrupted
      */
@@ -446,7 +446,7 @@ public final class Pane {
      * }</pre>
      *
      * @param configure receives a builder that reads the visible area and nothing else
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public List<String> capture(Consumer<CaptureSpec.Builder> configure) {
         CaptureSpec.Builder builder = CaptureSpec.builder();
@@ -457,7 +457,7 @@ public final class Pane {
     /**
      * Reads part of this pane according to a spec, which may be reused across panes.
      *
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public List<String> capture(CaptureSpec spec) {
         return server.run(snapshot, spec.argv(state.id().value(), server.version(snapshot)))
@@ -646,7 +646,7 @@ public final class Pane {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.window(created)
                 .map(window -> new Window(server, fresh, window))
-                .orElseThrow(() -> new ObjectDoesNotExist("the window just broken out is already gone"));
+                .orElseThrow(() -> new ObjectDoesNotExistException("the window just broken out is already gone"));
     }
 
     /**
@@ -668,7 +668,7 @@ public final class Pane {
      *
      * @param configure receives a builder holding tmux's defaults
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Pane split(Consumer<SplitSpec.Builder> configure) {
         SplitSpec.Builder builder = SplitSpec.builder();
@@ -680,7 +680,7 @@ public final class Pane {
      * Splits this pane according to a spec, which may be reused across panes.
      *
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Pane split(SplitSpec spec) {
         return created(server, snapshot, spec.argv(state.id().value(), CREATED.template(), server.version(snapshot)));
@@ -704,7 +704,7 @@ public final class Pane {
                 .filter(pane -> pane.id().equals(id))
                 .findFirst()
                 .map(pane -> new Pane(server, fresh, pane))
-                .orElseThrow(() -> new ObjectDoesNotExist("the pane just created is already gone"));
+                .orElseThrow(() -> new ObjectDoesNotExistException("the pane just created is already gone"));
     }
 
     /** The format a creating command reports its new pane through. */
@@ -735,7 +735,7 @@ public final class Pane {
      *
      * @throws IllegalArgumentException if the text contains NUL, which a terminal cannot receive and
      *     {@link #send} refuses too
-     * @throws UnsupportedTmuxVersion before tmux 3.4, where deleting the buffer left by a failed
+     * @throws UnsupportedTmuxVersionException before tmux 3.4, where deleting the buffer left by a failed
      *     paste can remove one this did not create
      */
     public void paste(String text) {
@@ -745,7 +745,7 @@ public final class Pane {
         }
         TmuxVersion running = server.version(snapshot);
         if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-            throw new UnsupportedTmuxVersion("pasting text", Buffers.EXACT_NAMED_DELETE, running);
+            throw new UnsupportedTmuxVersionException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
         }
         String buffer = "libtmux-paste-" + UUID.randomUUID();
         try {
@@ -788,7 +788,7 @@ public final class Pane {
         }
         TmuxVersion running = server.version(snapshot);
         if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-            throw new UnsupportedTmuxVersion("pasting text", Buffers.EXACT_NAMED_DELETE, running);
+            throw new UnsupportedTmuxVersionException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
         }
         String buffer = "libtmux-paste-" + UUID.randomUUID();
         try {
@@ -838,7 +838,7 @@ public final class Pane {
     /**
      * Takes a new capture and returns this pane as it is now.
      *
-     * @throws ObjectDoesNotExist if the pane is gone
+     * @throws ObjectDoesNotExistException if the pane is gone
      */
     public Pane refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
@@ -846,7 +846,7 @@ public final class Pane {
                 .filter(pane -> pane.id().equals(state.id()))
                 .findFirst()
                 .map(pane -> new Pane(server, fresh, pane))
-                .orElseThrow(() -> new ObjectDoesNotExist("pane " + state.id() + " no longer exists"));
+                .orElseThrow(() -> new ObjectDoesNotExistException("pane " + state.id() + " no longer exists"));
     }
 
     @Override
