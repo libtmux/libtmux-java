@@ -62,6 +62,13 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
   refuses `:` and `.` in a session or window name depending on the release; the
   reply named the requested string instead of the handle's actual name. (#17)
 
+### Documented
+
+- **The operation benchmark report says its milliseconds are noisy again.**
+  The caveat that dispatch count is the cost and wall clock is one machine's
+  rendering of it was dropped while rewording this report for strict reads.
+  Restored, and the table regenerated. (#17)
+
 ### Removed
 
 - **`ServerSnapshot.of` no longer has a pid-only overload.** Removing
