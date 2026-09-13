@@ -1,0 +1,1292 @@
+package io.github.libtmux.workspace.cli;
+
+import static java.util.stream.Collectors.toSet;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.libtmux.Server;
+import io.github.libtmux.ServerEndpoint;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashMap;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+
+final class ExecutionTest {
+    @TempDir
+    Path directory;
+
+    private record Result(int code, String out, String err) {}
+
+    private Result invoke(String... args) {
+        return invoke(java.util.Map.of(), args);
+    }
+
+    private Result invoke(java.util.Map<String, String> overrides, String... args) {
+        var environment = new HashMap<>(System.getenv());
+        environment.remove("TMUX");
+        environment.remove("TMUX_PANE");
+        environment.put("HOME", directory.toString());
+        environment.put("LIBTMUX_TEST_TMUX", System.getProperty("libtmux.tmux", "tmux"));
+        environment.putAll(overrides);
+        var out = new ByteArrayOutputStream();
+        var err = new ByteArrayOutputStream();
+        int code = Main.run(args, environment, directory, InputStream.nullInputStream(), out, err);
+        return new Result(code, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
+    }
+
+    private Server server(Path socket) {
+        return Server.builder()
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .binary(System.getProperty("libtmux.tmux", "tmux"))
+                .configFile(Path.of("/dev/null"))
+                .build();
+    }
+
+    private static void assertReportedObjects(Server server, JsonNode effects) {
+        assertEquals(
+                server.windows().stream().map(window -> window.id().value()).collect(toSet()),
+                effects.path("window_ids").valueStream().map(JsonNode::asText).collect(toSet()));
+        assertEquals(
+                server.panes().stream().map(pane -> pane.id().value()).collect(toSet()),
+                effects.path("pane_ids").valueStream().map(JsonNode::asText).collect(toSet()));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void pythonExtensionsUseTheSelectedServerAndReportObservedEffects(boolean append, boolean fail) throws Exception {
+        String python = System.getenv("TMUX_WORKSPACE_TEST_PYTHON");
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                python != null, "set TMUX_WORKSPACE_TEST_PYTHON for bridge fixtures");
+        Path source = directory.resolve("extension.yaml");
+        Path socket = directory.resolve("extension-socket");
+        Files.writeString(directory.resolve("extensions.py"), """
+                import sys
+                from tmuxp.workspace.builder.classic import ClassicWorkspaceBuilder
+                class Plugin:
+                    def before_workspace_builder(self, session): pass
+                    def on_window_create(self, window): window.set_option('@plugin', 'called')
+                    def on_pane_create(self, pane): pass
+                    def after_window_finished(self, window): pass
+                    def before_script(self, session): pass
+                class Builder(ClassicWorkspaceBuilder):
+                    def build(self, session=None, append=False):
+                        assert append == self.session_config['custom_append']
+                        super().build(session=session, append=append)
+                        print('extension-out\\x1b', flush=True)
+                        print('extension-err', file=sys.stderr, flush=True)
+                        if self.session_config['custom_fail']: raise RuntimeError('extension failed')
+                """);
+        Files.writeString(
+                source,
+                "session_name: extension\nworkspace_builder: extensions:Builder\n"
+                        + "workspace_builder_paths: [.]\nplugins: [extensions.Plugin]\n"
+                        + "custom_append: " + append + "\ncustom_fail: " + fail
+                        + "\nwindows:\n  - window_name: built\n    panes: [null, null]\n");
+        try (Server server = server(socket)) {
+            try {
+                var environment = new HashMap<String, String>();
+                environment.put("TMUX_WORKSPACE_PYTHON", java.util.Objects.requireNonNull(python));
+                String sessionId = "";
+                var arguments = new java.util.ArrayList<String>(java.util.List.of("load"));
+                if (append) {
+                    var original = server.newSession("borrowed");
+                    sessionId = original.id().value();
+                    environment.putAll(inherited(server, socket));
+                    var invoking = original.windows().getFirst();
+                    original.newWindow("keep");
+                    var other = server.newSession("other");
+                    Path move = directory.resolve("move.sh");
+                    Files.writeString(
+                            move,
+                            "exec '" + System.getProperty("libtmux.tmux", "tmux") + "' -S '" + socket
+                                    + "' move-window -s '" + invoking.id().value() + "' -t '"
+                                    + other.id().value() + ":4'\n");
+                    Path first = directory.resolve("first.yaml");
+                    Files.writeString(
+                            first, "session_name: native-first\nbefore_script: /bin/sh " + move + "\nwindows: [{}]\n");
+                    arguments.add(first.toString());
+                }
+                arguments.addAll(java.util.List.of(
+                        source.toString(),
+                        append ? "--append" : "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "-s",
+                        "~",
+                        "--json"));
+                Result result = invoke(environment, arguments.toArray(String[]::new));
+                assertEquals(fail ? 1 : 0, result.code(), result.toString());
+                JsonNode output = new ObjectMapper().readTree(result.out());
+                JsonNode effects = fail
+                        ? output.path("errors").path(0).path("effects")
+                        : output.path("results").path(append ? 1 : 0);
+                assertEquals("python", effects.path("engine").asText());
+                assertEquals("observed", effects.path("effects_scope").asText());
+                assertEquals(
+                        append ? "borrowed" : "~", effects.path("session_name").asText());
+                assertEquals(
+                        "extension-out\u001b\n",
+                        effects.path("script_output").path("stdout").asText());
+                assertTrue(effects.path("script_output").path("stderr").asText().contains("extension-err"));
+                assertEquals(
+                        append ? sessionId : server.sessions().getFirst().id().value(),
+                        effects.path("session_id").asText());
+                var window = server.windows().stream()
+                        .filter(value -> value.name().equals("built"))
+                        .findFirst()
+                        .orElseThrow();
+                assertEquals("called", window.options().get("@plugin").orElseThrow());
+                if (append) assertEquals(sessionId, window.session().id().value());
+                assertEquals(
+                        java.util.Set.of(window.id().value()),
+                        effects.path("window_ids")
+                                .valueStream()
+                                .map(JsonNode::asText)
+                                .collect(toSet()));
+                assertEquals(
+                        window.panes().stream().map(pane -> pane.id().value()).collect(toSet()),
+                        effects.path("pane_ids")
+                                .valueStream()
+                                .map(JsonNode::asText)
+                                .collect(toSet()));
+                assertTrue(server.isAlive(), "extension failure must not trigger native cleanup");
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void customBuilderWithoutWindowsKeepsExpansionAndObservedOwnership() throws Exception {
+        String python = System.getenv("TMUX_WORKSPACE_TEST_PYTHON");
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                python != null, "set TMUX_WORKSPACE_TEST_PYTHON for bridge fixtures");
+        Path source = directory.resolve("existing-extension.yaml");
+        Path socket = directory.resolve("existing-extension-socket");
+        Files.writeString(directory.resolve("existing_extension.py"), """
+                from pathlib import Path
+                class Builder:
+                    def __init__(self, session_config, server, plugins):
+                        assert session_config['start_directory'] == str(Path(__file__).parent)
+                        self.session = server.sessions.get(session_name=session_config['custom_session'])
+                        self.plugins = plugins
+                    def build(self, session=None, append=False): pass
+                """);
+        Files.writeString(source, """
+                session_name: requested
+                workspace_builder: existing_extension:Builder
+                workspace_builder_paths: [.]
+                start_directory: .
+                custom_session: existing
+                """);
+        try (Server server = server(socket)) {
+            try {
+                var existing = server.newSession("existing");
+                Result result = invoke(
+                        java.util.Map.of("TMUX_WORKSPACE_PYTHON", java.util.Objects.requireNonNull(python)),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "--json");
+                assertEquals(0, result.code(), result.toString());
+                JsonNode effects = new ObjectMapper()
+                        .readTree(result.out())
+                        .path("results")
+                        .path(0);
+                assertEquals(existing.id().value(), effects.path("session_id").asText());
+                assertFalse(effects.path("owned_session").asBoolean(), effects.toString());
+                assertTrue(effects.path("window_ids").isEmpty(), effects.toString());
+                assertTrue(effects.path("pane_ids").isEmpty(), effects.toString());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"--json", "--ndjson"})
+    void cancelledPythonExtensionsKeepObservedTopologyAndStopTheirChild(String mode) throws Exception {
+        String python = System.getenv("TMUX_WORKSPACE_TEST_PYTHON");
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                python != null, "set TMUX_WORKSPACE_TEST_PYTHON for bridge fixtures");
+        Path source = directory.resolve("cancel-extension.yaml");
+        Path socket = directory.resolve("cancel-extension-socket");
+        Path marker = directory.resolve("extension-pid");
+        Files.writeString(directory.resolve("cancel_extension.py"), """
+                import os, time
+                from pathlib import Path
+                from tmuxp.workspace.builder.classic import ClassicWorkspaceBuilder
+                class Builder(ClassicWorkspaceBuilder):
+                    def build(self, session=None, append=False):
+                        super().build(session=session, append=append)
+                        print('bridge-ready\\x1b', flush=True)
+                        Path(self.session_config['marker']).write_text(str(os.getpid()))
+                        time.sleep(30)
+                """);
+        Files.writeString(
+                source,
+                "session_name: cancelled-extension\nworkspace_builder: cancel_extension:Builder\n"
+                        + "workspace_builder_paths: [.]\nmarker: " + marker + "\nwindows: [{}]\n");
+        var result = new java.util.concurrent.atomic.AtomicReference<>(new Result(-1, "", ""));
+        Thread owner = Thread.ofPlatform()
+                .unstarted(() -> result.set(invoke(
+                        java.util.Map.of("TMUX_WORKSPACE_PYTHON", java.util.Objects.requireNonNull(python)),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        mode)));
+        try (Server server = server(socket)) {
+            try {
+                owner.start();
+                long deadline =
+                        System.nanoTime() + java.time.Duration.ofSeconds(5).toNanos();
+                while (!Files.exists(marker) && owner.isAlive() && System.nanoTime() < deadline) Thread.sleep(10);
+                assertTrue(Files.exists(marker), result.get().toString());
+                owner.interrupt();
+                owner.join(1_000);
+                assertFalse(owner.isAlive(), "Python bridge retained the cancelled invocation");
+                assertEquals(130, result.get().code(), result.get().toString());
+                String output = result.get().out();
+                assertFalse(output.contains("\u001b"), output);
+                JsonNode summary = mode.equals("--json")
+                        ? new ObjectMapper().readTree(output)
+                        : new ObjectMapper()
+                                .readTree(output.lines()
+                                        .reduce((before, after) -> after)
+                                        .orElseThrow());
+                assertEquals("partial", summary.path("status").asText(), output);
+                JsonNode failure = summary.path("errors").path(0);
+                assertEquals("interrupted", failure.path("code").asText());
+                assertTrue(failure.path("effects").path("effects_unknown").asBoolean());
+                assertReportedObjects(server, failure.path("effects"));
+                long pid = Long.parseLong(Files.readString(marker));
+                assertFalse(
+                        ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "Python child is still alive");
+            } finally {
+                owner.interrupt();
+                owner.join(2_000);
+                if (Files.exists(marker))
+                    ProcessHandle.of(Long.parseLong(Files.readString(marker)))
+                            .ifPresent(ProcessHandle::destroyForcibly);
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void loadPasses256ColorsToNativeTmuxInvocations() throws Exception {
+        Path source = directory.resolve("colors.yaml");
+        Path socket = directory.resolve("colors-socket");
+        Path trace = directory.resolve("colors-arguments");
+        Path wrapper = directory.resolve("tmux-colors");
+        Files.writeString(
+                wrapper,
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '" + trace + "'\nexec '"
+                        + System.getProperty("libtmux.tmux", "tmux") + "' \"$@\"\n");
+        assertTrue(wrapper.toFile().setExecutable(true));
+        Files.writeString(
+                source,
+                "session_name: colors\nplugins: []\nworkspace_builder: null\nworkspace_builder_paths: []\nwindows: [{}]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke(
+                        java.util.Map.of(
+                                "LIBTMUX_TEST_TMUX", wrapper.toString(), "TMUX_WORKSPACE_PYTHON", "/missing/python"),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-2",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(0, result.code(), result.toString());
+                assertTrue(Files.readString(trace).lines().anyMatch("-2"::equals), "256-color flag was not sent");
+                assertEquals(1, server.windows().size());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"always", "auto"})
+    void readinessWaitsUntilACommandConsumerDrawsItsPrompt(String policy) throws Exception {
+        Path source = directory.resolve("readiness.yaml");
+        Path socket = directory.resolve("readiness-socket");
+        Path consumer = directory.resolve("consumer.sh");
+        Path marker = directory.resolve("received");
+        Path shell = directory.resolve("zsh");
+        Files.createSymbolicLink(shell, Path.of("/bin/sh"));
+        Files.writeString(consumer, """
+                stty -echo
+                sleep 0.2
+                while IFS= read -r -t 0.02 line; do :; done
+                printf READY
+                IFS= read -r line
+                eval "$line"
+                exec sleep 30
+                """);
+        Files.writeString(
+                source,
+                "session_name: readiness\nworkspace_builder_options:\n  pane_readiness: " + policy + "\n"
+                        + "options:\n  default-shell: " + shell + "\n  default-command: /bin/bash " + consumer
+                        + "\nwindows:\n  - panes:\n      - 'printf received > " + marker + "'\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, result.code(), result.err());
+                long deadline =
+                        System.nanoTime() + java.time.Duration.ofSeconds(2).toNanos();
+                while (!Files.exists(marker) && System.nanoTime() < deadline) Thread.sleep(10);
+                assertTrue(Files.exists(marker), "command was discarded before the consumer became ready");
+                assertEquals("received", Files.readString(marker));
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void blankPanesAndExplicitLaunchersSkipReadinessQueries() throws Exception {
+        Path source = directory.resolve("blank.yaml");
+        Path socket = directory.resolve("blank-socket");
+        Path trace = directory.resolve("tmux-arguments");
+        Path wrapper = directory.resolve("tmux-wrapper");
+        String binary = System.getProperty("libtmux.tmux", "tmux");
+        Files.writeString(
+                wrapper, "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '" + trace + "'\nexec '" + binary + "' \"$@\"\n");
+        assertTrue(wrapper.toFile().setExecutable(true));
+        try (Server server = server(socket)) {
+            try {
+                for (String policy : java.util.List.of("always", "auto")) {
+                    Files.writeString(
+                            source,
+                            "session_name: blank-" + policy
+                                    + "\nworkspace_builder_options:\n  pane_readiness: " + policy
+                                    + "\noptions:\n  default-command: sleep 30\nwindows:\n  - panes: [null, blank]\n");
+                    Result result = invoke(
+                            java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString()),
+                            "load",
+                            source.toString(),
+                            "-d",
+                            "-S",
+                            socket.toString(),
+                            "-f",
+                            "/dev/null",
+                            "--json");
+                    assertEquals(0, result.code(), result.err());
+                }
+                Files.writeString(source, """
+                        session_name: never
+                        workspace_builder_options:
+                          pane_readiness: never
+                        options:
+                          default-command: /bin/cat
+                        windows:
+                          - panes: ['printed']
+                        """);
+                assertEquals(
+                        0,
+                        invoke(
+                                        java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString()),
+                                        "load",
+                                        source.toString(),
+                                        "-d",
+                                        "-S",
+                                        socket.toString(),
+                                        "-f",
+                                        "/dev/null",
+                                        "--json")
+                                .code());
+                Files.writeString(source, """
+                        session_name: launched
+                        workspace_builder_options:
+                          pane_readiness: always
+                        windows:
+                          - panes:
+                              - shell: /bin/cat
+                                shell_command: printed
+                        """);
+                Result result = invoke(
+                        java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString()),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(0, result.code(), result.err());
+                String commands = Files.readString(trace);
+                assertFalse(commands.contains("#{cursor_x}:#{cursor_y}"), commands);
+                assertFalse(commands.contains("default-shell"), commands);
+                var launched = server.sessions().stream()
+                        .filter(session -> session.name().equals("launched"))
+                        .findFirst()
+                        .orElseThrow();
+                assertEquals(
+                        "cat", launched.windows().getFirst().panes().getFirst().currentCommand());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void readinessTimeoutWarnsAndStillSendsCommands() throws Exception {
+        Path source = directory.resolve("timeout.yaml");
+        Path socket = directory.resolve("timeout-socket");
+        Files.writeString(source, """
+                session_name: timeout
+                workspace_builder_options:
+                  pane_readiness: always
+                options:
+                  default-command: /bin/cat
+                windows:
+                  - panes: ['after-timeout']
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--ndjson");
+                assertEquals(0, result.code(), result.err());
+                var records = result.out()
+                        .lines()
+                        .map(line -> {
+                            try {
+                                return new ObjectMapper().readTree(line);
+                            } catch (java.io.IOException error) {
+                                throw new AssertionError(error);
+                            }
+                        })
+                        .toList();
+                assertTrue(
+                        records.stream()
+                                .anyMatch(
+                                        record -> record.path("event").asText().equals("warning")
+                                                && record.path("code").asText().equals("pane_readiness_timeout")),
+                        result.out());
+                assertEquals("completed", records.getLast().path("event").asText());
+                assertTrue(
+                        String.join("\n", server.panes().getFirst().capture()).contains("after-timeout"));
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void paneEnterFalseLeavesTheCommandForManualExecution() throws Exception {
+        Path source = directory.resolve("typed.yaml");
+        Path socket = directory.resolve("typed-socket");
+        Path marker = directory.resolve("executed");
+        Files.writeString(
+                source,
+                "session_name: typed\noptions:\n  default-shell: /bin/sh\nwindows:\n  - panes:\n"
+                        + "      - enter: false\n        shell_command: printf executed > " + marker + "\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, result.code(), result.err());
+                var pane = server.panes().getFirst();
+                assertTrue(String.join("\n", pane.capture()).contains("printf executed"));
+                assertFalse(Files.exists(marker));
+                pane.sendKeys(java.util.List.of("Enter"));
+                long deadline =
+                        System.nanoTime() + java.time.Duration.ofSeconds(2).toNanos();
+                while (!Files.exists(marker) && System.nanoTime() < deadline) Thread.sleep(10);
+                assertEquals("executed", Files.readString(marker));
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void implicitWindowsReserveLaterExplicitIndexesAndTheMaximumIndex(boolean renumber) throws Exception {
+        Path source = directory.resolve("indexes.yaml");
+        Path socket = directory.resolve("indexes-socket");
+        Files.writeString(source, """
+                session_name: indexes
+                options:
+                  base-index: 3
+                  renumber-windows: %s
+                windows:
+                  - window_name: implicit
+                  - window_name: reserved
+                    window_index: 3
+                  - window_name: maximum
+                    window_index: 2147483647
+                """.formatted(renumber));
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, result.code(), result.err());
+                var indexes = server.windows().stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                io.github.libtmux.Window::name,
+                                window -> window.index().value()));
+                assertEquals(java.util.Map.of("implicit", 4, "reserved", 3, "maximum", Integer.MAX_VALUE), indexes);
+                assertEquals(
+                        renumber ? "on" : "off",
+                        server.sessions()
+                                .getFirst()
+                                .options()
+                                .get("renumber-windows")
+                                .orElseThrow());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void versionSensitiveLayoutsUseColdAndEmptyEndpointsWithoutCreatingSessions() throws Exception {
+        Path socket = directory.resolve("layout-version");
+        try (Server server = server(socket)) {
+            try {
+                String client = server.cmd("-V").stdout().getFirst().replace("tmux ", "");
+                boolean mirrors =
+                        io.github.libtmux.TmuxVersion.parse(client).atLeast(io.github.libtmux.TmuxVersion.parse("3.5"));
+                String layout = mirrors ? "main-horizontal-m" : "main-h";
+                String expected = mirrors ? "main-horizontal-mirrored" : "main-horizontal";
+                assertEquals(expected, io.github.libtmux.Layouts.require(layout, server, 1));
+                assertFalse(server.isAlive(), "cold version lookup must not create a daemon");
+                var keeper = server.newSession("keeper");
+                server.cmd("set-option", "-s", "exit-empty", "off");
+                String pid = server.expand("#{pid}");
+                keeper.kill();
+                assertEquals(expected, io.github.libtmux.Layouts.require(layout, server, 1));
+                assertEquals(pid, server.expand("#{pid}"));
+                assertTrue(server.sessions().isEmpty());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void layoutCorpusPreservesAnIndependentSession() throws Exception {
+        var mapper = new ObjectMapper();
+        try (var resource = ExecutionTest.class.getResourceAsStream("/layout-preflight.json")) {
+            assertNotNull(resource);
+            var cases = mapper.readTree(resource);
+            Path source = directory.resolve("layout.json");
+            Path socket = directory.resolve("layout-corpus");
+            try (Server server = server(socket)) {
+                try {
+                    var keeper = server.newSession("keeper");
+                    String pid = server.expand("#{pid}");
+                    var windows = keeper.windows().stream()
+                            .map(io.github.libtmux.Window::id)
+                            .toList();
+                    var panes = keeper.windows().getFirst().panes().stream()
+                            .map(io.github.libtmux.Pane::id)
+                            .toList();
+                    String version = server.version().atLeast(io.github.libtmux.TmuxVersion.parse("3.5"))
+                            ? "3.7c"
+                            : server.version().atLeast(io.github.libtmux.TmuxVersion.parse("3.3")) ? "3.3a" : "3.2a";
+                    for (var item : cases) {
+                        String id = item.path("id").asText();
+                        var workspace = mapper.createObjectNode().put("session_name", "layout-" + id);
+                        var window = workspace
+                                .putArray("windows")
+                                .addObject()
+                                .put("layout", item.path("layout").asText());
+                        var requested = window.putArray("panes");
+                        for (int pane = 0; pane < item.path("pane_count").asInt(); pane++) requested.addNull();
+                        Files.writeString(source, mapper.writeValueAsString(workspace));
+                        Result result = invoke("load", source.toString(), "-d", "-S", socket.toString(), "--json");
+                        assertEquals(
+                                item.path("expected_valid").path(version).asBoolean(),
+                                result.code() == 0,
+                                id + ": " + result);
+                        assertEquals(pid, server.expand("#{pid}"), id);
+                        assertEquals(
+                                windows,
+                                keeper.refresh().windows().stream()
+                                        .map(io.github.libtmux.Window::id)
+                                        .toList(),
+                                id);
+                        assertEquals(
+                                panes,
+                                keeper.windows().getFirst().panes().stream()
+                                        .map(io.github.libtmux.Pane::id)
+                                        .toList(),
+                                id);
+                        for (var session : server.sessions()) if (!session.id().equals(keeper.id())) session.kill();
+                    }
+                } finally {
+                    if (server.isAlive()) server.killServer();
+                }
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void allLayoutsAreCheckedBeforeScriptsOrBorrowedStateChange(boolean append) throws Exception {
+        Path first = directory.resolve("first.yaml");
+        Path second = directory.resolve("second.yaml");
+        Path socket = directory.resolve("layout-socket");
+        Path marker = directory.resolve("layout-script");
+        Files.writeString(
+                first,
+                "session_name: first\nbefore_script: /usr/bin/touch " + marker
+                        + "\noptions:\n  '@changed': yes\nwindows:\n  - window_name: first\n");
+        Files.writeString(
+                second, "session_name: second\nwindows:\n  - layout: 'b25d,80x24,0,0,0'\n    panes: [null, null]\n");
+        try (Server server = server(socket)) {
+            try {
+                var keeper = server.newSession("keeper");
+                String pid = server.expand("#{pid}");
+                var windows = server.windows().stream()
+                        .map(io.github.libtmux.Window::id)
+                        .toList();
+                var panes =
+                        server.panes().stream().map(io.github.libtmux.Pane::id).toList();
+                Result result = invoke(
+                        append ? inherited(server, socket) : java.util.Map.of(),
+                        "load",
+                        first.toString(),
+                        second.toString(),
+                        append ? "--append" : "-d",
+                        "-S",
+                        socket.toString(),
+                        "--json");
+                assertEquals(1, result.code(), result.toString());
+                assertFalse(Files.exists(marker), "no earlier input may run a script");
+                assertEquals(pid, server.expand("#{pid}"));
+                assertEquals(
+                        java.util.List.of(keeper.id()),
+                        server.sessions().stream()
+                                .map(io.github.libtmux.Session::id)
+                                .toList());
+                assertEquals(
+                        windows,
+                        server.windows().stream()
+                                .map(io.github.libtmux.Window::id)
+                                .toList());
+                assertEquals(
+                        panes,
+                        server.panes().stream().map(io.github.libtmux.Pane::id).toList());
+                assertFalse(keeper.options().all().containsKey("@changed"));
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void appendIndexConflictsFailBeforeScriptsOrOptionsRun() throws Exception {
+        Path source = directory.resolve("collision.yaml");
+        Path socket = directory.resolve("collision-socket");
+        Path marker = directory.resolve("script-ran");
+        Files.writeString(
+                source,
+                "session_name: ignored\nbefore_script: /usr/bin/touch " + marker
+                        + "\noptions:\n  '@changed': yes\nwindows:\n  - window_index: 0\n");
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("borrowed");
+                Result result = invoke(
+                        inherited(server, socket),
+                        "load",
+                        source.toString(),
+                        "--append",
+                        "-S",
+                        socket.toString(),
+                        "--json");
+                assertEquals(2, result.code(), result.toString());
+                assertFalse(Files.exists(marker));
+                assertFalse(server.sessions().getFirst().options().all().containsKey("@changed"));
+                assertEquals(1, server.windows().size());
+                assertEquals(
+                        "error",
+                        new ObjectMapper().readTree(result.out()).path("status").asText());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void appendReservesLaterFilesBeforeAnyMutation(boolean conflict) throws Exception {
+        Path first = directory.resolve("first.yaml");
+        Path second = directory.resolve("second.yaml");
+        Path socket = directory.resolve("append-files-socket");
+        Path marker = directory.resolve("append-script");
+        Files.writeString(
+                first,
+                "session_name: ignored-first\nbefore_script: /usr/bin/touch " + marker
+                        + "\noptions:\n  '@changed': yes\nwindows:\n  - window_name: implicit\n");
+        Files.writeString(
+                second,
+                "session_name: ignored-second\nwindows:\n  - window_name: reserved\n    window_index: "
+                        + (conflict ? 0 : 1) + "\n");
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("borrowed");
+                Result result = invoke(
+                        inherited(server, socket),
+                        "load",
+                        first.toString(),
+                        second.toString(),
+                        "--append",
+                        "-S",
+                        socket.toString(),
+                        "--json");
+                assertEquals(conflict ? 2 : 0, result.code(), result.toString());
+                assertEquals(!conflict, Files.exists(marker));
+                assertEquals(
+                        !conflict, server.sessions().getFirst().options().all().containsKey("@changed"));
+                if (conflict) assertEquals(1, server.windows().size());
+                else {
+                    var indexes = server.windows().stream()
+                            .collect(java.util.stream.Collectors.toMap(
+                                    io.github.libtmux.Window::name,
+                                    window -> window.index().value()));
+                    assertEquals(2, indexes.get("implicit"));
+                    assertEquals(1, indexes.get("reserved"));
+                    assertEquals(3, indexes.size());
+                }
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void appendKeepsItsBorrowedSessionWhenTheInvokingWindowMoves() throws Exception {
+        Path first = directory.resolve("first.yaml");
+        Path second = directory.resolve("second.yaml");
+        Path script = directory.resolve("move-window.sh");
+        Path socket = directory.resolve("stable-append-socket");
+        Files.writeString(
+                first,
+                "session_name: ignored-first\nbefore_script: /bin/sh " + script
+                        + "\nwindows:\n  - window_name: first\n");
+        Files.writeString(
+                second, "session_name: ignored-second\nwindows:\n  - window_name: second\n    window_index: 4\n");
+        try (Server server = server(socket)) {
+            try {
+                var borrowed = server.newSession("borrowed");
+                var invoking = borrowed.windows().getFirst();
+                borrowed.newWindow("keep");
+                var other = server.newSession("other");
+                var environment = inherited(server, socket);
+                Files.writeString(
+                        script,
+                        "exec '" + System.getProperty("libtmux.tmux", "tmux") + "' -S '" + socket
+                                + "' move-window -s '" + invoking.id().value() + "' -t '"
+                                + other.id().value()
+                                + ":3'\n");
+                Result result = invoke(
+                        environment,
+                        "load",
+                        first.toString(),
+                        second.toString(),
+                        "--append",
+                        "-S",
+                        socket.toString(),
+                        "--json");
+                assertEquals(0, result.code(), result.toString());
+                var results = new ObjectMapper().readTree(result.out()).path("results");
+                assertEquals(2, results.size());
+                for (var item : results)
+                    assertEquals(borrowed.id().value(), item.path("session_id").asText(), result.out());
+                assertEquals(
+                        java.util.Set.of("keep", "first", "second"),
+                        borrowed.refresh().windows().stream()
+                                .map(io.github.libtmux.Window::name)
+                                .collect(toSet()));
+                assertEquals(2, other.refresh().windows().size());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void booleanOptionsUseTmuxValuesWhileEnvironmentRemainsText() throws Exception {
+        Path source = directory.resolve("booleans.yaml");
+        Path socket = directory.resolve("booleans-socket");
+        Files.writeString(source, """
+                session_name: booleans
+                options:
+                  renumber-windows: true
+                global_options:
+                  mouse: false
+                environment:
+                  FLAG: true
+                windows:
+                  - options:
+                      remain-on-exit: true
+                    options_after:
+                      synchronize-panes: false
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, result.code(), result.err());
+                var session = server.sessions().getFirst();
+                assertEquals("on", session.options().get("renumber-windows").orElseThrow());
+                assertEquals("off", server.globalOptions().get("mouse").orElseThrow());
+                var options = session.windows().getFirst().options();
+                assertEquals("on", options.get("remain-on-exit").orElseThrow());
+                assertEquals("off", options.get("synchronize-panes").orElseThrow());
+                assertEquals(
+                        java.util.List.of("FLAG=true"),
+                        server.run(java.util.List.of(
+                                        "show-environment", "-t", session.id().value(), "FLAG"))
+                                .stdout());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"true,false,false", "false,true,false", "true,true,false", "false,false,true"})
+    void bootstrapCleanupPreservesPrimaryFailuresAndSettings(
+            boolean failRemoval, boolean failRestore, boolean failDisable) throws Exception {
+        Path source = directory.resolve("cleanup.yaml");
+        Path socket = directory.resolve("cleanup-socket");
+        Path wrapper = directory.resolve("tmux-failed-cleanup");
+        Path removing = directory.resolve("removing");
+        Files.writeString(wrapper, """
+                #!/bin/sh
+                case "$*" in
+                  %s
+                  *kill-window*) : > '%s'; %s;;
+                  *renumber-windows*) if test -f '%s'; then %s; fi;;
+                esac
+                exec '%s' "$@"
+                """.formatted(
+                        failDisable
+                                ? "*set-option*renumber-windows*off*) '%s' \"$@\"; printf injected-disable-failure >&2; exit 1;;"
+                                        .formatted(System.getProperty("libtmux.tmux", "tmux"))
+                                : "",
+                        removing,
+                        failRemoval ? "printf injected-cleanup-failure >&2; exit 1" : ":",
+                        removing,
+                        failRestore ? "printf injected-restore-failure >&2; exit 1" : ":",
+                        System.getProperty("libtmux.tmux", "tmux")));
+        assertTrue(wrapper.toFile().setExecutable(true));
+        Files.writeString(
+                source, "session_name: cleanup\noptions:\n  renumber-windows: true\nwindows:\n  - window_index: 4\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke(
+                        java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString()),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(1, result.code());
+                var failure =
+                        new ObjectMapper().readTree(result.out()).path("errors").path(0);
+                assertTrue(failure.path("message")
+                        .asText()
+                        .contains(
+                                failDisable
+                                        ? "injected-disable-failure"
+                                        : failRemoval ? "injected-cleanup-failure" : "injected-restore-failure"));
+                assertEquals("finalize", failure.path("effects").path("stage").asText());
+                assertReportedObjects(server, failure.path("effects"));
+                assertEquals(
+                        failRestore,
+                        failure.path("effects")
+                                .path("renumber_restore_error")
+                                .asText()
+                                .contains("injected-restore-failure"));
+                assertEquals(
+                        failRestore ? "off" : "on",
+                        server.sessions()
+                                .getFirst()
+                                .options()
+                                .get("renumber-windows")
+                                .orElseThrow());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void bootstrapCleanupPreservesInheritedRenumbering() throws Exception {
+        Path source = directory.resolve("inherited-renumber.yaml");
+        Path socket = directory.resolve("inherited-renumber-socket");
+        Files.writeString(
+                source,
+                "session_name: inherited\nglobal_options:\n  renumber-windows: true\nwindows:\n  - window_index: 4\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, result.code(), result.err());
+                assertEquals(4, server.windows().getFirst().index().value());
+                server.globalOptions().set("renumber-windows", "off");
+                assertEquals(
+                        "off",
+                        server.sessions()
+                                .getFirst()
+                                .options()
+                                .get("renumber-windows")
+                                .orElseThrow());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void loadLogsBothScriptStreamsWithoutContaminatingItsJsonResult() throws Exception {
+        Path source = directory.resolve("logged.yaml");
+        Path socket = directory.resolve("logged-socket");
+        Path log = directory.resolve("operations.jsonl");
+        Files.writeString(source, """
+                session_name: logged
+                before_script: /bin/sh -c 'printf stdout; printf stderr >&2'
+                windows:
+                  - panes: [null]
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke(
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json",
+                        "--log-file",
+                        log.toString(),
+                        "--log-level",
+                        "info",
+                        "--color",
+                        "always");
+                assertEquals(0, result.code(), result.err());
+                assertEquals(
+                        "ok",
+                        new ObjectMapper().readTree(result.out()).path("status").asText());
+                boolean stdout = false;
+                boolean stderr = false;
+                for (String line : Files.readAllLines(log)) {
+                    var record = new ObjectMapper().readTree(line);
+                    if (record.path("event").asText().equals("script-output")) {
+                        stdout |= record.path("stream").asText().equals("stdout")
+                                && record.path("text").asText().equals("stdout");
+                        stderr |= record.path("stream").asText().equals("stderr")
+                                && record.path("text").asText().equals("stderr");
+                    }
+                }
+                assertTrue(stdout && stderr, Files.readString(log));
+                assertFalse(result.out().contains("\u001b") || result.err().contains("\u001b"));
+                for (String line : result.err().lines().toList()) new ObjectMapper().readTree(line);
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void humanBootstrapOutputStaysOnItsOriginalStream() throws Exception {
+        Path source = directory.resolve("human-output.yaml");
+        Path socket = directory.resolve("human-output-socket");
+        Files.writeString(source, """
+                session_name: human-output
+                before_script: /bin/sh -c 'printf "bootstrap-out\\n"; printf "bootstrap-err\\n" >&2'
+                windows: [{}]
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke(
+                        "load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--no-progress");
+                assertEquals(0, result.code(), result.toString());
+                assertTrue(result.out().contains("bootstrap-out\n"), result.out());
+                assertFalse(result.out().contains("bootstrap-err"), result.out());
+                assertEquals("bootstrap-err\n", result.err());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void cancellationReleasesChildDrainsAndPreservesPartialJson() throws Exception {
+        Path source = directory.resolve("blocked-output.json");
+        Path socket = directory.resolve("blocked-output-socket");
+        Path script = directory.resolve("bootstrap.sh");
+        Path pids = directory.resolve("child-pids");
+        Files.writeString(
+                script,
+                "sleep 30 &\nprintf '%s\\n%s\\n' \"$$\" \"$!\" > '" + pids
+                        + "'\nprintf bootstrap-out\nprintf bootstrap-err >&2\nwait\n");
+        var config = new ObjectMapper()
+                .createObjectNode()
+                .put("session_name", "blocked-output")
+                .put("before_script", "/bin/sh " + script);
+        config.putArray("windows").addObject();
+        Files.writeString(source, config.toString());
+        var output = new ByteArrayOutputStream();
+        var error = new MainTest.BlockedOutput("\"event\":\"script-output\"");
+        var status = new java.util.concurrent.atomic.AtomicInteger(-1);
+        var environment = new HashMap<>(System.getenv());
+        environment.remove("TMUX");
+        environment.remove("TMUX_PANE");
+        environment.put("HOME", directory.toString());
+        environment.put("LIBTMUX_TEST_TMUX", System.getProperty("libtmux.tmux", "tmux"));
+        Thread owner = Thread.ofPlatform()
+                .unstarted(() -> status.set(Main.run(
+                        new String[] {
+                            "load",
+                            source.toString(),
+                            "-d",
+                            "-S",
+                            socket.toString(),
+                            "-f",
+                            "/dev/null",
+                            "--json",
+                            "--log-level",
+                            "info"
+                        },
+                        environment,
+                        directory,
+                        InputStream.nullInputStream(),
+                        output,
+                        error)));
+        try (Server server = server(socket)) {
+            try {
+                owner.start();
+                assertTrue(error.entered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+                owner.interrupt();
+                owner.join(1_000);
+                assertFalse(owner.isAlive(), "child drains retained the invocation");
+                assertEquals(130, status.get());
+                var result = new ObjectMapper().readTree(output.toString(StandardCharsets.UTF_8));
+                assertTrue(result != null, "missing partial JSON");
+                assertEquals("partial", result.path("status").asText());
+                var failure = result.path("errors").path(0);
+                assertEquals("interrupted", failure.path("code").asText());
+                assertReportedObjects(server, failure.path("effects"));
+                for (String pid : Files.readAllLines(pids)) {
+                    Process probe = new ProcessBuilder("ps", "-o", "stat=", "-p", pid).start();
+                    String state = new String(probe.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
+                    probe.waitFor();
+                    assertTrue(state.isEmpty() || state.startsWith("Z"), "owned child is running: " + state);
+                }
+                assertFalse(error.closed.get());
+            } finally {
+                error.release.countDown();
+                owner.join(2_000);
+                assertTrue(error.finished.await(2, java.util.concurrent.TimeUnit.SECONDS));
+                if (Files.exists(pids)) {
+                    for (String pid : Files.readAllLines(pids))
+                        ProcessHandle.of(Long.parseLong(pid)).ifPresent(ProcessHandle::destroyForcibly);
+                }
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    private static java.util.Map<String, String> inherited(Server server, Path socket) {
+        return java.util.Map.of(
+                "TMUX",
+                socket + "," + server.expand("#{pid}") + ",0",
+                "TMUX_PANE",
+                server.panes().getFirst().id().value());
+    }
+
+    @Test
+    void appendAuthenticatesTheDaemonAndAcceptsSocketAliases() throws Exception {
+        Path firstSocket = directory.resolve("first");
+        Path otherSocket = directory.resolve("other");
+        Path alias = directory.resolve("alias");
+        Path source = directory.resolve("append.yaml");
+        Files.writeString(source, "session_name: ignored\nwindows:\n  - window_name: added\n    panes: [null]\n");
+        try (Server first = server(firstSocket);
+                Server other = server(otherSocket)) {
+            try {
+                first.newSession("borrowed");
+                other.newSession("unrelated");
+                var context = inherited(first, firstSocket);
+                Result refused =
+                        invoke(context, "load", source.toString(), "--append", "-S", otherSocket.toString(), "--json");
+                assertEquals(2, refused.code(), refused.toString());
+                assertEquals(1, other.windows().size());
+                assertEquals(1, first.windows().size());
+                Files.createSymbolicLink(alias, firstSocket);
+                Result accepted =
+                        invoke(context, "load", source.toString(), "--append", "-S", alias.toString(), "--json");
+                assertEquals(0, accepted.code(), accepted.err());
+                assertEquals(2, first.windows().size());
+            } finally {
+                if (first.isAlive()) first.killServer();
+                if (other.isAlive()) other.killServer();
+            }
+        }
+    }
+
+    @Test
+    void failedAppendReportsTheFirstSuccessfulOptionMutation() throws Exception {
+        Path socket = directory.resolve("append");
+        Path source = directory.resolve("append.yaml");
+        Files.writeString(
+                source,
+                "session_name: ignored\noptions:\n  '@applied': yes\n  not-a-tmux-option: invalid\nwindows:\n  - panes: [null]\n");
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("borrowed");
+                Result failed = invoke(
+                        inherited(server, socket),
+                        "load",
+                        source.toString(),
+                        "--append",
+                        "-S",
+                        socket.toString(),
+                        "--json");
+                assertEquals(1, failed.code());
+                var result = new ObjectMapper().readTree(failed.out());
+                assertEquals("partial", result.path("status").asText(), failed.toString());
+                assertTrue(
+                        server.sessions().getFirst().options().get("@applied").isPresent());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void failedSetupReportsEveryCreatedObject(boolean sessionOptions) throws Exception {
+        Path socket = directory.resolve("partial");
+        Path source = directory.resolve("partial.yaml");
+        Files.writeString(
+                source,
+                sessionOptions
+                        ? "session_name: partial\noptions:\n  not-a-tmux-option: invalid\nwindows: [{}]\n"
+                        : "session_name: partial\nwindows:\n  - options:\n      not-a-tmux-option: invalid\n    panes: [null]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result failed =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(1, failed.code());
+                var effects = new ObjectMapper()
+                        .readTree(failed.out())
+                        .path("errors")
+                        .path(0)
+                        .path("effects");
+                assertEquals(1, effects.path("window_ids").size());
+                assertEquals(1, effects.path("pane_ids").size(), failed.toString());
+                assertReportedObjects(server, effects);
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void coldLoadCaptureAndReusePreserveIndexedTopology() throws Exception {
+        Path socket = directory.resolve("socket");
+        Path source = directory.resolve("workspace.yaml");
+        Files.writeString(source, """
+                session_name: native-java
+                options:
+                  default-shell: /bin/sh
+                environment:
+                  WORKSPACE_TEST: inherited
+                windows:
+                  - &main
+                    window_name: main
+                    window_index: 0
+                    layout: even-horizontal
+                    panes: [null, null]
+                  - <<: *main
+                    window_name: other
+                    window_index: 4
+                    panes: [null]
+                """);
+        try (Server server = Server.builder()
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .binary(System.getProperty("libtmux.tmux", "tmux"))
+                .build()) {
+            try {
+                assertFalse(server.isAlive());
+                Result load =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--ndjson");
+                assertEquals(0, load.code(), load.err());
+                var events = load.out()
+                        .lines()
+                        .map(line -> {
+                            try {
+                                return new ObjectMapper().readTree(line);
+                            } catch (java.io.IOException invalid) {
+                                throw new java.io.UncheckedIOException(invalid);
+                            }
+                        })
+                        .toList();
+                assertEquals("started", events.getFirst().path("event").asText());
+                assertEquals("completed", events.getLast().path("event").asText());
+                assertEquals(2, server.windows().size());
+                assertEquals(3, server.panes().size());
+                assertEquals(
+                        java.util.List.of(0, 4),
+                        server.windows().stream()
+                                .map(window -> window.index().value())
+                                .toList());
+                Result freeze = invoke("freeze", "native-java", "-S", socket.toString(), "--json");
+                assertEquals(0, freeze.code(), freeze.err());
+                var captured = new ObjectMapper().readTree(freeze.out());
+                assertEquals(2, captured.path("windows").size());
+                assertEquals(
+                        4, captured.path("windows").path(1).path("window_index").asInt());
+                Result reused = invoke("load", source.toString(), "-d", "-S", socket.toString(), "--json");
+                assertEquals(0, reused.code(), reused.err());
+                assertTrue(new ObjectMapper()
+                        .readTree(reused.out())
+                        .path("results")
+                        .path(0)
+                        .path("reused")
+                        .asBoolean());
+                assertEquals(2, server.windows().size());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+}

@@ -27,7 +27,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Making windows and sessions against a real tmux, on whichever release the lane is running.
  *
  * <p>Neither command changed its flags across the supported range, so what is version-dependent here
- * is behaviour 3.2a accepts and then ignores. Both branches assert.
+ * is the detached session size that 3.2a accepts and then ignores.
  */
 @ExtendWith(TmuxExtension.class)
 final class CreationIntegrationTest {
@@ -121,32 +121,16 @@ final class CreationIntegrationTest {
         assertNotEquals(stale.id(), replacement.id());
     }
 
-    /**
-     * 3.2a takes {@code -c} on new-window and drops it, though it honours the same flag on
-     * split-window. Refused there rather than sent, so the caller is never handed a window that
-     * started somewhere else.
-     */
     @Test
-    void aStartDirectoryIsHonouredOrRefusedDependingOnTheRelease(Server server, @TempDir Path directory)
-            throws Exception {
+    void aWindowCommandStartsInTheRequestedDirectory(Server server, @TempDir Path directory) throws Exception {
         Session session = server.sessions().get(0);
         Path real = directory.toRealPath();
-
-        if (server.version().atLeast(HONOURS_EXTRAS_SINCE)) {
-            Window window = session.newWindow(w -> w.named("elsewhere").in(real));
-            Pane pane = window.activePane().orElseThrow();
-
-            assertTrue(
-                    Await.until(() -> real.equals(pane.refresh().currentPath())),
-                    "the window did not start where it was told");
-        } else {
-            assertThrows(
-                    UnsupportedTmuxVersion.class,
-                    () -> session.newWindow(w -> w.named("elsewhere").in(real)));
-            assertTrue(
-                    session.refresh().windows().stream().noneMatch(window -> "elsewhere".equals(window.name())),
-                    "a refused spec must not have reached tmux");
-        }
+        Path written = directory.resolve("seen");
+        session.newWindow(w -> w.named("elsewhere")
+                .in(real)
+                .running("/bin/sh", "-c", "pwd > \"$1\"; sleep 30", "probe", written.toString()));
+        assertTrue(Await.until(() -> Files.exists(written)));
+        assertEquals(real.toString(), Files.readString(written).strip());
     }
 
     @Test

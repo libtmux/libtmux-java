@@ -29,12 +29,14 @@ public final class ServerConfig {
     private final ServerEndpoint endpoint;
     private final @Nullable Path configFile;
     private final Duration defaultTimeout;
+    private final boolean force256Colors;
 
     private ServerConfig(Builder builder) {
         this.binary = builder.binary;
         this.endpoint = builder.endpoint;
         this.configFile = builder.configFile;
         this.defaultTimeout = builder.defaultTimeout;
+        this.force256Colors = builder.force256Colors;
     }
 
     /** A builder holding the documented defaults. */
@@ -90,13 +92,19 @@ public final class ServerConfig {
         return defaultTimeout;
     }
 
+    /** Whether tmux clients advertise 256-color support regardless of terminal detection. */
+    public boolean force256Colors() {
+        return force256Colors;
+    }
+
     /**
-     * The argv prefix every command on this server begins with: the binary, the server selection,
-     * and the config file if one was pinned.
+     * The argv prefix every command begins with: binary, client color flag, server selection,
+     * and config file. Optional choices are omitted when unset.
      */
     public List<String> endpointCommand() {
         List<String> command = new ArrayList<>(6);
         command.add(binary);
+        if (force256Colors) command.add("-2");
         command.addAll(endpoint.flags());
         if (configFile != null) {
             command.add("-f");
@@ -112,6 +120,7 @@ public final class ServerConfig {
         builder.endpoint = endpoint;
         builder.configFile = configFile;
         builder.defaultTimeout = defaultTimeout;
+        builder.force256Colors = force256Colors;
         return builder;
     }
 
@@ -122,6 +131,7 @@ public final class ServerConfig {
         private ServerEndpoint endpoint = ServerEndpoint.defaultSocket();
         private @Nullable Path configFile;
         private Duration defaultTimeout = DEFAULT_TIMEOUT;
+        private boolean force256Colors;
 
         private Builder() {}
 
@@ -146,6 +156,12 @@ public final class ServerConfig {
         /** Sets the deadline a request gets when the caller does not supply one. */
         public Builder defaultTimeout(Duration defaultTimeout) {
             this.defaultTimeout = Objects.requireNonNull(defaultTimeout, "defaultTimeout");
+            return this;
+        }
+
+        /** Forces 256-color client support with tmux's {@code -2}; false uses terminal detection. */
+        public Builder force256Colors(boolean force256Colors) {
+            this.force256Colors = force256Colors;
             return this;
         }
 

@@ -552,10 +552,15 @@ final class Catalog {
         tools.add(manageTool(
                 "select_layout",
                 "Select a layout",
-                "Applies one built-in tmux layout.",
+                "Applies a named tmux layout, a unique abbreviation or a checksummed saved layout. "
+                        + "Names follow the running daemon's version; mirrored main layouts require tmux 3.5. "
+                        + "Malformed syntax is refused before window lookup; tmux validates geometry.",
                 List.of(
                         required("window_id", "The window ID, such as @1."),
-                        required("layout", "A built-in layout name.")),
+                        required(
+                                "layout",
+                                "A built-in name, unique abbreviation or saved tmux layout. "
+                                        + "Existing enum-style names are also accepted.")),
                 sinks(input("window_id", TMUX_LOOKUP), input("layout", TMUX_STATE)),
                 false,
                 record(Shaping.Changed.class, "note"),

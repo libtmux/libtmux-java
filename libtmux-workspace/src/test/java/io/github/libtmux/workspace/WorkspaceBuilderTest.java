@@ -12,7 +12,6 @@ import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.UnsupportedTmuxVersion;
 import io.github.libtmux.Window;
-import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
@@ -330,8 +329,7 @@ final class WorkspaceBuilderTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 if (request.commands().get(0).get(0).equals("display-message")) {
-                    return new CommandResult(
-                            0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.4")), List.of());
+                    return new CommandResult(0, List.of("3.4"), List.of());
                 }
                 effected.set(true);
                 return new CommandResult(0, List.of(), List.of());

@@ -113,6 +113,8 @@ tasks.withType<Test>().configureEach {
     // Short on purpose: a unix socket path cannot exceed about 104 bytes, which rules out the build
     // directory and is why this is not derived from one.
     val socketRoot = providers.gradleProperty("libtmuxSocketRoot").getOrElse("/tmp/libtmux-java-test")
+    val checkoutIdentity = rootProject.rootDir.canonicalPath
+    val taskIdentity = path
     systemProperty("java.io.tmpdir", socketRoot)
     doFirst {
         require(socketRoot.length <= 40) {
@@ -122,8 +124,8 @@ tasks.withType<Test>().configureEach {
         // bare-client sockets along with the named ones instead of splitting them across two roots.
         // Owner identity separates concurrent invocations; 16 hex digits leave AF_UNIX room.
         val quarantineIdentity = listOf(
-            rootProject.rootDir.canonicalPath,
-            path,
+            checkoutIdentity,
+            taskIdentity,
             ProcessHandle.current().pid().toString(),
         ).joinToString("\u0000")
         val quarantineDigest = MessageDigest.getInstance("SHA-256")

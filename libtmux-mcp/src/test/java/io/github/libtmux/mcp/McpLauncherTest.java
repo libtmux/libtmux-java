@@ -1,5 +1,6 @@
 package io.github.libtmux.mcp;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -9,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.junit5.NamedServerFixture;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.junit5.TmuxSocketPath;
@@ -53,6 +55,107 @@ final class McpLauncherTest {
 
     /** Longer than any single call needs, short enough that a hung launcher fails as itself. */
     private static final int PATIENCE_SECONDS = 60;
+
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void layoutWireRejectsMalformedSyntaxBeforeLookingUpAWindow(Server server, TmuxSocketPath socket) {
+        try (McpSyncClient client = launch(socket.path())) {
+            client.initialize();
+            McpSchema.CallToolResult result = client.callTool(McpSchema.CallToolRequest.builder("select_layout")
+                    .arguments(Map.of("window_id", "@999999", "layout", "32d2,80x24,0,0{}"))
+                    .build());
+
+            assertTrue(Boolean.TRUE.equals(result.isError()), textOf(result));
+            assertTrue(textOf(result).contains("not a tmux layout"), textOf(result));
+            assertFalse(textOf(result).contains("no window"), textOf(result));
+        }
+    }
+
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void layoutWireAcceptsNativeAbbreviationsAndSavedTrees(Server server, TmuxSocketPath socket) {
+        var window = server.windows().getFirst();
+        window.split();
+        String saved = window.refresh().layout();
+        try (McpSyncClient client = launch(socket.path())) {
+            client.initialize();
+            McpSchema.CallToolResult abbreviated = client.callTool(McpSchema.CallToolRequest.builder("select_layout")
+                    .arguments(Map.of("window_id", window.id().value(), "layout", "even-h"))
+                    .build());
+            McpSchema.CallToolResult restored = client.callTool(McpSchema.CallToolRequest.builder("select_layout")
+                    .arguments(Map.of("window_id", window.id().value(), "layout", saved))
+                    .build());
+            assertAll(
+                    () -> assertFalse(Boolean.TRUE.equals(abbreviated.isError()), textOf(abbreviated)),
+                    () -> assertFalse(Boolean.TRUE.equals(restored.isError()), textOf(restored)));
+            assertEquals(
+                    "EVEN_HORIZONTAL",
+                    Answers.JSON
+                            .valueToTree(abbreviated.structuredContent())
+                            .path("what")
+                            .asText());
+            assertEquals(
+                    saved,
+                    Answers.JSON
+                            .valueToTree(restored.structuredContent())
+                            .path("what")
+                            .asText());
+            assertEquals(saved, window.refresh().layout());
+            assertEquals(2, window.refresh().panes().size());
+        }
+    }
+
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void layoutWirePreservesKeeperAcrossNativeRefusals(Server server, TmuxSocketPath socket) {
+        var window = server.windows().getFirst();
+        window.split();
+        long pid = server.snapshot().serverPid().orElseThrow();
+        var sessionId = window.session().id();
+        boolean mirrored = server.version().atLeast(new TmuxVersion(3, 5, ""));
+        try (McpSyncClient client = launch(socket.path())) {
+            client.initialize();
+            for (String layout : List.of(
+                    "not-a-layout",
+                    "-E",
+                    "32d2,80x24,0,0{}",
+                    "4a17,80x24,0,0{39x24,0,0,0,40x24,40,0[]}",
+                    "ffff,80x24,0,0,0",
+                    "even",
+                    "79f5,80x24,0,0{39x23,0,0,0,40x24,40,0,1}",
+                    mirrored ? "main-h" : "main-horizontal-mirrored")) {
+                String before = window.refresh().layout();
+                McpSchema.CallToolResult refused = client.callTool(McpSchema.CallToolRequest.builder("select_layout")
+                        .arguments(Map.of("window_id", window.id().value(), "layout", layout))
+                        .build());
+                assertTrue(Boolean.TRUE.equals(refused.isError()), layout + ": " + textOf(refused));
+                assertFalse(textOf(refused).isBlank());
+                assertEquals(before, window.refresh().layout(), layout);
+            }
+            for (String layout : List.of(
+                    "t",
+                    "even-h",
+                    "EVEN_HORIZONTAL",
+                    "even_horizontal",
+                    "main-horizontal",
+                    "8A08,1x1,0,0{39x24,0,0,0,40x24,40,0,1}",
+                    mirrored ? "main-horizontal-mirrored" : "main-h")) {
+                McpSchema.CallToolResult accepted = client.callTool(McpSchema.CallToolRequest.builder("select_layout")
+                        .arguments(Map.of("window_id", window.id().value(), "layout", layout))
+                        .build());
+                assertFalse(Boolean.TRUE.equals(accepted.isError()), layout + ": " + textOf(accepted));
+            }
+            McpSchema.CallToolResult missing = client.callTool(McpSchema.CallToolRequest.builder("select_layout")
+                    .arguments(Map.of("window_id", "@999999", "layout", "tiled"))
+                    .build());
+            assertTrue(Boolean.TRUE.equals(missing.isError()), textOf(missing));
+            assertTrue(textOf(missing).contains("no window @999999"), textOf(missing));
+        }
+        assertEquals(pid, server.snapshot().serverPid().orElseThrow());
+        assertEquals(1, server.sessions().size());
+        assertEquals(sessionId, server.sessions().getFirst().id());
+        assertEquals(2, window.refresh().panes().size());
+    }
 
     @Test
     void theRemovedWatchFlagDoesNotLeaveTheLauncherAlive(Server server, TmuxSocketPath socket) throws Exception {

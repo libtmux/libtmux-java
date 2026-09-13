@@ -29,11 +29,13 @@ val laneTasks =
             // Declared so the suite can check it got the tmux this lane is named after. Without it a
             // lane that ignored the binary would run against whatever is on PATH and still be green.
             systemProperty("libtmux.tmux.expected", lane)
+            val configured = matrix.isPresent
+            val configuredBinary = binary.getOrElse("tmux-matrix-not-configured")
             onlyIf {
-                require(matrix.isPresent) {
+                require(configured) {
                     "no tmux matrix configured; set -PlibtmuxMatrix=<dir> to a tree of tmux builds"
                 }
-                require(File(binary.get()).canExecute()) { "tmux $lane is missing from the matrix" }
+                require(File(configuredBinary).canExecute()) { "tmux $lane is missing from the matrix" }
                 true
             }
         }

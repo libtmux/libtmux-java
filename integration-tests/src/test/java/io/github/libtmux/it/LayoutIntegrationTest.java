@@ -10,6 +10,7 @@ import io.github.libtmux.Server;
 import io.github.libtmux.UnsupportedTmuxVersion;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.util.StringJoiner;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -89,6 +90,29 @@ final class LayoutIntegrationTest {
 
         assertEquals(wanted, window.refresh().layout(), "the arrangement did not come back");
         assertTrue(server.isAlive());
+    }
+
+    @Test
+    void savedLayoutInputCanExceedTheDumpBuffer(Server server) {
+        Window window = server.windows().getFirst();
+        var keeper = server.newSession("keeper");
+        long pid = server.snapshot().serverPid().orElseThrow();
+        String keeperLayout = keeper.windows().getFirst().layout();
+        var body = new StringJoiner(",", "1199x24,0,0{", "}");
+        for (int pane = 0; pane < 600; pane++) body.add("1x24," + (2 * pane) + ",0," + pane);
+        int checksum = 0;
+        for (char value : body.toString().toCharArray())
+            checksum = ((checksum >> 1) + ((checksum & 1) << 15) + value) & 0xffff;
+        String layout = "%04x,%s".formatted(checksum, body);
+        assertTrue(body.length() > 8192, "the input must exceed tmux's layout_dump buffer");
+
+        window.applyLayout(layout);
+
+        assertEquals(pid, server.snapshot().serverPid().orElseThrow());
+        assertEquals(2, server.sessions().size());
+        assertEquals(1, window.refresh().panes().size(), "tmux prunes the extra cells");
+        assertTrue(window.refresh().layout().contains(",1199x24,0,0,"));
+        assertEquals(keeperLayout, keeper.refresh().windows().getFirst().layout());
     }
 
     /**

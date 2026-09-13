@@ -22,9 +22,6 @@ import org.jspecify.annotations.Nullable;
  */
 public final class WindowSpec {
 
-    /** 3.2a accepts {@code -c} on new-window and then ignores it; 3.3a is the first that honours it. */
-    private static final TmuxVersion START_DIRECTORY_SINCE = new TmuxVersion(3, 3, "a");
-
     private final @Nullable String name;
     private final @Nullable Path directory;
     private final Map<String, String> environment;
@@ -111,14 +108,8 @@ public final class WindowSpec {
      *
      * @param target the session, or the index, to create in
      * @param format the row format the caller will read the result back with
-     * @param running the version of the server about to run this
-     * @throws UnsupportedTmuxVersion if the spec asks for something {@code running} does not have
      */
-    List<String> argv(String target, String format, TmuxVersion running) {
-        if (directory != null && !running.atLeast(START_DIRECTORY_SINCE)) {
-            // 3.2a takes -c on new-window and drops it, unlike -c on split-window, which it honours.
-            throw new UnsupportedTmuxVersion("a start directory for a new window", START_DIRECTORY_SINCE, running);
-        }
+    List<String> argv(String target, String format) {
         List<String> argv = new ArrayList<>(20);
         argv.add("new-window");
         if (detached) {

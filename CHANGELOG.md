@@ -12,6 +12,22 @@ production.
 
 ## Unreleased
 
+### Fixed
+
+- **Saved layout input can exceed tmux's dump buffer.** The core, workspace
+  loader and MCP accept valid trees with bodies longer than 8191 characters.
+  tmux still owns geometry, pruning and command transport limits.
+
+- **MCP `select_layout` accepts saved layouts and unique abbreviations.** It
+  validates input before window lookup and checks names against the running
+  daemon through the native layout guard. Existing enum aliases and named
+  response values remain supported.
+
+- **Workspace layouts accept tmux abbreviations and prunable geometry.** Layout
+  validation checks names against the running daemon and checks serialized
+  checksums, tree structure and pane counts before any input runs scripts or
+  changes sessions. tmux remains responsible for geometry and pruning.
+
 ## 0.0.1-alpha.11 — 2026-09-12
 
 ### Added

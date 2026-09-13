@@ -20,20 +20,21 @@ Unlike `split-window`, which gained six flags in 3.7, there is nothing here for
 a version rule to protect. What differs between releases is behaviour, not
 vocabulary.
 
-## 3.2a ignores two things it accepts
+## Window directories and detached session dimensions
+
+`new-window -c` starts the window's command in the requested directory on
+3.2a. A fresh isolated server and an explicit `/bin/sh` command writing `pwd`
+to a file verify the directory after the child starts. The integration suite
+uses the same shell-observed assertion on every matrix lane. The library does
+not gate window directories by tmux version.
 
 | asked for                     | 3.2a        | 3.3a onwards |
 | ----------------------------- | ----------- | ------------ |
-| `new-window -c <dir>`         | **ignored** | honoured     |
-| `new-session -d -x 100 -y 40` | **80x23**   | `100x40`     |
+| `new-window -c <dir>`          | honoured    | honoured     |
+| `new-session -d -x 100 -y 40`  | **80x23**   | `100x40`     |
 
-Both exit zero. The directory case is the sharper one, because `split-window -c`
-*does* work on 3.2a — so the same flag on the same server is honoured by one
-command and dropped by another, and no error distinguishes them.
-
-Both are refused rather than dropped, on the same reasoning as the 3.7 split
-options: a window that silently started somewhere else is indistinguishable from
-the window that was asked for.
+Detached session dimensions remain refused on 3.2a under the existing measured
+rule. They were not remeasured by the window-directory probe.
 
 ## `-S` reports nothing
 
@@ -83,5 +84,3 @@ $ tmux -S "$sock" -f /dev/null new-session -d -s sized -x 100 -y 40 -P -F '#{win
 
 - `new-session -E`, which suppresses `update-environment`.
 - `new-session -t`, which groups a new session with an existing one.
-- Whether 3.2a's `-c` is dropped at parse time or at spawn time; only the
-  outcome was measured.
