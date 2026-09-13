@@ -152,6 +152,9 @@ final class OptionsIntegrationTest {
         written.put("@spaces", "[#S] and a space");
         written.put("@backslash", "back\\slash");
         written.put("@newline", "first\nsecond");
+        written.put("@carriage-return", "first\rsecond");
+        written.put("@crlf", "first\r\nsecond\r");
+        written.put("@carriage-only", "\r");
         written.put("@tab", "a\tb");
         written.put("@dquote", "has \"quotes\"");
         written.put("@empty", "");
