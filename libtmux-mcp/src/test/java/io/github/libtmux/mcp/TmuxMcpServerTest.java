@@ -121,6 +121,61 @@ final class TmuxMcpServerTest {
         assertTrue(result.path("truncatedBytes").asInt() > 0);
     }
 
+    /** A dead daemon must not read as a mysterious failure with nothing for a caller to check. */
+    @Test
+    void anAbsentDaemonNamesTheSocketHintInTheToolError() throws Exception {
+        TmuxTransport absent = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return new CommandResult(1, List.of(), List.of("no server running"));
+            }
+
+            @Override
+            public void close() {}
+        };
+        ToolSurface surface =
+                ToolSurface.resolve(Map.of(ToolSurface.TOOLSETS_ENV, "", ToolSurface.TOOLS_ENV, "list_sessions"));
+        WireOutput output = new WireOutput();
+
+        try (Server absentServer = Server.using(ServerConfig.builder().build(), absent);
+                PipedInputStream input = new PipedInputStream();
+                PipedOutputStream client = new PipedOutputStream(input)) {
+            McpSyncServer mcp = TmuxMcpServer.overStdio(absentServer, input, output, surface, () -> {});
+            try {
+                client.write(initialize());
+                client.flush();
+                assertTrue(output.first.await(3, TimeUnit.SECONDS), "initialization did not answer");
+
+                client.write("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
+                        .getBytes(StandardCharsets.UTF_8));
+                client.write((Answers.JSON.writeValueAsString(Map.of(
+                                        "jsonrpc",
+                                        "2.0",
+                                        "id",
+                                        "absent-daemon",
+                                        "method",
+                                        "tools/call",
+                                        "params",
+                                        Map.of("name", "list_sessions", "arguments", Map.of())))
+                                + "\n")
+                        .getBytes(StandardCharsets.UTF_8));
+                client.flush();
+                assertTrue(output.second.await(5, TimeUnit.SECONDS), "list_sessions did not answer");
+            } finally {
+                mcp.close();
+            }
+        }
+
+        String response = output.lines().stream()
+                .filter(line -> line.contains("absent-daemon"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("list_sessions response is absent"));
+        var result = Answers.JSON.readTree(response).path("result");
+        assertEquals(true, result.path("isError").asBoolean());
+        String message = result.path("content").get(0).path("text").asText();
+        assertTrue(message.contains("Check that the MCP process selected the socket you intended"), message);
+    }
+
     @Test
     void oversizedRequestIdFailsBeforeToolDispatch() throws Exception {
         AtomicInteger calls = new AtomicInteger();

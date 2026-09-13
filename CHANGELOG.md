@@ -54,6 +54,10 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
 
 ### Fixed
 
+- **An MCP tool error for an absent daemon says to check the socket.** Every
+  tool that reads or acts through a dead server now carries the hint that used
+  to live only on an empty listing, which the strict-read change had nowhere
+  left to surface it from. (#17)
 - **The MCP `rename` tool reports the name tmux settled on.** tmux rewrites or
   refuses `:` and `.` in a session or window name depending on the release; the
   reply named the requested string instead of the handle's actual name. (#17)
