@@ -14,6 +14,11 @@ production.
 
 ### Fixed
 
+- **MCP `select_layout` accepts saved layouts and unique abbreviations.** It
+  validates input before window lookup and checks names against the running
+  daemon through the native layout guard. Existing enum aliases and named
+  response values remain supported.
+
 - **Workspace layouts accept tmux abbreviations and prunable geometry.** Layout
   validation checks names against the running daemon and checks serialized
   checksums, tree structure and pane counts before any input runs scripts or
