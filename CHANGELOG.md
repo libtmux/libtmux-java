@@ -12,6 +12,27 @@ production.
 
 ## Unreleased
 
+### Changed
+
+- **Live reads preserve failures.** `Server.snapshot()`, its listings and
+  finders, and `Buffers.list()` throw when a capture or command fails, including
+  when no daemon answers. Empty lists and missing-object `Optional` values now
+  mean a successful read. Catch `LibTmuxException` for read failures; use
+  `newSession` to start a daemon. The workspace example handles both daemon
+  states, and MCP listings report failed reads as errors.
+
+- **Public guards and exceptions use Java names.** Replace `raiseIfDead()` with
+  `requireAlive()`, `ObjectDoesNotExist` with `ObjectDoesNotExistException`, and
+  `UnsupportedTmuxVersion` with `UnsupportedTmuxVersionException`. These alpha
+  renames have no deprecated aliases. The guard behavior and exception hierarchy
+  remain the same.
+
+- **Error Prone checks discarded replacement state.** `Session.rename()`,
+  `Window.rename()`, `Pane.retitle()`, and the four handles' `refresh()` methods
+  carry `@CheckReturnValue`. Retain the result to read the new capture, or assign
+  it to `var unused` when only the effect is wanted. The earlier handle keeps
+  its captured state. The annotation adds no runtime dependency.
+
 ## 0.0.1-alpha.11 — 2026-09-12
 
 ### Added
