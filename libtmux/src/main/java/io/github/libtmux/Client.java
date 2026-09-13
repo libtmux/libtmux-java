@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import com.google.errorprone.annotations.CheckReturnValue;
 import io.github.libtmux.snapshot.ClientState;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import java.util.List;
@@ -103,7 +104,16 @@ public final class Client {
         return refresh().flatMap(Client::attachment);
     }
 
-    /** Takes a new capture and returns this client as it is now, or empty if it has gone. */
+    /**
+     * Takes a new capture and returns this client as it is now, or empty if it has gone.
+     *
+     * <p>This handle remains unchanged. Empty means this client detached while the same daemon
+     * remained reachable; failed capture still throws.
+     *
+     * @throws ObjectDoesNotExistException if a different daemon answers on the endpoint
+     * @throws LibTmuxException if capture fails, including when no daemon is running
+     */
+    @CheckReturnValue
     public Optional<Client> refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.clients().stream()

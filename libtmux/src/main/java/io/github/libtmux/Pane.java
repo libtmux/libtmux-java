@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import com.google.errorprone.annotations.CheckReturnValue;
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.snapshot.PaneState;
@@ -238,11 +239,14 @@ public final class Pane {
     }
 
     /**
-     * Retitles this pane and returns a handle on it as it is now.
+     * Retitles this pane and returns its replacement capture.
+     *
+     * <p>Retain the result to read the changed title. This handle keeps its original captured state.
      *
      * <p>A program running in the pane can set its own title through an escape sequence, and tmux
      * reports that one instead. This says what the title is now, not what it will stay.
      */
+    @CheckReturnValue
     public Pane retitle(String title) {
         Objects.requireNonNull(title, "title");
         server.run(snapshot, List.of("select-pane", "-t", state.id().value(), "-T", TmuxFormats.literal(title)));
@@ -838,8 +842,11 @@ public final class Pane {
     /**
      * Takes a new capture and returns this pane as it is now.
      *
+     * <p>This handle remains unchanged. Use the returned handle for subsequent state reads.
+     *
      * @throws ObjectDoesNotExistException if the pane is gone
      */
+    @CheckReturnValue
     public Pane refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.panes().stream()

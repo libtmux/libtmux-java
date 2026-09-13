@@ -46,7 +46,7 @@ final class ControlWatchIntegrationTest {
         try (ControlClient client = ControlClient.attach(server.config(), session.id());
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
 
-            session.windows().get(0).rename("renamed-now");
+            var unused = session.windows().get(0).rename("renamed-now");
 
             assertTrue(
                     awaitEvent(

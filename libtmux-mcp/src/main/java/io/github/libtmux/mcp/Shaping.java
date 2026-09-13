@@ -100,13 +100,11 @@ final class Shaping {
         String target = call.string("target");
         String name = call.string("name");
         if (target.startsWith("@")) {
-            Window window = Targets.window(call.server(), target);
-            window.rename(name);
-            return new Changed("window", target, name, null);
+            Window renamed = Targets.window(call.server(), target).rename(name);
+            return new Changed("window", renamed.id().value(), name, null);
         }
-        Session session = Targets.sessionById(call.server(), target);
-        session.rename(name);
-        return new Changed("session", session.id().value(), name, null);
+        Session renamed = Targets.sessionById(call.server(), target).rename(name);
+        return new Changed("session", renamed.id().value(), name, null);
     }
 
     static Changed select(Call call) {
