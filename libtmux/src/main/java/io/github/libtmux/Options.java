@@ -129,10 +129,12 @@ public final class Options {
         Map<String, String> options = new LinkedHashMap<>();
         for (int from = 0; from < names.size(); ) {
             int to = from;
-            // -q so an option unset between the two requests reads as empty rather than ending the batch.
+            // -q keeps an option unset between the two requests from ending the batch.
             Batch batch = snapshot == null ? server.batch() : server.batch(snapshot);
             do {
-                batch.add(argv("show-options", List.of("-q", "-v", names.get(to++))));
+                var valueFlags = new ArrayList<>(flags);
+                valueFlags.addAll(List.of("-q", "-v", names.get(to++)));
+                batch.add(argv("show-options", valueFlags));
             } while (to < names.size() && batch.length() < GROUP_BUDGET);
             record(names.subList(from, to), batch, options);
             from = to;
@@ -230,10 +232,10 @@ public final class Options {
     }
 
     /**
-     * Every option in effect at this scope, including the ones inherited rather than set here.
+     * Options set here and inherited built-in options, in tmux's order.
      *
-     * <p>The wide counterpart to {@link #all()}: what tmux will act on, which for a session that
-     * sets nothing of its own is everything and not nothing.
+     * <p>tmux's wide listing omits inherited custom options. Read one inherited custom value with
+     * {@link #get(String)}.
      */
     public Map<String, String> effective() {
         return read(List.of("-A"));
