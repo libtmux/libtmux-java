@@ -28,6 +28,14 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
 
 ### Changed
 
+- **`Server.hasSession` throws on an absent daemon instead of answering
+  `false`.** A missing session and a missing server were both "no", which the
+  rest of this release stopped doing everywhere else. The MCP `new_session`
+  tool catches the new exception and starts a daemon on demand, as it already
+  did. (#17)
+- **`Buffers.show` throws `ServerNotRunningException` for an absent daemon
+  instead of `ObjectDoesNotExistException`.** It no longer reports a dead
+  server as a buffer that was never there. (#17)
 - **Live listings, lookups and snapshots throw when a read fails.** This
   includes an absent daemon and buffer-list failures. Empty results now mean a
   successful capture found no objects; MCP listings also surface failed reads.
