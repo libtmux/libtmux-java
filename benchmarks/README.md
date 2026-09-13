@@ -2,9 +2,8 @@
 
 **Measures what an operation costs. Not published.**
 
-Every command this library sends starts a tmux process, so what a caller pays is
-decided by how many commands an operation takes rather than by how fast any one
-of them runs. This measures that, and regenerates
+This benchmark uses `ProcessTransport`, which starts a tmux process for each
+dispatch. It measures how many dispatches each operation takes and regenerates
 [`docs/benchmarks/operations.md`](../docs/benchmarks/operations.md) from a real
 run.
 
