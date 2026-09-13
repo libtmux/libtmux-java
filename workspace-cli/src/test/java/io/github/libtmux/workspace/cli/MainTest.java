@@ -608,7 +608,7 @@ final class MainTest {
                         - commands: ['false', 'printf one']
                         - commands: ['printf two']
                           focus: true
-                        - cmd: printf three
+                        - cmd: echo <%= literal %>
                           focus: true
                     - name: second
                       focus: true
@@ -627,6 +627,10 @@ final class MainTest {
         assertEquals("value", windows.path(0).path("options").path("@imported").asText());
         assertTrue(windows.path(0).path("panes").path(1).path("focus").asBoolean());
         assertFalse(windows.path(0).path("panes").path(2).path("focus").asBoolean());
+        // Teamocil evaluates no templates, so this text is ordinary and survives.
+        assertEquals(
+                "echo <%= literal %>",
+                windows.path(0).path("panes").path(2).path("shell_command").asText());
         assertTrue(windows.path(1).path("focus").asBoolean());
         assertFalse(windows.path(2).path("focus").asBoolean());
         assertTrue(windows.path(1).path("panes").path(0).path("focus").asBoolean());
@@ -660,7 +664,9 @@ final class MainTest {
                 "name: demo\nwindows: [{one: [17]}]\n",
                 "name: demo\nproject_name: other\nwindows: [{one: null}]\n",
                 "name: demo\nwindows: []\n",
-                "name: '<%= name %>'\nwindows: [{one: null}]\n");
+                "name: '<%= name %>'\nwindows: [{one: null}]\n",
+                "name: demo\nwindows: [{one: ['echo <%= dynamic_command %>']}]\n",
+                "name: demo\nwindows: [{'<%= dynamic_window %>': null}]\n");
         List<String> teamocil = List.of(
                 "name: demo\nwindows: [{name: one, clear: true, panes: [one]}]\n",
                 "name: demo\nwindows: [{name: one, filters: {before: echo}, panes: [one]}]\n",
@@ -677,6 +683,7 @@ final class MainTest {
                 assertEquals(1, result.code(), yaml + result);
                 assertEquals("", result.out(), yaml);
                 assertEquals("retained", Files.readString(saved), yaml);
+                if (yaml.contains("<%")) assertTrue(result.err().contains("ERB"), yaml + result);
                 Result stream = invoke("import", kind, source.toString(), "--ndjson");
                 assertEquals(1, stream.code(), yaml + stream);
                 assertFalse(stream.out().contains("completed"), yaml + stream);
