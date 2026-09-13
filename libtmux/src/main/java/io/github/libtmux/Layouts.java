@@ -26,7 +26,6 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Layouts {
 
-    private static final int MAX_SERIALIZED_LENGTH = 8_191;
     private static final int MAX_DEPTH = 256;
     private static final List<String> NAMED =
             Arrays.stream(Layout.values()).map(Layout::tmuxName).toList();
@@ -300,7 +299,7 @@ public final class Layouts {
             checksum = (checksum + layout.charAt(index)) & 0xffff;
         }
         String body = layout.substring(5);
-        if (checksum != declared || body.length() > MAX_SERIALIZED_LENGTH) return -1;
+        if (checksum != declared) return -1;
         Serialized parser = new Serialized(body);
         return parser.valid() ? parser.leaves : -1;
     }
