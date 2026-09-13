@@ -19,6 +19,37 @@ cyclic aliases, nonfinite numbers and nonstring mapping keys are rejected.
 Files ending in `.json` require JSON syntax. YAML expansion is limited to
 100 levels and 100,000 values.
 
+## Imports
+
+`import tmuxinator` and `import teamocil` translate supported source shapes and
+validate the resulting native workspace before writing stdout or a destination.
+`convert` remains lossless document conversion and does not validate loading.
+
+Tmuxinator window command arrays stay sequential commands in one pane; explicit
+`panes` create separate panes. Project `pre_window` arrays form one `; `-joined
+command, and window `pre` arrays form one ` && `-joined command before each
+explicit pane. `pre_tab` is accepted as an alias for `pre_window`.
+Teamocil `commands` arrays form one `; `-joined command; legacy `cmd` and `splits`
+are accepted. Window options and the first requested window/pane focus are
+preserved; absent focus selects the first item. Layouts and source order remain
+part of the translated workspace.
+
+Imports record an absolute project directory from the invocation directory,
+including when `root` is omitted. Window roots resolve against that project
+directory, so moving the saved file does not change its working directories.
+Directories need not exist during import; native loading still checks them.
+Missing session names use the source filename without its extension. Conflicting
+non-null aliases and malformed scalar or command shapes are rejected.
+
+Lifecycle hooks, project `pre`/`post`, endpoint/runtime overrides, named pane
+titles, ERB templates, Teamocil `clear`/filters and other unsupported fields are
+rejected before output. Java creates all panes before sending commands, so
+before-command synchronization cannot preserve the source delivery order and is
+rejected. Tmuxinator `synchronize: after` uses native `options_after` instead.
+Window `pre` requires explicit nonempty panes; otherwise Tmuxinator would omit
+that command. Move unsupported behavior into an explicit native workspace or
+keep using its source tool.
+
 ## Installation
 
 Build the local distribution from the repository root:
