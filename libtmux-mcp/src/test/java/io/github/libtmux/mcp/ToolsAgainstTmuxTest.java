@@ -61,6 +61,17 @@ final class ToolsAgainstTmuxTest {
         assertThrows(LibTmuxException.class, () -> Listings.panes(TestCalls.on(server)));
     }
 
+    /** No daemon means no name can already be taken, so this starts one instead of failing. */
+    @Test
+    void newSessionStartsADaemonRatherThanFailingOnAnAbsentOne(Server server) {
+        server.killServer();
+
+        Shaping.Made made = Shaping.newSession(TestCalls.on(server, "name", "revived"));
+
+        assertEquals("revived", made.name());
+        assertTrue(server.hasSession("revived"));
+    }
+
     @Test
     void emptyListingsDescribeCapturedState(Server server) {
         server.run(List.of("set-option", "-s", "exit-empty", "off"));

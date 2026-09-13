@@ -4,6 +4,7 @@ import io.github.libtmux.Layout;
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import java.util.Arrays;
@@ -33,7 +34,7 @@ final class Shaping {
     static Made newSession(Call call) {
         String name = call.string("name");
         Server server = call.server();
-        if (server.hasSession(name)) {
+        if (taken(server, name)) {
             throw new IllegalArgumentException(
                     "a session named '" + name + "' is already there; pick another name, or use it as it is");
         }
@@ -47,6 +48,15 @@ final class Shaping {
                 first.id().value(),
                 session.name(),
                 "Detached, so nothing is watching it. Its first pane is the one to act on.");
+    }
+
+    /** No daemon means no name can already be taken; {@code newSession} will start one. */
+    private static boolean taken(Server server, String name) {
+        try {
+            return server.hasSession(name);
+        } catch (ServerNotRunningException absent) {
+            return false;
+        }
     }
 
     static Made newWindow(Call call) {

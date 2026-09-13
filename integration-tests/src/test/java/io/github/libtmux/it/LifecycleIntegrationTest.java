@@ -46,6 +46,13 @@ final class LifecycleIntegrationTest {
     }
 
     @Test
+    void anAbsentDaemonIsNotReportedAsAnAbsentSession(Server server) {
+        server.killServer();
+
+        assertThrows(ServerNotRunningException.class, () -> server.hasSession("never-made"));
+    }
+
+    @Test
     void anEmptyServerAndAnAbsentOneAreDistinguishable(Server server) {
         assertTrue(server.isAlive());
         server.requireAlive();

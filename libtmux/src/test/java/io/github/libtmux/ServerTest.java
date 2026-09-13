@@ -418,7 +418,8 @@ final class ServerTest {
     @Test
     void showingABufferDistinguishesAnAbsentDaemonFromAMissingName(@TempDir Path directory) throws IOException {
         try (Server server = Server.using(config(directory), new RefusingTransport("no buffer never-set"))) {
-            assertThrows(ObjectDoesNotExistException.class, () -> server.buffers().show("never-set"));
+            assertThrows(
+                    ObjectDoesNotExistException.class, () -> server.buffers().show("never-set"));
         }
         try (Server server = Server.using(config(directory), new RefusingTransport("no server running"))) {
             assertThrows(ServerNotRunningException.class, () -> server.buffers().show("never-set"));

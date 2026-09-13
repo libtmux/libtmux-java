@@ -100,9 +100,20 @@ public final class Server implements AutoCloseable {
                 .orElseThrow(() -> new ObjectDoesNotExistException("the session just created is already gone"));
     }
 
-    /** Whether a session with this name exists. */
+    /**
+     * Whether a session with this name exists.
+     *
+     * @throws ServerNotRunningException if no daemon is running
+     */
     public boolean hasSession(String name) {
-        return cmd("has-session", "-t", "=" + name).succeeded();
+        CommandResult result = cmd("has-session", "-t", "=" + name);
+        if (result.succeeded()) {
+            return true;
+        }
+        if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
+            throw new ServerNotRunningException("no tmux server is answering on this endpoint");
+        }
+        return false;
     }
 
     /**
