@@ -51,7 +51,7 @@ public enum Layout {
     /** Refuses this layout when the running tmux predates it. */
     public void requireSupported(TmuxVersion running) {
         if (!running.atLeast(since())) {
-            throw new UnsupportedTmuxVersion("the " + this + " layout", since(), running);
+            throw new UnsupportedTmuxVersionException("the " + this + " layout", since(), running);
         }
     }
 

@@ -46,12 +46,12 @@ final class LifecycleIntegrationTest {
     @Test
     void anEmptyServerAndAnAbsentOneAreDistinguishable(Server server) {
         assertTrue(server.isAlive());
-        server.raiseIfDead();
+        server.requireAlive();
 
         server.killServer();
 
         assertFalse(server.isAlive(), "the server is gone");
-        assertThrows(LibTmuxException.class, server::raiseIfDead);
+        assertThrows(LibTmuxException.class, server::requireAlive);
         assertThrows(LibTmuxException.class, server::sessions);
     }
 

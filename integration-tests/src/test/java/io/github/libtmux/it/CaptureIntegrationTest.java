@@ -9,7 +9,7 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -137,7 +137,7 @@ final class CaptureIntegrationTest {
             assertTrue(
                     pane.capture(c -> c.trimmingTrailingSpace()).stream().anyMatch(line -> line.contains("line-12")));
         } else {
-            assertThrows(UnsupportedTmuxVersion.class, () -> pane.capture(c -> c.trimmingTrailingSpace()));
+            assertThrows(UnsupportedTmuxVersionException.class, () -> pane.capture(c -> c.trimmingTrailingSpace()));
         }
     }
 
@@ -149,7 +149,7 @@ final class CaptureIntegrationTest {
             pane.copyMode();
             assertTrue(pane.capture(c -> c.fromModeScreen()) != null);
         } else {
-            assertThrows(UnsupportedTmuxVersion.class, () -> pane.capture(c -> c.fromModeScreen()));
+            assertThrows(UnsupportedTmuxVersionException.class, () -> pane.capture(c -> c.fromModeScreen()));
         }
     }
 
@@ -161,8 +161,8 @@ final class CaptureIntegrationTest {
             assertTrue(pane.capture(c -> c.withLineNumbers()).stream().anyMatch(line -> line.contains("line-12")));
             assertTrue(pane.capture(c -> c.withHyperlinks()) != null);
         } else {
-            assertThrows(UnsupportedTmuxVersion.class, () -> pane.capture(c -> c.withLineNumbers()));
-            assertThrows(UnsupportedTmuxVersion.class, () -> pane.capture(c -> c.withHyperlinks()));
+            assertThrows(UnsupportedTmuxVersionException.class, () -> pane.capture(c -> c.withLineNumbers()));
+            assertThrows(UnsupportedTmuxVersionException.class, () -> pane.capture(c -> c.withHyperlinks()));
         }
     }
 
@@ -173,7 +173,7 @@ final class CaptureIntegrationTest {
         int before = pane.capture().size();
 
         if (!server.version().atLeast(HYPERLINKS_SINCE)) {
-            assertThrows(UnsupportedTmuxVersion.class, () -> pane.capture(c -> c.withHyperlinks()));
+            assertThrows(UnsupportedTmuxVersionException.class, () -> pane.capture(c -> c.withHyperlinks()));
         }
 
         assertEquals(before, pane.capture().size(), "the pane changed under a refused read");

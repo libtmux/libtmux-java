@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.Server;
 import io.github.libtmux.TmuxFormats;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -99,8 +99,8 @@ final class ServerScriptingIntegrationTest {
     @Test
     void readingWhatTheCommandPrintedWorksOrRefuses(Server server) {
         if (losesShellOutput(server)) {
-            UnsupportedTmuxVersion refused =
-                    assertThrows(UnsupportedTmuxVersion.class, () -> server.runShellCapturing("echo captured-me"));
+            UnsupportedTmuxVersionException refused = assertThrows(
+                    UnsupportedTmuxVersionException.class, () -> server.runShellCapturing("echo captured-me"));
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("run-shell"),

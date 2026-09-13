@@ -13,7 +13,7 @@ import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.SplitSpec;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.Window_;
 import io.github.libtmux.batch.BatchResult;
@@ -99,7 +99,7 @@ final class ExamplesTest {
         assertTrue(rightSide.edges().right(), "and again in another");
 
         if (!server.version().atLeast(new TmuxVersion(3, 7, ""))) {
-            assertThrows(UnsupportedTmuxVersion.class, () -> pane.split(s -> s.empty()));
+            assertThrows(UnsupportedTmuxVersionException.class, () -> pane.split(s -> s.empty()));
         }
     }
 

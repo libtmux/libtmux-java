@@ -78,7 +78,7 @@ public final class Server implements AutoCloseable {
      * }</pre>
      *
      * @param configure receives a builder holding tmux's defaults
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Session newSession(Consumer<SessionSpec.Builder> configure) {
         SessionSpec.Builder builder = SessionSpec.builder();
@@ -89,7 +89,7 @@ public final class Server implements AutoCloseable {
     /**
      * Creates a session according to a spec, which may be reused across servers.
      *
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Session newSession(SessionSpec spec) {
         List<String> reported = run(spec.argv("#{session_id}", this::version)).stdout();
@@ -97,7 +97,7 @@ public final class Server implements AutoCloseable {
         ServerSnapshot fresh = snapshot();
         return fresh.session(created)
                 .map(session -> new Session(this, fresh, session))
-                .orElseThrow(() -> new ObjectDoesNotExist("the session just created is already gone"));
+                .orElseThrow(() -> new ObjectDoesNotExistException("the session just created is already gone"));
     }
 
     /** Whether a session with this name exists. */
@@ -141,11 +141,11 @@ public final class Server implements AutoCloseable {
     }
 
     /**
-     * Checks the server is answering, and says so loudly when it is not.
+     * Requires a running tmux daemon that answers the liveness probe.
      *
      * @throws LibTmuxException if the server is not running or not answering
      */
-    public void raiseIfDead() {
+    public void requireAlive() {
         if (!isAlive()) {
             throw new LibTmuxException("no tmux server is answering on this endpoint");
         }
@@ -252,7 +252,7 @@ public final class Server implements AutoCloseable {
      * nothing, on every attempt. A caller who wants the effect is fine there; a caller who wants the
      * output would silently get none, so this one refuses rather than answering emptily.
      *
-     * @throws UnsupportedTmuxVersion on the releases that lose the output
+     * @throws UnsupportedTmuxVersionException on the releases that lose the output
      *
      * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
      * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
@@ -262,7 +262,7 @@ public final class Server implements AutoCloseable {
         Objects.requireNonNull(command, "command");
         TmuxVersion running = version();
         if (running.atLeast(SHELL_OUTPUT_LOST) && !running.atLeast(SHELL_OUTPUT_FOUND)) {
-            throw new UnsupportedTmuxVersion(
+            throw new UnsupportedTmuxVersionException(
                     "reading what run-shell printed is broken between tmux 3.3a and 3.4, and this server runs "
                             + running);
         }
@@ -330,7 +330,7 @@ public final class Server implements AutoCloseable {
     /**
      * What has been typed at tmux's command prompt, oldest first.
      *
-     * @throws UnsupportedTmuxVersion before 3.3a, which has no such command at all
+     * @throws UnsupportedTmuxVersionException before 3.3a, which has no such command at all
      */
     public List<String> promptHistory() {
         requirePromptHistory();
@@ -340,7 +340,7 @@ public final class Server implements AutoCloseable {
     /**
      * Forgets what has been typed at tmux's command prompt.
      *
-     * @throws UnsupportedTmuxVersion before 3.3a, which has no such command at all
+     * @throws UnsupportedTmuxVersionException before 3.3a, which has no such command at all
      */
     public void clearPromptHistory() {
         requirePromptHistory();
@@ -350,7 +350,7 @@ public final class Server implements AutoCloseable {
     private void requirePromptHistory() {
         TmuxVersion running = version();
         if (!running.atLeast(PROMPT_HISTORY_SINCE)) {
-            throw new UnsupportedTmuxVersion("the command prompt's history", PROMPT_HISTORY_SINCE, running);
+            throw new UnsupportedTmuxVersionException("the command prompt's history", PROMPT_HISTORY_SINCE, running);
         }
     }
 
@@ -821,7 +821,7 @@ public final class Server implements AutoCloseable {
         String stale = "libtmux-stale-handle-" + pid;
         CommandResult result = cmd(List.of("if-shell", "-F", fence, command, stale), config.defaultTimeout(), input);
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
-            throw new ObjectDoesNotExist("the tmux server this handle belonged to has ended");
+            throw new ObjectDoesNotExistException("the tmux server this handle belonged to has ended");
         }
         return result;
     }
@@ -836,7 +836,7 @@ public final class Server implements AutoCloseable {
         CommandResult result =
                 cmd(List.of("if-shell", "-F", "-t", target, condition, CommandStrings.stringify(argv), stale));
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
-            throw new ObjectDoesNotExist("window " + expected.window() + " no longer exists here");
+            throw new ObjectDoesNotExistException("window " + expected.window() + " no longer exists here");
         }
         if (!result.succeeded()) {
             throw new LibTmuxException("tmux " + argv.get(0) + " failed: " + String.join("; ", result.stderr()));
@@ -847,7 +847,7 @@ public final class Server implements AutoCloseable {
     ServerSnapshot refresh(ServerSnapshot previous) {
         ServerSnapshot fresh = snapshot();
         if (!identity(previous).equals(identity(fresh))) {
-            throw new ObjectDoesNotExist("the tmux server this handle belonged to has ended");
+            throw new ObjectDoesNotExistException("the tmux server this handle belonged to has ended");
         }
         return fresh;
     }

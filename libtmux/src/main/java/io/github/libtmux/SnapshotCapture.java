@@ -87,7 +87,7 @@ final class SnapshotCapture {
                 process().orElseThrow(() -> new LibTmuxException("no tmux server is answering on this endpoint"));
         try {
             return Optional.of(capture(process));
-        } catch (ObjectDoesNotExist replaced) {
+        } catch (ObjectDoesNotExistException replaced) {
             // The fence answered: this is no longer the server the identity came from.
             return Optional.empty();
         } catch (RuntimeException failure) {

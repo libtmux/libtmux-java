@@ -99,12 +99,12 @@ choice too: a shell, a command, or nothing at all. tmux rejects a command on an
 empty pane, so no spec can carry both.
 
 Options that arrived in tmux 3.7 — an empty pane, keeping a pane after its
-command exits, per-pane styles — raise `UnsupportedTmuxVersion` on an older
-server rather than being quietly dropped:
+command exits, per-pane styles — throw `UnsupportedTmuxVersionException` on an
+older server:
 
 ```java
 if (!server.version().atLeast(new TmuxVersion(3, 7, ""))) {
-    assertThrows(UnsupportedTmuxVersion.class, () -> pane.split(s -> s.empty()));
+    assertThrows(UnsupportedTmuxVersionException.class, () -> pane.split(s -> s.empty()));
 }
 ```
 
@@ -244,3 +244,29 @@ pinned.configFile().isPresent();           // → true
 | understand what a handle is       | [snapshots and handles](snapshots-and-handles.md) |
 | watch output as it happens        | [streaming](streaming.md)                     |
 | test your own code against tmux   | [testing](testing.md)                         |
+
+## Migrating from earlier alphas
+
+The exception and guard names now follow Java spelling. Replace the old imports,
+catch types and calls, then recompile against the new alpha:
+
+| Previous name | Current name |
+| --- | --- |
+| `ObjectDoesNotExist` | `ObjectDoesNotExistException` |
+| `UnsupportedTmuxVersion` | `UnsupportedTmuxVersionException` |
+| `server.raiseIfDead()` | `server.requireAlive()` |
+
+Both exceptions still extend `LibTmuxException`. `requireAlive()` still throws
+when tmux refuses the probe and preserves transport failures. These are direct
+renames under the alpha compatibility policy; the old names are removed.
+
+```java
+server.requireAlive();
+server.isAlive();                      // → true
+```
+
+Live listings, finders and snapshot capture now throw when a read fails,
+including an absent daemon. A missing object in a successful capture still
+produces an empty `Optional`. Catch `LibTmuxException` when failed reads require
+recovery; do not treat them as an empty server. `server.cmd(...)` still returns a
+completed nonzero exit as result data, while `server.run(...)` throws.

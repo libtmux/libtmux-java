@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.LibTmuxException;
-import io.github.libtmux.ObjectDoesNotExist;
+import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
@@ -138,7 +138,7 @@ final class OperationsIntegrationTest {
         Window extra = session(server).newWindow("doomed");
         extra.kill();
 
-        assertThrows(ObjectDoesNotExist.class, extra::refresh);
+        assertThrows(ObjectDoesNotExistException.class, extra::refresh);
     }
 
     @Test
@@ -165,7 +165,7 @@ final class OperationsIntegrationTest {
                 assertNotEquals(
                         stale, current, "equal numeric ids from different server processes are not one session");
 
-                assertThrows(ObjectDoesNotExist.class, () -> stale.rename("corrupted"));
+                assertThrows(ObjectDoesNotExistException.class, () -> stale.rename("corrupted"));
 
                 assertEquals("replacement", replacement.sessions().get(0).name());
             } finally {
