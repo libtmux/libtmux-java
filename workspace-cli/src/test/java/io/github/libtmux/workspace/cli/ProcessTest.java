@@ -37,6 +37,188 @@ final class ProcessTest {
         return process;
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"tmuxinator", "teamocil"})
+    void installedImportsLoadCommandsInOrderWithNativeFocusAndOptions(String kind) throws Exception {
+        Path socket = directory.resolve("import-socket");
+        Path project = Files.createDirectories(directory.resolve("project/child"));
+        Path source = Files.createDirectories(directory.resolve("inputs")).resolve("source.json");
+        Path saved = Files.createDirectories(directory.resolve("moved")).resolve("native.json");
+        Path out = directory.resolve("output.json");
+        Path err = directory.resolve("error.log");
+        Path before = directory.resolve("before");
+        Path suppressed = directory.resolve("suppressed");
+        var mapper = new ObjectMapper();
+        ObjectNode document = mapper.createObjectNode().put("name", "imported");
+        var windows = document.putArray("windows");
+        if (kind.equals("tmuxinator")) {
+            document.put("root", "project");
+            document.putArray("pre_window").add("false").add("printf b >> '" + before + "'");
+            var main = windows.addObject()
+                    .putObject("main")
+                    .put("root", "child")
+                    .put("layout", "even-horizontal")
+                    .put("synchronize", "after");
+            main.putArray("pre").add("false").add("printf lost > '" + suppressed + "'");
+            var panes = main.putArray("panes");
+            for (int index = 0; index < 3; index++) {
+                panes.addArray()
+                        .add("IMPORT_VALUE=pane" + index)
+                        .add("printf '%s:' \"$IMPORT_VALUE\" > '" + directory.resolve("marker" + index) + "'; pwd >> '"
+                                + directory.resolve("marker" + index) + "'");
+            }
+            windows.addObject()
+                    .putArray("sequence")
+                    .add("IMPORT_SEQUENCE=one")
+                    .add("printf '%s-two' \"$IMPORT_SEQUENCE\" > '" + directory.resolve("sequence") + "'");
+        } else {
+            var main = windows.addObject()
+                    .put("name", "main")
+                    .put("root", "project/child")
+                    .put("layout", "even-horizontal");
+            main.putObject("options").put("automatic-rename", false).put("@imported", "retained");
+            var panes = main.putArray("panes");
+            for (int index = 0; index < 3; index++) {
+                panes.addObject()
+                        .put("focus", index > 0)
+                        .putArray("commands")
+                        .add("false")
+                        .add("printf 'pane" + index + ":' > '" + directory.resolve("marker" + index) + "'; pwd >> '"
+                                + directory.resolve("marker" + index) + "'");
+            }
+            windows.addObject()
+                    .put("name", "sequence")
+                    .put("focus", true)
+                    .putArray("splits")
+                    .addObject()
+                    .put("cmd", "printf one-two > '" + directory.resolve("sequence") + "'");
+            windows.addObject()
+                    .put("name", "later")
+                    .put("focus", true)
+                    .putArray("panes")
+                    .addNull();
+        }
+        Files.writeString(source, mapper.writeValueAsString(document));
+        try (Server server = Server.builder()
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .binary(System.getProperty("libtmux.tmux", "tmux"))
+                .configFile(Path.of("/dev/null"))
+                .build()) {
+            Process process = null;
+            try {
+                var keeper = server.newSession("keeper");
+                String keeperId = keeper.id().value();
+                var keeperPanes = server.cmd("list-panes", "-t", keeperId, "-F", "#{pane_id}:#{pane_pid}")
+                        .stdout();
+                server.globalOptions().set("default-shell", "/bin/sh");
+                for (String[] args : List.of(
+                        new String[] {
+                            "import",
+                            kind,
+                            source.toString(),
+                            "--json",
+                            "--workspace-format",
+                            "json",
+                            "--save-to",
+                            saved.toString()
+                        },
+                        new String[] {"load", saved.toString(), "-d", "-S", socket.toString(), "--json"})) {
+                    process = command(args)
+                            .redirectOutput(out.toFile())
+                            .redirectError(err.toFile())
+                            .start();
+                    assertTrue(process.waitFor(15, TimeUnit.SECONDS), "installed import/load did not finish");
+                    assertEquals(0, process.exitValue(), Files.readString(err));
+                }
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                while (System.nanoTime() < deadline) {
+                    Path sequence = directory.resolve("sequence");
+                    boolean complete =
+                            Files.exists(sequence) && Files.readString(sequence).equals("one-two");
+                    for (int index = 0; index < 3; index++) {
+                        Path marker = directory.resolve("marker" + index);
+                        complete &= Files.exists(marker)
+                                && Files.readString(marker).equals("pane" + index + ":" + project + "\n");
+                    }
+                    if (kind.equals("tmuxinator"))
+                        complete &=
+                                Files.exists(before) && Files.readString(before).equals("bbbb");
+                    if (complete) break;
+                    Thread.sleep(20);
+                }
+                for (int index = 0; index < 3; index++) {
+                    assertEquals(
+                            "pane" + index + ":" + project + "\n",
+                            Files.readString(directory.resolve("marker" + index)));
+                }
+                assertEquals("one-two", Files.readString(directory.resolve("sequence")));
+                var loaded = server.session("imported").orElseThrow();
+                var main = loaded.windows().getFirst();
+                var nativePanes = server.cmd(
+                                "list-panes",
+                                "-t",
+                                main.id().value(),
+                                "-F",
+                                "#{pane_id}:#{pane_index}:#{pane_left}:#{pane_active}")
+                        .stdout();
+                assertEquals(3, nativePanes.size());
+                var effects = mapper.readTree(Files.readString(out))
+                        .path("results")
+                        .path(0)
+                        .path("pane_ids");
+                int previousLeft = -1;
+                for (int index = 0; index < 3; index++) {
+                    String[] fields = nativePanes.get(index).split(":", -1);
+                    assertEquals(effects.path(index).asText(), fields[0]);
+                    assertEquals(index, Integer.parseInt(fields[1]));
+                    assertTrue(Integer.parseInt(fields[2]) > previousLeft);
+                    previousLeft = Integer.parseInt(fields[2]);
+                    assertEquals(index == (kind.equals("tmuxinator") ? 0 : 1) ? "1" : "0", fields[3]);
+                }
+                String expectedWindow = kind.equals("tmuxinator")
+                        ? main.id().value()
+                        : loaded.windows().get(1).id().value();
+                assertEquals(
+                        List.of(expectedWindow),
+                        server.cmd("display-message", "-p", "-t", loaded.id().value(), "#{window_id}")
+                                .stdout());
+                if (kind.equals("tmuxinator")) {
+                    assertEquals("bbbb", Files.readString(before));
+                    assertFalse(Files.exists(suppressed));
+                    assertEquals("on", main.options().get("synchronize-panes").orElseThrow());
+                    Path synchronizedOutput = directory.resolve("synchronized");
+                    assertTrue(server.cmd(
+                                    "send-keys",
+                                    "-t",
+                                    effects.path(0).asText(),
+                                    "-l",
+                                    "--",
+                                    "printf x >> '" + synchronizedOutput + "'")
+                            .succeeded());
+                    assertTrue(server.cmd("send-keys", "-t", effects.path(0).asText(), "Enter")
+                            .succeeded());
+                    deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                    while (System.nanoTime() < deadline
+                            && (!Files.exists(synchronizedOutput) || Files.size(synchronizedOutput) < 3))
+                        Thread.sleep(20);
+                    assertEquals("xxx", Files.readString(synchronizedOutput));
+                } else {
+                    assertEquals("off", main.options().get("automatic-rename").orElseThrow());
+                    assertEquals("retained", main.options().get("@imported").orElseThrow());
+                }
+                assertEquals(keeperId, keeper.refresh().id().value());
+                assertEquals(
+                        keeperPanes,
+                        server.cmd("list-panes", "-t", keeperId, "-F", "#{pane_id}:#{pane_pid}")
+                                .stdout());
+            } finally {
+                if (process != null && process.isAlive())
+                    process.destroyForcibly().waitFor();
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     @Test
     void installedCaptureReloadPreservesOptionLineEndings() throws Exception {
         Path socket = directory.resolve("capture-socket");

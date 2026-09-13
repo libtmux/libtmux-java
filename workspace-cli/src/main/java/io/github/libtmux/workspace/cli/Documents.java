@@ -135,7 +135,10 @@ final class Documents {
         String kind = args.commandSpec().name();
         Path source = Catalog.resolve(context, args.matchedPositionalValue(0, ""), kind);
         ObjectNode value = read(source);
-        if (!kind.equals("convert")) value = importSource(value, kind);
+        if (!kind.equals("convert")) {
+            value = importSource(context, source, value, kind);
+            WorkspacePlan.validateImported(context, source, value);
+        }
         String defaultFormat =
                 kind.equals("convert") && !Catalog.extension(source).equals("json") ? "json" : "yaml";
         String format = args.matchedOptionValue("--workspace-format", defaultFormat);
@@ -178,74 +181,204 @@ final class Documents {
         if (answer != 'y' && answer != 'Y') throw new Main.Failure("cancelled", 1, "operation cancelled");
     }
 
-    static ObjectNode importSource(ObjectNode source, String kind) {
-        JsonNode input = kind.equals("teamocil") && source.has("session") ? source.path("session") : source;
-        ObjectNode result = JSON.createObjectNode();
-        result.set("session_name", input.path(input.has("project_name") ? "project_name" : "name"));
-        copy(input, result, input.has("project_root") ? "project_root" : "root", "start_directory");
-        ArrayNode windows = result.putArray("windows");
-        if (kind.equals("tmuxinator")) {
-            if (input.has("pre"))
-                result.set(input.has("pre_window") ? "shell_command" : "shell_command_before", input.path("pre"));
-            if (input.has("pre") && input.has("pre_window"))
-                result.set("shell_command_before", input.path("pre_window"));
-            if (input.has("rbenv")) {
-                JsonNode previous = result.path("shell_command_before");
-                ArrayNode before = JSON.createArrayNode();
-                if (previous.isArray()) previous.forEach(before::add);
-                else if (!previous.isMissingNode()) before.add(previous);
-                before.add("rbenv shell " + input.path("rbenv").asText());
-                result.set("shell_command_before", before);
-            }
-            copy(input, result, "socket_name", "socket_name");
-            if (input.has("cli_args") || input.has("tmux_options"))
-                result.put(
-                        "config",
-                        input.path(input.has("cli_args") ? "cli_args" : "tmux_options")
-                                .asText()
-                                .replace("-f", "")
-                                .strip());
-            for (JsonNode entry : input.path(input.has("tabs") ? "tabs" : "windows")) {
-                entry.properties().forEach(field -> {
-                    ObjectNode window = windows.addObject().put("window_name", field.getKey());
-                    JsonNode config = field.getValue();
-                    if (config.isObject()) {
-                        copy(config, window, "panes", "panes");
-                        copy(config, window, "pre", "shell_command_before");
-                        copy(config, window, "root", "start_directory");
-                        copy(config, window, "layout", "layout");
-                    } else
-                        window.set(
-                                "panes",
-                                config.isArray()
-                                        ? config
-                                        : JSON.createArrayNode().add(config));
-                });
-            }
-        } else {
-            for (JsonNode entry : input.path("windows")) {
-                ObjectNode window = windows.addObject();
-                copy(entry, window, "name", "window_name");
-                copy(entry, window, "root", "start_directory");
-                copy(entry, window, "clear", "clear");
-                copy(entry, window, "layout", "layout");
-                copy(entry.path("filters"), window, "before", "shell_command_before");
-                copy(entry.path("filters"), window, "after", "shell_command_after");
-                JsonNode panes =
-                        entry.path(entry.has("splits") ? "splits" : "panes").deepCopy();
-                if (!panes.isMissingNode()) window.set("panes", panes);
-                for (JsonNode pane : panes) {
-                    if (pane instanceof ObjectNode object) {
-                        if (object.has("cmd")) object.set("shell_command", object.remove("cmd"));
-                        object.remove("width");
-                    }
-                }
-            }
+    private static ObjectNode importSource(Main.Context context, Path source, ObjectNode document, String kind) {
+        if (document.toString().contains("<%")) throw importError("ERB templates are not supported");
+        boolean tmuxinator = kind.equals("tmuxinator");
+        JsonNode input = document;
+        if (!tmuxinator && document.hasNonNull("session")) {
+            importKeys(document, Set.of("session"), "document");
+            input = document.path("session");
         }
+        importKeys(
+                input,
+                tmuxinator
+                        ? Set.of(
+                                "name",
+                                "project_name",
+                                "root",
+                                "project_root",
+                                "windows",
+                                "tabs",
+                                "pre_window",
+                                "pre_tab")
+                        : Set.of("name", "root", "windows"),
+                kind);
+        JsonNode name = tmuxinator ? alias(input, "project_name", "name") : input.path("name");
+        ObjectNode result =
+                JSON.createObjectNode().put("session_name", absent(name) ? stem(source) : importText(name, "name"));
+        Path directory = importDirectory(
+                context, tmuxinator ? alias(input, "project_root", "root") : input.path("root"), context.directory());
+        result.put("start_directory", directory.toString());
+        if (tmuxinator) {
+            String before = commandGroup(alias(input, "pre_tab", "pre_window"), "pre_window", "; ");
+            if (!before.isEmpty()) result.put("shell_command_before", before);
+        }
+        JsonNode entries = tmuxinator ? alias(input, "tabs", "windows") : input.path("windows");
+        if (!entries.isArray() || entries.isEmpty()) throw importError("windows must be a nonempty array");
+        ArrayNode windows = result.putArray("windows");
+        for (JsonNode entry : entries) {
+            ObjectNode window = tmuxinator
+                    ? tmuxinatorWindow(context, directory, entry)
+                    : teamocilWindow(context, directory, entry);
+            windows.add(window);
+        }
+        firstFocus(windows);
         return result;
     }
 
+    private static ObjectNode tmuxinatorWindow(Main.Context context, Path directory, JsonNode entry) {
+        if (!entry.isObject() || entry.size() != 1)
+            throw importError("each tmuxinator window must have exactly one name");
+        var field = entry.properties().iterator().next();
+        JsonNode input = field.getValue();
+        ObjectNode window = JSON.createObjectNode().put("window_name", field.getKey());
+        ArrayNode panes = window.putArray("panes");
+        if (input.isObject()) {
+            importKeys(input, Set.of("root", "layout", "pre", "panes", "synchronize"), "tmuxinator window");
+            window.put(
+                    "start_directory",
+                    importDirectory(context, input.path("root"), directory).toString());
+            copy(input, window, "layout", "layout");
+            String before = commandGroup(input.path("pre"), "window.pre", " && ");
+            JsonNode entries = input.path("panes");
+            if (!absent(entries) && !entries.isArray()) throw importError("window.panes must be an array");
+            if (!before.isEmpty()) {
+                if (entries.isEmpty()) throw importError("window.pre requires explicit nonempty panes");
+                window.put("shell_command_before", before);
+            }
+            for (JsonNode pane : entries) {
+                if (pane.isObject())
+                    throw importError(
+                            "named tmuxinator panes require pane titles, which native loading does not support");
+                panes.addObject().set("shell_command", literalCommands(importCommands(pane, "pane")));
+            }
+            JsonNode synchronize = input.path("synchronize");
+            if (!absent(synchronize)
+                    && !synchronize.equals(JSON.getNodeFactory().booleanNode(false))) {
+                if (!synchronize.isTextual() || !synchronize.asText().equals("after"))
+                    throw importError("synchronize before pane commands is not supported; use synchronize: after");
+                window.putObject("options_after").put("synchronize-panes", true);
+            }
+        } else {
+            panes.addObject().set("shell_command", literalCommands(importCommands(input, "window commands")));
+        }
+        if (panes.isEmpty()) panes.addObject();
+        firstFocus(panes);
+        return window;
+    }
+
+    private static ObjectNode teamocilWindow(Main.Context context, Path directory, JsonNode input) {
+        importKeys(input, Set.of("name", "root", "layout", "focus", "options", "panes", "splits"), "teamocil window");
+        ObjectNode window = JSON.createObjectNode();
+        copy(input, window, "name", "window_name");
+        copy(input, window, "layout", "layout");
+        copy(input, window, "focus", "focus");
+        window.put(
+                "start_directory",
+                importDirectory(context, input.path("root"), directory).toString());
+        JsonNode options = input.path("options");
+        if (!absent(options)) {
+            if (!options.isObject()) throw importError("window.options must be a mapping");
+            JsonNode synchronize = options.path("synchronize-panes");
+            if (!absent(synchronize)
+                    && !(synchronize.isBoolean() && !synchronize.asBoolean())
+                    && !(synchronize.isTextual() && Set.of("off", "0").contains(synchronize.asText())))
+                throw importError("Teamocil synchronize-panes before pane commands is not supported");
+            window.set("options", options);
+        }
+        JsonNode entries = alias(input, "panes", "splits");
+        if (!absent(entries) && !entries.isArray()) throw importError("window.panes must be an array");
+        ArrayNode panes = window.putArray("panes");
+        for (JsonNode entry : entries) {
+            ObjectNode pane = panes.addObject();
+            JsonNode commands = entry;
+            if (entry.isObject()) {
+                importKeys(entry, Set.of("commands", "cmd", "focus"), "teamocil pane");
+                commands = alias(entry, "commands", "cmd");
+                copy(entry, pane, "focus", "focus");
+            }
+            String command = commandGroup(commands, "pane commands", "; ");
+            if (!command.isEmpty())
+                pane.set("shell_command", literalCommands(JSON.getNodeFactory().textNode(command)));
+        }
+        if (panes.isEmpty()) panes.addObject();
+        firstFocus(panes);
+        return window;
+    }
+
+    private static void firstFocus(ArrayNode items) {
+        ObjectNode selected = (ObjectNode) items.get(0);
+        boolean found = false;
+        for (JsonNode item : items) {
+            JsonNode focus = item.path("focus");
+            if (!absent(focus) && !focus.isBoolean()) throw importError("focus must be a boolean");
+            if (!found && focus.asBoolean()) {
+                selected = (ObjectNode) item;
+                found = true;
+            }
+            ((ObjectNode) item).put("focus", false);
+        }
+        selected.put("focus", true);
+    }
+
+    private static Path importDirectory(Main.Context context, JsonNode value, Path fallback) {
+        if (absent(value)) return fallback.toAbsolutePath().normalize();
+        return fallback.resolve(Catalog.expand(context, importText(value, "root")))
+                .toAbsolutePath()
+                .normalize();
+    }
+
+    private static ArrayNode importCommands(JsonNode value, String field) {
+        ArrayNode commands = JSON.createArrayNode();
+        if (absent(value)) return commands;
+        if (value.isArray()) {
+            for (JsonNode command : value) if (!command.isNull()) commands.add(importText(command, field));
+        } else commands.add(importText(value, field));
+        return commands;
+    }
+
+    private static JsonNode literalCommands(JsonNode commands) {
+        JsonNode single = commands.isArray() && commands.size() == 1 ? commands.path(0) : commands;
+        // Imported shell commands must not become native blank-pane shorthand.
+        return single.isTextual() && Set.of("blank", "empty", "pane").contains(single.asText())
+                ? JSON.createObjectNode().put("cmd", single.asText())
+                : commands;
+    }
+
+    private static String commandGroup(JsonNode value, String field, String separator) {
+        var commands = new java.util.ArrayList<String>();
+        for (JsonNode command : importCommands(value, field)) commands.add(command.asText());
+        return String.join(separator, commands);
+    }
+
+    private static String importText(JsonNode value, String field) {
+        if (!value.isTextual() || value.asText().indexOf('\0') >= 0)
+            throw importError(field + " must be text without NUL");
+        return value.asText();
+    }
+
+    private static boolean absent(JsonNode value) {
+        return value.isMissingNode() || value.isNull();
+    }
+
+    private static JsonNode alias(JsonNode input, String first, String second) {
+        if (input.hasNonNull(first) && input.hasNonNull(second))
+            throw importError(first + " and " + second + " cannot both be set");
+        return input.hasNonNull(first) ? input.path(first) : input.path(second);
+    }
+
+    private static void importKeys(JsonNode input, Set<String> allowed, String scope) {
+        if (!input.isObject()) throw importError(scope + " must be a mapping");
+        input.fieldNames().forEachRemaining(key -> {
+            if (!allowed.contains(key)) throw importError(scope + "." + key + " is not supported by native import");
+        });
+    }
+
+    private static Main.Failure importError(String message) {
+        return new Main.Failure("invalid_config", 1, message);
+    }
+
     private static void copy(JsonNode source, ObjectNode target, String from, String to) {
-        if (source.has(from)) target.set(to, source.path(from));
+        if (source.hasNonNull(from)) target.set(to, source.path(from));
     }
 }

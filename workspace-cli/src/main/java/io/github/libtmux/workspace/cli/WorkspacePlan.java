@@ -46,12 +46,20 @@ record WorkspacePlan(
             List<Pane> panes) {}
 
     static WorkspacePlan read(Main.Context context, Path source, String rename) throws java.io.IOException {
-        ObjectNode root = Documents.read(source);
+        return parse(context, source, Documents.read(source), rename, true);
+    }
+
+    static void validateImported(Main.Context context, Path source, ObjectNode root) {
+        parse(context, source, root, "", false);
+    }
+
+    private static WorkspacePlan parse(
+            Main.Context context, Path source, ObjectNode root, String rename, boolean checkDirectories) {
         String name = rename.isEmpty() ? text(context, root.path("session_name"), "session_name") : rename;
         if (name.isEmpty() || name.indexOf('\0') >= 0) throw invalid("session_name must be nonempty text without NUL");
         Path parent = source.getParent();
         if (parent == null) throw invalid("workspace source has no parent");
-        Path directory = directory(context, root, parent);
+        Path directory = directory(context, root, parent, checkDirectories);
         Path scriptDirectory = root.hasNonNull("start_directory") ? directory : context.directory();
         String script = optionalText(context, root.path("before_script"), "before_script", "");
         List<String> beforeScript = script.isEmpty() ? List.of() : Children.words(script);
@@ -116,7 +124,7 @@ record WorkspacePlan(
             if (index >= 0 && !indexes.add(index)) throw invalid("duplicate window_index " + index);
             String layout = optionalText(context, node.path("layout"), "layout", "");
             if (!layout.isEmpty()) Layouts.require(layout);
-            Path windowDirectory = directory(context, node, directory);
+            Path windowDirectory = directory(context, node, directory, checkDirectories);
             Map<String, String> windowEnvironment = mapping(context, node.path("environment"), true);
             String shell = optionalText(context, node.path("window_shell"), "window_shell", "");
             boolean suppress = bool(node.path("suppress_history"), bool(root.path("suppress_history"), true));
@@ -142,7 +150,7 @@ record WorkspacePlan(
                                     "shell",
                                     "pane_shell"),
                             "pane");
-                Path paneDirectory = directory(context, pane, windowDirectory);
+                Path paneDirectory = directory(context, pane, windowDirectory, checkDirectories);
                 Map<String, String> paneEnvironment =
                         pane.has("environment") ? mapping(context, pane.path("environment"), true) : windowEnvironment;
                 boolean paneSuppress = bool(pane.path("suppress_history"), suppress);
@@ -254,12 +262,13 @@ record WorkspacePlan(
         return value.asInt();
     }
 
-    private static Path directory(Main.Context context, JsonNode node, Path fallback) {
+    private static Path directory(Main.Context context, JsonNode node, Path fallback, boolean checkDirectories) {
         JsonNode value = node.path("start_directory");
         if (value.isMissingNode() || value.isNull()) return fallback;
         Path resolved =
                 fallback.resolve(text(context, value, "start_directory")).normalize();
-        if (!Files.isDirectory(resolved)) throw invalid("start_directory is not a directory: " + resolved);
+        if (checkDirectories && !Files.isDirectory(resolved))
+            throw invalid("start_directory is not a directory: " + resolved);
         return resolved;
     }
 

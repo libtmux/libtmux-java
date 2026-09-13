@@ -535,6 +535,222 @@ final class MainTest {
     }
 
     @Test
+    void tmuxinatorImportKeepsCommandGroupsAndInvocationDirectories() throws Exception {
+        Path source = Files.createDirectories(directory.resolve("inputs")).resolve("project.yaml");
+        Files.writeString(source, """
+                name: imported
+                root: not-created
+                pre_window: ['false', 'printf project']
+                windows:
+                  - work:
+                      root: child
+                      pre: ['printf first', 'printf second']
+                      panes:
+                        - ['printf one', 'printf two']
+                        - null
+                  - sequence: ['printf three', 'printf four']
+                """);
+        Result imported = invoke("import", "tmuxinator", source.toString(), "--json");
+        assertEquals(0, imported.code(), imported.toString());
+        var value = new ObjectMapper().readTree(imported.out());
+        assertEquals(
+                directory.resolve("not-created").toString(),
+                value.path("start_directory").asText());
+        assertEquals("false; printf project", value.path("shell_command_before").asText());
+        var first = value.path("windows").path(0);
+        assertEquals(
+                directory.resolve("not-created/child").toString(),
+                first.path("start_directory").asText());
+        assertEquals(
+                "printf first && printf second",
+                first.path("shell_command_before").asText());
+        assertEquals(2, first.path("panes").size());
+        assertEquals(2, first.path("panes").path(0).path("shell_command").size());
+        assertEquals(1, value.path("windows").path(1).path("panes").size());
+        assertEquals(
+                2,
+                value.path("windows")
+                        .path(1)
+                        .path("panes")
+                        .path(0)
+                        .path("shell_command")
+                        .size());
+        assertTrue(first.path("focus").asBoolean());
+        assertTrue(first.path("panes").path(0).path("focus").asBoolean());
+        assertFalse(Files.exists(directory.resolve("not-created")));
+        Path saved = Files.createDirectories(directory.resolve("elsewhere")).resolve("project.json");
+        Result save = invoke(
+                "import",
+                "tmuxinator",
+                source.toString(),
+                "--json",
+                "--workspace-format",
+                "json",
+                "--save-to",
+                saved.toString());
+        assertEquals(0, save.code(), save.toString());
+        assertEquals(value, new ObjectMapper().readTree(Files.readString(saved)));
+        Result load = invoke("load", saved.toString(), "-d", "--json");
+        assertEquals(1, load.code());
+        assertTrue(load.err().contains("start_directory is not a directory"), load.toString());
+    }
+
+    @Test
+    void teamocilImportPreservesCommandsOptionsAndFirstFocus() throws Exception {
+        Path source = directory.resolve("team.yaml");
+        Files.writeString(source, """
+                session:
+                  name: imported
+                  windows:
+                    - name: first
+                      options: {automatic-rename: false, '@imported': value}
+                      panes:
+                        - commands: ['false', 'printf one']
+                        - commands: ['printf two']
+                          focus: true
+                        - cmd: printf three
+                          focus: true
+                    - name: second
+                      focus: true
+                      splits: [{cmd: printf four}, {cmd: printf five}]
+                    - name: third
+                      focus: true
+                      panes: []
+                """);
+        Result imported = invoke("import", "teamocil", source.toString(), "--json");
+        assertEquals(0, imported.code(), imported.toString());
+        var value = new ObjectMapper().readTree(imported.out());
+        var windows = value.path("windows");
+        assertEquals(
+                "false; printf one",
+                windows.path(0).path("panes").path(0).path("shell_command").asText());
+        assertEquals("value", windows.path(0).path("options").path("@imported").asText());
+        assertTrue(windows.path(0).path("panes").path(1).path("focus").asBoolean());
+        assertFalse(windows.path(0).path("panes").path(2).path("focus").asBoolean());
+        assertTrue(windows.path(1).path("focus").asBoolean());
+        assertFalse(windows.path(2).path("focus").asBoolean());
+        assertTrue(windows.path(1).path("panes").path(0).path("focus").asBoolean());
+        assertEquals(1, windows.path(2).path("panes").size());
+        Path saved = directory.resolve("native.json");
+        Files.writeString(saved, imported.out());
+        Main.Context context = new Main.Context(
+                Map.of("HOME", directory.toString()),
+                directory,
+                InputStream.nullInputStream(),
+                OutputStream.nullOutputStream(),
+                OutputStream.nullOutputStream());
+        WorkspacePlan plan = WorkspacePlan.read(context, saved, "");
+        assertEquals(3, plan.windows().getFirst().panes().size());
+        assertEquals("off", plan.windows().getFirst().options().get("automatic-rename"));
+    }
+
+    @Test
+    void importsRejectUnsupportedBehaviorAndMalformedValuesBeforeOutputOrSave() throws Exception {
+        Path source = directory.resolve("unsupported.yaml");
+        Path saved = directory.resolve("retained.json");
+        List<String> tmuxinator = List.of(
+                "name: demo\npre: printf host\nwindows: [{one: null}]\n",
+                "name: demo\npost: printf host\nwindows: [{one: null}]\n",
+                "name: demo\non_project_start: printf hook\nwindows: [{one: null}]\n",
+                "name: demo\nsocket_name: other\nwindows: [{one: null}]\n",
+                "name: demo\nwindows: [{one: {panes: [{title: printf pane}]}}]\n",
+                "name: demo\nwindows: [{one: {pre: printf dropped, panes: []}}]\n",
+                "name: demo\nwindows: [{one: {synchronize: before, panes: [one, two]}}]\n",
+                "name: demo\nwindows: [{one: {layout: invalid-layout}}]\n",
+                "name: demo\nwindows: [{one: [17]}]\n",
+                "name: demo\nproject_name: other\nwindows: [{one: null}]\n",
+                "name: demo\nwindows: []\n",
+                "name: '<%= name %>'\nwindows: [{one: null}]\n");
+        List<String> teamocil = List.of(
+                "name: demo\nwindows: [{name: one, clear: true, panes: [one]}]\n",
+                "name: demo\nwindows: [{name: one, filters: {before: echo}, panes: [one]}]\n",
+                "name: demo\nwindows: [{name: one, panes: [{commands: [17]}]}]\n",
+                "name: demo\nwindows: [{name: one, options: {synchronize-panes: true}, panes: [one, two]}]\n",
+                "name: demo\nwindows: [{name: one, focus: yes, panes: [one]}]\n".replace("yes", "'yes'"),
+                "name: demo\nwindows: [{name: one, panes: [one], splits: [two]}]\n");
+        for (String kind : List.of("tmuxinator", "teamocil")) {
+            for (String yaml : kind.equals("tmuxinator") ? tmuxinator : teamocil) {
+                Files.writeString(source, yaml);
+                Files.writeString(saved, "retained");
+                Result result =
+                        invoke("import", kind, source.toString(), "--json", "--save-to", saved.toString(), "--force");
+                assertEquals(1, result.code(), yaml + result);
+                assertEquals("", result.out(), yaml);
+                assertEquals("retained", Files.readString(saved), yaml);
+                Result stream = invoke("import", kind, source.toString(), "--ndjson");
+                assertEquals(1, stream.code(), yaml + stream);
+                assertFalse(stream.out().contains("completed"), yaml + stream);
+                assertEquals(0, invoke("convert", source.toString(), "--json").code(), yaml);
+            }
+        }
+    }
+
+    @Test
+    void importedCommandsDoNotBecomeNativeBlankPaneShorthand() throws Exception {
+        Path source = directory.resolve("literal.yaml");
+        Main.Context context = new Main.Context(
+                Map.of("HOME", directory.toString()),
+                directory,
+                InputStream.nullInputStream(),
+                OutputStream.nullOutputStream(),
+                OutputStream.nullOutputStream());
+        for (String kind : List.of("tmuxinator", "teamocil")) {
+            for (String command : List.of("blank", "empty", "pane")) {
+                Files.writeString(
+                        source,
+                        "name: literal\nwindows: ["
+                                + (kind.equals("tmuxinator")
+                                        ? "{one: ['" + command + "']}"
+                                        : "{name: one, panes: [{commands: ['" + command + "']}]}")
+                                + "]\n");
+                Result imported = invoke("import", kind, source.toString(), "--json");
+                assertEquals(0, imported.code(), imported.toString());
+                Path saved = directory.resolve("literal.json");
+                Files.writeString(saved, imported.out());
+                var commands = WorkspacePlan.read(context, saved, "")
+                        .windows()
+                        .getFirst()
+                        .panes()
+                        .getFirst()
+                        .commands();
+                assertEquals(1, commands.size(), kind + " " + command);
+                assertEquals(" " + command, commands.getFirst().text());
+            }
+        }
+    }
+
+    @Test
+    void importAliasesUseNullFallbackAndAfterSynchronization() throws Exception {
+        Path source = directory.resolve("aliases.yaml");
+        Files.writeString(source, """
+                project_name: null
+                name: aliases
+                project_root: null
+                root: .
+                tabs: null
+                windows:
+                  - work:
+                      synchronize: after
+                      panes: [null, ['printf a', 'printf b']]
+                """);
+        Result imported = invoke("import", "tmuxinator", source.toString(), "--json");
+        assertEquals(0, imported.code(), imported.toString());
+        var value = new ObjectMapper().readTree(imported.out());
+        assertEquals("aliases", value.path("session_name").asText());
+        assertTrue(value.path("windows")
+                .path(0)
+                .path("options_after")
+                .path("synchronize-panes")
+                .asBoolean());
+        Files.writeString(source, "windows: [{name: default, panes: [null]}]\n");
+        imported = invoke("import", "teamocil", source.toString(), "--json");
+        assertEquals(0, imported.code(), imported.toString());
+        value = new ObjectMapper().readTree(imported.out());
+        assertEquals("aliases", value.path("session_name").asText());
+        assertEquals(directory.toString(), value.path("start_directory").asText());
+    }
+
+    @Test
     void editorCapturesControlBytesAndReturnsItsExitStatus() throws Exception {
         Path source = directory.resolve("workspace.yaml");
         Files.writeString(source, "session_name: edited\nwindows: []\n");
