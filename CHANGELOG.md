@@ -52,6 +52,12 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
   `UnsupportedTmuxVersion` with `UnsupportedTmuxVersionException` in imports and
   catch clauses. The old names have no aliases. (#17)
 
+### Fixed
+
+- **The MCP `rename` tool reports the name tmux settled on.** tmux rewrites or
+  refuses `:` and `.` in a session or window name depending on the release; the
+  reply named the requested string instead of the handle's actual name. (#17)
+
 ## 0.0.1-alpha.11 — 2026-09-12
 
 ### Added

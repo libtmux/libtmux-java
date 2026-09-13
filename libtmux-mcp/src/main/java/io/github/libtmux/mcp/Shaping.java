@@ -106,15 +106,16 @@ final class Shaping {
                 "The new pane is " + made.id().value() + "; " + pane.id().value() + " is still there.");
     }
 
+    /** tmux 3.2a-3.6 rewrite ':' and '.' to '_', so the reply names what tmux settled on. */
     static Changed rename(Call call) {
         String target = call.string("target");
         String name = call.string("name");
         if (target.startsWith("@")) {
             Window renamed = Targets.window(call.server(), target).rename(name);
-            return new Changed("window", renamed.id().value(), name, null);
+            return new Changed("window", renamed.id().value(), renamed.name(), null);
         }
         Session renamed = Targets.sessionById(call.server(), target).rename(name);
-        return new Changed("session", renamed.id().value(), name, null);
+        return new Changed("session", renamed.id().value(), renamed.name(), null);
     }
 
     static Changed select(Call call) {

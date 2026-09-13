@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Server;
+import io.github.libtmux.Session;
+import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.WakeReason;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
@@ -19,6 +21,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 /** The rest of the surface, against real tmux. */
 @ExtendWith(TmuxExtension.class)
 final class ToolsAgainstTmuxTest {
+
+    /** tmux 3.7 refuses ':' and '.' in a session name; every other supported release accepts it. */
+    private static final TmuxVersion REJECTS_DELIMITER = new TmuxVersion(3, 7, "");
+
+    private static final TmuxVersion ACCEPTS_DELIMITER_AGAIN = new TmuxVersion(3, 7, "a");
 
     // ---------------------------------------------------------------- knowing where you are
 
@@ -295,6 +302,26 @@ final class ToolsAgainstTmuxTest {
         assertEquals("session", ended.kind());
         assertTrue(server.isAlive());
         assertEquals(1, server.sessions().size());
+    }
+
+    /** tmux rewrites ':' and '.' in a name; the reply must say what it settled on, not what was asked. */
+    @Test
+    void renamingReportsWhatTmuxSettledOnRatherThanWhatWasAsked(Server server) {
+        Session session = server.sessions().get(0);
+        boolean refuses =
+                server.version().atLeast(REJECTS_DELIMITER) && !server.version().atLeast(ACCEPTS_DELIMITER_AGAIN);
+        if (refuses) {
+            assertThrows(
+                    LibTmuxException.class,
+                    () -> Shaping.rename(
+                            TestCalls.on(server, "target", session.id().value(), "name", "a.b")));
+            return;
+        }
+
+        Shaping.Changed renamed =
+                Shaping.rename(TestCalls.on(server, "target", session.id().value(), "name", "a.b"));
+
+        assertEquals(session.refresh().name(), renamed.what(), "the reply must match the name tmux actually kept");
     }
 
     @Test
