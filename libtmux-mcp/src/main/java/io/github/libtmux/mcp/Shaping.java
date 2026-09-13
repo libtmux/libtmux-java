@@ -137,13 +137,17 @@ final class Shaping {
      * does.
      */
     static Changed selectLayout(Call call) {
-        Window window = Targets.window(call.server(), call.string("window_id"));
         String asked = call.string("layout");
-        Layout layout = Layouts.builtIn(asked, window.server().version())
-                .orElseThrow(() ->
-                        new IllegalArgumentException("'" + asked + "' is not a layout; use one of " + layoutNames()));
-        window.selectLayout(layout);
-        return new Changed("window", window.id().value(), layout.name(), null);
+        String layout = Layouts.require(layoutNamed(asked).map(Layout::tmuxName).orElse(asked), call.server(), 1);
+        Window window = Targets.window(call.server(), call.string("window_id"));
+        Optional<Layout> named = layoutNamed(layout);
+        if (named.isPresent()) {
+            window.selectLayout(named.orElseThrow());
+        } else {
+            window.applyLayout(layout);
+        }
+        return new Changed(
+                "window", window.id().value(), named.map(Layout::name).orElse(layout), null);
     }
 
     static Changed resizePane(Call call) {
@@ -256,9 +260,11 @@ final class Shaping {
                 + " Pass confirm_self=true only if disconnecting yourself is the actual goal.";
     }
 
-    static List<String> layoutNames() {
+    /** tmux names a layout with hyphens; the enum names it with underscores. */
+    static Optional<Layout> layoutNamed(String name) {
+        String wanted = name.toUpperCase(Locale.ROOT).replace('-', '_');
         return Arrays.stream(Layout.values())
-                .map(value -> value.name().toLowerCase(Locale.ROOT).replace('_', '-'))
-                .toList();
+                .filter(candidate -> candidate.name().equals(wanted))
+                .findFirst();
     }
 }
