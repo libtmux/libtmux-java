@@ -35,9 +35,9 @@ daemon on demand, and `LibTmuxException` for any other failed read; do not
 treat either as an empty server. `server.cmd(...)` still returns a completed
 nonzero exit as result data, while `server.run(...)` throws.
 
-`Server.hasSession` and `Buffers.show` follow the same rule: both now throw
-`ServerNotRunningException` for an absent daemon instead of answering as
-though nothing matched.
+`Server.hasSession`, `Buffers.show` and `Buffers.delete` follow the same rule:
+all three now throw `ServerNotRunningException` for an absent daemon instead
+of answering as though nothing matched.
 
 A finder requires a running daemon. `server.newSession("build")` can start
 one; [`BuildAWorkspace`][workspace-example] shows how to handle both an
