@@ -36,7 +36,7 @@ final class Documentation {
     static List<Path> readable(Path root) {
         List<Path> found = new ArrayList<>();
         found.add(root.resolve("README.md"));
-        found.add(root.resolve("MIGRATION"));
+        found.add(root.resolve("MIGRATION.md"));
         try (Stream<Path> packages = Files.list(root)) {
             packages.map(directory -> directory.resolve("README.md"))
                     .filter(Files::isRegularFile)

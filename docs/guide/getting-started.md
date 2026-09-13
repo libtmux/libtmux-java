@@ -245,4 +245,4 @@ pinned.configFile().isPresent();           // → true
 | watch output as it happens        | [streaming](streaming.md)                     |
 | test your own code against tmux   | [testing](testing.md)                         |
 
-See the [migration notes](../../MIGRATION) when upgrading.
+See the [migration notes](../../MIGRATION.md) when upgrading.

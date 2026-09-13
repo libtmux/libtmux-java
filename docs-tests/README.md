@@ -132,7 +132,7 @@ a suite that discovers nothing passes loudly.
 
 ## Which documents
 
-Snippets come from `README.md`, `MIGRATION`, every package's `README.md`, and
+Snippets come from `README.md`, `MIGRATION.md`, every package's `README.md`, and
 `docs/guide/*.md`. The checks above that are not about snippets read more than
 that, and each row says where it looks.
 
