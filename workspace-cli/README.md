@@ -71,9 +71,13 @@ $ tmux-workspace freeze dev \
     --json
 ```
 
-Capture recovers topology, directories, focus and configured options. It cannot
-recover original command history, bootstrap scripts or plugin intent. Ordinary
-loading creates or reuses a session. Append authenticates the inherited tmux
+Capture recovers topology, directories, focus and configured options, preserving
+carriage returns and embedded or trailing line feeds in option values. Capture
+currently omits session-local environment variables and cannot recover original
+command history, bootstrap scripts or plugin intent. Normal loading expands
+defined environment variables in captured strings.
+
+Ordinary loading creates or reuses a session. Append authenticates the inherited tmux
 daemon before resolving the current pane, then keeps that session across input
 files even if a script moves the pane. Socket aliases are accepted when
 they reach that same daemon. Failures report retained changes rather than
