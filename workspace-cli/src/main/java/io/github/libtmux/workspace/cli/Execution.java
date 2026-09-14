@@ -6,6 +6,7 @@ import io.github.libtmux.Layout;
 import io.github.libtmux.Layouts;
 import io.github.libtmux.Options;
 import io.github.libtmux.Pane;
+import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
@@ -428,13 +429,20 @@ final class Execution {
 
     private static Session appendTarget(Main.Context context, Server server) {
         authenticate(context, server);
-        String current = context.environment().getOrDefault("TMUX_PANE", "");
+        PaneId current = currentPane(context);
         return server.panes().stream()
-                .filter(pane -> pane.id().value().equals(current))
+                .filter(pane -> pane.id().equals(current))
                 .findFirst()
                 .orElseThrow(() -> Main.usage("TMUX_PANE does not resolve on the selected server"))
                 .window()
                 .session();
+    }
+
+    /** The pane this process runs in, already checked for its sigil by the inherited context. */
+    private static PaneId currentPane(Main.Context context) {
+        return io.github.libtmux.TmuxEnvironment.of(context.environment())
+                .flatMap(io.github.libtmux.TmuxEnvironment::pane)
+                .orElseThrow(() -> Main.usage("TMUX_PANE does not resolve on the selected server"));
     }
 
     private static void authenticate(Main.Context context, Server selected) {
@@ -457,15 +465,10 @@ final class Execution {
 
     private static Optional<io.github.libtmux.Client> invokingClient(Main.Context context, Server selected) {
         if (!context.environment().containsKey("TMUX") || !sameDaemon(context, selected)) return Optional.empty();
-        String pane = context.environment().getOrDefault("TMUX_PANE", "");
+        PaneId pane = currentPane(context);
         var clients = selected.clients().stream()
                 .filter(client -> client.attachment().isPresent()
-                        && client.attachment()
-                                .orElseThrow()
-                                .activePane()
-                                .id()
-                                .value()
-                                .equals(pane))
+                        && client.attachment().orElseThrow().activePane().id().equals(pane))
                 .toList();
         if (clients.size() != 1) throw Main.usage("cannot identify one invoking tmux client; load detached with -d");
         return Optional.of(clients.getFirst());
@@ -477,10 +480,10 @@ final class Execution {
         if (invoking.isPresent()) {
             authenticate(context, server);
             var client = invoking.orElseThrow();
-            String pane = context.environment().getOrDefault("TMUX_PANE", "");
+            PaneId pane = currentPane(context);
             var attachment = client.fetchAttachment();
             if (attachment.isEmpty()
-                    || !attachment.orElseThrow().activePane().id().value().equals(pane)) {
+                    || !attachment.orElseThrow().activePane().id().equals(pane)) {
                 throw Main.usage("invoking tmux client changed during load; workspace remains loaded");
             }
             client.switchTo(session);
