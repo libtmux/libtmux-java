@@ -194,9 +194,6 @@ final class Execution {
                     .build());
             bootstrap = session.windows().getFirst();
             effects.put("owned_session", true).put("changed", true);
-            effects.withArray("window_ids").add(bootstrap.id().value());
-            for (Pane pane : bootstrap.panes())
-                effects.withArray("pane_ids").add(pane.id().value());
         }
         effects.put("session_id", session.id().value())
                 .put("session_name", session.name())
@@ -208,6 +205,13 @@ final class Execution {
             for (WorkspacePlan reserved : reservations) reserveIndexes(reserved, occupied);
         }
         if (!append) report.event("session-created", effects.deepCopy());
+        // Listed only after the event: tmux insists on a first window, and this one is killed as
+        // soon as the workspace has a window of its own. It is reported while it can still survive.
+        if (bootstrap != null) {
+            effects.withArray("window_ids").add(bootstrap.id().value());
+            for (Pane pane : bootstrap.panes())
+                effects.withArray("pane_ids").add(pane.id().value());
+        }
         effects.put("stage", "before_script");
         if (!plan.beforeScript().isEmpty()) {
             Children.Output output =

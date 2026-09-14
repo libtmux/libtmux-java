@@ -455,6 +455,60 @@ final class ExecutionTest {
         }
     }
 
+    /** A stream consumer tracking created objects must not be handed one that is about to go. */
+    @Test
+    void sessionCreatedReportsNoObjectThatTheLoadThenDestroys() throws Exception {
+        Path source = directory.resolve("bootstrap.yaml");
+        Path socket = directory.resolve("bootstrap-socket");
+        Files.writeString(source, "session_name: bootstrap\nwindows:\n  - window_name: work\n    panes: [{}]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke("load", source.toString(), "-d", "-S", socket.toString(), "--ndjson");
+                assertEquals(0, result.code(), result.err());
+                var events = result.out()
+                        .lines()
+                        .map(line -> {
+                            try {
+                                return new ObjectMapper().readTree(line);
+                            } catch (java.io.IOException invalid) {
+                                throw new java.io.UncheckedIOException(invalid);
+                            }
+                        })
+                        .toList();
+                var created = events.stream()
+                        .filter(event -> event.path("event").asText().equals("session-created"))
+                        .findFirst()
+                        .orElseThrow();
+                var live = server.windows().stream()
+                        .map(window -> window.id().value())
+                        .collect(toSet());
+                live.addAll(
+                        server.panes().stream().map(pane -> pane.id().value()).collect(toSet()));
+
+                assertTrue(
+                        live.containsAll(created.path("window_ids")
+                                .valueStream()
+                                .map(JsonNode::asText)
+                                .toList()),
+                        created.toString());
+                assertTrue(
+                        live.containsAll(created.path("pane_ids")
+                                .valueStream()
+                                .map(JsonNode::asText)
+                                .toList()),
+                        created.toString());
+                assertReportedObjects(
+                        server,
+                        events.stream()
+                                .filter(event -> event.path("event").asText().equals("workspace-completed"))
+                                .findFirst()
+                                .orElseThrow());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** A session name reaches the default destination from tmux, not from the invocation. */
     @Test
     void aFrozenSessionNameCannotChooseTheDirectoryItLandsIn() throws Exception {
