@@ -20,6 +20,11 @@ production.
 
 ### Fixed
 
+- **A late capture drain no longer reports `logging failed` after the command
+  finished.** `Reporter.close` takes the same lock its writers hold and stops
+  further records, so a drain thread still inside `read` cannot write to the
+  closed log or repaint cleared progress. (#16)
+
 - **A pane command expands `~` and `$VAR` like every other workspace value.**
   tmuxp resolves a command through the same expansion it gives names,
   directories and option values, so `$FOO` no longer means the loading
