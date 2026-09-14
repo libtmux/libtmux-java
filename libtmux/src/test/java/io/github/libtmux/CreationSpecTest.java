@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 final class CreationSpecTest {
 
     private static final TmuxVersion V32A = new TmuxVersion(3, 2, "a");
+    private static final TmuxVersion V33A = new TmuxVersion(3, 3, "a");
     private static final TmuxVersion V37B = new TmuxVersion(3, 7, "b");
     private static final String FORMAT = "#{window_id}";
 
@@ -27,7 +28,7 @@ final class CreationSpecTest {
 
     @Test
     void aPlainWindowAsksForNothingBeyondTheWindow() {
-        List<String> argv = WindowSpec.builder().build().argv("$1", FORMAT);
+        List<String> argv = WindowSpec.builder().build().argv("$1", FORMAT, V37B);
 
         assertEquals(List.of("new-window", "-t", "$1", "-P", "-F", FORMAT), argv);
     }
@@ -38,16 +39,18 @@ final class CreationSpecTest {
      */
     @Test
     void onlyASessionIsDetachedByDefault() {
-        assertFalse(WindowSpec.builder().build().argv("$1", FORMAT).contains("-d"));
-        assertTrue(WindowSpec.builder().detached().build().argv("$1", FORMAT).contains("-d"));
+        assertFalse(WindowSpec.builder().build().argv("$1", FORMAT, V37B).contains("-d"));
+        assertTrue(
+                WindowSpec.builder().detached().build().argv("$1", FORMAT, V37B).contains("-d"));
         assertTrue(SessionSpec.builder().build().argv(FORMAT, () -> V37B).contains("-d"));
     }
 
     @Test
     void placementIsAbsentUntilItIsAskedFor() {
-        assertFalse(WindowSpec.builder().build().argv("$1", FORMAT).contains("-a"));
-        assertTrue(WindowSpec.builder().after().build().argv("$1", FORMAT).contains("-a"));
-        assertTrue(WindowSpec.builder().before().build().argv("$1", FORMAT).contains("-b"));
+        assertFalse(WindowSpec.builder().build().argv("$1", FORMAT, V37B).contains("-a"));
+        assertTrue(WindowSpec.builder().after().build().argv("$1", FORMAT, V37B).contains("-a"));
+        assertTrue(
+                WindowSpec.builder().before().build().argv("$1", FORMAT, V37B).contains("-b"));
     }
 
     @Test
@@ -55,17 +58,20 @@ final class CreationSpecTest {
         assertTrue(WindowSpec.builder()
                 .replaceExisting()
                 .build()
-                .argv("$1", FORMAT)
+                .argv("$1", FORMAT, V37B)
                 .contains("-k"));
-        assertTrue(
-                WindowSpec.builder().reuseExisting().build().argv("$1", FORMAT).contains("-S"));
+        assertTrue(WindowSpec.builder()
+                .reuseExisting()
+                .build()
+                .argv("$1", FORMAT, V37B)
+                .contains("-S"));
     }
 
     /** {@code -k} needs an index to replace; without one tmux picks a free one and destroys nothing. */
     @Test
     void anIndexTurnsTheTargetFromASessionIntoAWinlink() {
-        List<String> plain = WindowSpec.builder().build().argv("$1", FORMAT);
-        List<String> placed = WindowSpec.builder().atIndex(3).build().argv("$1", FORMAT);
+        List<String> plain = WindowSpec.builder().build().argv("$1", FORMAT, V37B);
+        List<String> placed = WindowSpec.builder().atIndex(3).build().argv("$1", FORMAT, V37B);
 
         assertEquals("$1", plain.get(plain.indexOf("-t") + 1));
         assertEquals("$1:3", placed.get(placed.indexOf("-t") + 1));
@@ -82,20 +88,36 @@ final class CreationSpecTest {
                 .named("logs")
                 .running("journalctl", "-f")
                 .build()
-                .argv("$1", FORMAT);
+                .argv("$1", FORMAT, V37B);
 
         assertEquals(List.of("journalctl", "-f"), argv.subList(argv.size() - 2, argv.size()));
     }
 
     @Test
     void aWindowStartDirectoryIsPassedToTmux() {
-        List<String> argv = WindowSpec.builder().in(Path.of("/srv")).build().argv("$1", FORMAT);
+        List<String> argv = WindowSpec.builder().in(Path.of("/srv")).build().argv("$1", FORMAT, V37B);
         assertEquals("/srv", argv.get(argv.indexOf("-c") + 1));
+    }
+
+    /**
+     * An absolute directory is honoured on every supported release; a relative one is resolved
+     * against the server's working directory before 3.3a, which is not the caller's.
+     */
+    @Test
+    void aRelativeWindowStartDirectoryIsRefusedBefore33a() {
+        WindowSpec relative = WindowSpec.builder().in(Path.of("sub")).build();
+
+        List<String> honoured = relative.argv("$1", FORMAT, V33A);
+
+        assertThrows(UnsupportedTmuxVersion.class, () -> relative.argv("$1", FORMAT, V32A));
+        assertEquals("sub", honoured.get(honoured.indexOf("-c") + 1));
+        assertDoesNotThrow(
+                () -> WindowSpec.builder().in(Path.of("/srv")).build().argv("$1", FORMAT, V32A));
     }
 
     @Test
     void aWindowWithoutADirectoryUsesTmuxDefaults() {
-        assertDoesNotThrow(() -> WindowSpec.builder().named("plain").build().argv("$1", FORMAT));
+        assertDoesNotThrow(() -> WindowSpec.builder().named("plain").build().argv("$1", FORMAT, V37B));
     }
 
     // ----------------------------------------------------------------------------- new-session
@@ -189,7 +211,7 @@ final class CreationSpecTest {
         String literal = "/srv/##one/####two";
 
         List<String> session = SessionSpec.builder().in(supplied).build().argv(FORMAT, () -> V37B);
-        List<String> window = WindowSpec.builder().in(supplied).build().argv("$1", FORMAT);
+        List<String> window = WindowSpec.builder().in(supplied).build().argv("$1", FORMAT, V37B);
         List<String> split = SplitSpec.builder().in(supplied).build().argv("%1", FORMAT, V37B);
         List<String> respawn = Pane.respawnArgv(new PaneId("%1"), supplied);
 
@@ -210,10 +232,12 @@ final class CreationSpecTest {
         WindowSpec window = WindowSpec.builder().named("shared").build();
         SessionSpec session = SessionSpec.builder().named("shared").build();
 
-        assertEquals(window.argv("$1", FORMAT), window.argv("$1", FORMAT));
+        assertEquals(window.argv("$1", FORMAT, V37B), window.argv("$1", FORMAT, V37B));
         assertEquals(session.argv(FORMAT, () -> V37B), session.argv(FORMAT, () -> V37B));
         assertEquals(
-                "$2", window.argv("$2", FORMAT).get(window.argv("$2", FORMAT).indexOf("-t") + 1));
+                "$2",
+                window.argv("$2", FORMAT, V37B)
+                        .get(window.argv("$2", FORMAT, V37B).indexOf("-t") + 1));
     }
 
     // ------------------------------------------------------------------------------ finding

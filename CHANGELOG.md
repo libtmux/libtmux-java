@@ -20,6 +20,11 @@ production.
 
 ### Fixed
 
+- **A window start directory is honoured on tmux 3.2a when it is absolute.**
+  Only a relative one is refused below 3.3a, which resolves it against the
+  directory the server was started in rather than the calling process and
+  silently falls back to `$HOME`. (#16)
+
 - **Tmuxinator imports refuse unexpanded ERB markup before output or
   overwrite.** Teamocil sources, which no template engine reads, keep such
   text literal. (#16)

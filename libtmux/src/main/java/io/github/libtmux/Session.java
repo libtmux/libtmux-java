@@ -155,6 +155,7 @@ public final class Session {
      *
      * @param configure receives a builder holding tmux's defaults
      * @return a handle on the created window, from a fresh capture
+     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
      */
     public Window newWindow(Consumer<WindowSpec.Builder> configure) {
         WindowSpec.Builder builder = WindowSpec.builder();
@@ -166,9 +167,11 @@ public final class Session {
      * Creates a window in this session according to a spec, which may be reused across sessions.
      *
      * @return a handle on the created window, from a fresh capture
+     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
      */
     public Window newWindow(WindowSpec spec) {
-        List<String> reported = server.run(snapshot, spec.argv(state.id().value(), CREATED.template()))
+        List<String> reported = server.run(
+                        snapshot, spec.argv(state.id().value(), CREATED.template(), server.version(snapshot)))
                 .stdout();
         ServerSnapshot fresh = server.refresh(snapshot);
         if (reported.isEmpty()) {
