@@ -147,9 +147,9 @@ final class MainTest {
         assertEquals(1, result.code(), result.toString());
         assertEquals("", result.out());
         assertTrue(Files.exists(marker));
-        assertEquals(
-                "python_runtime",
-                new ObjectMapper().readTree(result.err()).path("code").asText());
+        var diagnostic = new ObjectMapper().readTree(result.err());
+        assertEquals("python_runtime", diagnostic.path("code").asText());
+        assertTrue(diagnostic.path("message").asText().contains("tmuxp 1.74.0 is required"), result.err());
     }
 
     @Test
@@ -824,9 +824,9 @@ final class MainTest {
         Result result = invoke(Map.of("TMUX_WORKSPACE_PYTHON", "/missing/python"), "shell", "-c", "print(1)", "--json");
         assertEquals(1, result.code());
         assertEquals("", result.out());
-        assertEquals(
-                "python_runtime",
-                new ObjectMapper().readTree(result.err()).path("code").asText());
+        var diagnostic = new ObjectMapper().readTree(result.err());
+        assertEquals("python_runtime", diagnostic.path("code").asText());
+        assertTrue(diagnostic.path("message").asText().contains("/missing/python"), result.err());
     }
 
     @Test
