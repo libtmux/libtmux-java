@@ -20,6 +20,11 @@ production.
 
 ### Fixed
 
+- **A frozen session's name no longer chooses where the capture lands.** The
+  default destination takes the session name as tmux reports it, so `$HOME` and
+  `~` stay literal, and a name holding `/` is refused with `--save-to` named as
+  the way to place the file. (#16)
+
 - **An option read on an unreachable daemon is absent rather than an error.**
   `Options.get` returns `Optional.empty()` where the encoding probe cannot
   reach the server, as it did before the probe existed; a version the probe
