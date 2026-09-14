@@ -20,6 +20,12 @@ production.
 
 ### Fixed
 
+- **Saving a document works on a store with no hard links.** `--save-to` and
+  `freeze` fall back to a move where `Files.createLink` reports the filesystem
+  cannot link, instead of failing with an uncaught
+  `UnsupportedOperationException`. An existing destination is still refused
+  without `--force`. (#16)
+
 - **A window start directory is honoured on tmux 3.2a when it is absolute.**
   Only a relative one is refused below 3.3a, which resolves it against the
   directory the server was started in rather than the calling process and
