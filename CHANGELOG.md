@@ -20,6 +20,12 @@ production.
 
 ### Fixed
 
+- **A pane command expands `~` and `$VAR` like every other workspace value.**
+  tmuxp resolves a command through the same expansion it gives names,
+  directories and option values, so `$FOO` no longer means the loading
+  environment in one field and the pane's shell in another. An undefined
+  variable is still left as written. (#16)
+
 - **A frozen session's name no longer chooses where the capture lands.** The
   default destination takes the session name as tmux reports it, so `$HOME` and
   `~` stay literal, and a name holding `/` is refused with `--save-to` named as

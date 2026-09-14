@@ -176,7 +176,7 @@ record WorkspacePlan(
                                 "shell",
                                 optionalText(context, pane.path("pane_shell"), "pane_shell", shell)),
                         bool(pane.path("focus"), false),
-                        commands(raw, paneSuppress, pane)));
+                        commands(context, raw, paneSuppress, pane)));
             }
             windows.add(new Window(
                     optionalText(context, node.path("window_name"), "window_name", ""),
@@ -220,7 +220,7 @@ record WorkspacePlan(
         else if (!value.isMissingNode() && !value.isNull()) target.add(value);
     }
 
-    private static List<Command> commands(List<JsonNode> raw, boolean suppress, JsonNode pane) {
+    private static List<Command> commands(Main.Context context, List<JsonNode> raw, boolean suppress, JsonNode pane) {
         var result = new ArrayList<Command>();
         boolean enter = bool(pane.path("enter"), true);
         Duration before = delay(pane.path("sleep_before"));
@@ -237,7 +237,7 @@ record WorkspacePlan(
             }
             if (!text.isTextual() || text.asText().indexOf('\0') >= 0)
                 throw invalid("command must be text without NUL");
-            String value = text.asText();
+            String value = Catalog.expand(context, text.asText());
             result.add(new Command(suppress ? " " + value : value, enter, before, after));
         }
         return List.copyOf(result);
