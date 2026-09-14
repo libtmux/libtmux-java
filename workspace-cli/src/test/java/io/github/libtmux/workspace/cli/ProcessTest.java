@@ -23,6 +23,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+/** Drives the installed launcher as a real process, which is why the whole class is tagged. */
+@org.junit.jupiter.api.Tag("distribution")
 final class ProcessTest {
     @TempDir
     Path directory;
