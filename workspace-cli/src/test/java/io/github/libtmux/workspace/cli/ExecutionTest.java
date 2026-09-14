@@ -517,12 +517,19 @@ final class ExecutionTest {
             try {
                 server.newSession(s -> s.named("$HOME"));
                 server.newSession(s -> s.named("held/aside"));
+                // Releases before 3.5 escape the sigil as they store the name, so ask tmux which
+                // spelling it kept rather than assuming the one that went in.
+                String stored = server.sessions().stream()
+                        .map(session -> session.name())
+                        .filter(name -> name.endsWith("HOME"))
+                        .findFirst()
+                        .orElseThrow();
 
-                Result expanded = invoke("freeze", "$HOME", "-S", socket.toString(), "-y", "--quiet");
+                Result expanded = invoke("freeze", stored, "-S", socket.toString(), "-y", "--quiet");
                 Result separated = invoke("freeze", "held/aside", "-S", socket.toString(), "-y", "--quiet");
 
                 assertEquals(0, expanded.code(), expanded.err());
-                assertTrue(Files.exists(directory.resolve("$HOME.yaml")), expanded.err());
+                assertTrue(Files.exists(directory.resolve(stored + ".yaml")), expanded.err());
                 assertFalse(Files.exists(Path.of(directory + ".yaml")));
                 assertEquals(2, separated.code(), separated.err());
                 assertFalse(Files.exists(directory.resolve("held")));
