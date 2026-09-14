@@ -507,6 +507,14 @@ final class Execution {
         }
     }
 
+    /** tmux names a session, it does not name a file: separators and what expansion reads survive. */
+    private static String fileName(String session) {
+        if (session.contains("/")) {
+            throw Main.usage("session name is not a file name; choose the destination with --save-to");
+        }
+        return session;
+    }
+
     static void freeze(Main.Context context, ParseResult args, Reporter report) throws IOException {
         try (Server server = server(context, args)) {
             String name = args.matchedPositionalValue(0, "");
@@ -552,8 +560,9 @@ final class Execution {
                     report.event("completed", result);
                 } else report.document(captured);
             } else {
-                if (destination.isEmpty()) destination = session.name() + "." + format;
-                Path path = context.directory().resolve(Catalog.expand(context, destination));
+                Path path = destination.isEmpty()
+                        ? context.directory().resolve(fileName(session.name()) + "." + format)
+                        : context.directory().resolve(Catalog.expand(context, destination));
                 if (!report.machine() && !Main.flag(args, "--yes"))
                     Documents.confirm(context, "Save " + Catalog.mask(context, path) + "?");
                 Documents.write(path, captured, format, Main.flag(args, "--force"));
