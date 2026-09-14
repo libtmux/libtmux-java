@@ -2,6 +2,7 @@ package io.github.libtmux.workspace.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -586,6 +587,12 @@ final class ProcessTest {
                 if (server.isAlive()) server.killServer();
             }
         }
+    }
+
+    /** A lookup ps could not run must not read as a session holding nothing; both exit non-zero. */
+    @Test
+    void anUnusableOwnedProcessLookupIsNotReadAsAnEmptySession() {
+        assertThrows(java.io.IOException.class, () -> Children.hasCapturedDescendant(-1));
     }
 
     @Test

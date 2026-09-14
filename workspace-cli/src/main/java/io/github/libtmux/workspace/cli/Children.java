@@ -97,13 +97,23 @@ final class Children {
         }
     }
 
-    private static boolean hasCapturedDescendant(long group) throws IOException, InterruptedException {
-        Process list = new ProcessBuilder("/bin/ps", "-o", "pid=", "--sid", Long.toString(group))
-                .redirectError(ProcessBuilder.Redirect.DISCARD)
-                .start();
+    static boolean hasCapturedDescendant(long group) throws IOException, InterruptedException {
+        Process list = new ProcessBuilder("/bin/ps", "-o", "pid=", "--sid", Long.toString(group)).start();
         try {
             if (!list.waitFor(1, TimeUnit.SECONDS)) throw new IOException("owned process lookup timed out");
             String pids = new String(list.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            // ps reports a session holding nothing and a lookup it could not run alike, with an
+            // empty listing and status one; only what it wrote to stderr separates them.
+            String complaint = new String(list.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+            if (!complaint.isBlank()) {
+                throw new IOException("owned process lookup failed: "
+                        + complaint
+                                .lines()
+                                .map(String::strip)
+                                .filter(line -> !line.isEmpty())
+                                .findFirst()
+                                .orElse(""));
+            }
             for (String pid : pids.lines().map(String::strip).toList()) {
                 if (!pid.matches("[0-9]+")) continue;
                 for (String descriptor : List.of("1", "2")) {
