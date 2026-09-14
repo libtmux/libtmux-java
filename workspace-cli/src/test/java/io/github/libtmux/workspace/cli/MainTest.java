@@ -917,10 +917,18 @@ final class MainTest {
         }
     }
 
+    /** tmuxp expands a pane command through expandshell before sending it, as it does a value. */
     @Test
-    void shellVariablesRemainForThePaneToExpand() throws Exception {
+    void oneShellVariableMeansOneThingAcrossAWorkspace() throws Exception {
         Path source = directory.resolve("commands.yaml");
-        Files.writeString(source, "session_name: vars\nwindows:\n  - panes:\n      - 'echo $WORKSPACE_TEST'\n");
+        Files.writeString(source, """
+                session_name: vars
+                options:
+                  '@banner': $WORKSPACE_TEST
+                windows:
+                  - panes:
+                      - 'echo $WORKSPACE_TEST'
+                """);
         Main.Context context = new Main.Context(
                 Map.of("HOME", directory.toString(), "WORKSPACE_TEST", "outer"),
                 directory,
@@ -928,8 +936,9 @@ final class MainTest {
                 OutputStream.nullOutputStream(),
                 OutputStream.nullOutputStream());
         WorkspacePlan plan = WorkspacePlan.read(context, source, "");
+        assertEquals("outer", plan.options().get("@banner"));
         assertEquals(
-                " echo $WORKSPACE_TEST",
+                " echo outer",
                 plan.windows()
                         .getFirst()
                         .panes()

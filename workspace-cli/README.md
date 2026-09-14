@@ -111,6 +111,12 @@ currently omits session-local environment variables and cannot recover original
 command history, bootstrap scripts or plugin intent. Normal loading expands
 defined environment variables in captured strings.
 
+Loading resolves `~` and defined `$VAR` references against the environment the
+CLI runs in, and it does so in every value tmuxp does: names, directories,
+scripts, option and environment values, and pane commands. An undefined
+variable is left as written, so the pane's own shell still sees it. Mapping keys
+are never expanded.
+
 Ordinary loading creates or reuses a session. Append authenticates the inherited tmux
 daemon before resolving the current pane, then keeps that session across input
 files even if a script moves the pane. Socket aliases are accepted when
