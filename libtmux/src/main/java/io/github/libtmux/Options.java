@@ -146,7 +146,10 @@ public final class Options {
     private @Nullable TmuxVersion listingVersion() {
         TmuxVersion version = snapshot == null ? null : snapshot.serverVersion().orElse(null);
         if (version == null) {
-            var result = run(List.of("display-message", "-p", "#{version}"));
+            var result = cmd(List.of("display-message", "-p", "#{version}"));
+            // A daemon that cannot answer cannot serve the read either, and that read reports the
+            // failure the way the scope always has.
+            if (!result.succeeded()) return null;
             try {
                 version = TmuxVersion.parse(String.join("\n", result.stdout()));
             } catch (IllegalArgumentException invalid) {

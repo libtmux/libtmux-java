@@ -20,6 +20,11 @@ production.
 
 ### Fixed
 
+- **An option read on an unreachable daemon is absent rather than an error.**
+  `Options.get` returns `Optional.empty()` where the encoding probe cannot
+  reach the server, as it did before the probe existed; a version the probe
+  cannot parse still raises `LibTmuxException`. (#16)
+
 - **A layout check survives a server that exits while it runs.** The version
   probe treats `server exited unexpectedly` as an absent server, as the
   snapshot and workspace paths already did, and reads the version from the
