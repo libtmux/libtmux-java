@@ -75,9 +75,11 @@ final class ServerTest {
             version.set(new CommandResult(0, List.of("unknown"), List.of()));
             assertThrows(LibTmuxException.class, () -> server.globalOptions().get("@value"));
             version.set(new CommandResult(1, List.of(), List.of("server exited unexpectedly")));
-            assertThrows(LibTmuxException.class, () -> server.globalOptions().get("@value"));
+            value.set(new CommandResult(1, List.of(), List.of("server exited unexpectedly")));
+            assertTrue(server.globalOptions().get("@value").isEmpty());
             assertEquals(
-                    "display-message", requests.getLast().commands().getFirst().getFirst());
+                    List.of("show-options", "-g", "-A", "-v", "@value"),
+                    requests.getLast().commands().getFirst());
         }
     }
 
