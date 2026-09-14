@@ -552,6 +552,31 @@ final class MainTest {
         }
     }
 
+    /** A capture drain outlives the command it reported for, and can reach the reporter after it. */
+    @Test
+    void reportingAfterCloseNeitherWritesNorComplains() throws Exception {
+        Path logFile = directory.resolve("late.log");
+        var err = new ByteArrayOutputStream();
+        var parsed = Arguments.create()
+                .parseArgs("--log-level", "debug", "load", "workspace.yaml", "-d", "--log-file", logFile.toString());
+        Main.Context context = new Main.Context(
+                Map.of("HOME", directory.toString()),
+                directory,
+                InputStream.nullInputStream(),
+                OutputStream.nullOutputStream(),
+                err);
+        Reporter report = new Reporter(context, parsed);
+        report.event("started", Documents.JSON.createObjectNode());
+        long written = Files.size(logFile);
+        String reported = err.toString(StandardCharsets.UTF_8);
+        report.close();
+
+        report.event("script-output", Documents.JSON.createObjectNode().put("stream", "stdout"));
+
+        assertEquals(written, Files.size(logFile));
+        assertEquals(reported, err.toString(StandardCharsets.UTF_8));
+    }
+
     @Test
     void tmuxinatorImportKeepsCommandGroupsAndInvocationDirectories() throws Exception {
         Path source = Files.createDirectories(directory.resolve("inputs")).resolve("project.yaml");
