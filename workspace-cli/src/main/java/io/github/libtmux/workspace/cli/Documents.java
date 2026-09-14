@@ -124,7 +124,13 @@ final class Documents {
             if (replace) {
                 Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } else {
-                Files.createLink(target, temporary);
+                try {
+                    Files.createLink(target, temporary);
+                } catch (UnsupportedOperationException withoutLinks) {
+                    // A link refuses an existing destination without a window between the two;
+                    // a store that has no links leaves that to the move itself.
+                    Files.move(temporary, target);
+                }
             }
         } finally {
             Files.deleteIfExists(temporary);

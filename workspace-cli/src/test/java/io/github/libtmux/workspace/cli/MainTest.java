@@ -2,6 +2,7 @@ package io.github.libtmux.workspace.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -532,6 +533,23 @@ final class MainTest {
                 invoke("convert", source.toString(), "--json", "--save-to", target.toString(), "--force")
                         .code());
         assertEquals(document, new ObjectMapper().readTree(Files.readString(target)));
+    }
+
+    /** Saving relies on a hard link to refuse an existing destination, which not every store has. */
+    @Test
+    void aDestinationWithoutHardLinksIsStillWrittenAndStillProtected() throws Exception {
+        var document = Documents.JSON.createObjectNode().put("session_name", "linkless");
+        try (var store =
+                java.nio.file.FileSystems.newFileSystem(directory.resolve("store.zip"), Map.of("create", "true"))) {
+            Path target = store.getPath("/workspace.yaml");
+
+            Documents.write(target, document, "yaml", false);
+
+            assertTrue(Files.readString(target).contains("linkless"));
+            assertThrows(
+                    java.nio.file.FileAlreadyExistsException.class,
+                    () -> Documents.write(target, document, "yaml", false));
+        }
     }
 
     @Test
