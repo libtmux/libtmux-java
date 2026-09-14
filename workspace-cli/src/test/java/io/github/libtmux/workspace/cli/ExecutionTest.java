@@ -455,6 +455,29 @@ final class ExecutionTest {
         }
     }
 
+    /** A session name reaches the default destination from tmux, not from the invocation. */
+    @Test
+    void aFrozenSessionNameCannotChooseTheDirectoryItLandsIn() throws Exception {
+        Path socket = directory.resolve("freeze-name-socket");
+        try (Server server = server(socket)) {
+            try {
+                server.newSession(s -> s.named("$HOME"));
+                server.newSession(s -> s.named("held/aside"));
+
+                Result expanded = invoke("freeze", "$HOME", "-S", socket.toString(), "-y", "--quiet");
+                Result separated = invoke("freeze", "held/aside", "-S", socket.toString(), "-y", "--quiet");
+
+                assertEquals(0, expanded.code(), expanded.err());
+                assertTrue(Files.exists(directory.resolve("$HOME.yaml")), expanded.err());
+                assertFalse(Files.exists(Path.of(directory + ".yaml")));
+                assertEquals(2, separated.code(), separated.err());
+                assertFalse(Files.exists(directory.resolve("held")));
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     @Test
     void readinessTimeoutWarnsAndStillSendsCommands() throws Exception {
         Path source = directory.resolve("timeout.yaml");
