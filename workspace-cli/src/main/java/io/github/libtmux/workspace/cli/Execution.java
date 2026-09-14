@@ -227,9 +227,6 @@ final class Execution {
             server.run(List.of("set-environment", "-t", session.id().value(), variable.getKey(), variable.getValue()));
             effects.put("changed", true);
         }
-        if (!plan.options().isEmpty()
-                || !plan.globalOptions().isEmpty()
-                || !plan.environment().isEmpty()) effects.put("changed", true);
         boolean readiness = plan.readiness() != WorkspacePlan.Readiness.NEVER
                 && plan.windows().stream()
                         .flatMap(window -> window.panes().stream())
