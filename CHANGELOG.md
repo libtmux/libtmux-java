@@ -18,6 +18,15 @@ production.
   captures, converts and imports tmuxp workspaces, with JSON and NDJSON output,
   terminal load progress and generated Bash completion. (#16)
 
+### Changed
+
+- **`freeze` no longer derives a destination from the session name.** Writing a
+  file requires `--save-to`; `--json` and `--ndjson` still capture to stdout,
+  and plain `freeze` with neither is a usage error rather than a file named
+  after the session. A live session's name is tmux's to choose, and running it
+  through path resolution and variable expansion let a session named `$HOME`,
+  or one holding `/`, decide where the capture landed. (#16)
+
 ### Fixed
 
 - **A Python bridge failure says which failure it was.** A missing interpreter,
@@ -40,11 +49,6 @@ production.
   directories and option values, so `$FOO` no longer means the loading
   environment in one field and the pane's shell in another. An undefined
   variable is still left as written. (#16)
-
-- **A frozen session's name no longer chooses where the capture lands.** The
-  default destination takes the session name as tmux reports it, so `$HOME` and
-  `~` stay literal, and a name holding `/` is refused with `--save-to` named as
-  the way to place the file. (#16)
 
 - **An option read on an unreachable daemon is absent rather than an error.**
   `Options.get` returns `Optional.empty()` where the encoding probe cannot

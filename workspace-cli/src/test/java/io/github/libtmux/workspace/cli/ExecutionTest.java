@@ -509,14 +509,13 @@ final class ExecutionTest {
         }
     }
 
-    /** A session name reaches the default destination from tmux, not from the invocation. */
+    /** A live session names itself; nothing about that name is safe to build a path out of. */
     @Test
-    void aFrozenSessionNameCannotChooseTheDirectoryItLandsIn() throws Exception {
+    void freezeWillNotDeriveADestinationFromTheSession() throws Exception {
         Path socket = directory.resolve("freeze-name-socket");
         try (Server server = server(socket)) {
             try {
                 server.newSession(s -> s.named("$HOME"));
-                server.newSession(s -> s.named("held/aside"));
                 // Releases before 3.5 escape the sigil as they store the name, so ask tmux which
                 // spelling it kept rather than assuming the one that went in.
                 String stored = server.sessions().stream()
@@ -525,14 +524,15 @@ final class ExecutionTest {
                         .findFirst()
                         .orElseThrow();
 
-                Result expanded = invoke("freeze", stored, "-S", socket.toString(), "-y", "--quiet");
-                Result separated = invoke("freeze", "held/aside", "-S", socket.toString(), "-y", "--quiet");
+                Result derived = invoke("freeze", stored, "-S", socket.toString(), "-y", "--quiet");
+                Result saved =
+                        invoke("freeze", stored, "-S", socket.toString(), "-y", "--save-to", "capture.yaml", "--quiet");
 
-                assertEquals(0, expanded.code(), expanded.err());
-                assertTrue(Files.exists(directory.resolve(stored + ".yaml")), expanded.err());
+                assertEquals(2, derived.code(), derived.err());
+                assertFalse(Files.exists(directory.resolve(stored + ".yaml")));
                 assertFalse(Files.exists(Path.of(directory + ".yaml")));
-                assertEquals(2, separated.code(), separated.err());
-                assertFalse(Files.exists(directory.resolve("held")));
+                assertEquals(0, saved.code(), saved.err());
+                assertTrue(Files.exists(directory.resolve("capture.yaml")));
             } finally {
                 if (server.isAlive()) server.killServer();
             }
