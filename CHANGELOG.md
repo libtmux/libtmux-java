@@ -20,6 +20,11 @@ production.
 
 ### Fixed
 
+- **A Python bridge failure says which failure it was.** A missing interpreter,
+  a wrong `tmuxp` version, a timed-out probe and a probe that left a process
+  holding the captured streams no longer share one message; the probe's own
+  error text is reported and attached as the cause. (#16)
+
 - **`session-created` lists no object the load then destroys.** The window and
   pane tmux insists on creating with a session are reported once they can
   survive, so a stream consumer tracking created objects is not handed an
