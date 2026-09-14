@@ -532,6 +532,7 @@ final class ExecutionTest {
         }
     }
 
+    /** Costs the readiness budget in full: the pane is held at the origin so the poll never wins. */
     @Test
     void readinessTimeoutWarnsAndStillSendsCommands() throws Exception {
         Path source = directory.resolve("timeout.yaml");
