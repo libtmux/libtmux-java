@@ -29,7 +29,8 @@ import org.junit.jupiter.params.provider.ValueSource;
  * Making windows and sessions against a real tmux, on whichever release the lane is running.
  *
  * <p>Neither command changed its flags across the supported range, so what is version-dependent here
- * is the detached session size that 3.2a accepts and then ignores.
+ * is behaviour 3.2a accepts and then ignores: a detached session's size, and a relative start
+ * directory. Both branches assert.
  */
 @ExtendWith(TmuxExtension.class)
 final class CreationIntegrationTest {
@@ -161,6 +162,38 @@ final class CreationIntegrationTest {
                 .running("/bin/sh", "-c", "pwd > \"$1\"; sleep 30", "probe", written.toString()));
         assertTrue(Await.until(() -> Files.exists(written)));
         assertEquals(real.toString(), Files.readString(written).strip());
+    }
+
+    /**
+     * A relative directory resolves against the calling process before 3.3a only by accident: tmux
+     * passes it to the child unchanged, so it lands wherever the server was started. Refused there
+     * rather than sent, so the caller is never handed a window that started somewhere else.
+     */
+    @Test
+    void aRelativeStartDirectoryIsHonouredOrRefusedDependingOnTheRelease(Server server, @TempDir Path directory)
+            throws Exception {
+        Session session = server.sessions().get(0);
+        Path real = directory.toRealPath();
+        Path relative = Path.of("").toAbsolutePath().relativize(real);
+        Path written = real.resolve("seen");
+
+        if (server.version().atLeast(HONOURS_EXTRAS_SINCE)) {
+            session.newWindow(w -> w.named("relative")
+                    .in(relative)
+                    .running("/bin/sh", "-c", "pwd > \"$1\"; sleep 30", "probe", written.toString()));
+
+            assertTrue(Await.until(() -> Files.exists(written)), "the command never ran");
+            // tmux joins the relative path onto the client's directory without normalising it,
+            // so the shell reports a spelling of the directory rather than its real path.
+            assertEquals(real, Path.of(Files.readString(written).strip()).toRealPath());
+        } else {
+            assertThrows(
+                    UnsupportedTmuxVersionException.class,
+                    () -> session.newWindow(w -> w.named("relative").in(relative)));
+            assertTrue(
+                    session.refresh().windows().stream().noneMatch(window -> "relative".equals(window.name())),
+                    "a refused spec must not have reached tmux");
+        }
     }
 
     @Test
