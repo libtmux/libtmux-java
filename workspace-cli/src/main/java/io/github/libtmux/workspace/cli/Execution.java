@@ -233,9 +233,7 @@ final class Execution {
                                 pane.shell().isEmpty() && !pane.commands().isEmpty());
         if (readiness && plan.readiness() == WorkspacePlan.Readiness.AUTO) {
             effects.put("stage", "readiness");
-            String shell = session.options()
-                    .get("default-shell")
-                    .orElse(context.environment().getOrDefault("SHELL", ""));
+            String shell = session.options().get("default-shell").orElse("");
             readiness = shell.equals("zsh") || shell.endsWith("/zsh");
         }
         Set<Integer> occupied = new HashSet<>();
