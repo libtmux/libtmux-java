@@ -28,6 +28,7 @@ final class Reporter implements AutoCloseable {
     private final int logLevel;
     private final @Nullable LoadProgress progress;
     private boolean logFailed;
+    private boolean closed;
 
     Reporter(Main.Context context, ParseResult parsed) throws IOException, InterruptedException {
         this.context = context;
@@ -98,7 +99,7 @@ final class Reporter implements AutoCloseable {
     }
 
     synchronized void record(String level, String event, ObjectNode data, boolean echo) throws IOException {
-        if (logFailed || severity(level) < logLevel) return;
+        if (closed || logFailed || severity(level) < logLevel) return;
         ObjectNode value = data.deepCopy()
                 .put("schema_version", 1)
                 .put("command", command)
@@ -129,8 +130,13 @@ final class Reporter implements AutoCloseable {
         }
     }
 
+    /**
+     * Synchronized like the writers: a capture drain can still be inside one when this runs, and it
+     * shares the log stream and the progress display with them.
+     */
     @Override
-    public void close() {
+    public synchronized void close() {
+        closed = true;
         if (progress != null) {
             try {
                 progress.clear();
@@ -160,6 +166,7 @@ final class Reporter implements AutoCloseable {
     }
 
     synchronized void event(String name, ObjectNode data) throws IOException {
+        if (closed) return;
         String level =
                 switch (name) {
                     case "failed" -> "error";
