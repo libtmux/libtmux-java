@@ -105,6 +105,10 @@ $ tmux-workspace freeze dev \
     --json
 ```
 
+Writing the capture to a file requires `--save-to`. `freeze` derives no
+destination from the session, because a session name is tmux's to choose and
+carries neither a directory nor an extension.
+
 Capture recovers topology, directories, focus and configured options, preserving
 carriage returns and embedded or trailing line feeds in option values. Capture
 currently omits session-local environment variables and cannot recover original
