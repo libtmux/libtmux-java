@@ -46,7 +46,8 @@ final class LayoutsTest {
     @ValueSource(
             strings = {
                 "no server running on /tmp/libtmux-java-test/absent",
-                "error connecting to /tmp/libtmux-java-test/absent (No such file or directory)\n"
+                "error connecting to /tmp/libtmux-java-test/absent (No such file or directory)\n",
+                "server exited unexpectedly"
             })
     void onlyColdEndpointsUseTheSelectedClientVersion(String reason) {
         try (VersionTransport transport = new VersionTransport(new CommandResult(1, List.of(), List.of(reason)));
@@ -61,7 +62,6 @@ final class LayoutsTest {
             strings = {
                 "error connecting to /tmp/libtmux-java-test/private (Permission denied)",
                 "protocol version mismatch (client 8, server 7)",
-                "server exited unexpectedly",
                 "no current target"
             })
     void probeFailuresDoNotFallBackToANewerClient(String reason) {

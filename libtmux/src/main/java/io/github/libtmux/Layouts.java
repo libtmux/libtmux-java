@@ -87,8 +87,7 @@ public final class Layouts {
         CommandResult reply = server.cmd("display-message", "-p", "#{version}");
         if (reply.succeeded()) return parsedVersion(reply, false);
         String reason = String.join("\n", reply.stderr()).strip();
-        if (!(reason.startsWith("no server running on ")
-                || (reason.startsWith("error connecting to ") && reason.endsWith(" (No such file or directory)")))) {
+        if (!SnapshotCapture.serverAbsent(reason)) {
             throw new LibTmuxException("tmux display-message failed: " + reason);
         }
         return parsedVersion(server.cmd("-V"), true);
