@@ -25,8 +25,25 @@ dependencies {
     testImplementation(project(":libtmux-junit5"))
 }
 
+// Only the tests tagged "distribution" run the installed launcher, so only the tasks that run them
+// assemble it. Keeping the assembly out of `test` keeps an application build out of the edit loop.
+val distributionTest = tasks.register<Test>("distributionTest") {
+    group = "verification"
+    description = "Runs the tests that drive the installed tmux-workspace launcher."
+    val tests = sourceSets.test.get()
+    testClassesDirs = tests.output.classesDirs
+    classpath = tests.runtimeClasspath
+    useJUnitPlatform { includeTags("distribution") }
+}
+
+tasks.test { useJUnitPlatform { excludeTags("distribution") } }
+
+tasks.check { dependsOn(distributionTest) }
+
 tasks.withType<Test>().configureEach {
-    dependsOn(tasks.installDist)
+    // Every task but `test` runs the tagged tests: the matrix lanes run the whole suite per tmux
+    // release, and `distributionTest` runs nothing else.
+    if (name != "test") dependsOn(tasks.installDist)
     systemProperty("workspace.cli.launcher", layout.buildDirectory.file("install/tmux-workspace/bin/tmux-workspace").get().asFile.absolutePath)
 }
 
