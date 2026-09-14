@@ -20,6 +20,11 @@ production.
 
 ### Fixed
 
+- **A layout check survives a server that exits while it runs.** The version
+  probe treats `server exited unexpectedly` as an absent server, as the
+  snapshot and workspace paths already did, and reads the version from the
+  selected client instead of failing the command. (#16)
+
 - **Saving a document works on a store with no hard links.** `--save-to` and
   `freeze` fall back to a move where `Files.createLink` reports the filesystem
   cannot link, instead of failing with an uncaught
