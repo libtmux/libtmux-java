@@ -20,6 +20,11 @@ production.
 
 ### Fixed
 
+- **`session-created` lists no object the load then destroys.** The window and
+  pane tmux insists on creating with a session are reported once they can
+  survive, so a stream consumer tracking created objects is not handed an
+  `@N` or `%N` that never appears again. (#16)
+
 - **A late capture drain no longer reports `logging failed` after the command
   finished.** `Reporter.close` takes the same lock its writers hold and stops
   further records, so a drain thread still inside `read` cannot write to the
