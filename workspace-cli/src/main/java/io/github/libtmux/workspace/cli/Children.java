@@ -15,6 +15,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import org.jspecify.annotations.Nullable;
 
 final class Children {
     private static final int LIMIT = 1024 * 1024;
@@ -249,12 +250,32 @@ final class Children {
                     Duration.ofSeconds(5),
                     false);
             if (version.status() != 0 || !version.stdout().strip().equals("1.74.0"))
-                throw new Main.Failure("python_runtime", 1, "tmuxp 1.74.0 is required");
+                throw new Main.Failure("python_runtime", 1, "tmuxp 1.74.0 is required: " + refusal(version));
             return executable;
-        } catch (IOException | Main.Failure absent) {
-            throw new Main.Failure(
-                    "python_runtime", 1, "set TMUX_WORKSPACE_PYTHON to an interpreter with tmuxp 1.74.0 installed");
+        } catch (IOException absent) {
+            throw unusableRuntime(absent.getMessage(), absent);
+        } catch (Main.Failure absent) {
+            // A timeout or a child holding the captured streams is not a missing interpreter, and
+            // the version refusal above already says what it found.
+            if (!absent.code.equals("executable_not_found")) throw absent;
+            throw unusableRuntime(absent.getMessage(), absent);
         }
+    }
+
+    /** What the probe itself said, which is where an exec failure under setsid ends up. */
+    private static String refusal(Output version) {
+        return version.stderr().isBlank()
+                ? "reported " + version.stdout().strip() + " with status " + version.status()
+                : version.stderr().strip().lines().findFirst().orElse("");
+    }
+
+    private static Main.Failure unusableRuntime(@Nullable String reason, Throwable cause) {
+        var failure = new Main.Failure(
+                "python_runtime",
+                1,
+                reason + "; set TMUX_WORKSPACE_PYTHON to an interpreter with tmuxp 1.74.0 installed");
+        failure.initCause(cause);
+        return failure;
     }
 
     static void shell(Main.Context context, picocli.CommandLine.ParseResult args, Reporter report)
