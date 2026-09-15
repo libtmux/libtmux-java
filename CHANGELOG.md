@@ -25,6 +25,11 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
   `Window.rename`, `Pane.retitle` and entity `refresh` methods carry
   `@CheckReturnValue`. Retain the returned capture to read updated state; the
   original capture stays unchanged. (#17)
+- **`TmuxVersion` parses a development build.** Between releases tmux reports
+  `#{version}` as `next-M.m`; `TmuxVersion.parse` used to reject it outright,
+  so every read failed against a git-master tmux. `development()` says which
+  kind a value is, and such a build sorts above the release before it and
+  below the one it names. (#17)
 
 ### Changed
 
