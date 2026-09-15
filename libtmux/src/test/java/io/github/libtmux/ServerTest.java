@@ -587,6 +587,61 @@ final class ServerTest {
         }
     }
 
+    // --------------------------------------------------------------------------- version gates
+
+    /**
+     * Pins the prompt-history floor to what tmux's own history says, not to what the local matrix
+     * happens to run.
+     *
+     * <p>{@code cmd-show-prompt-history.c} is absent at tag {@code 3.2a} and present at tag
+     * {@code 3.3}, and CHANGES lists it under "CHANGES FROM 3.2a TO 3.3" — so 3.3 is the floor, not
+     * 3.3a. The matrix has no plain-3.3 lane (only 3.2a and 3.3a), which is exactly how a floor set
+     * one lettered patch too high — fitted to the two adjacent versions CI happens to run rather
+     * than to tmux's history — would go unnoticed; a real tmux 3.3 install would wrongly refuse a
+     * command it has.
+     */
+    @Test
+    void promptHistoryRefusesBeforeItsRealFloorAndPermitsFromIt(@TempDir Path directory) throws IOException {
+        try (Server server = Server.using(config(directory), reportingVersion("3.2a"))) {
+            UnsupportedTmuxVersionException refused =
+                    assertThrows(UnsupportedTmuxVersionException.class, server::promptHistory);
+
+            assertTrue(
+                    String.valueOf(refused.getMessage()).contains("3.3"),
+                    "the refusal must name the real floor: " + refused.getMessage());
+        }
+        // The discriminating case: 3.2a and 3.3a both take the same branch under the old 3.3a floor
+        // and the corrected 3.3 one, so neither alone would catch the constant regressing. Only a
+        // plain 3.3 answer differs between the two, which is also why the matrix's 3.2a/3.3a lanes
+        // never caught it themselves.
+        try (Server server = Server.using(config(directory), reportingVersion("3.3"))) {
+            assertDoesNotThrow(server::promptHistory, "3.3 is the real floor, so this must not refuse");
+            assertDoesNotThrow(server::clearPromptHistory);
+        }
+        try (Server server = Server.using(config(directory), reportingVersion("3.3a"))) {
+            assertDoesNotThrow(server::promptHistory, "3.3a is at least 3.3, so this must not refuse");
+            assertDoesNotThrow(server::clearPromptHistory);
+        }
+    }
+
+    /** A transport that answers the identity probe with a chosen version and everything else as a no-op success. */
+    private static TmuxTransport reportingVersion(String version) {
+        String separator = RowFormat.of("field").separator();
+        return new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                List<String> argv = request.commands().get(0);
+                if (argv.get(0).equals("display-message")) {
+                    return new CommandResult(0, List.of(String.join(separator, "4242", version)), List.of());
+                }
+                return new CommandResult(0, List.of(), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+    }
+
     // -------------------------------------------------------------------------------- builders
 
     @Test

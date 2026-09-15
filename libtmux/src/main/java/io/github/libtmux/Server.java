@@ -222,8 +222,13 @@ public final class Server implements AutoCloseable {
         return new CommandChain(batch());
     }
 
-    /** 3.2a answers "unknown command" for both of the prompt-history commands. */
-    private static final TmuxVersion PROMPT_HISTORY_SINCE = new TmuxVersion(3, 3, "a");
+    /**
+     * 3.2a answers "unknown command" for both of the prompt-history commands; {@code
+     * cmd-show-prompt-history.c} lands in tmux itself at tag 3.3, under CHANGES' "3.2a TO 3.3"
+     * section, not 3.3a. The matrix has no plain-3.3 lane, only 3.2a and 3.3a, so this floor is
+     * exercised against tmux's own history rather than a real 3.3 build.
+     */
+    private static final TmuxVersion PROMPT_HISTORY_SINCE = new TmuxVersion(3, 3, "");
 
     /** tmux lost run-shell's output in 3.3a and found it again in 3.5. */
     private static final TmuxVersion SHELL_OUTPUT_LOST = new TmuxVersion(3, 3, "");

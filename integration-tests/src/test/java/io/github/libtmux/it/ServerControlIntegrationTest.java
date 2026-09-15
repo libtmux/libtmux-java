@@ -18,13 +18,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
  * Deciding inside tmux, locking, and reading what the server has been told.
  *
  * <p>{@code if-shell}, {@code lock-server} and {@code show-messages} declare the same flags from
- * 3.2a to 3.7b. The prompt-history commands do not exist at all before 3.3a, which is a floor rather
- * than a flag, so both branches assert.
+ * 3.2a to 3.7b. The prompt-history commands do not exist at all before 3.3, which is a floor rather
+ * than a flag, so both branches assert. The matrix has no plain-3.3 lane, so 3.2a and 3.3a are the
+ * two lanes this floor is actually observed on; both take the same branch before and after 3.3 as
+ * they did before, since neither is below the real floor.
  */
 @ExtendWith(TmuxExtension.class)
 final class ServerControlIntegrationTest {
 
-    private static final TmuxVersion PROMPT_HISTORY_SINCE = new TmuxVersion(3, 3, "a");
+    private static final TmuxVersion PROMPT_HISTORY_SINCE = new TmuxVersion(3, 3, "");
 
     /** Before 3.6, show-messages wants a client attached and refuses without one. */
     private static final TmuxVersion MESSAGES_WITHOUT_CLIENT_SINCE = new TmuxVersion(3, 6, "");
@@ -110,7 +112,7 @@ final class ServerControlIntegrationTest {
 
     // ------------------------------------------------------------------------------ prompt history
 
-    /** 3.2a has no such command; from 3.3a it answers, empty until something has been typed. */
+    /** 3.2a has no such command; from 3.3 it answers, empty until something has been typed. */
     @Test
     void thePromptHistoryIsReadableOrRefusedDependingOnTheRelease(Server server) {
         if (server.version().atLeast(PROMPT_HISTORY_SINCE)) {
@@ -122,7 +124,7 @@ final class ServerControlIntegrationTest {
                     assertThrows(UnsupportedTmuxVersionException.class, server::promptHistory);
 
             assertTrue(
-                    String.valueOf(refused.getMessage()).contains("3.3a"),
+                    String.valueOf(refused.getMessage()).contains("3.3"),
                     "the refusal names the release that has it: " + refused.getMessage());
             assertThrows(UnsupportedTmuxVersionException.class, server::clearPromptHistory);
         }

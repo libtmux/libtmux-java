@@ -66,6 +66,10 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
 - **The MCP `rename` tool reports the name tmux settled on.** tmux rewrites or
   refuses `:` and `.` in a session or window name depending on the release; the
   reply named the requested string instead of the handle's actual name. (#17)
+- **`Server.promptHistory` and `clearPromptHistory` no longer refuse tmux
+  3.3.** The floor was set to 3.3a, one lettered patch too high: tmux adds
+  `cmd-show-prompt-history.c` at tag 3.3 itself, and the matrix's 3.2a/3.3a
+  lanes never exercised the gap. (#17)
 
 ### Removed
 
