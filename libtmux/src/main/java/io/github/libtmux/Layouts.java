@@ -43,6 +43,12 @@ public final class Layouts {
     /**
      * Returns the layout unchanged, having checked tmux will recognise it.
      *
+     * <p>Only the classic checksummed form, not JSON: unlike {@link #requireSerialized}, nothing here
+     * takes a running version to gate a JSON shape against, and {@link CommandChain#arrange} - one of
+     * the two callers - has no server in reach to ask for one. Not yet a demonstrated gap: nothing
+     * exercises a workspace file or a chain naming a JSON layout, only {@link Window#applyLayout},
+     * where {@link #requireSerialized} already covers it.
+     *
      * @throws IllegalArgumentException if tmux would not recognise the name, which on some versions
      *     is not a recoverable error
      */
