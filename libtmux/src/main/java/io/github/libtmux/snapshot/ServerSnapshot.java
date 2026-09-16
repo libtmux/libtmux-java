@@ -70,32 +70,22 @@ public final class ServerSnapshot {
     }
 
     /**
-     * Assembles a capture, checking that the listings agree with each other.
+     * Assembles a capture with no server identity, checking that the listings agree with each other.
+     *
+     * <p>Package-private: a handle built from an identity-less snapshot fails the moment it tries to
+     * act, so nothing in production can use one. The only caller is this package's own consistency
+     * tests, which do not need an identity to check that a hierarchy is internally coherent.
      *
      * @throws IllegalArgumentException if the listings contain duplicate identities or disagree on
      *     the captured hierarchy
      */
-    public static ServerSnapshot of(
+    static ServerSnapshot of(
             Instant capturedAt,
             List<SessionState> sessions,
             List<WindowState> windows,
             List<PaneState> panes,
             List<ClientState> clients) {
         return of(capturedAt, OptionalLong.empty(), Optional.empty(), sessions, windows, panes, clients);
-    }
-
-    /** Assembles a capture tied to the live tmux process that produced it. */
-    public static ServerSnapshot of(
-            Instant capturedAt,
-            long serverPid,
-            List<SessionState> sessions,
-            List<WindowState> windows,
-            List<PaneState> panes,
-            List<ClientState> clients) {
-        if (serverPid < 1) {
-            throw new IllegalArgumentException("serverPid is not positive: " + serverPid);
-        }
-        return of(capturedAt, OptionalLong.of(serverPid), Optional.empty(), sessions, windows, panes, clients);
     }
 
     /** Assembles a capture tied to the live tmux process and version that produced it. */

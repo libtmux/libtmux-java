@@ -303,15 +303,15 @@ tmux state, the caller invokes `refresh()` and uses the returned handle.
 
 `Server.sessions()`, `Server.windows()`, `Server.panes()`, `Server.clients()`,
 and `Server.attachedSessions()` are compatibility accessors. Each eagerly
-captures its result and returns `List.copyOf(...)`. In accordance with the
-existing libtmux contract, a tmux error produces an empty list. Callers that
-must distinguish no rows from an unavailable server use `isAlive()`,
-`raiseIfDead()`, or a copied `Server` configured with strict query failure.
+captures its result and returns `List.copyOf(...)`. A capture failure raises,
+including `ServerNotRunningException` when no daemon answers; an empty list
+means a live server successfully reported no rows. `isAlive()` and
+`requireAlive()` probe liveness without capturing a hierarchy.
 
-`Server.snapshot()` is explicit and strict: a capture failure raises rather
-than returning an apparently valid empty graph. This distinction keeps the
-lenient list contract while giving query and engine callers trustworthy
-failure semantics.
+`Server.snapshot()` is the same strict capture the list accessors are now
+built on: a failure raises rather than returning an apparently valid empty
+graph, so query and engine callers get trustworthy failure semantics from
+every read.
 
 Server-wide window and pane listings preserve winlink duplicates and order.
 Point lookup uses tmux's current-winlink-then-lowest-index rule. A missing
@@ -677,12 +677,14 @@ Behavior that must match includes:
 - unavailable commands raising a typed unsupported-feature exception
 - live-client attachment semantics
 - low-level output normalization and high-level error translation
-- empty-on-tmux-error list accessors with explicit strict liveness checks
+- strict list accessors, with a typed exception naming an absent daemon
 
 The Java port does not preserve two identified Python defects: attached-session
 filtering through an unregistered lookup, and inconsistent failure leniency
 among list-shaped accessors. Attached sessions use an attached count greater
-than zero, and all public list accessors follow the documented lenient default.
+than zero, and every public list accessor now raises on a failed capture
+rather than answering emptily; an empty list means a live server reported no
+rows.
 
 Deprecated tombstones, Python mapping behavior, reflection-based field access,
 vendored loose-version parsing, and the bespoke `QueryList` are omitted.

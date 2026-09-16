@@ -484,6 +484,7 @@ is worth testing against real tmux and attaching it to a transport is not.
 
 <!-- snippet: compile-only: overStdio reads standard input until the client closes it -->
 ```java
+// Given: ServerConfig config
 Server server = Server.open(config);
 
 // Serves on stdin and stdout, reading until the client closes the stream.

@@ -6,8 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.ObjectDoesNotExist;
+import io.github.libtmux.LibTmuxException;
+import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Server;
+import io.github.libtmux.Session;
+import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.WakeReason;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
@@ -18,6 +21,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 /** The rest of the surface, against real tmux. */
 @ExtendWith(TmuxExtension.class)
 final class ToolsAgainstTmuxTest {
+
+    /** tmux 3.7 refuses ':' and '.' in a session name; every other supported release accepts it. */
+    private static final TmuxVersion REJECTS_DELIMITER = new TmuxVersion(3, 7, "");
+
+    private static final TmuxVersion ACCEPTS_DELIMITER_AGAIN = new TmuxVersion(3, 7, "a");
 
     // ---------------------------------------------------------------- knowing where you are
 
@@ -48,17 +56,64 @@ final class ToolsAgainstTmuxTest {
         assertEquals(2, server.panes().size());
     }
 
-    /** An empty listing has to say whether the server was empty or absent; a count cannot. */
     @Test
-    void anEmptyListingSaysWhetherThereIsAServerAtAll(Server server) {
+    void anAbsentDaemonFailsTheListing(Server server) {
         Listings.Sessions running = Listings.sessions(server);
         server.killServer();
-        Listings.Sessions gone = Listings.sessions(server);
 
         assertEquals(1, running.count());
-        assertEquals(null, running.note(), "a listing that found something says nothing extra");
-        assertEquals(0, gone.count());
-        assertTrue(String.valueOf(gone.note()).contains("No tmux server is running"), String.valueOf(gone.note()));
+        assertNull(running.note(), "a listing that found something says nothing extra");
+        assertThrows(LibTmuxException.class, () -> Listings.sessions(server));
+        assertThrows(LibTmuxException.class, () -> Listings.windows(TestCalls.on(server)));
+        assertThrows(LibTmuxException.class, () -> Listings.panes(TestCalls.on(server)));
+    }
+
+    /** One capture answers every field, so a dead daemon fails the whole answer, not part of it. */
+    @Test
+    void serverInfoReportsARunningServerFromOneCapture(Server server) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) Operations.serverInfo(TestCalls.on(server));
+
+        assertEquals(true, info.get("running"));
+        assertEquals(1, info.get("sessions"));
+    }
+
+    @Test
+    void serverInfoReportsAnAbsentDaemonRatherThanFailing(Server server) {
+        server.killServer();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) Operations.serverInfo(TestCalls.on(server));
+
+        assertEquals(false, info.get("running"));
+        assertEquals("unknown", info.get("version"));
+        assertEquals(0, info.get("sessions"));
+    }
+
+    /** No daemon means no name can already be taken, so this starts one instead of failing. */
+    @Test
+    void newSessionStartsADaemonRatherThanFailingOnAnAbsentOne(Server server) {
+        server.killServer();
+
+        Shaping.Made made = Shaping.newSession(TestCalls.on(server, "name", "revived"));
+
+        assertEquals("revived", made.name());
+        assertTrue(server.hasSession("revived"));
+    }
+
+    @Test
+    void emptyListingsDescribeCapturedState(Server server) {
+        server.run(List.of("set-option", "-s", "exit-empty", "off"));
+        server.sessions().getFirst().kill();
+
+        assertEquals(
+                "The capture contains no sessions.", Listings.sessions(server).note());
+        assertEquals(
+                "The capture contains no windows.",
+                Listings.windows(TestCalls.on(server)).note());
+        assertEquals(
+                "The capture contains no panes.",
+                Listings.panes(TestCalls.on(server)).note());
     }
 
     @Test
@@ -249,6 +304,26 @@ final class ToolsAgainstTmuxTest {
         assertEquals(1, server.sessions().size());
     }
 
+    /** tmux rewrites ':' and '.' in a name; the reply must say what it settled on, not what was asked. */
+    @Test
+    void renamingReportsWhatTmuxSettledOnRatherThanWhatWasAsked(Server server) {
+        Session session = server.sessions().get(0);
+        boolean refuses =
+                server.version().atLeast(REJECTS_DELIMITER) && !server.version().atLeast(ACCEPTS_DELIMITER_AGAIN);
+        if (refuses) {
+            assertThrows(
+                    LibTmuxException.class,
+                    () -> Shaping.rename(
+                            TestCalls.on(server, "target", session.id().value(), "name", "a.b")));
+            return;
+        }
+
+        Shaping.Changed renamed =
+                Shaping.rename(TestCalls.on(server, "target", session.id().value(), "name", "a.b"));
+
+        assertEquals(session.refresh().name(), renamed.what(), "the reply must match the name tmux actually kept");
+    }
+
     @Test
     void theServerTargetMeansTheWholeServer(Server server) {
         Shaping.Ended ended = Shaping.kill(TestCalls.on(server, "target", "server"));
@@ -357,7 +432,8 @@ final class ToolsAgainstTmuxTest {
 
     @Test
     void aTargetThatIsNotThereNamesTheToolThatFindsOne(Server server) {
-        ObjectDoesNotExist missing = assertThrows(ObjectDoesNotExist.class, () -> Targets.window(server, "@999"));
+        ObjectDoesNotExistException missing =
+                assertThrows(ObjectDoesNotExistException.class, () -> Targets.window(server, "@999"));
 
         assertTrue(String.valueOf(missing.getMessage()).contains("list_windows"), missing.getMessage());
     }

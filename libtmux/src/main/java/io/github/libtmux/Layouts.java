@@ -13,9 +13,12 @@ import org.jspecify.annotations.Nullable;
  * program never created. A workspace file is user-supplied text, so the name has to be checked
  * before it is dispatched rather than after tmux has had it.
  *
- * <p>tmux accepts either one of its named layouts or a serialized layout carrying tmux's own
- * checksum. The checksum is verified here; a four-hex-digit prefix alone does not make the rest
- * safe for tmux to parse.
+ * <p>tmux accepts either one of its named layouts or a serialized layout tmux itself produced. Since
+ * 3.8 that serialized form is either the classic checksummed grammar or JSON; both round-trip
+ * exactly, and {@code select-layout} takes either back. The classic checksum is verified here; a
+ * four-hex-digit prefix alone does not make the rest safe for tmux to parse. JSON carries no such
+ * signature, so a JSON-shaped string is only trusted once the running tmux is new enough to have
+ * written it - see {@link #requireSerialized}.
  */
 public final class Layouts {
 
@@ -24,10 +27,27 @@ public final class Layouts {
     private static final List<String> NAMED =
             Arrays.stream(Layout.values()).map(Layout::tmuxName).toList();
 
+    /**
+     * tmux 3.8 added the JSON (v2) layout format: {@code layout_dump} in {@code layout-custom.c}
+     * writes {@code {"V":2,"L":...}} instead of the checksummed string from that release on. Landed
+     * at {@code bf43fdc0} in tmux's own history, which {@code git tag --contains} places on {@code
+     * 3.8-rc} and nothing earlier. Every release before it has no JSON parser at all: {@code
+     * layout_construct} dispatches purely on whether the input opens with a curly brace, and
+     * anything that branch cannot parse ends the server outright on 3.3a. A JSON-shaped string is
+     * therefore only something *this* tmux could have written once it is at least this version.
+     */
+    private static final TmuxVersion JSON_LAYOUT_SINCE = new TmuxVersion(3, 8, "");
+
     private Layouts() {}
 
     /**
      * Returns the layout unchanged, having checked tmux will recognise it.
+     *
+     * <p>Only the classic checksummed form, not JSON: unlike {@link #requireSerialized}, nothing here
+     * takes a running version to gate a JSON shape against, and {@link CommandChain#arrange} - one of
+     * the two callers - has no server in reach to ask for one. Not yet a demonstrated gap: nothing
+     * exercises a workspace file or a chain naming a JSON layout, only {@link Window#applyLayout},
+     * where {@link #requireSerialized} already covers it.
      *
      * @throws IllegalArgumentException if tmux would not recognise the name, which on some versions
      *     is not a recoverable error
@@ -40,12 +60,46 @@ public final class Layouts {
                 "not a tmux layout: '" + layout + "'; expected one of " + NAMED + " or a serialized layout");
     }
 
-    /** Requires an exact layout string rather than a built-in layout name. */
-    static String requireSerialized(String layout) {
+    /**
+     * Requires an exact layout string rather than a built-in layout name.
+     *
+     * <p>The classic form answers "did tmux write this?" by its own checksum, without needing to
+     * know what tmux is running. JSON carries nothing equivalent, so the only question left to ask
+     * is "could this tmux have written it?" - which is a version, not a parse. Recognising the shape
+     * is as far as this goes: a JSON body that passes the shape check but is not real is tmux's own
+     * problem to refuse, and it does, safely, on every release that understands the format at all
+     * (confirmed against next-3.9: malformed JSON answers an ordinary parse error, never a crash).
+     *
+     * @throws IllegalArgumentException if the string is not a layout tmux wrote
+     * @throws UnsupportedTmuxVersionException if it is JSON-shaped but {@code running} predates the
+     *     format, so it cannot be one this server wrote
+     */
+    static String requireSerialized(String layout, TmuxVersion running) {
         if (isSerialized(layout)) {
             return layout;
         }
+        if (isJsonShaped(layout)) {
+            if (!running.atLeast(JSON_LAYOUT_SINCE)) {
+                throw new UnsupportedTmuxVersionException("a JSON layout", JSON_LAYOUT_SINCE, running);
+            }
+            return layout;
+        }
         throw new IllegalArgumentException("not a layout tmux wrote: " + layout);
+    }
+
+    /**
+     * Whether {@code layout} has the shape of tmux's JSON (v2) format - not whether it is one.
+     *
+     * <p>Mirrors {@code layout_construct}'s own dispatch in {@code layout-custom.c}: tmux decides
+     * between the two grammars on nothing more than whether the first non-blank byte is an opening
+     * curly brace. Matching that exactly, rather than inspecting the body, is deliberate - the
+     * layout is an opaque token tmux hands back and forth, and parsing its structure is tmux's job.
+     * A leading dash fails this the same way it fails {@link #isSerialized}, so it still falls
+     * through to the refusal below rather than reaching {@code select-layout} as a flag.
+     */
+    private static boolean isJsonShaped(String layout) {
+        String trimmed = layout.strip();
+        return trimmed.length() >= 2 && trimmed.charAt(0) == '{' && trimmed.charAt(trimmed.length() - 1) == '}';
     }
 
     private static boolean isSerialized(String layout) {

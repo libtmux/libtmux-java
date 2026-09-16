@@ -4,6 +4,7 @@ import io.github.libtmux.Layout;
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import java.util.Arrays;
@@ -33,7 +34,7 @@ final class Shaping {
     static Made newSession(Call call) {
         String name = call.string("name");
         Server server = call.server();
-        if (server.hasSession(name)) {
+        if (taken(server, name)) {
             throw new IllegalArgumentException(
                     "a session named '" + name + "' is already there; pick another name, or use it as it is");
         }
@@ -47,6 +48,15 @@ final class Shaping {
                 first.id().value(),
                 session.name(),
                 "Detached, so nothing is watching it. Its first pane is the one to act on.");
+    }
+
+    /** No daemon means no name can already be taken; {@code newSession} will start one. */
+    private static boolean taken(Server server, String name) {
+        try {
+            return server.hasSession(name);
+        } catch (ServerNotRunningException absent) {
+            return false;
+        }
     }
 
     static Made newWindow(Call call) {
@@ -96,17 +106,16 @@ final class Shaping {
                 "The new pane is " + made.id().value() + "; " + pane.id().value() + " is still there.");
     }
 
+    /** tmux 3.2a-3.6 rewrite ':' and '.' to '_', so the reply names what tmux settled on. */
     static Changed rename(Call call) {
         String target = call.string("target");
         String name = call.string("name");
         if (target.startsWith("@")) {
-            Window window = Targets.window(call.server(), target);
-            window.rename(name);
-            return new Changed("window", target, name, null);
+            Window renamed = Targets.window(call.server(), target).rename(name);
+            return new Changed("window", renamed.id().value(), renamed.name(), null);
         }
-        Session session = Targets.sessionById(call.server(), target);
-        session.rename(name);
-        return new Changed("session", session.id().value(), name, null);
+        Session renamed = Targets.sessionById(call.server(), target).rename(name);
+        return new Changed("session", renamed.id().value(), renamed.name(), null);
     }
 
     static Changed select(Call call) {

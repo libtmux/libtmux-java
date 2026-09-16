@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import com.google.errorprone.annotations.CheckReturnValue;
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.snapshot.PaneState;
@@ -51,7 +52,11 @@ public final class Pane {
     /**
      * tmux 3.7 exactly gets break-pane's naming wrong twice: it ends the whole server — every
      * session on the socket — when it has to choose the name itself, and it silently discards a name
-     * that is given. 3.7a fixed both.
+     * that is given. Both are one inverted check in {@code cmd-break-pane.c} — {@code if (name !=
+     * NULL)} where it meant {@code == NULL} - fixed by {@code 84291b02}, which {@code git tag
+     * --contains} places on 3.7a and nothing earlier, matching CHANGES' "3.7 TO 3.7a": "Fix crash in
+     * break-pane when no name is provided." Not probeable: break-pane's args are unchanged across the
+     * fix, so nothing in {@link Server#listCommands} distinguishes the two releases.
      */
     private static final TmuxVersion BREAK_PANE_NAMING_BROKEN = new TmuxVersion(3, 7, "");
 
@@ -238,11 +243,14 @@ public final class Pane {
     }
 
     /**
-     * Retitles this pane and returns a handle on it as it is now.
+     * Retitles this pane and returns its replacement capture.
+     *
+     * <p>Retain the result to read the changed title. This handle keeps its original captured state.
      *
      * <p>A program running in the pane can set its own title through an escape sequence, and tmux
      * reports that one instead. This says what the title is now, not what it will stay.
      */
+    @CheckReturnValue
     public Pane retitle(String title) {
         Objects.requireNonNull(title, "title");
         server.run(snapshot, List.of("select-pane", "-t", state.id().value(), "-T", TmuxFormats.literal(title)));
@@ -354,7 +362,7 @@ public final class Pane {
      * @param settled receives this pane as it is now
      * @param timeout how long to keep looking
      * @return why the wait ended
-     * @throws ObjectDoesNotExist if this pane is killed while its server stays up, which is not a
+     * @throws ObjectDoesNotExistException if this pane is killed while its server stays up, which is not a
      *     timeout
      * @throws InterruptedException if the waiting thread is interrupted
      */
@@ -446,7 +454,7 @@ public final class Pane {
      * }</pre>
      *
      * @param configure receives a builder that reads the visible area and nothing else
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public List<String> capture(Consumer<CaptureSpec.Builder> configure) {
         CaptureSpec.Builder builder = CaptureSpec.builder();
@@ -457,7 +465,7 @@ public final class Pane {
     /**
      * Reads part of this pane according to a spec, which may be reused across panes.
      *
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public List<String> capture(CaptureSpec spec) {
         return server.run(snapshot, spec.argv(state.id().value(), server.version(snapshot)))
@@ -646,7 +654,7 @@ public final class Pane {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.window(created)
                 .map(window -> new Window(server, fresh, window))
-                .orElseThrow(() -> new ObjectDoesNotExist("the window just broken out is already gone"));
+                .orElseThrow(() -> new ObjectDoesNotExistException("the window just broken out is already gone"));
     }
 
     /**
@@ -668,7 +676,7 @@ public final class Pane {
      *
      * @param configure receives a builder holding tmux's defaults
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Pane split(Consumer<SplitSpec.Builder> configure) {
         SplitSpec.Builder builder = SplitSpec.builder();
@@ -680,7 +688,7 @@ public final class Pane {
      * Splits this pane according to a spec, which may be reused across panes.
      *
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Pane split(SplitSpec spec) {
         return created(server, snapshot, spec.argv(state.id().value(), CREATED.template(), server.version(snapshot)));
@@ -704,7 +712,7 @@ public final class Pane {
                 .filter(pane -> pane.id().equals(id))
                 .findFirst()
                 .map(pane -> new Pane(server, fresh, pane))
-                .orElseThrow(() -> new ObjectDoesNotExist("the pane just created is already gone"));
+                .orElseThrow(() -> new ObjectDoesNotExistException("the pane just created is already gone"));
     }
 
     /** The format a creating command reports its new pane through. */
@@ -735,7 +743,7 @@ public final class Pane {
      *
      * @throws IllegalArgumentException if the text contains NUL, which a terminal cannot receive and
      *     {@link #send} refuses too
-     * @throws UnsupportedTmuxVersion before tmux 3.4, where deleting the buffer left by a failed
+     * @throws UnsupportedTmuxVersionException before tmux 3.4, where deleting the buffer left by a failed
      *     paste can remove one this did not create
      */
     public void paste(String text) {
@@ -745,7 +753,7 @@ public final class Pane {
         }
         TmuxVersion running = server.version(snapshot);
         if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-            throw new UnsupportedTmuxVersion("pasting text", Buffers.EXACT_NAMED_DELETE, running);
+            throw new UnsupportedTmuxVersionException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
         }
         String buffer = "libtmux-paste-" + UUID.randomUUID();
         try {
@@ -788,7 +796,7 @@ public final class Pane {
         }
         TmuxVersion running = server.version(snapshot);
         if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-            throw new UnsupportedTmuxVersion("pasting text", Buffers.EXACT_NAMED_DELETE, running);
+            throw new UnsupportedTmuxVersionException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
         }
         String buffer = "libtmux-paste-" + UUID.randomUUID();
         try {
@@ -838,15 +846,19 @@ public final class Pane {
     /**
      * Takes a new capture and returns this pane as it is now.
      *
-     * @throws ObjectDoesNotExist if the pane is gone
+     * <p>This handle remains unchanged. Use the returned handle for subsequent state reads.
+     *
+     * @throws ObjectDoesNotExistException if the pane is gone from a server that still answers
+     * @throws ServerNotRunningException if no daemon is running
      */
+    @CheckReturnValue
     public Pane refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.panes().stream()
                 .filter(pane -> pane.id().equals(state.id()))
                 .findFirst()
                 .map(pane -> new Pane(server, fresh, pane))
-                .orElseThrow(() -> new ObjectDoesNotExist("pane " + state.id() + " no longer exists"));
+                .orElseThrow(() -> new ObjectDoesNotExistException("pane " + state.id() + " no longer exists"));
     }
 
     @Override

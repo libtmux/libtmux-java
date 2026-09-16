@@ -32,7 +32,14 @@ import org.jspecify.annotations.Nullable;
  */
 public final class SplitSpec {
 
-    /** Every option below was refused by 3.6 and accepted by 3.7 on a real server. */
+    /**
+     * Every option below was refused by 3.6 and accepted by 3.7 on a real server, and each flag
+     * ({@code -k}, {@code -m}, {@code -s}, {@code -S}, {@code -R}) is likewise absent from 3.6's own
+     * {@code list-commands} line for split-window and present in 3.7's. Kept as a constant rather
+     * than a probe reading that line: {@code -l} is declared to take a value in {@code
+     * cmd-split-window.c}'s args spec but still shows up in the generated line's boolean cluster too,
+     * so the line is not a grammar a probe can trust without also parsing tmux's own args spec.
+     */
     private static final TmuxVersion PANE_EXTRAS_SINCE = new TmuxVersion(3, 7, "");
 
     private final SplitDirection direction;
@@ -147,7 +154,7 @@ public final class SplitSpec {
      * @param target what to split, as a tmux target
      * @param format the row format the caller will read the result back with
      * @param running the version of the server about to run this
-     * @throws UnsupportedTmuxVersion if the spec asks for something {@code running} does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something {@code running} does not have
      */
     List<String> argv(String target, String format, TmuxVersion running) {
         requireVersion(running);
@@ -251,7 +258,7 @@ public final class SplitSpec {
             wanted = "pane styling on split";
         }
         if (wanted != null) {
-            throw new UnsupportedTmuxVersion(wanted, PANE_EXTRAS_SINCE, running);
+            throw new UnsupportedTmuxVersionException(wanted, PANE_EXTRAS_SINCE, running);
         }
     }
 

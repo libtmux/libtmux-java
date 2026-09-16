@@ -7,6 +7,7 @@ Both put several commands into one tmux invocation.
 ## A batch: several commands, each with its own outcome
 
 ```java
+// Given: Server server
 BatchResult result = server.batch()
         .add("new-window", "-d", "-n", "one")
         .add("new-window", "-d", "-n", "two")
@@ -28,6 +29,7 @@ unhelpful nonzero.
 ## A chain: each step acts on what the last one made
 
 ```java
+// Given: Server server
 server.chain()
         .newWindow("built")
         .splitLeftRight()

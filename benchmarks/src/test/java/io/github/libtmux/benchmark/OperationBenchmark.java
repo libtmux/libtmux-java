@@ -277,8 +277,9 @@ final class OperationBenchmark {
                 .append("`, ")
                 .append(ROUNDS)
                 .append(" rounds per scenario, on one machine at one moment. ")
-                .append("Every command starts a tmux process, so the dispatch count is the cost and ")
-                .append("the milliseconds are one machine's rendering of it. Read the shape.\n\n");
+                .append("Each `ProcessTransport` dispatch starts a tmux process, so the dispatch count ")
+                .append("is the cost and the milliseconds are one machine's rendering of it. Read the ")
+                .append("shape.\n\n");
 
         out.append("## Collapsing round trips\n\n")
                 .append("The same ")
@@ -291,7 +292,7 @@ final class OperationBenchmark {
                 .append("saves: the work itself is 60 commands against one.\n");
 
         out.append("\n## Reading the hierarchy\n\n")
-                .append("`windows()` is lenient and `snapshot()` is strict; both read who the ")
+                .append("`windows()` and `snapshot()` both throw when capture fails. They read who the ")
                 .append("server is, then run the four listings as one group fenced against that ")
                 .append("answer. Two commands, whatever the hierarchy holds.\n\n");
         table(out, "read", reading);

@@ -61,6 +61,11 @@ final class DocumentationSnippetsTest {
                 found.stream().anyMatch(snippet -> snippet.file().toString().startsWith("libtmux/")),
                 "the core's own README contributed nothing");
         assertTrue(
+                found.stream()
+                        .anyMatch(snippet -> snippet.file().equals(Path.of("MIGRATION.md"))
+                                && snippet.expectation() == Snippet.Expectation.RUNS),
+                "migration examples are not being compiled and run");
+        assertTrue(
                 found.stream().anyMatch(snippet -> snippet.expectation() == Snippet.Expectation.RUNS),
                 "nothing is being run, so nothing is really being checked");
     }

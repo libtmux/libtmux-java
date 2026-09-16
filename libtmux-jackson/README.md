@@ -48,6 +48,7 @@ It is a `Predicate`, so it drops straight into a stream over a capture you alrea
 hold — reading it from JSON changes nothing about how it is applied:
 
 ```java
+// Given: Server server
 String json = FilterJson.writeString(Pane_.active().isTrue(), LibTmuxModels.pane());
 FilterExpr<Pane> active = FilterJson.readString(json, LibTmuxModels.pane());
 

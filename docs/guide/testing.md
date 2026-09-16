@@ -20,6 +20,7 @@ The extension resolves `Server` and `TmuxSocketPath`. It never claims a bare
 What that hands you:
 
 ```java
+// Given: Server server, Path socket
 server.sessions().size();                          // → 1
 server.sessions().get(0).name();                   // → libtmux
 socket.startsWith("/tmp/libtmux-java-test/");      // → true

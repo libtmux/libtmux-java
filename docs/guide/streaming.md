@@ -16,6 +16,7 @@ failure.
 
 <!-- snippet: compile-only: the signal comes from a shell inside a pane, whose readiness this fixture cannot establish; it timed out on the 3.6 through 3.7c matrix lanes and passed on the rest -->
 ```java
+// Given: Server server, Pane pane, Path socket
 Channel done = server.channel("build-finished");
 done.drain();
 
@@ -46,6 +47,7 @@ is ready, a build somebody else started. This is the only case where reading the
 screen is the right answer, and it is a heuristic:
 
 ```java
+// Given: Pane pane
 pane.sendLine("echo listening on 8080");
 
 pane.awaitText("listening on", Duration.ofSeconds(10));   // → SIGNALLED
@@ -82,6 +84,7 @@ A control client stays attached and pushes terminal output as tmux produces it,
 rather than being asked:
 
 ```java
+// Given: Server server, Session session
 try (ControlClient client = ControlClient.attach(server.config(), session.id());
         EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
 

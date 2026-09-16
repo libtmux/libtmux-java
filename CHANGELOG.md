@@ -12,6 +12,90 @@ production.
 
 ## Unreleased
 
+See the [migration notes](MIGRATION.md) for upgrade instructions.
+
+### Added
+
+- **`ServerNotRunningException` names an absent daemon.** Every read that used
+  to throw a plain `LibTmuxException` for a missing tmux server —
+  `requireAlive`, `version`, live listings, finders, snapshots and
+  `Buffers.show` — now throws this subtype instead. Catch it specifically to
+  tell "nothing is there" from any other failed capture. (#17)
+- **Error Prone flags discarded replacement handles.** `Session.rename`,
+  `Window.rename`, `Pane.retitle` and entity `refresh` methods carry
+  `@CheckReturnValue`. Retain the returned capture to read updated state; the
+  original capture stays unchanged. (#17)
+- **`TmuxVersion` parses a development build.** Between releases tmux reports
+  `#{version}` as `next-M.m`; `TmuxVersion.parse` used to reject it outright,
+  so every read failed against a git-master tmux. `development()` says which
+  kind a value is, and such a build sorts above the release before it and
+  below the one it names. (#17)
+
+### Changed
+
+- **`Server.hasSession` throws on an absent daemon instead of answering
+  `false`.** A missing session and a missing server were both "no", which the
+  rest of this release stopped doing everywhere else. The MCP `new_session`
+  tool catches the new exception and starts a daemon on demand, as it already
+  did. (#17)
+- **The MCP `get_server_info` tool answers from one capture.** It used to
+  probe `isAlive()` and then read `sessions()` separately; a daemon that
+  exited between the two failed the whole call instead of reporting itself
+  gone. It now reports `running: false` for that case rather than failing.
+  (#17)
+- **`Buffers.show` and `Buffers.delete` throw `ServerNotRunningException` for
+  an absent daemon instead of `ObjectDoesNotExistException`.** Neither report
+  a dead server as a buffer that was never there. (#17)
+- **Live listings, lookups and snapshots throw when a read fails.** This
+  includes an absent daemon and buffer-list failures. Empty results now mean a
+  successful capture found no objects; MCP listings also surface failed reads.
+  (#17)
+- **`Server.raiseIfDead` is renamed to `requireAlive`.** Update callers to the
+  new name; this alpha rename has no forwarding alias. (#17)
+- **Public exception names gain the Java `Exception` suffix.** Replace
+  `ObjectDoesNotExist` with `ObjectDoesNotExistException` and
+  `UnsupportedTmuxVersion` with `UnsupportedTmuxVersionException` in imports and
+  catch clauses. The old names have no aliases. (#17)
+
+### Fixed
+
+- **An MCP tool error for an absent daemon says to check the socket.** Every
+  tool that reads or acts through a dead server now carries the hint that used
+  to live only on an empty listing, which the strict-read change had nowhere
+  left to surface it from. (#17)
+- **A snapshot no longer crashes on a pane with no process.** The built
+  development tmux this port has no CI lane for reports `pane_pid` as an
+  empty string for such a pane, rather than the `0` every released tmux
+  through 3.7c uses; a capture now keeps reading `0` for that case instead of
+  failing before a caller's own dead-pane check ever runs. (#17)
+- **The MCP `rename` tool reports the name tmux settled on.** tmux rewrites or
+  refuses `:` and `.` in a session or window name depending on the release; the
+  reply named the requested string instead of the handle's actual name. (#17)
+- **`Server.promptHistory` and `clearPromptHistory` no longer refuse tmux
+  3.3.** The floor was set to 3.3a, one lettered patch too high: tmux adds
+  `cmd-show-prompt-history.c` at tag 3.3 itself, and the matrix's 3.2a/3.3a
+  lanes never exercised the gap. (#17)
+- **A window's start directory and a detached session's size no longer
+  refuse tmux 3.3.** Both floors were set to 3.3a, the same one-lettered-
+  patch-too-high shape as `promptHistory`: tmux's own fix for the size case
+  is already in tag 3.3, and nothing relevant to either case landed between
+  3.3 and 3.3a. (#17)
+
+### Removed
+
+- **`ServerSnapshot.of` no longer has a pid-only overload.** Removing
+  `Server.lenient()` left it with no caller, production or test. The overload
+  taking no identity at all is now package-private: a handle built from either
+  fails at its first real operation, so neither belonged in the public API.
+  (#17)
+
+### Documented
+
+- **The operation benchmark report says its milliseconds are noisy again.**
+  The caveat that dispatch count is the cost and wall clock is one machine's
+  rendering of it was dropped while rewording this report for strict reads.
+  Restored, and the table regenerated. (#17)
+
 ## 0.0.1-alpha.11 — 2026-09-12
 
 ### Added

@@ -65,7 +65,13 @@ final class SnapshotCapture {
 
     private static final RowFormat PANES = RowFormat.of(PANE_FIELDS);
 
-    /** tmux gained pane_floating_flag in 3.7; before that the format expands to nothing. */
+    /**
+     * tmux gained {@code pane_floating_flag} at {@code 87aaff5f} ("Bring some new formats from the
+     * floating panes work"), which {@code git tag --contains} places on 3.7 and nothing earlier;
+     * before that the format expands to nothing, indistinguishable from a real pane answering false.
+     * Not probeable: an unknown format variable and a false one both expand empty, and {@link
+     * Server#listCommands} lists commands, not the format variables a running tmux understands.
+     */
     private static final TmuxVersion FLOATING_SINCE = new TmuxVersion(3, 7, "");
 
     private static final String FLOATING = "pane_floating_flag";
@@ -83,14 +89,11 @@ final class SnapshotCapture {
 
     /** One attempt, empty when the server was replaced under it. */
     Optional<ServerSnapshot> attempt() {
-        Optional<ServerProcess> observed = process();
-        if (observed.isEmpty()) {
-            return Optional.of(ServerSnapshot.of(Instant.now(), List.of(), List.of(), List.of(), List.of()));
-        }
-        ServerProcess process = observed.orElseThrow();
+        ServerProcess process = process()
+                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
         try {
             return Optional.of(capture(process));
-        } catch (ObjectDoesNotExist replaced) {
+        } catch (ObjectDoesNotExistException replaced) {
             // The fence answered: this is no longer the server the identity came from.
             return Optional.empty();
         } catch (RuntimeException failure) {
@@ -112,7 +115,7 @@ final class SnapshotCapture {
     Optional<ServerProcess> process() {
         CommandResult result = server.cmd("display-message", "-p", PROCESS.template());
         if (!result.succeeded()) {
-            if (result.stderr().stream().anyMatch(SnapshotCapture::serverAbsent)) {
+            if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
                 return Optional.empty();
             }
             throw new LibTmuxException("tmux display-message failed: " + String.join("; ", result.stderr()));
@@ -176,7 +179,7 @@ final class SnapshotCapture {
                     new Dimensions(row.number("pane_width"), row.number("pane_height")),
                     row.text("pane_title"),
                     Path.of(row.text("pane_current_path")),
-                    row.count("pane_pid"),
+                    panePid(row),
                     new PaneEdges(
                             row.flag("pane_at_top"),
                             row.flag("pane_at_bottom"),
@@ -192,6 +195,17 @@ final class SnapshotCapture {
                     session.isEmpty() ? Optional.empty() : Optional.of(new SessionId(session))));
         }
         return ServerSnapshot.of(Instant.now(), process.pid(), process.version(), sessions, windows, panes, clients);
+    }
+
+    /**
+     * A pane with no process reports {@code pane_pid} as {@code 0} on every released tmux through
+     * 3.7c; the built development tmux this port has no CI lane for reports it as an empty string
+     * instead. Neither an empty nor a keep-on-exit pane runs anything, so this keeps the sentinel a
+     * caller already expects rather than widening {@link RowFormat.Row#count} for every field that
+     * uses it.
+     */
+    private static long panePid(RowFormat.Row row) {
+        return row.text("pane_pid").isEmpty() ? 0L : row.count("pane_pid");
     }
 
     private static List<String> listing(RowFormat format, String... command) {
@@ -215,12 +229,6 @@ final class SnapshotCapture {
                 new SessionId(row.text("session_id")),
                 new WindowIndex(row.number("window_index")),
                 new WindowId(row.text("window_id")));
-    }
-
-    private static boolean serverAbsent(String message) {
-        return message.contains("no server running")
-                || message.contains("server exited unexpectedly")
-                || message.contains("(No such file or directory)");
     }
 
     private static String[] withFloating() {

@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import com.google.errorprone.annotations.CheckReturnValue;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.snapshot.WindowState;
@@ -130,7 +131,7 @@ public final class Window {
      *
      * @param configure receives a builder holding tmux's defaults
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Pane split(Consumer<SplitSpec.Builder> configure) {
         SplitSpec.Builder builder = SplitSpec.builder();
@@ -142,7 +143,7 @@ public final class Window {
      * Splits this window's active pane according to a spec, which may be reused across windows.
      *
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Pane split(SplitSpec spec) {
         return Pane.created(server, snapshot, spec.argv(target(), Pane.createdFormat(), server.version(snapshot)));
@@ -166,12 +167,15 @@ public final class Window {
     }
 
     /**
-     * Renames this window and returns a handle on it as it is now.
+     * Renames this window and returns its replacement capture.
+     *
+     * <p>Retain the result to read the changed name. This handle keeps its original captured state.
      *
      * <p>A {@code :} or {@code .} is kept as written on every supported release but 3.7, which
      * refuses the name. A kept delimiter cannot then address the window, since a target splits on
      * both. Unlike a session name, a window name is never rewritten.
      */
+    @CheckReturnValue
     public Window rename(String name) {
         server.run(snapshot, List.of("rename-window", "-t", target(), TmuxFormats.literal(name)));
         return refresh();
@@ -257,7 +261,7 @@ public final class Window {
     /**
      * Rearranges this window's panes into one of tmux's built-in layouts.
      *
-     * @throws UnsupportedTmuxVersion if the layout arrived after the release this server runs
+     * @throws UnsupportedTmuxVersionException if the layout arrived after the release this server runs
      */
     public void selectLayout(Layout layout) {
         Objects.requireNonNull(layout, "layout");
@@ -275,14 +279,20 @@ public final class Window {
      *
      * <p>The string is checked here rather than by tmux, because tmux 3.3a does not survive being
      * handed one it cannot parse: it ends the server and every session on the socket. Every other
-     * supported release answers {@code invalid layout}. Since a layout string carries tmux's own
-     * checksum, a wrong one is detectable without asking.
+     * supported release answers {@code invalid layout}. The classic form carries tmux's own
+     * checksum, so a wrong one is detectable without asking; since 3.8 tmux may instead hand back
+     * JSON, which carries no checksum, so that shape is only trusted from a server new enough to
+     * have written it.
      *
      * @throws IllegalArgumentException if the string is not a layout tmux wrote
+     * @throws UnsupportedTmuxVersionException if it is JSON-shaped but this server predates JSON
+     *     layouts
      */
     public void applyLayout(String layout) {
         Objects.requireNonNull(layout, "layout");
-        server.run(snapshot, List.of("select-layout", "-t", target(), Layouts.requireSerialized(layout)));
+        server.run(
+                snapshot,
+                List.of("select-layout", "-t", target(), Layouts.requireSerialized(layout, server.version(snapshot))));
     }
 
     /** Kills what is running in this window and starts it again. */
@@ -312,13 +322,16 @@ public final class Window {
     /**
      * Takes a new capture and returns this winlink as it is now.
      *
-     * @throws ObjectDoesNotExist if this window is no longer linked here
+     * @throws ObjectDoesNotExistException if this window is no longer linked here, from a server
+     *     that still answers
+     * @throws ServerNotRunningException if no daemon is running
      */
+    @CheckReturnValue
     public Window refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.window(state.context())
                 .map(window -> new Window(server, fresh, window))
-                .orElseThrow(() -> new ObjectDoesNotExist("window " + id() + " no longer exists here"));
+                .orElseThrow(() -> new ObjectDoesNotExistException("window " + id() + " no longer exists here"));
     }
 
     /** Addresses the underlying window, which every link to it shares. */

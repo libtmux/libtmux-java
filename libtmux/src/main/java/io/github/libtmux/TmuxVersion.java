@@ -11,23 +11,36 @@ import java.util.regex.Pattern;
  * 3.2a follows 3.2. Comparing the text alone gets that wrong in both directions, and a feature gate
  * that gets it wrong reads a format the running tmux does not have.
  *
+ * <p>Between releases, tmux reports itself as {@code next-M.m}: a development build tracking toward
+ * the release named, not that release itself. It has everything the previous release shipped and
+ * nothing later's patches guarantee, so it sorts strictly between the two — above every patch of the
+ * release before it, below the release it names and every patch of that.
+ *
  * @param major the major number
  * @param minor the minor number
  * @param patch the patch letter, or empty for an unlettered release
+ * @param development whether this is a {@code next-M.m} build rather than the release {@code M.m}
+ *     itself
  */
-public record TmuxVersion(int major, int minor, String patch) implements Comparable<TmuxVersion> {
+public record TmuxVersion(int major, int minor, String patch, boolean development) implements Comparable<TmuxVersion> {
 
-    private static final Pattern RELEASE = Pattern.compile("^(\\d+)\\.(\\d+)([a-z]*)");
+    private static final Pattern RELEASE = Pattern.compile("^(next-)?(\\d+)\\.(\\d+)([a-z]*)");
 
     public TmuxVersion {
         Objects.requireNonNull(patch, "patch");
     }
 
+    /** A released version — the ordinary case, and every version literal this library names. */
+    public TmuxVersion(int major, int minor, String patch) {
+        this(major, minor, patch, false);
+    }
+
     /**
      * Reads what tmux reports for {@code #{version}}.
      *
-     * @throws IllegalArgumentException if the text does not begin with a release number; a build
-     *     that reports something else is one this cannot make version decisions about
+     * @throws IllegalArgumentException if the text does not begin with a release number, optionally
+     *     preceded by {@code next-}; a build that reports something else is one this cannot make
+     *     version decisions about
      */
     public static TmuxVersion parse(String reported) {
         Matcher release = RELEASE.matcher(reported);
@@ -35,7 +48,10 @@ public record TmuxVersion(int major, int minor, String patch) implements Compara
             throw new IllegalArgumentException("not a tmux version: " + reported);
         }
         return new TmuxVersion(
-                Integer.parseInt(release.group(1)), Integer.parseInt(release.group(2)), release.group(3));
+                Integer.parseInt(release.group(2)),
+                Integer.parseInt(release.group(3)),
+                release.group(4),
+                release.group(1) != null);
     }
 
     /** Whether this version has everything the given one has. */
@@ -50,12 +66,20 @@ public record TmuxVersion(int major, int minor, String patch) implements Compara
             return byMajor;
         }
         int byMinor = Integer.compare(minor, other.minor);
+        if (byMinor != 0) {
+            return byMinor;
+        }
+        if (development != other.development) {
+            // A next-M.m build has not shipped everything M.m's own patches will carry, so it
+            // sorts below the release it names, whatever either side's patch letter is.
+            return development ? -1 : 1;
+        }
         // An unlettered release precedes its own patches, which empty-string ordering already gives.
-        return byMinor != 0 ? byMinor : patch.compareTo(other.patch);
+        return patch.compareTo(other.patch);
     }
 
     @Override
     public String toString() {
-        return major + "." + minor + patch;
+        return (development ? "next-" : "") + major + "." + minor + patch;
     }
 }

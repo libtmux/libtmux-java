@@ -70,7 +70,7 @@ final class Listings {
                                 .map(window -> window.name())
                                 .toList()))
                 .toList();
-        return new Sessions(summaries.size(), summaries, emptiness(server, summaries.size(), "session"));
+        return new Sessions(summaries.size(), summaries, emptiness(summaries.size(), "session"));
     }
 
     /** Lists sessions for the MCP connection. */
@@ -101,31 +101,18 @@ final class Listings {
                         window.active(),
                         window.panes().size()))
                 .toList();
-        return new Windows(summaries.size(), summaries, emptiness(server, summaries.size(), "window"));
+        return new Windows(summaries.size(), summaries, emptiness(summaries.size(), "window"));
     }
 
     static Panes panes(Call call) {
         Server server = call.server();
         Caller caller = call.caller();
         List<Pane> panes = server.panes();
-        return new Panes(panes.size(), describe(panes, caller), emptiness(server, panes.size(), "pane"));
+        return new Panes(panes.size(), describe(panes, caller), emptiness(panes.size(), "pane"));
     }
 
-    /**
-     * Why a listing is empty, when it is.
-     *
-     * <p>A server with nothing on it and a socket with no server behind it both list nothing, and a
-     * model cannot tell them apart from a count. Only asked on the empty answer, so a listing that
-     * found something costs no extra tmux command.
-     */
-    private static @Nullable String emptiness(Server server, int found, String what) {
-        if (found > 0) {
-            return null;
-        }
-        return server.isAlive()
-                ? "This tmux server is running and has no " + what + "s on it."
-                : "No tmux server is running on the socket this was pointed at, so there is nothing to "
-                        + "list. Check that the MCP process selected the socket you intended.";
+    private static @Nullable String emptiness(int found, String what) {
+        return found == 0 ? "The capture contains no " + what + "s." : null;
     }
 
     static List<PaneSummary> describe(List<Pane> panes, Caller caller) {

@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.ObjectDoesNotExist;
+import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -723,8 +723,8 @@ final class RunningCommandsTest {
 
     @Test
     void aPaneThatIsNotThereSaysWhichToolFindsOne(Server server) {
-        ObjectDoesNotExist refused = assertThrows(
-                ObjectDoesNotExist.class,
+        ObjectDoesNotExistException refused = assertThrows(
+                ObjectDoesNotExistException.class,
                 () -> RunningCommands.run(TestCalls.on(server, "pane_id", "%999", "command", "true")));
 
         String message = String.valueOf(refused.getMessage());

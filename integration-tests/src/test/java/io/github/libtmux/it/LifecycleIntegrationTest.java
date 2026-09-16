@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -44,20 +45,36 @@ final class LifecycleIntegrationTest {
         assertFalse(server.hasSession("never-made"));
     }
 
-    /**
-     * The distinction the lenient list accessors deliberately do not make: they return an empty list
-     * for both "no sessions" and "no server", and these are how a caller tells them apart.
-     */
+    @Test
+    void anAbsentDaemonIsNotReportedAsAnAbsentSession(Server server) {
+        server.killServer();
+
+        assertThrows(ServerNotRunningException.class, () -> server.hasSession("never-made"));
+    }
+
     @Test
     void anEmptyServerAndAnAbsentOneAreDistinguishable(Server server) {
         assertTrue(server.isAlive());
-        server.raiseIfDead();
+        server.requireAlive();
 
         server.killServer();
 
         assertFalse(server.isAlive(), "the server is gone");
-        assertThrows(LibTmuxException.class, server::raiseIfDead);
-        assertEquals(List.of(), server.sessions(), "and the lenient accessor still answers with nothing");
+        assertThrows(ServerNotRunningException.class, server::requireAlive);
+        assertThrows(ServerNotRunningException.class, server::sessions);
+    }
+
+    /** The other half of the distinction above: a live server with nothing on it still answers. */
+    @Test
+    void aLiveServerCanSuccessfullyReportNoSessions(Server server) {
+        server.run(List.of("set-option", "-s", "exit-empty", "off"));
+        for (Session session : server.sessions()) {
+            session.kill();
+        }
+
+        assertTrue(server.isAlive());
+        assertEquals(List.of(), server.sessions());
+        assertEquals(List.of(), server.clients());
     }
 
     @Test

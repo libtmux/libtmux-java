@@ -1,6 +1,7 @@
 package io.github.libtmux.docs;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -139,7 +140,7 @@ final class DocumentationFactsTest {
 
     /** Everything a reader is expected to act on, which is what Documentation.readable also covers. */
     private static List<String> readerFacing() {
-        List<String> found = new ArrayList<>(List.of("README.md"));
+        List<String> found = new ArrayList<>(List.of("README.md", "MIGRATION.md"));
         PUBLISHED.forEach(module -> found.add(module + "/README.md"));
         found.add("libtmux-bom/README.md");
         try (Stream<Path> guides = Files.list(ROOT.resolve("docs/guide"))) {
@@ -175,19 +176,53 @@ final class DocumentationFactsTest {
     @Test
     void theParityDocumentsCallTheirTestsPlannedWhileTheyAre() {
         for (String document : PARITY) {
-            Set<String> named = claimedContractTests().keySet();
-            if (named.stream().anyMatch(type -> sourceOf(type).isPresent())) {
+            if (!anyContractTestStillUnwritten(claimedContractTests(List.of(document)))) {
                 continue;
             }
             assertTrue(read(document).contains("planned parity"), document + " no longer says its tests are planned");
         }
     }
 
+    /**
+     * One written contract test must not clear the document of naming the rest as planned.
+     *
+     * <p>{@code ServerTest} exists, so a document citing it alongside a still-unwritten class has to
+     * keep saying "planned parity" for the one that is; a check that stops at the first resolved
+     * class would miss that.
+     */
+    @Test
+    void aWrittenContractTestDoesNotClearAStillPlannedSibling() {
+        Map<String, Set<String>> mixed = new TreeMap<>();
+        mixed.put("ServerTest", Set.of("liveReadsRejectAnAbsentDaemon"));
+        mixed.put("NoSuchDocsFixtureContract", Set.of("aPlannedMethod"));
+
+        assertTrue(anyContractTestStillUnwritten(mixed), "a real class must not mask an unwritten sibling");
+    }
+
+    /** The clean control: once every cited class is real, nothing is left to call planned. */
+    @Test
+    void everyContractTestBeingWrittenClearsThePlannedRequirement() {
+        Map<String, Set<String>> allWritten = new TreeMap<>();
+        allWritten.put("ServerTest", Set.of("liveReadsRejectAnAbsentDaemon"));
+
+        assertFalse(anyContractTestStillUnwritten(allWritten), "an all-real citation set still reads as unwritten");
+    }
+
+    /** Whether a contract test the map cites has no matching source yet. */
+    private static boolean anyContractTestStillUnwritten(Map<String, Set<String>> claimed) {
+        return claimed.keySet().stream().anyMatch(type -> sourceOf(type).isEmpty());
+    }
+
     /** Every {@code Class#method} the parity documents name, grouped by the class that would hold it. */
     private static Map<String, Set<String>> claimedContractTests() {
+        return claimedContractTests(PARITY);
+    }
+
+    /** As {@link #claimedContractTests()}, but read from only the given documents. */
+    private static Map<String, Set<String>> claimedContractTests(List<String> documents) {
         Map<String, Set<String>> claimed = new TreeMap<>();
         Pattern cited = Pattern.compile("<code>([A-Z][A-Za-z0-9]*)#([A-Za-z0-9_]+)</code>");
-        for (String document : PARITY) {
+        for (String document : documents) {
             cited.matcher(read(document))
                     .results()
                     .forEach(found -> claimed.computeIfAbsent(found.group(1), type -> new TreeSet<>())
