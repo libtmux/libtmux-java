@@ -10,6 +10,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.Session;
+import io.github.libtmux.SplitSpec;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -1388,6 +1390,39 @@ final class ExecutionTest {
                 assertEquals(0, result.code(), result.err());
                 String cwd = server.panes().getFirst().currentPath().toString();
                 assertEquals(directory.toString(), cwd, cwd);
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /** freeze must omit shell_command for the session's own default shell and emit it for anything else. */
+    @Test
+    void freezeOmitsShellCommandOnlyForTheSessionDefaultShell() throws Exception {
+        Path socket = directory.resolve("freeze-shell-socket");
+        try (Server server = server(socket)) {
+            try {
+                Session session =
+                        server.newSession(s -> s.named("qa-freeze-shell").in(directory));
+                session.windows()
+                        .getFirst()
+                        .panes()
+                        .getFirst()
+                        .split(SplitSpec.builder()
+                                .below()
+                                .detached()
+                                .running("cat")
+                                .build());
+                Result result = invoke("freeze", "qa-freeze-shell", "-S", socket.toString(), "-y", "--json", "--quiet");
+                assertEquals(0, result.code(), result.err());
+                var panes = new ObjectMapper()
+                        .readTree(result.out())
+                        .path("windows")
+                        .path(0)
+                        .path("panes");
+                assertEquals(2, panes.size(), panes.toString());
+                assertFalse(panes.path(0).has("shell_command"), panes.toString());
+                assertEquals("cat", panes.path(1).path("shell_command").path(0).asText(), panes.toString());
             } finally {
                 if (server.isAlive()) server.killServer();
             }

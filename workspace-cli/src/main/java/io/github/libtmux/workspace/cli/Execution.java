@@ -529,6 +529,7 @@ final class Execution {
                             .orElseThrow(() -> Main.usage("select a live session by name"));
             ObjectNode captured = Documents.JSON.createObjectNode().put("session_name", session.name());
             captured.set("options", Documents.JSON.valueToTree(session.options().all()));
+            String defaultShell = session.options().get("default-shell").orElse("");
             ArrayNode windows = captured.putArray("windows");
             for (Window window : session.windows()) {
                 ObjectNode node = windows.addObject()
@@ -540,11 +541,17 @@ final class Execution {
                         "options_after",
                         Documents.JSON.valueToTree(window.options().all()));
                 ArrayNode panes = node.putArray("panes");
-                for (Pane pane : window.panes())
-                    panes.addObject()
+                for (Pane pane : window.panes()) {
+                    ObjectNode paneNode = panes.addObject()
                             .put("start_directory", pane.currentPath().toString())
-                            .put("focus", pane.active())
-                            .putArray("shell_command");
+                            .put("focus", pane.active());
+                    String command = pane.currentCommand();
+                    // Round-trips faithfully: reloading this document must not run the session's
+                    // own default shell as an explicit pane command, which would put a shell inside
+                    // a shell. Anything else the pane runs is emitted so reloading recreates it.
+                    if (!sameShell(command, defaultShell))
+                        paneNode.putArray("shell_command").add(command);
+                }
             }
             String format = args.matchedOptionValue("--workspace-format", "yaml");
             String destination = args.matchedOptionValue("--save-to", "");
@@ -574,5 +581,19 @@ final class Execution {
                 else if (!Main.flag(args, "--quiet")) report.line("success", "Saved", Catalog.mask(context, path));
             }
         }
+    }
+
+    /** Whether a pane's reported command and the session's default shell name the same program. */
+    private static boolean sameShell(String command, String defaultShell) {
+        String left = shellName(command);
+        String right = shellName(defaultShell);
+        return !left.isEmpty() && left.equals(right);
+    }
+
+    /** A shell name stripped of tmux's login-shell {@code -} prefix and any directory. */
+    private static String shellName(String value) {
+        String stripped = value.startsWith("-") ? value.substring(1) : value;
+        int slash = stripped.lastIndexOf('/');
+        return slash < 0 ? stripped : stripped.substring(slash + 1);
     }
 }
