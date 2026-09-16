@@ -250,7 +250,11 @@ final class Children {
                     Duration.ofSeconds(5),
                     false);
             if (version.status() != 0 || !version.stdout().strip().equals("1.74.0"))
-                throw new Main.Failure("python_runtime", 1, "tmuxp 1.74.0 is required: " + refusal(version));
+                throw new Main.Failure(
+                        "python_runtime",
+                        1,
+                        "tmuxp 1.74.0 is required: " + refusal(version)
+                                + "; set TMUX_WORKSPACE_PYTHON to an interpreter with tmuxp 1.74.0 installed");
             return executable;
         } catch (IOException absent) {
             throw unusableRuntime(absent.getMessage(), absent);
@@ -262,11 +266,19 @@ final class Children {
         }
     }
 
-    /** What the probe itself said, which is where an exec failure under setsid ends up. */
+    /**
+     * What the probe itself said. A Python traceback puts its exception on the last line, not the
+     * first, so this takes the last non-blank stderr line rather than leaking the "Traceback (most
+     * recent call last):" header and the frames above it.
+     */
     private static String refusal(Output version) {
-        return version.stderr().isBlank()
-                ? "reported " + version.stdout().strip() + " with status " + version.status()
-                : version.stderr().strip().lines().findFirst().orElse("");
+        List<String> lines = version.stderr()
+                .lines()
+                .map(String::strip)
+                .filter(line -> !line.isEmpty())
+                .toList();
+        if (!lines.isEmpty()) return lines.getLast();
+        return "reported " + version.stdout().strip() + " with status " + version.status();
     }
 
     private static Main.Failure unusableRuntime(@Nullable String reason, Throwable cause) {

@@ -55,6 +55,11 @@ production.
   regardless of what it ran; reloading now starts the plain pane the user
   had, and a pane running anything else still round-trips it. (#16)
 
+- **`shell` reports one sentence when the bridge interpreter cannot import
+  `tmuxp`, not a Python traceback.** The probe's own last stderr line — the
+  actual exception — replaces the "Traceback (most recent call last):"
+  header the first line used to leak. (#16)
+
 - **A Python bridge failure says which failure it was.** A missing interpreter,
   a wrong `tmuxp` version, a timed-out probe and a probe that left a process
   holding the captured streams no longer share one message; the probe's own
@@ -137,6 +142,12 @@ production.
 - **Saved layout input can exceed tmux's dump buffer.** The core, workspace
   loader and MCP accept valid trees with bodies longer than 8191 characters.
   tmux still owns geometry, pruning and command transport limits. (#16)
+
+### Documented
+
+- **`shell --help` names `TMUX_WORKSPACE_PYTHON`.** Six of the seven ports'
+  `shell` failures already tell the user to set it; the variable now also
+  appears in the command that fails, not only in its error. (#16)
 
 ## 0.0.1-alpha.11 — 2026-09-12
 
