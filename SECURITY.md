@@ -44,6 +44,15 @@ should not become the disclosure.
 run commands in every pane on that server. The tests keep each server under a
 directory of its own for isolation, not for secrecy.
 
+**A pane's own typed echo is held briefly, in memory, to filter it out.**
+`libtmux-mcp`'s `wait_for_text` excludes a pane's echo of literal text
+`send_keys` or `paste_text` just sent it, so a caller cannot match its own
+input rather than the pane's output. That means the literal text itself, not
+only the pane id, sits in an in-process map for up to ten seconds per pane
+before it is dropped on its own. Nothing here is written to disk, logged or
+sent anywhere; it exists only to be compared against that pane's next few
+reads.
+
 ## Supported versions
 
 Before 1.0, only the latest release is supported.

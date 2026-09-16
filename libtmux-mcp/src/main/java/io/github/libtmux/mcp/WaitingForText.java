@@ -4,6 +4,7 @@ import io.github.libtmux.Pane;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -60,6 +61,12 @@ final class WaitingForText {
         Cursor cursor = call.maybe("cursor")
                 .map(Cursor::decode)
                 .orElseGet(() -> Screen.from(pane).cursor());
+        // A pane a caller just typed into can echo that text back before this wait even starts
+        // watching; matching it there would report the caller's own input as the pane's answer
+        // (D10). Excluded up front, from both matching and the lines a caller sees, using only what
+        // this process itself just sent - nothing about a screen capture says "this line is an
+        // echo" on its own.
+        Optional<String> recentEcho = TypedEcho.recentFor(pane.id().value());
         Trim.Trimmed retained = new Trim.Trimmed(List.of(), 0);
         long started = System.nanoTime();
         long deadline = started + timeout.toNanos();
@@ -71,27 +78,29 @@ final class WaitingForText {
         while (true) {
             Screen.Fresh fresh = Screen.since(pane, cursor, budget);
             cursor = fresh.cursor();
-            retained = Trim.append(retained, fresh.lines(), budget);
+            List<String> freshLines =
+                    recentEcho.map(echo -> withoutEcho(fresh.lines(), echo)).orElse(fresh.lines());
+            retained = Trim.append(retained, freshLines, budget);
 
             // Failure first: a build that has already printed "error:" is not going to print
             // "Listening on", and the wait that notices is the one that returns in seconds.
-            Found stopped = find(stops, fresh.lines());
+            Found stopped = find(stops, freshLines);
             if (stopped != null) {
                 outcome = "STOPPED";
                 hit = stopped.matcher();
                 hitLine = stopped.line();
                 break;
             }
-            Found found = find(wanted, fresh.lines());
+            Found found = find(wanted, freshLines);
             if (found != null) {
                 outcome = "MATCHED";
                 hit = found.matcher();
                 hitLine = found.line();
                 break;
             }
-            if (wanted.isEmpty() && !fresh.lines().isEmpty()) {
+            if (wanted.isEmpty() && !freshLines.isEmpty()) {
                 outcome = "MATCHED";
-                hitLine = fresh.lines().get(fresh.lines().size() - 1);
+                hitLine = freshLines.get(freshLines.size() - 1);
                 break;
             }
             if (System.nanoTime() >= deadline) {
@@ -157,6 +166,63 @@ final class WaitingForText {
             }
         }
         return null;
+    }
+
+    /**
+     * Drops a fresh line that carries a recently typed echo, so it is never scanned for a match and
+     * never shown to a caller as though the pane had printed it.
+     *
+     * <p>A line long enough to wrap is split across rows by the terminal, not by anything tmux or
+     * this code chose, so no single captured row need carry the whole echo even though it is
+     * exactly what is on screen. The rows are searched joined into one string, with nothing between
+     * them the way a wrapped line joins its own rows.
+     *
+     * <p>Only the echo's own characters are taken out, rather than every row it touches. A row
+     * holds whatever the terminal put there, and the same row can carry the tail of what was typed
+     * and the start of what the pane then printed — a prompt and the output beside it, once the
+     * prompt has wrapped. Dropping such a row would lose real output and leave the wait timing out
+     * against text that is plainly on screen. A row left empty by the removal held nothing else and
+     * goes; a row with anything left keeps it.
+     */
+    static List<String> withoutEcho(List<String> lines, String echo) {
+        if (echo.isEmpty() || lines.isEmpty()) {
+            return lines;
+        }
+        int[] lineStart = new int[lines.size() + 1];
+        StringBuilder joined = new StringBuilder();
+        for (int index = 0; index < lines.size(); index++) {
+            lineStart[index] = joined.length();
+            joined.append(lines.get(index));
+        }
+        lineStart[lines.size()] = joined.length();
+
+        String text = joined.toString();
+        boolean[] echoed = new boolean[text.length()];
+        int from = 0;
+        int at;
+        while ((at = text.indexOf(echo, from)) >= 0) {
+            int end = at + echo.length();
+            for (int position = at; position < end; position++) {
+                echoed[position] = true;
+            }
+            from = end;
+        }
+
+        List<String> kept = new ArrayList<>(lines.size());
+        StringBuilder row = new StringBuilder();
+        for (int index = 0; index < lines.size(); index++) {
+            row.setLength(0);
+            for (int position = lineStart[index]; position < lineStart[index + 1]; position++) {
+                if (!echoed[position]) {
+                    row.append(text.charAt(position));
+                }
+            }
+            boolean emptiedByRemoval = row.isEmpty() && lineStart[index] < lineStart[index + 1];
+            if (!emptiedByRemoval) {
+                kept.add(row.toString());
+            }
+        }
+        return kept;
     }
 
     private static boolean sleep() {

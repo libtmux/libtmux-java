@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
@@ -20,6 +21,51 @@ import org.junit.jupiter.api.extension.ExtendWith;
  */
 @ExtendWith(TmuxExtension.class)
 final class WaitingForTextTest {
+
+    /**
+     * A terminal wraps a line too long for the pane across rows; no single captured row then
+     * carries the whole echo even though it is exactly what is on screen. Reproduced deterministically
+     * here rather than by hand - it depends on the pane's width relative to the shell's own prompt
+     * length, which a CI runner's longer default prompt hit and a short local one did not,
+     * surfacing this once real tmux was involved (JAVA2-6 follow-up).
+     */
+    @Test
+    void withoutEchoExcludesAnEchoTheTerminalWrappedAcrossRows() {
+        String echo = "sleep 1; echo JAVA-D10-MARKER-WARM";
+        List<String> wrapped = List.of("prompt $ true", "prompt $ sleep 1; echo JAVA-D10-M", "ARKER-WARM", "");
+
+        List<String> filtered = WaitingForText.withoutEcho(wrapped, echo);
+
+        assertEquals(List.of("prompt $ true", "prompt $ ", ""), filtered);
+    }
+
+    /** The ordinary case, a single row, still works exactly as before. */
+    @Test
+    void withoutEchoStillExcludesAnEchoThatFitsOnOneRow() {
+        String echo = "echo unwrapped-marker";
+        List<String> lines = List.of("prompt $ true", "prompt $ echo unwrapped-marker", "unwrapped-marker");
+
+        List<String> filtered = WaitingForText.withoutEcho(lines, echo);
+
+        assertEquals(List.of("prompt $ true", "prompt $ ", "unwrapped-marker"), filtered);
+    }
+
+    /**
+     * A wrapped prompt puts what the pane printed on the same row as the prompt that follows the
+     * echo, so a row the echo touches can still carry real output. Dropping the row would lose it
+     * and the wait would time out against text plainly on screen — which is what a whole-row
+     * exclusion did to a background command whose marker also appears in the line that started it.
+     */
+    @Test
+    void withoutEchoKeepsOutputSharingARowWithTheEcho() {
+        String echo = "(sleep 1; echo the-server-is-ready) &";
+        List<String> lines =
+                List.of("runner@host:~/work", "$ (sleep 1; echo the-server-is-ready) &", "$ the-server-is-ready");
+
+        List<String> filtered = WaitingForText.withoutEcho(lines, echo);
+
+        assertEquals(List.of("runner@host:~/work", "$ ", "$ the-server-is-ready"), filtered);
+    }
 
     @Test
     void textThatArrivesIsMatchedAndTheWaitEndsAtOnce(Server server) {
@@ -50,6 +96,61 @@ final class WaitingForTextTest {
                 TestCalls.on(server, "pane_id", pane, "patterns", List.of("already-ready"), "timeout", 2));
 
         assertEquals("TIMED_OUT", waited.outcome(), "only output arriving after the call counts");
+        assertTrue(
+                waited.output().stream().noneMatch(line -> line.contains("already-ready")),
+                "a timeout must not carry the very text it timed out waiting for: " + waited.output());
+    }
+
+    /**
+     * D10: {@code send_keys} then {@code wait_for_text} for the same marker must not match the
+     * typed command line itself, which a shell echoes back and which therefore contains the marker
+     * too. {@link TypedEcho} is what makes the difference - go through the real MCP {@link Typing}
+     * operation rather than a raw {@code send-keys}, or nothing records the echo to exclude.
+     */
+    @Test
+    void sendThenWaitDoesNotMatchTheEchoedCommandLine(Server server) {
+        Pane pane = server.panes().get(0);
+        String marker = "JAVA-D10-MARKER-COLD";
+
+        typeAndSubmit(server, pane, "sleep 1; echo " + marker);
+
+        assertMatchedTheOutputNotTheEcho(server, pane, marker);
+    }
+
+    /** As above, against a shell whose prompt has already settled rather than a freshly split one. */
+    @Test
+    void sendThenWaitDoesNotMatchTheEchoedCommandLineOnAWarmShellEither(Server server) {
+        Pane pane = server.panes().get(0);
+        String marker = "JAVA-D10-MARKER-WARM";
+        RunningCommands.run(TestCalls.on(server, "pane_id", pane.id().value(), "command", "true", "timeout", 15));
+
+        typeAndSubmit(server, pane, "sleep 1; echo " + marker);
+
+        assertMatchedTheOutputNotTheEcho(server, pane, marker);
+    }
+
+    /**
+     * Types a line and submits it. The line sleeps before printing so its output lands after the
+     * wait takes its starting cursor; output already on screen by then does not count, and a fast
+     * shell would otherwise print it first.
+     */
+    private static void typeAndSubmit(Server server, Pane pane, String line) {
+        Typing.sendKeys(TestCalls.on(server, "pane_id", pane.id().value(), "keys", List.of(line), "literal", true));
+        Typing.sendKeys(TestCalls.on(server, "pane_id", pane.id().value(), "keys", List.of("Enter"), "literal", false));
+    }
+
+    private static void assertMatchedTheOutputNotTheEcho(Server server, Pane pane, String marker) {
+        WaitingForText.Waited waited = WaitingForText.waitFor(
+                TestCalls.on(server, "pane_id", pane.id().value(), "patterns", List.of(marker), "timeout", 5));
+
+        assertEquals("MATCHED", waited.outcome(), "the output must eventually appear");
+        String matchedLine = String.valueOf(waited.matchedLine());
+        assertTrue(
+                matchedLine.contains(marker) && !matchedLine.contains("echo "),
+                "matched the typed command line, not its output: " + matchedLine);
+        assertTrue(
+                waited.output().stream().noneMatch(line -> line.contains("echo " + marker)),
+                "the echoed command line leaked into the caller-visible output: " + waited.output());
     }
 
     /** Without a stop pattern the same run is waited on until the deadline; with one it comes back. */

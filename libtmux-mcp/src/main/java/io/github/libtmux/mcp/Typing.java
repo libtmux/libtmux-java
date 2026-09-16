@@ -59,6 +59,9 @@ final class Typing {
             // not a choice a reader of this file makes.
             if (literal) {
                 pane.sendLiteral(keys);
+                // Only literal text is echoed as what it says; a key name such as "Enter" is not.
+                String typed = String.join("", keys);
+                resolved.forEach(id -> TypedEcho.record(id, typed));
             } else {
                 pane.sendKeys(keys);
             }
@@ -67,7 +70,11 @@ final class Typing {
                     keys.size(),
                     literal,
                     resolved,
-                    "Sent, not waited for. Call capture_since or wait_for_text on this pane to see " + "what it did.");
+                    "Sent, not waited for. A command you authored is run_shell_command's job, which frames and"
+                            + " waits for it correctly; reach for capture_since or wait_for_text here only for input"
+                            + " that is not a command to run to completion. Either way, a wait_for_text pattern that"
+                            + " repeats text from these keys can match the pane's own echo of them rather than what"
+                            + " runs.");
         }
     }
 
@@ -95,6 +102,9 @@ final class Typing {
             pane.paste(
                     enter ? text + "\n" : text,
                     () -> lease.requireSamePaste(PaneInputCohort.resolve(pane, call.caller())));
+            if (!text.isEmpty()) {
+                TypedEcho.record(pane.id().value(), text);
+            }
             return new Pasted(
                     pane.id().value(),
                     text.length(),
