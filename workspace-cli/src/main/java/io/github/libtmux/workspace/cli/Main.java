@@ -109,6 +109,19 @@ public final class Main {
         return new Failure("usage", 2, message);
     }
 
+    /**
+     * The S14 code for a failure not already thrown as a {@link Failure}, matching how {@link
+     * #execute} classifies the same exception types for its own top-level diagnostic.
+     */
+    static String failureCode(Throwable failure, String fallback) {
+        if (failure instanceof InterruptedException || failure instanceof InterruptedIOException) return "interrupted";
+        if (failure instanceof Failure known) return known.code;
+        if (failure instanceof io.github.libtmux.LibTmuxException) return "tmux_failed";
+        if (failure instanceof IOException || failure instanceof UncheckedIOException || failure instanceof IllegalArgumentException)
+            return "invalid_workspace";
+        return fallback;
+    }
+
     static int run(
             String[] args,
             Map<String, String> environment,
@@ -275,8 +288,11 @@ public final class Main {
     static void diagnostic(Context context, boolean machine, String code, String message) {
         try {
             String value = machine
-                    ? Documents.JSON.writeValueAsString(
-                            Documents.JSON.createObjectNode().put("code", code).put("message", message))
+                    ? Documents.JSON.writeValueAsString(Documents.JSON
+                            .createObjectNode()
+                            .put("schema_version", 1)
+                            .put("code", code)
+                            .put("message", message))
                     : code + ": " + Reporter.safe(message);
             context.error().write((value + "\n").getBytes(StandardCharsets.UTF_8));
             context.error().flush();
