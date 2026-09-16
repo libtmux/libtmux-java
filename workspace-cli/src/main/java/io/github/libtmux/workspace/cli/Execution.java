@@ -63,8 +63,16 @@ final class Execution {
         List<WorkspacePlan> plans = new ArrayList<>();
         for (int index = 0; index < sources.length; index++) {
             Path source = Catalog.resolve(context, sources[index], "load");
-            plans.add(WorkspacePlan.read(
-                    context, source, index == sources.length - 1 ? args.matchedOptionValue("-s", "") : ""));
+            WorkspacePlan plan = WorkspacePlan.read(
+                    context, source, index == sources.length - 1 ? args.matchedOptionValue("-s", "") : "");
+            for (String warning : plan.warnings())
+                report.event(
+                        "warning",
+                        Documents.JSON
+                                .createObjectNode()
+                                .put("code", "start_directory_missing")
+                                .put("message", warning));
+            plans.add(plan);
         }
         for (WorkspacePlan plan : plans) {
             if (append && plan.extension() != null && plan.extension().has("before_script"))

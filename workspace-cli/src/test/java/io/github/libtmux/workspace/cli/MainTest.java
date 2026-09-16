@@ -633,9 +633,10 @@ final class MainTest {
                 saved.toString());
         assertEquals(0, save.code(), save.toString());
         assertEquals(value, new ObjectMapper().readTree(Files.readString(saved)));
+        // A missing start_directory is a warning, not a refusal (M2); this harness has no tmux on
+        // PATH, so the load still fails, but past workspace validation and for a different reason.
         Result load = invoke("load", saved.toString(), "-d", "--json");
-        assertEquals(1, load.code());
-        assertTrue(load.err().contains("start_directory is not a directory"), load.toString());
+        assertTrue(load.err().contains("start_directory_missing"), load.toString());
     }
 
     @Test
@@ -971,5 +972,89 @@ final class MainTest {
                         .commands()
                         .getFirst()
                         .text());
+    }
+
+    /** tmuxp freeze writes focus as the quoted string 'true', not a YAML boolean; load must accept both. */
+    @Test
+    void focusAcceptsTheQuotedStringTmuxpFreezeWrites() throws Exception {
+        Path source = directory.resolve("focus.yaml");
+        Main.Context context = new Main.Context(
+                Map.of("HOME", directory.toString()),
+                directory,
+                InputStream.nullInputStream(),
+                OutputStream.nullOutputStream(),
+                OutputStream.nullOutputStream());
+        for (String quoted : List.of("'true'", "'false'")) {
+            Files.writeString(
+                    source,
+                    "session_name: focus\nwindows:\n  - focus: " + quoted + "\n    panes:\n      - focus: " + quoted
+                            + "\n");
+            var window = WorkspacePlan.read(context, source, "").windows().getFirst();
+            boolean expected = quoted.equals("'true'");
+            assertEquals(expected, window.focus(), quoted);
+            assertEquals(expected, window.panes().getFirst().focus(), quoted);
+        }
+        Files.writeString(source, "session_name: focus\nwindows:\n  - focus: maybe\n    panes: [null]\n");
+        Result invalid = invoke("load", source.toString(), "-d", "--json");
+        assertEquals(1, invalid.code());
+        assertTrue(
+                new ObjectMapper()
+                        .readTree(invalid.err())
+                        .path("message")
+                        .asText()
+                        .contains("focus must be a boolean"),
+                invalid.err());
+    }
+
+    /** tmux uses ':' and '.' as the session:window.pane separators; a name holding either is unaddressable. */
+    @Test
+    void sessionNameRefusesTmuxTargetSeparators() throws Exception {
+        Path source = directory.resolve("h8.yaml");
+        for (String bad : List.of("a:b", "a.b")) {
+            Files.writeString(source, "session_name: \"" + bad + "\"\nwindows:\n  - panes: [null]\n");
+            Result result = invoke("load", source.toString(), "-d", "--json");
+            assertEquals(1, result.code(), result.toString());
+            var diagnostic = new ObjectMapper().readTree(result.err());
+            assertEquals("invalid_config", diagnostic.path("code").asText());
+            String character = bad.contains(":") ? ":" : ".";
+            assertTrue(diagnostic.path("message").asText().contains("'" + character + "'"), result.err());
+        }
+    }
+
+    /** A missing start_directory is a warning that still loads, matching tmuxp; tmux falls back to $HOME. */
+    @Test
+    void missingStartDirectoryWarnsInsteadOfRefusing() throws Exception {
+        Path source = directory.resolve("m2.yaml");
+        Path missing = directory.resolve("missing");
+        Files.writeString(source, "session_name: m2\nstart_directory: " + missing + "\nwindows:\n  - panes: [null]\n");
+        Main.Context context = new Main.Context(
+                Map.of("HOME", directory.toString()),
+                directory,
+                InputStream.nullInputStream(),
+                OutputStream.nullOutputStream(),
+                OutputStream.nullOutputStream());
+        WorkspacePlan plan = WorkspacePlan.read(context, source, "");
+        assertEquals(missing, plan.directory());
+        assertEquals(1, plan.warnings().size(), plan.warnings().toString());
+        assertTrue(
+                plan.warnings().getFirst().contains("not a directory"),
+                plan.warnings().toString());
+    }
+
+    /** A workspace file's own directory must never supply the default when start_directory is absent. */
+    @Test
+    void defaultPaneDirectoryIsCwdNotTheWindowOrPaneParent() throws Exception {
+        Path documentDirectory = Files.createDirectories(directory.resolve("docs"));
+        Path source = documentDirectory.resolve("h9.yaml");
+        Files.writeString(source, "session_name: h9\nwindows:\n  - panes: [null]\n");
+        Main.Context context = new Main.Context(
+                Map.of("HOME", directory.toString()),
+                directory,
+                InputStream.nullInputStream(),
+                OutputStream.nullOutputStream(),
+                OutputStream.nullOutputStream());
+        WorkspacePlan plan = WorkspacePlan.read(context, source, "");
+        assertEquals(directory, plan.directory());
+        assertEquals(directory, plan.windows().getFirst().panes().getFirst().directory());
     }
 }

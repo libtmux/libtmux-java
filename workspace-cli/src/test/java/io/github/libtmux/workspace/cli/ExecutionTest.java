@@ -1374,4 +1374,23 @@ final class ExecutionTest {
             }
         }
     }
+
+    /** With no start_directory anywhere, panes must start in the invocation directory, not the document's. */
+    @Test
+    void defaultPaneDirectoryIsTheInvocationDirectoryNotTheDocumentDirectory() throws Exception {
+        Path socket = directory.resolve("h9-socket");
+        Path documentDirectory = Files.createDirectories(directory.resolve("docs"));
+        Path source = documentDirectory.resolve("h9.yaml");
+        Files.writeString(source, "session_name: h9\nwindows:\n  - panes: [null]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke("load", source.toString(), "-d", "-S", socket.toString(), "--json");
+                assertEquals(0, result.code(), result.err());
+                String cwd = server.panes().getFirst().currentPath().toString();
+                assertEquals(directory.toString(), cwd, cwd);
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
 }
