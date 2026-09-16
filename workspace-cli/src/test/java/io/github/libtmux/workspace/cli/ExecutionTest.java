@@ -1664,6 +1664,33 @@ final class ExecutionTest {
         }
     }
 
+    /** D4: human mode says which a load did, one session at a time, not "1 workspaces" either way. */
+    @Test
+    void humanLoadSummaryDistinguishesCreatedFromReused() throws Exception {
+        Path source = directory.resolve("d4.yaml");
+        Path socket = directory.resolve("d4-socket");
+        Files.writeString(source, "session_name: d4\nwindows: [{}]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result created =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null");
+                assertEquals(0, created.code(), created.err());
+                assertTrue(created.out().contains("Created"), created.out());
+                assertTrue(created.out().contains("d4"), created.out());
+                assertFalse(created.out().contains("workspaces"), created.out());
+
+                Result reused =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null");
+                assertEquals(0, reused.code(), reused.err());
+                assertTrue(reused.out().contains("Reused"), reused.out());
+                assertTrue(reused.out().contains("d4"), reused.out());
+                assertFalse(reused.out().contains("workspaces"), reused.out());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     @Test
     void coldLoadCaptureAndReusePreserveIndexedTopology() throws Exception {
         Path socket = directory.resolve("socket");

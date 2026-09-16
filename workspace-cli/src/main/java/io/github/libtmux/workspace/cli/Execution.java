@@ -1,5 +1,6 @@
 package io.github.libtmux.workspace.cli;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.libtmux.Dimensions;
@@ -154,7 +155,14 @@ final class Execution {
             ObjectNode summary = summary("ok", results);
             if (report.streaming()) report.event("completed", summary);
             else if (report.machine()) report.document(summary);
-            else report.line("success", "Loaded", results.size() + " workspaces");
+            else
+                // D4: each result says what happened to its own session; "Loaded N workspaces"
+                // read the same on a first load and a reuse, and was wrong when N was 1.
+                for (JsonNode effects : results)
+                    report.line(
+                            "success",
+                            effects.path("reused").asBoolean() ? "Reused" : "Created",
+                            "session " + effects.path("session_name").asText());
             if (!detached && !append && last != null) attach(server, last, context, invoking);
         }
     }
