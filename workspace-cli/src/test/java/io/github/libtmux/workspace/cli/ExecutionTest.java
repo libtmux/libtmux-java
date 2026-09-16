@@ -378,6 +378,7 @@ final class ExecutionTest {
         Path socket = directory.resolve("size-socket");
         Files.writeString(source, "session_name: sized\nwindows:\n  - window_name: a\n  - window_name: b\n");
         try (Server server = server(socket)) {
+            assumeSizesDetachedSessions(server);
             try {
                 assertFalse(server.isAlive(), "the daemon must still be cold before this load");
                 Result result = invoke(
@@ -415,6 +416,7 @@ final class ExecutionTest {
         assertTrue(wrapper.toFile().setExecutable(true));
         Files.writeString(source, "session_name: default-size\nwindows: [{}]\n");
         try (Server server = server(socket)) {
+            assumeSizesDetachedSessions(server);
             try {
                 Result result = invoke(
                         java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString()),
@@ -1908,5 +1910,13 @@ final class ExecutionTest {
                 if (server.isAlive()) server.killServer();
             }
         }
+    }
+
+    /** tmux 3.2a accepts -x/-y for a detached session and ignores them, so the CLI sends no size there. */
+    private static void assumeSizesDetachedSessions(Server server) {
+        String client = server.cmd("-V").stdout().getFirst().replace("tmux ", "");
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                io.github.libtmux.TmuxVersion.parse(client).atLeast(io.github.libtmux.TmuxVersion.parse("3.3a")),
+                "detached session sizing needs tmux 3.3a");
     }
 }

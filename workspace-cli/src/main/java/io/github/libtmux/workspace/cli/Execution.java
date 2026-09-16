@@ -151,13 +151,11 @@ final class Execution {
             if (report.streaming()) report.event("completed", summary);
             else if (report.machine()) report.document(summary);
             else
-                // D4: each result says what happened to its own session; "Loaded N workspaces"
-                // read the same on a first load and a reuse, and was wrong when N was 1.
                 for (JsonNode effects : results)
                     report.line(
                             "success",
-                            effects.path("reused").asBoolean() ? "Reused" : "Created",
-                            "session " + effects.path("session_name").asText());
+                            effects.path("reused").asBoolean() ? "Reused session" : "Created session",
+                            effects.path("session_name").asText());
             if (!detached && !append && last != null) attach(server, last, context, invoking);
         }
     }
