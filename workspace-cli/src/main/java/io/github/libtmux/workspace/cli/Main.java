@@ -187,14 +187,7 @@ public final class Main {
                         case "freeze" -> Execution.freeze(context, leaf, report);
                         case "edit" -> Children.edit(context, leaf, report);
                         case "shell" -> Children.shell(context, leaf, report);
-                        case "debug-info" ->
-                            report.document(Documents.JSON
-                                    .createObjectNode()
-                                    .put("port", "java")
-                                    .put("version", version())
-                                    .put("java_version", System.getProperty("java.version"))
-                                    .put("working_directory", Catalog.mask(context, context.directory()))
-                                    .set("global_workspace_dirs", Catalog.directories(context)));
+                        case "debug-info" -> debugInfo(context, report);
                         default -> throw usage("select a workspace command; use --help");
                     }
                     output.flush();
@@ -238,6 +231,34 @@ public final class Main {
             diagnostic(context, machine, "invalid_config", Objects.toString(failure.getMessage(), "command failed"));
             return 1;
         }
+    }
+
+    private static void debugInfo(Context context, Reporter report) throws IOException {
+        com.fasterxml.jackson.databind.node.ArrayNode directories = Catalog.directories(context);
+        String workingDirectory = Catalog.mask(context, context.directory());
+        if (report.machine()) {
+            report.document(Documents.JSON
+                    .createObjectNode()
+                    .put("port", "java")
+                    .put("version", version())
+                    .put("java_version", System.getProperty("java.version"))
+                    .put("working_directory", workingDirectory)
+                    .set("global_workspace_dirs", directories));
+            return;
+        }
+        report.line("subject", "tmux-workspace", version());
+        report.line("subject", "port", "java (" + System.getProperty("java.version") + ")");
+        report.line("subject", "working_directory", workingDirectory);
+        if (directories.isEmpty()) report.line("subject", "global_workspace_dirs", "(none)");
+        else
+            for (var directory : directories)
+                report.line(
+                        directory.path("active").asBoolean() ? "success" : "subject",
+                        directory.path("path").asText(),
+                        directory.path("source").asText() + ", "
+                                + directory.path("workspace_count").asInt()
+                                + " workspace(s)"
+                                + (directory.path("exists").asBoolean() ? "" : ", missing"));
     }
 
     static boolean flag(ParseResult args, String name) {
