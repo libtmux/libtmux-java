@@ -90,10 +90,15 @@ public final class Server implements AutoCloseable {
     /**
      * Creates a session according to a spec, which may be reused across servers.
      *
+     * <p>A version-gated field such as {@link SessionSpec#size()} is checked against the running
+     * daemon, or the client binary where none is running yet — asking a session's own size to create
+     * that first session must not require one to already exist.
+     *
      * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
      */
     public Session newSession(SessionSpec spec) {
-        List<String> reported = run(spec.argv("#{session_id}", this::version)).stdout();
+        List<String> reported = run(spec.argv("#{session_id}", () -> Layouts.version(this)))
+                .stdout();
         SessionId created = new SessionId(reported.get(0));
         ServerSnapshot fresh = snapshot();
         return fresh.session(created)

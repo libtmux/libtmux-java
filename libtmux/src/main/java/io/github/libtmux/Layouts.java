@@ -83,7 +83,8 @@ public final class Layouts {
         return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
     }
 
-    private static TmuxVersion version(Server server) {
+    /** The running daemon's version where one answers, else the client binary's own; never starts a daemon. */
+    static TmuxVersion version(Server server) {
         CommandResult reply = server.cmd("display-message", "-p", "#{version}");
         if (reply.succeeded()) return parsedVersion(reply, false);
         String reason = String.join("\n", reply.stderr()).strip();

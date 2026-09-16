@@ -1,6 +1,7 @@
 package io.github.libtmux.workspace.cli;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.libtmux.Dimensions;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -10,11 +11,13 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 
 final class Children {
@@ -332,6 +335,33 @@ final class Children {
                         .put("command", "shell")
                         .put("status", output.status() == 0 ? "ok" : "error"),
                 output.status());
+    }
+
+    /**
+     * The real process's stdout size in terminal cells, or empty when it is not a terminal.
+     *
+     * <p>Gated on {@link Main.Context#processError()} like {@link LoadProgress}: a test's redirected
+     * streams never reach a real fd, so probing them would only add a subprocess per invocation.
+     */
+    static Optional<Dimensions> stdoutSize(Main.Context context) throws IOException, InterruptedException {
+        if (!context.processError()) return Optional.empty();
+        var builder = new ProcessBuilder("/bin/sh", "-c", "test -t 1 || exit 1; /bin/stty size <&1 >&2")
+                .redirectOutput(ProcessBuilder.Redirect.INHERIT);
+        builder.environment().clear();
+        builder.environment().putAll(context.environment());
+        Process probe = builder.start();
+        probe.getOutputStream().close();
+        try (var stream = probe.getErrorStream()) {
+            if (!probe.waitFor(1, TimeUnit.SECONDS) || probe.exitValue() != 0) return Optional.empty();
+            String size = new String(stream.readAllBytes(), StandardCharsets.UTF_8).strip();
+            var dimensions = Pattern.compile("([0-9]+) +([0-9]+)").matcher(size);
+            if (!dimensions.matches()) return Optional.empty();
+            int rows = Integer.parseInt(dimensions.group(1));
+            int columns = Integer.parseInt(dimensions.group(2));
+            return rows > 0 && columns > 0 ? Optional.of(new Dimensions(columns, rows)) : Optional.empty();
+        } finally {
+            if (probe.isAlive()) probe.destroyForcibly();
+        }
     }
 
     static java.io.File terminalDevice(Main.Context context) throws IOException, InterruptedException {
