@@ -522,7 +522,7 @@ final class ProcessTest {
                 String stdout = Files.readString(output);
                 String stderr = Files.readString(terminalError ? terminal : error);
                 assertTrue(stdout.contains("bootstrap-out"), stdout);
-                assertEquals(!cancelled, stdout.contains("Loaded"), stdout);
+                assertEquals(!cancelled, stdout.contains("Created session"), stdout);
                 assertFalse(stdout.contains("PROGRESS_"), stdout);
                 assertTrue(stderr.contains("bootstrap-err"), stderr);
                 assertEquals(terminalError && !disabled, stderr.contains("PROGRESS_progress_1_2"), stderr);
