@@ -31,9 +31,7 @@ final class Execution {
     private Execution() {}
 
     static Server server(Main.Context context, ParseResult args) {
-        var server = Server.builder()
-                .force256Colors(Main.flag(args, "-2"))
-                .binary(Children.executable(context, context.environment().getOrDefault("LIBTMUX_TEST_TMUX", "tmux")));
+        var server = Server.builder().force256Colors(Main.flag(args, "-2")).binary(tmuxExecutable(context));
         String socket = args.matchedOptionValue("-S", "");
         String name = args.matchedOptionValue("-L", "");
         if (!socket.isEmpty())
@@ -46,6 +44,17 @@ final class Execution {
         if (args.commandSpec().name().equals("load") && !config.isEmpty())
             server.configFile(context.directory().resolve(config));
         return server.build();
+    }
+
+    /** S14: a missing tmux is `tmux_unavailable`, not the raw {@code executable_not_found} of the lookup. */
+    private static String tmuxExecutable(Main.Context context) {
+        try {
+            return Children.executable(context, context.environment().getOrDefault("LIBTMUX_TEST_TMUX", "tmux"));
+        } catch (Main.Failure absent) {
+            if (!absent.code.equals("executable_not_found")) throw absent;
+            throw new Main.Failure(
+                    "tmux_unavailable", 1, java.util.Objects.toString(absent.getMessage(), "tmux is not available"));
+        }
     }
 
     static void load(Main.Context context, ParseResult args, Reporter report) throws IOException, InterruptedException {
@@ -130,7 +139,7 @@ final class Execution {
                                     failure instanceof InterruptedException
                                                     || failure instanceof java.io.InterruptedIOException
                                             ? "interrupted"
-                                            : "load_failed")
+                                            : failure instanceof Main.Failure known ? known.code : "load_failed")
                             .put("message", String.valueOf(failure.getMessage()))
                             .put("input_index", index)
                             .put("partial_effects", partial);
@@ -229,7 +238,7 @@ final class Execution {
                 // S16: the session this load created must not outlive its own failed setup; a
                 // borrowed or appended one is never this load's to remove.
                 if (bootstrap != null) session.kill();
-                throw new Main.Failure("before_script_failed", 1, "before_script exited with " + output.status());
+                throw new Main.Failure("script_failed", 1, "before_script exited with " + output.status());
             }
         }
         effects.put("stage", "options");
@@ -599,7 +608,7 @@ final class Execution {
                     : sessions.stream()
                             .filter(value -> value.name().equals(name))
                             .findFirst()
-                            .orElseThrow(() -> Main.usage("select a live session by name"));
+                            .orElseThrow(() -> new Main.Failure("session_not_found", 1, "select a live session by name"));
             ObjectNode captured = Documents.JSON.createObjectNode().put("session_name", session.name());
             captured.set("options", Documents.JSON.valueToTree(session.options().all()));
             String defaultShell = session.options().get("default-shell").orElse("");
@@ -647,7 +656,12 @@ final class Execution {
                 Path path = context.directory().resolve(Catalog.expand(context, destination));
                 if (!report.machine() && !Main.flag(args, "--yes"))
                     Documents.confirm(context, "Save " + Catalog.mask(context, path) + "?");
-                Documents.write(path, captured, format, Main.flag(args, "--force"));
+                try {
+                    Documents.write(path, captured, format, Main.flag(args, "--force"));
+                } catch (java.nio.file.FileAlreadyExistsException exists) {
+                    throw new Main.Failure(
+                            "destination_exists", 1, "destination already exists: " + Catalog.mask(context, path));
+                }
                 result.put("destination", Catalog.mask(context, path)).put("format", format);
                 if (report.streaming()) report.event("completed", result);
                 else if (report.machine()) report.document(result);

@@ -161,7 +161,12 @@ final class Documents {
                 : context.directory().resolve(Catalog.expand(context, destination));
         if (!report.machine() && !Main.flag(args, "--yes"))
             confirm(context, "Save " + Catalog.mask(context, target) + "?");
-        write(target, value, format, Main.flag(args, "--force"));
+        try {
+            write(target, value, format, Main.flag(args, "--force"));
+        } catch (java.nio.file.FileAlreadyExistsException exists) {
+            throw new Main.Failure(
+                    "destination_exists", 1, "destination already exists: " + Catalog.mask(context, target));
+        }
         ObjectNode saved = JSON.createObjectNode()
                 .put("schema_version", 1)
                 .put("command", kind)
@@ -180,7 +185,8 @@ final class Documents {
     }
 
     static void confirm(Main.Context context, String prompt) throws IOException {
-        if (!Main.terminal()) throw Main.usage("confirmation requires a terminal; pass --yes");
+        if (!Main.terminal())
+            throw new Main.Failure("confirmation_required", 1, "confirmation requires a terminal; pass --yes");
         context.error().write((Reporter.safe(prompt) + " [y/N] ").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         context.error().flush();
         int answer = context.input().read();
@@ -377,12 +383,14 @@ final class Documents {
     private static void importKeys(JsonNode input, Set<String> allowed, String scope) {
         if (!input.isObject()) throw importError(scope + " must be a mapping");
         input.fieldNames().forEachRemaining(key -> {
-            if (!allowed.contains(key)) throw importError(scope + "." + key + " is not supported by native import");
+            if (!allowed.contains(key))
+                throw new Main.Failure(
+                        "unsupported_key", 1, scope + "." + key + " is not supported by native import");
         });
     }
 
     private static Main.Failure importError(String message) {
-        return new Main.Failure("invalid_config", 1, message);
+        return new Main.Failure("invalid_workspace", 1, message);
     }
 
     private static void copy(JsonNode source, ObjectNode target, String from, String to) {

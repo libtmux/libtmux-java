@@ -41,6 +41,53 @@ final class MainTest {
         return new Result(code, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
     }
 
+    /** S14/E3: the minimum test — a missing workspace file is `workspace_not_found`. */
+    @Test
+    void missingWorkspaceFileReportsWorkspaceNotFound() throws Exception {
+        Result result = invoke("load", directory.resolve("missing.yaml").toString(), "-d", "--json");
+        assertEquals(1, result.code(), result.toString());
+        assertEquals(
+                "workspace_not_found",
+                new ObjectMapper().readTree(result.err()).path("code").asText());
+    }
+
+    /** S14/E3: the minimum test — malformed YAML is `invalid_workspace`. */
+    @Test
+    void malformedYamlReportsInvalidWorkspace() throws Exception {
+        Path source = directory.resolve("bad.yaml");
+        Files.writeString(source, "a: [\n");
+        Result result = invoke("load", source.toString(), "-d", "--json");
+        assertEquals(1, result.code(), result.toString());
+        assertEquals(
+                "invalid_workspace",
+                new ObjectMapper().readTree(result.err()).path("code").asText());
+    }
+
+    /** S14/E3/S6: the minimum test — an unknown top-level key is `unsupported_key`, and the message
+     * suggests the `x-` prefix that S6 exempts. */
+    @Test
+    void unsupportedTopLevelKeyReportsUnsupportedKeyAndSuggestsXPrefix() throws Exception {
+        Path source = directory.resolve("bogus.yaml");
+        Files.writeString(source, "session_name: x\nbogus: 1\nwindows: [{}]\n");
+        Result result = invoke("load", source.toString(), "-d", "--json");
+        assertEquals(1, result.code(), result.toString());
+        var diagnostic = new ObjectMapper().readTree(result.err());
+        assertEquals("unsupported_key", diagnostic.path("code").asText());
+        assertTrue(diagnostic.path("message").asText().contains("x-"), result.err());
+    }
+
+    /** S14/E3: a missing tmux executable is `tmux_unavailable`, not the python probe's own code. */
+    @Test
+    void missingTmuxExecutableReportsTmuxUnavailable() throws Exception {
+        Path source = directory.resolve("any.yaml");
+        Files.writeString(source, "session_name: any\nwindows: [{}]\n");
+        Result result = invoke("load", source.toString(), "-d", "--json");
+        assertEquals(1, result.code(), result.toString());
+        assertEquals(
+                "tmux_unavailable",
+                new ObjectMapper().readTree(result.err()).path("code").asText());
+    }
+
     @Test
     void helpAndEveryLeafOutputPlacementAreBackendFree() {
         for (List<String> leaf : List.of(
@@ -231,7 +278,7 @@ final class MainTest {
             String diagnostic = error.toString(StandardCharsets.UTF_8);
             if (arguments.size() > 2) {
                 var value = new ObjectMapper().readTree(diagnostic);
-                assertEquals("invalid_config", value.path("code").asText());
+                assertEquals("invalid_workspace", value.path("code").asText());
                 assertTrue(value.path("message").asText().contains("closed"));
             } else assertTrue(diagnostic.contains("closed"));
         }
@@ -483,7 +530,7 @@ final class MainTest {
             assertEquals(1, result.code(), fixture.getKey() + ": " + result);
             assertEquals("", result.out());
             assertEquals(
-                    "invalid_config",
+                    "invalid_workspace",
                     new ObjectMapper().readTree(result.err()).path("code").asText());
         }
     }
@@ -529,10 +576,24 @@ final class MainTest {
         assertEquals(1, rejected.code());
         assertEquals("sentinel", Files.readString(target));
         assertEquals(
+                "destination_exists",
+                new ObjectMapper().readTree(rejected.err()).path("code").asText());
+        assertEquals(
                 0,
                 invoke("convert", source.toString(), "--json", "--save-to", target.toString(), "--force")
                         .code());
         assertEquals(document, new ObjectMapper().readTree(Files.readString(target)));
+    }
+
+    /** S14/E3: a save that needs confirmation but has no terminal is `confirmation_required`. */
+    @Test
+    void convertWithoutYesAndNoTerminalReportsConfirmationRequired() throws Exception {
+        Path source = directory.resolve("confirm.yaml");
+        Files.writeString(source, "session_name: confirm\nwindows: []\n");
+        Result result = invoke("convert", source.toString(), "--save-to", "confirm.json");
+        assertEquals(1, result.code(), result.toString());
+        assertFalse(Files.exists(directory.resolve("confirm.json")));
+        assertEquals("confirmation_required: confirmation requires a terminal; pass --yes\n", result.err());
     }
 
     /** Saving relies on a hard link to refuse an existing destination, which not every store has. */
@@ -847,8 +908,7 @@ final class MainTest {
                             + "\nwindows:\n  - panes: [null]\n");
             WorkspacePlan.read(context, source, "");
         }
-        for (String catalog :
-                List.of("[]", "false", "{pane_readiness: sometimes}", "{pane_readiness: []}", "{unknown: true}")) {
+        for (String catalog : List.of("[]", "false", "{pane_readiness: sometimes}", "{pane_readiness: []}")) {
             Files.writeString(
                     source,
                     "session_name: readiness\nworkspace_builder_options: " + catalog
@@ -857,10 +917,20 @@ final class MainTest {
             assertEquals(1, result.code());
             assertEquals("", result.out());
             assertEquals(
-                    "invalid_config",
+                    "invalid_workspace",
                     new ObjectMapper().readTree(result.err()).path("code").asText());
             assertTrue(result.err().contains("workspace_builder_options"), result.err());
         }
+        Files.writeString(
+                source,
+                "session_name: readiness\nworkspace_builder_options: {unknown: true}\nwindows:\n  - panes: [null]\n");
+        Result unknownKey = invoke("load", source.toString(), "-d", "--json");
+        assertEquals(1, unknownKey.code());
+        assertEquals("", unknownKey.out());
+        assertEquals(
+                "unsupported_key",
+                new ObjectMapper().readTree(unknownKey.err()).path("code").asText());
+        assertTrue(unknownKey.err().contains("workspace_builder_options"), unknownKey.err());
     }
 
     @Test
@@ -938,7 +1008,7 @@ final class MainTest {
             assertEquals(1, result.code());
             assertEquals("", result.out());
             assertEquals(
-                    "invalid_config",
+                    "invalid_workspace",
                     new ObjectMapper().readTree(result.err()).path("code").asText());
         }
     }
@@ -1015,7 +1085,7 @@ final class MainTest {
             Result result = invoke("load", source.toString(), "-d", "--json");
             assertEquals(1, result.code(), result.toString());
             var diagnostic = new ObjectMapper().readTree(result.err());
-            assertEquals("invalid_config", diagnostic.path("code").asText());
+            assertEquals("invalid_workspace", diagnostic.path("code").asText());
             String character = bad.contains(":") ? ":" : ".";
             assertTrue(diagnostic.path("message").asText().contains("'" + character + "'"), result.err());
         }

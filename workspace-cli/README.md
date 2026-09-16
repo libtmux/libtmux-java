@@ -13,6 +13,9 @@ conversion, imports, discovery, search, editor execution and Python shell
 execution are available. Python plugins and custom builders use an explicit
 tmuxp bridge; their effects remain outside the native builder's guarantees.
 Native loading rejects unsupported configuration keys before contacting tmux.
+A key starting with `x-`, at any level, is the exception: it is accepted,
+ignored, and preserved by `convert`, for a vendor extension a workspace may
+carry without failing native loading.
 YAML anchors and merge keys expand into ordinary workspace values. Date-like
 scalars remain text. Documents must contain one mapping; duplicate keys,
 cyclic aliases, nonfinite numbers and nonstring mapping keys are rejected.
