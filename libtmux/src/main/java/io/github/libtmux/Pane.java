@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -105,6 +106,11 @@ public final class Pane {
         return state.size();
     }
 
+    /** Where the pane's top-left corner sat in its window when captured, in terminal cells. */
+    public PanePosition position() {
+        return state.position();
+    }
+
     /** The pane title, which a program running inside it can change. */
     public String title() {
         return state.title();
@@ -115,9 +121,38 @@ public final class Pane {
         return state.currentPath();
     }
 
-    /** The process id of the program running in the pane. */
-    public long pid() {
+    /**
+     * The process id of the program running in the pane, captured at the time of the read this
+     * handle came from.
+     *
+     * <p>Empty means tmux reported no process — never a literal {@code 0}, which would be
+     * indistinguishable from a real pid. That covers two different situations this capture cannot
+     * tell apart: a pane that never ran one ({@link SplitSpec.Builder#empty()}) and, from tmux 3.8, a
+     * pane that ran one and it has since died. Before 3.8 a dead pane still reports its stale pid.
+     * {@link #dead()} is the live read that tells a caller which.
+     */
+    public OptionalLong pid() {
         return state.pid();
+    }
+
+    /**
+     * Whether this pane's process has exited, read fresh rather than from the capture.
+     *
+     * <p>Dying is something that happens between reads, so a cached answer would report a pane that
+     * died after this handle was captured as alive forever — the trap a snapshot-backed {@code
+     * isDead()} would set, which is why there is no such accessor on the capture itself. This asks
+     * tmux directly instead, every time.
+     *
+     * <p>A dead pane is not necessarily a gone one: {@code remain-on-exit} keeps it around, still
+     * listed, to be read. A pane with no {@code remain-on-exit} is simply removed once its process
+     * exits — {@link #refresh()} on this handle then throws {@link ObjectDoesNotExistException}, and
+     * this method throws too, carrying tmux's own {@code can't find pane} rather than ever reporting
+     * one final "dead" for a pane that is not there to ask.
+     *
+     * @throws LibTmuxException if this pane no longer exists
+     */
+    public boolean dead() {
+        return "1".equals(expand("#{pane_dead}"));
     }
 
     /**
@@ -677,6 +712,9 @@ public final class Pane {
      * @param configure receives a builder holding tmux's defaults
      * @return the pane that appeared
      * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws ObjectDoesNotExistException if a command with no {@link SplitSpec.Builder#keepOnExit}
+     *     exits before the pane it ran in can be read back — see {@link SplitSpec.Builder#running}.
+     *     tmux still made the pane and ran the command; only this confirming read lost the race.
      */
     public Pane split(Consumer<SplitSpec.Builder> configure) {
         SplitSpec.Builder builder = SplitSpec.builder();
@@ -689,6 +727,9 @@ public final class Pane {
      *
      * @return the pane that appeared
      * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws ObjectDoesNotExistException if a command with no {@link SplitSpec.Builder#keepOnExit}
+     *     exits before the pane it ran in can be read back — see {@link SplitSpec.Builder#running}.
+     *     tmux still made the pane and ran the command; only this confirming read lost the race.
      */
     public Pane split(SplitSpec spec) {
         return created(server, snapshot, spec.argv(state.id().value(), CREATED.template(), server.version(snapshot)));

@@ -323,7 +323,14 @@ public final class SplitSpec {
             return this;
         }
 
-        /** Runs a command, which closes the pane when it exits unless {@link #keepOnExit} is set. */
+        /**
+         * Runs a command, which closes the pane when it exits unless {@link #keepOnExit} is set.
+         *
+         * <p>A command that exits fast enough races {@link Pane#split}'s own read-back: tmux can
+         * destroy the pane before the second listing that confirms it runs, and the split then
+         * throws {@code ObjectDoesNotExistException} even though tmux made the pane and ran the
+         * command in it. {@link #keepOnExit} removes the race by keeping the pane there to be read.
+         */
         public Builder running(String... argv) {
             start = PaneStart.command(argv);
             return this;

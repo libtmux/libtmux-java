@@ -58,3 +58,32 @@ unchanged.
 Session renamed = session.rename("build");
 renamed.name();                        // → build
 ```
+
+### `Pane.pid()` returns `OptionalLong`
+
+`0` meant two different things depending on release — no process at all, and,
+on a development tmux, a process that ran and died — and could be mistaken
+for a real pid either way. Replace `pane.pid() > 0` with `pane.pid()
+.orElseThrow() > 0`, and a bare `long pid = pane.pid();` with `orElse(0)` if a
+sentinel is still wanted, or `orElseThrow()` where absence should fail loudly.
+
+```java
+// Given: Pane pane
+pane.pid().isEmpty();                  // → false
+```
+
+`PaneState`'s own `pid` component changed the same way, from `long` to
+`OptionalLong`; a caller constructing one directly wraps the value in
+`OptionalLong.of(...)` or passes `OptionalLong.empty()`. `PaneState` also
+gained a `position` component (a `PanePosition`) between `size` and `title` —
+a direct constructor call needs one more argument, in that position.
+
+### `ControlClient.attach` requests JSON layouts on connect
+
+`attach` now sends `refresh-client -f new-layouts` right after attaching, so
+a `%layout-change` notification agrees with what a plain client reads on tmux
+3.8+ instead of carrying the classic string. A fake control-mode server built
+for a test — one that scripts an exact sequence of requests and replies
+rather than answering every request generically — now has one more request
+to answer, right after the attach reply, before whatever its own script
+expects next.

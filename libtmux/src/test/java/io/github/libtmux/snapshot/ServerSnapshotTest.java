@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.Dimensions;
 import io.github.libtmux.PaneEdges;
 import io.github.libtmux.PaneId;
+import io.github.libtmux.PanePosition;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.WindowId;
 import io.github.libtmux.WindowIndex;
@@ -15,6 +16,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -29,6 +31,7 @@ final class ServerSnapshotTest {
 
     private static final Instant WHEN = Instant.parse("2026-08-14T00:00:00Z");
     private static final Dimensions SIZE = new Dimensions(80, 24);
+    private static final PanePosition POSITION = new PanePosition(0, 0);
     private static final Path PATH = Path.of("/tmp");
     private static final PaneEdges EDGES = new PaneEdges(true, true, true, true);
 
@@ -58,7 +61,18 @@ final class ServerSnapshotTest {
 
     private static PaneState pane(WindowContext context, String id, int index, boolean active, String command) {
         return new PaneState(
-                context, new PaneId(id), index, active, command, SIZE, "t", PATH, 1L, EDGES, Optional.of(false));
+                context,
+                new PaneId(id),
+                index,
+                active,
+                command,
+                SIZE,
+                POSITION,
+                "t",
+                PATH,
+                OptionalLong.of(1L),
+                EDGES,
+                Optional.of(false));
     }
 
     @Test
@@ -226,9 +240,10 @@ final class ServerSnapshotTest {
                                 true,
                                 "zsh",
                                 SIZE,
+                                POSITION,
                                 "t",
                                 PATH,
-                                1L,
+                                OptionalLong.of(1L),
                                 EDGES,
                                 Optional.empty())),
                         List.of()),
@@ -252,9 +267,10 @@ final class ServerSnapshotTest {
                                 true,
                                 "zsh",
                                 SIZE,
+                                POSITION,
                                 "t",
                                 PATH,
-                                1L,
+                                OptionalLong.of(1L),
                                 EDGES,
                                 Optional.empty())),
                         List.of()));
@@ -326,9 +342,10 @@ final class ServerSnapshotTest {
                                 true,
                                 "zsh",
                                 SIZE,
+                                POSITION,
                                 "t",
                                 PATH,
-                                1L,
+                                OptionalLong.of(1L),
                                 EDGES,
                                 Optional.empty())),
                         List.of()));

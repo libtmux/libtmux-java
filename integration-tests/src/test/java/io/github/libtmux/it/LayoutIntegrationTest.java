@@ -80,6 +80,24 @@ final class LayoutIntegrationTest {
         assertNotEquals(before, window.refresh().layout(), "next-layout did nothing");
     }
 
+    /**
+     * {@code previous-layout} steps back through tmux's preset cycle. The window starts on a preset
+     * because a fresh split is not a position in that cycle, so stepping back from one step forward
+     * would not return to it.
+     */
+    @Test
+    void movingToThePreviousLayoutIsAcceptedOnEveryRelease(Server server) {
+        Window window = split(server);
+        window.selectLayout(Layout.EVEN_HORIZONTAL);
+        String before = window.refresh().layout();
+        window.nextLayout();
+
+        window.previousLayout();
+
+        assertTrue(server.isAlive());
+        assertEquals(before, window.refresh().layout(), "previous-layout did not undo next-layout");
+    }
+
     // ----------------------------------------------------------------------- the dangerous path
 
     /** A layout tmux wrote round-trips, which is what applyLayout is for. */

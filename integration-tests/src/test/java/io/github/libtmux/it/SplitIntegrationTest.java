@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
+import io.github.libtmux.PanePosition;
 import io.github.libtmux.Server;
 import io.github.libtmux.SplitSpec;
 import io.github.libtmux.TmuxVersion;
@@ -55,6 +57,19 @@ final class SplitIntegrationTest {
         assertTrue(created.edges().right());
         assertTrue(created.size().width() < width, "a horizontal split narrows both panes");
         assertEquals(original.size().height(), created.size().height(), "and leaves the height alone");
+    }
+
+    /** JAVA-7: no absolute pane position accessor existed; reaching it needed a raw round trip per pane. */
+    @Test
+    void positionReportsWhereEachPaneSitsInTheWindow(Server server) {
+        Pane original = onlyPane(server);
+        assertEquals(new PanePosition(0, 0), original.position(), "the first pane starts at the window's origin");
+
+        Pane right = original.split(s -> s.toRight());
+
+        assertTrue(right.position().left() > 0, "a pane split to the right does not start at the left edge");
+        assertEquals(0, right.position().top());
+        assertEquals(new PanePosition(0, 0), original.refresh().position(), "the original pane did not move");
     }
 
     @Test
@@ -176,7 +191,7 @@ final class SplitIntegrationTest {
             Pane created = original.split(s -> s.empty());
 
             assertEquals(2, created.window().panes().size(), "the pane exists");
-            assertEquals(0, created.pid(), "and nothing is running in it");
+            assertTrue(created.pid().isEmpty(), "and nothing is running in it");
         } else {
             UnsupportedTmuxVersionException refused =
                     assertThrows(UnsupportedTmuxVersionException.class, () -> original.split(s -> s.empty()));
@@ -199,6 +214,24 @@ final class SplitIntegrationTest {
         } else {
             assertThrows(UnsupportedTmuxVersionException.class, () -> original.split(s -> s.keepOnExit()));
         }
+    }
+
+    /**
+     * JAVA-2: a command with no {@link SplitSpec.Builder#keepOnExit} that exits fast enough races
+     * the read-back {@link Pane#split} uses to confirm the new pane. tmux still makes the pane and
+     * runs the command in it — this pins the documented failure ({@link
+     * SplitSpec.Builder#running}) rather than a behaviour change, so a future edit that started
+     * swallowing the race instead of reporting it would be caught here.
+     */
+    @Test
+    void aFastExitingCommandWithNoRemainOnExitCanLoseTheReadBackRace(Server server) {
+        Pane original = onlyPane(server);
+
+        ObjectDoesNotExistException raced = assertThrows(
+                ObjectDoesNotExistException.class,
+                () -> original.split(s -> s.running("sh", "-c", "echo dying; exit 3")));
+
+        assertEquals("the pane just created is already gone", raced.getMessage());
     }
 
     @Test

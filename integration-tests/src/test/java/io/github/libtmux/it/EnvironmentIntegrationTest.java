@@ -74,7 +74,9 @@ final class EnvironmentIntegrationTest {
 
         assertEquals(
                 Long.parseLong(reported.pane().expand("#{pid}")), here.serverPid(), "TMUX carries the server's pid");
-        assertTrue(here.serverPid() != reported.pane().pid(), "which is not the process running in the pane");
+        assertTrue(
+                here.serverPid() != reported.pane().pid().orElseThrow(),
+                "which is not the process running in the pane");
     }
 
     /**

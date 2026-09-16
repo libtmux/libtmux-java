@@ -614,8 +614,8 @@ final class ServerTest {
                         new CommandResult(
                                 0,
                                 List.of(String.join(
-                                        separator, "$0", "@0", "0", "%0", "0", "1", "zsh", "80", "24", "", "/tmp", "",
-                                        "0", "0", "0", "0")),
+                                        separator, "$0", "@0", "0", "%0", "0", "1", "zsh", "80", "24", "0", "0", "",
+                                        "/tmp", "", "0", "0", "0", "0")),
                                 List.of());
                     default -> new CommandResult(0, List.of(), List.of());
                 });
@@ -629,7 +629,8 @@ final class ServerTest {
             List<Pane> panes = server.panes();
 
             assertEquals(1, panes.size());
-            assertEquals(0L, panes.get(0).pid(), "an empty pane_pid must read as no process, not crash the capture");
+            assertTrue(
+                    panes.get(0).pid().isEmpty(), "an empty pane_pid must read as no process, not crash the capture");
         }
     }
 

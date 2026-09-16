@@ -274,6 +274,11 @@ public final class Window {
         server.run(snapshot, List.of("next-layout", "-t", target()));
     }
 
+    /** Moves to the previous built-in layout, as tmux's own binding does. */
+    public void previousLayout() {
+        server.run(snapshot, List.of("previous-layout", "-t", target()));
+    }
+
     /**
      * Restores an exact arrangement previously read from {@link #layout()}.
      *
@@ -283,6 +288,12 @@ public final class Window {
      * checksum, so a wrong one is detectable without asking; since 3.8 tmux may instead hand back
      * JSON, which carries no checksum, so that shape is only trusted from a server new enough to
      * have written it.
+     *
+     * <p>"Exact" holds in full only for a JSON layout, since that is the one form carrying each
+     * pane's id. A classic string — every release before 3.8, or an older reader against a newer
+     * server — restores the geometry but names no pane, so which process lands in which cell can
+     * differ from where it started; whether it does depends on whether the pane list still happens
+     * to match the order the layout was saved in. Confirmed by hand on 3.2a and 3.7c.
      *
      * @throws IllegalArgumentException if the string is not a layout tmux wrote
      * @throws UnsupportedTmuxVersionException if it is JSON-shaped but this server predates JSON

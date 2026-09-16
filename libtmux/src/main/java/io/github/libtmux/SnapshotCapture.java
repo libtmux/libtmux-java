@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 /**
  * Reads a whole tmux server into one snapshot.
@@ -54,6 +55,8 @@ final class SnapshotCapture {
         "pane_current_command",
         "pane_width",
         "pane_height",
+        "pane_left",
+        "pane_top",
         "pane_title",
         "pane_current_path",
         "pane_pid",
@@ -177,6 +180,7 @@ final class SnapshotCapture {
                     row.flag("pane_active"),
                     row.text("pane_current_command"),
                     new Dimensions(row.number("pane_width"), row.number("pane_height")),
+                    new PanePosition(row.number("pane_left"), row.number("pane_top")),
                     row.text("pane_title"),
                     Path.of(row.text("pane_current_path")),
                     panePid(row),
@@ -199,13 +203,19 @@ final class SnapshotCapture {
 
     /**
      * A pane with no process reports {@code pane_pid} as {@code 0} on every released tmux through
-     * 3.7c; the built development tmux this port has no CI lane for reports it as an empty string
-     * instead. Neither an empty nor a keep-on-exit pane runs anything, so this keeps the sentinel a
-     * caller already expects rather than widening {@link RowFormat.Row#count} for every field that
-     * uses it.
+     * 3.7c, and as an empty string on the built development tmux this port has no CI lane for. That
+     * development tmux reports the same empty string for a pane that ran a real process and then
+     * died with {@code remain-on-exit} — the two are indistinguishable from this field alone there;
+     * {@link Pane#dead()} is the live read that tells them apart. Either raw form collapses to
+     * {@link OptionalLong#empty()} rather than a literal {@code 0}, so a caller cannot mistake the
+     * sentinel for a real pid.
      */
-    private static long panePid(RowFormat.Row row) {
-        return row.text("pane_pid").isEmpty() ? 0L : row.count("pane_pid");
+    private static OptionalLong panePid(RowFormat.Row row) {
+        if (row.text("pane_pid").isEmpty()) {
+            return OptionalLong.empty();
+        }
+        long pid = row.count("pane_pid");
+        return pid == 0 ? OptionalLong.empty() : OptionalLong.of(pid);
     }
 
     private static List<String> listing(RowFormat format, String... command) {

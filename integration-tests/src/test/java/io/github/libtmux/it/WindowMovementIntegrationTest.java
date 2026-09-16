@@ -101,14 +101,14 @@ final class WindowMovementIntegrationTest {
     @Test
     void respawningKeepsTheWindowAndReplacesWhatRuns(Server server) {
         Window window = server.sessions().get(0).windows().get(0);
-        long before = window.panes().get(0).pid();
+        long before = window.panes().get(0).pid().orElseThrow();
 
         window.respawn();
 
         Window now = window.refresh();
         assertEquals(window.id(), now.id(), "the window survives");
         assertEquals(1, now.panes().size());
-        assertTrue(now.panes().get(0).pid() != before, "but what runs in it was started again");
+        assertTrue(now.panes().get(0).pid().orElseThrow() != before, "but what runs in it was started again");
     }
 
     /** tmux draws a popup for a client, and a detached fixture session has none. */

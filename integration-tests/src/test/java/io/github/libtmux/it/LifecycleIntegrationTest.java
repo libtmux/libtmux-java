@@ -92,7 +92,7 @@ final class LifecycleIntegrationTest {
 
         assertTrue(pane.size().width() > 0, "a pane has a width: " + pane.size());
         assertTrue(pane.size().height() > 0, "a pane has a height: " + pane.size());
-        assertTrue(pane.pid() > 0, "a pane runs a process");
+        assertTrue(pane.pid().orElseThrow() > 0, "a pane runs a process");
         assertTrue(pane.currentPath().isAbsolute(), "the working directory is a real path: " + pane.currentPath());
     }
 
