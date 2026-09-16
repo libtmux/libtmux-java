@@ -587,6 +587,52 @@ final class ServerTest {
         }
     }
 
+    /**
+     * A pane with no process reports {@code pane_pid} as {@code 0} on every released tmux through
+     * 3.7c; the built development tmux this port has no CI lane for reports it as an empty string
+     * instead — confirmed directly against that binary with {@code split-window -E} and a pane
+     * whose command has already exited, neither of which this test needs live tmux to prove. A
+     * capture used to crash on the empty count before ever reaching a caller's own dead-pane check.
+     */
+    @Test
+    void snapshotTreatsAnEmptyPanePidAsNoProcess(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return GroupedTmux.execute(request, 4242L, "3.6", argv -> switch (argv.get(0)) {
+                    case "display-message" ->
+                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6")), List.of());
+                    case "list-sessions" ->
+                        new CommandResult(0, List.of(String.join(separator, "$0", "only", "1", "1")), List.of());
+                    case "list-windows" ->
+                        new CommandResult(
+                                0,
+                                List.of(String.join(separator, "$0", "@0", "0", "only", "1", "1", "0", "80", "24", "")),
+                                List.of());
+                    case "list-panes" ->
+                        new CommandResult(
+                                0,
+                                List.of(String.join(
+                                        separator, "$0", "@0", "0", "%0", "0", "1", "zsh", "80", "24", "", "/tmp", "",
+                                        "0", "0", "0", "0")),
+                                List.of());
+                    default -> new CommandResult(0, List.of(), List.of());
+                });
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            List<Pane> panes = server.panes();
+
+            assertEquals(1, panes.size());
+            assertEquals(0L, panes.get(0).pid(), "an empty pane_pid must read as no process, not crash the capture");
+        }
+    }
+
     // --------------------------------------------------------------------------- version gates
 
     /**

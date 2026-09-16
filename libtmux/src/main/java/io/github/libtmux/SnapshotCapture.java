@@ -173,7 +173,7 @@ final class SnapshotCapture {
                     new Dimensions(row.number("pane_width"), row.number("pane_height")),
                     row.text("pane_title"),
                     Path.of(row.text("pane_current_path")),
-                    row.count("pane_pid"),
+                    panePid(row),
                     new PaneEdges(
                             row.flag("pane_at_top"),
                             row.flag("pane_at_bottom"),
@@ -189,6 +189,17 @@ final class SnapshotCapture {
                     session.isEmpty() ? Optional.empty() : Optional.of(new SessionId(session))));
         }
         return ServerSnapshot.of(Instant.now(), process.pid(), process.version(), sessions, windows, panes, clients);
+    }
+
+    /**
+     * A pane with no process reports {@code pane_pid} as {@code 0} on every released tmux through
+     * 3.7c; the built development tmux this port has no CI lane for reports it as an empty string
+     * instead. Neither an empty nor a keep-on-exit pane runs anything, so this keeps the sentinel a
+     * caller already expects rather than widening {@link RowFormat.Row#count} for every field that
+     * uses it.
+     */
+    private static long panePid(RowFormat.Row row) {
+        return row.text("pane_pid").isEmpty() ? 0L : row.count("pane_pid");
     }
 
     private static List<String> listing(RowFormat format, String... command) {
