@@ -110,7 +110,7 @@ public final class Main {
     }
 
     /**
-     * The S14 code for a failure not already thrown as a {@link Failure}, matching how {@link
+     * The machine error code for a failure not already thrown as a {@link Failure}, matching how {@link
      * #execute} classifies the same exception types for its own top-level diagnostic.
      */
     static String failureCode(Throwable failure, String fallback) {

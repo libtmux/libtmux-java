@@ -41,7 +41,7 @@ final class MainTest {
         return new Result(code, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
     }
 
-    /** S14/E3: the minimum test — a missing workspace file is `workspace_not_found`. */
+    /** A missing workspace file is `workspace_not_found`. */
     @Test
     void missingWorkspaceFileReportsWorkspaceNotFound() throws Exception {
         Result result = invoke("load", directory.resolve("missing.yaml").toString(), "-d", "--json");
@@ -51,7 +51,7 @@ final class MainTest {
                 new ObjectMapper().readTree(result.err()).path("code").asText());
     }
 
-    /** S14/E3: the minimum test — malformed YAML is `invalid_workspace`. */
+    /** Malformed YAML is `invalid_workspace`. */
     @Test
     void malformedYamlReportsInvalidWorkspace() throws Exception {
         Path source = directory.resolve("bad.yaml");
@@ -63,8 +63,8 @@ final class MainTest {
                 new ObjectMapper().readTree(result.err()).path("code").asText());
     }
 
-    /** S14/E3/S6: the minimum test — an unknown top-level key is `unsupported_key`, and the message
-     * suggests the `x-` prefix that S6 exempts. */
+    /** An unknown top-level key is `unsupported_key`, and the message
+     * suggests the `x-` prefix that exempts a key. */
     @Test
     void unsupportedTopLevelKeyReportsUnsupportedKeyAndSuggestsXPrefix() throws Exception {
         Path source = directory.resolve("bogus.yaml");
@@ -76,7 +76,7 @@ final class MainTest {
         assertTrue(diagnostic.path("message").asText().contains("x-"), result.err());
     }
 
-    /** S14/E3: a missing tmux executable is `tmux_unavailable`, not the python probe's own code. */
+    /** A missing tmux executable is `tmux_unavailable`, not the python probe's own code. */
     @Test
     void missingTmuxExecutableReportsTmuxUnavailable() throws Exception {
         Path source = directory.resolve("any.yaml");
@@ -585,7 +585,7 @@ final class MainTest {
         assertEquals(document, new ObjectMapper().readTree(Files.readString(target)));
     }
 
-    /** S14/E3: a save that needs confirmation but has no terminal is `confirmation_required`. */
+    /** A save that needs confirmation but has no terminal is `confirmation_required`. */
     @Test
     void convertWithoutYesAndNoTerminalReportsConfirmationRequired() throws Exception {
         Path source = directory.resolve("confirm.yaml");
