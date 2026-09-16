@@ -8,6 +8,7 @@ An accessor reads tmux once and hands back handles over what it saw. Walking the
 hierarchy afterwards issues no commands at all:
 
 ```java
+// Given: Server server
 for (Session session : server.sessions()) {
     for (Window window : session.windows()) {
         for (Pane pane : window.panes()) {
@@ -43,6 +44,7 @@ a window linked into two sessions is one window at two positions, and tmux
 orders and addresses those separately.
 
 ```java
+// Given: Server server
 Session before = server.sessions().get(0);
 String originalName = before.name();
 Session renamed = before.rename("something-else");
@@ -61,6 +63,7 @@ carry `@CheckReturnValue`. Error Prone rejects a call that discards their result
 If the effect alone is needed, make that choice explicit:
 
 ```java
+// Given: Session session
 var unused = session.rename("effect-only");
 ```
 
@@ -84,6 +87,7 @@ A snapshot carries the fields worth carrying. `expand` reaches everything else
 tmux knows, including fields from a release this library has never heard of:
 
 ```java
+// Given: Server server, Pane pane
 pane.expand("#{session_name}:#{window_index}.#{pane_index}");   // → libtmux:0.0
 
 server.expand("#{version}").isEmpty();                          // → false
@@ -99,6 +103,7 @@ range — lines count from the top of the visible area, and negatives climb into
 the history:
 
 ```java
+// Given: Pane pane
 pane.sendLine("echo captured");
 
 List<String> everything = pane.capture(c -> c.fromStartOfHistory());

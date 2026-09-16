@@ -13,6 +13,7 @@ it never ends anybody's sessions.
 
 <!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
+// Given: Path socket
 ServerConfig config = ServerConfig.builder()
         .endpoint(ServerEndpoint.socketPath(socket))
         .build();
@@ -29,6 +30,7 @@ try (Server server = Server.open(config)) {
 And what it leaves behind:
 
 ```java
+// Given: Server server
 Session session = server.newSession("demo");
 Window window = session.newWindow("build");
 
@@ -45,6 +47,7 @@ one you own and never closes it, so several servers can share a transport.
 To end the tmux server itself, ask plainly:
 
 ```java
+// Given: Server server
 server.killServer();
 ```
 
@@ -54,6 +57,7 @@ Sessions, windows and panes are all made the same way: call it plainly, describe
 it with a lambda, or hand it a description you built earlier.
 
 ```java
+// Given: Server server
 Session build = server.newSession(s -> s.named("build").firstWindowNamed("editor"));
 Window logs = build.newWindow(w -> w.named("logs").running("sleep", "30"));
 
@@ -74,6 +78,7 @@ does not have.
 builder:
 
 ```java
+// Given: Pane pane, Path directory
 Pane side = pane.split(s -> s.toRight().percent(30));
 Pane app = pane.split(s -> s.running("sleep", "30").in(directory));
 
@@ -84,6 +89,7 @@ pane.window().refresh().panes().size();    // → 3
 A description is also a value, so one can be named and applied wherever it fits:
 
 ```java
+// Given: Session session
 SplitSpec sidebar = SplitSpec.builder().toRight().percent(25).build();
 
 Pane leftSide = session.newWindow("left").split(sidebar);
@@ -103,6 +109,7 @@ command exits, per-pane styles — throw `UnsupportedTmuxVersionException` on an
 older server:
 
 ```java
+// Given: Server server, Pane pane
 if (!server.version().atLeast(new TmuxVersion(3, 7, ""))) {
     assertThrows(UnsupportedTmuxVersionException.class, () -> pane.split(s -> s.empty()));
 }
@@ -118,6 +125,7 @@ Accessors read tmux once and hand back handles over what they saw. Walking the
 hierarchy afterwards issues no commands at all:
 
 ```java
+// Given: Server server
 for (Session session : server.sessions()) {
     for (Window window : session.windows()) {
         for (Pane pane : window.panes()) {
@@ -154,6 +162,7 @@ A scope is chosen when you take the view, so you cannot read one scope and write
 another:
 
 ```java
+// Given: Server server, Session session
 server.globalOptions().set("base-index", "1");
 
 session.options().get("base-index").orElseThrow();   // → 1
@@ -167,6 +176,7 @@ it. `all()` answers the narrower question — what this scope sets itself.
 A batch is one tmux invocation, and every operation gets its own outcome:
 
 ```java
+// Given: Server server
 BatchResult result = server.batch()
         .add("new-window", "-d", "-n", "one")
         .add("new-window", "-d", "-n", "two")
@@ -185,6 +195,7 @@ A chain is the same machinery where each step acts on what the last one made,
 using tmux's own current-target following:
 
 ```java
+// Given: Server server
 server.chain()
         .newWindow("built")
         .splitLeftRight()
@@ -203,6 +214,7 @@ just created.
 A control client stays attached and pushes terminal output as it happens:
 
 ```java
+// Given: Server server, Session session
 try (ControlClient client = ControlClient.attach(server.config(), session.id());
         EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
 
@@ -224,6 +236,7 @@ A run that reads the developer's own `.tmux.conf` is a run whose behaviour nobod
 can predict. Pin one:
 
 ```java
+// Given: Path directory
 Path tmuxConf = Files.writeString(directory.resolve("tmux.conf"), "");
 
 ServerConfig pinned = ServerConfig.builder()

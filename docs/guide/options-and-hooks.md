@@ -7,6 +7,7 @@ than one. A scope is chosen when the view is taken, so a caller cannot read one
 and write another:
 
 ```java
+// Given: Server server, Session session, Window window, Pane pane
 server.globalOptions().set("base-index", "1");
 session.options().set("status-left", "mine");
 window.options().set("automatic-rename", "off");
@@ -19,6 +20,7 @@ pane.options().set("remain-on-exit", "on");
 including what the scope inherits:
 
 ```java
+// Given: Session session
 Options options = session.options();
 
 options.all().isEmpty();                          // → true
@@ -36,6 +38,7 @@ That star never reaches you: the name you look up is the name you get back, and
 ## Writing without replacing
 
 ```java
+// Given: Session session
 Options options = session.options();
 
 options.set("status-left", "one");
@@ -60,6 +63,7 @@ Every hook is a list of commands tmux runs in order, so a hook set once is a lis
 of one rather than a special case:
 
 ```java
+// Given: Session session
 Hooks hooks = session.hooks();
 
 hooks.set("after-new-window", "display-message one");
@@ -77,6 +81,7 @@ A hook belongs to one scope, and setting it anywhere else is **accepted and then
 silently discarded** — no error, on any supported release:
 
 ```java
+// Given: Window window
 window.hooks().set("pane-focus-in", "display-message belongs-here");   // a window hook
 window.hooks().set("alert-bell", "display-message does-not");          // a session hook
 

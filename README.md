@@ -17,6 +17,7 @@ practical parity while reading as Java rather than as a translation.
 
 <!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
+// Given: Path socket
 ServerConfig config = ServerConfig.builder()
         .endpoint(ServerEndpoint.socketPath(socket))
         .build();
@@ -33,6 +34,7 @@ try (Server server = Server.open(config)) {
 Which leaves this behind, and reading it back is where the library earns its keep:
 
 ```java
+// Given: Server server
 Session session = server.newSession("demo");
 Window window = session.newWindow("build");
 Pane pane = window.split();
@@ -56,6 +58,7 @@ asserted. If any of them stopped being true, the build would fail.
 ### Create things
 
 ```java
+// Given: Server server
 Session session = server.newSession("demo");
 Window editor = session.newWindow("editor");
 Pane right = editor.split();
@@ -71,6 +74,7 @@ One read hands you handles. Walking them issues no further commands, so a
 traversal cannot see a half-changed server.
 
 ```java
+// Given: Server server
 server.newSession("demo").newWindow("editor");
 
 List<String> names = server.windows().stream().map(Window::name).sorted().toList();
@@ -82,6 +86,7 @@ server.sessions().size();            // → 2
 ### Filter, without asking tmux again
 
 ```java
+// Given: Server server
 server.sessions().get(0).newWindow("editor");
 
 List<Window> editors = server.windows().stream()
@@ -104,6 +109,7 @@ One read answers, and absence is a value rather than an exception, so the caller
 says whether it is a bug:
 
 ```java
+// Given: Server server
 server.newSession("build");
 
 server.session("build").orElseThrow().name();   // → build
@@ -113,6 +119,7 @@ server.session("absent").isPresent();           // → false
 Which is how "this session, or a new one" stays a single read:
 
 ```java
+// Given: Server server
 Session work = server.session("work").orElseGet(() -> server.newSession("work"));
 
 work.name();                         // → work
@@ -121,6 +128,7 @@ work.name();                         // → work
 ### Say how many you expect
 
 ```java
+// Given: Server server
 server.newSession("build");
 
 Session build = Selections.exactlyOne(
@@ -135,6 +143,7 @@ for several, because those are different bugs in the calling code.
 ### Send keys and read what a pane shows
 
 ```java
+// Given: Server server
 Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
 
 pane.sendLine("echo hello from libtmux");
@@ -145,6 +154,7 @@ pane.capture().isEmpty();            // → false
 ### Traverse in both directions
 
 ```java
+// Given: Server server
 Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
 
 pane.window().session().name();      // → libtmux
@@ -156,6 +166,7 @@ Nothing is hidden behind the typed API. Every object can reach tmux directly, an
 a nonzero exit is data rather than an exception:
 
 ```java
+// Given: Server server
 server.cmd("display-message", "-p", "#{version}").succeeded();   // → true
 server.cmd("kill-session", "-t", "=nope").succeeded();           // → false
 ```
@@ -167,6 +178,7 @@ ask where it is. tmux writes `TMUX` and `TMUX_PANE` into every pane it spawns,
 and `TmuxEnvironment` reads them back:
 
 ```java
+// Given: Path socket
 Map<String, String> inside = Map.of("TMUX", socket + ",1,$0", "TMUX_PANE", "%0");
 
 TmuxEnvironment here = TmuxEnvironment.of(inside).orElseThrow();
@@ -196,6 +208,7 @@ server. `refresh()` is how you look again.
 be printed, stored, or translated:
 
 ```java
+// Given: Server server
 List<Window> editors = server.windows().stream()
         .filter(Window_.name().startsWith("edit"))
         .toList();

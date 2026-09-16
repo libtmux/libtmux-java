@@ -36,6 +36,7 @@ windows:
 ```
 
 ```java
+// Given: Server server
 Workspace workspace = WorkspaceBuilder.parse("""
         session_name: built
         windows:
@@ -56,6 +57,7 @@ Session session = WorkspaceBuilder.build(server, workspace);
 `build` returns the session it made, so there is nothing to look up afterwards:
 
 ```java
+// Given: Server server
 Workspace workspace = WorkspaceBuilder.parse("""
         session_name: built
         windows:
@@ -82,6 +84,7 @@ session.windows().get(0).panes().size();          // → 2
 It adds a session; it does not take over the one you had:
 
 ```java
+// Given: Server server
 Workspace workspace = WorkspaceBuilder.parse("session_name: added\nwindows:\n  - window_name: w\n");
 
 WorkspaceBuilder.build(server, workspace);
