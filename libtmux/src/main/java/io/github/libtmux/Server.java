@@ -97,8 +97,8 @@ public final class Server implements AutoCloseable {
      * @throws UnsupportedTmuxVersion if the spec asks for something this server does not have
      */
     public Session newSession(SessionSpec spec) {
-        List<String> reported = run(spec.argv("#{session_id}", () -> Layouts.version(this)))
-                .stdout();
+        List<String> reported =
+                run(spec.argv("#{session_id}", () -> Layouts.version(this))).stdout();
         SessionId created = new SessionId(reported.get(0));
         ServerSnapshot fresh = snapshot();
         return fresh.session(created)

@@ -384,8 +384,7 @@ final class Documents {
         if (!input.isObject()) throw importError(scope + " must be a mapping");
         input.fieldNames().forEachRemaining(key -> {
             if (!allowed.contains(key))
-                throw new Main.Failure(
-                        "unsupported_key", 1, scope + "." + key + " is not supported by native import");
+                throw new Main.Failure("unsupported_key", 1, scope + "." + key + " is not supported by native import");
         });
     }
 
