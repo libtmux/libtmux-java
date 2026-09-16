@@ -21,6 +21,7 @@ answers; it still preserves transport failures. The old names have no
 forwarding aliases.
 
 ```java
+// Given: Server server
 server.requireAlive();
 server.isAlive();                      // → true
 ```
@@ -53,6 +54,7 @@ the returned handle to read the updated capture; the original remains
 unchanged.
 
 ```java
+// Given: Session session
 Session renamed = session.rename("build");
 renamed.name();                        // → build
 ```

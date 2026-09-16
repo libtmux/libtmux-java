@@ -59,6 +59,7 @@ class MyOtherTest {
 A server that is already running, with one session in it, on a socket of its own:
 
 ```java
+// Given: Server server
 server.sessions().size();                         // → 1
 server.sessions().get(0).name();                  // → libtmux
 server.sessions().get(0).windows().size();        // → 1
@@ -67,6 +68,7 @@ server.sessions().get(0).windows().size();        // → 1
 Do whatever you like to it. The next test gets a different server:
 
 ```java
+// Given: Server server
 server.newSession("scratch");
 server.sessions().get(0).newWindow("more");
 
@@ -77,6 +79,7 @@ server.hasSession("scratch");                     // → true
 And the socket is under this port's own root, never the default one:
 
 ```java
+// Given: Path socket
 socket.toString().startsWith("/tmp/libtmux-java-test/");   // → true
 socket.getFileName().toString();                           // → s
 ```

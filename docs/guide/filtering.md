@@ -5,6 +5,7 @@ unchanged, and — unlike a lambda — it can also be printed, stored, or transl
 into another system's filter language.
 
 ```java
+// Given: Server server
 server.sessions().get(0).newWindow("editor");
 
 List<Window> editors = server.windows().stream()
@@ -120,6 +121,7 @@ library never has to accept that shape. The key is `field__operator`; a bare
 field name means equality.
 
 ```java
+// Given: Server server
 var catalog = LegacyFilters.FieldCatalog.<Pane>builder()
         .add("index", Pane_.index())
         .add("active", Pane_.active())
