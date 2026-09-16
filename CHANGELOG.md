@@ -63,6 +63,11 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
   tool that reads or acts through a dead server now carries the hint that used
   to live only on an empty listing, which the strict-read change had nowhere
   left to surface it from. (#17)
+- **A snapshot no longer crashes on a pane with no process.** The built
+  development tmux this port has no CI lane for reports `pane_pid` as an
+  empty string for such a pane, rather than the `0` every released tmux
+  through 3.7c uses; a capture now keeps reading `0` for that case instead of
+  failing before a caller's own dead-pane check ever runs. (#17)
 - **The MCP `rename` tool reports the name tmux settled on.** tmux rewrites or
   refuses `:` and `.` in a session or window name depending on the release; the
   reply named the requested string instead of the handle's actual name. (#17)
