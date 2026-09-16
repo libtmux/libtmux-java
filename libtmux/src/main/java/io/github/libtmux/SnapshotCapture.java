@@ -65,7 +65,13 @@ final class SnapshotCapture {
 
     private static final RowFormat PANES = RowFormat.of(PANE_FIELDS);
 
-    /** tmux gained pane_floating_flag in 3.7; before that the format expands to nothing. */
+    /**
+     * tmux gained {@code pane_floating_flag} at {@code 87aaff5f} ("Bring some new formats from the
+     * floating panes work"), which {@code git tag --contains} places on 3.7 and nothing earlier;
+     * before that the format expands to nothing, indistinguishable from a real pane answering false.
+     * Not probeable: an unknown format variable and a false one both expand empty, and {@link
+     * Server#listCommands} lists commands, not the format variables a running tmux understands.
+     */
     private static final TmuxVersion FLOATING_SINCE = new TmuxVersion(3, 7, "");
 
     private static final String FLOATING = "pane_floating_flag";

@@ -227,10 +227,20 @@ public final class Server implements AutoCloseable {
      * cmd-show-prompt-history.c} lands in tmux itself at tag 3.3, under CHANGES' "3.2a TO 3.3"
      * section, not 3.3a. The matrix has no plain-3.3 lane, only 3.2a and 3.3a, so this floor is
      * exercised against tmux's own history rather than a real 3.3 build.
+     *
+     * <p>Not what gates {@link #requirePromptHistory}: a whole command's presence is answerable by
+     * the daemon itself, through {@link #listCommands}, so the live answer decides it. This is kept
+     * only for the message a refusal reads, which names the release most callers will recognise.
      */
     private static final TmuxVersion PROMPT_HISTORY_SINCE = new TmuxVersion(3, 3, "");
 
-    /** tmux lost run-shell's output in 3.3a and found it again in 3.5. */
+    /**
+     * tmux lost run-shell's output in 3.3a and found it again in 3.5 - confirmed against the matrix:
+     * {@code run-shell "echo hi"} without an attached client prints {@code hi} on 3.2a and 3.5, and
+     * only {@code no current client} on 3.3a and 3.4. Not probeable through {@link #listCommands}:
+     * {@code run-shell} exists on every one of those releases, and its args are unchanged across the
+     * gap, so a probe reading either would answer the same wrong way everywhere in the range.
+     */
     private static final TmuxVersion SHELL_OUTPUT_LOST = new TmuxVersion(3, 3, "");
 
     private static final TmuxVersion SHELL_OUTPUT_FOUND = new TmuxVersion(3, 5, "");
@@ -353,7 +363,7 @@ public final class Server implements AutoCloseable {
     /**
      * What has been typed at tmux's command prompt, oldest first.
      *
-     * @throws UnsupportedTmuxVersionException before 3.3a, which has no such command at all
+     * @throws UnsupportedTmuxVersionException if this tmux has no such command at all
      */
     public List<String> promptHistory() {
         requirePromptHistory();
@@ -363,18 +373,29 @@ public final class Server implements AutoCloseable {
     /**
      * Forgets what has been typed at tmux's command prompt.
      *
-     * @throws UnsupportedTmuxVersionException before 3.3a, which has no such command at all
+     * @throws UnsupportedTmuxVersionException if this tmux has no such command at all
      */
     public void clearPromptHistory() {
         requirePromptHistory();
         run(List.of("clear-prompt-history"));
     }
 
+    /**
+     * Whether the command exists is answerable by the daemon itself, so it is asked rather than
+     * inferred from a version: {@link #listCommands} either names {@code show-prompt-history} or it
+     * does not, on whatever this tmux turns out to be.
+     */
     private void requirePromptHistory() {
-        TmuxVersion running = version();
-        if (!running.atLeast(PROMPT_HISTORY_SINCE)) {
-            throw new UnsupportedTmuxVersionException("the command prompt's history", PROMPT_HISTORY_SINCE, running);
+        if (listCommands().stream().anyMatch(line -> commandNamed(line, "show-prompt-history"))) {
+            return;
         }
+        throw new UnsupportedTmuxVersionException("the command prompt's history", PROMPT_HISTORY_SINCE, version());
+    }
+
+    /** Whether a {@link #listCommands} line names this command - not one of its aliases. */
+    private static boolean commandNamed(String line, String name) {
+        int space = line.indexOf(' ');
+        return (space < 0 ? line : line.substring(0, space)).equals(name);
     }
 
     /** Binds a key to a tmux command. */
