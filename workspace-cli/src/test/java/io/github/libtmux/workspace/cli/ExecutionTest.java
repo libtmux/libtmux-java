@@ -747,6 +747,39 @@ final class ExecutionTest {
         }
     }
 
+    /**
+     * S14/E3: a tmux command failing while building is `tmux_failed`, in the stderr record and in
+     * the load envelope's errors[] alike.
+     */
+    @Test
+    void tmuxCommandFailureWhileBuildingReportsTmuxFailedEverywhere() throws Exception {
+        Path source = directory.resolve("tmux-failed.yaml");
+        Path socket = directory.resolve("tmux-failed-socket");
+        Files.writeString(
+                source,
+                "session_name: tf\nwindows:\n  - options:\n      no-such-option-xyz: 1\n    panes: [null]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(1, result.code(), result.toString());
+                assertEquals(
+                        "tmux_failed",
+                        new ObjectMapper().readTree(result.err()).path("code").asText());
+                assertEquals(
+                        "tmux_failed",
+                        new ObjectMapper()
+                                .readTree(result.out())
+                                .path("errors")
+                                .path(0)
+                                .path("code")
+                                .asText());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** S14/E3: an existing `--save-to` destination without `--force` is `destination_exists`. */
     @Test
     void freezeExistingDestinationReportsDestinationExists() throws Exception {

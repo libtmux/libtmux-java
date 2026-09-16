@@ -83,9 +83,9 @@ final class MainTest {
         Files.writeString(source, "session_name: any\nwindows: [{}]\n");
         Result result = invoke("load", source.toString(), "-d", "--json");
         assertEquals(1, result.code(), result.toString());
-        assertEquals(
-                "tmux_unavailable",
-                new ObjectMapper().readTree(result.err()).path("code").asText());
+        var diagnostic = new ObjectMapper().readTree(result.err());
+        assertEquals("tmux_unavailable", diagnostic.path("code").asText());
+        assertEquals(1, diagnostic.path("schema_version").asInt());
     }
 
     @Test
