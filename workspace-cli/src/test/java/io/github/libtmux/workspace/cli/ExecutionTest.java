@@ -176,7 +176,7 @@ final class ExecutionTest {
         }
     }
 
-    /** E4/S15: human mode prints a script's output once, raw — not a second, escaped copy after it. */
+    /** Human mode prints a script's output once, raw — not a second, escaped copy after it. */
     @Test
     void shellDashCPrintsOutputOnceInHumanMode() throws Exception {
         String python = System.getenv("TMUX_WORKSPACE_TEST_PYTHON");
@@ -371,7 +371,7 @@ final class ExecutionTest {
         }
     }
 
-    /** S1: a fresh, still-cold server must not crash asking for a size; COLUMNS/LINES win. */
+    /** A fresh, still-cold server must not crash asking for a size; COLUMNS/LINES win. */
     @Test
     void loadSizesAColdSessionFromColumnsAndLines() throws Exception {
         Path source = directory.resolve("size.yaml");
@@ -490,7 +490,7 @@ final class ExecutionTest {
                 "usage", new ObjectMapper().readTree(result.err()).path("code").asText());
     }
 
-    /** S1: below 3.3a a size is silently skipped, not sent and ignored, matching {@code SessionSpec}. */
+    /** Below 3.3a a size is silently skipped, not sent and ignored, matching {@code SessionSpec}. */
     @Test
     void loadSkipsSizingOnATmuxOlderThan33a() throws Exception {
         Path source = directory.resolve("size-old.yaml");
@@ -735,7 +735,7 @@ final class ExecutionTest {
         }
     }
 
-    /** S14/E3: the minimum test — freezing a session that does not exist is `session_not_found`. */
+    /** Freezing a session that does not exist is `session_not_found`. */
     @Test
     void freezeMissingSessionReportsSessionNotFound() throws Exception {
         Path socket = directory.resolve("freeze-missing-socket");
@@ -754,7 +754,7 @@ final class ExecutionTest {
     }
 
     /**
-     * S14/E3: a tmux command failing while building is `tmux_failed`, in the stderr record and in
+     * A tmux command failing while building is `tmux_failed`, in the stderr record and in
      * the load envelope's errors[] alike.
      */
     @Test
@@ -785,7 +785,7 @@ final class ExecutionTest {
         }
     }
 
-    /** S14/E3: an existing `--save-to` destination without `--force` is `destination_exists`. */
+    /** An existing `--save-to` destination without `--force` is `destination_exists`. */
     @Test
     void freezeExistingDestinationReportsDestinationExists() throws Exception {
         Path socket = directory.resolve("freeze-exists-socket");
@@ -814,7 +814,7 @@ final class ExecutionTest {
         }
     }
 
-    /** S11/D7: an explicit --save-to is consent; freeze must not prompt with or without --yes. */
+    /** An explicit --save-to is consent; freeze must not prompt with or without --yes. */
     @Test
     void freezeWithSaveToNeedsNoConfirmationEvenWithoutYes() throws Exception {
         Path socket = directory.resolve("freeze-noyes-socket");
@@ -832,7 +832,7 @@ final class ExecutionTest {
         }
     }
 
-    /** S6: an `x-` key is inert at every level — accepted, ignored, and the session still builds. */
+    /** An `x-` key is inert at every level — accepted, ignored, and the session still builds. */
     @Test
     void xPrefixedKeysAreAcceptedAtEveryLevelAndIgnored() throws Exception {
         Path source = directory.resolve("x-keys.yaml");
@@ -858,7 +858,7 @@ final class ExecutionTest {
         }
     }
 
-    /** S6: `convert` preserves an `x-` key unchanged rather than dropping or refusing it. */
+    /** `convert` preserves an `x-` key unchanged rather than dropping or refusing it. */
     @Test
     void convertPreservesXPrefixedKeys() throws Exception {
         Path source = directory.resolve("x-convert.yaml");
@@ -1249,7 +1249,7 @@ final class ExecutionTest {
         }
     }
 
-    /** S10/D6: appending must not move the client unless an appended window sets focus: true. */
+    /** Appending must not move the client unless an appended window sets focus: true. */
     @Test
     void appendDoesNotMoveTheClientUnlessAnAppendedWindowFocuses() throws Exception {
         Path source = directory.resolve("append-focus.yaml");
@@ -1275,7 +1275,7 @@ final class ExecutionTest {
         }
     }
 
-    /** B7/S16: a failing before_script removes the session the load owns, never a borrowed one. */
+    /** A failing before_script removes the session the load owns, never a borrowed one. */
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void aFailingBeforeScriptRemovesOnlyTheSessionTheLoadOwns(boolean append) throws Exception {
@@ -1708,7 +1708,7 @@ final class ExecutionTest {
         }
     }
 
-    /** D4: human mode says which a load did, one session at a time, not "1 workspaces" either way. */
+    /** Human mode says which a load did, one session at a time, not "1 workspaces" either way. */
     @Test
     void humanLoadSummaryDistinguishesCreatedFromReused() throws Exception {
         Path source = directory.resolve("d4.yaml");

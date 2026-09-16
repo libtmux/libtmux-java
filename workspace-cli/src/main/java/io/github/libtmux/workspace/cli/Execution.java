@@ -47,7 +47,7 @@ final class Execution {
         return server.build();
     }
 
-    /** S14: a missing tmux is `tmux_unavailable`, not the raw {@code executable_not_found} of the lookup. */
+    /** A missing tmux is `tmux_unavailable`, not the raw {@code executable_not_found} of the lookup. */
     private static String tmuxExecutable(Main.Context context) {
         try {
             return Children.executable(context, context.environment().getOrDefault("LIBTMUX_TEST_TMUX", "tmux"));
@@ -238,7 +238,7 @@ final class Execution {
                     Children.run(context, plan.beforeScript(), plan.scriptDirectory(), report, Duration.ofHours(24));
             effects.set("script_output", output.value());
             if (output.status() != 0) {
-                // S16: the session this load created must not outlive its own failed setup; a
+                // The session this load created must not outlive its own failed setup; a
                 // borrowed or appended one is never this load's to remove.
                 if (bootstrap != null) session.kill();
                 throw new Main.Failure("script_failed", 1, "before_script exited with " + output.status());
@@ -374,7 +374,7 @@ final class Execution {
                                 .put("pane_index", index));
             }
             apply(window.options(), spec.optionsAfter(), effects);
-            // S10: a new session defaults to its first window (S9); an appended one leaves the
+            // A new session defaults to its first window; an appended one leaves the
             // client where it was unless a window explicitly asks for focus.
             if ((!append && focused == null) || spec.focus()) focused = window;
             report.event(
@@ -438,7 +438,7 @@ final class Execution {
     }
 
     /**
-     * S1: a new owned session, sized like tmuxp's terminal-size detection where {@code Server}
+     * A new owned session, sized like tmuxp's terminal-size detection where {@code Server}
      * can honor it, and plain otherwise.
      *
      * <p>{@code TMUXP_DEFAULT_COLUMNS}/{@code TMUXP_DEFAULT_ROWS} (else {@code COLUMNS}/{@code ROWS},
@@ -659,7 +659,7 @@ final class Execution {
                     report.event("completed", result);
                 } else report.document(captured);
             } else {
-                // S11: an explicit --save-to is consent to that destination; --force alone governs
+                // An explicit --save-to is consent to that destination; --force alone governs
                 // replacing an existing file, with or without a terminal.
                 Path path = context.directory().resolve(Catalog.expand(context, destination));
                 try {

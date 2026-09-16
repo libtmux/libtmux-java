@@ -341,7 +341,7 @@ record WorkspacePlan(
         return java.util.Collections.unmodifiableMap(result);
     }
 
-    /** S6: a key starting with {@code x-}, at any level, is inert rather than refused. */
+    /** A key starting with {@code x-}, at any level, is inert rather than refused. */
     private static void keys(JsonNode node, Set<String> allowed, String field) {
         if (!node.isObject()) throw invalid(field + " must be a mapping");
         node.fieldNames().forEachRemaining(name -> {
