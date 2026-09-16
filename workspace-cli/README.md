@@ -135,6 +135,9 @@ layouts accept unique abbreviations; version-sensitive names use the running
 daemon, or the selected client when no daemon is listening. Saved layouts must
 have a valid checksum, a nonempty tree and enough pane cells. tmux still owns
 geometry correction and pruning, and can reject a layout during application.
+A window naming no `layout` tiles its panes; tmuxp instead stacks them,
+halving each split. A window or pane naming no `focus` keeps the first one
+active; tmuxp keeps the last. Both are deliberate differences from tmuxp.
 
 Explicit window indexes are reserved before implicit windows receive free
 indexes from `base-index`. Append reserves indexes from later input files and
@@ -161,7 +164,9 @@ Use `--help` on any command for its arguments. Discovery checks local project
 files and the first existing global directory from `TMUXP_CONFIGDIR`, XDG and
 the legacy directory. Conversion preserves extension fields and never executes
 workspace commands. Explicit file saves protect existing files unless `--force`
-is supplied. `--yes` controls confirmation separately.
+is supplied. `convert` asks for confirmation before writing unless `--yes` is
+given; `freeze --save-to` names its own destination and needs neither `--yes`
+nor a terminal to write it.
 
 ## Inspect a workspace through MCP
 
