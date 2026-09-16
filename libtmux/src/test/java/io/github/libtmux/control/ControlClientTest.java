@@ -40,6 +40,9 @@ final class ControlClientTest {
     void aBlockedControlWriteDoesNotOccupyTheCallersCarrier(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                # the client's own on-attach refresh-client -f new-layouts (D5)
+                IFS= read -r request
+                printf '%%begin 101 1 0\n%%end 101 1 0\n'
                 sleep 5
                 """);
 
@@ -86,6 +89,9 @@ final class ControlClientTest {
         Files.writeString(fakeTmux, """
                 #!/bin/sh
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                # the client's own on-attach refresh-client -f new-layouts (D5)
+                IFS= read -r request
+                printf '%%begin 101 1 0\n%%end 101 1 0\n'
                 IFS= read -r request
                 sleep 1
                 """);
@@ -108,6 +114,9 @@ final class ControlClientTest {
     void closingTheClientWakesAWaitingSubscriber(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                # the client's own on-attach refresh-client -f new-layouts (D5)
+                IFS= read -r request
+                printf '%%begin 101 1 0\n%%end 101 1 0\n'
                 IFS= read -r never
                 """);
         ControlClient client = ControlClient.attach(config, new SessionId("$0"));
@@ -174,6 +183,9 @@ final class ControlClientTest {
         Path dispatched = directory.resolve("dispatched");
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                # the client's own on-attach refresh-client -f new-layouts (D5)
+                IFS= read -r request
+                printf '%%begin 101 1 0\n%%end 101 1 0\n'
                 IFS= read -r request
                 : > "${0%/*}/dispatched"
                 IFS= read -r never
@@ -234,7 +246,8 @@ final class ControlClientTest {
                     i=$((i + 1))
                 done
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                while IFS= read -r request; do :; done
+                # includes the client's own on-attach refresh-client -f new-layouts (D5)
+                while IFS= read -r request; do printf '%%begin 101 1 0\n%%end 101 1 0\n'; done
                 """);
 
         try (ControlClient client = ControlClient.attach(config, new SessionId("$0"), Duration.ofSeconds(2))) {
@@ -249,7 +262,8 @@ final class ControlClientTest {
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 sleep 30 &
                 printf '%s\n' "$!" > "${0%/*}/child-pid"
-                while IFS= read -r request; do :; done
+                # includes the client's own on-attach refresh-client -f new-layouts (D5)
+                while IFS= read -r request; do printf '%%begin 101 1 0\n%%end 101 1 0\n'; done
                 """);
         long child = -1;
         try {
@@ -273,6 +287,9 @@ final class ControlClientTest {
         Path ready = directory.resolve("stdin-closed");
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                # the client's own on-attach refresh-client -f new-layouts (D5)
+                IFS= read -r request
+                printf '%%begin 101 1 0\n%%end 101 1 0\n'
                 sh -c 'trap "" HUP TERM; exec sleep 30' </dev/null >/dev/null 2>&1 &
                 printf '%s\n' "$!" > "${0%/*}/child-pid"
                 exec 0<&-

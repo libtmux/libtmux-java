@@ -1,15 +1,19 @@
 package io.github.libtmux.it;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
+import io.github.libtmux.TmuxVersion;
+import io.github.libtmux.Window;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.control.ControlEvent;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -105,6 +109,43 @@ final class ControlWatchIntegrationTest {
         }
     }
 
+    /**
+     * D5: {@code ControlClient.attach} now sends {@code refresh-client -f new-layouts} on connect,
+     * so a {@code layout-change} notification carries JSON on tmux 3.8+ - agreeing with what a
+     * plain client already reads through {@link Window#layout()} - instead of the classic string a
+     * control client got before this flag was requested.
+     */
+    @Test
+    void aLayoutChangeCarriesJsonOnceThisClientAskedForIt(Server server) throws Exception {
+        Session session = server.sessions().get(0);
+        Window window = session.windows().get(0);
+        if (!server.version().atLeast(new TmuxVersion(3, 8, ""))) {
+            return; // classic-only releases have no JSON layout to disagree about
+        }
+
+        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+                EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
+            window.split();
+
+            Optional<ControlEvent> layoutChange =
+                    awaitMatchingEvent(events, event -> event.kind().equals("layout-change"), Duration.ofSeconds(10));
+            String jsonField =
+                    layoutChange
+                            .orElseThrow(() -> new AssertionError("no layout-change notification arrived"))
+                            .fields()
+                            .stream()
+                            .filter(field -> field.startsWith("{"))
+                            .findFirst()
+                            .orElseThrow(() -> new AssertionError("no JSON-shaped field in "
+                                    + layoutChange.orElseThrow().fields()));
+
+            assertEquals(
+                    window.refresh().layout(),
+                    jsonField,
+                    "the control client's own layout-change disagreed with a plain client's #{window_layout}");
+        }
+    }
+
     @Test
     void aWatchThatIsRemovedStopsBeingReported(Server server) throws Exception {
         Session session = server.sessions().get(0);
@@ -144,16 +185,23 @@ final class ControlWatchIntegrationTest {
     private static boolean awaitEvent(
             EventSubscription<ControlEvent> events, Predicate<ControlEvent> match, Duration timeout)
             throws InterruptedException {
+        return awaitMatchingEvent(events, match, timeout).isPresent();
+    }
+
+    /** As {@link #awaitEvent}, keeping the event that matched rather than only whether one did. */
+    private static Optional<ControlEvent> awaitMatchingEvent(
+            EventSubscription<ControlEvent> events, Predicate<ControlEvent> match, Duration timeout)
+            throws InterruptedException {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadline) {
             var event = events.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
             if (event.isEmpty()) {
-                return false;
+                return Optional.empty();
             }
             if (match.test(event.orElseThrow())) {
-                return true;
+                return event;
             }
         }
-        return false;
+        return Optional.empty();
     }
 }

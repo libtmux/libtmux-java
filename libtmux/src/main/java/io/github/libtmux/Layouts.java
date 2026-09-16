@@ -14,8 +14,10 @@ import org.jspecify.annotations.Nullable;
  * before it is dispatched rather than after tmux has had it.
  *
  * <p>tmux accepts either one of its named layouts or a serialized layout tmux itself produced. Since
- * 3.8 that serialized form is either the classic checksummed grammar or JSON; both round-trip
- * exactly, and {@code select-layout} takes either back. The classic checksum is verified here; a
+ * 3.8 that serialized form is either the classic checksummed grammar or JSON, and {@code
+ * select-layout} takes either back - but only JSON round-trips exactly. The classic grammar
+ * carries no pane identity, only shape, so which process lands in which cell can differ from
+ * where it started; see {@link Window#applyLayout}. The classic checksum is verified here; a
  * four-hex-digit prefix alone does not make the rest safe for tmux to parse. JSON carries no such
  * signature, so a JSON-shaped string is only trusted once the running tmux is new enough to have
  * written it - see {@link #requireSerialized}.

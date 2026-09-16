@@ -129,7 +129,29 @@ public final class ControlClient implements AutoCloseable {
             throw failure;
         }
         client.writer.start();
+        client.requestJsonLayouts();
         return client;
+    }
+
+    /**
+     * Asks tmux to report layouts as JSON on notifications this client receives, matching what a
+     * plain client already gets from {@code #{window_layout}} on tmux 3.8+.
+     *
+     * <p>Without this, this client's own {@code %layout-change} carries the classic string even on a
+     * server new enough to write JSON elsewhere: the same window's layout then disagrees depending
+     * on which kind of client read it — the mismatch a {@code watch}ed layout format or a parsed
+     * notification would otherwise hit. Measured harmless back to 3.2a: {@code refresh-client -f
+     * new-layouts} completes with no error on every supported release, just with nothing to change
+     * before 3.8, so this is sent unconditionally rather than gated on a version.
+     */
+    private void requestJsonLayouts() {
+        ControlReply reply = send("refresh-client", "-f", "new-layouts");
+        if (reply.outcome() != OperationOutcome.COMPLETE) {
+            LibTmuxException failure =
+                    new LibTmuxException("could not request JSON layouts on attach: " + reply.lines());
+            closeAfterFailure(failure);
+            throw failure;
+        }
     }
 
     /** Runs one command and waits for its reply. */
