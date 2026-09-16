@@ -75,6 +75,11 @@ See the [migration notes](MIGRATION.md) for upgrade instructions.
   3.3.** The floor was set to 3.3a, one lettered patch too high: tmux adds
   `cmd-show-prompt-history.c` at tag 3.3 itself, and the matrix's 3.2a/3.3a
   lanes never exercised the gap. (#17)
+- **A window's start directory and a detached session's size no longer
+  refuse tmux 3.3.** Both floors were set to 3.3a, the same one-lettered-
+  patch-too-high shape as `promptHistory`: tmux's own fix for the size case
+  is already in tag 3.3, and nothing relevant to either case landed between
+  3.3 and 3.3a. (#17)
 
 ### Removed
 

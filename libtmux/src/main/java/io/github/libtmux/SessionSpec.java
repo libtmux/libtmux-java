@@ -26,8 +26,13 @@ import org.jspecify.annotations.Nullable;
  */
 public final class SessionSpec {
 
-    /** 3.2a accepts {@code -x}/{@code -y} for a detached session and then ignores them. */
-    private static final TmuxVersion SIZE_SINCE = new TmuxVersion(3, 3, "a");
+    /**
+     * 3.2a accepts {@code -x}/{@code -y} for a detached session and then ignores them; upstream's
+     * {@code df3fe2aa} ("Only use client for sizing when not detached") is the fix, and it is
+     * already in tag 3.3 - absent from 3.2a, and {@code git log 3.3..3.3a} touches nothing under
+     * {@code spawn.c} or {@code cmd-new-session.c} - so the floor is 3.3, not 3.3a.
+     */
+    private static final TmuxVersion SIZE_SINCE = new TmuxVersion(3, 3, "");
 
     private final @Nullable String name;
     private final @Nullable Path directory;
@@ -88,7 +93,7 @@ public final class SessionSpec {
         return Optional.ofNullable(windowName);
     }
 
-    /** How big the session is, or empty for tmux's default. Requires tmux 3.3a. */
+    /** How big the session is, or empty for tmux's default. Requires tmux 3.3. */
     public Optional<Dimensions> size() {
         return Optional.ofNullable(size);
     }
