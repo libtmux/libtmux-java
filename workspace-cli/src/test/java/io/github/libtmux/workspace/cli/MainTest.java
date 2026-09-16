@@ -1057,4 +1057,34 @@ final class MainTest {
         assertEquals(directory, plan.directory());
         assertEquals(directory, plan.windows().getFirst().panes().getFirst().directory());
     }
+
+    /** A Python traceback is not a sentence; the last stderr line carries the exception, not "Traceback". */
+    @Test
+    void pythonRuntimeFailureReportsOneSentenceNotATraceback() throws Exception {
+        Path script = directory.resolve("fake-python.sh");
+        Files.writeString(script, """
+                #!/bin/sh
+                echo 'Traceback (most recent call last):' >&2
+                echo '  File "<string>", line 1, in <module>' >&2
+                echo "ModuleNotFoundError: No module named 'tmuxp'" >&2
+                exit 1
+                """);
+        java.nio.file.Files.setPosixFilePermissions(
+                script, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
+        Result result = invoke(Map.of("TMUX_WORKSPACE_PYTHON", script.toString()), "shell", "-c", "print(1)", "--json");
+        assertEquals(1, result.code());
+        var diagnostic = new ObjectMapper().readTree(result.err());
+        assertEquals("python_runtime", diagnostic.path("code").asText());
+        String message = diagnostic.path("message").asText();
+        assertFalse(message.contains("Traceback"), message);
+        assertTrue(message.contains("ModuleNotFoundError"), message);
+        assertTrue(message.contains("TMUX_WORKSPACE_PYTHON"), message);
+    }
+
+    @Test
+    void shellHelpDocumentsThePythonInterpreterVariable() {
+        Result result = invoke("shell", "--help");
+        assertEquals(0, result.code(), result.err());
+        assertTrue(result.out().contains("TMUX_WORKSPACE_PYTHON"), result.out());
+    }
 }
