@@ -18,6 +18,10 @@ production.
   captures, converts and imports tmuxp workspaces, with JSON and NDJSON output,
   terminal load progress and generated Bash completion. (#16)
 
+- **Shell completion also generates Zsh and Fish.** `--generate zsh` and
+  `--generate fish` join the existing `bash` target, syntax-checked with
+  `zsh -n` and `fish --no-execute`. (#16)
+
 ### Changed
 
 - **`freeze` no longer derives a destination from the session name.** Writing a

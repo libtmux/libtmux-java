@@ -1099,4 +1099,19 @@ final class MainTest {
         assertTrue(human.out().contains("tmux-workspace"), human.out());
         assertFalse(human.out().equals(json.out()));
     }
+
+    @Test
+    void generateAcceptsZshAndFishAlongsideBash() throws Exception {
+        for (String shell : List.of("zsh", "fish")) {
+            Result result = invoke("--generate", shell);
+            assertEquals(0, result.code(), result.err());
+            assertFalse(result.out().strip().startsWith("{"), result.out());
+            assertTrue(result.out().contains("tmux-workspace"), result.out());
+            Result machine = invoke("--generate", shell, "--json");
+            assertEquals(0, machine.code(), machine.err());
+            var artifact = new ObjectMapper().readTree(machine.out());
+            assertEquals(shell, artifact.path("format").asText());
+            assertEquals(result.out(), artifact.path("script").asText());
+        }
+    }
 }

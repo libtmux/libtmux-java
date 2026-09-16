@@ -150,14 +150,21 @@ public final class Main {
                     report.record("debug", "command-started", Documents.JSON.createObjectNode(), true);
                     if (parsed.hasMatchedOption("--generate")) {
                         if (parsed.hasSubcommand()) throw usage("--generate cannot accompany a command");
-                        if (parsed.matchedOptionValue("--generate", "schema").equals("bash")) {
-                            String script = picocli.AutoComplete.bash("tmux-workspace", command);
+                        String target = parsed.matchedOptionValue("--generate", "schema");
+                        String script =
+                                switch (target) {
+                                    case "bash" -> picocli.AutoComplete.bash("tmux-workspace", command);
+                                    case "zsh" -> Completions.zsh("tmux-workspace", command.getCommandSpec());
+                                    case "fish" -> Completions.fish("tmux-workspace", command.getCommandSpec());
+                                    default -> null;
+                                };
+                        if (script != null) {
                             if (report.machine()) {
                                 var artifact = Documents.JSON
                                         .createObjectNode()
                                         .put("schema_version", 1)
                                         .put("command", "generate")
-                                        .put("format", "bash")
+                                        .put("format", target)
                                         .put("script", script)
                                         .put("status", "ok");
                                 if (report.streaming()) report.event("completed", artifact);
