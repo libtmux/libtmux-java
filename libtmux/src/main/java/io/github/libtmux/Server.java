@@ -92,7 +92,8 @@ public final class Server implements AutoCloseable {
      * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Session newSession(SessionSpec spec) {
-        List<String> reported = run(spec.argv("#{session_id}", this::version)).stdout();
+        List<String> reported =
+                run(spec.argv("#{session_id}", this::versionForCreation)).stdout();
         SessionId created = new SessionId(reported.get(0));
         ServerSnapshot fresh = snapshot();
         return fresh.session(created)
@@ -514,6 +515,47 @@ public final class Server implements AutoCloseable {
 
     TmuxVersion version(ServerSnapshot snapshot) {
         return snapshot.serverVersion().orElseGet(this::version);
+    }
+
+    /**
+     * The version to gate a session-creation spec against.
+     *
+     * <p>{@code new-session} is the one command that may be the first thing said to a fresh socket,
+     * so asking {@link #version()} — which needs an already-answering daemon — fails exactly when a
+     * spec depends on the answer and nothing has started the daemon yet. Preferring the running
+     * daemon when there is one keeps {@link #version()}'s own reasoning: a server already up may
+     * have been started by a different build than this client is invoking. Only when nothing answers
+     * at all does this fall back to {@link #binaryVersion}, which asks the executable directly and
+     * needs no server.
+     */
+    private TmuxVersion versionForCreation() {
+        try {
+            return version();
+        } catch (ServerNotRunningException noDaemonYet) {
+            return binaryVersion();
+        }
+    }
+
+    /**
+     * Which tmux the configured binary is, without asking any server.
+     *
+     * <p>{@code -V} is handled before tmux touches a socket at all, so it answers even against an
+     * endpoint nothing is listening on yet — confirmed against every matrix release, with or without
+     * a {@code -f} pointed at a config file that does not exist.
+     *
+     * @throws LibTmuxException if the binary could not be run or did not report a version
+     */
+    private TmuxVersion binaryVersion() {
+        CommandResult result = cmd(List.of("-V"));
+        if (!result.succeeded() || result.stdout().isEmpty()) {
+            throw new LibTmuxException("tmux -V did not report a version: " + String.join("; ", result.stderr()));
+        }
+        String reported = result.stdout().get(0);
+        int space = reported.indexOf(' ');
+        if (space < 0) {
+            throw new LibTmuxException("tmux -V reported an unexpected line: " + reported);
+        }
+        return TmuxVersion.parse(reported.substring(space + 1));
     }
 
     /** Which server this is. Every handle taken from it is scoped by this. */

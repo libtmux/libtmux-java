@@ -219,6 +219,38 @@ final class CreationIntegrationTest {
         }
     }
 
+    /**
+     * JAVA-1: sizing is exactly the one thing {@link SessionSpec#argv} needs the version for, and a
+     * fresh socket has no daemon yet to ask {@link Server#version()}. The version has to come from
+     * somewhere that does not need one already running — here, the binary itself.
+     */
+    @Test
+    void aSizedSessionCanBeMadeBeforeAnythingHasAskedTheServerItsVersion(Server server, @TempDir Path directory)
+            throws Exception {
+        Path config = directory.resolve("empty.conf");
+        Files.writeString(config, "");
+        Path socket = directory.resolve("s");
+        Dimensions wanted = new Dimensions(120, 40);
+
+        try (Server fresh = Server.open(io.github.libtmux.ServerConfig.builder()
+                .binary(System.getProperty("libtmux.tmux", "tmux"))
+                .endpoint(io.github.libtmux.ServerEndpoint.socketPath(socket))
+                .configFile(config)
+                .build())) {
+            if (server.version().atLeast(HONOURS_EXTRAS_SINCE)) {
+                Session sized = fresh.newSession(s -> s.named("sized").sized(wanted));
+
+                assertEquals(wanted, sized.windows().get(0).size());
+                fresh.killServer();
+            } else {
+                assertThrows(
+                        UnsupportedTmuxVersionException.class,
+                        () -> fresh.newSession(s -> s.named("sized").sized(wanted)));
+                assertTrue(Files.notExists(socket), "a refused spec must not have started the daemon");
+            }
+        }
+    }
+
     @Test
     void oneSpecDescribesTheWindowOfTwoDifferentSessions(Server server) {
         WindowSpec shape = WindowSpec.builder().named("shared").after().build();
