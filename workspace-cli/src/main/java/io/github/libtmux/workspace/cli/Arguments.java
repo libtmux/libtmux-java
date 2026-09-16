@@ -116,7 +116,10 @@ final class Arguments {
         root.addSubcommand(
                 "debug-info",
                 command("debug-info", "Report runtime and configuration diagnostics with home paths masked."));
-        CommandSpec shell = command("shell", "Use a version-checked tmuxp 1.74.0 Python shell.");
+        CommandSpec shell = command(
+                "shell",
+                "Use a version-checked tmuxp 1.74.0 Python shell. TMUX_WORKSPACE_PYTHON selects the"
+                        + " interpreter; python3 on PATH is the default.");
         shell.addPositional(positional("session", "0", "0..1", String.class));
         shell.addPositional(positional("window", "1", "0..1", String.class));
         sockets(shell);
