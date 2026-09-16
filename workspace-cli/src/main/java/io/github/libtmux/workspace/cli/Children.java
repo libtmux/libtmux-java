@@ -404,11 +404,12 @@ final class Children {
         }
     }
 
+    // E4/S15: human mode already streamed stdout/stderr live via "script-output" events as the child
+    // ran (see Reporter.event); a summary line here would print the whole capture a second time,
+    // with control characters escaped, which is what a script reading the last line then captures.
     private static void complete(Reporter report, ObjectNode result, int status) throws IOException {
         if (report.streaming()) report.event(status == 0 ? "completed" : "failed", result);
         else if (report.machine()) report.document(result);
-        else if (!result.path("stdout").asText().isEmpty())
-            report.line("information", "Output", result.path("stdout").asText());
         if (status != 0) throw new Main.Failure("child_failed", status, "child exited with " + status);
     }
 }
