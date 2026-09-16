@@ -653,9 +653,9 @@ final class Execution {
                     report.event("completed", result);
                 } else report.document(captured);
             } else {
+                // S11: an explicit --save-to is consent to that destination; --force alone governs
+                // replacing an existing file, with or without a terminal.
                 Path path = context.directory().resolve(Catalog.expand(context, destination));
-                if (!report.machine() && !Main.flag(args, "--yes"))
-                    Documents.confirm(context, "Save " + Catalog.mask(context, path) + "?");
                 try {
                     Documents.write(path, captured, format, Main.flag(args, "--force"));
                 } catch (java.nio.file.FileAlreadyExistsException exists) {

@@ -770,6 +770,24 @@ final class ExecutionTest {
         }
     }
 
+    /** S11/D7: an explicit --save-to is consent; freeze must not prompt with or without --yes. */
+    @Test
+    void freezeWithSaveToNeedsNoConfirmationEvenWithoutYes() throws Exception {
+        Path socket = directory.resolve("freeze-noyes-socket");
+        Path destination = directory.resolve("noyes.yaml");
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("present");
+                Result result =
+                        invoke("freeze", "present", "-S", socket.toString(), "--save-to", destination.toString());
+                assertEquals(0, result.code(), result.toString());
+                assertTrue(Files.exists(destination));
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** S6: an `x-` key is inert at every level — accepted, ignored, and the session still builds. */
     @Test
     void xPrefixedKeysAreAcceptedAtEveryLevelAndIgnored() throws Exception {
