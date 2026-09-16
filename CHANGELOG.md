@@ -64,6 +64,12 @@ production.
   printed the identical compact JSON object either way; human mode now
   prints readable lines. (#16)
 
+- **`pane-created`, `pane-completed`, `window-created` and `window-completed`
+  carry `input_index` and `session_id`.** `pane-created` and `pane-completed`
+  also carry `pane_index`, and `window-completed` carries `window_index`; a
+  streamed consumer loading more than one workspace could not previously
+  tell which input or session an event belonged to. (#16)
+
 - **A Python bridge failure says which failure it was.** A missing interpreter,
   a wrong `tmuxp` version, a timed-out probe and a probe that left a process
   holding the captured streams no longer share one message; the probe's own
