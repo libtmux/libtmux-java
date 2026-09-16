@@ -102,6 +102,37 @@ Each subscriber chooses a fixed buffer capacity. A full buffer drops its oldest
 value, and `droppedCount()` reports the exact loss. The control reader only fills
 those buffers; caller code runs on the thread that calls `next()`.
 
+## Pausing and muting a pane
+
+There is no typed `pause()`/`resume()` here — `refresh-client -A pane:state` is
+reached through the raw escape hatch, `client.send("refresh-client", "-A",
+"<pane>:<state>")`. Pass the pair unquoted: `send` single-quotes every argument
+itself, which a control-mode line needs, since tmux answers a bare `parse error`
+for an unquoted `%0:off` typed there directly.
+
+The four state words are **two independent pairs**, with different loss
+behaviour, measured against tmux 3.2a, 3.7c and next-3.9:
+
+| stop → resume | recovers? | output produced while stopped |
+| --- | --- | --- |
+| `off` → `on` | yes | lost before tmux 3.7; delivered as a backlog on 3.7+ |
+| `pause` → `continue` | yes | lost, on every version |
+| `off` → `continue` | **no** | stuck, and tmux answers success with no error |
+| `pause` → `on` | **no** | stuck, same silent success |
+
+Resume with the word that stopped it — `on` after `off`, `continue` after
+`pause`. Crossing the pair leaves the pane stopped with nothing in the reply
+to say so.
+
+On tmux 3.7 and later, `off` also stops tmux reading that pane's pty **for
+every client**, not only the one that asked: a human attached to the same pane
+sees it freeze too, and the pane's own program can block on `write()` once the
+kernel's pty buffer fills behind it. Before 3.7, `off` only withheld delivery
+from the asking client — the pane kept updating everywhere else, and what was
+withheld was lost outright rather than queued. `pause`/`continue` never
+reaches other clients at all; it drops output for the pausing client only, on
+every version.
+
 ## Requests are serialized
 
 A control client has one reply stream, so `send` calls run one at a time. A

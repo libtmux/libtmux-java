@@ -50,6 +50,14 @@ compiled and then run against a real tmux** by [`docs-tests`](docs-tests/). A
 snippet that stopped working fails the build; one that claims the compiler rejects
 it must actually be rejected.
 
+A fence's first line, `// Given: Server server` and the like, names what the
+snippet *reads* rather than builds — real code still needs its own imports and,
+for `Server`, a call such as the `Server.open(ServerConfig...)` shown above.
+`docs-tests` also hands every snippet a `Server` that already holds one session,
+so `server.sessions().get(0)` finds something without the snippet creating it
+first; a snippet that opens its own session instead — as several below do —
+depends on nothing already being there.
+
 ## Quickstart
 
 Each block below runs against a real tmux server, and every value after a `→` is
@@ -75,19 +83,19 @@ traversal cannot see a half-changed server.
 
 ```java
 // Given: Server server
-server.newSession("demo").newWindow("editor");
+Window editor = server.newSession("demo").newWindow("editor");
 
 List<String> names = server.windows().stream().map(Window::name).sorted().toList();
 
 names.contains("editor");            // → true
-server.sessions().size();            // → 2
+editor.session().name();             // → demo
 ```
 
 ### Filter, without asking tmux again
 
 ```java
 // Given: Server server
-server.sessions().get(0).newWindow("editor");
+server.newSession("build").newWindow("editor");
 
 List<Window> editors = server.windows().stream()
         .filter(Window_.name().startsWith("edit"))

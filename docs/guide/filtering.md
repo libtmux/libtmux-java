@@ -6,7 +6,7 @@ into another system's filter language.
 
 ```java
 // Given: Server server
-server.sessions().get(0).newWindow("editor");
+server.newSession("build").newWindow("editor");
 
 List<Window> editors = server.windows().stream()
         .filter(Window_.name().startsWith("edit"))
