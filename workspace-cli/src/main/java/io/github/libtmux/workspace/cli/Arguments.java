@@ -37,8 +37,8 @@ final class Arguments {
                         .scopeType(CommandLine.ScopeType.INHERIT)
                         .build());
         root.addOption(choice(
-                "Generate reference metadata or Bash completion without tmux.",
-                List.of("schema", "bash"),
+                "Generate reference metadata or shell completion without tmux.",
+                List.of("schema", "bash", "zsh", "fish"),
                 "--generate"));
 
         CommandSpec load = command("load", "Build workspaces in order; -s applies to the last input.");
