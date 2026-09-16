@@ -270,6 +270,8 @@ final class Execution {
         }
         Window focused = null;
         int ordinal = 0;
+        int inputIndex = effects.path("input_index").asInt();
+        String sessionId = effects.path("session_id").asText();
         for (WorkspacePlan.Window spec : plan.windows()) {
             effects.put("stage", "windows");
             WorkspacePlan.Pane first = spec.panes().getFirst();
@@ -287,11 +289,13 @@ final class Execution {
                     "window-created",
                     Documents.JSON
                             .createObjectNode()
+                            .put("input_index", inputIndex)
+                            .put("session_id", sessionId)
                             .put("window_id", window.id().value())
                             .put("window_index", window.index().value())
                             .put("pane_total", spec.panes().size())
                             .put("window_name", window.name()));
-            created(panes.getFirst(), window, report);
+            created(panes.getFirst(), window, inputIndex, sessionId, 0, report);
             if (bootstrap != null) {
                 effects.put("stage", "finalize");
                 removeBootstrap(session, bootstrap, effects);
@@ -309,7 +313,7 @@ final class Execution {
                 if (!pane.shell().isEmpty()) split.running(pane.shell());
                 panes.add(panes.getLast().split(split.build()));
                 effects.withArray("pane_ids").add(panes.getLast().id().value());
-                created(panes.getLast(), window, report);
+                created(panes.getLast(), window, inputIndex, sessionId, index, report);
                 window.selectLayout(Layout.TILED);
             }
             if (!spec.layout().isEmpty()) {
@@ -348,7 +352,11 @@ final class Execution {
                         "pane-completed",
                         Documents.JSON
                                 .createObjectNode()
-                                .put("pane_id", pane.id().value()));
+                                .put("input_index", inputIndex)
+                                .put("session_id", sessionId)
+                                .put("window_id", window.id().value())
+                                .put("pane_id", pane.id().value())
+                                .put("pane_index", index));
             }
             apply(window.options(), spec.optionsAfter(), effects);
             if (focused == null || spec.focus()) focused = window;
@@ -356,7 +364,10 @@ final class Execution {
                     "window-completed",
                     Documents.JSON
                             .createObjectNode()
-                            .put("window_id", window.id().value()));
+                            .put("input_index", inputIndex)
+                            .put("session_id", sessionId)
+                            .put("window_id", window.id().value())
+                            .put("window_index", window.index().value()));
         }
         effects.put("stage", "finalize");
         if (focused != null) focused.select();
@@ -426,13 +437,18 @@ final class Execution {
         });
     }
 
-    private static void created(Pane pane, Window window, Reporter report) throws IOException {
+    private static void created(
+            Pane pane, Window window, int inputIndex, String sessionId, int paneIndex, Reporter report)
+            throws IOException {
         report.event(
                 "pane-created",
                 Documents.JSON
                         .createObjectNode()
+                        .put("input_index", inputIndex)
+                        .put("session_id", sessionId)
+                        .put("window_id", window.id().value())
                         .put("pane_id", pane.id().value())
-                        .put("window_id", window.id().value()));
+                        .put("pane_index", paneIndex));
     }
 
     private static Session appendTarget(Main.Context context, Server server) {
