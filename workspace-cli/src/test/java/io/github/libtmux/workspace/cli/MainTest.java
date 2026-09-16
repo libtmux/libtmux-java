@@ -1087,4 +1087,16 @@ final class MainTest {
         assertEquals(0, result.code(), result.err());
         assertTrue(result.out().contains("TMUX_WORKSPACE_PYTHON"), result.out());
     }
+
+    @Test
+    void debugInfoHumanModeIsReadableTextNotTheJsonDocument() {
+        Result human = invoke("debug-info");
+        Result json = invoke("debug-info", "--json");
+        assertEquals(0, human.code(), human.err());
+        assertEquals(0, json.code(), json.err());
+        assertTrue(json.out().strip().startsWith("{"), json.out());
+        assertFalse(human.out().strip().startsWith("{"), human.out());
+        assertTrue(human.out().contains("tmux-workspace"), human.out());
+        assertFalse(human.out().equals(json.out()));
+    }
 }

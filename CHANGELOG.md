@@ -60,6 +60,10 @@ production.
   actual exception — replaces the "Traceback (most recent call last):"
   header the first line used to leak. (#16)
 
+- **`debug-info` has a human rendering.** Without `--json` or `--ndjson` it
+  printed the identical compact JSON object either way; human mode now
+  prints readable lines. (#16)
+
 - **A Python bridge failure says which failure it was.** A missing interpreter,
   a wrong `tmuxp` version, a timed-out probe and a probe that left a process
   holding the captured streams no longer share one message; the probe's own
