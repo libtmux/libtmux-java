@@ -196,7 +196,13 @@ final class ExecutionTest {
                         "target");
                 assertEquals(0, result.code(), result.err());
                 assertTrue(result.out().endsWith("hello\nworld\n"), result.out());
-                assertEquals(1, result.out().lines().filter(line -> line.equals("hello")).count(), result.out());
+                assertEquals(
+                        1,
+                        result.out()
+                                .lines()
+                                .filter(line -> line.equals("hello"))
+                                .count(),
+                        result.out());
                 assertFalse(result.out().contains("Output"), result.out());
                 assertFalse(result.out().contains("\\u000a"), result.out());
             } finally {
@@ -756,8 +762,7 @@ final class ExecutionTest {
         Path source = directory.resolve("tmux-failed.yaml");
         Path socket = directory.resolve("tmux-failed-socket");
         Files.writeString(
-                source,
-                "session_name: tf\nwindows:\n  - options:\n      no-such-option-xyz: 1\n    panes: [null]\n");
+                source, "session_name: tf\nwindows:\n  - options:\n      no-such-option-xyz: 1\n    panes: [null]\n");
         try (Server server = server(socket)) {
             try {
                 Result result =
@@ -790,7 +795,13 @@ final class ExecutionTest {
             try {
                 server.newSession("present");
                 Result result = invoke(
-                        "freeze", "present", "-S", socket.toString(), "-y", "--save-to", destination.toString(),
+                        "freeze",
+                        "present",
+                        "-S",
+                        socket.toString(),
+                        "-y",
+                        "--save-to",
+                        destination.toString(),
                         "--json");
                 assertEquals(1, result.code(), result.toString());
                 assertEquals(
@@ -1243,8 +1254,7 @@ final class ExecutionTest {
     void appendDoesNotMoveTheClientUnlessAnAppendedWindowFocuses() throws Exception {
         Path source = directory.resolve("append-focus.yaml");
         Path socket = directory.resolve("append-focus-socket");
-        Files.writeString(
-                source, "session_name: ignored\nwindows:\n  - window_name: one\n  - window_name: two\n");
+        Files.writeString(source, "session_name: ignored\nwindows:\n  - window_name: one\n  - window_name: two\n");
         try (Server server = server(socket)) {
             try {
                 var borrowed = server.newSession("borrowed");
@@ -1299,7 +1309,8 @@ final class ExecutionTest {
                                 .asText());
                 if (append)
                     assertTrue(
-                            server.sessions().stream().anyMatch(s -> s.id().value().equals(borrowedId)),
+                            server.sessions().stream()
+                                    .anyMatch(s -> s.id().value().equals(borrowedId)),
                             "a borrowed session must survive a failed before_script");
                 else
                     assertTrue(
@@ -1705,15 +1716,13 @@ final class ExecutionTest {
         Files.writeString(source, "session_name: d4\nwindows: [{}]\n");
         try (Server server = server(socket)) {
             try {
-                Result created =
-                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null");
+                Result created = invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null");
                 assertEquals(0, created.code(), created.err());
                 assertTrue(created.out().contains("Created"), created.out());
                 assertTrue(created.out().contains("d4"), created.out());
                 assertFalse(created.out().contains("workspaces"), created.out());
 
-                Result reused =
-                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null");
+                Result reused = invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null");
                 assertEquals(0, reused.code(), reused.err());
                 assertTrue(reused.out().contains("Reused"), reused.out());
                 assertTrue(reused.out().contains("d4"), reused.out());

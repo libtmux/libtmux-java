@@ -117,8 +117,9 @@ public final class Main {
         if (failure instanceof InterruptedException || failure instanceof InterruptedIOException) return "interrupted";
         if (failure instanceof Failure known) return known.code;
         if (failure instanceof io.github.libtmux.LibTmuxException) return "tmux_failed";
-        if (failure instanceof IOException || failure instanceof UncheckedIOException || failure instanceof IllegalArgumentException)
-            return "invalid_workspace";
+        if (failure instanceof IOException
+                || failure instanceof UncheckedIOException
+                || failure instanceof IllegalArgumentException) return "invalid_workspace";
         return fallback;
     }
 

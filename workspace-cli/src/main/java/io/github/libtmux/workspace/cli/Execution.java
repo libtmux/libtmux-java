@@ -449,8 +449,7 @@ final class Execution {
      */
     private static Session newOwnedSession(Main.Context context, Server server, WorkspacePlan plan)
             throws IOException, InterruptedException {
-        SessionSpec.Builder spec =
-                SessionSpec.builder().named(plan.name()).in(plan.directory());
+        SessionSpec.Builder spec = SessionSpec.builder().named(plan.name()).in(plan.directory());
         Optional<Dimensions> size = sessionDimensions(context);
         if (size.isEmpty()) return server.newSession(spec.build());
         try {
@@ -463,7 +462,8 @@ final class Execution {
         }
     }
 
-    private static Optional<Dimensions> sessionDimensions(Main.Context context) throws IOException, InterruptedException {
+    private static Optional<Dimensions> sessionDimensions(Main.Context context)
+            throws IOException, InterruptedException {
         Map<String, String> env = context.environment();
         int width = envInt(env, "TMUXP_DEFAULT_COLUMNS", envInt(env, "COLUMNS", 80));
         int height = envInt(env, "TMUXP_DEFAULT_ROWS", envInt(env, "ROWS", 24));
@@ -613,7 +613,8 @@ final class Execution {
                     : sessions.stream()
                             .filter(value -> value.name().equals(name))
                             .findFirst()
-                            .orElseThrow(() -> new Main.Failure("session_not_found", 1, "select a live session by name"));
+                            .orElseThrow(
+                                    () -> new Main.Failure("session_not_found", 1, "select a live session by name"));
             ObjectNode captured = Documents.JSON.createObjectNode().put("session_name", session.name());
             captured.set("options", Documents.JSON.valueToTree(session.options().all()));
             String defaultShell = session.options().get("default-shell").orElse("");
