@@ -1080,6 +1080,41 @@ final class ExecutionTest {
         }
     }
 
+    /** B7/S16: a failing before_script removes the session the load owns, never a borrowed one. */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aFailingBeforeScriptRemovesOnlyTheSessionTheLoadOwns(boolean append) throws Exception {
+        Path source = directory.resolve("bsfail.yaml");
+        Path socket = directory.resolve("bsfail-socket");
+        Files.writeString(source, "session_name: bsfail\nbefore_script: /bin/sh -c 'exit 3'\nwindows: [{}]\n");
+        try (Server server = server(socket)) {
+            try {
+                String borrowedId = append ? server.newSession("borrowed").id().value() : "";
+                Result result = invoke(
+                        append ? inherited(server, socket) : java.util.Map.of(),
+                        "load",
+                        source.toString(),
+                        append ? "--append" : "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(1, result.code(), result.toString());
+                if (append)
+                    assertTrue(
+                            server.sessions().stream().anyMatch(s -> s.id().value().equals(borrowedId)),
+                            "a borrowed session must survive a failed before_script");
+                else
+                    assertTrue(
+                            server.sessions().stream().noneMatch(s -> s.name().equals("bsfail")),
+                            "the session the failed before_script created must not survive");
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     @Test
     void booleanOptionsUseTmuxValuesWhileEnvironmentRemainsText() throws Exception {
         Path source = directory.resolve("booleans.yaml");

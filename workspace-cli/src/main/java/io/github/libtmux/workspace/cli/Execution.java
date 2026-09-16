@@ -225,8 +225,12 @@ final class Execution {
             Children.Output output =
                     Children.run(context, plan.beforeScript(), plan.scriptDirectory(), report, Duration.ofHours(24));
             effects.set("script_output", output.value());
-            if (output.status() != 0)
+            if (output.status() != 0) {
+                // S16: the session this load created must not outlive its own failed setup; a
+                // borrowed or appended one is never this load's to remove.
+                if (bootstrap != null) session.kill();
                 throw new Main.Failure("before_script_failed", 1, "before_script exited with " + output.status());
+            }
         }
         effects.put("stage", "options");
         apply(session.options(), plan.options(), effects);
