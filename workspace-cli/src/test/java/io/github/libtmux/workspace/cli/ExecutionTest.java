@@ -176,6 +176,35 @@ final class ExecutionTest {
         }
     }
 
+    /** E4/S15: human mode prints a script's output once, raw — not a second, escaped copy after it. */
+    @Test
+    void shellDashCPrintsOutputOnceInHumanMode() throws Exception {
+        String python = System.getenv("TMUX_WORKSPACE_TEST_PYTHON");
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                python != null, "set TMUX_WORKSPACE_TEST_PYTHON for bridge fixtures");
+        Path socket = directory.resolve("shell-output-socket");
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("target");
+                Result result = invoke(
+                        java.util.Map.of("TMUX_WORKSPACE_PYTHON", python),
+                        "shell",
+                        "-S",
+                        socket.toString(),
+                        "-c",
+                        "print('hello'); print('world')",
+                        "target");
+                assertEquals(0, result.code(), result.err());
+                assertTrue(result.out().endsWith("hello\nworld\n"), result.out());
+                assertEquals(1, result.out().lines().filter(line -> line.equals("hello")).count(), result.out());
+                assertFalse(result.out().contains("Output"), result.out());
+                assertFalse(result.out().contains("\\u000a"), result.out());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     @Test
     void customBuilderWithoutWindowsKeepsExpansionAndObservedOwnership() throws Exception {
         String python = System.getenv("TMUX_WORKSPACE_TEST_PYTHON");
