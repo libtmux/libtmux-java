@@ -1205,6 +1205,33 @@ final class ExecutionTest {
         }
     }
 
+    /** S10/D6: appending must not move the client unless an appended window sets focus: true. */
+    @Test
+    void appendDoesNotMoveTheClientUnlessAnAppendedWindowFocuses() throws Exception {
+        Path source = directory.resolve("append-focus.yaml");
+        Path socket = directory.resolve("append-focus-socket");
+        Files.writeString(
+                source, "session_name: ignored\nwindows:\n  - window_name: one\n  - window_name: two\n");
+        try (Server server = server(socket)) {
+            try {
+                var borrowed = server.newSession("borrowed");
+                var original = borrowed.windows().getFirst();
+                Result result = invoke(
+                        inherited(server, socket),
+                        "load",
+                        source.toString(),
+                        "--append",
+                        "-S",
+                        socket.toString(),
+                        "--json");
+                assertEquals(0, result.code(), result.toString());
+                assertTrue(original.refresh().active(), "append must not move the client off its original window");
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** B7/S16: a failing before_script removes the session the load owns, never a borrowed one. */
     @ParameterizedTest
     @ValueSource(booleans = {false, true})

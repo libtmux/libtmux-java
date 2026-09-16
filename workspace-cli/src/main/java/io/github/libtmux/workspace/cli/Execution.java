@@ -371,7 +371,9 @@ final class Execution {
                                 .put("pane_index", index));
             }
             apply(window.options(), spec.optionsAfter(), effects);
-            if (focused == null || spec.focus()) focused = window;
+            // S10: a new session defaults to its first window (S9); an appended one leaves the
+            // client where it was unless a window explicitly asks for focus.
+            if ((!append && focused == null) || spec.focus()) focused = window;
             report.event(
                     "window-completed",
                     Documents.JSON
