@@ -231,11 +231,11 @@ public final class Main {
             Thread.currentThread().interrupt();
             diagnostic(context, machine, "interrupted", "operation interrupted");
             return 130;
-        } catch (IOException
-                | UncheckedIOException
-                | IllegalArgumentException
-                | io.github.libtmux.LibTmuxException failure) {
-            diagnostic(context, machine, "invalid_config", Objects.toString(failure.getMessage(), "command failed"));
+        } catch (io.github.libtmux.LibTmuxException failure) {
+            diagnostic(context, machine, "tmux_failed", Objects.toString(failure.getMessage(), "command failed"));
+            return 1;
+        } catch (IOException | UncheckedIOException | IllegalArgumentException failure) {
+            diagnostic(context, machine, "invalid_workspace", Objects.toString(failure.getMessage(), "command failed"));
             return 1;
         }
     }

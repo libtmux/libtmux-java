@@ -700,6 +700,84 @@ final class ExecutionTest {
         }
     }
 
+    /** S14/E3: the minimum test — freezing a session that does not exist is `session_not_found`. */
+    @Test
+    void freezeMissingSessionReportsSessionNotFound() throws Exception {
+        Path socket = directory.resolve("freeze-missing-socket");
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("present");
+                Result result = invoke("freeze", "nosuch", "-S", socket.toString(), "--json");
+                assertEquals(1, result.code(), result.toString());
+                assertEquals(
+                        "session_not_found",
+                        new ObjectMapper().readTree(result.err()).path("code").asText());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /** S14/E3: an existing `--save-to` destination without `--force` is `destination_exists`. */
+    @Test
+    void freezeExistingDestinationReportsDestinationExists() throws Exception {
+        Path socket = directory.resolve("freeze-exists-socket");
+        Path destination = directory.resolve("existing.yaml");
+        Files.writeString(destination, "sentinel");
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("present");
+                Result result = invoke(
+                        "freeze", "present", "-S", socket.toString(), "-y", "--save-to", destination.toString(),
+                        "--json");
+                assertEquals(1, result.code(), result.toString());
+                assertEquals(
+                        "destination_exists",
+                        new ObjectMapper().readTree(result.err()).path("code").asText());
+                assertEquals("sentinel", Files.readString(destination));
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /** S6: an `x-` key is inert at every level — accepted, ignored, and the session still builds. */
+    @Test
+    void xPrefixedKeysAreAcceptedAtEveryLevelAndIgnored() throws Exception {
+        Path source = directory.resolve("x-keys.yaml");
+        Path socket = directory.resolve("x-keys-socket");
+        Files.writeString(source, """
+                session_name: x-keys
+                x-defaults: &shared
+                  shell_command_before: [export QA_ANCHOR=1]
+                windows:
+                  - x-window-note: anything
+                    panes:
+                      - x-pane-note: anything
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, result.code(), result.err());
+                assertEquals(1, server.sessions().size());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /** S6: `convert` preserves an `x-` key unchanged rather than dropping or refusing it. */
+    @Test
+    void convertPreservesXPrefixedKeys() throws Exception {
+        Path source = directory.resolve("x-convert.yaml");
+        Files.writeString(source, "session_name: x-convert\nx-note: kept\nwindows: []\n");
+        Result result = invoke("convert", source.toString(), "--json");
+        assertEquals(0, result.code(), result.err());
+        assertEquals(
+                "kept", new ObjectMapper().readTree(result.out()).path("x-note").asText());
+    }
+
     /** Costs the readiness budget in full: the pane is held at the origin so the poll never wins. */
     @Test
     void readinessTimeoutWarnsAndStillSendsCommands() throws Exception {
@@ -1101,6 +1179,17 @@ final class ExecutionTest {
                         "/dev/null",
                         "--json");
                 assertEquals(1, result.code(), result.toString());
+                assertEquals(
+                        "script_failed",
+                        new ObjectMapper().readTree(result.err()).path("code").asText());
+                assertEquals(
+                        "script_failed",
+                        new ObjectMapper()
+                                .readTree(result.out())
+                                .path("errors")
+                                .path(0)
+                                .path("code")
+                                .asText());
                 if (append)
                     assertTrue(
                             server.sessions().stream().anyMatch(s -> s.id().value().equals(borrowedId)),

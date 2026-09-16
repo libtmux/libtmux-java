@@ -341,14 +341,21 @@ record WorkspacePlan(
         return java.util.Collections.unmodifiableMap(result);
     }
 
+    /** S6: a key starting with {@code x-}, at any level, is inert rather than refused. */
     private static void keys(JsonNode node, Set<String> allowed, String field) {
         if (!node.isObject()) throw invalid(field + " must be a mapping");
         node.fieldNames().forEachRemaining(name -> {
-            if (!allowed.contains(name)) throw invalid(field + "." + name + " is not supported by native loading");
+            if (!allowed.contains(name) && !name.startsWith("x-"))
+                throw unsupportedKey(field + "." + name
+                        + " is not supported by native loading; prefix a custom key with 'x-' to pass it through");
         });
     }
 
     private static Main.Failure invalid(String message) {
-        return new Main.Failure("invalid_config", 1, message);
+        return new Main.Failure("invalid_workspace", 1, message);
+    }
+
+    private static Main.Failure unsupportedKey(String message) {
+        return new Main.Failure("unsupported_key", 1, message);
     }
 }
