@@ -16,6 +16,16 @@ import java.util.List;
 public final class Buffers {
 
     private static final RowFormat LISTING = RowFormat.of("buffer_name", "buffer_size");
+
+    /**
+     * tmux's own history dates the fix to {@code 0f6227f4} ("When deleting or renaming a buffer and
+     * a buffer name is specified, complain if the buffer doesn't exist instead of silently deleting
+     * or renaming the most recent buffer", GitHub issue 3205); {@code git tag --contains} places it
+     * on {@code 3.4} and nothing earlier, so 3.3 and 3.3a both have the bug. Confirmed on the matrix:
+     * {@code set-buffer -b a x; set-buffer -b b y; delete-buffer -b nope} answers {@code unknown
+     * buffer: nope} on 3.4 and leaves both buffers, but on 3.3a it exits 0 and takes {@code b}, the
+     * one {@code delete-buffer} was never told to touch.
+     */
     static final TmuxVersion EXACT_NAMED_DELETE = new TmuxVersion(3, 4, "");
 
     private final Server server;
