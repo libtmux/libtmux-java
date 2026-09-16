@@ -50,6 +50,11 @@ production.
   holding either could be created but never addressed, killed or attached by
   name again. (#16)
 
+- **`freeze` omits `shell_command` for a pane running the session's own
+  default shell.** Every pane used to capture an empty `shell_command: []`
+  regardless of what it ran; reloading now starts the plain pane the user
+  had, and a pane running anything else still round-trips it. (#16)
+
 - **A Python bridge failure says which failure it was.** A missing interpreter,
   a wrong `tmuxp` version, a timed-out probe and a probe that left a process
   holding the captured streams no longer share one message; the probe's own
