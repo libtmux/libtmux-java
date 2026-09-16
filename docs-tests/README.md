@@ -44,8 +44,9 @@ against `getClass().getSimpleName()`, so `IllegalArgumentException` matches and
 
 A block that declares a type — a `class`, `record`, `interface` or `enum` — is
 compiled and never run, whatever its directive says, because a declaration has
-nothing to execute. Statements are wrapped in a method body with the fixtures
-below in scope; a type is compiled as it stands.
+nothing to execute. Statements are wrapped in a method body, with whatever the
+fence's own `Given:` line asked for (below) in scope; a type is compiled as it
+stands and never sees one.
 
 `does-not-compile` earns its keep: it is what keeps
 `Pane_.index().startsWith("2")` an error. A README claiming the compiler rejects
@@ -57,6 +58,7 @@ A line ending in an arrow is an assertion:
 
 <!-- snippet: compile-only: shows the syntax; the values belong to a session this fixture does not have -->
 ```java
+// Given: Server server, Session session
 session.name();                      // → demo
 server.sessions().size();            // → 2
 server.hasSession("demo");           // → true
@@ -84,13 +86,51 @@ Two consequences worth knowing:
 ## What a snippet may assume
 
 Documentation shows the interesting line, not the ones before it that made a
-server. Those are supplied: `server`, `config`, `session`, `window`, `pane`,
-`options`, `socket`, `directory`, `timeout`, `yamlString`, and the common
-imports. A snippet declaring its own `server` shadows the supplied one, which is
-what a reader copying it would get anyway.
+server — but leaning on one of those without saying so is a snippet a reader
+cannot paste and run, whatever it proves to this build. So the harness offers
+nothing by default. A snippet that needs one declares it, visibly, as the first
+line inside the fence:
 
-Consequently a fence cannot depend on a variable another fence declared — and
-neither can a reader who copies just that fence.
+```java
+// Given: Server server
+Session session = server.newSession("demo");
+```
+
+`Given:` is not an HTML comment above the fence like the directives below — it
+is inside it, in the language the fence is written in, so it is part of what a
+reader sees and copies, not part of the machinery checking it. The names on
+offer are `server` (`Server`), `config` (`ServerConfig`), `session` (`Session`),
+`window` (`Window`), `pane` (`Pane`), `options` (`Options`), `socket` (`Path`),
+`directory` (`Path`), `timeout` (`Duration`) and `yamlString` (`String`); several
+go on one line, comma-separated: `// Given: Server server, Session session`. A
+snippet declaring its own `server` shadows the supplied one, which is what a
+reader copying it would get anyway.
+
+The declaration is held to exactly what the snippet uses, in both directions:
+
+- **Uses a name it did not declare** fails to compile as an ordinary "cannot
+  find symbol" — nothing of that name exists on the harness the snippet asked
+  for.
+- **Declares a name it never reads** fails too, for that reason specifically.
+  Java has no "declared and not used" error for a field the way some languages
+  do for a local, so this half is checked textually: comments are stripped
+  (the `Given:` line itself included) and the rest is searched for the name as
+  a whole word. A name mentioned only in prose does not count as used, and a
+  name inside a string this check cannot tell from code would be a false
+  negative it does not try to catch — keep a `Given:` line to real bindings and
+  this does not come up.
+
+A fence with no `Given:` line gets nothing and must be self-contained.
+Consequently a fence cannot depend on a variable another fence declared, a
+harness field it never asked for, or on being read in the order it prints —
+and neither can a reader who copies just that fence.
+
+[`SnippetCompilerTest`](src/test/java/io/github/libtmux/docs/SnippetCompilerTest.java)
+pins this mechanism directly, the way go's own doc-generator pins the same
+property for its regions: a binding declared and used compiles, one used but
+not declared fails as "cannot find symbol", and one declared but not used fails
+as unused — with no tmux server needed for any of the three, since compiling a
+snippet never starts one.
 
 ## Kotlin fences
 
@@ -106,6 +146,13 @@ documentation, the two cannot drift.
 ```console
 $ ./gradlew :libtmux-kotlin:test
 ```
+
+It has the same shape of gap the `Given:` line above closes for Java, and is not
+fixed here: `generateDocumentationSnippets` still hands every generated test
+`config`, `session`, `window` and `pane` unconditionally, so a Kotlin fence can
+lean on one of those without saying so in what a reader sees. Eighteen fences
+across the docs, against Java's eighty-one - worth the same fix, just not this
+one.
 
 ## Claims that are not code
 
