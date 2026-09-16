@@ -9,9 +9,9 @@ import static org.junit.jupiter.api.Assertions.fail;
 import io.github.libtmux.Options;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerConfig;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
-import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.junit5.TmuxSocketPath;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -31,11 +32,13 @@ import org.junit.jupiter.params.provider.MethodSource;
  * silently, and a stale snippet is worse than no snippet: it reads exactly as well as a working one.
  *
  * <p>One case per snippet, named for the file and line it came from, so a failure says where to look
- * rather than that "the docs" are broken. One tmux server per case, from {@link TmuxExtension},
+ * rather than that "the docs" are broken. One tmux server per case, from {@link DocumentationArena},
  * which puts every socket under this port's own root and removes it afterwards — a snippet that
- * makes a session gets a server nobody else is using, and cannot disturb the next one.
+ * makes a session gets a server nobody else is using, and cannot disturb the next one. When an
+ * outside arena lends a server instead, {@link DocumentationArena} gives each case a session of its
+ * own on that server rather than a server of its own.
  */
-@ExtendWith(TmuxExtension.class)
+@ExtendWith(DocumentationArena.class)
 final class DocumentationSnippetsTest {
 
     private static final Path ROOT = Path.of(System.getProperty("libtmux.docs.root", "."));
@@ -68,11 +71,23 @@ final class DocumentationSnippetsTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("snippets")
     void theSnippetIsWhatItClaimsToBe(Snippet snippet, Server server, TmuxSocketPath socket) throws Throwable {
+        Optional<ServerConfig> arena = DocumentationArena.config();
+        DocumentationArena.audited(snippet.file(), arena);
+        runCase(snippet, server, socket, arena);
+    }
+
+    /**
+     * The per-snippet check, taking the arena state as a parameter rather than reading it from this
+     * process's environment, so a test can supply one without touching that environment.
+     */
+    static void runCase(Snippet snippet, Server server, TmuxSocketPath socket, Optional<ServerConfig> arena)
+            throws Throwable {
         if (snippet.expectation() == Snippet.Expectation.SKIPPED) {
             return;
         }
         SnippetCompiler compiler = new SnippetCompiler(System.getProperty("libtmux.docs.classpath", ""));
         SnippetCompiler.Compiled compiled = compiler.compile(snippet);
+        DocumentationArena.FreshServer fresh = null;
         try {
             if (snippet.expectation() == Snippet.Expectation.DOES_NOT_COMPILE) {
                 assertFalse(
@@ -87,10 +102,31 @@ final class DocumentationSnippetsTest {
             if (snippet.shape() != Snippet.Shape.STATEMENTS) {
                 return; // A type declaration has nothing to run; compiling it is the whole check.
             }
+            if (snippet.expectation() == Snippet.Expectation.THROWS
+                    || snippet.expectation() == Snippet.Expectation.RUNS) {
+                DocumentationArena.refuseIfStopsTheServer(snippet, arena);
+            }
+
+            Server effectiveServer = server;
+            TmuxSocketPath effectiveSocket = socket;
+            Optional<ServerConfig> effectiveArena = arena;
+            Optional<DocumentationArena.Exemption> exemption =
+                    arena.isPresent() ? DocumentationArena.exemptionFor(snippet) : Optional.empty();
+            if (exemption.isPresent()) {
+                // Visible in the run output the way the killServer refusal already is, so a reader of
+                // a green run can see what did not borrow the lent server and why.
+                System.out.println("NEEDS_A_FRESH_SERVER=" + snippet.where() + ": "
+                        + exemption.orElseThrow().reason());
+                fresh = DocumentationArena.FreshServer.start();
+                effectiveServer = fresh.server();
+                effectiveSocket = fresh.socket();
+                effectiveArena = Optional.empty();
+            }
+
             if (snippet.expectation() == Snippet.Expectation.THROWS) {
                 Throwable thrown = null;
                 try {
-                    compiler.run(compiled, bindings(server, socket));
+                    compiler.run(compiled, bindings(effectiveServer, effectiveSocket, effectiveArena));
                 } catch (Throwable e) {
                     thrown = e;
                 }
@@ -103,16 +139,20 @@ final class DocumentationSnippetsTest {
                 return;
             }
             if (snippet.expectation() == Snippet.Expectation.RUNS) {
-                compiler.run(compiled, bindings(server, socket));
+                compiler.run(compiled, bindings(effectiveServer, effectiveSocket, effectiveArena));
             }
         } finally {
+            if (fresh != null) {
+                fresh.close();
+            }
             SnippetCompiler.discard(compiled.classes());
         }
     }
 
     /** What the harness's fields hold: a running server and the things a reader would already have. */
-    private static Map<String, Object> bindings(Server server, TmuxSocketPath socket) {
-        Session session = server.sessions().get(0);
+    private static Map<String, Object> bindings(Server server, TmuxSocketPath socket, Optional<ServerConfig> arena) {
+        Session session = DocumentationArena.harnessSession(server, arena)
+                .orElseGet(() -> server.sessions().get(0));
         Window window = session.windows().get(0);
         Pane pane = window.panes().get(0);
         Options options = session.options();

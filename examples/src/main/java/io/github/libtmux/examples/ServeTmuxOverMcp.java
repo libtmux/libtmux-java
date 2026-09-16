@@ -13,6 +13,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * Serves a tmux server over MCP and reports the tool surface an agent would see.
@@ -31,11 +33,23 @@ import java.util.List;
  */
 public final class ServeTmuxOverMcp {
 
+    private static final String ARENA_ARTIFACT = "java-serve-tmux-over-mcp";
+
     private ServeTmuxOverMcp() {}
 
     public static void main(String[] args) {
+        Optional<ServerConfig> arena = arenaConfig(System.getenv());
+        if (arena.isPresent()) {
+            System.out.println("LIBTMUX_ARENA_EVIDENCE="
+                    + ArenaSupport.run(ARENA_ARTIFACT, arena.orElseThrow(), ServeTmuxOverMcp::run));
+            return;
+        }
         Path socket = Path.of(args.length > 0 ? args[0] : "/tmp/libtmux-java-dev/demo/s");
         run(socket).forEach(System.out::println);
+    }
+
+    static Optional<ServerConfig> arenaConfig(Map<String, String> environment) {
+        return ArenaSupport.config(environment, ARENA_ARTIFACT);
     }
 
     /** Separated from {@code main} so the suite can run exactly what a reader runs. */
@@ -45,24 +59,25 @@ public final class ServeTmuxOverMcp {
                 .build();
 
         try (Server server = Server.open(config)) {
-            // A real client speaks over this process's stdin and stdout, which TmuxMcpServer.overStdio
-            // wires up. Here the streams are empty and discarded: the point is the surface, not a
-            // conversation, and an example that wrote JSON-RPC to stdout could not also print.
-            StdioServerTransportProvider transport = new StdioServerTransportProvider(
-                    new JacksonMcpJsonMapper(new ObjectMapper()),
-                    InputStream.nullInputStream(),
-                    OutputStream.nullOutputStream());
+            return run(server);
+        }
+    }
 
-            // Serving hands the transport over; closing the returned server closes it.
-            McpSyncServer mcp = TmuxMcpServer.serving(server, transport);
-            try {
-                return mcp.listTools().stream()
-                        .map(McpSchema.Tool::name)
-                        .sorted()
-                        .toList();
-            } finally {
-                mcp.close();
-            }
+    static List<String> run(Server server) {
+        // A real client speaks over this process's stdin and stdout, which TmuxMcpServer.overStdio
+        // wires up. Here the streams are empty and discarded: the point is the surface, not a
+        // conversation, and an example that wrote JSON-RPC to stdout could not also print.
+        StdioServerTransportProvider transport = new StdioServerTransportProvider(
+                new JacksonMcpJsonMapper(new ObjectMapper()),
+                InputStream.nullInputStream(),
+                OutputStream.nullOutputStream());
+
+        // Serving hands the transport over; closing the returned server closes it.
+        McpSyncServer mcp = TmuxMcpServer.serving(server, transport);
+        try {
+            return mcp.listTools().stream().map(McpSchema.Tool::name).sorted().toList();
+        } finally {
+            mcp.close();
         }
     }
 }

@@ -11,6 +11,8 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
@@ -26,11 +28,24 @@ import java.util.function.Consumer;
  */
 public final class WatchWhatChanges {
 
+    private static final String ARENA_ARTIFACT = "java-watch-what-changes";
+    private static final Duration DEFAULT_WATCH = Duration.ofSeconds(10);
+
     private WatchWhatChanges() {}
 
     public static void main(String[] args) {
+        Optional<ServerConfig> arena = arenaConfig(System.getenv());
+        if (arena.isPresent()) {
+            System.out.println("LIBTMUX_ARENA_EVIDENCE="
+                    + ArenaSupport.run(ARENA_ARTIFACT, arena.orElseThrow(), WatchWhatChanges::run));
+            return;
+        }
         Path socket = Path.of(args.length > 0 ? args[0] : "/tmp/libtmux-java-dev/demo/s");
-        run(socket, Duration.ofSeconds(10), event -> System.out.println(describe(event)));
+        run(socket, DEFAULT_WATCH, event -> System.out.println(describe(event)));
+    }
+
+    static Optional<ServerConfig> arenaConfig(Map<String, String> environment) {
+        return ArenaSupport.config(environment, ARENA_ARTIFACT);
     }
 
     /**
@@ -43,33 +58,43 @@ public final class WatchWhatChanges {
                 .endpoint(ServerEndpoint.socketPath(socket))
                 .build();
 
-        List<ControlEvent> seen = new ArrayList<>();
         try (Server server = Server.open(config)) {
-            Session session = server.sessions().get(0);
+            return run(server, watchFor, onChange);
+        }
+    }
 
-            try (ControlClient client = ControlClient.attach(server.config(), session.id());
-                    EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
+    /** The lent-server entry point the arena runner drives; nothing here writes to stdout. */
+    static List<ControlEvent> run(Server server) {
+        return run(server, DEFAULT_WATCH, event -> {});
+    }
 
-                // Every window's name, reported whenever one of them changes. The comparison happens
-                // inside tmux; this client is idle until something is different.
-                client.watch("names", "@*", "#{window_name}");
+    static List<ControlEvent> run(Server server, Duration watchFor, Consumer<ControlEvent> onChange) {
+        List<ControlEvent> seen = new ArrayList<>();
 
-                session.newWindow("watched-into-existence");
+        Session session = ArenaSupport.ownSession(server, "watch-what-changes");
 
-                long deadline = System.nanoTime() + watchFor.toNanos();
-                while (System.nanoTime() < deadline && !sawTheNewWindow(seen)) {
-                    try {
-                        var next = events.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
-                        if (next.isEmpty()) {
-                            break;
-                        }
-                        ControlEvent arrived = next.orElseThrow();
-                        seen.add(arrived);
-                        onChange.accept(arrived);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
+        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+                EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
+
+            // Every window's name, reported whenever one of them changes. The comparison happens
+            // inside tmux; this client is idle until something is different.
+            client.watch("names", "@*", "#{window_name}");
+
+            session.newWindow("watched-into-existence");
+
+            long deadline = System.nanoTime() + watchFor.toNanos();
+            while (System.nanoTime() < deadline && !sawTheNewWindow(seen)) {
+                try {
+                    var next = events.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
+                    if (next.isEmpty()) {
                         break;
                     }
+                    ControlEvent arrived = next.orElseThrow();
+                    seen.add(arrived);
+                    onChange.accept(arrived);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
                 }
             }
         }
