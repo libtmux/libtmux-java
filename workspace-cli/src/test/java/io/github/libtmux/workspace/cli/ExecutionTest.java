@@ -38,6 +38,11 @@ final class ExecutionTest {
         var environment = new HashMap<>(System.getenv());
         environment.remove("TMUX");
         environment.remove("TMUX_PANE");
+        environment.remove("COLUMNS");
+        environment.remove("LINES");
+        environment.remove("TMUXP_DEFAULT_COLUMNS");
+        environment.remove("TMUXP_DEFAULT_ROWS");
+        environment.remove("TMUXP_DETECT_TERMINAL_SIZE");
         environment.put("HOME", directory.toString());
         environment.put("LIBTMUX_TEST_TMUX", System.getProperty("libtmux.tmux", "tmux"));
         environment.putAll(overrides);
@@ -325,6 +330,160 @@ final class ExecutionTest {
                 assertEquals(0, result.code(), result.toString());
                 assertTrue(Files.readString(trace).lines().anyMatch("-2"::equals), "256-color flag was not sent");
                 assertEquals(1, server.windows().size());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /** S1: a fresh, still-cold server must not crash asking for a size; COLUMNS/LINES win. */
+    @Test
+    void loadSizesAColdSessionFromColumnsAndLines() throws Exception {
+        Path source = directory.resolve("size.yaml");
+        Path socket = directory.resolve("size-socket");
+        Files.writeString(source, "session_name: sized\nwindows:\n  - window_name: a\n  - window_name: b\n");
+        try (Server server = server(socket)) {
+            try {
+                assertFalse(server.isAlive(), "the daemon must still be cold before this load");
+                Result result = invoke(
+                        java.util.Map.of("COLUMNS", "120", "LINES", "40"),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(0, result.code(), result.err());
+                for (var window : server.windows())
+                    assertEquals(
+                            "120x40",
+                            window.expand("#{window_width}x#{window_height}"),
+                            "window " + window.name() + " was not built at the session size");
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void loadSizesASessionAt80x24WithoutColumnsOrLines() throws Exception {
+        Path source = directory.resolve("size-default.yaml");
+        Path socket = directory.resolve("size-default-socket");
+        Path trace = directory.resolve("size-default-arguments");
+        Path wrapper = directory.resolve("tmux-size-default");
+        Files.writeString(
+                wrapper,
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '" + trace + "'\nexec '"
+                        + System.getProperty("libtmux.tmux", "tmux") + "' \"$@\"\n");
+        assertTrue(wrapper.toFile().setExecutable(true));
+        Files.writeString(source, "session_name: default-size\nwindows: [{}]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke(
+                        java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString()),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(0, result.code(), result.err());
+                assertTrue(Files.readString(trace).contains("-x\n80\n-y\n24\n"), Files.readString(trace));
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void loadSendsNoSizeWhenDetectionIsDisabled() throws Exception {
+        Path source = directory.resolve("size-disabled.yaml");
+        Path socket = directory.resolve("size-disabled-socket");
+        Path trace = directory.resolve("size-disabled-arguments");
+        Path wrapper = directory.resolve("tmux-size-disabled");
+        Files.writeString(
+                wrapper,
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '" + trace + "'\nexec '"
+                        + System.getProperty("libtmux.tmux", "tmux") + "' \"$@\"\n");
+        assertTrue(wrapper.toFile().setExecutable(true));
+        Files.writeString(source, "session_name: disabled-size\nwindows: [{}]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke(
+                        java.util.Map.of(
+                                "LIBTMUX_TEST_TMUX", wrapper.toString(),
+                                "COLUMNS", "120",
+                                "LINES", "40",
+                                "TMUXP_DETECT_TERMINAL_SIZE", "0"),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(0, result.code(), result.err());
+                assertFalse(Files.readString(trace).lines().anyMatch("-x"::equals), Files.readString(trace));
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void loadRejectsANonNumericColumnsAsUsage() throws Exception {
+        Path source = directory.resolve("size-invalid.yaml");
+        Path socket = directory.resolve("size-invalid-socket");
+        Files.writeString(source, "session_name: invalid-size\nwindows: [{}]\n");
+        Result result = invoke(
+                java.util.Map.of("COLUMNS", "abc"),
+                "load",
+                source.toString(),
+                "-d",
+                "-S",
+                socket.toString(),
+                "-f",
+                "/dev/null",
+                "--json");
+        assertEquals(2, result.code(), result.toString());
+        assertEquals(
+                "usage", new ObjectMapper().readTree(result.err()).path("code").asText());
+    }
+
+    /** S1: below 3.3a a size is silently skipped, not sent and ignored, matching {@code SessionSpec}. */
+    @Test
+    void loadSkipsSizingOnATmuxOlderThan33a() throws Exception {
+        Path source = directory.resolve("size-old.yaml");
+        Path socket = directory.resolve("size-old-socket");
+        Path trace = directory.resolve("size-old-arguments");
+        Path wrapper = directory.resolve("tmux-size-old");
+        Files.writeString(
+                wrapper,
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '" + trace
+                        + "'\nfor last; do :; done\nif [ \"$last\" = -V ]; then echo 'tmux 3.2a'; exit 0; fi\nexec '"
+                        + System.getProperty("libtmux.tmux", "tmux") + "' \"$@\"\n");
+        assertTrue(wrapper.toFile().setExecutable(true));
+        Files.writeString(source, "session_name: old-tmux\nwindows: [{}]\n");
+        try (Server server = server(socket)) {
+            try {
+                assertFalse(server.isAlive());
+                Result result = invoke(
+                        java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString(), "COLUMNS", "120", "LINES", "40"),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(0, result.code(), result.err());
+                assertFalse(Files.readString(trace).lines().anyMatch("-x"::equals), Files.readString(trace));
             } finally {
                 if (server.isAlive()) server.killServer();
             }

@@ -2,6 +2,7 @@ package io.github.libtmux.workspace.cli;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.libtmux.Dimensions;
 import io.github.libtmux.Layout;
 import io.github.libtmux.Layouts;
 import io.github.libtmux.Options;
@@ -12,6 +13,7 @@ import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.SessionSpec;
 import io.github.libtmux.SplitSpec;
+import io.github.libtmux.UnsupportedTmuxVersion;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowSpec;
 import java.io.IOException;
@@ -197,10 +199,7 @@ final class Execution {
             authenticate(context, server);
             session = borrowed.orElseThrow().refresh();
         } else {
-            session = server.newSession(SessionSpec.builder()
-                    .named(plan.name())
-                    .in(plan.directory())
-                    .build());
+            session = newOwnedSession(context, server, plan);
             bootstrap = session.windows().getFirst();
             effects.put("owned_session", true).put("changed", true);
         }
@@ -418,6 +417,60 @@ final class Execution {
             index++;
         }
         return index;
+    }
+
+    /**
+     * S1: a new owned session, sized like tmuxp's terminal-size detection where {@code Server}
+     * can honor it, and plain otherwise.
+     *
+     * <p>{@code TMUXP_DEFAULT_COLUMNS}/{@code TMUXP_DEFAULT_ROWS} (else {@code COLUMNS}/{@code ROWS},
+     * else 80x24) seed the size; the real stdout's terminal overrides it where there is one, and
+     * {@code COLUMNS}/{@code LINES} override that. {@code TMUXP_DETECT_TERMINAL_SIZE} set to anything
+     * but {@code 1} disables detection outright. Below tmux 3.3a, {@code Server} refuses a size; that
+     * refusal is caught here rather than predicted, because it also carries the running version.
+     */
+    private static Session newOwnedSession(Main.Context context, Server server, WorkspacePlan plan)
+            throws IOException, InterruptedException {
+        SessionSpec.Builder spec =
+                SessionSpec.builder().named(plan.name()).in(plan.directory());
+        Optional<Dimensions> size = sessionDimensions(context);
+        if (size.isEmpty()) return server.newSession(spec.build());
+        try {
+            return server.newSession(spec.sized(size.orElseThrow()).build());
+        } catch (UnsupportedTmuxVersion tooOld) {
+            return server.newSession(SessionSpec.builder()
+                    .named(plan.name())
+                    .in(plan.directory())
+                    .build());
+        }
+    }
+
+    private static Optional<Dimensions> sessionDimensions(Main.Context context) throws IOException, InterruptedException {
+        Map<String, String> env = context.environment();
+        int width = envInt(env, "TMUXP_DEFAULT_COLUMNS", envInt(env, "COLUMNS", 80));
+        int height = envInt(env, "TMUXP_DEFAULT_ROWS", envInt(env, "ROWS", 24));
+        String detect = env.get("TMUXP_DETECT_TERMINAL_SIZE");
+        if (detect != null && !detect.equals("1")) return Optional.empty();
+        Optional<Dimensions> terminal = Children.stdoutSize(context);
+        if (terminal.isPresent()) {
+            width = terminal.orElseThrow().width();
+            height = terminal.orElseThrow().height();
+        }
+        width = envInt(env, "COLUMNS", width);
+        height = envInt(env, "LINES", height);
+        return Optional.of(new Dimensions(width, height));
+    }
+
+    private static int envInt(Map<String, String> env, String name, int fallback) {
+        String raw = env.get(name);
+        if (raw == null || raw.isEmpty()) return fallback;
+        try {
+            int value = Integer.parseInt(raw.strip());
+            if (value < 1 || value > 65535) throw new NumberFormatException();
+            return value;
+        } catch (NumberFormatException invalid) {
+            throw Main.usage(name + " must be 1..65535");
+        }
     }
 
     private static boolean ready(Pane pane) throws InterruptedException {
