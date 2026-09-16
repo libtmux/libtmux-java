@@ -27,7 +27,28 @@ production.
   through path resolution and variable expansion let a session named `$HOME`,
   or one holding `/`, decide where the capture landed. (#16)
 
+- **A `start_directory` tmux cannot use is a warning, not a refusal.** `load`
+  continues and reports which directory was missing, matching tmuxp and six
+  of the other seven ports; tmux itself falls back to `$HOME` for the pane.
+  A workspace with `before_script` still runs it from the invocation
+  directory when the named directory does not exist. (#16)
+
 ### Fixed
+
+- **A pane with no `start_directory` anywhere starts in the invocation
+  directory, not the workspace file's.** Matching tmuxp: only an explicit
+  `start_directory` resolves against the document, and a relative one does
+  so at every level, not only the session's. (#16)
+
+- **`focus` accepts the quoted string `tmuxp freeze` writes.** `freeze`
+  writes `focus: 'true'`, not a YAML boolean, on every capture; `load`
+  rejected its own port's output. A YAML boolean still works, and any other
+  value is still refused. (#16)
+
+- **`session_name` refuses a colon or a period.** tmux uses `:` and `.` as
+  the session:window and window.pane separators in a target, so a name
+  holding either could be created but never addressed, killed or attached by
+  name again. (#16)
 
 - **A Python bridge failure says which failure it was.** A missing interpreter,
   a wrong `tmuxp` version, a timed-out probe and a probe that left a process

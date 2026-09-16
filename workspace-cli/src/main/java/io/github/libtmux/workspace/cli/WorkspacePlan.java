@@ -25,6 +25,7 @@ record WorkspacePlan(
         List<String> beforeScript,
         Readiness readiness,
         List<Window> windows,
+        List<String> warnings,
         @Nullable ObjectNode extension) {
     enum Readiness {
         AUTO,
@@ -57,10 +58,16 @@ record WorkspacePlan(
             Main.Context context, Path source, ObjectNode root, String rename, boolean checkDirectories) {
         String name = rename.isEmpty() ? text(context, root.path("session_name"), "session_name") : rename;
         if (name.isEmpty() || name.indexOf('\0') >= 0) throw invalid("session_name must be nonempty text without NUL");
+        if (name.indexOf(':') >= 0)
+            throw invalid("session_name must not contain ':': tmux uses it as the session:window separator");
+        if (name.indexOf('.') >= 0)
+            throw invalid("session_name must not contain '.': tmux uses it as the window.pane separator");
         Path parent = source.getParent();
         if (parent == null) throw invalid("workspace source has no parent");
-        Path directory = directory(context, root, parent, checkDirectories);
-        Path scriptDirectory = root.hasNonNull("start_directory") ? directory : context.directory();
+        List<String> warnings = new ArrayList<>();
+        Path directory = directory(context, root, context.directory(), parent, checkDirectories, warnings);
+        Path scriptDirectory =
+                root.hasNonNull("start_directory") && Files.isDirectory(directory) ? directory : context.directory();
         String script = optionalText(context, root.path("before_script"), "before_script", "");
         List<String> beforeScript = script.isEmpty() ? List.of() : Children.words(script);
         if (PythonExtensions.required(context, source, root)) {
@@ -76,6 +83,7 @@ record WorkspacePlan(
                     beforeScript,
                     Readiness.NEVER,
                     List.of(),
+                    List.copyOf(warnings),
                     root);
         }
         keys(
@@ -124,7 +132,7 @@ record WorkspacePlan(
             if (index >= 0 && !indexes.add(index)) throw invalid("duplicate window_index " + index);
             String layout = optionalText(context, node.path("layout"), "layout", "");
             if (!layout.isEmpty()) Layouts.require(layout);
-            Path windowDirectory = directory(context, node, directory, checkDirectories);
+            Path windowDirectory = directory(context, node, directory, parent, checkDirectories, warnings);
             Map<String, String> windowEnvironment = mapping(context, node.path("environment"), true);
             String shell = optionalText(context, node.path("window_shell"), "window_shell", "");
             boolean suppress = bool(node.path("suppress_history"), bool(root.path("suppress_history"), true));
@@ -150,7 +158,7 @@ record WorkspacePlan(
                                     "shell",
                                     "pane_shell"),
                             "pane");
-                Path paneDirectory = directory(context, pane, windowDirectory, checkDirectories);
+                Path paneDirectory = directory(context, pane, windowDirectory, parent, checkDirectories, warnings);
                 Map<String, String> paneEnvironment =
                         pane.has("environment") ? mapping(context, pane.path("environment"), true) : windowEnvironment;
                 boolean paneSuppress = bool(pane.path("suppress_history"), suppress);
@@ -175,14 +183,14 @@ record WorkspacePlan(
                                 pane.path("shell"),
                                 "shell",
                                 optionalText(context, pane.path("pane_shell"), "pane_shell", shell)),
-                        bool(pane.path("focus"), false),
+                        focus(pane.path("focus")),
                         commands(context, raw, paneSuppress, pane)));
             }
             windows.add(new Window(
                     optionalText(context, node.path("window_name"), "window_name", ""),
                     index,
                     layout,
-                    bool(node.path("focus"), false),
+                    focus(node.path("focus")),
                     mapping(context, node.path("options"), false),
                     mapping(context, node.path("options_after"), false),
                     List.copyOf(panes)));
@@ -198,6 +206,7 @@ record WorkspacePlan(
                 beforeScript,
                 readiness,
                 List.copyOf(windows),
+                List.copyOf(warnings),
                 null);
     }
 
@@ -256,19 +265,48 @@ record WorkspacePlan(
         return value.asBoolean();
     }
 
+    /**
+     * {@code focus} alone accepts the quoted string {@code tmuxp freeze} writes, in addition to a
+     * YAML boolean; every other boolean field keeps the strict check.
+     */
+    private static boolean focus(JsonNode value) {
+        if (value.isMissingNode() || value.isNull()) return false;
+        if (value.isBoolean()) return value.asBoolean();
+        if (value.isTextual()
+                && (value.asText().equals("true") || value.asText().equals("false")))
+            return Boolean.parseBoolean(value.asText());
+        throw invalid("focus must be a boolean");
+    }
+
     private static int integer(JsonNode value, String field) {
         if (!value.isIntegralNumber() || !value.canConvertToInt() || value.asInt() < 0)
             throw invalid(field + " must be a nonnegative integer");
         return value.asInt();
     }
 
-    private static Path directory(Main.Context context, JsonNode node, Path fallback, boolean checkDirectories) {
+    /**
+     * The effective start_directory at this node: {@code inherited} when the node names none, or
+     * {@code documentDirectory}-relative (or absolute) otherwise. A relative value always resolves
+     * against the workspace document's directory, not the parent node's effective directory, at
+     * every level.
+     *
+     * <p>A missing target directory is not refused: tmux itself falls back to {@code $HOME} for a
+     * {@code -c} it cannot use, so this records a warning instead and lets tmux do the same.
+     */
+    private static Path directory(
+            Main.Context context,
+            JsonNode node,
+            Path inherited,
+            Path documentDirectory,
+            boolean checkDirectories,
+            List<String> warnings) {
         JsonNode value = node.path("start_directory");
-        if (value.isMissingNode() || value.isNull()) return fallback;
-        Path resolved =
-                fallback.resolve(text(context, value, "start_directory")).normalize();
+        if (value.isMissingNode() || value.isNull()) return inherited;
+        Path resolved = documentDirectory
+                .resolve(text(context, value, "start_directory"))
+                .normalize();
         if (checkDirectories && !Files.isDirectory(resolved))
-            throw invalid("start_directory is not a directory: " + resolved);
+            warnings.add("start_directory is not a directory, tmux will fall back to $HOME: " + resolved);
         return resolved;
     }
 
