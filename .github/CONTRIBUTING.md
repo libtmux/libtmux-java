@@ -29,7 +29,9 @@ answerable for how the whole library is tested.
 ## Building
 
 You need JDK 21 or newer and tmux on `PATH`. Nothing else — Gradle provisions
-the toolchain, and the library has no runtime dependencies.
+the toolchain, and the library has no runtime dependencies. The workspace CLI
+adds its own runtime dependencies; its terminal regression tests also require
+Python 3 for the standard-library PTY driver.
 
 `./gradlew` is the only supported entry point. A locally installed `gradle` is
 not: the wrapper pins the version the build was written against, and

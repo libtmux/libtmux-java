@@ -472,6 +472,14 @@ it returns, then create and split windows and choose a layout.
  "layout": "even-horizontal"}}
 ```
 
+`select_layout` also accepts unique abbreviations such as `even-h` and
+checksummed layouts previously returned by tmux. Names follow the running
+daemon's version; mirrored main layouts require tmux 3.5. Malformed syntax is
+refused before window lookup, while tmux retains geometry and pruning.
+Existing enum spellings such as `EVEN_HORIZONTAL` remain accepted. The
+`what` result keeps the enum spelling for named layouts and the validated
+request string for saved layouts; inspect the window to read the applied tree.
+
 These tools accept no command or environment payload. Start the configured
 process first, then use `run_shell_command`, `send_keys`, or `paste_text` for
 workload input. If a later step fails, the earlier typed results still identify

@@ -12,6 +12,157 @@ production.
 
 ## Unreleased
 
+### Added
+
+- **`tmux-workspace` is a native application module.** It discovers, loads,
+  captures, converts and imports tmuxp workspaces, with JSON and NDJSON output,
+  terminal load progress and generated Bash completion. (#16)
+
+- **Shell completion also generates Zsh and Fish.** `--generate zsh` and
+  `--generate fish` join the existing `bash` target, syntax-checked with
+  `zsh -n` and `fish --no-execute`. (#16)
+
+### Changed
+
+- **`freeze` no longer derives a destination from the session name.** Writing a
+  file requires `--save-to`; `--json` and `--ndjson` still capture to stdout,
+  and plain `freeze` with neither is a usage error rather than a file named
+  after the session. A live session's name is tmux's to choose, and running it
+  through path resolution and variable expansion let a session named `$HOME`,
+  or one holding `/`, decide where the capture landed. (#16)
+
+- **A `start_directory` tmux cannot use is a warning, not a refusal.** `load`
+  continues and reports which directory was missing, matching tmuxp and six
+  of the other seven ports; tmux itself falls back to `$HOME` for the pane.
+  A workspace with `before_script` still runs it from the invocation
+  directory when the named directory does not exist. (#16)
+
+### Fixed
+
+- **A pane with no `start_directory` anywhere starts in the invocation
+  directory, not the workspace file's.** Matching tmuxp: only an explicit
+  `start_directory` resolves against the document, and a relative one does
+  so at every level, not only the session's. (#16)
+
+- **`focus` accepts the quoted string `tmuxp freeze` writes.** `freeze`
+  writes `focus: 'true'`, not a YAML boolean, on every capture; `load`
+  rejected its own port's output. A YAML boolean still works, and any other
+  value is still refused. (#16)
+
+- **`session_name` refuses a colon or a period.** tmux uses `:` and `.` as
+  the session:window and window.pane separators in a target, so a name
+  holding either could be created but never addressed, killed or attached by
+  name again. (#16)
+
+- **`freeze` omits `shell_command` for a pane running the session's own
+  default shell.** Every pane used to capture an empty `shell_command: []`
+  regardless of what it ran; reloading now starts the plain pane the user
+  had, and a pane running anything else still round-trips it. (#16)
+
+- **`shell` reports one sentence when the bridge interpreter cannot import
+  `tmuxp`, not a Python traceback.** The probe's own last stderr line — the
+  actual exception — replaces the "Traceback (most recent call last):"
+  header the first line used to leak. (#16)
+
+- **`debug-info` has a human rendering.** Without `--json` or `--ndjson` it
+  printed the identical compact JSON object either way; human mode now
+  prints readable lines. (#16)
+
+- **`pane-created`, `pane-completed`, `window-created` and `window-completed`
+  carry `input_index` and `session_id`.** `pane-created` and `pane-completed`
+  also carry `pane_index`, and `window-completed` carries `window_index`; a
+  streamed consumer loading more than one workspace could not previously
+  tell which input or session an event belonged to. (#16)
+
+- **A Python bridge failure says which failure it was.** A missing interpreter,
+  a wrong `tmuxp` version, a timed-out probe and a probe that left a process
+  holding the captured streams no longer share one message; the probe's own
+  error text is reported and attached as the cause. (#16)
+
+- **`session-created` lists no object the load then destroys.** The window and
+  pane tmux insists on creating with a session are reported once they can
+  survive, so a stream consumer tracking created objects is not handed an
+  `@N` or `%N` that never appears again. (#16)
+
+- **A late capture drain no longer reports `logging failed` after the command
+  finished.** `Reporter.close` takes the same lock its writers hold and stops
+  further records, so a drain thread still inside `read` cannot write to the
+  closed log or repaint cleared progress. (#16)
+
+- **A pane command expands `~` and `$VAR` like every other workspace value.**
+  tmuxp resolves a command through the same expansion it gives names,
+  directories and option values, so `$FOO` no longer means the loading
+  environment in one field and the pane's shell in another. An undefined
+  variable is still left as written. (#16)
+
+- **An option read on an unreachable daemon is absent rather than an error.**
+  `Options.get` returns `Optional.empty()` where the encoding probe cannot
+  reach the server, as it did before the probe existed; a version the probe
+  cannot parse still raises `LibTmuxException`. (#16)
+
+- **A layout check survives a server that exits while it runs.** The version
+  probe treats `server exited unexpectedly` as an absent server, as the
+  snapshot and workspace paths already did, and reads the version from the
+  selected client instead of failing the command. (#16)
+
+- **Saving a document works on a store with no hard links.** `--save-to` and
+  `freeze` fall back to a move where `Files.createLink` reports the filesystem
+  cannot link, instead of failing with an uncaught
+  `UnsupportedOperationException`. An existing destination is still refused
+  without `--force`. (#16)
+
+- **A window start directory is honoured on tmux 3.2a when it is absolute.**
+  Only a relative one is refused below 3.3a, which resolves it against the
+  directory the server was started in rather than the calling process and
+  silently falls back to `$HOME`. (#16)
+
+- **Tmuxinator imports refuse unexpanded ERB markup before output or
+  overwrite.** Teamocil sources, which no template engine reads, keep such
+  text literal. (#16)
+
+- **Bash completion keeps each option's choices.** Distinct native parameter
+  labels prevent color, log-level, format and generation values from replacing
+  one another in the generated script, including inherited options. (#16)
+
+- **Imports validate translated workspaces before publishing them.** Tmuxinator
+  command arrays remain in one pane; Teamocil command groups, options and first
+  focus survive native loading. Imported directories retain their invocation
+  context when the saved file moves. Unsupported lifecycle, runtime and
+  before-synchronization behavior is rejected instead of silently discarded or
+  saved as a configuration the native loader cannot use. (#16)
+
+- **Bash completion generation supports machine output.** `--generate bash`
+  with `--json` returns the script in a structured artifact; `--ndjson` emits
+  one completed event. Plain generation retains the original Bash bytes. (#16)
+
+- **Custom option names retain trailing stars.** `Options.all()`,
+  `Options.effective()` and workspace capture keep `@name`, `@name*` and
+  `@name**` distinct. Inherited built-in options retain their plain
+  names. (#16)
+
+- **`Options.effective()` reads inherited built-in values.** Framed value reads
+  retain the listing's inheritance flag instead of returning an empty value
+  for an option set only at a parent scope. (#16)
+
+- **Option reads recover values on tmux 3.4 and 3.5.** Those daemons escape
+  value-only output ambiguously. Reads decode the normal listing instead,
+  preserving control characters and literal escape sequences. Encoding follows
+  the captured daemon version or a checked query to the selected daemon. (#16)
+
+- **Option capture preserves carriage returns.** Subprocess stdout now splits
+  only at LF, retaining CR and CRLF data in option reads and workspace capture.
+  Diagnostic stderr keeps its existing newline normalization. (#16)
+
+- **Saved layout input can exceed tmux's dump buffer.** The core, workspace
+  loader and MCP accept valid trees with bodies longer than 8191 characters.
+  tmux still owns geometry, pruning and command transport limits. (#16)
+
+### Documented
+
+- **`shell --help` names `TMUX_WORKSPACE_PYTHON`.** Six of the seven ports'
+  `shell` failures already tell the user to set it; the variable now also
+  appears in the command that fails, not only in its error. (#16)
+
 ## 0.0.1-alpha.11 — 2026-09-12
 
 ### Added

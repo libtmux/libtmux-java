@@ -27,7 +27,8 @@ import org.junit.jupiter.api.io.TempDir;
  * Making windows and sessions against a real tmux, on whichever release the lane is running.
  *
  * <p>Neither command changed its flags across the supported range, so what is version-dependent here
- * is behaviour 3.2a accepts and then ignores. Both branches assert.
+ * is behaviour 3.2a accepts and then ignores: a detached session's size, and a relative start
+ * directory. Both branches assert.
  */
 @ExtendWith(TmuxExtension.class)
 final class CreationIntegrationTest {
@@ -121,30 +122,46 @@ final class CreationIntegrationTest {
         assertNotEquals(stale.id(), replacement.id());
     }
 
+    @Test
+    void aWindowCommandStartsInTheRequestedDirectory(Server server, @TempDir Path directory) throws Exception {
+        Session session = server.sessions().get(0);
+        Path real = directory.toRealPath();
+        Path written = directory.resolve("seen");
+        session.newWindow(w -> w.named("elsewhere")
+                .in(real)
+                .running("/bin/sh", "-c", "pwd > \"$1\"; sleep 30", "probe", written.toString()));
+        assertTrue(Await.until(() -> Files.exists(written)));
+        assertEquals(real.toString(), Files.readString(written).strip());
+    }
+
     /**
-     * 3.2a takes {@code -c} on new-window and drops it, though it honours the same flag on
-     * split-window. Refused there rather than sent, so the caller is never handed a window that
-     * started somewhere else.
+     * A relative directory resolves against the calling process before 3.3a only by accident: tmux
+     * passes it to the child unchanged, so it lands wherever the server was started. Refused there
+     * rather than sent, so the caller is never handed a window that started somewhere else.
      */
     @Test
-    void aStartDirectoryIsHonouredOrRefusedDependingOnTheRelease(Server server, @TempDir Path directory)
+    void aRelativeStartDirectoryIsHonouredOrRefusedDependingOnTheRelease(Server server, @TempDir Path directory)
             throws Exception {
         Session session = server.sessions().get(0);
         Path real = directory.toRealPath();
+        Path relative = Path.of("").toAbsolutePath().relativize(real);
+        Path written = real.resolve("seen");
 
         if (server.version().atLeast(HONOURS_EXTRAS_SINCE)) {
-            Window window = session.newWindow(w -> w.named("elsewhere").in(real));
-            Pane pane = window.activePane().orElseThrow();
+            session.newWindow(w -> w.named("relative")
+                    .in(relative)
+                    .running("/bin/sh", "-c", "pwd > \"$1\"; sleep 30", "probe", written.toString()));
 
-            assertTrue(
-                    Await.until(() -> real.equals(pane.refresh().currentPath())),
-                    "the window did not start where it was told");
+            assertTrue(Await.until(() -> Files.exists(written)), "the command never ran");
+            // tmux joins the relative path onto the client's directory without normalising it,
+            // so the shell reports a spelling of the directory rather than its real path.
+            assertEquals(real, Path.of(Files.readString(written).strip()).toRealPath());
         } else {
             assertThrows(
                     UnsupportedTmuxVersion.class,
-                    () -> session.newWindow(w -> w.named("elsewhere").in(real)));
+                    () -> session.newWindow(w -> w.named("relative").in(relative)));
             assertTrue(
-                    session.refresh().windows().stream().noneMatch(window -> "elsewhere".equals(window.name())),
+                    session.refresh().windows().stream().noneMatch(window -> "relative".equals(window.name())),
                     "a refused spec must not have reached tmux");
         }
     }

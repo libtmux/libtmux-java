@@ -44,10 +44,9 @@ final class WorkspaceApplier {
 
     private static void validate(Server server, Workspace workspace) {
         for (WindowSpec window : workspace.windows()) {
-            window.layout().ifPresent(value -> {
-                Layouts.require(value);
-                builtIn(value).ifPresent(layout -> layout.requireSupported(server.version()));
-            });
+            window.layout()
+                    .ifPresent(value ->
+                            Layouts.require(value, server, window.panes().size()));
         }
     }
 
@@ -77,7 +76,7 @@ final class WorkspaceApplier {
             for (int pane = 1; pane < spec.panes().size(); pane++) {
                 window.split();
             }
-            applyLayout(window, spec.layout());
+            applyLayout(window, spec.layout(), spec.panes().size());
             List<Pane> panes = window.refresh().panes();
             requirePaneCount(panes, spec);
             windows.add(new BuiltWindow(spec, panes));
@@ -90,9 +89,10 @@ final class WorkspaceApplier {
         return name.isEmpty() ? window : window.rename(name);
     }
 
-    private static void applyLayout(Window window, Optional<String> layout) {
-        layout.ifPresent(
-                value -> builtIn(value).ifPresentOrElse(window::selectLayout, () -> window.applyLayout(value)));
+    private static void applyLayout(Window window, Optional<String> layout, int panes) {
+        layout.map(value -> Layouts.require(value, window.server(), panes))
+                .ifPresent(
+                        value -> builtIn(value).ifPresentOrElse(window::selectLayout, () -> window.applyLayout(value)));
     }
 
     private static Optional<Layout> builtIn(String layout) {

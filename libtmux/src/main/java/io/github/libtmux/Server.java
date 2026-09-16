@@ -875,6 +875,12 @@ public final class Server implements AutoCloseable {
             return this;
         }
 
+        /** Forces 256-color client support; false preserves terminal detection. */
+        public Builder force256Colors(boolean force256Colors) {
+            config.force256Colors(force256Colors);
+            return this;
+        }
+
         /** Borrows a caller-owned transport, which the built server will never close. */
         public Builder transport(TmuxTransport transport) {
             this.transport = Objects.requireNonNull(transport, "transport");

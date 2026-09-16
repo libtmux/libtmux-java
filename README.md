@@ -240,6 +240,10 @@ Not published, and part of how the library is built:
 [`docs-tests/`](docs-tests/) ·
 [`scripts/`](scripts/) · `build-logic/`
 
+The local [`workspace-cli`](workspace-cli/) application provides the
+`tmux-workspace` launcher over native workspace services. It is built as a
+distribution and is not a Maven publication.
+
 A directory is a published artifact exactly when it appears above, and
 `platformCoversEveryPublishedModule` fails the build if that stops being true.
 
@@ -323,6 +327,7 @@ $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds
 - [Streaming](docs/guide/streaming.md)
 - [Driving tmux from a model](docs/guide/mcp.md)
 - [Testing with real tmux](docs/guide/testing.md)
+- [Workspace commands](workspace-cli/README.md)
 - [Kotlin](docs/guide/kotlin.md) and [Scala](docs/guide/scala.md)
 - [Releasing](RELEASING.md)
 
