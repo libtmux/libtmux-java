@@ -1428,4 +1428,59 @@ final class ExecutionTest {
             }
         }
     }
+
+    /**
+     * pane-created, pane-completed, window-created and window-completed must carry input_index,
+     * session_id and the document ordinal, not just the tmux ids.
+     */
+    @Test
+    void ndjsonPaneAndWindowEventsCarryInputIndexSessionIdAndOrdinal() throws Exception {
+        Path socket = directory.resolve("ndjson-fields-socket");
+        Path source = directory.resolve("ndjson-fields.yaml");
+        Files.writeString(source, "session_name: ndjson-fields\nwindows:\n  - panes: [null, null]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke("load", source.toString(), "-d", "-S", socket.toString(), "--ndjson");
+                assertEquals(0, result.code(), result.err());
+                String sessionId = server.sessions().getFirst().id().value();
+                int windowIndex = server.windows().getFirst().index().value();
+                var events = result.out()
+                        .lines()
+                        .map(line -> {
+                            try {
+                                return new ObjectMapper().readTree(line);
+                            } catch (java.io.IOException invalid) {
+                                throw new java.io.UncheckedIOException(invalid);
+                            }
+                        })
+                        .toList();
+                for (String name : java.util.List.of("window-created", "window-completed")) {
+                    var event = events.stream()
+                            .filter(candidate ->
+                                    candidate.path("event").asText().equals(name))
+                            .findFirst()
+                            .orElseThrow();
+                    assertEquals(0, event.path("input_index").asInt(), event.toString());
+                    assertEquals(sessionId, event.path("session_id").asText(), event.toString());
+                    assertEquals(windowIndex, event.path("window_index").asInt(), event.toString());
+                }
+                for (String name : java.util.List.of("pane-created", "pane-completed")) {
+                    var matching = events.stream()
+                            .filter(candidate ->
+                                    candidate.path("event").asText().equals(name))
+                            .toList();
+                    assertEquals(2, matching.size(), matching.toString());
+                    for (int index = 0; index < matching.size(); index++) {
+                        var event = matching.get(index);
+                        assertEquals(0, event.path("input_index").asInt(), event.toString());
+                        assertEquals(sessionId, event.path("session_id").asText(), event.toString());
+                        assertTrue(event.has("window_id"), event.toString());
+                        assertEquals(index, event.path("pane_index").asInt(), event.toString());
+                    }
+                }
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
 }
