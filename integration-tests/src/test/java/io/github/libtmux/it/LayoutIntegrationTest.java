@@ -4,9 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.libtmux.Layout;
+import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
+import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -29,7 +33,7 @@ final class LayoutIntegrationTest {
         Window window = split(server);
 
         for (Layout layout : Layout.values()) {
-            if (!server.version().atLeast(new io.github.libtmux.TmuxVersion(3, 5, ""))
+            if (!server.version().atLeast(new TmuxVersion(3, 5, ""))
                     && layout.tmuxName().contains("mirrored")) {
                 continue;
             }
@@ -42,7 +46,7 @@ final class LayoutIntegrationTest {
     @Test
     void aLayoutThisReleaseDoesNotHaveIsRefusedRatherThanSent(Server server) {
         Window window = split(server);
-        boolean hasMirrored = server.version().atLeast(new io.github.libtmux.TmuxVersion(3, 5, ""));
+        boolean hasMirrored = server.version().atLeast(new TmuxVersion(3, 5, ""));
 
         if (hasMirrored) {
             window.selectLayout(Layout.MAIN_VERTICAL_MIRRORED);
@@ -104,6 +108,10 @@ final class LayoutIntegrationTest {
         assertThrows(IllegalArgumentException.class, () -> window.applyLayout("not-a-layout"));
         assertThrows(IllegalArgumentException.class, () -> window.applyLayout(""));
         assertThrows(IllegalArgumentException.class, () -> window.applyLayout("abcd"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> window.applyLayout("-x"),
+                "a leading dash is a flag to select-layout, not a layout");
 
         assertTrue(server.isAlive(), "a refused layout must never have reached tmux");
         assertEquals(1, server.sessions().size(), "and no session was lost");
@@ -119,6 +127,45 @@ final class LayoutIntegrationTest {
         assertThrows(IllegalArgumentException.class, () -> window.applyLayout(corrupted));
 
         assertTrue(server.isAlive());
+    }
+
+    /**
+     * JSON carries no checksum, so the guard can only ask whether this tmux could have written it.
+     * Below 3.8 the answer is always no, whatever the body says - refused before tmux sees it.
+     */
+    @Test
+    void aJsonShapedLayoutIsRefusedBeforeItsFloor(Server server) {
+        assumeTmuxOlderThanJsonLayouts(server);
+        Window window = split(server);
+
+        assertThrows(UnsupportedTmuxVersionException.class, () -> window.applyLayout("{}"));
+
+        assertTrue(server.isAlive(), "a refusal must not have reached tmux");
+    }
+
+    /**
+     * From 3.8, a JSON body that merely has the shape is tmux's own problem to refuse - and it does,
+     * with an ordinary error rather than the 3.3a crash. This is what proves the shape check does not
+     * need to parse the body: tmux itself is safe against one that only looks right.
+     */
+    @Test
+    void aJsonShapedLayoutThatIsNotRealIsRefusedByTmuxItself(Server server) {
+        assumeTmuxAtLeastJsonLayouts(server);
+        Window window = split(server);
+
+        assertThrows(LibTmuxException.class, () -> window.applyLayout("{}"));
+
+        assertTrue(server.isAlive(), "tmux must reject a fake JSON layout without dying");
+    }
+
+    private static final TmuxVersion JSON_LAYOUT_FLOOR = new TmuxVersion(3, 8, "");
+
+    private static void assumeTmuxOlderThanJsonLayouts(Server server) {
+        assumeFalse(server.version().atLeast(JSON_LAYOUT_FLOOR), "needs a tmux older than JSON layouts");
+    }
+
+    private static void assumeTmuxAtLeastJsonLayouts(Server server) {
+        assumeTrue(server.version().atLeast(JSON_LAYOUT_FLOOR), "needs a tmux with JSON layouts");
     }
 
     private static Window split(Server server) {

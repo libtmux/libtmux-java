@@ -279,14 +279,20 @@ public final class Window {
      *
      * <p>The string is checked here rather than by tmux, because tmux 3.3a does not survive being
      * handed one it cannot parse: it ends the server and every session on the socket. Every other
-     * supported release answers {@code invalid layout}. Since a layout string carries tmux's own
-     * checksum, a wrong one is detectable without asking.
+     * supported release answers {@code invalid layout}. The classic form carries tmux's own
+     * checksum, so a wrong one is detectable without asking; since 3.8 tmux may instead hand back
+     * JSON, which carries no checksum, so that shape is only trusted from a server new enough to
+     * have written it.
      *
      * @throws IllegalArgumentException if the string is not a layout tmux wrote
+     * @throws UnsupportedTmuxVersionException if it is JSON-shaped but this server predates JSON
+     *     layouts
      */
     public void applyLayout(String layout) {
         Objects.requireNonNull(layout, "layout");
-        server.run(snapshot, List.of("select-layout", "-t", target(), Layouts.requireSerialized(layout)));
+        server.run(
+                snapshot,
+                List.of("select-layout", "-t", target(), Layouts.requireSerialized(layout, server.version(snapshot))));
     }
 
     /** Kills what is running in this window and starts it again. */
