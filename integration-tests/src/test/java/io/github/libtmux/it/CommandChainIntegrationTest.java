@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.TmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.batch.BatchResult;
 import io.github.libtmux.batch.OperationOutcome;
@@ -127,6 +129,28 @@ final class CommandChainIntegrationTest {
                 "a serialized layout with the wrong checksum is just as unsafe");
 
         assertEquals(1, server.windows().size(), "and nothing was dispatched");
+    }
+
+    /**
+     * A mirrored preset is a name tmux 3.4 and earlier does not know, which is the same fatal path
+     * on 3.3a as any other unrecognised layout. The chain asks the running tmux, as
+     * {@code Window.selectLayout(Layout)} already did.
+     */
+    @Test
+    void aMirroredLayoutIsRefusedBelowTmux35(Server server) {
+        if (server.version().atLeast(new TmuxVersion(3, 5, ""))) {
+            BatchResult result = server.chain()
+                    .newWindow("mirrored")
+                    .splitLeftRight()
+                    .arrange("main-vertical-mirrored")
+                    .run();
+            assertTrue(result.succeeded(), result.toString());
+        } else {
+            assertThrows(
+                    UnsupportedTmuxVersionException.class,
+                    () -> server.chain().newWindow("safe").arrange("main-vertical-mirrored"));
+        }
+        assertTrue(server.isAlive(), "the server survives either way");
     }
 
     @Test

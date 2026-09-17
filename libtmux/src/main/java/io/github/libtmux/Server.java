@@ -220,7 +220,7 @@ public final class Server implements AutoCloseable {
      * the id of a window or pane it just created.
      */
     public CommandChain chain() {
-        return new CommandChain(batch());
+        return new CommandChain(batch(), this::versionForCreation);
     }
 
     /**

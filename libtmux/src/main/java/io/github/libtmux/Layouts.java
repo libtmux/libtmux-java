@@ -2,6 +2,7 @@ package io.github.libtmux;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -45,11 +46,11 @@ public final class Layouts {
     /**
      * Returns the layout unchanged, having checked tmux will recognise it.
      *
-     * <p>Only the classic checksummed form, not JSON: unlike {@link #requireSerialized}, nothing here
-     * takes a running version to gate a JSON shape against, and {@link CommandChain#arrange} - one of
-     * the two callers - has no server in reach to ask for one. Not yet a demonstrated gap: nothing
-     * exercises a workspace file or a chain naming a JSON layout, only {@link Window#applyLayout},
-     * where {@link #requireSerialized} already covers it.
+     * <p>Only the classic checksummed form, not JSON: this overload takes no running version to
+     * gate a JSON shape against. Callers that have one use {@link #require(String, TmuxVersion)},
+     * which also refuses a built-in name older than the running release; nothing exercises a
+     * workspace file or a chain naming a JSON layout, only {@link Window#applyLayout}, where
+     * {@link #requireSerialized} covers it.
      *
      * @throws IllegalArgumentException if tmux would not recognise the name, which on some versions
      *     is not a recoverable error
@@ -60,6 +61,32 @@ public final class Layouts {
         }
         throw new IllegalArgumentException(
                 "not a tmux layout: '" + layout + "'; expected one of " + NAMED + " or a serialized layout");
+    }
+
+    /**
+     * Refuses a layout tmux would not recognise, and a built-in name the running tmux predates.
+     *
+     * <p>An unknown name reaches {@code layout_parse} exactly as a malformed string does, so a
+     * mirrored preset on a release older than 3.5 ends the server on 3.3a rather than being
+     * refused. The version is read lazily, because a chain is built before it runs.
+     *
+     * @throws IllegalArgumentException if tmux would not recognise the layout
+     * @throws UnsupportedTmuxVersionException if the name arrived after this release
+     */
+    public static String require(String layout, TmuxVersion running) {
+        String checked = require(layout);
+        builtIn(checked).ifPresent(named -> named.requireSupported(running));
+        return checked;
+    }
+
+    /** The built-in layout a name denotes, if it denotes one. */
+    static Optional<Layout> builtIn(String layout) {
+        for (Layout candidate : Layout.values()) {
+            if (candidate.tmuxName().equals(layout)) {
+                return Optional.of(candidate);
+            }
+        }
+        return Optional.empty();
     }
 
     /**

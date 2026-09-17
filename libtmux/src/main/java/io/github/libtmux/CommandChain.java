@@ -4,6 +4,7 @@ import io.github.libtmux.batch.Batch;
 import io.github.libtmux.batch.BatchResult;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
  * A sequence of tmux commands where each one acts on what the last one made.
@@ -19,9 +20,11 @@ import java.util.Objects;
 public final class CommandChain {
 
     private final Batch batch;
+    private final Supplier<TmuxVersion> running;
 
-    CommandChain(Batch batch) {
+    CommandChain(Batch batch, Supplier<TmuxVersion> running) {
         this.batch = batch;
+        this.running = running;
     }
 
     /** Creates a window and makes it the one following steps act on. */
@@ -59,9 +62,11 @@ public final class CommandChain {
      *
      * @throws IllegalArgumentException if tmux would not recognise the layout, which on some
      *     versions ends the whole server rather than the command
+     * @throws UnsupportedTmuxVersionException if the layout name arrived after this release, which
+     *     tmux cannot tell from any other name it does not know
      */
     public CommandChain arrange(String layout) {
-        return then("select-layout", Layouts.require(layout));
+        return then("select-layout", Layouts.require(layout, running.get()));
     }
 
     /** Adds any tmux command, for whatever this class does not name. */

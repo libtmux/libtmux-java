@@ -45,8 +45,7 @@ final class WorkspaceApplier {
     private static void validate(Server server, Workspace workspace) {
         for (WindowSpec window : workspace.windows()) {
             window.layout().ifPresent(value -> {
-                Layouts.require(value);
-                builtIn(value).ifPresent(layout -> layout.requireSupported(server.version()));
+                Layouts.require(value, server.version());
             });
         }
     }
