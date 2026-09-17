@@ -233,8 +233,13 @@ final class Execution {
         }
         effects.put("stage", "before_script");
         if (!plan.beforeScript().isEmpty()) {
-            Children.Output output =
-                    Children.run(context, plan.beforeScript(), plan.scriptDirectory(), report, Duration.ofHours(24));
+            Children.Output output = Children.script(
+                    context,
+                    plan.beforeScript(),
+                    plan.scriptDirectory(),
+                    report,
+                    Duration.ofHours(24),
+                    effects.path("input_index").asInt());
             effects.set("script_output", output.value());
             if (output.status() != 0) {
                 // The session this load created must not outlive its own failed setup; a

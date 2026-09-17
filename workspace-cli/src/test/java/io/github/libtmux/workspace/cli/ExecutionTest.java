@@ -1277,6 +1277,42 @@ final class ExecutionTest {
         }
     }
 
+    /** A script's NDJSON events bracket its output, and each one names its input. */
+    @Test
+    void scriptEventsBracketTheirOutputAndNameTheirInput() throws Exception {
+        Path source = directory.resolve("bracket.yaml");
+        Path socket = directory.resolve("bracket-socket");
+        Path script = directory.resolve("bracket.sh");
+        Files.writeString(script, "#!/bin/sh\nprintf 'from-script\\n'\n");
+        assertTrue(script.toFile().setExecutable(true));
+        Files.writeString(
+                source, "session_name: bracket\nbefore_script: " + script + "\nwindows:\n  - panes: [null]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--ndjson");
+                assertEquals(0, result.code(), result.err());
+                var events = new java.util.ArrayList<String>();
+                var mapper = new ObjectMapper();
+                for (String line : result.out().lines().toList()) {
+                    var record = mapper.readTree(line);
+                    String event = record.path("event").asText();
+                    if (!event.startsWith("script-")) continue;
+                    events.add(event);
+                    assertEquals(0, record.path("input_index").asInt(-1), line);
+                    if (event.equals("script-completed")) {
+                        assertEquals(0, record.path("child_status").asInt(-1), line);
+                        assertFalse(record.path("truncated").isMissingNode(), line);
+                    }
+                }
+                assertEquals(
+                        java.util.List.of("script-started", "script-output", "script-completed"), events, result.out());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** A failing before_script removes the session the load owns, never a borrowed one. */
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
