@@ -83,6 +83,47 @@ final class ControlClientTest {
                 ControlClient.line(List.of("display-message", "-p", "it's quoted")));
     }
 
+    /**
+     * JAVA2-4: tmux(1) documents {@code refresh-client -B name:what:format}'s {@code what} as empty,
+     * {@code %N}, {@code %*}, {@code @N} or {@code @*} only. A session id ({@code $0}) or an
+     * arbitrary word were never spellings the manual promises for "the attached session" - 3.2a and
+     * 3.7c happen to accept them leniently, but on master the identical call is accepted and fires
+     * nothing, silently. {@code watch} now sends the one spelling confirmed to work everywhere -
+     * {@code ""} - for anything that does not itself name a pane or window.
+     */
+    @Test
+    void watchNormalizesAnySessionScopeTargetToTheEmptyString(@TempDir Path directory) throws Exception {
+        String expected = ControlClient.line(List.of("refresh-client", "-B", "javatest::#{session_name}"));
+        int attempt = 0;
+        for (String target : List.of("$0", "session", "anything-else", "")) {
+            String requestLine = capturedWatchRequest(directory, attempt++, target);
+            assertEquals(expected, requestLine, "target '" + target + "' must normalize to the empty string");
+        }
+    }
+
+    /** Attaches a fresh fake control client, sends one {@code watch}, and returns the request line it made. */
+    private static String capturedWatchRequest(Path directory, int attempt, String target) throws Exception {
+        Path scratch = directory.resolve("watch-" + attempt);
+        Files.createDirectory(scratch);
+        Path captured = scratch.resolve("captured-watch-request");
+        ServerConfig config = fakeTmux(scratch, """
+                printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                IFS= read -r onattach
+                printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                IFS= read -r request
+                printf '%s\\n' "$request" > '""" + captured + """
+                '
+                printf '%%begin 102 1 0\n%%end 102 1 0\n'
+                sleep 5
+                """);
+
+        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+            client.watch("javatest", target, "#{session_name}");
+            assertTrue(awaitFile(captured), "the watch request never reached the fake server");
+            return Files.readString(captured).strip();
+        }
+    }
+
     @Test
     void aTimedOutReplyMakesTheStreamUnavailableForLaterRequests(@TempDir Path directory) throws Exception {
         Path fakeTmux = directory.resolve("tmux");

@@ -233,11 +233,24 @@ public final class ControlClient implements AutoCloseable {
      *
      * @param name what to call it; registering the same name again replaces the old one
      * @param target {@code %*} for every pane, {@code @*} for every window, a specific {@code %id} or
-     *     {@code @id}, or anything else for the attached session
+     *     {@code @id}, or the attached session (pass {@code ""} - see below)
      * @param format a tmux format, such as {@code #{pane_current_command}}
      */
     public ControlReply watch(String name, String target, String format) {
-        return send("refresh-client", "-B", name + ":" + target + ":" + format);
+        return send("refresh-client", "-B", name + ":" + sessionScopeNormalized(target) + ":" + format);
+    }
+
+    /**
+     * tmux(1) documents {@code refresh-client -B name:what:format}'s {@code what} as empty,
+     * {@code %N}, {@code %*}, {@code @N} or {@code @*} only - a session id or an arbitrary word was
+     * never a spelling the manual promises, even though 3.2a and 3.7c happen to accept one leniently
+     * (confirmed against the matrix). On master the same non-empty, non-{@code %}/{@code @} target
+     * is accepted by the parser but delivers nothing, silently (JAVA2-4). The empty string is the one
+     * spelling confirmed to mean "the attached session" and to actually fire on every tested release,
+     * so anything that does not name a pane or window is normalized to it rather than passed through.
+     */
+    private static String sessionScopeNormalized(String target) {
+        return target.startsWith("%") || target.startsWith("@") ? target : "";
     }
 
     /** Stops a watch. tmux reads a name with no colon in it as one to remove. */
