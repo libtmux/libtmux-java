@@ -90,13 +90,20 @@ try (ControlClient client = ControlClient.attach(server.config(), session.id());
 
     client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
 
-    PaneOutput arrived = output.next(Duration.ofSeconds(5)).orElseThrow();
-    arrived.data().contains("streamed");  // → true
+    StringBuilder seen = new StringBuilder();
+    while (seen.indexOf("streamed") < 0) {
+        seen.append(output.next(Duration.ofSeconds(5)).orElseThrow().data());
+    }
+    seen.indexOf("streamed") >= 0;  // → true
 }
 ```
 
 Attaching is what makes tmux push at all. A control client that never attaches
 sees no output, however long it waits.
+
+tmux decides where one push ends and the next begins, so what a caller wants can
+arrive split across several: read until you have it rather than testing the
+first one. The loop above is bounded by the timeout each `next` carries.
 
 Each subscriber chooses a fixed buffer capacity. A full buffer drops its oldest
 value, and `droppedCount()` reports the exact loss. The control reader only fills
