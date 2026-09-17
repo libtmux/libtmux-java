@@ -233,7 +233,7 @@ final class LoadProgress {
                 "overall_percent",
                 Integer.toString(sessionPaneTotal == 0 ? 0 : 100 * sessionPanesDone / sessionPaneTotal));
         values.put("summary", "[" + windowsDone + " win, " + sessionPanesDone + " panes]");
-        values.put("progress", ratio(windowIndex, windowTotal) + " win, " + ratio(paneIndex, paneTotal) + " pane");
+        values.put("progress", progressToken(windowIndex, windowTotal, paneIndex, paneTotal));
         values.put("bar", bar(sessionPanesDone, sessionPaneTotal));
         values.put("pane_bar", bar(sessionPanesDone, sessionPaneTotal));
         values.put("window_bar", bar(windowsDone, windowTotal));
@@ -243,6 +243,12 @@ final class LoadProgress {
 
     private static String ratio(int done, int total) {
         return total == 0 ? "" : done + "/" + total;
+    }
+
+    /** The combined {@code {progress}} token: a pane count not yet known reads {@code 0}, not blank. */
+    static String progressToken(int windowIndex, int windowTotal, int paneIndex, int paneTotal) {
+        String paneProgress = ratio(paneIndex, paneTotal);
+        return ratio(windowIndex, windowTotal) + " win, " + (paneProgress.isEmpty() ? "0" : paneProgress) + " pane";
     }
 
     private String bar(int done, int total) {

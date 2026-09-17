@@ -593,7 +593,7 @@ final class MainTest {
         Result result = invoke("convert", source.toString(), "--save-to", "confirm.json");
         assertEquals(1, result.code(), result.toString());
         assertFalse(Files.exists(directory.resolve("confirm.json")));
-        assertEquals("confirmation_required: confirmation requires a terminal; pass --yes\n", result.err());
+        assertEquals("Error: confirmation requires a terminal; pass --yes\n", result.err());
     }
 
     /** Saving relies on a hard link to refuse an existing destination, which not every store has. */

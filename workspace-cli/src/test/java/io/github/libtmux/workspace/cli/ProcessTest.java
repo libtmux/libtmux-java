@@ -681,6 +681,13 @@ final class ProcessTest {
         }
     }
 
+    /**
+     * The attach child gets this process's own descriptors, not a fresh open of the tty by path: a
+     * redirected human load's attach child inherits that redirection too, exactly as a shell
+     * redirection would, and fails to attach rather than drawing nothing on a client that connected.
+     * A real terminal's client must actually render the session, not just connect: the earlier
+     * reopen-by-path bug left a connected client with the screen blank.
+     */
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void humanLoadAttachesThroughTheActualTerminalDevice(boolean redirected) throws Exception {
@@ -699,19 +706,29 @@ final class ProcessTest {
                 env.pop('TMUX', None)
                 env.pop('TMUX_PANE', None)
                 connected = False
+                written = 0
                 with open(destination, 'wb') as output:
                     child = subprocess.Popen([launcher, 'load', source, '-S', socket, '-f', '/dev/null'],
                         stdin=subprocess.DEVNULL if redirected else slave, stdout=output,
                         stderr=output if redirected else slave, env=env, preexec_fn=terminal, pass_fds=(slave,))
                     try:
                         until = time.monotonic() + 5
+                        name = None
                         while child.poll() is None and time.monotonic() < until:
                             clients = subprocess.run([tmux, '-S', socket, 'list-clients', '-F', '#{client_name}'], capture_output=True, text=True)
                             if clients.returncode == 0 and clients.stdout.strip():
                                 connected = True
-                                subprocess.run([tmux, '-S', socket, 'detach-client', '-t', clients.stdout.strip()], check=True)
+                                name = clients.stdout.strip().splitlines()[0]
                                 break
                             time.sleep(.025)
+                        if connected:
+                            # Give a working client time to draw before measuring what it wrote.
+                            time.sleep(.3)
+                            report = subprocess.run(
+                                [tmux, '-S', socket, 'display-message', '-p', '-t', name, '#{client_written}'],
+                                capture_output=True, text=True)
+                            written = int(report.stdout.strip() or '0')
+                            subprocess.run([tmux, '-S', socket, 'detach-client', '-t', name], check=True)
                         code = child.wait(timeout=3)
                     finally:
                         if child.poll() is None:
@@ -719,7 +736,13 @@ final class ProcessTest {
                             child.wait()
                 os.close(slave)
                 os.close(master)
-                sys.exit(0 if connected and code == 0 else 1)
+                # Redirected stdio carries no terminal, so tmux itself must refuse to attach, the
+                # same as any other program asked to draw a screen on a file. A real terminal must
+                # both connect and actually render: a few hundred bytes is the blank-screen bug.
+                ok = (not connected and code != 0) if redirected else (connected and code == 0 and written > 450)
+                if not ok:
+                    print('connected=%s code=%s written=%s' % (connected, code, written), file=sys.stderr)
+                sys.exit(0 if ok else 1)
                 """;
         try (Server server = Server.builder()
                 .endpoint(ServerEndpoint.socketPath(socket))
@@ -838,6 +861,286 @@ final class ProcessTest {
                         .redirectError(ProcessBuilder.Redirect.INHERIT)
                         .start();
                 assertTrue(child.waitFor(12, TimeUnit.SECONDS));
+                assertEquals(0, child.exitValue());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /**
+     * A key binding's {@code run-shell} sets {@code TMUX} but never {@code TMUX_PANE} and gives the
+     * command no terminal. Inside tmux a switch needs neither: it must still switch the session's
+     * most recently active client, with no {@code -c}, rather than demanding a terminal.
+     */
+    @Test
+    void runShellStyleLoadSwitchesTheMostRecentClientWithoutATargetPane() throws Exception {
+        Path source = directory.resolve("runshell.yaml");
+        Path socket = directory.resolve("runshell-switch");
+        Files.writeString(source, "session_name: from-runshell\nwindows:\n  - panes: [null]\n");
+        String script = """
+                import fcntl, os, pty, subprocess, sys, termios, time
+                launcher, source, socket, tmux, destination = sys.argv[1:]
+                prefix = [tmux, '-S', socket]
+                master, slave = pty.openpty()
+                os.set_blocking(master, False)
+                def terminal():
+                    os.setsid()
+                    fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+                env_client = dict(os.environ, TERM='xterm', LIBTMUX_TEST_TMUX=tmux)
+                env_client.pop('TMUX', None)
+                env_client.pop('TMUX_PANE', None)
+                client = subprocess.Popen(prefix + ['attach-session', '-t', 'keeper'],
+                    stdin=slave, stdout=slave, stderr=slave, env=env_client, preexec_fn=terminal)
+                def sessions():
+                    try: os.read(master, 65536)
+                    except (BlockingIOError, OSError): pass
+                    rows = subprocess.check_output(prefix + ['list-clients', '-F', '#{client_name} #{session_name}'], text=True)
+                    return dict(row.rsplit(' ', 1) for row in rows.splitlines() if row)
+                try:
+                    until = time.monotonic() + 5
+                    state = sessions()
+                    while not state and time.monotonic() < until:
+                        time.sleep(.025)
+                        state = sessions()
+                    assert len(state) == 1, state
+                    pid = subprocess.check_output(prefix + ['display-message', '-p', '#{pid}'], text=True).strip()
+                    # Exactly what run-shell hands its command: TMUX resolves, TMUX_PANE and the
+                    # terminal do not.
+                    env = dict(os.environ, TMUX=socket + ',' + pid + ',0', LIBTMUX_TEST_TMUX=tmux)
+                    env.pop('TMUX_PANE', None)
+                    with open(destination, 'wb') as output:
+                        runshell = subprocess.Popen([launcher, 'load', source, '-S', socket],
+                            stdin=subprocess.DEVNULL, stdout=output, stderr=output, env=env)
+                        code = runshell.wait(timeout=5)
+                    until = time.monotonic() + 5
+                    switched = False
+                    while time.monotonic() < until:
+                        state = sessions()
+                        if state and list(state.values())[0] != 'keeper':
+                            switched = True
+                            break
+                        time.sleep(.025)
+                    if not (code == 0 and switched):
+                        print('code=%s switched=%s state=%s' % (code, switched, state), file=sys.stderr)
+                    sys.exit(0 if code == 0 and switched else 1)
+                finally:
+                    subprocess.run(prefix + ['kill-server'], capture_output=True)
+                    if client.poll() is None:
+                        client.wait(timeout=2)
+                    os.close(slave)
+                    os.close(master)
+                """;
+        Path diagnostics = directory.resolve("runshell-diagnostics.log");
+        try (Server server = Server.builder()
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .binary(System.getProperty("libtmux.tmux", "tmux"))
+                .build()) {
+            server.newSession("keeper");
+            try {
+                Process process = new ProcessBuilder(
+                                "python3",
+                                "-c",
+                                script,
+                                System.getProperty("workspace.cli.launcher"),
+                                source.toString(),
+                                socket.toString(),
+                                System.getProperty("libtmux.tmux", "tmux"),
+                                directory.resolve("runshell-output").toString())
+                        .redirectError(diagnostics.toFile())
+                        .start();
+                boolean finished = process.waitFor(15, TimeUnit.SECONDS);
+                String diagnosticText =
+                        Files.exists(diagnostics) ? Files.readString(diagnostics) : "(no diagnostics file)";
+                assertTrue(finished, diagnosticText);
+                assertEquals(0, process.exitValue(), diagnosticText);
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /**
+     * Inside tmux, a new session's load asks switch/detached/append. Answered "n" by keystroke in a
+     * real pane (never piped), it must build the session detached and leave the client where it was.
+     */
+    @Test
+    void interactiveNewSessionPromptAnsweredNoBuildsDetached() throws Exception {
+        Path source = directory.resolve("prompt-new.yaml");
+        Path socket = directory.resolve("prompt-new-socket");
+        Files.writeString(source, "session_name: from-prompt\nwindows:\n  - panes: [null]\n");
+        String script = """
+                import fcntl, os, pty, shlex, subprocess, sys, termios, time
+                launcher, source, socket, tmux, scratch = sys.argv[1:]
+                env = dict(os.environ, TERM='xterm', LIBTMUX_TEST_TMUX=tmux)
+                env.pop('TMUX', None)
+                env.pop('TMUX_PANE', None)
+                prefix = [tmux, '-S', socket]
+                master, slave = pty.openpty()
+                os.set_blocking(master, False)
+                def terminal():
+                    os.setsid()
+                    fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+                child = subprocess.Popen(prefix + ['attach-session', '-t', 'keeper'],
+                    stdin=slave, stdout=slave, stderr=slave, env=env, preexec_fn=terminal)
+                def screen():
+                    try: os.read(master, 65536)
+                    except (BlockingIOError, OSError): pass
+                    return subprocess.check_output(prefix + ['capture-pane', '-p', '-t', 'keeper'], text=True)
+                def wait_for(needle, budget):
+                    until = time.monotonic() + budget
+                    text = screen()
+                    while needle not in text and time.monotonic() < until:
+                        time.sleep(.025)
+                        text = screen()
+                    return text
+                try:
+                    text = wait_for('workspace-ready>', 4)
+                    assert 'workspace-ready>' in text, text
+                    status = os.path.join(scratch, 'exit-status')
+                    # Neither stream is redirected: the prompt (on stderr) must stay visible on the
+                    # pane to be read and answered by a real keystroke.
+                    command = shlex.join(['env', 'LIBTMUX_TEST_TMUX=' + tmux, launcher, 'load', source])
+                    command += '; printf %s $? >' + shlex.quote(status)
+                    subprocess.run(prefix + ['send-keys', '-t', 'keeper', '-l', command], check=True)
+                    subprocess.run(prefix + ['send-keys', '-t', 'keeper', 'Enter'], check=True)
+                    text = wait_for('switch (y)', 5)
+                    assert 'switch (y)' in text, text
+                    # A real keystroke, not piped stdin: several ports skip prompting on a pipe.
+                    subprocess.run(prefix + ['send-keys', '-t', 'keeper', '-l', 'n'], check=True)
+                    subprocess.run(prefix + ['send-keys', '-t', 'keeper', 'Enter'], check=True)
+                    until = time.monotonic() + 5
+                    text = screen()
+                    while not os.path.exists(status) and time.monotonic() < until:
+                        time.sleep(.025)
+                        text = screen()
+                    assert os.path.exists(status), text
+                    assert open(status).read() == '0', text
+                    built = subprocess.run(prefix + ['has-session', '-t', 'from-prompt'], capture_output=True).returncode == 0
+                    assert built, 'answering n must still build the session, detached'
+                    final = subprocess.check_output(prefix + ['list-clients', '-F', '#{session_name}'], text=True).strip()
+                    assert final == 'keeper', final
+                finally:
+                    subprocess.run(prefix + ['kill-server'], capture_output=True)
+                    if child.poll() is None:
+                        child.wait(timeout=2)
+                    os.close(slave)
+                    os.close(master)
+                """;
+        try (Server server = Server.builder()
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .binary(System.getProperty("libtmux.tmux", "tmux"))
+                .build()) {
+            server.newSession(spec ->
+                    spec.named("keeper").running("/bin/sh", "-i").env("ENV", "").env("PS1", "workspace-ready> "));
+            try {
+                Process child = new ProcessBuilder(
+                                "python3",
+                                "-c",
+                                script,
+                                System.getProperty("workspace.cli.launcher"),
+                                source.toString(),
+                                socket.toString(),
+                                System.getProperty("libtmux.tmux", "tmux"),
+                                directory.toString())
+                        .redirectError(ProcessBuilder.Redirect.INHERIT)
+                        .start();
+                assertTrue(child.waitFor(15, TimeUnit.SECONDS));
+                assertEquals(0, child.exitValue());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /**
+     * A session that already exists asks once whether to attach; answered "n" it changes nothing
+     * and never asks the new-session question too.
+     */
+    @Test
+    void interactiveExistingSessionPromptAnsweredNoChangesNothing() throws Exception {
+        Path source = directory.resolve("prompt-exists.yaml");
+        Path socket = directory.resolve("prompt-exists-socket");
+        Files.writeString(
+                source, "session_name: home\nwindows:\n  - panes: [null]\n  - window_name: extra\n    panes: [null]\n");
+        String script = """
+                import fcntl, os, pty, shlex, subprocess, sys, termios, time
+                launcher, source, socket, tmux, scratch = sys.argv[1:]
+                env = dict(os.environ, TERM='xterm', LIBTMUX_TEST_TMUX=tmux)
+                env.pop('TMUX', None)
+                env.pop('TMUX_PANE', None)
+                prefix = [tmux, '-S', socket]
+                master, slave = pty.openpty()
+                os.set_blocking(master, False)
+                def terminal():
+                    os.setsid()
+                    fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+                child = subprocess.Popen(prefix + ['attach-session', '-t', 'keeper'],
+                    stdin=slave, stdout=slave, stderr=slave, env=env, preexec_fn=terminal)
+                def screen():
+                    try: os.read(master, 65536)
+                    except (BlockingIOError, OSError): pass
+                    return subprocess.check_output(prefix + ['capture-pane', '-p', '-t', 'keeper'], text=True)
+                def wait_for(needle, budget):
+                    until = time.monotonic() + budget
+                    text = screen()
+                    while needle not in text and time.monotonic() < until:
+                        time.sleep(.025)
+                        text = screen()
+                    return text
+                try:
+                    text = wait_for('workspace-ready>', 4)
+                    assert 'workspace-ready>' in text, text
+                    status = os.path.join(scratch, 'exit-status')
+                    # Neither stream is redirected: the prompt (on stderr) must stay visible on the
+                    # pane to be read and answered by a real keystroke.
+                    command = shlex.join(['env', 'LIBTMUX_TEST_TMUX=' + tmux, launcher, 'load', source])
+                    command += '; printf %s $? >' + shlex.quote(status)
+                    subprocess.run(prefix + ['send-keys', '-t', 'keeper', '-l', command], check=True)
+                    subprocess.run(prefix + ['send-keys', '-t', 'keeper', 'Enter'], check=True)
+                    text = wait_for('already running', 5)
+                    assert 'already running' in text, text
+                    assert 'switch (y)' not in text, 'the existing-session question must not double as the new-session one'
+                    subprocess.run(prefix + ['send-keys', '-t', 'keeper', '-l', 'n'], check=True)
+                    subprocess.run(prefix + ['send-keys', '-t', 'keeper', 'Enter'], check=True)
+                    until = time.monotonic() + 5
+                    text = screen()
+                    while not os.path.exists(status) and time.monotonic() < until:
+                        time.sleep(.025)
+                        text = screen()
+                    assert os.path.exists(status), text
+                    assert open(status).read() == '0', text
+                    windows = subprocess.check_output(prefix + ['list-windows', '-t', 'home'], text=True).splitlines()
+                    assert len(windows) == 1, windows
+                    final = subprocess.check_output(prefix + ['list-clients', '-F', '#{session_name}'], text=True).strip()
+                    assert final == 'keeper', final
+                finally:
+                    subprocess.run(prefix + ['kill-server'], capture_output=True)
+                    if child.poll() is None:
+                        child.wait(timeout=2)
+                    os.close(slave)
+                    os.close(master)
+                """;
+        try (Server server = Server.builder()
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .binary(System.getProperty("libtmux.tmux", "tmux"))
+                .build()) {
+            server.newSession(spec ->
+                    spec.named("keeper").running("/bin/sh", "-i").env("ENV", "").env("PS1", "workspace-ready> "));
+            server.newSession("home");
+            try {
+                Process child = new ProcessBuilder(
+                                "python3",
+                                "-c",
+                                script,
+                                System.getProperty("workspace.cli.launcher"),
+                                source.toString(),
+                                socket.toString(),
+                                System.getProperty("libtmux.tmux", "tmux"),
+                                directory.toString())
+                        .redirectError(ProcessBuilder.Redirect.INHERIT)
+                        .start();
+                assertTrue(child.waitFor(15, TimeUnit.SECONDS));
                 assertEquals(0, child.exitValue());
             } finally {
                 if (server.isAlive()) server.killServer();

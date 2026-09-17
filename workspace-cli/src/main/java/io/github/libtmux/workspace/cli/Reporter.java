@@ -119,8 +119,8 @@ final class Reporter implements AutoCloseable {
                             level.equals("warning")
                                     ? "warning"
                                     : level.equals("error") || level.equals("critical") ? "error" : "info",
-                            level,
-                            event + " " + Documents.JSON.writeValueAsString(data));
+                            Character.toUpperCase(level.charAt(0)) + level.substring(1),
+                            data.path("message").asText(event));
                 context.error().flush();
             }
         } catch (IOException failure) {

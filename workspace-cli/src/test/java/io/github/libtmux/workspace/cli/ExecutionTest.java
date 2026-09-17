@@ -1140,13 +1140,15 @@ final class ExecutionTest {
                         "-S",
                         socket.toString(),
                         "--json");
-                assertEquals(2, result.code(), result.toString());
+                assertEquals(1, result.code(), result.toString());
                 assertFalse(Files.exists(marker));
                 assertFalse(server.sessions().getFirst().options().all().containsKey("@changed"));
                 assertEquals(1, server.windows().size());
+                var document = new ObjectMapper().readTree(result.out());
+                assertEquals("error", document.path("status").asText());
                 assertEquals(
-                        "error",
-                        new ObjectMapper().readTree(result.out()).path("status").asText());
+                        "tmux_failed",
+                        document.path("errors").path(0).path("code").asText());
             } finally {
                 if (server.isAlive()) server.killServer();
             }
@@ -1180,7 +1182,7 @@ final class ExecutionTest {
                         "-S",
                         socket.toString(),
                         "--json");
-                assertEquals(conflict ? 2 : 0, result.code(), result.toString());
+                assertEquals(conflict ? 1 : 0, result.code(), result.toString());
                 assertEquals(!conflict, Files.exists(marker));
                 assertEquals(
                         !conflict, server.sessions().getFirst().options().all().containsKey("@changed"));
@@ -1655,12 +1657,94 @@ final class ExecutionTest {
         }
     }
 
+    /** Human mode says "Appended" for --append, naming the session that received the windows. */
+    @Test
+    void humanLoadSummaryNamesAppendedSessionsNotCreated() throws Exception {
+        Path source = directory.resolve("append-summary.yaml");
+        Path socket = directory.resolve("append-summary-socket");
+        Files.writeString(source, "session_name: ignored\nwindows:\n  - window_name: added\n    panes: [null]\n");
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("home");
+                Result result = invoke(
+                        inherited(server, socket), "load", source.toString(), "--append", "-S", socket.toString());
+                assertEquals(0, result.code(), result.err());
+                assertTrue(result.out().contains("Appended"), result.out());
+                assertTrue(result.out().contains("home"), result.out());
+                assertFalse(result.out().contains("Created"), result.out());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     private static java.util.Map<String, String> inherited(Server server, Path socket) {
         return java.util.Map.of(
                 "TMUX",
                 socket + "," + server.expand("#{pid}") + ",0",
                 "TMUX_PANE",
                 server.panes().getFirst().id().value());
+    }
+
+    /** -d beats --append: it builds a new detached session rather than refusing or appending. */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void detachedBeatsAppend(boolean insideTmux) throws Exception {
+        Path source = directory.resolve("t5.yaml");
+        Path socket = directory.resolve("t5-socket");
+        Files.writeString(source, "session_name: t5\nwindows:\n  - panes: [null]\n");
+        try (Server server = server(socket)) {
+            try {
+                var context = java.util.Map.<String, String>of();
+                if (insideTmux) {
+                    server.newSession("current");
+                    context = inherited(server, socket);
+                }
+                Result result =
+                        invoke(context, "load", source.toString(), "-d", "--append", "-S", socket.toString(), "--json");
+                assertEquals(0, result.code(), result.err());
+                assertTrue(server.hasSession("t5"), result.err());
+                assertEquals(insideTmux ? 2 : 1, server.sessions().size());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /** An attached load onto a different server is refused before building, whether or not it runs. */
+    @Test
+    void attachRefusesADifferentServerTheSameWayRunningOrNot() throws Exception {
+        Path currentSocket = directory.resolve("t2-current");
+        Path notRunningSocket = directory.resolve("t2-other-not-running");
+        Path source = directory.resolve("t2.yaml");
+        Files.writeString(source, "session_name: t2\nwindows:\n  - panes: [null]\n");
+        try (Server current = server(currentSocket)) {
+            try {
+                current.newSession("keeper");
+                var context = inherited(current, currentSocket);
+
+                Result notRunning = invoke(context, "load", source.toString(), "-S", notRunningSocket.toString());
+                assertEquals(2, notRunning.code(), notRunning.toString());
+                assertFalse(Files.exists(notRunningSocket), "must refuse before building on the other socket");
+                assertTrue(notRunning.err().contains("server"), notRunning.err());
+                assertFalse(notRunning.err().contains("terminal"), notRunning.err());
+
+                Path runningSocket = directory.resolve("t2-other-running");
+                try (Server other = server(runningSocket)) {
+                    try {
+                        other.newSession("elsewhere");
+                        Result running = invoke(context, "load", source.toString(), "-S", runningSocket.toString());
+                        assertEquals(2, running.code(), running.toString());
+                        assertEquals(1, other.windows().size(), "must refuse before building on the other server");
+                        assertEquals(notRunning.err(), running.err());
+                    } finally {
+                        if (other.isAlive()) other.killServer();
+                    }
+                }
+            } finally {
+                if (current.isAlive()) current.killServer();
+            }
+        }
     }
 
     @Test
@@ -1859,6 +1943,75 @@ final class ExecutionTest {
                 assertEquals(0, result.code(), result.err());
                 String cwd = server.panes().getFirst().currentPath().toString();
                 assertEquals(directory.toString(), cwd, cwd);
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /** A relative start_directory resolves against the parent's own directory when it declared one. */
+    @Test
+    void windowRelativeStartDirectoryResolvesAgainstTheSessionsExplicitDirectory() throws Exception {
+        Path socket = directory.resolve("t11-socket");
+        Path documentDirectory = Files.createDirectories(directory.resolve("docs"));
+        Path sessionDirectory = Files.createDirectories(directory.resolve("elsewhere"));
+        Files.createDirectories(sessionDirectory.resolve("sub/x"));
+        Path source = documentDirectory.resolve("t11.yaml");
+        Files.writeString(
+                source,
+                "session_name: t11\nstart_directory: " + sessionDirectory
+                        + "\nwindows:\n  - start_directory: ./sub\n    panes:\n      - start_directory: ./x\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke("load", source.toString(), "-d", "-S", socket.toString(), "--json");
+                assertEquals(0, result.code(), result.err());
+                String cwd = server.panes().getFirst().currentPath().toString();
+                assertEquals(sessionDirectory.resolve("sub/x").toString(), cwd, cwd);
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /** With no session start_directory, a window's relative value falls back to the document directory. */
+    @Test
+    void windowRelativeStartDirectoryFallsBackToTheDocumentDirectoryWithNoSessionDirectory() throws Exception {
+        Path socket = directory.resolve("t11-fallback-socket");
+        Path documentDirectory = Files.createDirectories(directory.resolve("docroot"));
+        Files.createDirectories(documentDirectory.resolve("sub"));
+        Path source = documentDirectory.resolve("t11b.yaml");
+        Files.writeString(source, "session_name: t11b\nwindows:\n  - start_directory: ./sub\n    panes: [null]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke("load", source.toString(), "-d", "-S", socket.toString(), "--json");
+                assertEquals(0, result.code(), result.err());
+                String cwd = server.panes().getFirst().currentPath().toString();
+                assertEquals(documentDirectory.resolve("sub").toString(), cwd, cwd);
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /** Human-mode warnings are one labelled sentence, not the machine event name plus its JSON record. */
+    @Test
+    void humanWarningsPrintOneLabelAndASentenceNotTheMachineRecord() throws Exception {
+        Path source = directory.resolve("missing-dir.yaml");
+        Path socket = directory.resolve("missing-dir-socket");
+        Path missing = directory.resolve("does-not-exist");
+        Files.writeString(
+                source, "session_name: missing-dir\nstart_directory: " + missing + "\nwindows:\n  - panes: [null]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result = invoke("load", source.toString(), "-d", "-S", socket.toString());
+                assertEquals(0, result.code(), result.err());
+                assertFalse(result.err().contains("warning  warning"), result.err());
+                assertFalse(result.err().contains("{\"code\""), result.err());
+                assertTrue(
+                        result.err()
+                                .contains("Warning  start_directory is not a directory, tmux will fall back to $HOME: "
+                                        + missing),
+                        result.err());
             } finally {
                 if (server.isAlive()) server.killServer();
             }
