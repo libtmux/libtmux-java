@@ -52,6 +52,19 @@ final class Screen {
     }
 
     /**
+     * As {@link #from}, but only what the pane has finished writing - never the line the terminal
+     * cursor is still drawing, which is where a caller's own typed-but-unsubmitted input sits. A
+     * cursorless {@code wait_for_text} reads this to decide whether the text it wants is already on
+     * screen (D1): checking it against {@link #from}'s raw capture instead would let a pending input
+     * line the caller just typed count as a match, however new the bytes are.
+     */
+    static Fresh completeOnly(Pane pane) {
+        Look look = look(pane, 0);
+        List<String> complete = look.complete();
+        return new Fresh(complete, Cursor.of(look.serverPid(), pane.id().value(), complete), true);
+    }
+
+    /**
      * Everything the pane shows, or everything it still holds, with a cursor for watching on from
      * there.
      *

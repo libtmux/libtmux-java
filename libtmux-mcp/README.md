@@ -280,8 +280,12 @@ deadline, and what comes back is a timeout instead of the error. Patterns are
 plain text unless you pass `regex` — a model asking for `[FAILED]` means those
 eight characters, not a character class.
 
-Only output arriving *after* the call counts, so text already on the screen from
-an hour ago cannot satisfy a wait for something that has not happened yet.
+Text already on the screen when a cursorless call starts is never reported as a
+fresh match — it did not just happen — but it is not hidden either: the outcome
+comes back `PRESENT_AT_ENTRY` rather than `MATCHED`, with the text included, so a
+call made moments after the output landed does not read as a timeout with
+nothing in it. Pass the returned `cursor` to a later call to watch only for what
+comes after.
 
 Every wait is capped (30 s by default, 2 minutes hard) and reports the ceiling it
 actually enforced. The cap protects the agent's turn, not the connection: a tool

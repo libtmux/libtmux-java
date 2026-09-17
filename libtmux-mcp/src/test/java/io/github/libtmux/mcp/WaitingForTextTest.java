@@ -82,11 +82,14 @@ final class WaitingForTextTest {
     }
 
     /**
-     * The failure that makes a scraping wait untrustworthy. A pane already saying "ready" from before
-     * the call must not satisfy a wait for something that has not happened yet.
+     * JAVA2-6: text already on screen when a cursorless wait starts must not be reported as a fresh
+     * {@code MATCHED} - a pane already saying "ready" from before the call did not just become ready
+     * - but it must not be silently invisible either. Before this fix it was: {@code TIMED_OUT} with
+     * completely empty {@code output}, indistinguishable from the pattern never having appeared at
+     * all, even though {@code capture-pane} showed it in plain sight.
      */
     @Test
-    void textAlreadyOnScreenDoesNotSatisfyTheWait(Server server) {
+    void textAlreadyOnScreenIsReportedAsPresentAtEntryNotAFreshMatch(Server server) {
         String pane = server.panes().get(0).id().value();
         RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "echo already-ready", "timeout", 15));
         // The wait has to start from a screen that already says it, or this is not that case.
@@ -95,10 +98,34 @@ final class WaitingForTextTest {
         WaitingForText.Waited waited = WaitingForText.waitFor(
                 TestCalls.on(server, "pane_id", pane, "patterns", List.of("already-ready"), "timeout", 2));
 
-        assertEquals("TIMED_OUT", waited.outcome(), "only output arriving after the call counts");
+        assertEquals("PRESENT_AT_ENTRY", waited.outcome(), "not a fresh match, and not an invisible one either");
+        assertEquals("already-ready", waited.matched());
         assertTrue(
-                waited.output().stream().noneMatch(line -> line.contains("already-ready")),
-                "a timeout must not carry the very text it timed out waiting for: " + waited.output());
+                waited.output().stream().anyMatch(line -> line.contains("already-ready")),
+                "the text really is there; hiding it is the bug this fixes: " + waited.output());
+        assertTrue(waited.seconds() < 1, "answered from the entry screen, no watching needed");
+    }
+
+    /**
+     * D1 point 2 (M2 in the round's own findings): text typed but never submitted sits on the
+     * pending input line, not in anything the pane produced. The new entry check this fix adds must
+     * not turn that into a false {@code PRESENT_AT_ENTRY} - it has to stay a plain {@code TIMED_OUT},
+     * exactly as a cursorless wait already handled it before this fix.
+     */
+    @Test
+    void unsubmittedTypedTextIsNeverPresentAtEntry(Server server) {
+        Pane pane = server.panes().get(0);
+        String marker = "JAVA-D1-PENDING-MARKER";
+        Typing.sendKeys(
+                TestCalls.on(server, "pane_id", pane.id().value(), "keys", List.of("echo " + marker), "literal", true));
+
+        WaitingForText.Waited waited = WaitingForText.waitFor(
+                TestCalls.on(server, "pane_id", pane.id().value(), "patterns", List.of(marker), "timeout", 1));
+
+        assertEquals("TIMED_OUT", waited.outcome(), "the command was never run; there is nothing to report yet");
+        assertTrue(
+                waited.output().stream().noneMatch(line -> line.contains(marker)),
+                "the pending, unsubmitted line must not leak into the caller-visible output: " + waited.output());
     }
 
     /**
@@ -278,9 +305,19 @@ final class WaitingForTextTest {
         return false;
     }
 
-    /** Sent without waiting, which is what makes this the tool for output nobody here authored. */
+    /**
+     * Starts a command in the background and returns at once, without a tracked run to learn when
+     * it finishes - {@code wait_for_text} is for exactly that case, output nobody here is watching
+     * for through a command result.
+     *
+     * <p>Goes through {@link Typing#sendKeys}, the same as {@link #typeAndSubmit}, rather than a raw
+     * {@code send-keys}: every command here is an {@code echo <marker>} whose own typed-and-submitted
+     * text contains the marker too, on screen the instant it is submitted - before the backgrounded
+     * process prints anything. Only {@link TypedEcho} can tell that line apart from real output, and
+     * only a call that goes through it gets recorded there.
+     */
     private static void send(Server server, String pane, String command) {
-        server.run(List.of("send-keys", "-l", "-t", pane, command));
-        server.run(List.of("send-keys", "-t", pane, "Enter"));
+        Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of(command), "literal", true));
+        Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of("Enter"), "literal", false));
     }
 }
