@@ -294,7 +294,7 @@ public final class Main {
                             .put("schema_version", 1)
                             .put("code", code)
                             .put("message", message))
-                    : code + ": " + Reporter.safe(message);
+                    : "Error: " + Reporter.safe(message);
             context.error().write((value + "\n").getBytes(StandardCharsets.UTF_8));
             context.error().flush();
         } catch (IOException ignored) {

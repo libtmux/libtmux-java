@@ -66,6 +66,7 @@ record WorkspacePlan(
         if (parent == null) throw invalid("workspace source has no parent");
         List<String> warnings = new ArrayList<>();
         Path directory = directory(context, root, context.directory(), parent, checkDirectories, warnings);
+        Path directoryBase = root.hasNonNull("start_directory") ? directory : parent;
         Path scriptDirectory =
                 root.hasNonNull("start_directory") && Files.isDirectory(directory) ? directory : context.directory();
         String script = optionalText(context, root.path("before_script"), "before_script", "");
@@ -132,7 +133,8 @@ record WorkspacePlan(
             if (index >= 0 && !indexes.add(index)) throw invalid("duplicate window_index " + index);
             String layout = optionalText(context, node.path("layout"), "layout", "");
             if (!layout.isEmpty()) Layouts.require(layout);
-            Path windowDirectory = directory(context, node, directory, parent, checkDirectories, warnings);
+            Path windowDirectory = directory(context, node, directory, directoryBase, checkDirectories, warnings);
+            Path windowBase = node.hasNonNull("start_directory") ? windowDirectory : directoryBase;
             Map<String, String> windowEnvironment = mapping(context, node.path("environment"), true);
             String shell = optionalText(context, node.path("window_shell"), "window_shell", "");
             boolean suppress = bool(node.path("suppress_history"), bool(root.path("suppress_history"), true));
@@ -158,7 +160,7 @@ record WorkspacePlan(
                                     "shell",
                                     "pane_shell"),
                             "pane");
-                Path paneDirectory = directory(context, pane, windowDirectory, parent, checkDirectories, warnings);
+                Path paneDirectory = directory(context, pane, windowDirectory, windowBase, checkDirectories, warnings);
                 Map<String, String> paneEnvironment =
                         pane.has("environment") ? mapping(context, pane.path("environment"), true) : windowEnvironment;
                 boolean paneSuppress = bool(pane.path("suppress_history"), suppress);
@@ -286,9 +288,9 @@ record WorkspacePlan(
 
     /**
      * The effective start_directory at this node: {@code inherited} when the node names none, or
-     * {@code documentDirectory}-relative (or absolute) otherwise. A relative value always resolves
-     * against the workspace document's directory, not the parent node's effective directory, at
-     * every level.
+     * {@code relativeBase}-relative (or absolute) otherwise. {@code relativeBase} is the nearest
+     * ancestor's own start_directory when one declared it, and the workspace document's directory
+     * otherwise.
      *
      * <p>A missing target directory is not refused: tmux itself falls back to {@code $HOME} for a
      * {@code -c} it cannot use, so this records a warning instead and lets tmux do the same.
@@ -297,14 +299,13 @@ record WorkspacePlan(
             Main.Context context,
             JsonNode node,
             Path inherited,
-            Path documentDirectory,
+            Path relativeBase,
             boolean checkDirectories,
             List<String> warnings) {
         JsonNode value = node.path("start_directory");
         if (value.isMissingNode() || value.isNull()) return inherited;
-        Path resolved = documentDirectory
-                .resolve(text(context, value, "start_directory"))
-                .normalize();
+        Path resolved =
+                relativeBase.resolve(text(context, value, "start_directory")).normalize();
         if (checkDirectories && !Files.isDirectory(resolved))
             warnings.add("start_directory is not a directory, tmux will fall back to $HOME: " + resolved);
         return resolved;

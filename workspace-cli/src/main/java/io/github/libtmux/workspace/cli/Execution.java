@@ -64,11 +64,11 @@ final class Execution {
                     "unsupported_color_mode",
                     2,
                     "tmux 3.2a and newer do not support legacy 88-color mode (-8); use -2 or terminal detection");
-        boolean append = Main.flag(args, "--append");
         boolean detached = Main.flag(args, "-d");
+        // -d beats --append: a detached load never has a current session to append into.
+        boolean append = Main.flag(args, "--append") && !detached;
+        boolean yes = Main.flag(args, "--yes");
         if (report.machine() && !detached && !append) throw Main.usage("machine load requires -d or --append");
-        if (!detached && !append && !Main.controllingTerminal())
-            throw Main.usage("attached load requires a terminal; pass -d");
         if (append && !context.environment().containsKey("TMUX_PANE"))
             throw Main.usage("append requires a resolved current TMUX_PANE");
         String[] sources = args.matchedPositionalValue(0, new String[0]);
@@ -86,13 +86,7 @@ final class Execution {
                                 .put("message", warning));
             plans.add(plan);
         }
-        for (WorkspacePlan plan : plans) {
-            if (append && plan.extension() != null && plan.extension().has("before_script"))
-                throw new Main.Failure(
-                        "unsupported_combination",
-                        2,
-                        "Python extension append cannot use before_script: tmuxp can delete the borrowed session on failure");
-        }
+        requireAppendExtensionCompatibility(plans, append);
         String python =
                 plans.stream().anyMatch(plan -> plan.extension() != null) ? Children.python(context, report) : "";
         try (Server server = server(context, args)) {
@@ -102,9 +96,35 @@ final class Execution {
                         Layouts.require(window.layout(), server, window.panes().size());
                 }
             }
+            // Resolved before anything is built: refuses a different server outright, and a prompt
+            // here can still turn this load into a detached or an appended one.
+            Optional<AttachTarget> target =
+                    detached || append ? Optional.empty() : Optional.of(attachTarget(context, server));
+            if (target.isPresent() && !report.machine() && !yes && Main.terminal()) {
+                AttachTarget resolved = target.orElseThrow();
+                boolean exists = server.isAlive()
+                        && server.sessions().stream()
+                                .anyMatch(session ->
+                                        session.name().equals(plans.getLast().name()));
+                if (exists) {
+                    if (promptAnswer(context, plans.getLast().name() + " is already running. Attach? [Y/n] ", 'y')
+                            == 'n') return;
+                } else if (resolved.insideTmux()) {
+                    char answer = promptAnswer(
+                            context,
+                            "Already inside tmux: switch (y), load detached (n), or append (a)? [y/n/a] ",
+                            'y');
+                    if (answer == 'n') detached = true;
+                    else if (answer == 'a') {
+                        append = true;
+                        // The eager check above ran before the prompt could set this.
+                        requireAppendExtensionCompatibility(plans, true);
+                    }
+                }
+            }
+            if (target.isPresent() && !target.orElseThrow().insideTmux() && !detached && !Main.controllingTerminal())
+                throw Main.usage("attached load requires a terminal; pass -d");
             Optional<Session> borrowed = append ? Optional.of(appendTarget(context, server)) : Optional.empty();
-            Optional<io.github.libtmux.Client> invoking =
-                    detached || append ? Optional.empty() : invokingClient(context, server);
             ArrayNode results = Documents.JSON.createArrayNode();
             report.event("started", Documents.JSON.createObjectNode().put("inputs", plans.size()));
             Session last = null;
@@ -155,9 +175,11 @@ final class Execution {
                 for (JsonNode effects : results)
                     report.line(
                             "success",
-                            effects.path("reused").asBoolean() ? "Reused session" : "Created session",
+                            append
+                                    ? "Appended"
+                                    : effects.path("reused").asBoolean() ? "Reused session" : "Created session",
                             effects.path("session_name").asText());
-            if (!detached && !append && last != null) attach(server, last, context, invoking);
+            if (!detached && !append && last != null) attach(server, last, context, target.orElseThrow());
         }
     }
 
@@ -429,10 +451,19 @@ final class Execution {
         if (failed != null) throw failed;
     }
 
+    private static void requireAppendExtensionCompatibility(List<WorkspacePlan> plans, boolean append) {
+        for (WorkspacePlan plan : plans)
+            if (append && plan.extension() != null && plan.extension().has("before_script"))
+                throw new Main.Failure(
+                        "unsupported_combination",
+                        2,
+                        "Python extension append cannot use before_script: tmuxp can delete the borrowed session on failure");
+    }
+
     private static void reserveIndexes(WorkspacePlan plan, Set<Integer> occupied) {
         for (WorkspacePlan.Window window : plan.windows())
             if (window.index() >= 0 && !occupied.add(window.index()))
-                throw Main.usage("window_index " + window.index() + " already exists in the selected session");
+                throw new Main.Failure("tmux_failed", 1, "create window failed: index " + window.index() + " in use");
     }
 
     private static int freeIndex(Set<Integer> occupied, int first) {
@@ -565,39 +596,70 @@ final class Execution {
         }
     }
 
-    private static Optional<io.github.libtmux.Client> invokingClient(Main.Context context, Server selected) {
-        if (!context.environment().containsKey("TMUX") || !sameDaemon(context, selected)) return Optional.empty();
-        PaneId pane = currentPane(context);
+    /**
+     * Where an attached load ends up: outside tmux ({@code insideTmux} false), switched via a known
+     * client, or switched blind when the invoking pane cannot be identified.
+     */
+    private record AttachTarget(boolean insideTmux, Optional<io.github.libtmux.Client> client) {}
+
+    /** Decided before anything is built: a different server than {@code $TMUX} names is refused here. */
+    private static AttachTarget attachTarget(Main.Context context, Server selected) {
+        if (!context.environment().containsKey("TMUX")) return new AttachTarget(false, Optional.empty());
+        if (!sameDaemon(context, selected))
+            throw Main.usage(
+                    "the current tmux pane's server is not the server selected to load onto; load detached with -d");
+        Optional<PaneId> pane = io.github.libtmux.TmuxEnvironment.of(context.environment())
+                .flatMap(io.github.libtmux.TmuxEnvironment::pane);
+        if (pane.isEmpty()) return new AttachTarget(true, Optional.empty());
         var clients = selected.clients().stream()
                 .filter(client -> client.attachment().isPresent()
-                        && client.attachment().orElseThrow().activePane().id().equals(pane))
+                        && client.attachment().orElseThrow().activePane().id().equals(pane.orElseThrow()))
                 .toList();
-        if (clients.size() != 1) throw Main.usage("cannot identify one invoking tmux client; load detached with -d");
-        return Optional.of(clients.getFirst());
+        return new AttachTarget(true, clients.size() == 1 ? Optional.of(clients.getFirst()) : Optional.empty());
     }
 
-    private static void attach(
-            Server server, Session session, Main.Context context, Optional<io.github.libtmux.Client> invoking)
+    /** A single-character reply, lower-cased, or {@code fallback} for a blank line. */
+    private static char promptAnswer(Main.Context context, String prompt, char fallback) throws IOException {
+        context.error().write(prompt.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        context.error().flush();
+        String line = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(context.input(), java.nio.charset.StandardCharsets.UTF_8))
+                .readLine();
+        return line == null || line.strip().isEmpty()
+                ? fallback
+                : Character.toLowerCase(line.strip().charAt(0));
+    }
+
+    private static void attach(Server server, Session session, Main.Context context, AttachTarget target)
             throws IOException, InterruptedException {
-        if (invoking.isPresent()) {
+        if (target.insideTmux()) {
             authenticate(context, server);
-            var client = invoking.orElseThrow();
-            PaneId pane = currentPane(context);
-            var attachment = client.fetchAttachment();
-            if (attachment.isEmpty()
-                    || !attachment.orElseThrow().activePane().id().equals(pane)) {
-                throw Main.usage("invoking tmux client changed during load; workspace remains loaded");
+            if (target.client().isPresent()) {
+                var client = target.client().orElseThrow();
+                PaneId pane = currentPane(context);
+                var attachment = client.fetchAttachment();
+                if (attachment.isEmpty()
+                        || !attachment.orElseThrow().activePane().id().equals(pane)) {
+                    throw Main.usage("invoking tmux client changed during load; workspace remains loaded");
+                }
+                client.switchTo(session);
+            } else {
+                // The invoking pane could not be identified (a run-shell binding sets TMUX but not
+                // TMUX_PANE): switch with no -c and let tmux pick its own most recent client.
+                server.run(List.of("switch-client", "-t", session.id().value()));
             }
-            client.switchTo(session);
             return;
         }
         var argv = new ArrayList<>(server.config().endpointCommand());
         argv.add("attach-session");
         argv.add("-t");
         argv.add(session.id().value());
-        java.io.File tty = Children.terminalDevice(context);
-        ProcessBuilder builder =
-                new ProcessBuilder(argv).redirectInput(tty).redirectOutput(tty).redirectError(tty);
+        // This process's own descriptors, not a fresh open of the tty by path: a client whose stdio
+        // is reopened attaches and reads input but draws nothing.
+        ProcessBuilder builder = new ProcessBuilder(argv)
+                .redirectInput(ProcessBuilder.Redirect.INHERIT)
+                .redirectOutput(ProcessBuilder.Redirect.INHERIT)
+                .redirectError(ProcessBuilder.Redirect.INHERIT);
         builder.environment().clear();
         builder.environment().putAll(context.environment());
         builder.environment().remove("TMUX");
