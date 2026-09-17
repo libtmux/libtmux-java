@@ -186,7 +186,7 @@ final class CapabilityRegistryTest {
             McpSchema.Tool described = tool.describe();
             assertTrue(
                     Objects.requireNonNull(described.description(), "description")
-                            .startsWith(tool.controlledOpener()),
+                            .endsWith(tool.controlledOpener()),
                     tool.name());
             McpSchema.ToolAnnotations annotations = Objects.requireNonNull(described.annotations(), "annotations");
             assertEquals(false, annotations.readOnlyHint(), tool.name());
@@ -335,6 +335,34 @@ final class CapabilityRegistryTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> Catalog.validate(List.of(byName("get_server_info"), byName("get_server_info"))));
+    }
+
+    /**
+     * JAVA2-5: the controlled opener used to be the first sentence of every description, so a
+     * client that reads only that sentence - which the round's own coordinator harness did, by
+     * splitting on {@code ". "} - could not tell {@code list_sessions} apart from {@code
+     * get_server_info}, or {@code rename_session} from {@code select_layout}: every tool in a
+     * toolset opened on the identical classification. Moving that sentence to the end means the
+     * first sentence is now the tool's own distinguishing text.
+     */
+    @Test
+    void theFirstSentenceOfEveryDescriptionIsDistinctFromEverySibling() {
+        Map<String, List<String>> firstSentenceByTool = Catalog.tools().stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        tool -> firstSentence(tool.description()),
+                        java.util.stream.Collectors.mapping(ToolSpec::name, java.util.stream.Collectors.toList())));
+
+        List<Map.Entry<String, List<String>>> collisions = firstSentenceByTool.entrySet().stream()
+                .filter(entry -> entry.getValue().size() > 1)
+                .toList();
+
+        assertTrue(collisions.isEmpty(), "tools sharing a first sentence: " + collisions);
+    }
+
+    /** The first sentence of a description, split at the first {@code ". "}. */
+    private static String firstSentence(String description) {
+        int end = description.indexOf(". ");
+        return end < 0 ? description : description.substring(0, end + 1);
     }
 
     @Test

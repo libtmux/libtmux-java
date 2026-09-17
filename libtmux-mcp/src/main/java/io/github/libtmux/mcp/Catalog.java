@@ -102,8 +102,8 @@ final class Catalog {
             if (tool.outputClasses().isEmpty()) {
                 throw new IllegalArgumentException(tool.name() + " has no output class");
             }
-            if (!tool.description().startsWith(tool.controlledOpener() + " ")) {
-                throw new IllegalArgumentException(tool.name() + " does not begin with its controlled opener");
+            if (!tool.description().endsWith(" " + tool.controlledOpener())) {
+                throw new IllegalArgumentException(tool.name() + " does not end with its controlled opener");
             }
             if (tool.processReach() == ToolSpec.ProcessReach.HOST_COMMAND) {
                 throw new IllegalArgumentException(tool.name() + " exposes prohibited host-command reach");

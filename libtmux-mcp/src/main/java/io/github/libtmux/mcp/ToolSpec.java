@@ -174,7 +174,11 @@ record ToolSpec(
             Set<String> nestedAuthority,
             OutputSchema output,
             Function<Call, Object> answer) {
-        String description = opener(name, toolset, processReach, outputClasses) + " " + details;
+        // The distinguishing sentence first, the safety/capability classification last (JAVA2-5):
+        // a client that reads only the first sentence of a description - the shared coordinator's
+        // own summarization did - could not tell any tool in a toolset apart from its siblings when
+        // the identical classification led every one of them.
+        String description = details + " " + opener(name, toolset, processReach, outputClasses);
         return new ToolSpec(
                 name,
                 title,
@@ -231,6 +235,7 @@ record ToolSpec(
         return Collections.unmodifiableMap(row);
     }
 
+    /** The fixed, category-wide safety/capability sentence every description carries - its last, not its first. */
     String controlledOpener() {
         return opener(name, toolset, processReach, outputClasses);
     }
@@ -398,8 +403,11 @@ record ToolSpec(
             aggregateSecrets |= selected.mayExposeSecrets();
             aggregateUntrusted |= selected.mayReturnUntrustedContent();
         }
-        String body = description.substring(controlledOpener().length()).stripLeading();
-        String aggregateDescription = opener(name, toolset, processReach, aggregateOutputs) + " " + body;
+        String currentOpener = controlledOpener();
+        String body = description
+                .substring(0, description.length() - currentOpener.length())
+                .stripTrailing();
+        String aggregateDescription = body + " " + opener(name, toolset, processReach, aggregateOutputs);
         return new ToolSpec(
                 name,
                 title,
