@@ -9,14 +9,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerConfig;
+import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.WakeReason;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 
 /** The rest of the surface, against real tmux. */
 @ExtendWith(TmuxExtension.class)
@@ -28,6 +33,36 @@ final class ToolsAgainstTmuxTest {
     private static final TmuxVersion ACCEPTS_DELIMITER_AGAIN = new TmuxVersion(3, 7, "a");
 
     // ---------------------------------------------------------------- knowing where you are
+
+    /**
+     * D2: an MCP's own observation client must not read as an attached one. Ports that keep a
+     * long-lived control client for {@code wait_for_text} have to exclude it explicitly from
+     * {@code list_sessions}'s attached count; java is the reference here by construction - it polls
+     * plain captures and never attaches a control client of its own, so there is nothing to
+     * exclude. This pins that it stays that way: a {@code wait_for_text} call genuinely in flight,
+     * watching a pattern that will not appear, must not make the session look attached.
+     */
+    @Test
+    void listSessionsStaysUnattachedWhileAWaitForTextCallIsInFlight(Server server) throws Exception {
+        String pane = server.panes().get(0).id().value();
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.Future<WaitingForText.Waited> waiting =
+                    pool.submit(() -> WaitingForText.waitFor(TestCalls.on(
+                            server, "pane_id", pane, "patterns", List.of("never-appears-anywhere"), "timeout", 3)));
+            Thread.sleep(300); // let the wait actually start watching before checking mid-flight
+
+            Listings.Sessions sessions = Listings.sessions(server);
+
+            assertTrue(
+                    sessions.sessions().stream().noneMatch(Listings.SessionSummary::attached),
+                    "java attaches no control client for wait_for_text, so nothing should read as attached: "
+                            + sessions);
+            waiting.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
 
     @Test
     void panesAreListedWithTheIdOtherToolsTake(Server server) {
@@ -478,5 +513,29 @@ final class ToolsAgainstTmuxTest {
         Shaping.Changed changed = Shaping.selectLayout(TestCalls.on(server, "window_id", windowId, "layout", "even-h"));
 
         assertEquals("EVEN_HORIZONTAL", changed.what());
+    }
+
+    /**
+     * JAVA2-11 (D5, D7): an explicit socket under a directory that does not exist is a path the
+     * operator chose, so tmux's own {@code error creating ...} is surfaced rather than invented -
+     * the same fix as JAVA2-9's {@code Server.newSession}, reached here through the MCP tool. Before
+     * it, this call reached an uncaught {@code ArrayIndexOutOfBoundsException}, which the answer
+     * dispatcher in {@code TmuxMcpServer} does not catch, so it left the tool boundary as a
+     * transport-level failure instead of an {@code isError} result the model can read and act on.
+     */
+    @Test
+    void createSessionUnderAMissingSocketDirectoryReportsTmuxsOwnReason(@TempDir Path directory) throws IOException {
+        ServerConfig missingDirectory = ServerConfig.builder()
+                .endpoint(ServerEndpoint.socketPath(directory.resolve("missing").resolve("s")))
+                .build();
+
+        try (Server broken = Server.open(missingDirectory)) {
+            LibTmuxException failure = assertThrows(
+                    LibTmuxException.class, () -> Operations.createSession(TestCalls.on(broken, "session_name", "x")));
+
+            assertTrue(
+                    String.valueOf(failure.getMessage()).contains("error creating"),
+                    "tmux's own reason, not a generic message: " + failure.getMessage());
+        }
     }
 }

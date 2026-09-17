@@ -18,6 +18,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.function.Predicate;
 
 /**
  * Reads a whole tmux server into one snapshot.
@@ -116,16 +117,40 @@ final class SnapshotCapture {
 
     /** Reads process identity and version together so neither can come from a different server. */
     Optional<ServerProcess> process() {
+        return identity(Server::serverAbsent);
+    }
+
+    /**
+     * As {@link #process}, except a live daemon this client cannot actually talk to is never folded
+     * into "no daemon" - used only by {@link Server#versionForCreation}, the one caller for which
+     * that distinction matters (JAVA2-8).
+     *
+     * <p>tmux reports both the same way from a client's side: "no server running"/"(No such file or
+     * directory)" for a socket nothing is listening on, and "server exited unexpectedly" for a
+     * daemon that refused this client's handshake - confirmed against the matrix, a 3.2a client
+     * against a 3.7c daemon on the same socket fails the second way, rc 1. {@link #process} still
+     * folds both into "no daemon" for every other caller, which asks "is there a server I can read
+     * from" and for which a daemon this client cannot use is no more usable than none at all.
+     */
+    Optional<ServerProcess> processForCreation() {
+        return identity(SnapshotCapture::daemonGenuinelyAbsent);
+    }
+
+    private Optional<ServerProcess> identity(Predicate<String> absent) {
         CommandResult result = server.cmd("display-message", "-p", PROCESS.template());
         if (!result.succeeded()) {
-            if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
+            if (result.stderr().stream().anyMatch(absent)) {
                 return Optional.empty();
             }
             throw new LibTmuxException("tmux display-message failed: " + String.join("; ", result.stderr()));
         }
         List<RowFormat.Row> reported = PROCESS.rows(result.stdout());
+        if (reported.isEmpty()) {
+            throw new LibTmuxException(
+                    server.config().binary() + " exited 0 and reported nothing for tmux's own identity; is it tmux?");
+        }
         if (reported.size() != 1) {
-            throw new LibTmuxException("tmux did not report exactly one server identity row");
+            throw new LibTmuxException("tmux did not report exactly one server identity row: " + reported);
         }
         RowFormat.Row row = reported.get(0);
         long pid = row.count("pid");
@@ -133,6 +158,10 @@ final class SnapshotCapture {
             throw new LibTmuxException("tmux reported a malformed server pid: " + pid);
         }
         return Optional.of(new ServerProcess(pid, TmuxVersion.parse(row.text("version"))));
+    }
+
+    private static boolean daemonGenuinelyAbsent(String message) {
+        return message.contains("no server running") || message.contains("(No such file or directory)");
     }
 
     /** The whole hierarchy in one invocation, fenced against the identity just read. */

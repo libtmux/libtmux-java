@@ -92,13 +92,31 @@ public final class Server implements AutoCloseable {
      * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Session newSession(SessionSpec spec) {
-        List<String> reported =
-                run(spec.argv("#{session_id}", this::versionForCreation)).stdout();
+        CommandResult result = run(spec.argv("#{session_id}", this::versionForCreation));
+        List<String> reported = result.stdout();
+        if (reported.isEmpty()) {
+            throw new LibTmuxException(sessionCreationFailureMessage(result));
+        }
         SessionId created = new SessionId(reported.get(0));
         ServerSnapshot fresh = snapshot();
         return fresh.session(created)
                 .map(session -> new Session(this, fresh, session))
                 .orElseThrow(() -> new ObjectDoesNotExistException("the session just created is already gone"));
+    }
+
+    /**
+     * tmux exits 0 even when nothing was created: an explicit {@code -S} under a directory that does
+     * not exist prints its own {@code error creating ...} and still returns success, and a binary
+     * that is not tmux at all can exit 0 with nothing on stdout the same way {@code run} cannot tell
+     * apart from a real session id. Reads tmux's own words when it spoke and names the configured
+     * binary when it did not, rather than letting an empty list reach {@code SessionId} and throw
+     * an unchecked collection exception with neither in it.
+     */
+    private String sessionCreationFailureMessage(CommandResult result) {
+        if (!result.stderr().isEmpty()) {
+            return "tmux new-session failed: " + String.join("; ", result.stderr());
+        }
+        return config.binary() + " exited 0 and reported no session id; is it tmux?";
     }
 
     /**
@@ -527,13 +545,19 @@ public final class Server implements AutoCloseable {
      * have been started by a different build than this client is invoking. Only when nothing answers
      * at all does this fall back to {@link #binaryVersion}, which asks the executable directly and
      * needs no server.
+     *
+     * <p>Reads {@link SnapshotCapture#processForCreation()} directly rather than going through
+     * {@link #version()}: a daemon this client is too old to talk to fails the identity probe the
+     * same way one that was never started does ("server exited unexpectedly", confirmed against the
+     * matrix), and {@link #version()}'s own {@link ServerNotRunningException} does not keep that
+     * distinction once raised. Falling back to {@code binaryVersion} for that case would report the
+     * configured binary's own version as though it were the daemon's — exactly the guarantee this
+     * method exists to keep (JAVA2-8).
      */
     private TmuxVersion versionForCreation() {
-        try {
-            return version();
-        } catch (ServerNotRunningException noDaemonYet) {
-            return binaryVersion();
-        }
+        return capture.processForCreation()
+                .map(SnapshotCapture.ServerProcess::version)
+                .orElseGet(this::binaryVersion);
     }
 
     /**
