@@ -146,13 +146,20 @@ public final class Pane {
      * <p>A dead pane is not necessarily a gone one: {@code remain-on-exit} keeps it around, still
      * listed, to be read. A pane with no {@code remain-on-exit} is simply removed once its process
      * exits — {@link #refresh()} on this handle then throws {@link ObjectDoesNotExistException}, and
-     * this method throws too, carrying tmux's own {@code can't find pane} rather than ever reporting
-     * one final "dead" for a pane that is not there to ask.
+     * this method throws too. Unlike every other command {@code Pane} sends, {@code display-message
+     * -t} does not error on a target it cannot resolve — it exits 0 with nothing on stdout — so a
+     * gone pane looks like a live one that answered nothing rather than like a failure. That empty
+     * read, and not a "can't find pane" from tmux, is what this method throws on: a real pane always
+     * answers {@code 0} or {@code 1} for this format, never nothing.
      *
-     * @throws LibTmuxException if this pane no longer exists
+     * @throws ObjectDoesNotExistException if the pane is gone from a server that still answers
      */
     public boolean dead() {
-        return "1".equals(expand("#{pane_dead}"));
+        String value = expand("#{pane_dead}");
+        if (value.isEmpty()) {
+            throw new ObjectDoesNotExistException("pane " + state.id() + " no longer exists");
+        }
+        return "1".equals(value);
     }
 
     /**

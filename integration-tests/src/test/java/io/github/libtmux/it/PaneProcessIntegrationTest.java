@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.TmuxVersion;
@@ -56,6 +57,22 @@ final class PaneProcessIntegrationTest {
         } else {
             assertTrue(kept.refresh().pid().isPresent(), "a released tmux keeps the exited process's stale pid");
         }
+    }
+
+    /**
+     * JAVA2-3: {@code display-message -t} does not error on a target it cannot resolve — unlike
+     * every other command {@code Pane} sends — so a fully gone pane (no {@code remain-on-exit})
+     * answered {@code #{pane_dead}} with an empty line rather than tmux's own "can't find pane",
+     * and {@code dead()} read that empty answer as {@code false} instead of throwing as its own
+     * doc promised.
+     */
+    @Test
+    void deadThrowsForAPaneThatIsWhollyGoneRatherThanReportingFalse(Server server) {
+        Pane pane = onlyPane(server).split();
+
+        pane.kill();
+
+        assertThrows(ObjectDoesNotExistException.class, pane::dead);
     }
 
     // -------------------------------------------------------------------------------- expanding
