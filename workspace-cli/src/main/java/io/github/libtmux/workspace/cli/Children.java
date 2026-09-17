@@ -52,11 +52,33 @@ final class Children {
 
     static Output run(Main.Context context, List<String> argv, Path directory, Reporter report, Duration timeout)
             throws IOException, InterruptedException {
-        return run(context, argv, directory, report, timeout, true);
+        return run(context, argv, directory, report, timeout, true, null);
+    }
+
+    /** Runs a child on an input's behalf, bracketing its output with script events. */
+    static Output script(
+            Main.Context context, List<String> argv, Path directory, Reporter report, Duration timeout, int inputIndex)
+            throws IOException, InterruptedException {
+        report.event("script-started", Documents.JSON.createObjectNode().put("input_index", inputIndex));
+        Output output = run(context, argv, directory, report, timeout, true, inputIndex);
+        report.event(
+                "script-completed",
+                Documents.JSON
+                        .createObjectNode()
+                        .put("input_index", inputIndex)
+                        .put("child_status", output.status())
+                        .put("truncated", output.truncated()));
+        return output;
     }
 
     private static Output run(
-            Main.Context context, List<String> argv, Path directory, Reporter report, Duration timeout, boolean events)
+            Main.Context context,
+            List<String> argv,
+            Path directory,
+            Reporter report,
+            Duration timeout,
+            boolean events,
+            @Nullable Integer inputIndex)
             throws IOException, InterruptedException {
         var command = new ArrayList<>(argv);
         command.set(0, executable(context, command.getFirst()));
@@ -71,8 +93,10 @@ final class Children {
         List<ProcessHandle> descendants = new ArrayList<>();
         boolean success = false;
         try {
-            Future<Capture> stdout = drains.submit(() -> capture(child.getInputStream(), "stdout", report, events));
-            Future<Capture> stderr = drains.submit(() -> capture(child.getErrorStream(), "stderr", report, events));
+            Future<Capture> stdout =
+                    drains.submit(() -> capture(child.getInputStream(), "stdout", report, events, inputIndex));
+            Future<Capture> stderr =
+                    drains.submit(() -> capture(child.getErrorStream(), "stderr", report, events, inputIndex));
             long deadline = System.nanoTime() + timeout.toNanos();
             while (!child.waitFor(25, TimeUnit.MILLISECONDS)) {
                 child.descendants()
@@ -165,7 +189,8 @@ final class Children {
         }
     }
 
-    private static Capture capture(InputStream input, String channel, Reporter report, boolean events)
+    private static Capture capture(
+            InputStream input, String channel, Reporter report, boolean events, @Nullable Integer inputIndex)
             throws IOException {
         StringBuilder retained = new StringBuilder();
         boolean truncated = false;
@@ -176,13 +201,14 @@ final class Children {
                 int keep = Math.min(count, LIMIT - retained.length());
                 retained.append(buffer, 0, keep);
                 truncated |= keep < count;
-                if (events)
-                    report.event(
-                            "script-output",
-                            Documents.JSON
-                                    .createObjectNode()
-                                    .put("stream", channel)
-                                    .put("text", chunk));
+                if (events) {
+                    ObjectNode record = Documents.JSON
+                            .createObjectNode()
+                            .put("stream", channel)
+                            .put("text", chunk);
+                    if (inputIndex != null) record.put("input_index", inputIndex);
+                    report.event("script-output", record);
+                }
             }
         }
         return new Capture(retained.toString(), truncated);
@@ -251,7 +277,8 @@ final class Children {
                     context.directory(),
                     report,
                     Duration.ofSeconds(5),
-                    false);
+                    false,
+                    null);
             if (version.status() != 0 || !version.stdout().strip().equals("1.74.0"))
                 throw new Main.Failure(
                         "python_runtime",

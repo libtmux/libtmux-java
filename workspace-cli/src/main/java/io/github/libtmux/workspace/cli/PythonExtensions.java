@@ -143,12 +143,13 @@ final class PythonExtensions {
                                     "Python extensions run through tmuxp 1.74.0; reported effects are observed topology"));
             effects.put("effects_unknown", true).put("changed", true);
             try {
-                Children.Output output = Children.run(
+                Children.Output output = Children.script(
                         context,
                         List.of(python, "-u", "-c", BUILD, request.toString()),
                         context.directory(),
                         report,
-                        Duration.ofHours(24));
+                        Duration.ofHours(24),
+                        effects.path("input_index").asInt());
                 effects.set("script_output", output.value());
                 if (output.status() != 0)
                     throw new Main.Failure(
