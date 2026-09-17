@@ -140,6 +140,7 @@ final class Execution {
                             .put("input_index", index)
                             .put("partial_effects", partial);
                     error.set("effects", effects);
+                    results.add(effects.deepCopy());
                     ObjectNode summary = summary(partial ? "partial" : "error", results);
                     summary.withArray("errors").add(error);
                     if (report.streaming()) report.event("failed", summary);
@@ -238,7 +239,10 @@ final class Execution {
             if (output.status() != 0) {
                 // The session this load created must not outlive its own failed setup; a
                 // borrowed or appended one is never this load's to remove.
-                if (bootstrap != null) session.kill();
+                if (bootstrap != null) {
+                    session.kill();
+                    effects.put("changed", false).put("owned_session", false).put("session_removed", true);
+                }
                 throw new Main.Failure("script_failed", 1, "before_script exited with " + output.status());
             }
         }

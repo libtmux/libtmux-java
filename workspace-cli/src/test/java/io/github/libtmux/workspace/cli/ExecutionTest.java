@@ -1309,6 +1309,11 @@ final class ExecutionTest {
                                 .path(0)
                                 .path("code")
                                 .asText());
+                var summary = new ObjectMapper().readTree(result.out());
+                var record = summary.path("results").path(0);
+                for (String field : java.util.List.of("input", "input_index", "session_id", "session_name", "reused"))
+                    assertFalse(record.path(field).isMissingNode(), field + " missing from " + result.out());
+                if (!append) assertEquals("error", summary.path("status").asText(), result.out());
                 if (append)
                     assertTrue(
                             server.sessions().stream()
