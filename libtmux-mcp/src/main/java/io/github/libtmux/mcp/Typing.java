@@ -34,6 +34,11 @@ final class Typing {
      * <p>Names by default rather than literal text, because that is the only thing this tool can do
      * that the others cannot. Text that must arrive exactly as written, brackets and all, is what
      * {@code literal} is for.
+     *
+     * <p>{@code literal} governs the keys named here, never {@code enter}: tmux's own {@code -l}
+     * treats every one of its arguments as literal text, so a caller sending {@code ["Enter"]} in a
+     * second, separate {@code literal:true} call types the word instead of pressing it (JAVA2-7) -
+     * the trap this flag exists to make unnecessary. {@code enter} always presses the key.
      */
     static Sent sendKeys(Call call) {
         Pane pane = Targets.pane(call.server(), call.string("pane_id"));
@@ -43,15 +48,20 @@ final class Typing {
                     "'keys' is empty; give the key names to send, such as [\"C-c\"] or [\"q\"]");
         }
         boolean literal = call.flag("literal", false);
-        return sendKeys(pane, keys, literal, PaneInputCohort.resolve(pane, call.caller()));
+        boolean enter = call.flag("enter", false);
+        return sendKeys(pane, keys, literal, enter, PaneInputCohort.resolve(pane, call.caller()));
     }
 
     static Sent sendKeys(Pane pane, List<String> keys, boolean literal) {
-        PaneInputCohort.Resolution cohort = PaneInputCohort.resolve(pane);
-        return sendKeys(pane, keys, literal, cohort);
+        return sendKeys(pane, keys, literal, false, PaneInputCohort.resolve(pane));
     }
 
     static Sent sendKeys(Pane pane, List<String> keys, boolean literal, PaneInputCohort.Resolution cohort) {
+        return sendKeys(pane, keys, literal, false, cohort);
+    }
+
+    static Sent sendKeys(
+            Pane pane, List<String> keys, boolean literal, boolean enter, PaneInputCohort.Resolution cohort) {
         try (PaneInputReservations.Lease lease = PaneInputReservations.keys(cohort, "send_keys")) {
             PaneInputCohort.Resolution fresh = PaneInputCohort.resolve(pane, cohort.caller());
             List<String> resolved = lease.requireSameKeys(fresh);
@@ -64,6 +74,12 @@ final class Typing {
                 resolved.forEach(id -> TypedEcho.record(id, typed));
             } else {
                 pane.sendKeys(keys);
+            }
+            if (enter) {
+                // A keypress, sent by name, inside the same reservation as the text above - nothing
+                // else can interleave between typing a line and submitting it, and this can never be
+                // the "-l typed the word Enter" trap because it never goes through sendLiteral.
+                pane.sendKeys(List.of("Enter"));
             }
             return new Sent(
                     pane.id().value(),

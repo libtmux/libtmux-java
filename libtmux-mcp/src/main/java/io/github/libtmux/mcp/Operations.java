@@ -376,7 +376,8 @@ final class Operations {
                 resolvedPaneIds = cohort.configuredKeyRecipientIds();
                 List<String> keys = strings(operation.get("keys"), "keys");
                 boolean literal = booleanValue(operation.get("literal"), false, "literal");
-                Typing.sendKeys(pane, keys, literal, cohort);
+                boolean enter = booleanValue(operation.get("enter"), false, "enter");
+                Typing.sendKeys(pane, keys, literal, enter, cohort);
                 results.add(values(
                         "index", index, "pane_id", paneId, "resolved_pane_ids", resolvedPaneIds, "success", true));
             } catch (RuntimeException failure) {

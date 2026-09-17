@@ -799,7 +799,12 @@ final class Catalog {
         List<Argument> keys = List.of(
                 paneId(),
                 strings("keys", "The key names or literal strings to send."),
-                flag("literal", "Send strings literally instead of as key names.", false));
+                flag("literal", "Send strings literally instead of as key names.", false),
+                flag(
+                        "enter",
+                        "Press Enter afterward, as a real keypress. Unlike a key named \"Enter\" sent under "
+                                + "literal:true, which types the four letters, this always submits.",
+                        false));
         tools.add(tool(
                 "send_keys",
                 "Send keys",
@@ -816,7 +821,8 @@ final class Catalog {
                 sinks(
                         input("pane_id", TMUX_LOOKUP),
                         input("keys", ToolSpec.InputSink.PANE_INPUT),
-                        input("literal", ToolSpec.InputSink.NONE)),
+                        input("literal", ToolSpec.InputSink.NONE),
+                        input("enter", ToolSpec.InputSink.PANE_INPUT)),
                 record(Typing.Sent.class, "note"),
                 Typing::sendKeys));
         tools.add(tool(
@@ -832,7 +838,8 @@ final class Catalog {
                 true,
                 true,
                 List.of(
-                        boundedObjects("operations", "Objects with pane_id, keys and optional literal fields.", 64),
+                        boundedObjects(
+                                "operations", "Objects with pane_id, keys and optional literal and enter fields.", 64),
                         optional("onError", "stop or continue; defaults to stop.")),
                 sinks(
                         input("operations", TMUX_LOOKUP, ToolSpec.InputSink.PANE_INPUT),

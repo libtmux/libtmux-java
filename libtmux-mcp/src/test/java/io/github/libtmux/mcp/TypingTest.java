@@ -65,6 +65,39 @@ final class TypingTest {
         assertTrue(await(() -> captureOf(server, pane).contains("-X-R-N")));
     }
 
+    /**
+     * JAVA2-7: before {@code enter}, the only way to type a line and press Enter was two calls -
+     * {@code literal:true} for the text, then a second call for {@code ["Enter"]} - and the natural
+     * spelling for that second call, {@code literal:true} again, types the word "Enter" instead of
+     * pressing it: tmux's own {@code -l} treats every one of its arguments as literal text. One call
+     * with {@code enter:true} sends a real keypress and cannot hit that trap, because it never goes
+     * through the literal path at all.
+     *
+     * <p>The command is {@code printf} with a format specifier rather than {@code echo}, so the
+     * marker this asserts on ({@code JAVA2-7-SUBMITTED}, with no {@code %s}) exists nowhere in the
+     * typed-but-unsubmitted line ({@code JAVA2-7-%s}) - only in real output. A test built on
+     * {@code echo <marker>} would pass whether or not Enter was ever pressed, since the marker is on
+     * screen the instant it is typed, submitted or not.
+     */
+    @Test
+    void enterSubmitsTypedTextInOneCallWithoutTypingTheWordEnter(Server server) throws Exception {
+        String pane = server.panes().getFirst().id().value();
+
+        Typing.Sent sent = Typing.sendKeys(TestCalls.on(
+                server,
+                "pane_id",
+                pane,
+                "keys",
+                List.of("printf 'JAVA2-7-%s\\n' SUBMITTED"),
+                "literal",
+                true,
+                "enter",
+                true));
+
+        assertEquals(1, sent.keys(), "the Enter keypress is not counted among the typed keys");
+        assertTrue(await(() -> captureOf(server, pane).contains("JAVA2-7-SUBMITTED")), "the command never ran");
+    }
+
     @Test
     void leadingOptionNamesReachEveryBatchRoute(Server server) throws Exception {
         var first = server.panes().getFirst();
@@ -83,6 +116,31 @@ final class TypingTest {
         assertTrue(await(() -> captureOf(server, first.id().value()).contains("-X")));
         assertTrue(await(() -> captureOf(server, second.id().value()).contains("-R")));
         assertTrue(await(() -> captureOf(server, third.id().value()).contains("-N")));
+    }
+
+    /**
+     * As above, through {@code send_keys_batch}'s per-operation {@code enter} field. Same {@code
+     * printf} technique: the marker asserted on exists only in real output, not in the typed line.
+     */
+    @Test
+    void enterSubmitsTypedTextInOneBatchOperation(Server server) throws Exception {
+        String pane = server.panes().getFirst().id().value();
+        Map<String, Object> operation = Map.of(
+                "pane_id",
+                pane,
+                "keys",
+                List.of("printf 'JAVA2-7-BATCH-%s\\n' SUBMITTED"),
+                "literal",
+                true,
+                "enter",
+                true);
+
+        Map<String, Object> batch =
+                map(Operations.sendKeysBatch(TestCalls.on(server, "operations", List.of(operation))));
+
+        assertEquals(1, batch.get("completed"));
+        assertTrue(rows(batch).stream().allMatch(row -> Boolean.TRUE.equals(row.get("success"))));
+        assertTrue(await(() -> captureOf(server, pane).contains("JAVA2-7-BATCH-SUBMITTED")), "the command never ran");
     }
 
     @Test
