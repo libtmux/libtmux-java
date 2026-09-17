@@ -694,7 +694,7 @@ final class MainTest {
                 saved.toString());
         assertEquals(0, save.code(), save.toString());
         assertEquals(value, new ObjectMapper().readTree(Files.readString(saved)));
-        // A missing start_directory is a warning, not a refusal (M2); this harness has no tmux on
+        // A missing start_directory is a warning, not a refusal; this harness has no tmux on
         // PATH, so the load still fails, but past workspace validation and for a different reason.
         Result load = invoke("load", saved.toString(), "-d", "--json");
         assertTrue(load.err().contains("start_directory_missing"), load.toString());
