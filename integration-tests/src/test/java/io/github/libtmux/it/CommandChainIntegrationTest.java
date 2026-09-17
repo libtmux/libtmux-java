@@ -6,13 +6,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerConfig;
+import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.batch.BatchResult;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.batch.OperationResult;
+import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.TmuxTransport;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -162,5 +168,50 @@ final class CommandChainIntegrationTest {
                 .run();
 
         assertTrue(result.succeeded(), result.toString());
+    }
+
+    /**
+     * {@code Window#layout()}'s own doc says its string "can be handed straight back to
+     * select-layout"; on tmux 3.8+ that string is JSON, and {@code arrange} shares {@link
+     * io.github.libtmux.Layouts#require(String, TmuxVersion)} with {@code Window#applyLayout}, which
+     * already handled it. Exercised against a fake daemon reporting each version rather than a real
+     * one, since the compatibility matrix this project tests against tops out at 3.7c and a JSON
+     * layout is refused there on shape alone — see {@code LayoutsTest} for the version-gated logic
+     * itself; this pins the real {@link Server#chain()} call site to it.
+     */
+    @Test
+    void arrangeAcceptsAJsonLayoutOnlyFromTheVersionThatWritesIt() {
+        String json = "{\"V\":2,\"L\":{\"t\":\"v\",\"w\":80,\"h\":24,\"i\":\"0\"}}";
+
+        try (Server tooOld = fakeServer("3.7c")) {
+            assertThrows(
+                    UnsupportedTmuxVersionException.class, () -> tooOld.chain().arrange(json));
+        }
+        try (Server current = fakeServer("3.8")) {
+            // Does not throw: the chain accepts it exactly as Window#applyLayout already did.
+            current.chain().arrange(json);
+        }
+    }
+
+    /** A server that answers its own identity without a real tmux process behind it. */
+    private static Server fakeServer(String version) {
+        String separator = RowFormat.of("field").separator();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                if (request.commands().get(0).get(0).equals("display-message")) {
+                    return new CommandResult(0, List.of(String.join(separator, "4242", version)), List.of());
+                }
+                return new CommandResult(0, List.of(), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+        return Server.using(
+                ServerConfig.builder()
+                        .endpoint(ServerEndpoint.namedSocket("command-chain-test"))
+                        .build(),
+                transport);
     }
 }

@@ -465,4 +465,18 @@ final class ToolsAgainstTmuxTest {
         assertFalse(global.variables().containsKey("LIBTMUX_JAVA_REMOVED"));
         assertFalse(global.variables().keySet().stream().anyMatch(key -> key.startsWith("-")));
     }
+
+    /**
+     * {@code layout_set_lookup} is a prefix match, so {@code even-h} resolves tmux's own way on
+     * every release. The tool used to look a layout up by exact name only, refusing a prefix real
+     * tmux accepts.
+     */
+    @Test
+    void selectLayoutAcceptsAUniquePresetPrefix(Server server) {
+        String windowId = server.sessions().get(0).windows().get(0).id().value();
+
+        Shaping.Changed changed = Shaping.selectLayout(TestCalls.on(server, "window_id", windowId, "layout", "even-h"));
+
+        assertEquals("EVEN_HORIZONTAL", changed.what());
+    }
 }

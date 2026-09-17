@@ -46,47 +46,116 @@ public final class Layouts {
     /**
      * Returns the layout unchanged, having checked tmux will recognise it.
      *
-     * <p>Only the classic checksummed form, not JSON: this overload takes no running version to
-     * gate a JSON shape against. Callers that have one use {@link #require(String, TmuxVersion)},
-     * which also refuses a built-in name older than the running release; nothing exercises a
-     * workspace file or a chain naming a JSON layout, only {@link Window#applyLayout}, where
-     * {@link #requireSerialized} covers it.
+     * <p>Accepts the classic checksummed form, a JSON layout (by shape only — a running version is
+     * needed to say whether this server could have written it, which {@link #require(String,
+     * TmuxVersion)} does), a built-in name, or an unambiguous prefix of exactly one built-in name
+     * ({@code layout_set_lookup} is a prefix match, so {@code tile} and {@code even-h} apply on
+     * every tmux release). Ambiguity is judged against every name this library knows, not only the
+     * ones the eventual server will have — the version to narrow that with is not available here.
      *
      * @throws IllegalArgumentException if tmux would not recognise the name, which on some versions
      *     is not a recoverable error
      */
     public static String require(String layout) {
-        if (NAMED.contains(layout) || isSerialized(layout)) {
+        if (isSerialized(layout) || isJsonShaped(layout)) {
             return layout;
         }
-        throw new IllegalArgumentException(
-                "not a tmux layout: '" + layout + "'; expected one of " + NAMED + " or a serialized layout");
+        List<Layout> candidates = resolve(layout, List.of(Layout.values()));
+        if (candidates.size() == 1) {
+            return layout;
+        }
+        if (candidates.size() > 1) {
+            // tmux does know this prefix - a narrower running version might make it unique, but
+            // nothing here says it does not know it at all, which is what "not a tmux layout" claims.
+            throw ambiguous(layout, candidates);
+        }
+        throw unknown(layout);
     }
 
     /**
-     * Refuses a layout tmux would not recognise, and a built-in name the running tmux predates.
+     * Refuses a layout tmux would not recognise, and a built-in name or JSON layout the running
+     * tmux predates.
      *
      * <p>An unknown name reaches {@code layout_parse} exactly as a malformed string does, so a
      * mirrored preset on a release older than 3.5 ends the server on 3.3a rather than being
      * refused. The version is read lazily, because a chain is built before it runs.
      *
+     * <p>A prefix is resolved against only the names {@code running} actually has: {@code
+     * layout_set_lookup} is compiled from a fixed table, so {@code main-h} is unambiguous on a
+     * release before 3.5 (no mirrored variant exists to collide with) and ambiguous from 3.5 on —
+     * confirmed against the matrix. Resolving against every name this library knows regardless of
+     * version would refuse a prefix the running tmux itself accepts.
+     *
      * @throws IllegalArgumentException if tmux would not recognise the layout
-     * @throws UnsupportedTmuxVersionException if the name arrived after this release
+     * @throws UnsupportedTmuxVersionException if the name or the JSON format arrived after this
+     *     release
      */
     public static String require(String layout, TmuxVersion running) {
-        String checked = require(layout);
-        builtIn(checked).ifPresent(named -> named.requireSupported(running));
-        return checked;
+        if (isJsonShaped(layout)) {
+            if (!running.atLeast(JSON_LAYOUT_SINCE)) {
+                throw new UnsupportedTmuxVersionException("a JSON layout", JSON_LAYOUT_SINCE, running);
+            }
+            return layout;
+        }
+        if (isSerialized(layout)) {
+            return layout;
+        }
+        List<Layout> candidates = resolve(layout, supported(running));
+        if (candidates.size() == 1) {
+            candidates.getFirst().requireSupported(running);
+            return layout;
+        }
+        if (candidates.size() > 1) {
+            throw ambiguous(layout, candidates);
+        }
+        throw unknown(layout);
     }
 
-    /** The built-in layout a name denotes, if it denotes one. */
-    static Optional<Layout> builtIn(String layout) {
+    /**
+     * The built-in layout a name or an unambiguous prefix of one denotes, resolved against what
+     * {@code running} actually supports — the same resolution {@link #require(String, TmuxVersion)}
+     * applies, exposed so a caller that must choose between the enum path and a raw string (a
+     * workspace file's own dispatch) makes the same choice the guard just validated.
+     */
+    public static Optional<Layout> builtIn(String layout, TmuxVersion running) {
+        List<Layout> candidates = resolve(layout, supported(running));
+        return candidates.size() == 1 ? Optional.of(candidates.getFirst()) : Optional.empty();
+    }
+
+    private static List<Layout> supported(TmuxVersion running) {
+        return Arrays.stream(Layout.values())
+                .filter(candidate -> running.atLeast(candidate.since()))
+                .toList();
+    }
+
+    /** An exact match against every name this library knows, or else an unambiguous prefix of one in {@code pool}. */
+    private static List<Layout> resolve(String layout, List<Layout> pool) {
         for (Layout candidate : Layout.values()) {
             if (candidate.tmuxName().equals(layout)) {
-                return Optional.of(candidate);
+                return List.of(candidate);
             }
         }
-        return Optional.empty();
+        return prefixed(layout, pool);
+    }
+
+    /** Every candidate {@code layout} is a prefix of. Empty text prefixes everything, so it is refused up front. */
+    private static List<Layout> prefixed(String layout, List<Layout> candidates) {
+        if (layout.isEmpty()) {
+            return List.of();
+        }
+        return candidates.stream()
+                .filter(candidate -> candidate.tmuxName().startsWith(layout))
+                .toList();
+    }
+
+    private static IllegalArgumentException ambiguous(String layout, List<Layout> candidates) {
+        return new IllegalArgumentException("ambiguous layout prefix: '" + layout + "'; matches "
+                + candidates.stream().map(Layout::tmuxName).toList());
+    }
+
+    private static IllegalArgumentException unknown(String layout) {
+        return new IllegalArgumentException(
+                "not a tmux layout: '" + layout + "'; expected one of " + NAMED + " or a serialized layout");
     }
 
     /**

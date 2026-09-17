@@ -351,6 +351,65 @@ final class WorkspaceBuilderTest {
         assertFalse(effected.get(), "version preflight must happen before new-session");
     }
 
+    /**
+     * {@code Window#layout()}'s own doc promises its string round-trips through {@code
+     * select-layout}; on 3.8+ that string is JSON, and {@code WorkspaceApplier}'s validation
+     * ({@code Layouts.require(value, server.version())}, {@code WorkspaceApplier.java:48}) had no
+     * JSON branch at all, so this refused every JSON layout with the generic "not a tmux layout"
+     * message regardless of version rather than gating it the way {@code Window#applyLayout}
+     * already did.
+     */
+    @Test
+    void aJsonLayoutFromAnOldServerIsRefusedForItsVersionNotAsAnUnknownName() {
+        AtomicBoolean effected = new AtomicBoolean();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                if (request.commands().get(0).get(0).equals("display-message")) {
+                    return new CommandResult(
+                            0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.4")), List.of());
+                }
+                effected.set(true);
+                return new CommandResult(0, List.of(), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+        Workspace workspace = new Workspace(
+                "portable",
+                List.of(new WindowSpec(
+                        "one",
+                        Optional.of("{\"V\":2,\"L\":{\"t\":\"v\",\"w\":80,\"h\":24,\"i\":\"0\"}}"),
+                        List.of(new PaneSpec(List.of())))));
+
+        try (Server old = Server.using(testConfig(), transport)) {
+            assertThrows(UnsupportedTmuxVersionException.class, () -> WorkspaceBuilder.build(old, workspace));
+        }
+        assertFalse(effected.get(), "version preflight must happen before new-session");
+    }
+
+    /**
+     * {@code WorkspaceApplier}'s own dispatch used to look a layout up by an exact name only
+     * ({@code builtIn(String)}, since removed), so a prefix that {@code validate} had just accepted
+     * fell through to {@code Window#applyLayout}, which refuses anything that is not the classic
+     * checksummed form or JSON — refusing a layout the same file's own validation had let through.
+     */
+    @Test
+    void aUniqueLayoutPrefixFromAWorkspaceFileIsAppliedNotRefused(Server server) {
+        Session built = WorkspaceBuilder.build(server, WorkspaceBuilder.parse("""
+                        session_name: prefixed
+                        windows:
+                          - window_name: one
+                            layout: even-h
+                            panes:
+                              - echo one
+                              - echo two
+                        """));
+
+        assertEquals(2, built.windows().get(0).panes().size());
+    }
+
     @Test
     void anUncertainCreationStillTargetsItsUniqueStagingSessionForCleanup() {
         AtomicReference<String> staged = new AtomicReference<>();

@@ -1,6 +1,7 @@
 package io.github.libtmux.mcp;
 
 import io.github.libtmux.Layout;
+import io.github.libtmux.Layouts;
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
@@ -130,10 +131,15 @@ final class Shaping {
         return new Changed("window", target, "active", "A person attached to this session now sees it.");
     }
 
+    /**
+     * A name or an unambiguous prefix of one tmux would resolve — {@code layout_set_lookup} is a
+     * prefix match, so {@code tile} and {@code even-h} apply on every release just as the full name
+     * does.
+     */
     static Changed selectLayout(Call call) {
         Window window = Targets.window(call.server(), call.string("window_id"));
         String asked = call.string("layout");
-        Layout layout = layoutNamed(asked)
+        Layout layout = Layouts.builtIn(asked, window.server().version())
                 .orElseThrow(() ->
                         new IllegalArgumentException("'" + asked + "' is not a layout; use one of " + layoutNames()));
         window.selectLayout(layout);
@@ -248,14 +254,6 @@ final class Shaping {
                 + ", which this MCP server is running in, so ending it cuts this conversation off from tmux "
                 + "— every later tmux call fails, including the ones that would say why. " + instead
                 + " Pass confirm_self=true only if disconnecting yourself is the actual goal.";
-    }
-
-    /** tmux names a layout with hyphens; the enum names it with underscores. */
-    static Optional<Layout> layoutNamed(String name) {
-        String wanted = name.toUpperCase(Locale.ROOT).replace('-', '_');
-        return Arrays.stream(Layout.values())
-                .filter(candidate -> candidate.name().equals(wanted))
-                .findFirst();
     }
 
     static List<String> layoutNames() {
