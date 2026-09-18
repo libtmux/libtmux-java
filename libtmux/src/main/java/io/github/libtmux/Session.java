@@ -209,7 +209,7 @@ public final class Session {
         Objects.requireNonNull(format, "format");
         List<String> reported = server.run(
                         snapshot,
-                        List.of("display-message", "-p", "-t", state.id().value(), format))
+                        List.of("display-message", "-p", "-t", state.id().value(), "--", format))
                 .stdout();
         return String.join("\n", reported);
     }
@@ -221,7 +221,7 @@ public final class Session {
      */
     @CheckReturnValue
     public Session rename(String name) {
-        server.run(snapshot, List.of("rename-session", "-t", state.id().value(), TmuxFormats.literal(name)));
+        server.run(snapshot, List.of("rename-session", "-t", state.id().value(), "--", TmuxFormats.literal(name)));
         return refresh();
     }
 

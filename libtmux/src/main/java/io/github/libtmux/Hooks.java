@@ -58,17 +58,17 @@ public final class Hooks {
      * command joins the first.
      */
     public void set(String event, String command) {
-        run(argv("set-hook", List.of(event, command)));
+        run(argv("set-hook", List.of("--", event, command)));
     }
 
     /** Binds another command to an event, after whatever is already bound to it. */
     public void append(String event, String command) {
-        run(argv("set-hook", List.of("-a", event, command)));
+        run(argv("set-hook", List.of("-a", "--", event, command)));
     }
 
     /** Removes everything bound to an event at this scope. */
     public void unset(String event) {
-        run(argv("set-hook", List.of("-u", event)));
+        run(argv("set-hook", List.of("-u", "--", event)));
     }
 
     /**
@@ -78,7 +78,7 @@ public final class Hooks {
      * and binds nothing.
      */
     public void run(String event) {
-        run(argv("set-hook", List.of("-R", event)));
+        run(argv("set-hook", List.of("-R", "--", event)));
     }
 
     /**

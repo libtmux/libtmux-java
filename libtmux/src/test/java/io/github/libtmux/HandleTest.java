@@ -206,7 +206,7 @@ final class HandleTest {
 
             secondLink.expand("#{window_index}");
             assertEquals(
-                    CommandStrings.stringify(List.of("display-message", "-p", "-t", "$1:3", "#{window_index}")),
+                    CommandStrings.stringify(List.of("display-message", "-p", "-t", "$1:3", "--", "#{window_index}")),
                     last(transport));
 
             secondLink.unlink();

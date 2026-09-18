@@ -34,7 +34,7 @@ public final class CommandChain {
 
     /** Renames the current window. */
     public CommandChain renameWindow(String name) {
-        return then("rename-window", name);
+        return then("rename-window", "--", name);
     }
 
     /**

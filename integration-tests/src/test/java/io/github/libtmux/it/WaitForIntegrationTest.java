@@ -106,6 +106,11 @@ final class WaitForIntegrationTest {
     @Test
     void aPaneWaitSeesTextThePaneProduces(Server server) throws InterruptedException {
         Pane pane = server.sessions().getFirst().windows().getFirst().panes().getFirst();
+        // Wait for the shell to draw something before typing at it. Until awaitText stopped
+        // matching a command's own echo, this passed without the command ever running — the echo
+        // carried the text — so keys sent before the shell was listening cost nothing. Now the
+        // output has to arrive, and keys sent into a shell that has not started never produce any.
+        pane.await(drawn -> drawn.capture().stream().anyMatch(line -> !line.isBlank()), Duration.ofSeconds(10));
 
         pane.sendLine("echo waited-for-this");
 

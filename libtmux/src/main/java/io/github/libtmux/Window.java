@@ -161,7 +161,7 @@ public final class Window {
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
         List<String> reported = server.run(
-                        snapshot, state.context(), List.of("display-message", "-p", "-t", linkTarget(), format))
+                        snapshot, state.context(), List.of("display-message", "-p", "-t", linkTarget(), "--", format))
                 .stdout();
         return String.join("\n", reported);
     }
@@ -177,7 +177,7 @@ public final class Window {
      */
     @CheckReturnValue
     public Window rename(String name) {
-        server.run(snapshot, List.of("rename-window", "-t", target(), TmuxFormats.literal(name)));
+        server.run(snapshot, List.of("rename-window", "-t", target(), "--", TmuxFormats.literal(name)));
         return refresh();
     }
 

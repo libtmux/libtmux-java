@@ -34,9 +34,15 @@ public final class Channel {
         return name;
     }
 
-    /** Signals the channel, waking one waiter, or being remembered until something waits. */
+    /**
+     * Signals the channel, waking one waiter, or being remembered until something waits.
+     *
+     * <p>{@code -S} takes no argument of its own — it says which of wait-for's three modes this is —
+     * so the name that follows is a positional and needs the options ended before it, exactly as
+     * the wait does.
+     */
     public void signal() {
-        server.run(java.util.List.of("wait-for", "-S", name));
+        server.run(java.util.List.of("wait-for", "-S", "--", name));
     }
 
     /**

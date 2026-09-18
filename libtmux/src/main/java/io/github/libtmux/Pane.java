@@ -545,7 +545,7 @@ public final class Pane {
      * <p>Separate from {@link #sendLine} rather than a boolean, so a call site says which it means.
      */
     public void send(String keys) {
-        server.run(snapshot, List.of("send-keys", "-t", state.id().value(), keys));
+        server.run(snapshot, List.of("send-keys", "-t", state.id().value(), "--", keys));
     }
 
     /**
@@ -627,7 +627,7 @@ public final class Pane {
         Objects.requireNonNull(format, "format");
         List<String> reported = server.run(
                         snapshot,
-                        List.of("display-message", "-p", "-t", state.id().value(), format))
+                        List.of("display-message", "-p", "-t", state.id().value(), "--", format))
                 .stdout();
         return String.join("\n", reported);
     }
@@ -668,7 +668,7 @@ public final class Pane {
             throw new IllegalArgumentException("command is empty");
         }
         List<String> argv =
-                new ArrayList<>(List.of("respawn-pane", "-k", "-t", state.id().value()));
+                new ArrayList<>(List.of("respawn-pane", "-k", "-t", state.id().value(), "--"));
         argv.addAll(List.of(command));
         server.run(snapshot, argv);
     }
@@ -715,8 +715,8 @@ public final class Pane {
                 new WindowId(fields.get(1)));
         if (server.version(snapshot).equals(BREAK_PANE_NAMING_BROKEN)) {
             // 3.7 took the name and ignored it, so the caller's choice is applied afterwards.
-            wanted.ifPresent(name ->
-                    server.run(snapshot, List.of("rename-window", "-t", fields.get(1), TmuxFormats.literal(name))));
+            wanted.ifPresent(name -> server.run(
+                    snapshot, List.of("rename-window", "-t", fields.get(1), "--", TmuxFormats.literal(name))));
         }
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.window(created)

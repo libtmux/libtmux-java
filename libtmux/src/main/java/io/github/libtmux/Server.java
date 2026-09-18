@@ -276,7 +276,8 @@ public final class Server implements AutoCloseable {
      */
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
-        List<String> reported = run(List.of("display-message", "-p", format)).stdout();
+        List<String> reported =
+                run(List.of("display-message", "-p", "--", format)).stdout();
         return String.join("\n", reported);
     }
 
@@ -291,6 +292,12 @@ public final class Server implements AutoCloseable {
      * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
      * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
      * mean it to be expanded.
+     *
+     * <p>Deliberately without the {@code --} every other caller value here gets. tmux expands
+     * {@code #(...)} in this command — which is what {@link TmuxFormats#literal} exists to prevent
+     * — and measured on 3.7c the terminator stops that expansion while 3.2a expands either way.
+     * Ending the options would change what this method means, differently by release. A shell
+     * command beginning with a dash is refused by tmux instead; spell it {@code ./-thing}.
      */
     public void runShell(String command) {
         Objects.requireNonNull(command, "command");
@@ -309,6 +316,12 @@ public final class Server implements AutoCloseable {
      * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
      * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
      * mean it to be expanded.
+     *
+     * <p>Deliberately without the {@code --} every other caller value here gets. tmux expands
+     * {@code #(...)} in this command — which is what {@link TmuxFormats#literal} exists to prevent
+     * — and measured on 3.7c the terminator stops that expansion while 3.2a expands either way.
+     * Ending the options would change what this method means, differently by release. A shell
+     * command beginning with a dash is refused by tmux instead; spell it {@code ./-thing}.
      */
     public List<String> runShellCapturing(String command) {
         Objects.requireNonNull(command, "command");
@@ -342,7 +355,7 @@ public final class Server implements AutoCloseable {
     public void ifShell(String condition, String whenTrue) {
         Objects.requireNonNull(condition, "condition");
         Objects.requireNonNull(whenTrue, "whenTrue");
-        run(List.of("if-shell", condition, whenTrue));
+        run(List.of("if-shell", "--", condition, whenTrue));
     }
 
     /**
@@ -356,7 +369,7 @@ public final class Server implements AutoCloseable {
         Objects.requireNonNull(condition, "condition");
         Objects.requireNonNull(whenTrue, "whenTrue");
         Objects.requireNonNull(whenFalse, "whenFalse");
-        run(List.of("if-shell", condition, whenTrue, whenFalse));
+        run(List.of("if-shell", "--", condition, whenTrue, whenFalse));
     }
 
     /** Locks every client attached to this server. */
@@ -419,14 +432,14 @@ public final class Server implements AutoCloseable {
 
     /** Binds a key to a tmux command. */
     public void bindKey(String key, List<String> command) {
-        List<String> argv = new ArrayList<>(List.of("bind-key", key));
+        List<String> argv = new ArrayList<>(List.of("bind-key", "--", key));
         argv.addAll(command);
         run(argv);
     }
 
     /** Removes a key binding. */
     public void unbindKey(String key) {
-        run(List.of("unbind-key", key));
+        run(List.of("unbind-key", "--", key));
     }
 
     /** Every key binding, as tmux prints them. */
@@ -472,7 +485,7 @@ public final class Server implements AutoCloseable {
 
     WakeReason awaitChannel(String channel, Duration timeout, boolean reserveSignalCapacity) {
         try {
-            CommandRequest request = request(List.of("wait-for", channel), timeout);
+            CommandRequest request = request(List.of("wait-for", "--", channel), timeout);
             if (reserveSignalCapacity) {
                 transport.executeWaiting(request);
             } else {
@@ -499,7 +512,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if tmux could not read or run it
      */
     public void sourceFile(Path file) {
-        run(List.of("source-file", file.toString()));
+        run(List.of("source-file", "--", file.toString()));
     }
 
     /** The server-wide options, the ones tmux keeps once per server. */
