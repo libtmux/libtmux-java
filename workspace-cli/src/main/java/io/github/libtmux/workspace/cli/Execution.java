@@ -573,9 +573,30 @@ final class Execution {
 
     /** The pane this process runs in, already checked for its sigil by the inherited context. */
     private static PaneId currentPane(Main.Context context) {
-        return io.github.libtmux.TmuxEnvironment.of(context.environment())
-                .flatMap(io.github.libtmux.TmuxEnvironment::pane)
+        return inheritedContext(context)
+                .pane()
                 .orElseThrow(() -> Main.usage("TMUX_PANE does not resolve on the selected server"));
+    }
+
+    /**
+     * What tmux told this process about where it is running.
+     *
+     * <p>The two variables are diagnosed apart: a {@code TMUX} that does not parse is neither a
+     * different server nor a missing terminal, and a {@code TMUX_PANE} that is not an id is neither
+     * of those either.
+     */
+    private static io.github.libtmux.TmuxEnvironment inheritedContext(Main.Context context) {
+        Map<String, String> environment = context.environment();
+        String pane = environment.getOrDefault("TMUX_PANE", "");
+        if (!pane.isEmpty())
+            try {
+                PaneId unused = new PaneId(pane);
+            } catch (IllegalArgumentException notAnId) {
+                throw Main.usage("TMUX_PANE is not a tmux pane id such as %0: " + pane);
+            }
+        return io.github.libtmux.TmuxEnvironment.of(environment)
+                .orElseThrow(() -> Main.usage(
+                        "TMUX is not shaped socket,pid,session: " + environment.getOrDefault("TMUX", "(unset)")));
     }
 
     private static void authenticate(Main.Context context, Server selected) {
@@ -584,14 +605,20 @@ final class Execution {
     }
 
     private static boolean sameDaemon(Main.Context context, Server selected) {
-        var inherited = io.github.libtmux.TmuxEnvironment.of(context.environment())
-                .orElseThrow(() -> Main.usage("append or switch requires valid inherited TMUX context"));
+        var inherited = inheritedContext(context);
         try (Server original = Server.open(selected.config().toBuilder()
                 .endpoint(ServerEndpoint.socketPath(inherited.socket()))
                 .build())) {
-            String identity = original.expand("#{pid}:#{start_time}");
+            String identity;
+            try {
+                identity = original.expand("#{pid}:#{start_time}");
+            } catch (io.github.libtmux.LibTmuxException unreachable) {
+                throw Main.usage(
+                        "the tmux server TMUX names is not running: " + inherited.socket() + "; load detached with -d");
+            }
             if (!identity.startsWith(inherited.serverPid() + ":"))
-                throw Main.usage("inherited tmux daemon identity is stale");
+                throw Main.usage(
+                        "the tmux server TMUX names has restarted since this shell started; load detached with -d");
             return selected.isAlive() && identity.equals(selected.expand("#{pid}:#{start_time}"));
         }
     }
@@ -602,20 +629,41 @@ final class Execution {
      */
     private record AttachTarget(boolean insideTmux, Optional<io.github.libtmux.Client> client) {}
 
-    /** Decided before anything is built: a different server than {@code $TMUX} names is refused here. */
+    /**
+     * Decided before anything is built: every way the invoking context can fail to carry this load
+     * is refused here, so a context that cannot be honored never leaves a session behind.
+     */
     private static AttachTarget attachTarget(Main.Context context, Server selected) {
         if (!context.environment().containsKey("TMUX")) return new AttachTarget(false, Optional.empty());
         if (!sameDaemon(context, selected))
             throw Main.usage(
                     "the current tmux pane's server is not the server selected to load onto; load detached with -d");
-        Optional<PaneId> pane = io.github.libtmux.TmuxEnvironment.of(context.environment())
-                .flatMap(io.github.libtmux.TmuxEnvironment::pane);
+        Optional<PaneId> pane = inheritedContext(context).pane();
+        // A run-shell key binding sets TMUX but no TMUX_PANE, and switches whichever client tmux
+        // considers current. There is no pane to check in that shape.
         if (pane.isEmpty()) return new AttachTarget(true, Optional.empty());
-        var clients = selected.clients().stream()
+        PaneId invoking = pane.orElseThrow();
+        Pane current = selected.panes().stream()
+                .filter(candidate -> candidate.id().equals(invoking))
+                .findFirst()
+                .orElseThrow(() -> Main.usage("TMUX_PANE names a pane this tmux server does not have: "
+                        + invoking.value() + "; load detached with -d"));
+        if (current.expand("#{pane_tty}").isBlank())
+            throw Main.usage(
+                    "the pane TMUX_PANE names has no terminal: " + invoking.value() + "; load detached with -d");
+        var host = current.window().session().id();
+        var attached = selected.clients().stream()
                 .filter(client -> client.attachment().isPresent()
-                        && client.attachment().orElseThrow().activePane().id().equals(pane.orElseThrow()))
+                        && client.attachment().orElseThrow().session().id().equals(host))
                 .toList();
-        return new AttachTarget(true, clients.size() == 1 ? Optional.of(clients.getFirst()) : Optional.empty());
+        if (attached.isEmpty())
+            throw Main.usage("no tmux client is attached to the session the current pane belongs to; "
+                    + "load detached with -d");
+        var exact = attached.stream()
+                .filter(client ->
+                        client.attachment().orElseThrow().activePane().id().equals(invoking))
+                .toList();
+        return new AttachTarget(true, exact.size() == 1 ? Optional.of(exact.getFirst()) : Optional.empty());
     }
 
     /** A single-character reply, lower-cased, or {@code fallback} for a blank line. */
@@ -646,7 +694,15 @@ final class Execution {
             } else {
                 // The invoking pane could not be identified (a run-shell binding sets TMUX but not
                 // TMUX_PANE): switch with no -c and let tmux pick its own most recent client.
-                server.run(List.of("switch-client", "-t", session.id().value()));
+                try {
+                    server.run(List.of("switch-client", "-t", session.id().value()));
+                } catch (io.github.libtmux.LibTmuxException unswitchable) {
+                    throw new Main.Failure(
+                            "tmux_failed",
+                            1,
+                            "the workspace loaded, but tmux had no client to move to it; attach with: tmux attach -t "
+                                    + session.name());
+                }
             }
             return;
         }

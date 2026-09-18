@@ -1699,6 +1699,43 @@ final class ExecutionTest {
                 server.panes().getFirst().id().value());
     }
 
+    /**
+     * Every way the invoking context can fail to carry an attached load is refused before the
+     * session is built, so a refusal never leaves a workspace running that nobody asked to keep.
+     */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {"unparsable-tmux", "not-a-pane-id", "pane-absent", "stale-server", "server-gone", "no-client"})
+    void anUnusableInvokingContextBuildsNothing(String broken) throws Exception {
+        Path source = directory.resolve("context.yaml");
+        Path socket = directory.resolve("context-socket");
+        Files.writeString(source, "session_name: probe\nwindows:\n  - panes: [null]\n");
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("host");
+                var environment = new HashMap<>(inherited(server, socket));
+                switch (broken) {
+                    case "unparsable-tmux" -> environment.put("TMUX", socket.toString());
+                    case "not-a-pane-id" -> environment.put("TMUX_PANE", "pane-one");
+                    case "pane-absent" -> environment.put("TMUX_PANE", "%9999");
+                    case "stale-server" -> environment.put("TMUX", socket + ",999999,0");
+                    case "server-gone" -> environment.put("TMUX", directory.resolve("gone-socket") + ",1,0");
+                    default -> {
+                        /* A detached server has the pane but no client on its session. */
+                    }
+                }
+                Result result = invoke(environment, "load", source.toString(), "-S", socket.toString());
+                assertEquals(2, result.code(), result.toString());
+                assertEquals(1, server.sessions().size(), result.toString());
+                assertFalse(server.hasSession("probe"), result.toString());
+                assertFalse(result.err().contains("error connecting"), result.err());
+                assertFalse(result.err().contains("no current client"), result.err());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** -d beats --append: it builds a new detached session rather than refusing or appending. */
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
