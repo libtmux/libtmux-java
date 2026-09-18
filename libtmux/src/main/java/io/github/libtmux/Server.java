@@ -47,12 +47,29 @@ public final class Server implements AutoCloseable {
     private final ServerIdentity identity;
     private final SnapshotCapture capture;
 
+    /**
+     * What this library last typed into each pane, so a wait can tell the pane's answer from its
+     * own question. Shared with every server derived from this one, because {@link Pane#awaitText}
+     * reads through a derived server and has to see what the original typed.
+     */
+    private final PaneEcho echo;
+
     private Server(ServerConfig config, TmuxTransport transport, boolean owned) {
+        this(config, transport, owned, new PaneEcho());
+    }
+
+    private Server(ServerConfig config, TmuxTransport transport, boolean owned, PaneEcho echo) {
         this.config = config;
         this.transport = transport;
         this.owned = owned;
         this.identity = ServerIdentity.of(transport.realm(), config.endpoint());
         this.capture = new SnapshotCapture(this);
+        this.echo = echo;
+    }
+
+    /** What this library last typed into each of this server's panes. */
+    PaneEcho echo() {
+        return echo;
     }
 
     /**
@@ -642,7 +659,7 @@ public final class Server implements AutoCloseable {
      * own, which a wait polling every fifty milliseconds would multiply.
      */
     Server within(Duration timeout) {
-        return new Server(config.toBuilder().defaultTimeout(timeout).build(), transport, false);
+        return new Server(config.toBuilder().defaultTimeout(timeout).build(), transport, false, echo);
     }
 
     /** A builder holding the documented defaults. */

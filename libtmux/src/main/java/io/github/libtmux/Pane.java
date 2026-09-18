@@ -375,6 +375,20 @@ public final class Pane {
     }
 
     /**
+     * What the pane has shown that this library did not type, as whole lines.
+     *
+     * <p>What a wait has to read, and different from {@link #capture()} twice over. Wrapped rows are
+     * rejoined, because a terminal breaks a long line wherever the pane happens to end and text
+     * split across that break is in no single row — a wait watching for it would never see it while
+     * it sits in plain view. And an echo of what this library just typed is taken out, because a
+     * terminal shows the caller's own command back and a wait for something that command's text
+     * contains would otherwise be answered by the question.
+     */
+    private List<String> shown() {
+        return server.echo().withoutEcho(capture(CaptureSpec.Builder::joiningWrappedLines), state.id());
+    }
+
+    /**
      * Waits until this pane's text contains something, and says why the wait ended.
      *
      * <p><strong>Reach for this last.</strong> It reads the screen on a timer, which is a heuristic
@@ -410,7 +424,7 @@ public final class Pane {
      */
     public WakeReason awaitText(String text, Duration timeout) throws InterruptedException {
         Objects.requireNonNull(text, "text");
-        return awaitCondition(bounded -> bounded.capture().stream().anyMatch(line -> line.contains(text)), timeout);
+        return awaitCondition(bounded -> bounded.shown().stream().anyMatch(line -> line.contains(text)), timeout);
     }
 
     /**
@@ -566,6 +580,7 @@ public final class Pane {
      */
     public void sendLiteral(List<String> keys) {
         server.run(snapshot, sendKeysArgv(keys, true));
+        server.echo().record(state.id(), String.join("", keys));
     }
 
     private List<String> sendKeysArgv(List<String> keys, boolean literal) {
@@ -586,6 +601,7 @@ public final class Pane {
     public void sendLine(String command) {
         Objects.requireNonNull(command, "command");
         server.run(snapshot, List.of("send-keys", "-l", "-t", state.id().value(), "--", command + "\r"));
+        server.echo().record(state.id(), command);
     }
 
     /**

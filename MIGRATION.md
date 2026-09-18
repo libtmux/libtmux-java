@@ -17,6 +17,28 @@ Reading needs no change: every command now passes `-u`, so tmux no longer
 replaces non-ASCII in a reply with `_` for a client whose locale it cannot
 read.
 
+### `Pane.awaitText` ignores an echo of what this library typed
+
+A wait no longer matches the pane's echo of text sent through `sendLine`,
+`sendLiteral` or `paste`, and now finds text the terminal wrapped across rows.
+A caller that waited for a marker its own command line contained was being
+answered by the echo; it now waits for the command to produce it. Waiting for
+text identical to what was just typed cannot be distinguished from the echo and
+will time out — send a marker the command prints, or signal a
+`Server.channel`, which is exact.
+
+`Pane.capture()` is unaffected and still answers with rows as the pane displays
+them.
+
+<!-- snippet: compile-only: needs a shell that has finished starting, which a shared fixture pane cannot promise; the behaviour itself is gated against every supported tmux by PaneWaitFidelityIntegrationTest -->
+```java
+// Given: Pane pane
+pane.sendLine("./build --target release");
+
+// Answered by what the build prints, not by the echo of the line that started it.
+pane.awaitText("release", java.time.Duration.ofSeconds(60));
+```
+
 ### `PaneState.currentPath` is text
 
 A directory name is bytes to tmux, and converting one this JVM cannot represent
