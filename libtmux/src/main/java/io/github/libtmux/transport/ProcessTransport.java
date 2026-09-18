@@ -61,6 +61,15 @@ public final class ProcessTransport implements TmuxTransport {
     private static final int DEFAULT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
     private static final long RECLAIM_MILLIS = 5_000;
     private static final long TERMINATION_SECONDS = 60;
+
+    /**
+     * How long a pump with nothing to do keeps its thread, and so how long an unclosed transport
+     * keeps a JVM alive after its last command. Long enough that an ordinary burst of commands
+     * reuses threads rather than making new ones, short enough that a program which forgot to close
+     * still exits promptly.
+     */
+    private static final long IDLE_PUMP_SECONDS = 10;
+
     private static final ProcessStarter SYSTEM_STARTER = command -> new ProcessBuilder(command).start();
 
     private final Semaphore admission;
@@ -102,6 +111,16 @@ public final class ProcessTransport implements TmuxTransport {
     }
 
     ProcessTransport(int maxConcurrentProcesses, int maxOutputBytes, ProcessStarter starter, LongSupplier nanoTime) {
+        this(maxConcurrentProcesses, maxOutputBytes, starter, nanoTime, TimeUnit.SECONDS.toNanos(IDLE_PUMP_SECONDS));
+    }
+
+    /** As above, with the idle-pump timeout a test can shorten rather than wait out. */
+    ProcessTransport(
+            int maxConcurrentProcesses,
+            int maxOutputBytes,
+            ProcessStarter starter,
+            LongSupplier nanoTime,
+            long idlePumpNanos) {
         if (maxConcurrentProcesses < 1) {
             throw new IllegalArgumentException("maxConcurrentProcesses is not positive");
         }
@@ -111,6 +130,15 @@ public final class ProcessTransport implements TmuxTransport {
         this.admission = new Semaphore(maxConcurrentProcesses);
         this.waitingAdmission = maxConcurrentProcesses == 1 ? null : new Semaphore(maxConcurrentProcesses - 1);
         this.pumps = (ThreadPoolExecutor) Executors.newFixedThreadPool(3 * maxConcurrentProcesses, factory());
+        // An idle pump lets go of the JVM. The threads are not daemons on purpose — work in flight
+        // has to finish, and a drain abandoned halfway is a truncated reply reported as a whole one
+        // — but "in flight" is the point, not "ever used". Without this a caller who forgot to
+        // close a transport kept a JVM alive forever after its last command, which for a
+        // command-line program is indistinguishable from a deadlock. A pump that is running holds
+        // the JVM exactly as before; one that has had nothing to do for this long does not, and the
+        // pool makes another the moment there is work.
+        this.pumps.setKeepAliveTime(idlePumpNanos, TimeUnit.NANOSECONDS);
+        this.pumps.allowCoreThreadTimeOut(true);
         this.maxOutputBytes = maxOutputBytes;
         this.starter = Objects.requireNonNull(starter, "starter");
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
@@ -486,7 +514,10 @@ public final class ProcessTransport implements TmuxTransport {
         }
     }
 
-    /** Non-daemon, so an unclosed transport is a visible leak rather than a silent JVM exit. */
+    /**
+     * Non-daemon, so a drain in flight finishes rather than being abandoned halfway and reported as
+     * a whole reply. An idle one times out instead, so forgetting to close still lets a JVM exit.
+     */
     private static ThreadFactory factory() {
         AtomicInteger index = new AtomicInteger();
         return runnable -> {

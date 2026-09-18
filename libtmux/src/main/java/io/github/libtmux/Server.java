@@ -34,6 +34,11 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Closing a server closes a client, not a tmux. It never kills the server process: sessions
  * outlive the program that made them, which is the entire point of tmux.
+ *
+ * <p>Close it anyway. A server that owns its transport holds the threads that drain tmux's output,
+ * and those are not daemons, so that a reply being read when a program ends is finished rather than
+ * truncated. They do let go once they have been idle, so forgetting to close delays a JVM's exit by
+ * seconds instead of preventing it — but only closing releases them at once.
  */
 public final class Server implements AutoCloseable {
 

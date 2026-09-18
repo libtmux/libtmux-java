@@ -1005,4 +1005,49 @@ final class ProcessTransportTest {
             assertNotNull(transport.execute(shell("true", GENEROUS)));
         }
     }
+
+    /**
+     * A forgotten {@code close()} must not keep the JVM alive forever.
+     *
+     * <p>The pumps are not daemon threads, so that a drain in flight finishes rather than being
+     * abandoned halfway and reported as a whole reply. That is right while there is work and wrong
+     * once there is none: before this, any program that ran one command and forgot to close hung at
+     * exit, which for a command-line tool is indistinguishable from a deadlock. An idle pump now
+     * lets go of its thread, and the JVM with it.
+     *
+     * <p>Runs with the timeout shortened, so the gate costs a moment rather than the ten seconds a
+     * real one waits.
+     */
+    @Test
+    void anIdlePumpStopsHoldingTheJvmOpen() throws InterruptedException {
+        ProcessTransport transport = new ProcessTransport(
+                1,
+                1_024,
+                command -> new ProcessBuilder(command).start(),
+                System::nanoTime,
+                Duration.ofMillis(100).toNanos());
+        try {
+            assertEquals(
+                    List.of("used"),
+                    transport.execute(shell("echo used", GENEROUS)).stdout());
+            assertTrue(livePumpThreads() > 0, "a command that ran must have had pumps to drain it");
+
+            long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+            while (livePumpThreads() > 0 && System.nanoTime() < deadline) {
+                Thread.sleep(25);
+            }
+
+            assertEquals(0, livePumpThreads(), "an idle pump kept its thread, so an unclosed transport pins the JVM");
+        } finally {
+            transport.close();
+        }
+    }
+
+    /** Counts this transport's own threads, which are the ones that would hold a JVM open. */
+    private static long livePumpThreads() {
+        return Thread.getAllStackTraces().keySet().stream()
+                .filter(Thread::isAlive)
+                .filter(thread -> thread.getName().startsWith("libtmux-pump-"))
+                .count();
+    }
 }
