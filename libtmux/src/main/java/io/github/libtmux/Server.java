@@ -154,7 +154,14 @@ public final class Server implements AutoCloseable {
         if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
             throw new ServerNotRunningException("no tmux server is answering on this endpoint");
         }
-        return false;
+        // "no" is the answer to "is there a session called this", and tmux says so in those words
+        // on every supported release. Anything else it reports — a socket this user cannot open, a
+        // binary that is not tmux — is not an answer to the question, and reporting it as one is
+        // how a misconfigured endpoint reads as an empty server.
+        if (result.stderr().stream().anyMatch(line -> line.contains("can't find session"))) {
+            return false;
+        }
+        throw failed("has-session", result);
     }
 
     /**
@@ -195,12 +202,46 @@ public final class Server implements AutoCloseable {
     /**
      * Requires a running tmux daemon that answers the liveness probe.
      *
-     * @throws ServerNotRunningException if the server is not running or not answering
+     * @throws ServerNotRunningException if no daemon is there to answer
+     * @throws LibTmuxException if one is, and could not be reached — a socket this user cannot
+     *     open, or a binary that is not tmux, which starting a server would not fix
      */
     public void requireAlive() {
-        if (!isAlive()) {
+        CommandResult result = cmd(List.of("display-message", "-p", "#{pid}"), config.defaultTimeout());
+        if (result.succeeded()) {
+            return;
+        }
+        // Not simply !isAlive(): that answers false for every refusal, so a socket this user cannot
+        // open, or a binary that is not tmux, was reported as a server that is not running — which
+        // sends a caller to start one when starting one is not the problem.
+        if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
             throw new ServerNotRunningException("no tmux server is answering on this endpoint");
         }
+        throw failed("display-message", result);
+    }
+
+    /**
+     * One sentence for a tmux command that did not succeed.
+     *
+     * <p>Built in one place because a message that omits the exit status, or says nothing at all
+     * when tmux printed nothing, is how a misconfigured binary reads as a tmux that simply refused:
+     * pointing a server at {@code /bin/false} used to raise "tmux display-message failed: " and
+     * stop there.
+     */
+    LibTmuxException failed(String command, CommandResult result) {
+        return new LibTmuxException(failure(command, config.binary(), "exit " + result.exitCode(), result.stderr()));
+    }
+
+    /**
+     * @param status how the command ended, as an exit code or, inside a group, tmux's own outcome
+     *     for it — a batch reports which of its commands never ran, which no single exit code says
+     */
+    static String failure(String command, String binary, String status, List<String> stderr) {
+        String reported = stderr.stream().filter(line -> !line.isBlank()).collect(Collectors.joining("; "));
+        return "tmux " + command + " failed (" + status + ")"
+                + (reported.isEmpty()
+                        ? "; it printed no error, so check that " + binary + " is tmux"
+                        : ": " + reported);
     }
 
     /** Whether a failed command's stderr says the daemon itself is gone, rather than refusing the request. */
@@ -358,7 +399,7 @@ public final class Server implements AutoCloseable {
 
     /** Every command this tmux knows, as it prints them. */
     public List<String> listCommands() {
-        return run(List.of("list-commands")).stdout();
+        return withoutStartingServer("list-commands").stdout();
     }
 
     /**
@@ -466,8 +507,30 @@ public final class Server implements AutoCloseable {
 
     /** Every key binding, as tmux prints them. */
     public List<String> listKeys() {
-        CommandResult result = cmd("list-keys");
-        return result.succeeded() ? result.stdout() : List.of();
+        return withoutStartingServer("list-keys").stdout();
+    }
+
+    /**
+     * Runs a read that tmux would otherwise answer by starting a daemon.
+     *
+     * <p>{@code list-keys} and {@code list-commands} are answered from the binary's own tables, and
+     * tmux starts a server to do it rather than reporting that there is none — so reading the key
+     * bindings of an endpoint nothing serves left a daemon behind, which is the opposite of a read.
+     * {@code -N} says not to, on every supported release, and tmux then reports the absent server
+     * the way every other read does.
+     */
+    private CommandResult withoutStartingServer(String command) {
+        List<String> argv = new ArrayList<>(config.endpointCommand());
+        argv.add(1, "-N");
+        CommandResult result =
+                transport.execute(new CommandRequest(argv, List.of(List.of(command)), config.defaultTimeout(), ""));
+        if (result.succeeded()) {
+            return result;
+        }
+        if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
+            throw new ServerNotRunningException("no tmux server is answering on this endpoint");
+        }
+        throw failed(command, result);
     }
 
     /** One of this server's wait-for channels, which is where a signal is sent and waited for. */
@@ -905,7 +968,7 @@ public final class Server implements AutoCloseable {
     public CommandResult run(List<String> argv) {
         CommandResult result = cmd(argv);
         if (!result.succeeded()) {
-            throw new LibTmuxException("tmux " + argv.get(0) + " failed: " + String.join("; ", result.stderr()));
+            throw failed(argv.get(0), result);
         }
         return result;
     }
@@ -935,7 +998,7 @@ public final class Server implements AutoCloseable {
     CommandResult run(ServerSnapshot snapshot, List<String> argv) {
         CommandResult result = cmd(snapshot, argv);
         if (!result.succeeded()) {
-            throw new LibTmuxException("tmux " + argv.get(0) + " failed: " + String.join("; ", result.stderr()));
+            throw failed(argv.get(0), result);
         }
         return result;
     }
@@ -956,7 +1019,7 @@ public final class Server implements AutoCloseable {
         CommandResult result = guarded(snapshot, CommandStrings.group(commands), input);
         if (!result.succeeded()) {
             String verbs = commands.stream().map(argv -> argv.get(0)).collect(Collectors.joining(" then "));
-            throw new LibTmuxException("tmux " + verbs + " failed: " + String.join("; ", result.stderr()));
+            throw failed(verbs, result);
         }
         return result;
     }
@@ -998,7 +1061,7 @@ public final class Server implements AutoCloseable {
             throw new ObjectDoesNotExistException("window " + expected.window() + " no longer exists here");
         }
         if (!result.succeeded()) {
-            throw new LibTmuxException("tmux " + argv.get(0) + " failed: " + String.join("; ", result.stderr()));
+            throw failed(argv.get(0), result);
         }
         return result;
     }

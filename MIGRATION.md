@@ -17,6 +17,24 @@ Reading needs no change: every command now passes `-u`, so tmux no longer
 replaces non-ASCII in a reply with `_` for a client whose locale it cannot
 read.
 
+### Four reads raise where they used to answer
+
+`Server.hasSession`, `Options.get`, `Server.listKeys` and `Server.requireAlive`
+answered a failed read as though it had found nothing. They now raise, and only
+`ServerNotRunningException` means an absent daemon:
+
+| Read | Was | Now |
+| --- | --- | --- |
+| `hasSession` on an unreachable socket | `false` | `LibTmuxException` |
+| `Options.get` on an unreachable socket | `Optional.empty()` | `LibTmuxException` |
+| `listKeys` on any failure | `List.of()` | raises |
+| `listKeys` with no daemon | started one, listed its tables | `ServerNotRunningException` |
+| `requireAlive` on an unreachable socket | `ServerNotRunningException` | `LibTmuxException` |
+
+A missing session is still `false`, and an option tmux does not know is still
+empty. Catch `ServerNotRunningException` where you start a daemon on demand,
+and `LibTmuxException` for a read that could not be made.
+
 ### `Pane.awaitText` ignores an echo of what this library typed
 
 A wait no longer matches the pane's echo of text sent through `sendLine`,

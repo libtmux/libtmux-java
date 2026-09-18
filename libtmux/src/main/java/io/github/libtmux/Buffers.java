@@ -70,7 +70,7 @@ public final class Buffers {
             throw new ServerNotRunningException("no tmux server is answering on this endpoint");
         }
         if (!result.succeeded()) {
-            throw new LibTmuxException("tmux show-buffer failed: " + String.join("; ", result.stderr()));
+            throw server.failed("show-buffer", result);
         }
         return String.join("\n", result.stdout());
     }
@@ -96,7 +96,7 @@ public final class Buffers {
             throw new ServerNotRunningException("no tmux server is answering on this endpoint");
         }
         if (!result.succeeded()) {
-            throw new LibTmuxException("tmux delete-buffer failed: " + String.join("; ", result.stderr()));
+            throw server.failed("delete-buffer", result);
         }
     }
 

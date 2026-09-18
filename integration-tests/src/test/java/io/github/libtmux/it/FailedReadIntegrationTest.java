@@ -1,0 +1,132 @@
+package io.github.libtmux.it;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.github.libtmux.LibTmuxException;
+import io.github.libtmux.Server;
+import io.github.libtmux.ServerConfig;
+import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.ServerNotRunningException;
+import io.github.libtmux.junit5.TmuxExtension;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Optional;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
+
+/**
+ * A read that failed against a read that found nothing.
+ *
+ * <p>The distinction the rest of this library is built on, applied to the four reads that answered
+ * outside it. "No such session" is an answer; "this socket cannot be opened" and "this binary is
+ * not tmux" are not, and reporting either as an empty result is how a misconfigured endpoint reads
+ * as an idle one — a caller then creates what is already there, or waits for a server it can never
+ * reach.
+ *
+ * <p>Three endpoints stand for the three cases: a socket nothing serves, a socket in a directory
+ * this user cannot enter, and a binary that exits nonzero and says nothing at all.
+ */
+@ExtendWith(TmuxExtension.class)
+final class FailedReadIntegrationTest {
+
+    private static Server at(Path socket, String binary) {
+        return Server.open(ServerConfig.builder()
+                .binary(binary)
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .build());
+    }
+
+    private static Path unreachableSocket(Path scratch) throws IOException {
+        Path locked = Files.createDirectory(scratch.resolve("locked"));
+        Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("---------"));
+        return locked.resolve("s");
+    }
+
+    // ------------------------------------------------------------- a read that found nothing
+
+    @Test
+    void anAbsentDaemonIsItsOwnAnswer(@TempDir Path scratch) {
+        try (Server server = at(scratch.resolve("nobody-home"), "tmux")) {
+            assertThrows(ServerNotRunningException.class, () -> server.hasSession("build"));
+            assertThrows(ServerNotRunningException.class, server::listKeys);
+            assertThrows(ServerNotRunningException.class, server::listCommands);
+            assertThrows(
+                    ServerNotRunningException.class,
+                    () -> server.globalOptions().get("history-limit"));
+            assertThrows(ServerNotRunningException.class, server::requireAlive);
+        }
+    }
+
+    @Test
+    void readingKeysDoesNotStartADaemonToAnswerWith(@TempDir Path scratch) {
+        Path socket = scratch.resolve("untouched");
+
+        try (Server server = at(socket, "tmux")) {
+            assertThrows(ServerNotRunningException.class, server::listKeys);
+        }
+
+        assertFalse(
+                Files.exists(socket),
+                "tmux answers list-keys from its own tables and starts a server to do it; a read must not");
+    }
+
+    @Test
+    void aMissingSessionOnALiveServerIsStillFalse(Server server) {
+        assertFalse(server.hasSession("no-such-session"));
+    }
+
+    @Test
+    void anOptionTmuxDoesNotKnowIsStillEmpty(Server server) {
+        assertEquals(Optional.empty(), server.globalOptions().get("@never-set-by-anyone"));
+    }
+
+    // ------------------------------------------------------------------- a read that failed
+
+    @Test
+    void aSocketThisUserCannotOpenIsNotAnEmptyServer(@TempDir Path scratch) throws IOException {
+        Path socket = unreachableSocket(scratch);
+        try (Server server = at(socket, "tmux")) {
+            assertReadsFailRatherThanAnswer(server);
+        } finally {
+            Files.setPosixFilePermissions(socket.getParent(), PosixFilePermissions.fromString("rwx------"));
+        }
+    }
+
+    @Test
+    void aBinaryThatIsNotTmuxIsNotAnEmptyServer(@TempDir Path scratch) {
+        try (Server server = at(scratch.resolve("s"), "/bin/false")) {
+            assertReadsFailRatherThanAnswer(server);
+
+            LibTmuxException reported = assertThrows(LibTmuxException.class, server::sessions);
+            String message = String.valueOf(reported.getMessage());
+            assertTrue(message.contains("exit 1"), "the message carries how tmux ended: " + message);
+            assertTrue(message.contains("/bin/false"), "and which binary it was: " + message);
+        }
+    }
+
+    /**
+     * Every read raises, and none of them claims the daemon is simply absent — that is a different
+     * fact, and the one a caller acts on by starting a server.
+     */
+    private static void assertReadsFailRatherThanAnswer(Server server) {
+        assertFailedRead("hasSession", () -> server.hasSession("build"));
+        assertFailedRead("listKeys", server::listKeys);
+        assertFailedRead("listCommands", server::listCommands);
+        assertFailedRead("options.get", () -> server.globalOptions().get("history-limit"));
+        assertFailedRead("requireAlive", server::requireAlive);
+        assertFailedRead("sessions", server::sessions);
+    }
+
+    private static void assertFailedRead(String what, org.junit.jupiter.api.function.Executable read) {
+        LibTmuxException raised = assertThrows(LibTmuxException.class, read, what + " answered instead of raising");
+        assertFalse(
+                raised instanceof ServerNotRunningException,
+                what + " reported a server it could not reach as one that is not running: " + raised.getMessage());
+    }
+}

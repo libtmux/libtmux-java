@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.function.Predicate;
@@ -141,7 +142,7 @@ final class SnapshotCapture {
             if (result.stderr().stream().anyMatch(absent)) {
                 return Optional.empty();
             }
-            throw new LibTmuxException("tmux display-message failed: " + String.join("; ", result.stderr()));
+            throw server.failed("display-message", result);
         }
         List<RowFormat.Row> reported = PROCESS.rows(result.stdout());
         if (reported.isEmpty()) {
@@ -255,9 +256,13 @@ final class SnapshotCapture {
     }
 
     /** Reads one listing's rows, insisting tmux actually ran it. */
-    private static List<RowFormat.Row> rows(RowFormat format, OperationResult operation, String command) {
+    private List<RowFormat.Row> rows(RowFormat format, OperationResult operation, String command) {
         if (operation.outcome() != OperationOutcome.COMPLETE) {
-            throw new LibTmuxException("tmux " + command + " failed: " + String.join("; ", operation.stderr()));
+            throw new LibTmuxException(Server.failure(
+                    command,
+                    server.config().binary(),
+                    operation.outcome().name().toLowerCase(Locale.ROOT).replace('_', ' '),
+                    operation.stderr()));
         }
         return format.rows(operation.stdout());
     }

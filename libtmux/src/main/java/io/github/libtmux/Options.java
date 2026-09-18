@@ -71,10 +71,19 @@ public final class Options {
      */
     public Optional<String> get(String name) {
         var result = cmd(argv("show-options", List.of("-A", "-v", "--", name)));
-        if (!result.succeeded()) {
+        if (result.succeeded()) {
+            return Optional.of(String.join("\n", result.stdout()));
+        }
+        if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
+            throw new ServerNotRunningException("no tmux server is answering on this endpoint");
+        }
+        // The documented meaning of empty, in tmux's own words on every supported release. Any
+        // other failure is a failed read, and answering it with "tmux does not know that option"
+        // makes this method say something it did not find out.
+        if (result.stderr().stream().anyMatch(line -> line.contains("invalid option"))) {
             return Optional.empty();
         }
-        return Optional.of(String.join("\n", result.stdout()));
+        throw server.failed("show-options", result);
     }
 
     /** Every option set at this scope, in tmux's order. Inherited values are not listed. */
