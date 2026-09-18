@@ -152,7 +152,7 @@ final class Execution {
                     results.add(effects);
                     report.event("workspace-completed", effects.deepCopy());
                 } catch (RuntimeException | IOException | InterruptedException failure) {
-                    boolean partial = effects.path("changed").asBoolean() || !results.isEmpty();
+                    boolean partial = rollback(server, effects, failure) || !results.isEmpty();
                     ObjectNode error = Documents.JSON
                             .createObjectNode()
                             .put("code", Main.failureCode(failure, "load_failed"))
@@ -181,6 +181,36 @@ final class Execution {
                             effects.path("session_name").asText());
             if (!detached && !append && last != null) attach(server, last, context, target.orElseThrow());
         }
+    }
+
+    /**
+     * Removes a session this load created and could not finish, and reports whether anything it did
+     * is still on the server.
+     *
+     * <p>A session the document only reused, one borrowed by {@code --append}, and one the Python
+     * bridge owns are never this load's to remove. Nor is one whose load was interrupted: the
+     * removal needs a tmux round trip the stopped invocation can no longer be relied on to make, and
+     * a session reported as retained and then found gone is the worse answer.
+     */
+    private static boolean rollback(Server server, ObjectNode effects, Throwable failure) {
+        if (!effects.path("changed").asBoolean()) return false;
+        boolean interrupted = failure instanceof InterruptedException
+                || failure instanceof java.io.InterruptedIOException
+                || Thread.currentThread().isInterrupted();
+        if (!effects.path("owned_session").asBoolean() || interrupted) return true;
+        String id = effects.path("session_id").asText();
+        try {
+            server.sessions().stream()
+                    .filter(session -> session.id().value().equals(id))
+                    .findFirst()
+                    .ifPresent(Session::kill);
+        } catch (RuntimeException unremovable) {
+            failure.addSuppressed(unremovable);
+            effects.put("session_removed", false);
+            return true;
+        }
+        effects.put("changed", false).put("owned_session", false).put("session_removed", true);
+        return false;
     }
 
     private static ObjectNode summary(String status, ArrayNode results) {
@@ -263,15 +293,8 @@ final class Execution {
                     Duration.ofHours(24),
                     effects.path("input_index").asInt());
             effects.set("script_output", output.value());
-            if (output.status() != 0) {
-                // The session this load created must not outlive its own failed setup; a
-                // borrowed or appended one is never this load's to remove.
-                if (bootstrap != null) {
-                    session.kill();
-                    effects.put("changed", false).put("owned_session", false).put("session_removed", true);
-                }
+            if (output.status() != 0)
                 throw new Main.Failure("script_failed", 1, "before_script exited with " + output.status());
-            }
         }
         effects.put("stage", "options");
         apply(session.options(), plan.options(), effects);

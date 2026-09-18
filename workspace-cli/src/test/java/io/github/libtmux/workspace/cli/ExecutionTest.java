@@ -1471,20 +1471,18 @@ final class ExecutionTest {
                                         ? "injected-disable-failure"
                                         : failRemoval ? "injected-cleanup-failure" : "injected-restore-failure"));
                 assertEquals("finalize", failure.path("effects").path("stage").asText());
-                assertReportedObjects(server, failure.path("effects"));
                 assertEquals(
                         failRestore,
                         failure.path("effects")
                                 .path("renumber_restore_error")
                                 .asText()
                                 .contains("injected-restore-failure"));
-                assertEquals(
-                        failRestore ? "off" : "on",
-                        server.sessions()
-                                .getFirst()
-                                .options()
-                                .get("renumber-windows")
-                                .orElseThrow());
+                // The load owned the session, so a cleanup failure takes the whole session with it;
+                // what it had created is still listed, because listing it is how the user knows.
+                assertFalse(failure.path("effects").path("window_ids").isEmpty(), result.toString());
+                assertFalse(failure.path("effects").path("pane_ids").isEmpty(), result.toString());
+                assertTrue(failure.path("effects").path("session_removed").asBoolean(), result.toString());
+                assertFalse(server.isAlive() && server.hasSession("cleanup"), result.toString());
             } finally {
                 if (server.isAlive()) server.killServer();
             }
@@ -1858,7 +1856,7 @@ final class ExecutionTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void failedSetupReportsEveryCreatedObject(boolean sessionOptions) throws Exception {
+    void failedSetupRemovesTheSessionAndReportsEveryCreatedObject(boolean sessionOptions) throws Exception {
         Path socket = directory.resolve("partial");
         Path source = directory.resolve("partial.yaml");
         Files.writeString(
@@ -1871,14 +1869,13 @@ final class ExecutionTest {
                 Result failed =
                         invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
                 assertEquals(1, failed.code());
-                var effects = new ObjectMapper()
-                        .readTree(failed.out())
-                        .path("errors")
-                        .path(0)
-                        .path("effects");
+                var document = new ObjectMapper().readTree(failed.out());
+                assertEquals("error", document.path("status").asText(), failed.toString());
+                var effects = document.path("errors").path(0).path("effects");
                 assertEquals(1, effects.path("window_ids").size());
                 assertEquals(1, effects.path("pane_ids").size(), failed.toString());
-                assertReportedObjects(server, effects);
+                assertTrue(effects.path("session_removed").asBoolean(), failed.toString());
+                assertFalse(server.isAlive() && server.hasSession("partial"), failed.toString());
             } finally {
                 if (server.isAlive()) server.killServer();
             }
