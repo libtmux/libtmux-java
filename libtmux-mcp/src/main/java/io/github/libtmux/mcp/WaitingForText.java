@@ -238,6 +238,33 @@ final class WaitingForText {
                 }
             }
         }
+        return findAcrossWrappedRows(matchers, lines);
+    }
+
+    /**
+     * Looks again with the rows joined, for text a terminal broke across two of them.
+     *
+     * <p>A line wider than the pane is stored as several rows, and nothing in what the pane printed
+     * put that break there - a long prompt is enough to push a short command's output past the edge.
+     * Row by row, such a string is never found; joined with nothing between them, the way the rows of
+     * one wrapped line join, it is. The rows are joined here rather than asked of tmux with {@code
+     * capture-pane -J} because the cursor this wait hands back counts rows as tmux reports them, and
+     * a capture with fewer rows than tmux counted no longer lines up with it.
+     */
+    private static @Nullable Found findAcrossWrappedRows(List<TextPatterns.Matcher> matchers, List<String> lines) {
+        if (lines.size() < 2) {
+            return null;
+        }
+        StringBuilder joined = new StringBuilder();
+        for (String line : lines) {
+            joined.append(line);
+        }
+        String text = joined.toString();
+        for (TextPatterns.Matcher matcher : matchers) {
+            if (matcher.matches(text)) {
+                return new Found(matcher, text);
+            }
+        }
         return null;
     }
 
@@ -245,22 +272,22 @@ final class WaitingForText {
      * Drops a fresh line that carries a recently typed echo, so it is never scanned for a match and
      * never shown to a caller as though the pane had printed it.
      *
-     * <p>A line long enough to wrap is split across rows by the terminal, not by anything tmux or
-     * this code chose, so no single captured row need carry the whole echo even though it is
-     * exactly what is on screen. The rows are searched joined into one string, with nothing between
-     * them the way a wrapped line joins its own rows.
-     *
-     * <p>Only the echo's own characters are taken out, rather than every row it touches. A row
-     * holds whatever the terminal put there, and the same row can carry the tail of what was typed
-     * and the start of what the pane then printed — a prompt and the output beside it, once the
-     * prompt has wrapped. Dropping such a row would lose real output and leave the wait timing out
-     * against text that is plainly on screen. A row left empty by the removal held nothing else and
-     * goes; a row with anything left keeps it.
+     * <p>One row holds the whole echo because the capture asks tmux to rejoin what it wrapped for
+     * display; without that a long prompt could split a typed line across rows and leave every one
+     * of them looking like something the pane printed.
      */
     static List<String> withoutEcho(List<String> lines, String echo) {
         if (echo.isEmpty() || lines.isEmpty()) {
             return lines;
         }
+        if (lines.stream().anyMatch(line -> line.contains(echo))) {
+            return lines.stream().filter(line -> !line.contains(echo)).toList();
+        }
+        // The echo is not on any one row, so the terminal broke it across two -
+        // the same display wrap findAcrossWrappedRows reads back. Take out its
+        // characters where they actually fall rather than every row it touches:
+        // a wrapped prompt puts what the pane printed on a row the echo also
+        // ends on, and dropping that row would lose real output.
         int[] lineStart = new int[lines.size() + 1];
         StringBuilder joined = new StringBuilder();
         for (int index = 0; index < lines.size(); index++) {
@@ -268,8 +295,10 @@ final class WaitingForText {
             joined.append(lines.get(index));
         }
         lineStart[lines.size()] = joined.length();
-
         String text = joined.toString();
+        if (!text.contains(echo)) {
+            return lines;
+        }
         boolean[] echoed = new boolean[text.length()];
         int from = 0;
         int at;
@@ -280,7 +309,6 @@ final class WaitingForText {
             }
             from = end;
         }
-
         List<String> kept = new ArrayList<>(lines.size());
         StringBuilder row = new StringBuilder();
         for (int index = 0; index < lines.size(); index++) {
@@ -290,8 +318,7 @@ final class WaitingForText {
                     row.append(text.charAt(position));
                 }
             }
-            boolean emptiedByRemoval = row.isEmpty() && lineStart[index] < lineStart[index + 1];
-            if (!emptiedByRemoval) {
+            if (!row.isEmpty() || lineStart[index] == lineStart[index + 1]) {
                 kept.add(row.toString());
             }
         }

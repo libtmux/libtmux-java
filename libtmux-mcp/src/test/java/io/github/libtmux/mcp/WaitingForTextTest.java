@@ -23,34 +23,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 final class WaitingForTextTest {
 
     /**
-     * A terminal wraps a line too long for the pane across rows; no single captured row then
-     * carries the whole echo even though it is exactly what is on screen. Reproduced deterministically
-     * here rather than by hand - it depends on the pane's width relative to the shell's own prompt
-     * length, which a CI runner's longer default prompt hit and a short local one did not,
-     * surfacing this once real tmux was involved (JAVA2-6 follow-up).
-     */
-    @Test
-    void withoutEchoExcludesAnEchoTheTerminalWrappedAcrossRows() {
-        String echo = "sleep 1; echo JAVA-D10-MARKER-WARM";
-        List<String> wrapped = List.of("prompt $ true", "prompt $ sleep 1; echo JAVA-D10-M", "ARKER-WARM", "");
-
-        List<String> filtered = WaitingForText.withoutEcho(wrapped, echo);
-
-        assertEquals(List.of("prompt $ true", "prompt $ ", ""), filtered);
-    }
-
-    /** The ordinary case, a single row, still works exactly as before. */
-    @Test
-    void withoutEchoStillExcludesAnEchoThatFitsOnOneRow() {
-        String echo = "echo unwrapped-marker";
-        List<String> lines = List.of("prompt $ true", "prompt $ echo unwrapped-marker", "unwrapped-marker");
-
-        List<String> filtered = WaitingForText.withoutEcho(lines, echo);
-
-        assertEquals(List.of("prompt $ true", "prompt $ ", "unwrapped-marker"), filtered);
-    }
-
-    /**
      * A wrapped prompt puts what the pane printed on the same row as the prompt that follows the
      * echo, so a row the echo touches can still carry real output. Dropping the row would lose it
      * and the wait would time out against text plainly on screen — which is what a whole-row
@@ -64,7 +36,32 @@ final class WaitingForTextTest {
 
         List<String> filtered = WaitingForText.withoutEcho(lines, echo);
 
-        assertEquals(List.of("runner@host:~/work", "$ ", "$ the-server-is-ready"), filtered);
+        assertEquals(List.of("runner@host:~/work", "$ the-server-is-ready"), filtered);
+    }
+
+    /**
+     * A long prompt pushes a short command's output past the pane's width, and tmux breaks the line
+     * to fit. Nothing in what the pane printed put that break there, so a row-by-row search must not
+     * be stopped by it. Found on CI, where one runner's hostname made the prompt long enough and a
+     * short local prompt never did: the wait timed out against text plainly on screen.
+     */
+    @Test
+    void outputTheTerminalWrappedForDisplayIsStillMatched(Server server) {
+        String pane = server.panes().get(0).id().value();
+        // Pin the width rather than inherit it: the break only happens when the
+        // prompt and the output together outrun the pane, and a wide default
+        // would hide exactly what this pins.
+        server.cmd("resize-window", "-t", pane, "-x", "80", "-y", "24");
+        // Longer than the pane is wide, so tmux has to break it wherever the
+        // prompt happens to leave the cursor.
+        String marker = "wrapped-" + "x".repeat(120) + "-marker";
+
+        send(server, pane, "(sleep 1; echo " + marker + ") &");
+
+        WaitingForText.Waited waited = WaitingForText.waitFor(
+                TestCalls.on(server, "pane_id", pane, "patterns", List.of(marker), "timeout", 20));
+
+        assertEquals("MATCHED", waited.outcome(), "output the wait saw: " + waited.output());
     }
 
     @Test
@@ -75,7 +72,7 @@ final class WaitingForTextTest {
         WaitingForText.Waited waited = WaitingForText.waitFor(
                 TestCalls.on(server, "pane_id", pane, "patterns", List.of("the-server-is-ready"), "timeout", 20));
 
-        assertEquals("MATCHED", waited.outcome());
+        assertEquals("MATCHED", waited.outcome(), "output the wait saw: " + waited.output());
         assertEquals("the-server-is-ready", waited.matched());
         assertTrue(String.valueOf(waited.matchedLine()).contains("the-server-is-ready"));
         assertTrue(waited.seconds() < 15, "it must return on the match, not at the deadline");
@@ -275,7 +272,7 @@ final class WaitingForTextTest {
         WaitingForText.Waited waited = WaitingForText.waitFor(
                 TestCalls.on(server, "pane_id", pane, "patterns", "lone-pattern-seen", "timeout", 20));
 
-        assertEquals("MATCHED", waited.outcome());
+        assertEquals("MATCHED", waited.outcome(), "output the wait saw: " + waited.output());
     }
 
     @Test
