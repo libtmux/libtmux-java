@@ -682,8 +682,10 @@ final class Execution {
                     : sessions.stream()
                             .filter(value -> value.name().equals(name))
                             .findFirst()
-                            .orElseThrow(
-                                    () -> new Main.Failure("session_not_found", 1, "select a live session by name"));
+                            .orElseThrow(() -> new Main.Failure(
+                                    "session_not_found",
+                                    1,
+                                    name.isEmpty() ? "select a live session by name" : "no session named " + name));
             ObjectNode captured = Documents.JSON.createObjectNode().put("session_name", session.name());
             captured.set("options", Documents.JSON.valueToTree(session.options().all()));
             String defaultShell = session.options().get("default-shell").orElse("");
