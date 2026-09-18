@@ -11,7 +11,6 @@ import io.github.libtmux.snapshot.SessionState;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.snapshot.WindowState;
 import io.github.libtmux.transport.CommandResult;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -211,7 +210,7 @@ final class SnapshotCapture {
                     new Dimensions(row.number("pane_width"), row.number("pane_height")),
                     new PanePosition(row.number("pane_left"), row.number("pane_top")),
                     row.text("pane_title"),
-                    Path.of(row.text("pane_current_path")),
+                    row.text("pane_current_path"),
                     panePid(row),
                     new PaneEdges(
                             row.flag("pane_at_top"),

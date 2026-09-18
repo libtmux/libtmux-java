@@ -125,7 +125,7 @@ final class Listings {
                             pane.window().name(),
                             pane.window().id().value(),
                             pane.currentCommand(),
-                            pane.currentPath().toString(),
+                            pane.currentPathText(),
                             size.width() + "x" + size.height(),
                             pane.active(),
                             caller.isSelf(pane.id()) ? Boolean.TRUE : null);

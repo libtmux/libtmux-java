@@ -12,7 +12,6 @@ import io.github.libtmux.PanePosition;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.WindowId;
 import io.github.libtmux.WindowIndex;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -32,7 +31,7 @@ final class ServerSnapshotTest {
     private static final Instant WHEN = Instant.parse("2026-08-14T00:00:00Z");
     private static final Dimensions SIZE = new Dimensions(80, 24);
     private static final PanePosition POSITION = new PanePosition(0, 0);
-    private static final Path PATH = Path.of("/tmp");
+    private static final String PATH = "/tmp";
     private static final PaneEdges EDGES = new PaneEdges(true, true, true, true);
 
     private static final SessionId ALPHA = new SessionId("$0");

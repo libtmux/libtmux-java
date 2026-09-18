@@ -91,12 +91,23 @@ public final class ServerConfig {
     }
 
     /**
-     * The argv prefix every command on this server begins with: the binary, the server selection,
-     * and the config file if one was pinned.
+     * The argv prefix every command on this server begins with: the binary, {@code -u}, the server
+     * selection, and the config file if one was pinned.
+     *
+     * <p>{@code -u} says this client reads UTF-8. Without it tmux decides from {@code LC_ALL},
+     * {@code LC_CTYPE} and {@code LANG}, and a client it judges not to be UTF-8 has every non-ASCII
+     * character in every reply replaced with {@code _} before it is sent — so a session named
+     * {@code café} reads back as {@code caf_}, and a pane's directory becomes a path that does not
+     * exist. The flag is in tmux's option string on every supported release.
+     *
+     * <p>Deliberately the flag rather than {@code LC_ALL} in the child's environment, which would
+     * reach the same conclusion and then be inherited by every pane the server spawns from this
+     * client.
      */
     public List<String> endpointCommand() {
-        List<String> command = new ArrayList<>(6);
+        List<String> command = new ArrayList<>(7);
         command.add(binary);
+        command.add("-u");
         command.addAll(endpoint.flags());
         if (configFile != null) {
             command.add("-f");

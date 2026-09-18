@@ -503,7 +503,7 @@ final class Operations {
                 "command",
                 pane.currentCommand(),
                 "path",
-                pane.currentPath().toString(),
+                pane.currentPathText(),
                 "title",
                 pane.title(),
                 "size",

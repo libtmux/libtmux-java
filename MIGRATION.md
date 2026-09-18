@@ -5,6 +5,34 @@ API changes that require updates to calling code are recorded here. See
 
 ## Next release
 
+### Non-ASCII text needs a UTF-8 locale
+
+Commands now refuse text this JVM cannot encode instead of letting tmux receive
+`?` in its place. `UnencodableTextException`, a `LibTmuxException` subtype,
+names the character and the fix. Set `LC_ALL` or `LANG` to a UTF-8 locale before
+the JVM starts; `-Dfile.encoding` and `-Dsun.jnu.encoding` are read too late to
+help. ASCII is unaffected on every locale.
+
+Reading needs no change: every command now passes `-u`, so tmux no longer
+replaces non-ASCII in a reply with `_` for a client whose locale it cannot
+read.
+
+### `PaneState.currentPath` is text
+
+A directory name is bytes to tmux, and converting one this JVM cannot represent
+throws — which, in a capture, lost every other pane over one pane's directory.
+`PaneState`'s `currentPath` component is now a `String`; a direct constructor
+call passes the text rather than a `Path`.
+
+`Pane.currentPath()` still answers with a `Path`, converting on request, and
+throws `LibTmuxException` only when this JVM cannot represent that name.
+`Pane.currentPathText()` is the value tmux reported and never throws.
+
+```java
+// Given: Pane pane
+pane.currentPathText().isEmpty();      // → false
+```
+
 ### Exception and guard names
 
 Replace the old imports, catch types and calls, then recompile:

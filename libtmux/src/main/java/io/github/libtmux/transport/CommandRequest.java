@@ -1,6 +1,7 @@
 package io.github.libtmux.transport;
 
 import io.github.libtmux.internal.CommandStrings;
+import io.github.libtmux.internal.Utf8;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -41,6 +42,13 @@ public record CommandRequest(List<String> endpoint, List<List<String>> commands,
         }
         if (timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException("timeout is not positive");
+        }
+        // Every process this library starts is built from one of these, so the JVM's own encoding
+        // limit is answered once here rather than at each call site. Input is exempt: it reaches
+        // tmux as bytes this library encodes, not as an argument the JVM encodes.
+        Utf8.requireEncodableArguments(endpoint);
+        for (List<String> command : commands) {
+            Utf8.requireEncodableArguments(command);
         }
     }
 

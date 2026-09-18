@@ -7,6 +7,7 @@ import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.transport.TmuxTimeoutException;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -116,8 +117,32 @@ public final class Pane {
         return state.title();
     }
 
-    /** The working directory tmux reported for the pane. */
+    /**
+     * The working directory tmux reported for the pane.
+     *
+     * <p>Converted on request rather than when the pane was captured, because a directory name is
+     * bytes to tmux and this JVM cannot always represent one: converting at capture time would lose
+     * every pane on the server over a single pane's directory. {@link #currentPathText()} is the
+     * value tmux actually reported, and never throws.
+     *
+     * @throws LibTmuxException if this JVM's encoding cannot represent the name, which a UTF-8
+     *     locale fixes
+     */
     public Path currentPath() {
+        String reported = state.currentPath();
+        try {
+            return Path.of(reported);
+        } catch (InvalidPathException unrepresentable) {
+            throw new LibTmuxException(
+                    "this JVM cannot represent the directory of pane " + state.id()
+                            + " as a path; start the JVM in a UTF-8 locale (LC_ALL=C.UTF-8), or read"
+                            + " currentPathText()",
+                    unrepresentable);
+        }
+    }
+
+    /** The working directory tmux reported for the pane, exactly as tmux reported it. */
+    public String currentPathText() {
         return state.currentPath();
     }
 
