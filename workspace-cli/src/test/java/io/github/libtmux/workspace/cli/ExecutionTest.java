@@ -749,6 +749,19 @@ final class ExecutionTest {
                 assertEquals(
                         "session_not_found",
                         new ObjectMapper().readTree(result.err()).path("code").asText());
+                assertEquals(
+                        "no session named nosuch",
+                        new ObjectMapper()
+                                .readTree(result.err())
+                                .path("message")
+                                .asText());
+                // A socket with no server behind it holds no session either,
+                // so it is the same answer.
+                Result cold = invoke("freeze", "nosuch", "-S", socket + ".cold", "--json");
+                assertEquals(1, cold.code(), cold.toString());
+                assertEquals(
+                        "no session named nosuch",
+                        new ObjectMapper().readTree(cold.err()).path("message").asText());
             } finally {
                 if (server.isAlive()) server.killServer();
             }
