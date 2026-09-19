@@ -56,6 +56,47 @@ final class ProcessTransportTest {
         return CommandRequest.of(List.of("/bin/bash"), List.of("-c", script), timeout);
     }
 
+    // ----------------------------------------------------------------------------- logging
+
+    /**
+     * Every command is visible to whoever turns logging on, and nothing a caller put in one is.
+     *
+     * <p>The seam is {@link System.Logger}, so this reads it through {@code java.util.logging}, the
+     * JDK's default backend, which is what a consumer who routes nothing anywhere gets.
+     */
+    @Test
+    void eachCommandIsLoggedByVerbAndNeverByItsArguments() {
+        java.util.logging.Logger jul = java.util.logging.Logger.getLogger(ProcessTransport.class.getName());
+        List<String> written = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.logging.Handler capture = new java.util.logging.Handler() {
+            @Override
+            public void publish(java.util.logging.LogRecord entry) {
+                written.add(java.text.MessageFormat.format(entry.getMessage(), entry.getParameters()));
+            }
+
+            @Override
+            public void flush() {}
+
+            @Override
+            public void close() {}
+        };
+        java.util.logging.Level before = jul.getLevel();
+        jul.setLevel(java.util.logging.Level.FINE);
+        jul.addHandler(capture);
+        try (ProcessTransport transport = new ProcessTransport(1)) {
+            transport.execute(
+                    CommandRequest.of(List.of("/bin/sh"), List.of("-c", "printf hunter2-secret; exit 3"), GENEROUS));
+        } finally {
+            jul.removeHandler(capture);
+            jul.setLevel(before);
+        }
+
+        assertEquals(1, written.size(), "one command, one line: " + written);
+        String line = written.get(0);
+        assertTrue(line.contains("-c") && line.contains("exited 3"), "it says what ran and how it ended: " + line);
+        assertFalse(line.contains("hunter2"), "and nothing a caller put in the command: " + line);
+    }
+
     // ------------------------------------------------------------------ channels and exit status
 
     @Test

@@ -54,6 +54,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class ControlClient implements AutoCloseable {
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
+
+    /** The same seam as the process transport's, since this client starts its own process. */
+    private static final System.Logger LOG = System.getLogger(ControlClient.class.getName());
+
     private static final long EXIT_MILLIS = 5_000;
 
     private final Process process;
@@ -151,6 +155,7 @@ public final class ControlClient implements AutoCloseable {
         }
         client.writer.start();
         client.requestJsonLayouts();
+        LOG.log(System.Logger.Level.DEBUG, "tmux control client attached to session {0}", session.value());
         return client;
     }
 
@@ -206,7 +211,19 @@ public final class ControlClient implements AutoCloseable {
         if (closed.get() || failed) {
             throw new IllegalStateException("control client is not usable");
         }
-        return writer.exchange(line(argv), timeout);
+        long started = System.nanoTime();
+        ControlReply reply = writer.exchange(line(argv), timeout);
+        // The verb and never its arguments, for the reason the process transport gives: an argument
+        // carries what a caller typed, and a log a library opens is no place for it.
+        if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
+            LOG.log(
+                    System.Logger.Level.DEBUG,
+                    "tmux control {0} {1} in {2} ms",
+                    argv.get(0),
+                    reply.outcome().name().toLowerCase(java.util.Locale.ROOT).replace('_', ' '),
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+        }
+        return reply;
     }
 
     /**

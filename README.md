@@ -212,6 +212,22 @@ server.environment().set("LIBTMUX_TOKEN", "abc123");
 server.environment().get("LIBTMUX_TOKEN").orElseThrow();   // → abc123
 ```
 
+### See every command tmux ran
+
+The process transport and the control client log through the JDK's own
+`System.Logger`, so the library brings no logging dependency and reaches
+whatever you already route logging to — `java.util.logging` by default, SLF4J or
+Log4j through their bridges. Turn on `DEBUG` for `io.github.libtmux` and each
+command is one line: which ran, how it ended, how long it took.
+
+```text
+tmux list-sessions exited 0 in 4 ms
+tmux control display-message complete in 1 ms
+```
+
+Only the verb is written, never its arguments: those carry session names, pane
+contents and whatever was typed, a password at a prompt among them.
+
 ## Avoid unnecessary round trips
 
 `server.batch()` sends independent commands in one invocation. `server.chain()`

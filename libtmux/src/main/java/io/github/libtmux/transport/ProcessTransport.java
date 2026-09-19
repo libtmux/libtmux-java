@@ -74,6 +74,8 @@ public final class ProcessTransport implements TmuxTransport {
 
     private static final ProcessStarter SYSTEM_STARTER = command -> new ProcessBuilder(command).start();
 
+    private static final System.Logger LOG = System.getLogger(ProcessTransport.class.getName());
+
     private final Semaphore admission;
     private final @Nullable Semaphore waitingAdmission;
     private final ThreadPoolExecutor pumps;
@@ -156,7 +158,63 @@ public final class ProcessTransport implements TmuxTransport {
         return execute(request, true);
     }
 
+    /**
+     * Runs one request, and says so at {@code DEBUG} on this class's {@link System.Logger}.
+     *
+     * <p>The seam is the JDK's own, so it costs a consumer no dependency and reaches whatever they
+     * already route logging to: {@code java.util.logging} by default, SLF4J or Log4j through their
+     * {@code System.LoggerFinder} bridges. Enable {@code DEBUG} on {@code io.github.libtmux} to see
+     * every command tmux ran, how long it took and how it ended.
+     *
+     * <p>Only the command verbs are written, never their arguments. An argument carries session
+     * names, pane contents and whatever a caller typed — a password sent to a prompt among them —
+     * and none of that belongs in a log a library opens on a caller's behalf.
+     */
     private CommandResult execute(CommandRequest asked, boolean waiting) {
+        long started = System.nanoTime();
+        try {
+            CommandResult result = dispatch(asked, waiting);
+            if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
+                LOG.log(
+                        System.Logger.Level.DEBUG,
+                        "tmux {0} exited {1} in {2} ms",
+                        verbs(asked),
+                        result.exitCode(),
+                        elapsedMillis(started));
+            }
+            return result;
+        } catch (RuntimeException failure) {
+            if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
+                String outcome = failure instanceof TmuxTransportException transport
+                        ? transport
+                                .outcome()
+                                .name()
+                                .toLowerCase(java.util.Locale.ROOT)
+                                .replace('_', ' ')
+                        : failure.getClass().getSimpleName();
+                LOG.log(
+                        System.Logger.Level.DEBUG,
+                        "tmux {0} failed ({1}) after {2} ms",
+                        verbs(asked),
+                        outcome,
+                        elapsedMillis(started));
+            }
+            throw failure;
+        }
+    }
+
+    /** The first word of each command: what ran, without anything a caller put in it. */
+    private static String verbs(CommandRequest request) {
+        return request.commands().stream()
+                .map(command -> command.get(0))
+                .collect(java.util.stream.Collectors.joining(" then "));
+    }
+
+    private static long elapsedMillis(long startedNanos) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
+    }
+
+    private CommandResult dispatch(CommandRequest asked, boolean waiting) {
         requireOpen();
         requireDispatchable(asked.commands());
         CommandRequest request = carriable(asked);
