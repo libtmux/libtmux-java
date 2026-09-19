@@ -237,6 +237,27 @@ final class DocumentationFactsTest {
         }
     }
 
+    /**
+     * Every example program is in the index that introduces them.
+     *
+     * <p>The examples exist because nobody compiles what everybody reads first, and an example
+     * nothing points at is no better than one nothing runs. Two had been written and never listed
+     * when this gate was added.
+     */
+    @Test
+    void everyExampleIsListedWhereExamplesAreIntroduced() throws IOException {
+        Path programs = ROOT.resolve("examples/src/main/java/io/github/libtmux/examples");
+        String index = read("examples/README.md");
+        List<String> missing = new ArrayList<>();
+        try (Stream<Path> found = Files.list(programs)) {
+            found.filter(file -> file.getFileName().toString().endsWith(".java"))
+                    .map(file -> file.getFileName().toString().replace(".java", ""))
+                    .filter(name -> !index.contains("`" + name + "`"))
+                    .forEach(missing::add);
+        }
+        assertEquals(List.of(), missing, "examples/README.md does not list every example");
+    }
+
     /** An unrun example reads exactly like an executed one, so it has to say which it is. */
     @Test
     void anExampleInALanguageNothingBuildsSaysThatItIsUnchecked() {
