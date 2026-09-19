@@ -23,23 +23,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 final class WaitingForTextTest {
 
     /**
-     * A wrapped prompt puts what the pane printed on the same row as the prompt that follows the
-     * echo, so a row the echo touches can still carry real output. Dropping the row would lose it
-     * and the wait would time out against text plainly on screen — which is what a whole-row
-     * exclusion did to a background command whose marker also appears in the line that started it.
-     */
-    @Test
-    void withoutEchoKeepsOutputSharingARowWithTheEcho() {
-        String echo = "(sleep 1; echo the-server-is-ready) &";
-        List<String> lines =
-                List.of("runner@host:~/work", "$ (sleep 1; echo the-server-is-ready) &", "$ the-server-is-ready");
-
-        List<String> filtered = WaitingForText.withoutEcho(lines, echo);
-
-        assertEquals(List.of("runner@host:~/work", "$ the-server-is-ready"), filtered);
-    }
-
-    /**
      * A long prompt pushes a short command's output past the pane's width, and tmux breaks the line
      * to fit. Nothing in what the pane printed put that break there, so a row-by-row search must not
      * be stopped by it. Found on CI, where one runner's hostname made the prompt long enough and a
@@ -128,7 +111,7 @@ final class WaitingForTextTest {
     /**
      * D10: {@code send_keys} then {@code wait_for_text} for the same marker must not match the
      * typed command line itself, which a shell echoes back and which therefore contains the marker
-     * too. {@link TypedEcho} is what makes the difference - go through the real MCP {@link Typing}
+     * too. {@link io.github.libtmux.TypedText} is what makes the difference - go through the real MCP {@link Typing}
      * operation rather than a raw {@code send-keys}, or nothing records the echo to exclude.
      */
     @Test
@@ -310,7 +293,7 @@ final class WaitingForTextTest {
      * <p>Goes through {@link Typing#sendKeys}, the same as {@link #typeAndSubmit}, rather than a raw
      * {@code send-keys}: every command here is an {@code echo <marker>} whose own typed-and-submitted
      * text contains the marker too, on screen the instant it is submitted - before the backgrounded
-     * process prints anything. Only {@link TypedEcho} can tell that line apart from real output, and
+     * process prints anything. Only {@link io.github.libtmux.TypedText} can tell that line apart from real output, and
      * only a call that goes through it gets recorded there.
      */
     private static void send(Server server, String pane, String command) {

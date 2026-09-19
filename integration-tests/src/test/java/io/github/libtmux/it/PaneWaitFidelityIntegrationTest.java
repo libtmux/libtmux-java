@@ -1,12 +1,13 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Dimensions;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
-import io.github.libtmux.WakeReason;
+import io.github.libtmux.TextOutcome;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.time.Duration;
@@ -41,7 +42,7 @@ final class PaneWaitFidelityIntegrationTest {
                 .get(0);
         window.resizeTo(new Dimensions(columns, 24));
         Pane pane = window.refresh().panes().get(0);
-        assertEquals(WakeReason.SIGNALLED, pane.awaitText("$", Duration.ofSeconds(10)), "the shell drew a prompt");
+        assertNotEquals(TextOutcome.TIMED_OUT, pane.awaitText("$", Duration.ofSeconds(10)), "the shell drew a prompt");
         return pane;
     }
 
@@ -51,11 +52,11 @@ final class PaneWaitFidelityIntegrationTest {
 
         pane.sendLine("sleep 5; echo build-finished");
         long started = System.nanoTime();
-        WakeReason why = pane.awaitText("build-finished", Duration.ofSeconds(3));
+        TextOutcome why = pane.awaitText("build-finished", Duration.ofSeconds(3));
         long millis = (System.nanoTime() - started) / 1_000_000;
 
         assertEquals(
-                WakeReason.TIMED_OUT,
+                TextOutcome.TIMED_OUT,
                 why,
                 "the only thing on screen is the echo of the command, which cannot print for five seconds");
         assertTrue(millis >= 2_500, "and the wait really waited rather than matching at once: " + millis + "ms");
@@ -65,10 +66,14 @@ final class PaneWaitFidelityIntegrationTest {
     void whatTheCommandActuallyPrintsStillMatches(Server server) throws InterruptedException {
         Pane pane = shell(server, "output", 120);
 
-        pane.sendLine("printf 'build-finished\\n'");
+        // Printed a second late, so the wait has to see it arrive rather than find it waiting. The
+        // command's own text contains the marker, so this fails either way round: if the echo were
+        // matched the answer would come back before the second was up, and if suppressing the echo
+        // also suppressed the output it would never come back at all.
+        pane.sendLine("sleep 1; printf 'build-finished\\n'");
 
         assertEquals(
-                WakeReason.SIGNALLED,
+                TextOutcome.APPEARED,
                 pane.awaitText("build-finished", Duration.ofSeconds(10)),
                 "suppressing the echo must not suppress the output, which here is the same text");
     }
@@ -80,12 +85,49 @@ final class PaneWaitFidelityIntegrationTest {
 
         // Assembled from two halves, so the command's own text never contains the marker whole and
         // this cannot pass on the echo.
-        pane.sendLine("printf '%s%s\\n' MARK-0123456789-ABCDE FGHIJ-0123456789-END");
+        pane.sendLine("sleep 1; printf '%s%s\\n' MARK-0123456789-ABCDE FGHIJ-0123456789-END");
 
         assertEquals(
-                WakeReason.SIGNALLED,
+                TextOutcome.APPEARED,
                 pane.awaitText(marker, Duration.ofSeconds(10)),
                 "the marker is 41 characters in a 30-column pane, so no row holds all of it");
+    }
+
+    /**
+     * A command's output routinely names the command: {@code make} answers {@code make: ... Stop.}.
+     * Taking the echo out by dropping every row that mentions it hid the answer along with the
+     * question, and the wait timed out with the answer on screen.
+     */
+    @Test
+    void outputThatNamesTheCommandThatProducedItIsFound(Server server) throws InterruptedException {
+        Pane pane = shell(server, "names", 120);
+
+        pane.sendLine("make");
+
+        // Found at all is the whole point: make answers in the same breath, so whether the answer
+        // was already there on the first look says nothing, while timing out would mean the rule
+        // that takes the echo out had taken the answer with it.
+        assertNotEquals(
+                TextOutcome.TIMED_OUT,
+                pane.awaitText("Stop.", Duration.ofSeconds(10)),
+                "make prints a message naming itself, and that message is the pane's answer");
+    }
+
+    /**
+     * Text an earlier run left on screen is not this run's output. Reported rather than ignored,
+     * because timing out while {@code capture} shows the text is worse than saying it was there.
+     */
+    @Test
+    void textLeftByAnEarlierRunIsNotReportedAsHavingAppeared(Server server) throws InterruptedException {
+        Pane pane = shell(server, "entry", 120);
+
+        pane.sendLine("sleep 1; printf 'tests-passed\\n'");
+        assertEquals(TextOutcome.APPEARED, pane.awaitText("tests-passed", Duration.ofSeconds(10)));
+
+        assertEquals(
+                TextOutcome.PRESENT_AT_ENTRY,
+                pane.awaitText("tests-passed", Duration.ofSeconds(2)),
+                "the second wait began with the first run's output already on screen");
     }
 
     @Test
@@ -93,8 +135,8 @@ final class PaneWaitFidelityIntegrationTest {
         Pane pane = shell(server, "rows", 30);
 
         pane.sendLine("printf '%s%s\\n' MARK-0123456789-ABCDE FGHIJ-0123456789-END");
-        assertEquals(
-                WakeReason.SIGNALLED,
+        assertNotEquals(
+                TextOutcome.TIMED_OUT,
                 pane.awaitText("MARK-0123456789-ABCDEFGHIJ-0123456789-END", Duration.ofSeconds(10)));
 
         List<String> rows = pane.capture();

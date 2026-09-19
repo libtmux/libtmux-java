@@ -10,7 +10,6 @@ import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
-import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,9 +42,10 @@ final class LeadingDashIntegrationTest {
 
         pane.send(FLAGGISH);
 
-        assertEquals(
-                io.github.libtmux.WakeReason.SIGNALLED,
-                pane.awaitText(FLAGGISH, Duration.ofSeconds(5)),
+        // Read the pane rather than waiting on it: what was typed is this library's own echo, which
+        // a wait discounts on purpose, so only a capture can confirm the characters arrived.
+        assertTrue(
+                Await.until(() -> pane.capture().stream().anyMatch(row -> row.contains(FLAGGISH))),
                 "send-keys -R redraws the pane instead of typing, and reports success either way");
     }
 
@@ -55,7 +55,7 @@ final class LeadingDashIntegrationTest {
 
         pane.send(UNKNOWN);
 
-        assertEquals(io.github.libtmux.WakeReason.SIGNALLED, pane.awaitText(UNKNOWN, Duration.ofSeconds(5)));
+        assertTrue(Await.until(() -> pane.capture().stream().anyMatch(row -> row.contains(UNKNOWN))));
     }
 
     @Test

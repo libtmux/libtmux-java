@@ -35,15 +35,56 @@ A missing session is still `false`, and an option tmux does not know is still
 empty. Catch `ServerNotRunningException` where you start a daemon on demand,
 and `LibTmuxException` for a read that could not be made.
 
+### `Pane.awaitText` answers with `TextOutcome`, not `WakeReason`
+
+The return type changed. `WakeReason.SIGNALLED` became two answers, because a
+screen wait can end a way a channel never does:
+
+| Was | Is |
+| --- | --- |
+| `SIGNALLED` | `TextOutcome.APPEARED` when the wait saw the text arrive |
+| `SIGNALLED` | `TextOutcome.PRESENT_AT_ENTRY` when the first look already showed it |
+| `TIMED_OUT` | `TextOutcome.TIMED_OUT` |
+| `SERVER_GONE` | `TextOutcome.SERVER_GONE` |
+
+`PRESENT_AT_ENTRY` says only that the text was there on the first look. It may
+be output from a command that finished before the wait read, or it may have been
+on the pane for an hour; a screen cannot tell those apart. What it replaces is
+worse: both used to be reported as though the wait had watched the text arrive,
+so a marker left by an earlier run satisfied the next wait for it in
+milliseconds. Treat both as "the text is there" unless the difference matters,
+and when it does, append `; tmux wait-for -S name` to your own command and block
+on `Server.channel`, which is exact.
+
+`Pane.await(Predicate, Duration)` still answers with `WakeReason`: you wrote that
+condition and can test it before waiting, so the library is not the only thing
+that can see it was already true.
+
 ### `Pane.awaitText` ignores an echo of what this library typed
 
-A wait no longer matches the pane's echo of text sent through `sendLine`,
+A wait no longer matches the pane's echo of text sent through `send`, `sendLine`,
 `sendLiteral` or `paste`, and now finds text the terminal wrapped across rows.
 A caller that waited for a marker its own command line contained was being
 answered by the echo; it now waits for the command to produce it. Waiting for
 text identical to what was just typed cannot be distinguished from the echo and
 will time out — send a marker the command prints, or signal a
 `Server.channel`, which is exact.
+
+The echo is taken out where it stands as a whole word, rather than by dropping
+every row that mentions it: a command's own output routinely names the command,
+and `make` answering `make: *** No targets specified ... Stop.` used to have its
+answer dropped along with its question. `id` now comes off `$ id` and stays
+inside `uid=1000`. The cost is that output repeating the typed text as a word of
+its own loses that word — `make: ***` reads `: ***` to a wait — while its answer,
+`Stop.`, is still there. `Pane.send(String)` records an echo too, since tmux
+types anything there that is not one of its key names.
+
+`TypedText` is that record, and it is public because the wait is not the only
+thing that needs it: take it once with `TypedText.in(pane)` and reuse it for
+every look, since what a pane is holding ages out and a watcher that asked again
+each time would stop discounting the echo partway through. `Pane.noteTyped`
+tells it about keys that reached a pane some other way, which is what
+`synchronize-panes` does.
 
 `Pane.capture()` is unaffected and still answers with rows as the pane displays
 them.

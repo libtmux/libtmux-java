@@ -69,9 +69,13 @@ final class Typing {
             // not a choice a reader of this file makes.
             if (literal) {
                 pane.sendLiteral(keys);
-                // Only literal text is echoed as what it says; a key name such as "Enter" is not.
+                // sendLiteral records the echo for the pane it addressed. Under synchronize-panes the
+                // same keys land in every pane of the window, which only the cohort knows about, so
+                // the rest are told here.
                 String typed = String.join("", keys);
-                resolved.forEach(id -> TypedEcho.record(id, typed));
+                resolved.stream()
+                        .filter(id -> !id.equals(pane.id().value()))
+                        .forEach(id -> Targets.pane(pane.server(), id).noteTyped(typed));
             } else {
                 pane.sendKeys(keys);
             }
@@ -118,9 +122,6 @@ final class Typing {
             pane.paste(
                     enter ? text + "\n" : text,
                     () -> lease.requireSamePaste(PaneInputCohort.resolve(pane, call.caller())));
-            if (!text.isEmpty()) {
-                TypedEcho.record(pane.id().value(), text);
-            }
             return new Pasted(
                     pane.id().value(),
                     text.length(),

@@ -50,8 +50,14 @@ screen is the right answer, and it is a heuristic:
 // Given: Pane pane
 pane.sendLine("echo listening on 8080");
 
-pane.awaitText("listening on", Duration.ofSeconds(10));   // → SIGNALLED
+pane.awaitText("listening on", Duration.ofSeconds(10));   // → APPEARED
 ```
+
+The echo of that command is not an answer to it, so a wait for text the command
+line itself contains is not satisfied by the line being typed. `PRESENT_AT_ENTRY`
+says the first look already showed the text: it may be output that beat the wait
+there, or it may have been on the pane for an hour. A screen cannot tell those
+apart, which is the reason to prefer a channel whenever the command is yours.
 
 Waiting longer here is less reliable rather than more: tmux frees the oldest
 scrollback once `history-limit` is reached, so a long wait on a productive pane

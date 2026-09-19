@@ -723,9 +723,14 @@ public final class Server implements AutoCloseable {
 
     /** A server over a transport the caller owns. Closing this server never closes it. */
     public static Server using(ServerConfig config, TmuxTransport transport) {
+        return using(config, transport, new PaneEcho());
+    }
+
+    /** As {@link #using(ServerConfig, TmuxTransport)}, with the echo record a gate wants to control. */
+    static Server using(ServerConfig config, TmuxTransport transport, PaneEcho echo) {
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(transport, "transport");
-        return new Server(config, transport, false);
+        return new Server(config, transport, false, echo);
     }
 
     /**

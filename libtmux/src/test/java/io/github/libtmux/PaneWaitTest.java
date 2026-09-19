@@ -14,7 +14,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -40,10 +42,10 @@ final class PaneWaitTest {
             tmux.captureTakes = Duration.ofSeconds(5);
 
             long started = System.nanoTime();
-            WakeReason reason = pane.awaitText("listening", Duration.ofMillis(100));
+            TextOutcome reason = pane.awaitText("listening", Duration.ofMillis(100));
             Duration took = Duration.ofNanos(System.nanoTime() - started);
 
-            assertEquals(WakeReason.TIMED_OUT, reason);
+            assertEquals(TextOutcome.TIMED_OUT, reason);
             assertTrue(took.compareTo(Duration.ofSeconds(2)) < 0, "a 100 ms wait took " + took);
         }
     }
@@ -62,7 +64,7 @@ final class PaneWaitTest {
             Duration timeout = Duration.ofMillis(120);
             tmux.textFrom = System.nanoTime() + timeout.plusMillis(5).toNanos();
 
-            assertEquals(WakeReason.TIMED_OUT, pane.awaitText("listening", timeout));
+            assertEquals(TextOutcome.TIMED_OUT, pane.awaitText("listening", timeout));
         }
     }
 
@@ -79,7 +81,7 @@ final class PaneWaitTest {
             Pane pane = server.panes().get(0);
             int probes = tmux.liveness.get();
 
-            assertEquals(WakeReason.TIMED_OUT, pane.awaitText("listening", Duration.ofMillis(150)));
+            assertEquals(TextOutcome.TIMED_OUT, pane.awaitText("listening", Duration.ofMillis(150)));
             assertEquals(probes, tmux.liveness.get(), "a liveness probe ran after the deadline");
         }
     }
@@ -108,7 +110,76 @@ final class PaneWaitTest {
             Pane pane = server.panes().get(0);
             tmux.textFrom = Long.MIN_VALUE;
 
-            assertEquals(WakeReason.SIGNALLED, pane.awaitText("listening", Duration.ZERO));
+            assertEquals(TextOutcome.PRESENT_AT_ENTRY, pane.awaitText("listening", Duration.ZERO));
+        }
+    }
+
+    /**
+     * The defect this pins: the echo record was consulted on every look rather than once, so a wait
+     * that outlived it began matching the pane's echo of the caller's own command partway through —
+     * and a command slow enough to need a wait is exactly one that outlives it.
+     *
+     * <p>The clock here belongs to the record and moves two seconds per read, so a wait of a few
+     * hundred milliseconds ages it out the way a twelve-second command does.
+     */
+    @Test
+    void anEchoStaysDiscountedHoweverLongTheWaitRuns() throws InterruptedException {
+        SlowTmux tmux = new SlowTmux();
+        tmux.secondsPerRead = 2;
+        PaneEcho echo = new PaneEcho(tmux.recordClock::get);
+        try (Server server = tmux.server(echo)) {
+            Pane pane = server.panes().get(0);
+            tmux.screen = List.of("$ sleep 12; echo listening");
+            pane.sendLine("sleep 12; echo listening");
+
+            assertEquals(TextOutcome.TIMED_OUT, pane.awaitText("listening", Duration.ofMillis(400)));
+        }
+    }
+
+    /**
+     * The defect this pins: every row holding the echo was dropped, so a command whose own output
+     * names it — {@code make} answering {@code make: ... Stop.} — timed out with the answer on screen.
+     */
+    @Test
+    void outputThatNamesTheCommandThatProducedItIsFound() throws InterruptedException {
+        SlowTmux tmux = new SlowTmux();
+        try (Server server = tmux.server()) {
+            Pane pane = server.panes().get(0);
+            tmux.screen = List.of("$ make");
+            pane.sendLine("make");
+            tmux.screenAfterReads(2, List.of("$ make", "make: *** No targets specified.  Stop."));
+
+            assertEquals(TextOutcome.APPEARED, pane.awaitText("Stop.", Duration.ofMillis(600)));
+        }
+    }
+
+    /**
+     * The defect this pins: a marker left by an earlier run answered the next wait for it in
+     * milliseconds. It is still reported — timing out with the text in plain sight is worse — but as
+     * what it is.
+     */
+    @Test
+    void textLeftOnScreenByAnEarlierRunIsNotReportedAsHavingAppeared() throws InterruptedException {
+        SlowTmux tmux = new SlowTmux();
+        try (Server server = tmux.server()) {
+            Pane pane = server.panes().get(0);
+            tmux.screen = List.of("$ echo listening", "listening", "$ ");
+
+            assertEquals(TextOutcome.PRESENT_AT_ENTRY, pane.awaitText("listening", Duration.ofMillis(200)));
+        }
+    }
+
+    /** Keys typed as text are echoed like any other text, whichever call sent them. */
+    @Test
+    void textSentWithoutASubmittingKeyIsStillAnEcho() throws InterruptedException {
+        SlowTmux tmux = new SlowTmux();
+        try (Server server = tmux.server()) {
+            Pane pane = server.panes().get(0);
+            tmux.screen = List.of("$ sleep 4; echo listening");
+            pane.send("sleep 4; echo listening");
+            pane.send("Enter");
+
+            assertEquals(TextOutcome.TIMED_OUT, pane.awaitText("listening", Duration.ofMillis(200)));
         }
     }
 
@@ -146,15 +217,32 @@ final class PaneWaitTest {
     private static final class SlowTmux implements TmuxTransport {
 
         private final AtomicInteger liveness = new AtomicInteger();
+        private final AtomicInteger reads = new AtomicInteger();
+        private final AtomicLong recordClock = new AtomicLong();
         private volatile Duration captureTakes = Duration.ZERO;
         private volatile long textFrom = Long.MAX_VALUE;
+        private volatile int secondsPerRead;
+        private volatile @Nullable List<String> screen;
+        private volatile int screenChangesAfter = Integer.MAX_VALUE;
+        private volatile List<String> screenAfterwards = List.of();
+
+        /** What the pane shows once it has been read this many times, so output can arrive mid-wait. */
+        void screenAfterReads(int reads, List<String> lines) {
+            screenChangesAfter = reads;
+            screenAfterwards = lines;
+        }
 
         Server server() {
+            return server(new PaneEcho());
+        }
+
+        Server server(PaneEcho echo) {
             return Server.using(
                     ServerConfig.builder()
                             .endpoint(ServerEndpoint.namedSocket("fixture"))
                             .build(),
-                    this);
+                    this,
+                    echo);
         }
 
         @Override
@@ -181,6 +269,12 @@ final class PaneWaitTest {
                 throw new TmuxTimeoutException("capture-pane outlived its deadline", null);
             }
             pause(captureTakes);
+            int read = reads.incrementAndGet();
+            recordClock.addAndGet(Duration.ofSeconds(secondsPerRead).toNanos());
+            List<String> scripted = screen;
+            if (scripted != null) {
+                return new CommandResult(0, read > screenChangesAfter ? screenAfterwards : scripted, List.of());
+            }
             String shown = System.nanoTime() >= textFrom ? "server listening" : "booting";
             return new CommandResult(0, List.of(shown), List.of());
         }

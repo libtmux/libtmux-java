@@ -384,8 +384,21 @@ public final class Pane {
      * terminal shows the caller's own command back and a wait for something that command's text
      * contains would otherwise be answered by the question.
      */
-    private List<String> shown() {
-        return server.echo().withoutEcho(capture(CaptureSpec.Builder::joiningWrappedLines), state.id());
+    private List<String> shown(TypedText typed) {
+        return typed.withoutEcho(capture(CaptureSpec.Builder::joiningWrappedLines));
+    }
+
+    /**
+     * Notes text that reached this pane without going through this handle, so a wait discounts its
+     * echo the way it discounts text sent through {@link #sendLine}.
+     *
+     * <p>What this is for is tmux's {@code synchronize-panes}: typing into one pane types into every
+     * pane in its window, and this library sees only the pane it addressed. Whoever turned that on
+     * knows which panes are involved and this does not, so it is told rather than detected.
+     */
+    public void noteTyped(String text) {
+        Objects.requireNonNull(text, "text");
+        server.echo().record(state.id(), text);
     }
 
     /**
@@ -406,8 +419,8 @@ public final class Pane {
      * <p>The timeout bounds the whole wait, reads included. Each read is given only what is left of
      * it, so a slow tmux cannot stretch a short wait out to the server's default deadline, and text
      * that first appears after the deadline is not reported. The first read alone is allowed at least
-     * a quarter of a second, so a timeout shorter than one read can still answer that the text is
-     * already there.
+     * a quarter of a second, so a timeout shorter than one read can still answer
+     * {@link TextOutcome#PRESENT_AT_ENTRY}.
      *
      * <p>Waiting longer is also less reliable, not more: tmux frees the oldest scrollback once
      * {@code history-limit} is reached, so a long wait on a productive pane can end up reading past
@@ -415,16 +428,34 @@ public final class Pane {
      *
      * @param text the text to wait for, matched anywhere in a captured line
      * @param timeout how long to keep looking
-     * @return {@link WakeReason#SIGNALLED} when the text appeared, {@link WakeReason#TIMED_OUT} when
-     *     it did not, {@link WakeReason#SERVER_GONE} when the server went away underneath the wait
+     * @return why the wait ended, which tells text that appeared from text that was already there
      * @throws LibTmuxException if a read fails while the server is still answering — most often
      *     because this pane was killed, which is not a timeout
      * @throws InterruptedException if the waiting thread is interrupted, which is a cancellation
      *     rather than a timeout and so is not reported as one
      */
-    public WakeReason awaitText(String text, Duration timeout) throws InterruptedException {
+    public TextOutcome awaitText(String text, Duration timeout) throws InterruptedException {
         Objects.requireNonNull(text, "text");
-        return awaitCondition(bounded -> bounded.shown().stream().anyMatch(line -> line.contains(text)), timeout);
+        // Read once, here, rather than on every look. The record ages out, and a wait that re-read it
+        // would stop discounting the echo partway through — so a command slower than that age answered
+        // its own wait, which is exactly the wait that needed to be right.
+        TypedText typed = TypedText.in(this);
+        boolean[] reading = {true, false};
+        WakeReason ended = awaitCondition(
+                bounded -> {
+                    boolean found = bounded.shown(typed).stream().anyMatch(line -> line.contains(text));
+                    if (reading[0]) {
+                        reading[0] = false;
+                        reading[1] = found;
+                    }
+                    return found;
+                },
+                timeout);
+        return switch (ended) {
+            case SIGNALLED -> reading[1] ? TextOutcome.PRESENT_AT_ENTRY : TextOutcome.APPEARED;
+            case TIMED_OUT -> TextOutcome.TIMED_OUT;
+            case SERVER_GONE -> TextOutcome.SERVER_GONE;
+        };
     }
 
     /**
@@ -557,9 +588,14 @@ public final class Pane {
      * Sends keys to this pane without pressing Enter.
      *
      * <p>Separate from {@link #sendLine} rather than a boolean, so a call site says which it means.
+     *
+     * <p>Recorded as an echo, because tmux types anything here that is not one of its key names and a
+     * terminal echoes what is typed. A key name costs nothing to record: {@code Enter} presses a key
+     * rather than typing five characters, so it is not on screen for a wait to discount.
      */
     public void send(String keys) {
         server.run(snapshot, List.of("send-keys", "-t", state.id().value(), "--", keys));
+        server.echo().record(state.id(), keys);
     }
 
     /**

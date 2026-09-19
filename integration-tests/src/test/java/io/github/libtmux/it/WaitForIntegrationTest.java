@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.TextOutcome;
 import io.github.libtmux.WakeReason;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.time.Duration;
@@ -114,14 +115,14 @@ final class WaitForIntegrationTest {
 
         pane.sendLine("echo waited-for-this");
 
-        assertEquals(WakeReason.SIGNALLED, pane.awaitText("waited-for-this", SHORT));
+        assertEquals(TextOutcome.APPEARED, pane.awaitText("waited-for-this", SHORT));
     }
 
     @Test
     void aPaneWaitForTextThatNeverComesIsATimeout(Server server) throws InterruptedException {
         Pane pane = server.sessions().getFirst().windows().getFirst().panes().getFirst();
 
-        assertEquals(WakeReason.TIMED_OUT, pane.awaitText("nothing-prints-this", Duration.ofMillis(600)));
+        assertEquals(TextOutcome.TIMED_OUT, pane.awaitText("nothing-prints-this", Duration.ofMillis(600)));
     }
 
     /**
@@ -149,11 +150,11 @@ final class WaitForIntegrationTest {
         Pane pane = server.sessions().getFirst().windows().getFirst().panes().getFirst();
         ExecutorService killer = Executors.newSingleThreadExecutor();
         try {
-            Future<WakeReason> waiting = killer.submit(() -> pane.awaitText("never-printed", Duration.ofSeconds(20)));
+            Future<TextOutcome> waiting = killer.submit(() -> pane.awaitText("never-printed", Duration.ofSeconds(20)));
             Thread.sleep(500);
             server.killServer();
 
-            assertEquals(WakeReason.SERVER_GONE, waiting.get(30, TimeUnit.SECONDS));
+            assertEquals(TextOutcome.SERVER_GONE, waiting.get(30, TimeUnit.SECONDS));
         } finally {
             killer.shutdownNow();
         }

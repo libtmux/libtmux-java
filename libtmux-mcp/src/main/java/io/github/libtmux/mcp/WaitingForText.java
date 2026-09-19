@@ -1,6 +1,7 @@
 package io.github.libtmux.mcp;
 
 import io.github.libtmux.Pane;
+import io.github.libtmux.TypedText;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -68,7 +69,10 @@ final class WaitingForText {
         // Excluded up front, from both matching and the lines a caller sees, using only what
         // this process itself just sent - nothing about a screen capture says "this line is an
         // echo" on its own.
-        Optional<String> recentEcho = TypedEcho.recentFor(pane.id().value());
+        // Read once, here. What a pane is holding ages out, so asking again on every look would
+        // stop discounting the echo partway through a wait — and a command worth waiting for is
+        // exactly one that outlives the record.
+        TypedText typed = TypedText.in(pane);
         long started = System.nanoTime();
 
         Optional<String> cursorArgument = call.maybe("cursor");
@@ -82,8 +86,7 @@ final class WaitingForText {
             // even while capture_pane shows the very thing it was asked for.
             Screen.Fresh entry = Screen.completeOnly(pane);
             cursor = entry.cursor();
-            List<String> entryLines =
-                    recentEcho.map(echo -> withoutEcho(entry.lines(), echo)).orElse(entry.lines());
+            List<String> entryLines = typed.withoutEcho(entry.lines());
             Waited early = presentAtEntry(pane, timeout, wanted, stops, budget, entryLines, cursor, started);
             if (early != null) {
                 return early;
@@ -99,8 +102,7 @@ final class WaitingForText {
         while (true) {
             Screen.Fresh fresh = Screen.since(pane, cursor, budget);
             cursor = fresh.cursor();
-            List<String> freshLines =
-                    recentEcho.map(echo -> withoutEcho(fresh.lines(), echo)).orElse(fresh.lines());
+            List<String> freshLines = typed.withoutEcho(fresh.lines());
             retained = Trim.append(retained, freshLines, budget);
 
             // Failure first: a build that has already printed "error:" is not going to print
@@ -266,63 +268,6 @@ final class WaitingForText {
             }
         }
         return null;
-    }
-
-    /**
-     * Drops a fresh line that carries a recently typed echo, so it is never scanned for a match and
-     * never shown to a caller as though the pane had printed it.
-     *
-     * <p>One row holds the whole echo because the capture asks tmux to rejoin what it wrapped for
-     * display; without that a long prompt could split a typed line across rows and leave every one
-     * of them looking like something the pane printed.
-     */
-    static List<String> withoutEcho(List<String> lines, String echo) {
-        if (echo.isEmpty() || lines.isEmpty()) {
-            return lines;
-        }
-        if (lines.stream().anyMatch(line -> line.contains(echo))) {
-            return lines.stream().filter(line -> !line.contains(echo)).toList();
-        }
-        // The echo is not on any one row, so the terminal broke it across two -
-        // the same display wrap findAcrossWrappedRows reads back. Take out its
-        // characters where they actually fall rather than every row it touches:
-        // a wrapped prompt puts what the pane printed on a row the echo also
-        // ends on, and dropping that row would lose real output.
-        int[] lineStart = new int[lines.size() + 1];
-        StringBuilder joined = new StringBuilder();
-        for (int index = 0; index < lines.size(); index++) {
-            lineStart[index] = joined.length();
-            joined.append(lines.get(index));
-        }
-        lineStart[lines.size()] = joined.length();
-        String text = joined.toString();
-        if (!text.contains(echo)) {
-            return lines;
-        }
-        boolean[] echoed = new boolean[text.length()];
-        int from = 0;
-        int at;
-        while ((at = text.indexOf(echo, from)) >= 0) {
-            int end = at + echo.length();
-            for (int position = at; position < end; position++) {
-                echoed[position] = true;
-            }
-            from = end;
-        }
-        List<String> kept = new ArrayList<>(lines.size());
-        StringBuilder row = new StringBuilder();
-        for (int index = 0; index < lines.size(); index++) {
-            row.setLength(0);
-            for (int position = lineStart[index]; position < lineStart[index + 1]; position++) {
-                if (!echoed[position]) {
-                    row.append(text.charAt(position));
-                }
-            }
-            if (!row.isEmpty() || lineStart[index] == lineStart[index + 1]) {
-                kept.add(row.toString());
-            }
-        }
-        return kept;
     }
 
     private static boolean sleep() {
