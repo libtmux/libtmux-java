@@ -864,8 +864,11 @@ final class Execution {
     }
 
     static void freeze(Main.Context context, ParseResult args, Reporter report) throws IOException {
+        String name = args.matchedPositionalValue(0, "");
+        // Refused on the name alone, before tmux is even asked: a name load would reject makes the
+        // document useless regardless of whether a session happens to hold it right now.
+        if (!name.isEmpty()) WorkspacePlan.requireAddressableName(name, "; rename it before capturing it");
         try (Server server = server(context, args)) {
-            String name = args.matchedPositionalValue(0, "");
             List<Session> sessions = server.sessions();
             Session session = name.isEmpty() && sessions.size() == 1
                     ? sessions.getFirst()
@@ -876,6 +879,8 @@ final class Execution {
                                     Machine.Code.SESSION_NOT_FOUND,
                                     1,
                                     name.isEmpty() ? "select a live session by name" : "no session named " + name));
+            // The auto-select path above never named a candidate to check, so the session it landed
+            // on still needs the same guard applied to its actual name.
             WorkspacePlan.requireAddressableName(session.name(), "; rename " + session.name() + " before capturing it");
             ObjectNode captured = Documents.JSON.createObjectNode().put("session_name", session.name());
             captured.set("options", Documents.JSON.valueToTree(session.options().all()));

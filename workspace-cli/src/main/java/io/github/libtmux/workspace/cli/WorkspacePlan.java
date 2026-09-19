@@ -60,9 +60,12 @@ record WorkspacePlan(
     /**
      * The rule both ends of a round trip apply, so a capture never writes a name a load refuses.
      *
-     * <p>tmux reads {@code :} and {@code .} as its target separators, which leaves a session holding
-     * either unaddressable by name. {@code remedy} says what the caller's side of the round trip can
-     * do about it.
+     * <p>tmux's answer to {@code :} or {@code .} in a session name changes across the supported
+     * range — rewritten to {@code _} through 3.6, refused outright on 3.7, kept from 3.7a on but only
+     * an explicit {@code name:} terminator then selects it, so a bare {@code -t name} still misreads
+     * the delimiter as a window separator. No spelling survives the whole range, so both ends refuse
+     * the name outright rather than build something the other cannot read back. {@code remedy} says
+     * what the caller's side of the round trip can do about it.
      */
     static void requireAddressableName(String name, String remedy) {
         if (name.isEmpty() || name.indexOf('\0') >= 0) throw invalid("session_name must be nonempty text without NUL");

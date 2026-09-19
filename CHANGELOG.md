@@ -39,11 +39,15 @@ production.
   prompt reads its answer as a whole line, through one shared reader. (#16)
 
 - **`session_name` refuses a colon or a period, and `freeze` applies the same
-  rule at capture.** tmux uses `:` and `.` as the session:window and window.pane
-  separators in a target, so a name holding either could be built but never
-  addressed, killed or attached by name again. `freeze` refuses before capturing
-  anything — `invalid_workspace`, exit 1, no file written — naming the `-s`
-  remedy `load` already has for its own refusal. (#16)
+  rule to the name it is asked to capture, before tmux is asked anything.**
+  tmux's answer to a `:` or `.` in a session name changes across the supported
+  range: rewritten to `_` through 3.6, refused outright on 3.7, and kept from
+  3.7a on — but only an explicit `name:` terminator then selects it, so a bare
+  `-t name` still misreads the delimiter as a window separator. No spelling
+  survives the whole range, so both ends refuse the name outright —
+  `invalid_workspace`, exit 1, no file written — whether or not a session
+  already holds it, naming the `-s` remedy `load` already has for its own
+  refusal. (#16)
 
 - **An attached `load` resolves its own invoking pane before building
   anything.** `TMUX` must parse and name the daemon on the target socket,
