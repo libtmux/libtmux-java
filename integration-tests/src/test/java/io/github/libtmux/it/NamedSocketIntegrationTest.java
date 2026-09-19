@@ -91,9 +91,11 @@ final class NamedSocketIntegrationTest {
         return config;
     }
 
-    private static Path tmuxTmpDir() {
+    private static Path tmuxTmpDir() throws IOException {
         String configured = System.getenv("TMUX_TMPDIR");
         assertTrue(configured != null && !configured.isEmpty(), "the build did not quarantine TMUX_TMPDIR");
-        return Path.of(configured).toAbsolutePath().normalize();
+        // Resolved because tmux reports -L sockets under this root's real path (macOS's /tmp is a
+        // link into /private), and the containment check below compares against what tmux said.
+        return Path.of(configured).toAbsolutePath().normalize().toRealPath();
     }
 }
