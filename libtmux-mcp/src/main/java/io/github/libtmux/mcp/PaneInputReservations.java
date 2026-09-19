@@ -6,8 +6,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -15,37 +17,70 @@ import java.util.Set;
 final class PaneInputReservations {
 
     private static final Object MONITOR = new Object();
-    private static final Set<PaneKey> HELD = new HashSet<>();
+
+    /** Each owned pane and the operation owning it, so an interrupt can tell whose it is. */
+    private static final Map<PaneKey, String> HELD = new HashMap<>();
+
+    /** The operation whose retained ownership an interrupt is allowed to reach through. */
+    private static final String RUN = "run_shell_command";
 
     private PaneInputReservations() {}
 
     static Lease keys(PaneInputCohort.Resolution initial, String operation) {
         initial.requireKeyRecipients(operation);
-        return acquire(initial, initial.keyRecipients(), operation);
+        return acquire(initial, initial.keyRecipients(), operation, false);
+    }
+
+    /**
+     * A lease for keys that can only stop what is running, rather than type anything.
+     *
+     * <p>A run that passed its deadline keeps the pane while its command is still going, and tells
+     * the caller to interrupt it. That advice has to be reachable, so an interrupt passes through a
+     * run's ownership instead of being refused by it — otherwise the one server that can start a
+     * command that hangs is the one that cannot stop it. It owns nothing itself: the run still owns
+     * the pane, until its command reports and releases it.
+     *
+     * <p>Owning nothing has a stated cost. Against a pane no run holds, this takes the pane free and
+     * sends without reserving it, so an operation admitted in between can have its line interleaved
+     * with the interrupt. A signal is the one thing where that does not matter: it enters no text,
+     * and its effect on whatever is running is the same either way.
+     */
+    static Lease interrupting(PaneInputCohort.Resolution initial, String operation) {
+        initial.requireKeyRecipients(operation);
+        return acquire(initial, initial.keyRecipients(), operation, true);
     }
 
     static Lease paste(PaneInputCohort.Resolution initial, String operation) {
         initial.requirePasteTarget(operation);
-        return acquire(initial, List.of(initial.source()), operation);
+        return acquire(initial, List.of(initial.source()), operation, false);
     }
 
     static Lease run(PaneInputCohort.Resolution initial, String operation) {
         initial.requireSingularCommandPane(operation);
-        return acquire(initial, initial.keyRecipients(), operation);
+        return acquire(initial, initial.keyRecipients(), operation, false);
     }
 
     private static Lease acquire(
-            PaneInputCohort.Resolution initial, List<PaneInputCohort.Member> members, String operation) {
+            PaneInputCohort.Resolution initial,
+            List<PaneInputCohort.Member> members,
+            String operation,
+            boolean interrupting) {
         Signature signature = Signature.capture(initial, members, operation);
         Set<PaneKey> panes = signature.keys(members);
         DaemonIdentity daemon = DaemonIdentity.capture(initial.authority());
         synchronized (MONITOR) {
-            if (panes.stream().anyMatch(HELD::contains)) {
-                throw new IllegalStateException(operation + " refuses pane input already owned by another operation");
+            for (PaneKey pane : panes) {
+                String holder = HELD.get(pane);
+                if (holder != null && !(interrupting && holder.equals(RUN))) {
+                    throw new IllegalStateException(
+                            operation + " refuses pane input already owned by another operation");
+                }
             }
-            HELD.addAll(panes);
+            if (!interrupting) {
+                panes.forEach(pane -> HELD.put(pane, operation));
+            }
         }
-        return new Lease(operation, initial.authority(), daemon, signature, panes);
+        return new Lease(operation, initial.authority(), daemon, signature, panes, !interrupting);
     }
 
     static final class Lease implements AutoCloseable {
@@ -55,6 +90,7 @@ final class PaneInputReservations {
         private final DaemonIdentity daemon;
         private final Signature initial;
         private final Set<PaneKey> panes;
+        private final boolean owning;
         private boolean closed;
 
         private Lease(
@@ -62,12 +98,14 @@ final class PaneInputReservations {
                 PaneInputCohort.Authority authority,
                 DaemonIdentity daemon,
                 Signature initial,
-                Set<PaneKey> panes) {
+                Set<PaneKey> panes,
+                boolean owning) {
             this.operation = operation;
             this.authority = authority;
             this.daemon = daemon;
             this.initial = initial;
             this.panes = Set.copyOf(panes);
+            this.owning = owning;
         }
 
         List<String> requireSameKeys(PaneInputCohort.Resolution fresh) {
@@ -96,7 +134,7 @@ final class PaneInputReservations {
 
         private void requireSame(Signature fresh) {
             synchronized (MONITOR) {
-                if (closed || !HELD.containsAll(panes)) {
+                if (closed || (owning && !HELD.keySet().containsAll(panes))) {
                     throw new IllegalStateException(operation + " lost pane input ownership");
                 }
                 if (!initial.equals(fresh)) {
@@ -109,7 +147,9 @@ final class PaneInputReservations {
         public void close() {
             synchronized (MONITOR) {
                 if (!closed) {
-                    HELD.removeAll(panes);
+                    if (owning) {
+                        HELD.keySet().removeAll(panes);
+                    }
                     closed = true;
                 }
             }

@@ -60,7 +60,7 @@ final class PaneCommandTest {
     }
 
     @Test
-    void aStatusIsReadOnlyFromAWholeWellFormedMarker() {
+    void aStatusIsReadOnlyFromAWellFormedMarkerEndingItsRow() {
         PaneCommand run = PaneCommand.fresh();
         String mark = end(run, 0).substring(0, end(run, 0).length() - 1);
 
@@ -72,6 +72,66 @@ final class PaneCommandTest {
         assertEquals(OptionalInt.empty(), run.status(mark + "\"$?\""));
     }
 
+    /**
+     * A command whose last line carried no newline leaves that line on the marker's own row. Reading
+     * the marker only where it began a row dropped the status of every such command — {@code printf
+     * foo} among them — kept the raw marker in the output, and called a finished run inexact.
+     */
+    @Test
+    void aMarkerIsReadAtTheEndOfTheRowItSharesAndWhatItSharesItWithIsOutput() {
+        PaneCommand run = PaneCommand.fresh();
+
+        PaneCommand.Framed framed = run.frame(List.of(start(run), "one", "two" + end(run, 0)));
+
+        assertEquals(List.of("one", "two"), framed.lines());
+        assertTrue(framed.exact());
+        assertEquals(OptionalInt.of(0), framed.status());
+    }
+
+    /**
+     * A terminal echoes the interrupt character onto the row the shell's trap then prints the marker
+     * on. The status is the shell's and is read; the echo is the terminal's and is not output.
+     */
+    @Test
+    void anInterruptEchoIsReadPastRatherThanReturned() {
+        PaneCommand run = PaneCommand.fresh();
+
+        PaneCommand.Framed framed = run.frame(List.of(start(run), "^C" + end(run, 130)));
+
+        assertEquals(List.of(), framed.lines());
+        assertEquals(OptionalInt.of(130), framed.status());
+    }
+
+    /**
+     * Exit alone leaves a command someone stops with no way to report, and the wait with nothing to
+     * end it — worst on dash, which does not run an exit trap on an interrupt at all.
+     */
+    @Test
+    void theTrapIsArmedForInterruptAndTerminateAsWellAsExit() {
+        String typed = PaneCommand.fresh().typed(TMUX, "true");
+
+        assertTrue(typed.contains("' 0 2 15; "), typed);
+        assertTrue(typed.contains("\\trap - 0 2 15; "), typed);
+    }
+
+    /**
+     * Asking tmux to rejoin wrapped rows also asks it to keep trailing spaces, and it pads the rows
+     * out to the pane to do so on 3.2a where 3.7c does not. The same command answered {@code built}
+     * on one and {@code built} followed by fifteen spaces on the other.
+     */
+    @Test
+    void tmuxsOwnPaddingIsNotTheCommandsOutput() {
+        PaneCommand run = PaneCommand.fresh();
+
+        PaneCommand.Framed framed =
+                run.frame(List.of(start(run), "built               ", "  indented    ", end(run, 0)));
+
+        assertEquals(
+                List.of("built", "  indented"),
+                framed.lines(),
+                "trailing padding goes, leading indentation is the command's and stays");
+    }
+
     /** Output that outgrew the history loses its start marker; what remains is said to be inexact. */
     @Test
     void aFrameWithItsStartScrolledAwayIsInexact() {
@@ -79,7 +139,9 @@ final class PaneCommandTest {
 
         PaneCommand.Framed framed = run.frame(List.of("line 9998", "line 9999", end(run, 1), "$ "));
 
-        assertEquals(List.of("line 9998", "line 9999", "$ "), framed.lines());
+        // "$" and not "$ ": every returned row loses its trailing space, here a prompt's, because
+        // nothing can tell tmux's padding from a printed one.
+        assertEquals(List.of("line 9998", "line 9999", "$"), framed.lines());
         assertFalse(framed.exact());
         assertEquals(OptionalInt.of(1), framed.status());
     }

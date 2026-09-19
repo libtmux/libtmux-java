@@ -68,11 +68,18 @@ was captured. Call `refresh()` for the state after:
 
 ```java
 // Given: Window window
-window.resizeTo(new Dimensions(100, 30));
+window.resizeTo(new Dimensions(90, 20));
+Window captured = window.refresh();
+captured.resizeTo(new Dimensions(100, 30));
 
-window.size();             // → 80x24
-window.refresh().size();   // → 100x30
+captured.size();             // → 90x20
+captured.refresh().size();   // → 100x30
 ```
+
+The first size is set rather than inherited on purpose. A new window's default
+is the client's size, less a row for the status line on tmux 3.2a and not on
+3.3 or later, so a snippet that printed that default would be telling the truth
+on only some of the releases this supports.
 
 `Session.rename`, `Window.rename`, `Pane.retitle`, and each handle's `refresh`
 carry `@CheckReturnValue`. Error Prone rejects a call that discards their results.

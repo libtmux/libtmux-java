@@ -2,6 +2,7 @@ package io.github.libtmux.mcp;
 
 import io.github.libtmux.Pane;
 import java.util.List;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -27,6 +28,12 @@ final class Typing {
             int characters,
             int lines,
             @Nullable String note) {}
+
+    /**
+     * The keys that can only stop what is running: each raises a signal at the terminal and enters
+     * no text, so letting one through a run's held pane cannot interleave with what that run typed.
+     */
+    private static final Set<String> STOPS = Set.of("C-c", "C-\\");
 
     /**
      * Sends keys as tmux names them, so {@code C-c} interrupts and {@code Enter} is a keypress.
@@ -62,7 +69,13 @@ final class Typing {
 
     static Sent sendKeys(
             Pane pane, List<String> keys, boolean literal, boolean enter, PaneInputCohort.Resolution cohort) {
-        try (PaneInputReservations.Lease lease = PaneInputReservations.keys(cohort, "send_keys")) {
+        // Keys that only signal go through a run still holding this pane; anything that could type
+        // waits for it. Without this the advice a timed-out run gives - interrupt it - names the one
+        // thing this server refuses, and a command that hangs can never be stopped through it.
+        boolean stopping = !literal && !enter && keys.stream().allMatch(STOPS::contains);
+        try (PaneInputReservations.Lease lease = stopping
+                ? PaneInputReservations.interrupting(cohort, "send_keys")
+                : PaneInputReservations.keys(cohort, "send_keys")) {
             PaneInputCohort.Resolution fresh = PaneInputCohort.resolve(pane, cohort.caller());
             List<String> resolved = lease.requireSameKeys(fresh);
             // A boolean is right here and wrong on Pane: this one is a tool argument off the wire,

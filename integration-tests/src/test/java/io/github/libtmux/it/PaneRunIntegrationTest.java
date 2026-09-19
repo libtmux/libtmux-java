@@ -67,6 +67,23 @@ final class PaneRunIntegrationTest {
                 "and exit ended the command's subshell, not the pane's shell");
     }
 
+    /**
+     * Plenty of commands end without a closing newline — {@code printf} and {@code echo -n} among
+     * them — and the shell then prints the end marker onto the same row as that last line. Reading
+     * the marker only where it began a row lost the status of every one of them, kept the raw marker
+     * in the output, and called a finished run inexact.
+     */
+    @Test
+    void aCommandWhoseLastLineHasNoNewlineStillReportsItsStatus(Server server) throws InterruptedException {
+        Pane pane = shell(server, "unterminated", 120);
+
+        PaneRun ran = pane.run("printf 'first\\nsecond'", GENEROUS);
+
+        assertEquals(OptionalInt.of(0), ran.exitStatus(), "the status shares its row with 'second'");
+        assertEquals(List.of("first", "second"), ran.output(), "and that row is output, marker and all removed");
+        assertTrue(ran.exact());
+    }
+
     @Test
     void aCommandThatPrintsNothingAnswersWithNothing(Server server) throws InterruptedException {
         PaneRun ran = shell(server, "quiet", 120).run("true", GENEROUS);

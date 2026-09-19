@@ -412,9 +412,10 @@ public final class Pane {
      * Runs a shell command in this pane to its end, and answers with its exit status and output.
      *
      * <p><strong>Reach for this first</strong> whenever the command is yours. Nothing is inferred from
-     * the screen: the command runs in a subshell of the pane's own shell, whose exit trap reports
-     * {@code $?} and signals a private {@code wait-for} channel, so the wait is tmux's and the status
-     * is the shell's. The output is what the command printed and nothing else — not the typed line,
+     * the screen: the command runs in a subshell of the pane's own shell, whose trap reports {@code $?}
+     * and signals a private {@code wait-for} channel, so the wait is tmux's and the status is the
+     * shell's. The trap covers interrupt and terminate as well as exit, so a command someone stops at
+     * the pane ends this call with the status it was stopped with rather than leaving it waiting. The output is what the command printed and nothing else — not the typed line,
      * not the prompt — cut out between two markers the plumbing prints around it.
      *
      * <pre>{@code

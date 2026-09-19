@@ -129,7 +129,14 @@ final class WaitingForTextTest {
     void sendThenWaitDoesNotMatchTheEchoedCommandLineOnAWarmShellEither(Server server) {
         Pane pane = server.panes().get(0);
         String marker = "echo-marker-warm";
-        RunningCommands.run(TestCalls.on(server, "pane_id", pane.id().value(), "command", "true", "timeout", 15));
+        // Asserted, not assumed: a run that does not finish keeps the pane, and the typing below
+        // would then be refused for owning rather than for anything this test is about.
+        assertEquals(
+                "SIGNALLED",
+                RunningCommands.run(
+                                TestCalls.on(server, "pane_id", pane.id().value(), "command", "true", "timeout", 15))
+                        .outcome(),
+                "the warm-up run never finished, so it still owns the pane");
 
         typeAndSubmit(server, pane, "sleep 1; echo " + marker);
 
@@ -147,8 +154,11 @@ final class WaitingForTextTest {
     }
 
     private static void assertMatchedTheOutputNotTheEcho(Server server, Pane pane, String marker) {
+        // Generous on purpose: what is pinned here is which line matched, not how soon. The
+        // command sleeps a second before printing, and a five-second budget left barely four for a
+        // loaded machine to get there - it lost one lane of the matrix that way.
         WaitingForText.Waited waited = WaitingForText.waitFor(
-                TestCalls.on(server, "pane_id", pane.id().value(), "patterns", List.of(marker), "timeout", 5));
+                TestCalls.on(server, "pane_id", pane.id().value(), "patterns", List.of(marker), "timeout", 20));
 
         assertEquals("MATCHED", waited.outcome(), "the output must eventually appear");
         String matchedLine = String.valueOf(waited.matchedLine());

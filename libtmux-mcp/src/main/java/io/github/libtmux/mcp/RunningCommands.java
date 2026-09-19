@@ -23,9 +23,10 @@ import org.jspecify.annotations.Nullable;
  * <h2>How completion is known</h2>
  *
  * <p>An inner subshell evaluates the command with the pane shell's inherited environment, options,
- * traps, and functions. An outer subshell arms an exit trap first; that trap prints the numeric end
- * marker and signals a private channel through one absolute tmux executable and the live server's
- * exact {@code -S} socket. Waiting is tmux's own {@code wait-for}, so completion is not inferred
+ * traps, and functions. An outer subshell arms a trap first — for interrupt and terminate as well as
+ * exit, so a command stopped at the pane still reports what it was stopped with; that trap prints the
+ * numeric end marker and signals a private channel through one absolute tmux executable and the live
+ * server's exact {@code -S} socket. Waiting is tmux's own {@code wait-for}, so completion is not inferred
  * from the screen.
  *
  * <h2>How the output is separated from the plumbing</h2>
