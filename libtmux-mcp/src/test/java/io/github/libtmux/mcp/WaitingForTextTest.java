@@ -62,11 +62,8 @@ final class WaitingForTextTest {
     }
 
     /**
-     * Text already on screen when a cursorless wait starts must not be reported as a fresh
-     * {@code MATCHED} - a pane already saying "ready" from before the call did not just become ready
-     * - but it must not be silently invisible either. Before this fix it was: {@code TIMED_OUT} with
-     * completely empty {@code output}, indistinguishable from the pattern never having appeared at
-     * all, even though {@code capture-pane} showed it in plain sight.
+     * Text already on screen when a cursorless wait starts is reported as {@code PRESENT_AT_ENTRY}
+     * with that text included - not a fresh {@code MATCHED}, and not a {@code TIMED_OUT} that hides it.
      */
     @Test
     void textAlreadyOnScreenIsReportedAsPresentAtEntryNotAFreshMatch(Server server) {
@@ -87,15 +84,21 @@ final class WaitingForTextTest {
     }
 
     /**
-     * Text typed but never submitted sits on the
-     * pending input line, not in anything the pane produced. The new entry check this fix adds must
-     * not turn that into a false {@code PRESENT_AT_ENTRY} - it has to stay a plain {@code TIMED_OUT},
-     * exactly as a cursorless wait already handled it before this fix.
+     * Text typed but never submitted sits on the pending input line, not in anything the pane
+     * produced, so a cursorless wait for it stays a plain {@code TIMED_OUT}.
      */
     @Test
     void unsubmittedTypedTextIsNeverPresentAtEntry(Server server) {
         Pane pane = server.panes().get(0);
         String marker = "pending-input-marker";
+        // A shell still starting up prints its first prompt straight after these unread bytes,
+        // with nothing between them, so the echo check cannot discount them.
+        assertEquals(
+                "SIGNALLED",
+                RunningCommands.run(
+                                TestCalls.on(server, "pane_id", pane.id().value(), "command", "true", "timeout", 15))
+                        .outcome(),
+                "the warm-up run never finished, so it still owns the pane");
         Typing.sendKeys(
                 TestCalls.on(server, "pane_id", pane.id().value(), "keys", List.of("echo " + marker), "literal", true));
 
