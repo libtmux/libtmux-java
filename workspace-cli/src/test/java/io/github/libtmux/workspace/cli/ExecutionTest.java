@@ -2141,6 +2141,55 @@ final class ExecutionTest {
         }
     }
 
+    /**
+     * Envelope status follows what the results retained, not what the errors say. An input that
+     * built a session before a later one mismatched leaves that session behind, so the load is
+     * partial however the failure is coded.
+     */
+    @Test
+    void anEarlierInputThatBuiltKeepsTheEnvelopePartial() throws Exception {
+        Path built = directory.resolve("built.yaml");
+        Path mismatched = directory.resolve("mismatched.yaml");
+        Path socket = directory.resolve("two-input-socket");
+        Files.writeString(built, """
+                session_name: built
+                windows:
+                  - window_name: only
+                    panes: [null]
+                """);
+        Files.writeString(mismatched, """
+                session_name: standing
+                windows:
+                  - window_name: absent
+                    panes: [null]
+                """);
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("standing");
+                Result result = invoke(
+                        "load",
+                        built.toString(),
+                        mismatched.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(1, result.code(), result.toString());
+                var document = new ObjectMapper().readTree(result.out());
+                assertEquals("partial", document.path("status").asText(), result.toString());
+                assertEquals(
+                        "session_mismatch",
+                        document.path("errors").path(0).path("code").asText(),
+                        result.toString());
+                assertTrue(server.hasSession("built"), result.toString());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** An append that fails partway keeps what it added, and the failure says which windows those are. */
     @Test
     void aFailedAppendNamesTheWindowsItKeeps() throws Exception {

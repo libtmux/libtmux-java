@@ -1201,7 +1201,7 @@ final class ProcessTest {
                 assertEquals(1, effects.path("pane_ids").size());
                 assertTrue(effects.path("session_removed").asBoolean(), output);
                 assertTrue(error.contains("not-a-tmux-option"), error);
-                assertTrue(error.contains("\"code\":\"usage\""), error);
+                assertTrue(error.contains("\"code\":\"log_unavailable\""), error);
             } finally {
                 if (process.isAlive()) process.destroyForcibly().waitFor();
                 if (server.isAlive()) server.killServer();

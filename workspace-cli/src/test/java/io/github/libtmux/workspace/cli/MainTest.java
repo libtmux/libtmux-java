@@ -57,8 +57,7 @@ final class MainTest {
                 "tmux_failed",
                 "script_failed",
                 "destination_exists",
-                "usage",
-                "interrupted");
+                "usage");
         Path unsupported = directory.resolve("unsupported.yaml");
         Files.writeString(unsupported, "session_name: codes\nbogus: 1\nwindows: [{}]\n");
         Path malformed = directory.resolve("malformed.yaml");
@@ -79,11 +78,14 @@ final class MainTest {
             String code = new ObjectMapper().readTree(result.err()).path("code").asText();
             assertTrue(shared.contains(code), code + " from " + String.join(" ", invocation));
         }
-        assertEquals(
-                shared,
-                java.util.Arrays.stream(Machine.Code.values())
-                        .map(Machine.Code::wire)
-                        .collect(java.util.stream.Collectors.toSet()));
+        var documented = java.util.Set.of("interrupted", "log_unavailable");
+        var declared = java.util.Arrays.stream(Machine.Code.values())
+                .map(Machine.Code::wire)
+                .collect(java.util.stream.Collectors.toSet());
+        assertTrue(declared.containsAll(shared), declared.toString());
+        var extra = new java.util.HashSet<>(declared);
+        extra.removeAll(shared);
+        assertEquals(documented, extra, "a code outside the shared set must be one the README names");
     }
 
     /** A missing workspace file is `workspace_not_found`. */
