@@ -22,7 +22,7 @@ final class LayoutsTest {
 
     private static final String JSON_LAYOUT = "{\"V\":2,\"L\":{\"t\":\"v\",\"w\":80,\"h\":24,\"i\":\"0\"}}";
 
-    // ------------------------------------------------------------------------------ JSON (JAVA2-1)
+    // ------------------------------------------------------------------------------ JSON
 
     @Test
     void aJsonLayoutIsAcceptedFromTheVersionThatWritesIt() {
@@ -47,7 +47,7 @@ final class LayoutsTest {
         assertThrows(IllegalArgumentException.class, () -> Layouts.require("{not json", V3_8));
     }
 
-    // ------------------------------------------------------------------------ prefixes (JAVA2-2)
+    // ------------------------------------------------------------------------ prefixes
 
     @Test
     void aUniquePrefixIsAcceptedOnEveryVersion() {
@@ -99,7 +99,7 @@ final class LayoutsTest {
     }
 
     /**
-     * D3: no refusal may claim tmux does not know a layout when tmux does. {@code main-h} is a name
+     * No refusal may claim tmux does not know a layout when tmux does. {@code main-h} is a name
      * tmux 3.3a resolves without ambiguity (confirmed above); the versionless overload cannot narrow
      * by version, but it must still say the prefix is ambiguous, not that tmux has never heard of it.
      */

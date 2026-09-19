@@ -32,6 +32,19 @@ final class DocumentationFactsTest {
 
     private static final Path ROOT = Path.of(System.getProperty("libtmux.docs.root", "."));
 
+    /** Every module with sources, published or not: a codename is no clearer in a test. */
+    private static final List<String> SOURCE_MODULES = List.of(
+            "libtmux",
+            "libtmux-jackson",
+            "libtmux-junit5",
+            "libtmux-kotlin",
+            "libtmux-mcp",
+            "libtmux-workspace",
+            "benchmarks",
+            "docs-tests",
+            "examples",
+            "integration-tests");
+
     /** Published modules, which is what a reader is told to depend on. */
     private static final List<String> PUBLISHED = List.of(
             "libtmux", "libtmux-jackson", "libtmux-junit5", "libtmux-kotlin", "libtmux-mcp", "libtmux-workspace");
@@ -97,42 +110,52 @@ final class DocumentationFactsTest {
     }
 
     /**
-     * An internal tracker id in a published source is a reference a reader cannot follow.
+     * An internal tracker id in any source is a reference a reader cannot follow.
      *
-     * <p>They arrive honestly — a comment written while a ticket was open — and then ship. The
-     * sentence around one always says the thing anyway, so the tag is pure cost to everyone outside
-     * the project, in Javadoc that goes to Maven Central.
+     * <p>They arrive honestly — a comment written while a ticket was open, a marker string named after
+     * the ticket that needed it — and then stay. The sentence around one always says the thing anyway,
+     * so the tag is pure cost to everyone outside the project. Tests too: a test is where a reader goes
+     * to learn why a behaviour exists, and a codename there answers nothing.
      */
     @Test
-    void noPublishedSourceCitesAnInternalTrackerId() throws IOException {
-        Pattern tag = Pattern.compile("\\b(?:JAVA[0-9]*-[0-9]+|D[0-9]{1,2})\\b");
+    void noSourceCitesAnInternalTrackerId() throws IOException {
+        // A ticket-shaped id is one wherever it sits. A short D-number could be a dimension or a
+        // drive, so that one counts only where it reads as a citation.
+        Pattern ticket = Pattern.compile("\\bJAVA[0-9]*-[A-Z0-9]+");
+        Pattern shortId = Pattern.compile("\\bD[0-9]{1,2}\\b");
         List<String> found = new ArrayList<>();
-        for (String module : PUBLISHED) {
-            Path sources = ROOT.resolve(module).resolve("src/main");
-            if (!Files.isDirectory(sources)) {
-                continue;
-            }
-            try (Stream<Path> tree = Files.walk(sources)) {
-                for (Path file : tree.filter(Files::isRegularFile).toList()) {
-                    String name = file.getFileName().toString();
-                    if (!name.endsWith(".java") && !name.endsWith(".kt")) {
-                        continue;
-                    }
-                    String text = Files.readString(file);
-                    Matcher cited = tag.matcher(text);
-                    while (cited.find()) {
-                        // A version or a dimension is not a ticket: require it to read as a citation.
-                        int at = cited.start();
-                        String around = text.substring(Math.max(0, at - 2), Math.min(text.length(), cited.end() + 1));
-                        if (around.startsWith("(") || around.startsWith(" (") || around.endsWith(":")) {
+        for (String module : SOURCE_MODULES) {
+            for (String set : List.of("src/main", "src/test")) {
+                Path sources = ROOT.resolve(module).resolve(set);
+                if (!Files.isDirectory(sources)) {
+                    continue;
+                }
+                try (Stream<Path> tree = Files.walk(sources)) {
+                    for (Path file : tree.filter(Files::isRegularFile).toList()) {
+                        String name = file.getFileName().toString();
+                        if (!name.endsWith(".java") && !name.endsWith(".kt") && !name.endsWith(".kts")) {
+                            continue;
+                        }
+                        String text = Files.readString(file);
+                        Matcher cited = ticket.matcher(text);
+                        while (cited.find()) {
                             found.add(ROOT.relativize(file) + ": " + cited.group());
+                        }
+                        Matcher brief = shortId.matcher(text);
+                        while (brief.find()) {
+                            int at = brief.start();
+                            String around =
+                                    text.substring(Math.max(0, at - 2), Math.min(text.length(), brief.end() + 1));
+                            if (around.startsWith("(") || around.startsWith(" (") || around.endsWith(":")) {
+                                found.add(ROOT.relativize(file) + ": " + brief.group());
+                            }
                         }
                     }
                 }
             }
         }
 
-        assertEquals(List.of(), found, "a published source cites an internal tracker id");
+        assertEquals(List.of(), found, "a source cites an internal tracker id");
     }
 
     /**

@@ -663,7 +663,7 @@ final class ServerTest {
     }
 
     /**
-     * JAVA2-8: an older client cannot talk to a newer daemon at all - confirmed against the matrix,
+     * An older client cannot talk to a newer daemon at all - confirmed against the matrix,
      * a 3.2a client against a 3.7c daemon on the same socket fails outright, {@code server exited
      * unexpectedly}. tmux reports that identically to "no daemon ever started here", so {@code
      * versionForCreation} used to read it as "no daemon" and quietly substitute the configured
@@ -704,7 +704,7 @@ final class ServerTest {
     // ------------------------------------------------------------------------- session creation
 
     /**
-     * JAVA2-9: {@code /bin/true} exits 0 and prints nothing, which {@code run} cannot tell apart
+     * {@code /bin/true} exits 0 and prints nothing, which {@code run} cannot tell apart
      * from tmux genuinely succeeding with an empty answer. Before this, an empty {@code stdout} list
      * reached {@code SessionId(reported.get(0))} directly and threw an unchecked collection
      * exception with neither tmux's stderr nor the configured binary in it.
@@ -717,7 +717,7 @@ final class ServerTest {
                 .build();
 
         try (Server server = Server.open(notTmux)) {
-            // assertThrows itself is the JAVA2-9 regression guard: an ArrayIndexOutOfBoundsException
+            // assertThrows itself is the regression guard: an ArrayIndexOutOfBoundsException
             // would not satisfy LibTmuxException.class and would fail this call as an unexpected type.
             LibTmuxException failure = assertThrows(LibTmuxException.class, () -> server.newSession("x"));
 
@@ -728,7 +728,7 @@ final class ServerTest {
     }
 
     /**
-     * JAVA2-10: the same misconfiguration, but with a spec that forces a version probe first
+     * The same misconfiguration, but with a spec that forces a version probe first
      * ({@code versionForCreation} -&gt; {@code version()} -&gt; the server identity read). Before
      * this, {@code /bin/true}'s empty answer produced "tmux did not report exactly one server
      * identity row" - a message that reads like a transient parsing problem with a real tmux, not
@@ -752,9 +752,9 @@ final class ServerTest {
     }
 
     /**
-     * JAVA2-11 (D5): an explicit socket under a directory that does not exist is a path the
+     * An explicit socket under a directory that does not exist is a path the
      * operator chose, so it is reported rather than created. tmux prints {@code error creating ...}
-     * and exits 0 - the same empty-output shape as JAVA2-9, reached through ordinary
+     * and exits 0 - the same empty-output shape as {@code /bin/true} above, reached through ordinary
      * misconfiguration rather than a non-tmux binary.
      */
     @Test

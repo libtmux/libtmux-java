@@ -37,7 +37,7 @@ final class PaneProcessIntegrationTest {
     // ------------------------------------------------------------------------------- dead panes
 
     /**
-     * JAVA-3: {@code pid()} for a dead, kept pane is version-dependent, and there was no way to ask
+     * {@code pid()} for a dead, kept pane is version-dependent, and there was no way to ask
      * "is this pane dead" short of a raw {@code #{pane_dead}} round trip. {@code dead()} is that
      * accessor, read live rather than from the capture.
      */
@@ -60,7 +60,7 @@ final class PaneProcessIntegrationTest {
     }
 
     /**
-     * JAVA2-3: {@code display-message -t} does not error on a target it cannot resolve — unlike
+     * {@code display-message -t} does not error on a target it cannot resolve — unlike
      * every other command {@code Pane} sends — so a fully gone pane (no {@code remain-on-exit})
      * answered {@code #{pane_dead}} with an empty line rather than tmux's own "can't find pane",
      * and {@code dead()} read that empty answer as {@code false} instead of throwing as its own

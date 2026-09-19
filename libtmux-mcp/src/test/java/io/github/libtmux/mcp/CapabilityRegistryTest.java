@@ -338,9 +338,8 @@ final class CapabilityRegistryTest {
     }
 
     /**
-     * JAVA2-5: the controlled opener used to be the first sentence of every description, so a
-     * client that reads only that sentence - which the round's own coordinator harness did, by
-     * splitting on {@code ". "} - could not tell {@code list_sessions} apart from {@code
+     * The controlled opener used to be the first sentence of every description, so a
+     * client that reads only that sentence could not tell {@code list_sessions} apart from {@code
      * get_server_info}, or {@code rename_session} from {@code select_layout}: every tool in a
      * toolset opened on the identical classification. Moving that sentence to the end means the
      * first sentence is now the tool's own distinguishing text.

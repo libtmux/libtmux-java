@@ -110,7 +110,7 @@ final class ControlWatchIntegrationTest {
     }
 
     /**
-     * D5: {@code ControlClient.attach} now sends {@code refresh-client -f new-layouts} on connect,
+     * {@code ControlClient.attach} now sends {@code refresh-client -f new-layouts} on connect,
      * so a {@code layout-change} notification carries JSON on tmux 3.8+ - agreeing with what a
      * plain client already reads through {@link Window#layout()} - instead of the classic string a
      * control client got before this flag was requested.

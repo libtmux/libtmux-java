@@ -40,7 +40,7 @@ final class ControlClientTest {
     void aBlockedControlWriteDoesNotOccupyTheCallersCarrier(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                # the client's own on-attach refresh-client -f new-layouts (D5)
+                # the client's own on-attach refresh-client -f new-layouts
                 IFS= read -r request
                 printf '%%begin 101 1 0\n%%end 101 1 0\n'
                 sleep 5
@@ -84,7 +84,7 @@ final class ControlClientTest {
     }
 
     /**
-     * JAVA2-4: tmux(1) documents {@code refresh-client -B name:what:format}'s {@code what} as empty,
+     * tmux(1) documents {@code refresh-client -B name:what:format}'s {@code what} as empty,
      * {@code %N}, {@code %*}, {@code @N} or {@code @*} only. A session id ({@code $0}) or an
      * arbitrary word were never spellings the manual promises for "the attached session" - 3.2a and
      * 3.7c happen to accept them leniently, but on master the identical call is accepted and fires
@@ -130,7 +130,7 @@ final class ControlClientTest {
         Files.writeString(fakeTmux, """
                 #!/bin/sh
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                # the client's own on-attach refresh-client -f new-layouts (D5)
+                # the client's own on-attach refresh-client -f new-layouts
                 IFS= read -r request
                 printf '%%begin 101 1 0\n%%end 101 1 0\n'
                 IFS= read -r request
@@ -155,7 +155,7 @@ final class ControlClientTest {
     void closingTheClientWakesAWaitingSubscriber(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                # the client's own on-attach refresh-client -f new-layouts (D5)
+                # the client's own on-attach refresh-client -f new-layouts
                 IFS= read -r request
                 printf '%%begin 101 1 0\n%%end 101 1 0\n'
                 IFS= read -r never
@@ -224,7 +224,7 @@ final class ControlClientTest {
         Path dispatched = directory.resolve("dispatched");
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                # the client's own on-attach refresh-client -f new-layouts (D5)
+                # the client's own on-attach refresh-client -f new-layouts
                 IFS= read -r request
                 printf '%%begin 101 1 0\n%%end 101 1 0\n'
                 IFS= read -r request
@@ -287,7 +287,7 @@ final class ControlClientTest {
                     i=$((i + 1))
                 done
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                # includes the client's own on-attach refresh-client -f new-layouts (D5)
+                # includes the client's own on-attach refresh-client -f new-layouts
                 while IFS= read -r request; do printf '%%begin 101 1 0\n%%end 101 1 0\n'; done
                 """);
 
@@ -303,7 +303,7 @@ final class ControlClientTest {
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 sleep 30 &
                 printf '%s\n' "$!" > "${0%/*}/child-pid"
-                # includes the client's own on-attach refresh-client -f new-layouts (D5)
+                # includes the client's own on-attach refresh-client -f new-layouts
                 while IFS= read -r request; do printf '%%begin 101 1 0\n%%end 101 1 0\n'; done
                 """);
         long child = -1;
@@ -328,7 +328,7 @@ final class ControlClientTest {
         Path ready = directory.resolve("stdin-closed");
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                # the client's own on-attach refresh-client -f new-layouts (D5)
+                # the client's own on-attach refresh-client -f new-layouts
                 IFS= read -r request
                 printf '%%begin 101 1 0\n%%end 101 1 0\n'
                 sh -c 'trap "" HUP TERM; exec sleep 30' </dev/null >/dev/null 2>&1 &

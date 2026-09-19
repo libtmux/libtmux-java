@@ -59,7 +59,7 @@ final class SplitIntegrationTest {
         assertEquals(original.size().height(), created.size().height(), "and leaves the height alone");
     }
 
-    /** JAVA-7: no absolute pane position accessor existed; reaching it needed a raw round trip per pane. */
+    /** No absolute pane position accessor existed; reaching it needed a raw round trip per pane. */
     @Test
     void positionReportsWhereEachPaneSitsInTheWindow(Server server) {
         Pane original = onlyPane(server);
@@ -217,7 +217,7 @@ final class SplitIntegrationTest {
     }
 
     /**
-     * JAVA-2: a command with no {@link SplitSpec.Builder#keepOnExit} that exits fast enough races
+     * A command with no {@link SplitSpec.Builder#keepOnExit} that exits fast enough races
      * the read-back {@link Pane#split} uses to confirm the new pane. tmux still makes the pane and
      * runs the command in it — this pins the documented failure ({@link
      * SplitSpec.Builder#running}) rather than a behaviour change, so a future edit that started

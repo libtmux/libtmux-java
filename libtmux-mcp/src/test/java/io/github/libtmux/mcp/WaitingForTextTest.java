@@ -62,7 +62,7 @@ final class WaitingForTextTest {
     }
 
     /**
-     * JAVA2-6: text already on screen when a cursorless wait starts must not be reported as a fresh
+     * Text already on screen when a cursorless wait starts must not be reported as a fresh
      * {@code MATCHED} - a pane already saying "ready" from before the call did not just become ready
      * - but it must not be silently invisible either. Before this fix it was: {@code TIMED_OUT} with
      * completely empty {@code output}, indistinguishable from the pattern never having appeared at
@@ -87,7 +87,7 @@ final class WaitingForTextTest {
     }
 
     /**
-     * D1 point 2 (M2 in the round's own findings): text typed but never submitted sits on the
+     * Text typed but never submitted sits on the
      * pending input line, not in anything the pane produced. The new entry check this fix adds must
      * not turn that into a false {@code PRESENT_AT_ENTRY} - it has to stay a plain {@code TIMED_OUT},
      * exactly as a cursorless wait already handled it before this fix.
@@ -95,7 +95,7 @@ final class WaitingForTextTest {
     @Test
     void unsubmittedTypedTextIsNeverPresentAtEntry(Server server) {
         Pane pane = server.panes().get(0);
-        String marker = "JAVA-D1-PENDING-MARKER";
+        String marker = "pending-input-marker";
         Typing.sendKeys(
                 TestCalls.on(server, "pane_id", pane.id().value(), "keys", List.of("echo " + marker), "literal", true));
 
@@ -109,7 +109,7 @@ final class WaitingForTextTest {
     }
 
     /**
-     * D10: {@code send_keys} then {@code wait_for_text} for the same marker must not match the
+     * {@code send_keys} then {@code wait_for_text} for the same marker must not match the
      * typed command line itself, which a shell echoes back and which therefore contains the marker
      * too. {@link io.github.libtmux.TypedText} is what makes the difference - go through the real MCP {@link Typing}
      * operation rather than a raw {@code send-keys}, or nothing records the echo to exclude.
@@ -117,7 +117,7 @@ final class WaitingForTextTest {
     @Test
     void sendThenWaitDoesNotMatchTheEchoedCommandLine(Server server) {
         Pane pane = server.panes().get(0);
-        String marker = "JAVA-D10-MARKER-COLD";
+        String marker = "echo-marker-cold";
 
         typeAndSubmit(server, pane, "sleep 1; echo " + marker);
 
@@ -128,7 +128,7 @@ final class WaitingForTextTest {
     @Test
     void sendThenWaitDoesNotMatchTheEchoedCommandLineOnAWarmShellEither(Server server) {
         Pane pane = server.panes().get(0);
-        String marker = "JAVA-D10-MARKER-WARM";
+        String marker = "echo-marker-warm";
         RunningCommands.run(TestCalls.on(server, "pane_id", pane.id().value(), "command", "true", "timeout", 15));
 
         typeAndSubmit(server, pane, "sleep 1; echo " + marker);

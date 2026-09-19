@@ -220,7 +220,7 @@ final class CreationIntegrationTest {
     }
 
     /**
-     * JAVA-1: sizing is exactly the one thing {@link SessionSpec#argv} needs the version for, and a
+     * Sizing is exactly the one thing {@link SessionSpec#argv} needs the version for, and a
      * fresh socket has no daemon yet to ask {@link Server#version()}. The version has to come from
      * somewhere that does not need one already running — here, the binary itself.
      */

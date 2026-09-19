@@ -35,7 +35,7 @@ final class ToolsAgainstTmuxTest {
     // ---------------------------------------------------------------- knowing where you are
 
     /**
-     * D2: an MCP's own observation client must not read as an attached one. Ports that keep a
+     * An MCP's own observation client must not read as an attached one. Ports that keep a
      * long-lived control client for {@code wait_for_text} have to exclude it explicitly from
      * {@code list_sessions}'s attached count; java is the reference here by construction - it polls
      * plain captures and never attaches a control client of its own, so there is nothing to
@@ -516,9 +516,9 @@ final class ToolsAgainstTmuxTest {
     }
 
     /**
-     * JAVA2-11 (D5, D7): an explicit socket under a directory that does not exist is a path the
+     * An explicit socket under a directory that does not exist is a path the
      * operator chose, so tmux's own {@code error creating ...} is surfaced rather than invented -
-     * the same fix as JAVA2-9's {@code Server.newSession}, reached here through the MCP tool. Before
+     * the same fix {@code Server.newSession} has, reached here through the MCP tool. Before
      * it, this call reached an uncaught {@code ArrayIndexOutOfBoundsException}, which the answer
      * dispatcher in {@code TmuxMcpServer} does not catch, so it left the tool boundary as a
      * transport-level failure instead of an {@code isError} result the model can read and act on.
