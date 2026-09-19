@@ -13,6 +13,7 @@ import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -87,19 +88,18 @@ final class ServerScriptingIntegrationTest {
         Path literal = directory.resolve("literal");
         Path probe = directory.resolve("probe");
 
+        // A control for #() dispatch itself, isolated from run-shell's own argument expansion: this
+        // tmux was observed on macOS never running the job at all, which no caller can work around.
+        server.expand("#(touch " + probe + ")");
+        Assumptions.assumeTrue(Await.until(() -> Files.exists(probe)), "this tmux never dispatches a #() job");
+
         // The literalized command goes first, so by the time the expanded one has landed the
         // literal one has had at least as long to fire. Asserting its absence straight after
         // dispatching it would pass even if literalization did nothing, because #() is asynchronous.
         server.runShell(TmuxFormats.literal("echo '#(touch " + literal + ")' > /dev/null"));
         server.runShell("echo '#(touch " + expanded + ")' > /dev/null");
-        // A control for #() dispatch itself, isolated from run-shell's own argument expansion.
-        server.expand("#(touch " + probe + ")");
 
-        boolean expandedRan = Await.until(() -> Files.exists(expanded));
-        assertTrue(
-                expandedRan,
-                () -> "tmux expands a format inside shell quotes; a #() job through display-message "
-                        + (Files.exists(probe) ? "still ran" : "did not run either"));
+        assertTrue(Await.until(() -> Files.exists(expanded)), "tmux expands a format inside shell quotes");
         assertFalse(Files.exists(literal), "a literalized value must reach the shell as text");
     }
 
