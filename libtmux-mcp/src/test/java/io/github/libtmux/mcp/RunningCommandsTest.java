@@ -20,6 +20,7 @@ import io.github.libtmux.transport.TmuxTransportException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -31,6 +32,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -867,10 +869,23 @@ final class RunningCommandsTest {
     private static Process attachClient(Server server, Pane pane) {
         String socket =
                 server.cmd("display-message", "-p", "#{socket_path}").stdout().getFirst();
-        String command = Shell.quote(server.config().binary()) + " -S " + Shell.quote(socket) + " attach-session -t "
-                + Shell.quote(pane.window().session().id().value());
+        List<String> tmuxAttach = List.of(
+                server.config().binary(),
+                "-S",
+                socket,
+                "attach-session",
+                "-t",
+                pane.window().session().id().value());
+        // BSD script (macOS) takes the command as trailing words, not -c: util-linux's -c syntax
+        // reads as an illegal option there and script exits before tmux ever runs.
+        boolean bsdScript =
+                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+        List<String> argv = bsdScript
+                ? Stream.concat(Stream.of("script", "-q", "/dev/null"), tmuxAttach.stream())
+                        .toList()
+                : List.of("script", "-q", "-c", Shell.quoteAll(tmuxAttach), "/dev/null");
         try {
-            ProcessBuilder builder = new ProcessBuilder("script", "-q", "-c", command, "/dev/null")
+            ProcessBuilder builder = new ProcessBuilder(argv)
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .redirectError(ProcessBuilder.Redirect.DISCARD);
             builder.environment().put("TERM", "xterm");
