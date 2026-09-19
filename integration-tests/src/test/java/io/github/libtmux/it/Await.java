@@ -37,6 +37,17 @@ final class Await {
     }
 
     /**
+     * Whether the pane displays the text within the budget, whoever put it there.
+     *
+     * <p>The counterpart to {@link #output}, for a test that has to confirm its own typing arrived.
+     * A wait discounts what this library typed, on purpose — that is the caller's question coming
+     * back, not the pane's answer — so only a capture can say the characters reached the pane.
+     */
+    static boolean shown(Pane pane, String expected) {
+        return until(() -> pane.capture().stream().anyMatch(line -> line.contains(expected)));
+    }
+
+    /**
      * Whether the pane showed the text within the budget.
      *
      * <p>The library's own wait, not another copy of one. It reports why it ended; this suite only
