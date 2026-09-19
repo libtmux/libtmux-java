@@ -127,8 +127,8 @@ final class Catalog {
         Optional<Path> found = bare && extension(path).isEmpty() ? candidate(global.resolve(path)) : Optional.empty();
         if (found.isEmpty()) found = candidate(context.directory().resolve(path));
         if (found.isEmpty() && bare) found = candidate(global.resolve(path));
-        return found.orElseThrow(
-                        () -> new Main.Failure("workspace_not_found", 1, "workspace source was not found: " + name))
+        return found.orElseThrow(() -> new Main.Failure(
+                        Machine.Code.WORKSPACE_NOT_FOUND, 1, "workspace source was not found: " + name))
                 .toRealPath();
     }
 

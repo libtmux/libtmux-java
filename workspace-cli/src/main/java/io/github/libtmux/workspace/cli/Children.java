@@ -47,7 +47,7 @@ final class Children {
             Path candidate = context.directory().resolve(directory).resolve(name);
             if (Files.isExecutable(candidate) && !Files.isDirectory(candidate)) return candidate.toString();
         }
-        throw new Main.Failure("executable_not_found", 1, "executable is not on PATH: " + name);
+        throw new Main.Missing("executable is not on PATH: " + name);
     }
 
     static Output run(Main.Context context, List<String> argv, Path directory, Reporter report, Duration timeout)
@@ -105,12 +105,13 @@ final class Children {
                 if (stdout.isDone()) result(stdout);
                 if (stderr.isDone()) result(stderr);
                 if (System.nanoTime() >= deadline)
-                    throw new Main.Failure("child_timeout", 1, "child execution timed out");
+                    throw new Main.Failure(Machine.Code.SCRIPT_FAILED, 1, "child execution timed out");
             }
             Capture out = result(stdout);
             Capture err = result(stderr);
             if (grouped && hasCapturedDescendant(child.pid())) {
-                throw new Main.Failure("child_stream_timeout", 1, "child left a process using captured output streams");
+                throw new Main.Failure(
+                        Machine.Code.SCRIPT_FAILED, 1, "child left a process using captured output streams");
             }
             success = child.exitValue() == 0;
             return new Output(child.exitValue(), out.text(), err.text(), out.truncated() || err.truncated());
@@ -185,7 +186,8 @@ final class Children {
             if (cause instanceof IOException io) throw io;
             throw new IOException("child stream failed", cause);
         } catch (TimeoutException timeout) {
-            throw new Main.Failure("child_stream_timeout", 1, "child exited with inherited output streams still open");
+            throw new Main.Failure(
+                    Machine.Code.SCRIPT_FAILED, 1, "child exited with inherited output streams still open");
         }
     }
 
@@ -260,7 +262,7 @@ final class Children {
                 ? terminal(context, command)
                 : run(context, command, context.directory(), report, Duration.ofHours(24));
         ObjectNode result = output.value()
-                .put("schema_version", 1)
+                .put("schema_version", Machine.SCHEMA_VERSION)
                 .put("command", "edit")
                 .put("path", Catalog.mask(context, source))
                 .put("status", output.status() == 0 ? "ok" : "error");
@@ -281,7 +283,7 @@ final class Children {
                     null);
             if (version.status() != 0 || !version.stdout().strip().equals("1.74.0"))
                 throw new Main.Failure(
-                        "python_runtime",
+                        Machine.Code.SCRIPT_FAILED,
                         1,
                         "tmuxp 1.74.0 is required: " + refusal(version)
                                 + "; set TMUX_WORKSPACE_PYTHON to an interpreter with tmuxp 1.74.0 installed");
@@ -291,7 +293,7 @@ final class Children {
         } catch (Main.Failure absent) {
             // A timeout or a child holding the captured streams is not a missing interpreter, and
             // the version refusal above already says what it found.
-            if (!absent.code.equals("executable_not_found")) throw absent;
+            if (!(absent instanceof Main.Missing)) throw absent;
             throw unusableRuntime(absent.getMessage(), absent);
         }
     }
@@ -313,7 +315,7 @@ final class Children {
 
     private static Main.Failure unusableRuntime(@Nullable String reason, Throwable cause) {
         var failure = new Main.Failure(
-                "python_runtime",
+                Machine.Code.SCRIPT_FAILED,
                 1,
                 reason + "; set TMUX_WORKSPACE_PYTHON to an interpreter with tmuxp 1.74.0 installed");
         failure.initCause(cause);
@@ -358,7 +360,7 @@ final class Children {
         complete(
                 report,
                 output.value()
-                        .put("schema_version", 1)
+                        .put("schema_version", Machine.SCHEMA_VERSION)
                         .put("command", "shell")
                         .put("status", output.status() == 0 ? "ok" : "error"),
                 output.status());
@@ -437,6 +439,6 @@ final class Children {
     private static void complete(Reporter report, ObjectNode result, int status) throws IOException {
         if (report.streaming()) report.event(status == 0 ? "completed" : "failed", result);
         else if (report.machine()) report.document(result);
-        if (status != 0) throw new Main.Failure("child_failed", status, "child exited with " + status);
+        if (status != 0) throw new Main.Failure(Machine.Code.SCRIPT_FAILED, status, "child exited with " + status);
     }
 }

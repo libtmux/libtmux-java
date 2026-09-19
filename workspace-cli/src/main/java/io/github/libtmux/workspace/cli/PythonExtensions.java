@@ -153,7 +153,7 @@ final class PythonExtensions {
                 effects.set("script_output", output.value());
                 if (output.status() != 0)
                     throw new Main.Failure(
-                            "python_extension_failed", 1, "Python extension exited with " + output.status());
+                            Machine.Code.SCRIPT_FAILED, 1, "Python extension exited with " + output.status());
             } finally {
                 try {
                     if (borrowed.isEmpty() && Files.exists(state) && Files.size(state) != 0)
@@ -171,7 +171,7 @@ final class PythonExtensions {
                     .filter(session -> session.id().value().equals(observed))
                     .findFirst()
                     .orElseThrow(() ->
-                            new Main.Failure("python_extension_failed", 1, "Python extension left no target session"));
+                            new Main.Failure(Machine.Code.SCRIPT_FAILED, 1, "Python extension left no target session"));
         } finally {
             for (Path file : List.of(state, request, scratch)) {
                 try {
@@ -181,7 +181,7 @@ final class PythonExtensions {
                     Main.diagnostic(
                             context,
                             report.machine(),
-                            "extension_cleanup",
+                            Machine.Code.SCRIPT_FAILED,
                             "could not remove private extension temporary files");
                 }
             }

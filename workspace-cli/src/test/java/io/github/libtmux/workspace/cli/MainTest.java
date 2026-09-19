@@ -41,6 +41,50 @@ final class MainTest {
         return new Result(code, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
     }
 
+    /**
+     * The machine vocabulary is closed. Consumers and the other ports read these names, so a
+     * failure may not invent one, and a tenth may not be added without this saying so.
+     */
+    @Test
+    void everyMachineFailureCodeComesFromTheSharedSet() throws Exception {
+        var shared = java.util.Set.of(
+                "workspace_not_found",
+                "invalid_workspace",
+                "unsupported_key",
+                "session_not_found",
+                "tmux_unavailable",
+                "tmux_failed",
+                "script_failed",
+                "destination_exists",
+                "usage",
+                "interrupted");
+        Path unsupported = directory.resolve("unsupported.yaml");
+        Files.writeString(unsupported, "session_name: codes\nbogus: 1\nwindows: [{}]\n");
+        Path malformed = directory.resolve("malformed.yaml");
+        Files.writeString(malformed, "a: [\n");
+        Path valid = directory.resolve("valid.yaml");
+        Files.writeString(valid, "session_name: valid\nwindows: [{}]\n");
+        for (String[] invocation : List.of(
+                new String[] {"load", directory.resolve("gone.yaml").toString(), "-d", "--json"},
+                new String[] {"load", malformed.toString(), "-d", "--json"},
+                new String[] {"load", unsupported.toString(), "-d", "--json"},
+                new String[] {"load", valid.toString(), "-d", "-8", "--json"},
+                new String[] {"load", valid.toString(), "-d", "--json"},
+                new String[] {"load", valid.toString(), "-d", "--json", "--log-file", directory.toString()},
+                new String[] {"shell", "-c", "print(1)", "--json"},
+                new String[] {"search", "[", "--json"})) {
+            Result result = invoke(invocation);
+            assertFalse(result.code() == 0, String.join(" ", invocation));
+            String code = new ObjectMapper().readTree(result.err()).path("code").asText();
+            assertTrue(shared.contains(code), code + " from " + String.join(" ", invocation));
+        }
+        assertEquals(
+                shared,
+                java.util.Arrays.stream(Machine.Code.values())
+                        .map(Machine.Code::wire)
+                        .collect(java.util.stream.Collectors.toSet()));
+    }
+
     /** A missing workspace file is `workspace_not_found`. */
     @Test
     void missingWorkspaceFileReportsWorkspaceNotFound() throws Exception {
@@ -150,7 +194,7 @@ final class MainTest {
         assertEquals(2, result.code(), result.toString());
         assertEquals("", result.out());
         var diagnostic = new ObjectMapper().readTree(result.err());
-        assertEquals("unsupported_color_mode", diagnostic.path("code").asText());
+        assertEquals("usage", diagnostic.path("code").asText());
         assertTrue(diagnostic.path("message").asText().contains("tmux 3.2a"));
     }
 
@@ -170,8 +214,7 @@ final class MainTest {
         assertEquals(2, result.code(), result.toString());
         assertEquals("", result.out());
         assertEquals(
-                "unsupported_combination",
-                new ObjectMapper().readTree(result.err()).path("code").asText());
+                "usage", new ObjectMapper().readTree(result.err()).path("code").asText());
     }
 
     @Test
@@ -195,7 +238,7 @@ final class MainTest {
         assertEquals("", result.out());
         assertTrue(Files.exists(marker));
         var diagnostic = new ObjectMapper().readTree(result.err());
-        assertEquals("python_runtime", diagnostic.path("code").asText());
+        assertEquals("script_failed", diagnostic.path("code").asText());
         assertTrue(diagnostic.path("message").asText().contains("tmuxp 1.74.0 is required"), result.err());
     }
 
@@ -461,7 +504,7 @@ final class MainTest {
             assertEquals(1, invalid.code());
             assertEquals("", invalid.out());
             assertEquals(
-                    "log_file",
+                    "usage",
                     new ObjectMapper().readTree(invalid.err()).path("code").asText());
         }
     }
@@ -877,7 +920,7 @@ final class MainTest {
         assertEquals(7, captured.path("child_status").asInt());
         assertFalse(result.out().contains("\u001b"));
         assertEquals(
-                "child_failed",
+                "script_failed",
                 new ObjectMapper().readTree(result.err()).path("code").asText());
     }
 
@@ -887,7 +930,7 @@ final class MainTest {
         assertEquals(1, result.code());
         assertEquals("", result.out());
         var diagnostic = new ObjectMapper().readTree(result.err());
-        assertEquals("python_runtime", diagnostic.path("code").asText());
+        assertEquals("script_failed", diagnostic.path("code").asText());
         assertTrue(diagnostic.path("message").asText().contains("/missing/python"), result.err());
     }
 
@@ -1145,7 +1188,7 @@ final class MainTest {
         Result result = invoke(Map.of("TMUX_WORKSPACE_PYTHON", script.toString()), "shell", "-c", "print(1)", "--json");
         assertEquals(1, result.code());
         var diagnostic = new ObjectMapper().readTree(result.err());
-        assertEquals("python_runtime", diagnostic.path("code").asText());
+        assertEquals("script_failed", diagnostic.path("code").asText());
         String message = diagnostic.path("message").asText();
         assertFalse(message.contains("Traceback"), message);
         assertTrue(message.contains("ModuleNotFoundError"), message);

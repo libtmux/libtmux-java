@@ -65,7 +65,7 @@ final class Reporter implements AutoCloseable {
         if (destination.isEmpty()) return OutputStream.nullOutputStream();
         var path = context.directory().resolve(Catalog.expand(context, destination));
         if (Files.exists(path) && !Files.isRegularFile(path))
-            throw new Main.Failure("log_file", 1, "log destination must be a regular file");
+            throw new Main.Failure(Machine.Code.USAGE, 1, "log destination must be a regular file");
         var options = Set.of(StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND);
         try {
             try {
@@ -83,7 +83,7 @@ final class Reporter implements AutoCloseable {
     }
 
     private static Main.Failure logFailure(IOException cause) {
-        var failure = new Main.Failure("log_file", 1, "log destination failed: " + cause.getMessage());
+        var failure = new Main.Failure(Machine.Code.USAGE, 1, "log destination failed: " + cause.getMessage());
         failure.initCause(cause);
         return failure;
     }
@@ -101,7 +101,7 @@ final class Reporter implements AutoCloseable {
     synchronized void record(String level, String event, ObjectNode data, boolean echo) throws IOException {
         if (closed || logFailed || severity(level) < logLevel) return;
         ObjectNode value = data.deepCopy()
-                .put("schema_version", 1)
+                .put("schema_version", Machine.SCHEMA_VERSION)
                 .put("command", command)
                 .put("level", level)
                 .put("event", event)
@@ -126,7 +126,7 @@ final class Reporter implements AutoCloseable {
         } catch (IOException failure) {
             if (failure instanceof java.io.InterruptedIOException) throw failure;
             logFailed = true;
-            Main.diagnostic(context, machine(), "log_file", "logging failed: " + failure.getMessage());
+            Main.diagnostic(context, machine(), Machine.Code.USAGE, "logging failed: " + failure.getMessage());
         }
     }
 
@@ -147,7 +147,7 @@ final class Reporter implements AutoCloseable {
         try {
             log.close();
         } catch (IOException failure) {
-            Main.diagnostic(context, machine(), "log_file", "closing log failed: " + failure.getMessage());
+            Main.diagnostic(context, machine(), Machine.Code.USAGE, "closing log failed: " + failure.getMessage());
         }
     }
 
@@ -185,7 +185,7 @@ final class Reporter implements AutoCloseable {
         if (ndjson) {
             ObjectNode event = Documents.JSON
                     .createObjectNode()
-                    .put("schema_version", 1)
+                    .put("schema_version", Machine.SCHEMA_VERSION)
                     .put("command", command)
                     .put("event", name)
                     .put("sequence", ++sequence);
