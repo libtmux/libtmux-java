@@ -303,6 +303,28 @@ final class WorkspaceBuilderTest {
         assertTrue(awaitOutput(editor.get(1), "editor-pane-two"), "the second pane never ran its command");
     }
 
+    /**
+     * Splitting the previous pane each time runs out of rows at a default terminal size, so a
+     * window with more panes than that fails partway unless the builder rebalances between splits.
+     */
+    @Test
+    void aWindowWithMorePanesThanHalvingAllowsStillGetsThemAll(Server server) {
+        Session built = WorkspaceBuilder.build(server, WorkspaceBuilder.parse("""
+                session_name: crowded
+                windows:
+                  - window_name: many
+                    panes:
+                      - echo one
+                      - echo two
+                      - echo three
+                      - echo four
+                      - echo five
+                      - echo six
+                """));
+
+        assertEquals(6, built.windows().getFirst().panes().size());
+    }
+
     @Test
     void buildingLeavesTheSessionTheFixtureAlreadyHad(Server server) {
         WorkspaceBuilder.build(server, WorkspaceBuilder.parse(WORKSPACE));
@@ -484,7 +506,13 @@ final class WorkspaceBuilderTest {
 
     @Test
     void aPaneCountMismatchCannotSilentlyDropCommands(Server server) {
-        server.run(List.of("set-hook", "-g", "after-select-layout", "kill-pane -t =mismatched:0.1"));
+        // Conditional because the builder rebalances between splits, so this hook fires more than
+        // once; it takes the pane only while there are two, leaving the count short at the end.
+        server.run(List.of(
+                "set-hook",
+                "-g",
+                "after-select-layout",
+                "if -F '#{==:#{window_panes},2}' 'kill-pane -t =mismatched:0.1'"));
         Workspace workspace = new Workspace(
                 "mismatched",
                 List.of(new WindowSpec(

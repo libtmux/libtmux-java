@@ -316,7 +316,22 @@ BOM; the shared sbt build validates the separately released Scala coordinates.
 
 The local [`workspace-cli`](workspace-cli/) application provides the
 `tmux-workspace` launcher over native workspace services. It is built as a
-distribution and is not a Maven publication, so it falls outside that check.
+distribution and is not a Maven publication.
+
+`workspace-cli` and `libtmux-workspace` are two implementations, and the CLI
+does not call the library. They read different document languages: the library
+takes a session name and windows of panes, each pane a list of commands, and
+nothing else. The CLI additionally reads `start_directory`, `environment`,
+`options`, `global_options`, `options_after`, `before_script`,
+`shell_command_before`, `window_index`, `focus`, `suppress_history`, per-command
+`enter` and sleeps, `workspace_builder_options`, the tmuxinator and teamocil
+import shapes, and the tmuxp Python bridge. It also owns the behaviour around
+building: the temporary window, index reservation, pane readiness, attach and
+append, and removing a session it could not finish. Code the CLI's behaviour
+against the CLI.
+
+A directory is a published artifact exactly when it appears above, and
+`platformCoversEveryPublishedModule` fails the build if that stops being true.
 
 ## Installation
 

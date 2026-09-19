@@ -16,7 +16,10 @@ application {
 distributions.main { contents { from("README.md") } }
 
 dependencies {
-    implementation(project(":libtmux-workspace"))
+    // The core, named directly. It used to arrive through :libtmux-workspace, whose own classes no
+    // source here imports: the two are separate implementations with different document languages,
+    // and shipping that jar in the distribution only claimed otherwise.
+    implementation(project(":libtmux"))
     implementation(libs.jackson.databind)
     implementation(libs.jackson.yaml)
     implementation(libs.picocli)
