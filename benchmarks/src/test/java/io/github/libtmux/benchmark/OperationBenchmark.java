@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.CommandChain;
+import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
@@ -11,6 +12,9 @@ import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import io.github.libtmux.Window_;
 import io.github.libtmux.batch.Batch;
+import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.EventSubscription;
+import io.github.libtmux.control.PaneOutput;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
@@ -97,6 +101,11 @@ final class OperationBenchmark {
                 measure(directory, "unguarded", OperationBenchmark::plantWindows, OperationBenchmark::unguarded),
                 measure(directory, "guarded", OperationBenchmark::plantWindows, OperationBenchmark::guarded));
 
+        List<Measured> waits = List.of(
+                measure(directory, "poll: awaitText", OperationBenchmark::plainShell, OperationBenchmark::poll),
+                measure(directory, "push: control %output", OperationBenchmark::plainShell, OperationBenchmark::push),
+                measure(directory, "signal: Pane.run", OperationBenchmark::plainShell, OperationBenchmark::signal));
+
         List<Measured> options = List.of(
                 measure(directory, "one option", server -> {}, OperationBenchmark::oneOption),
                 measure(directory, "all()", server -> {}, OperationBenchmark::allOptions),
@@ -111,12 +120,89 @@ final class OperationBenchmark {
         // Test task is the module and not the root.
         Path report = Path.of(System.getProperty("libtmux.benchmark.out", "build/operations.md"));
         Files.createDirectories(report.getParent());
-        Files.writeString(report, render(grouping, reading, guarding, options));
+        Files.writeString(report, render(grouping, reading, guarding, waits, options));
 
         assertTrue(Files.exists(report), "the benchmark wrote no table");
     }
 
     // ------------------------------------------------------------------------------- scenarios
+
+    /** How many times each wait runs, each on a command that prints after {@link #DELAY_MILLIS}. */
+    private static final int WAIT_ROUNDS = 5;
+
+    private static final int DELAY_MILLIS = 200;
+
+    /** A plain sh with a two-character prompt, drawn before the clock starts. */
+    private static void plainShell(Server server) {
+        Pane pane = server.newSession(session -> session.named("wait").running("env", "PS1=$ ", "ENV=", "/bin/sh"))
+                .activePane()
+                .orElseThrow();
+        try {
+            pane.awaitText("$", Duration.ofSeconds(10));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static Pane waiting(Server server) {
+        return server.session("wait").orElseThrow().activePane().orElseThrow();
+    }
+
+    /** The command each wait waits for: prints its marker after a fixed delay, never in its echo. */
+    private static String printsAfterDelay(int round) {
+        return "sleep " + (DELAY_MILLIS / 1000.0) + "; printf 'mark-%s\\n' " + round;
+    }
+
+    /** Reads the screen on a timer until the marker is there. */
+    private static String poll(Server server) {
+        Pane pane = waiting(server);
+        for (int round = 0; round < WAIT_ROUNDS; round++) {
+            pane.sendLine(printsAfterDelay(round));
+            try {
+                pane.awaitText("mark-" + round, Duration.ofSeconds(10));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        }
+        return "";
+    }
+
+    /** Is told: a control client attached for the whole run, reading the output tmux pushes. */
+    private static String push(Server server) {
+        Pane pane = waiting(server);
+        try (ControlClient client = ControlClient.attach(
+                        server.config(), server.session("wait").orElseThrow().id());
+                EventSubscription<PaneOutput> output = client.subscribeOutput(1024)) {
+            for (int round = 0; round < WAIT_ROUNDS; round++) {
+                pane.sendLine(printsAfterDelay(round));
+                StringBuilder seen = new StringBuilder();
+                while (seen.indexOf("mark-" + round) < 0) {
+                    seen.append(
+                            output.next(Duration.ofSeconds(10)).orElseThrow().data());
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+        return "";
+    }
+
+    /** Waits on the command itself: tmux blocks until the command's exit trap signals. */
+    private static String signal(Server server) {
+        Pane pane = waiting(server);
+        for (int round = 0; round < WAIT_ROUNDS; round++) {
+            try {
+                pane.run(printsAfterDelay(round), Duration.ofSeconds(10));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        }
+        return "";
+    }
 
     /** Gives the readers something to find, before the clock starts. */
     private static void plantWindows(Server server) {
@@ -268,7 +354,11 @@ final class OperationBenchmark {
     // --------------------------------------------------------------------------------- the table
 
     private String render(
-            List<Measured> grouping, List<Measured> reading, List<Measured> guarding, List<Measured> options) {
+            List<Measured> grouping,
+            List<Measured> reading,
+            List<Measured> guarding,
+            List<Measured> waits,
+            List<Measured> options) {
         StringBuilder out = new StringBuilder();
         out.append("# What an operation costs, measured\n\n")
                 .append("Regenerated by `./gradlew operationBenchmark`. Never edit by hand.\n\n")
@@ -304,6 +394,31 @@ final class OperationBenchmark {
         table(out, "command", guarding);
         out.append("\nThe guard rides inside the one command it fences, so it costs no further ")
                 .append("process. What it adds is bytes, against the 16384 a tmux command may carry.\n");
+
+        out.append("\n## Push against poll\n\n")
+                .append("The same command, waited on three ways, ")
+                .append(WAIT_ROUNDS)
+                .append(" times: it prints a marker ")
+                .append(DELAY_MILLIS)
+                .append(" ms after it starts, so ")
+                .append(WAIT_ROUNDS * DELAY_MILLIS)
+                .append(" ms of every row is the command itself. What is left is what the wait ")
+                .append("added: noticing late, and the processes spent looking.\n\n");
+        out.append("| wait | wall clock | added per wait | commands dispatched |\n")
+                .append("| --- | --- | --- | --- |\n");
+        for (Measured row : waits) {
+            long added = Math.max(0, row.millis() - (long) WAIT_ROUNDS * DELAY_MILLIS) / WAIT_ROUNDS;
+            out.append("| `%s` | %d ms | %d ms | %d |%n".formatted(row.label(), row.millis(), added, row.dispatches()));
+        }
+        out.append("\nThree different costs, not one ranking. A poll spends a tmux process every 50 ms, ")
+                .append("so its count grows with how long it waits, and it notices up to one interval ")
+                .append("late. A push pays once to attach a control client — not in the count, and most ")
+                .append("of its added time over so few waits — and after that is told as output arrives, ")
+                .append("so its count is only the commands typed. `Pane.run` pays a fixed handful per ")
+                .append("command whatever the command's length: reading the pane, the wait, reading the ")
+                .append("output back, and the three tmux calls the pane's shell makes to report the end. ")
+                .append("In return it is the only one of the three that knows the command ended, and ")
+                .append("with what status.\n");
 
         out.append("\n## What an option listing costs\n\n")
                 .append("A listed value is escaped for display, and how it is escaped changes ")

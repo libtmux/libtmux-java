@@ -422,9 +422,13 @@ public final class Pane {
     public PaneRun run(String command, Duration timeout) throws InterruptedException {
         Objects.requireNonNull(command, "command");
         Objects.requireNonNull(timeout, "timeout");
-        PaneCommand.requirePosixShell(currentCommandNow());
+        // What the pane is running and where its server listens, read together: one command, and the
+        // same moment, so the shell checked is the shell the line is typed into.
+        Map<String, String> here = variables(List.of("pane_current_command", "socket_path"));
+        String running = here.getOrDefault("pane_current_command", "");
+        PaneCommand.requirePosixShell(running.isEmpty() ? state.currentCommand() : running);
         PaneCommand frame = PaneCommand.fresh();
-        List<String> tmux = List.of(server.config().binaryPath(), "-S", expand("#{socket_path}"));
+        List<String> tmux = List.of(server.config().binaryPath(), "-S", here.getOrDefault("socket_path", ""));
         sendLine(frame.typed(tmux, command));
 
         WakeReason woke = server.channel(frame.channel()).await(timeout);
