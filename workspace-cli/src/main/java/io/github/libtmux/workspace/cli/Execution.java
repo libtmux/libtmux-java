@@ -47,21 +47,22 @@ final class Execution {
         return server.build();
     }
 
-    /** A missing tmux is `tmux_unavailable`, not the raw {@code executable_not_found} of the lookup. */
+    /** A missing tmux is its own answer, not the shared code the PATH lookup reports. */
     private static String tmuxExecutable(Main.Context context) {
         try {
             return Children.executable(context, context.environment().getOrDefault("LIBTMUX_TEST_TMUX", "tmux"));
-        } catch (Main.Failure absent) {
-            if (!absent.code.equals("executable_not_found")) throw absent;
+        } catch (Main.Missing absent) {
             throw new Main.Failure(
-                    "tmux_unavailable", 1, java.util.Objects.toString(absent.getMessage(), "tmux is not available"));
+                    Machine.Code.TMUX_UNAVAILABLE,
+                    1,
+                    java.util.Objects.toString(absent.getMessage(), "tmux is not available"));
         }
     }
 
     static void load(Main.Context context, ParseResult args, Reporter report) throws IOException, InterruptedException {
         if (Main.flag(args, "-8"))
             throw new Main.Failure(
-                    "unsupported_color_mode",
+                    Machine.Code.USAGE,
                     2,
                     "tmux 3.2a and newer do not support legacy 88-color mode (-8); use -2 or terminal detection");
         boolean detached = Main.flag(args, "-d");
@@ -156,7 +157,7 @@ final class Execution {
                     boolean partial = retained || !results.isEmpty();
                     ObjectNode error = Documents.JSON
                             .createObjectNode()
-                            .put("code", Main.failureCode(failure, "load_failed"))
+                            .put("code", Main.classify(failure).wire())
                             .put("message", retainedMessage(server, effects, failure, retained))
                             .put("input_index", index)
                             .put("partial_effects", partial);
@@ -235,7 +236,7 @@ final class Execution {
     private static ObjectNode summary(String status, ArrayNode results) {
         ObjectNode value = Documents.JSON
                 .createObjectNode()
-                .put("schema_version", 1)
+                .put("schema_version", Machine.SCHEMA_VERSION)
                 .put("command", "load")
                 .put("status", status);
         value.set("results", results);
@@ -269,7 +270,7 @@ final class Execution {
             List<String> missing = absentWindows(plan, session);
             if (!missing.isEmpty())
                 throw new Main.Failure(
-                        "tmux_failed",
+                        Machine.Code.TMUX_FAILED,
                         1,
                         "the running session " + session.name() + " does not have "
                                 + String.join(", ", missing)
@@ -321,7 +322,7 @@ final class Execution {
                     effects.path("input_index").asInt());
             effects.set("script_output", output.value());
             if (output.status() != 0)
-                throw new Main.Failure("script_failed", 1, "before_script exited with " + output.status());
+                throw new Main.Failure(Machine.Code.SCRIPT_FAILED, 1, "before_script exited with " + output.status());
         }
         effects.put("stage", "options");
         Map<String, String> windowScoped = windowScoped(server, plan.options());
@@ -530,7 +531,7 @@ final class Execution {
         for (WorkspacePlan plan : plans)
             if (append && plan.extension() != null && plan.extension().has("before_script"))
                 throw new Main.Failure(
-                        "unsupported_combination",
+                        Machine.Code.USAGE,
                         2,
                         "Python extension append cannot use before_script: tmuxp can delete the borrowed session on failure");
     }
@@ -538,7 +539,8 @@ final class Execution {
     private static void reserveIndexes(WorkspacePlan plan, Set<Integer> occupied) {
         for (WorkspacePlan.Window window : plan.windows())
             if (window.index() >= 0 && !occupied.add(window.index()))
-                throw new Main.Failure("tmux_failed", 1, "create window failed: index " + window.index() + " in use");
+                throw new Main.Failure(
+                        Machine.Code.TMUX_FAILED, 1, "create window failed: index " + window.index() + " in use");
     }
 
     private static int freeIndex(Set<Integer> occupied, int first) {
@@ -797,7 +799,7 @@ final class Execution {
                     server.run(List.of("switch-client", "-t", session.id().value()));
                 } catch (io.github.libtmux.LibTmuxException unswitchable) {
                     throw new Main.Failure(
-                            "tmux_failed",
+                            Machine.Code.TMUX_FAILED,
                             1,
                             "the workspace loaded, but tmux had no client to move to it; attach with: tmux attach -t "
                                     + session.name());
@@ -822,7 +824,7 @@ final class Execution {
         Process child = builder.start();
         try {
             int status = child.waitFor();
-            if (status != 0) throw new Main.Failure("attach_failed", status, "tmux attachment failed");
+            if (status != 0) throw new Main.Failure(Machine.Code.TMUX_FAILED, status, "tmux attachment failed");
         } finally {
             if (child.isAlive()) child.destroyForcibly();
         }
@@ -838,7 +840,7 @@ final class Execution {
                             .filter(value -> value.name().equals(name))
                             .findFirst()
                             .orElseThrow(() -> new Main.Failure(
-                                    "session_not_found",
+                                    Machine.Code.SESSION_NOT_FOUND,
                                     1,
                                     name.isEmpty() ? "select a live session by name" : "no session named " + name));
             WorkspacePlan.requireAddressableName(session.name(), "; rename " + session.name() + " before capturing it");
@@ -872,7 +874,7 @@ final class Execution {
             String destination = args.matchedOptionValue("--save-to", "");
             ObjectNode result = Documents.JSON
                     .createObjectNode()
-                    .put("schema_version", 1)
+                    .put("schema_version", Machine.SCHEMA_VERSION)
                     .put("command", "freeze")
                     .put("status", "ok");
             result.putArray("warnings")
@@ -893,7 +895,9 @@ final class Execution {
                     Documents.write(path, captured, format, Main.flag(args, "--force"));
                 } catch (java.nio.file.FileAlreadyExistsException exists) {
                     throw new Main.Failure(
-                            "destination_exists", 1, "destination already exists: " + Catalog.mask(context, path));
+                            Machine.Code.DESTINATION_EXISTS,
+                            1,
+                            "destination already exists: " + Catalog.mask(context, path));
                 }
                 result.put("destination", Catalog.mask(context, path)).put("format", format);
                 if (report.streaming()) report.event("completed", result);

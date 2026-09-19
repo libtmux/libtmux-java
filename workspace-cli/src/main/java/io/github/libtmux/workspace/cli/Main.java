@@ -93,34 +93,55 @@ public final class Main {
         }
     }
 
-    static final class Failure extends RuntimeException {
+    static class Failure extends RuntimeException {
         private static final long serialVersionUID = 1L;
-        final String code;
+        final Machine.Code code;
         final int status;
 
-        Failure(String code, int status, String message) {
+        Failure(Machine.Code code, int status, String message) {
             super(message);
             this.code = code;
             this.status = status;
         }
     }
 
+    /**
+     * Nothing on PATH by that name.
+     *
+     * <p>Its own type because what it means depends on which program was looked for: a missing tmux
+     * is not the same answer as a missing editor, and the shared code set has one name for both.
+     */
+    static final class Missing extends Failure {
+        private static final long serialVersionUID = 1L;
+
+        Missing(String message) {
+            super(Machine.Code.SCRIPT_FAILED, 1, message);
+        }
+    }
+
     static Failure usage(String message) {
-        return new Failure("usage", 2, message);
+        return new Failure(Machine.Code.USAGE, 2, message);
     }
 
     /**
-     * The machine error code for a failure not already thrown as a {@link Failure}, matching how {@link
-     * #execute} classifies the same exception types for its own top-level diagnostic.
+     * The one place a failure becomes a machine code, used by the top-level diagnostic and by any
+     * command that writes a failure into its own envelope, so the two cannot drift.
      */
-    static String failureCode(Throwable failure, String fallback) {
-        if (failure instanceof InterruptedException || failure instanceof InterruptedIOException) return "interrupted";
+    static Machine.Code classify(Throwable failure) {
+        if (failure instanceof InterruptedException || failure instanceof InterruptedIOException)
+            return Machine.Code.INTERRUPTED;
         if (failure instanceof Failure known) return known.code;
-        if (failure instanceof io.github.libtmux.LibTmuxException) return "tmux_failed";
+        if (failure instanceof io.github.libtmux.LibTmuxException) return Machine.Code.TMUX_FAILED;
         if (failure instanceof IOException
                 || failure instanceof UncheckedIOException
-                || failure instanceof IllegalArgumentException) return "invalid_workspace";
-        return fallback;
+                || failure instanceof IllegalArgumentException) return Machine.Code.INVALID_WORKSPACE;
+        return Machine.Code.TMUX_FAILED;
+    }
+
+    /** The exit status that goes with a classified failure. */
+    static int status(Throwable failure, Machine.Code code) {
+        if (failure instanceof Failure known) return known.status;
+        return code == Machine.Code.INTERRUPTED ? 130 : 1;
     }
 
     static int run(
@@ -176,7 +197,7 @@ public final class Main {
                             if (report.machine()) {
                                 var artifact = Documents.JSON
                                         .createObjectNode()
-                                        .put("schema_version", 1)
+                                        .put("schema_version", Machine.SCHEMA_VERSION)
                                         .put("command", "generate")
                                         .put("format", target)
                                         .put("script", script)
@@ -229,28 +250,32 @@ public final class Main {
                         diagnostic(
                                 context,
                                 machine,
-                                "log_file",
+                                Machine.Code.USAGE,
                                 Objects.toString(loggingFailure.getMessage(), "logging failed"));
                     }
                     throw failure;
                 }
             }
         } catch (CommandLine.ParameterException failure) {
-            diagnostic(context, machine, "usage", Objects.toString(failure.getMessage(), "invalid arguments"));
+            diagnostic(
+                    context, machine, Machine.Code.USAGE, Objects.toString(failure.getMessage(), "invalid arguments"));
             return 2;
-        } catch (Failure failure) {
-            diagnostic(context, machine, failure.code, Objects.toString(failure.getMessage(), "command failed"));
-            return failure.status;
-        } catch (InterruptedException | InterruptedIOException failure) {
-            Thread.currentThread().interrupt();
-            diagnostic(context, machine, "interrupted", "operation interrupted");
-            return 130;
-        } catch (io.github.libtmux.LibTmuxException failure) {
-            diagnostic(context, machine, "tmux_failed", Objects.toString(failure.getMessage(), "command failed"));
-            return 1;
-        } catch (IOException | UncheckedIOException | IllegalArgumentException failure) {
-            diagnostic(context, machine, "invalid_workspace", Objects.toString(failure.getMessage(), "command failed"));
-            return 1;
+        } catch (Failure
+                | InterruptedException
+                | io.github.libtmux.LibTmuxException
+                | IOException
+                | UncheckedIOException
+                | IllegalArgumentException failure) {
+            Machine.Code code = classify(failure);
+            if (code == Machine.Code.INTERRUPTED) Thread.currentThread().interrupt();
+            diagnostic(
+                    context,
+                    machine,
+                    code,
+                    code == Machine.Code.INTERRUPTED
+                            ? "operation interrupted"
+                            : Objects.toString(failure.getMessage(), "command failed"));
+            return status(failure, code);
         }
     }
 
@@ -286,13 +311,13 @@ public final class Main {
         return args.matchedOptionValue(name, false);
     }
 
-    static void diagnostic(Context context, boolean machine, String code, String message) {
+    static void diagnostic(Context context, boolean machine, Machine.Code code, String message) {
         try {
             String value = machine
                     ? Documents.JSON.writeValueAsString(Documents.JSON
                             .createObjectNode()
-                            .put("schema_version", 1)
-                            .put("code", code)
+                            .put("schema_version", Machine.SCHEMA_VERSION)
+                            .put("code", code.wire())
                             .put("message", message))
                     : "Error: " + Reporter.safe(message);
             context.error().write((value + "\n").getBytes(StandardCharsets.UTF_8));

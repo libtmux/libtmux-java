@@ -376,10 +376,10 @@ record WorkspacePlan(
     }
 
     private static Main.Failure invalid(String message) {
-        return new Main.Failure("invalid_workspace", 1, message);
+        return new Main.Failure(Machine.Code.INVALID_WORKSPACE, 1, message);
     }
 
     private static Main.Failure unsupportedKey(String message) {
-        return new Main.Failure("unsupported_key", 1, message);
+        return new Main.Failure(Machine.Code.UNSUPPORTED_KEY, 1, message);
     }
 }
