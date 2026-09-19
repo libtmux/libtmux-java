@@ -54,14 +54,25 @@ record WorkspacePlan(
         parse(context, source, root, "", false);
     }
 
+    /**
+     * The rule both ends of a round trip apply, so a capture never writes a name a load refuses.
+     *
+     * <p>tmux reads {@code :} and {@code .} as its target separators, which leaves a session holding
+     * either unaddressable by name. {@code remedy} says what the caller's side of the round trip can
+     * do about it.
+     */
+    static void requireAddressableName(String name, String remedy) {
+        if (name.isEmpty() || name.indexOf('\0') >= 0) throw invalid("session_name must be nonempty text without NUL");
+        if (name.indexOf(':') >= 0)
+            throw invalid("session_name must not contain ':': tmux uses it as the session:window separator" + remedy);
+        if (name.indexOf('.') >= 0)
+            throw invalid("session_name must not contain '.': tmux uses it as the window.pane separator" + remedy);
+    }
+
     private static WorkspacePlan parse(
             Main.Context context, Path source, ObjectNode root, String rename, boolean checkDirectories) {
         String name = rename.isEmpty() ? text(context, root.path("session_name"), "session_name") : rename;
-        if (name.isEmpty() || name.indexOf('\0') >= 0) throw invalid("session_name must be nonempty text without NUL");
-        if (name.indexOf(':') >= 0)
-            throw invalid("session_name must not contain ':': tmux uses it as the session:window separator");
-        if (name.indexOf('.') >= 0)
-            throw invalid("session_name must not contain '.': tmux uses it as the window.pane separator");
+        requireAddressableName(name, "; load with -s to choose another name");
         Path parent = source.getParent();
         if (parent == null) throw invalid("workspace source has no parent");
         List<String> warnings = new ArrayList<>();

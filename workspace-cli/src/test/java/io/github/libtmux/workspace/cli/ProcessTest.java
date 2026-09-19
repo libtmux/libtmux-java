@@ -1194,11 +1194,12 @@ final class ProcessTest {
                 var terminal =
                         new ObjectMapper().readTree(output.lines().toList().getLast());
                 assertEquals("failed", terminal.path("event").asText(), output + error);
-                assertEquals("partial", terminal.path("status").asText());
+                assertEquals("error", terminal.path("status").asText());
                 var effects = terminal.path("errors").path(0).path("effects");
                 assertEquals("windows", effects.path("stage").asText());
                 assertEquals(1, effects.path("window_ids").size());
                 assertEquals(1, effects.path("pane_ids").size());
+                assertTrue(effects.path("session_removed").asBoolean(), output);
                 assertTrue(error.contains("not-a-tmux-option"), error);
                 assertTrue(error.contains("\"code\":\"log_file\""), error);
             } finally {
