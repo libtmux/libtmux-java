@@ -152,11 +152,12 @@ final class Execution {
                     results.add(effects);
                     report.event("workspace-completed", effects.deepCopy());
                 } catch (RuntimeException | IOException | InterruptedException failure) {
-                    boolean partial = rollback(server, effects, failure) || !results.isEmpty();
+                    boolean retained = rollback(server, effects, failure);
+                    boolean partial = retained || !results.isEmpty();
                     ObjectNode error = Documents.JSON
                             .createObjectNode()
                             .put("code", Main.failureCode(failure, "load_failed"))
-                            .put("message", String.valueOf(failure.getMessage()))
+                            .put("message", retainedMessage(server, effects, failure, retained))
                             .put("input_index", index)
                             .put("partial_effects", partial);
                     error.set("effects", effects);
@@ -193,6 +194,8 @@ final class Execution {
      * a session reported as retained and then found gone is the worse answer.
      */
     private static boolean rollback(Server server, ObjectNode effects, Throwable failure) {
+        // A session that was already there outlives this load whatever happens to it.
+        if (effects.path("reused").asBoolean()) return true;
         if (!effects.path("changed").asBoolean()) return false;
         boolean interrupted = failure instanceof InterruptedException
                 || failure instanceof java.io.InterruptedIOException
@@ -211,6 +214,22 @@ final class Execution {
         }
         effects.put("changed", false).put("owned_session", false).put("session_removed", true);
         return false;
+    }
+
+    /** A failure that left windows behind says which ones, so the user knows what to deal with. */
+    private static String retainedMessage(Server server, ObjectNode effects, Throwable failure, boolean retained) {
+        String text = String.valueOf(failure.getMessage());
+        ArrayNode ids = effects.withArray("window_ids");
+        if (!retained || ids.isEmpty()) return text;
+        Set<String> kept = new HashSet<>();
+        ids.forEach(value -> kept.add(value.asText()));
+        List<String> names = new ArrayList<>();
+        try {
+            for (Window window : server.windows()) if (kept.contains(window.id().value())) names.add(window.name());
+        } catch (RuntimeException unreadable) {
+            return text;
+        }
+        return names.isEmpty() ? text : text + "; windows kept: " + String.join(", ", names);
     }
 
     private static ObjectNode summary(String status, ArrayNode results) {
@@ -247,6 +266,14 @@ final class Execution {
                     .put("session_name", session.name())
                     .put("reused", true)
                     .put("stage", "reused");
+            List<String> missing = absentWindows(plan, session);
+            if (!missing.isEmpty())
+                throw new Main.Failure(
+                        "tmux_failed",
+                        1,
+                        "the running session " + session.name() + " does not have "
+                                + String.join(", ", missing)
+                                + "; close it and load again, or load under another name with -s");
             return session;
         }
         if (plan.extension() != null) {
@@ -442,6 +469,29 @@ final class Execution {
         if (focused != null) focused.select();
         effects.put("stage", "completed");
         return session.refresh();
+    }
+
+    /**
+     * The document's windows that the running session does not have.
+     *
+     * <p>Reusing a session is a comparison, not a rebuild: a window the document names is either
+     * there or the load is not complete. A window the document gives neither a name nor an index
+     * cannot be looked for, so it is not claimed to be missing either.
+     */
+    private static List<String> absentWindows(WorkspacePlan plan, Session session) {
+        List<Window> live = new ArrayList<>(session.windows());
+        List<String> missing = new ArrayList<>();
+        for (WorkspacePlan.Window spec : plan.windows()) {
+            if (spec.index() < 0 && spec.name().isEmpty()) continue;
+            Optional<Window> found = live.stream()
+                    .filter(window -> spec.index() >= 0
+                            ? window.index().value() == spec.index()
+                            : window.name().equals(spec.name()))
+                    .findFirst();
+            if (found.isPresent()) live.remove(found.orElseThrow());
+            else missing.add(spec.index() >= 0 ? "a window at index " + spec.index() : "a window named " + spec.name());
+        }
+        return missing;
     }
 
     private static void removeBootstrap(Session session, Window bootstrap, ObjectNode effects) {
