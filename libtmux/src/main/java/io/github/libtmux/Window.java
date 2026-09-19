@@ -64,9 +64,14 @@ public final class Window {
         return state.size();
     }
 
-    /** tmux's own serialized layout, which can be handed straight back to select-layout. */
-    public String layout() {
-        return state.layout();
+    /**
+     * tmux's own layout for this window, in whichever form this server writes it.
+     *
+     * <p>Classic before tmux 3.8 and JSON from it, and the type says which. Hand it back with {@link
+     * #applyLayout(WindowLayout)}.
+     */
+    public WindowLayout layout() {
+        return WindowLayout.of(state.layout());
     }
 
     /**
@@ -294,6 +299,18 @@ public final class Window {
      * server — restores the geometry but names no pane, so which process lands in which cell can
      * differ from where it started; whether it does depends on whether the pane list still happens
      * to match the order the layout was saved in. Confirmed by hand on 3.2a and 3.7c.
+     *
+     * @throws IllegalArgumentException if the string is not a layout tmux wrote
+     * @throws UnsupportedTmuxVersionException if it is JSON-shaped but this server predates JSON
+     *     layouts
+     */
+    public void applyLayout(WindowLayout layout) {
+        Objects.requireNonNull(layout, "layout");
+        applyLayout(layout.value());
+    }
+
+    /**
+     * As {@link #applyLayout(WindowLayout)}, for a layout held as text — one saved to a file, say.
      *
      * @throws IllegalArgumentException if the string is not a layout tmux wrote
      * @throws UnsupportedTmuxVersionException if it is JSON-shaped but this server predates JSON

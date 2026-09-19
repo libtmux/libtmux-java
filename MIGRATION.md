@@ -38,6 +38,20 @@ A missing session is still `false`, and an option tmux does not know is still
 empty. Catch `ServerNotRunningException` where you start a daemon on demand,
 and `LibTmuxException` for a read that could not be made.
 
+### `Window.layout()` answers a `WindowLayout`
+
+It was a `String` holding tmux's classic checksummed form before 3.8 and JSON
+from 3.8, and nothing but a comment said which. `WindowLayout` is sealed over
+`Classic` and `Json`, and `value()` is the text exactly as tmux reported it.
+`applyLayout` takes either the `WindowLayout` or, as before, a `String`.
+`Notification.LayoutChanged` carries one too.
+
+```java
+// Given: Window window
+String saved = window.layout().value();
+window.applyLayout(window.layout());
+```
+
 ### `ControlEvent` names panes and windows with their own types
 
 `ControlEvent.paneId()` answers `Optional<PaneId>` and `windowId()`

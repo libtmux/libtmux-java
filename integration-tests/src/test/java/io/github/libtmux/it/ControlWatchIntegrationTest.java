@@ -141,7 +141,7 @@ final class ControlWatchIntegrationTest {
                                     + layoutChange.orElseThrow().fields()));
 
             assertEquals(
-                    window.refresh().layout(),
+                    window.refresh().layout().value(),
                     jsonField,
                     "the control client's own layout-change disagreed with a plain client's #{window_layout}");
         }

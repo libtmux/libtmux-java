@@ -1,6 +1,7 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -13,6 +14,7 @@ import io.github.libtmux.Server;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
+import io.github.libtmux.WindowLayout;
 import io.github.libtmux.junit5.TmuxExtension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -62,7 +64,7 @@ final class LayoutIntegrationTest {
     void choosingALayoutChangesTheArrangement(Server server) {
         Window window = split(server);
         window.selectLayout(Layout.EVEN_HORIZONTAL);
-        String horizontal = window.refresh().layout();
+        WindowLayout horizontal = window.refresh().layout();
 
         window.selectLayout(Layout.EVEN_VERTICAL);
 
@@ -72,7 +74,7 @@ final class LayoutIntegrationTest {
     @Test
     void movingToTheNextLayoutIsAcceptedOnEveryRelease(Server server) {
         Window window = split(server);
-        String before = window.refresh().layout();
+        WindowLayout before = window.refresh().layout();
 
         window.nextLayout();
 
@@ -89,7 +91,7 @@ final class LayoutIntegrationTest {
     void movingToThePreviousLayoutIsAcceptedOnEveryRelease(Server server) {
         Window window = split(server);
         window.selectLayout(Layout.EVEN_HORIZONTAL);
-        String before = window.refresh().layout();
+        WindowLayout before = window.refresh().layout();
         window.nextLayout();
 
         window.previousLayout();
@@ -100,12 +102,28 @@ final class LayoutIntegrationTest {
 
     // ----------------------------------------------------------------------- the dangerous path
 
+    /** The form a window reports is the one its server writes: JSON from tmux 3.8, classic before. */
+    @Test
+    void aLayoutSaysWhichFormThisServerWrote(Server server) {
+        Window window = server.sessions().get(0).windows().get(0);
+        window.split();
+
+        WindowLayout layout = window.refresh().layout();
+
+        if (server.version().atLeast(new TmuxVersion(3, 8, ""))) {
+            assertInstanceOf(WindowLayout.Json.class, layout, "tmux 3.8 and later write JSON: " + layout);
+        } else {
+            assertInstanceOf(
+                    WindowLayout.Classic.class, layout, "releases before 3.8 write the classic form: " + layout);
+        }
+    }
+
     /** A layout tmux wrote round-trips, which is what applyLayout is for. */
     @Test
     void anExactArrangementCanBeReadBackAndRestored(Server server) {
         Window window = split(server);
         window.selectLayout(Layout.EVEN_HORIZONTAL);
-        String wanted = window.refresh().layout();
+        WindowLayout wanted = window.refresh().layout();
         window.selectLayout(Layout.EVEN_VERTICAL);
 
         window.applyLayout(wanted);
@@ -139,7 +157,7 @@ final class LayoutIntegrationTest {
     @Test
     void aLayoutWithTheWrongChecksumIsRefused(Server server) {
         Window window = split(server);
-        String real = window.refresh().layout();
+        String real = window.refresh().layout().value();
         String corrupted = "0000" + real.substring(4);
 
         assertThrows(IllegalArgumentException.class, () -> window.applyLayout(corrupted));

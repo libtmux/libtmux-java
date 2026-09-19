@@ -101,7 +101,7 @@ final class LifecycleIntegrationTest {
         Window window = server.sessions().get(0).windows().get(0);
         window.split();
 
-        String layout = window.refresh().layout();
+        String layout = window.refresh().layout().value();
 
         assertTrue(
                 server.cmd("select-layout", "-t", window.id().value(), layout).succeeded(),

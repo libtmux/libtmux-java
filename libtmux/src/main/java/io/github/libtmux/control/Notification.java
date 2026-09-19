@@ -3,6 +3,7 @@ package io.github.libtmux.control;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.WindowId;
+import io.github.libtmux.WindowLayout;
 import java.util.Optional;
 
 /**
@@ -38,8 +39,8 @@ public sealed interface Notification {
     /** {@code %window-pane-changed}: a window's active pane changed. */
     record WindowPaneChanged(WindowId window, PaneId pane) implements Notification {}
 
-    /** {@code %layout-change}: a window's layout changed; the layout is in the form tmux reports it. */
-    record LayoutChanged(WindowId window, String layout) implements Notification {}
+    /** {@code %layout-change}: a window's layout changed, in whichever form tmux reports it. */
+    record LayoutChanged(WindowId window, WindowLayout layout) implements Notification {}
 
     /** {@code %session-changed}: the attached client is now attached to this session. */
     record SessionChanged(SessionId session, String name) implements Notification {}
@@ -121,7 +122,7 @@ public sealed interface Notification {
                                 .orElse(null);
                     case "layout-change" ->
                         window(first)
-                                .map(w -> (Notification) new LayoutChanged(w, second))
+                                .map(w -> (Notification) new LayoutChanged(w, WindowLayout.of(second)))
                                 .orElse(null);
                     case "session-changed" ->
                         session(first)

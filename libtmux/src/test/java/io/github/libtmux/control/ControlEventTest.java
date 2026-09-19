@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.WindowId;
+import io.github.libtmux.WindowLayout;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -89,7 +90,7 @@ final class ControlEventTest {
                 new Notification.WindowPaneChanged(new WindowId("@1"), new PaneId("%7")),
                 typed("%window-pane-changed @1 %7"));
         assertEquals(
-                new Notification.LayoutChanged(new WindowId("@1"), "b25d,80x24,0,0,1"),
+                new Notification.LayoutChanged(new WindowId("@1"), new WindowLayout.Classic("b25d,80x24,0,0,1")),
                 typed("%layout-change @1 b25d,80x24,0,0,1 b25d,80x24,0,0,1 *"));
         assertEquals(
                 new Notification.SessionWindowChanged(new SessionId("$0"), new WindowId("@2")),
