@@ -195,8 +195,6 @@ final class Execution {
      * a session reported as retained and then found gone is the worse answer.
      */
     private static boolean rollback(Server server, ObjectNode effects, Throwable failure) {
-        // A session that was already there outlives this load whatever happens to it.
-        if (effects.path("reused").asBoolean()) return true;
         if (!effects.path("changed").asBoolean()) return false;
         boolean interrupted = failure instanceof InterruptedException
                 || failure instanceof java.io.InterruptedIOException
@@ -270,7 +268,7 @@ final class Execution {
             List<String> missing = absentWindows(plan, session);
             if (!missing.isEmpty())
                 throw new Main.Failure(
-                        Machine.Code.TMUX_FAILED,
+                        Machine.Code.SESSION_MISMATCH,
                         1,
                         "the running session " + session.name() + " does not have "
                                 + String.join(", ", missing)

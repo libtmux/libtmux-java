@@ -29,6 +29,8 @@ final class Machine {
         UNSUPPORTED_KEY("unsupported_key"),
         /** The session the command names is not on the server. */
         SESSION_NOT_FOUND("session_not_found"),
+        /** The named session is on the server and is not what the document describes. */
+        SESSION_MISMATCH("session_mismatch"),
         /** tmux itself could not be found or run. */
         TMUX_UNAVAILABLE("tmux_unavailable"),
         /** tmux ran and refused, or the server changed under the command. */
