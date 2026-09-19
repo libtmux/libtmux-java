@@ -414,7 +414,9 @@ final class ProcessTest {
                         time.sleep(.01)
                     assert size[0] == capacity and child.poll() is None, size[0]
                     child.send_signal(signal.SIGINT)
-                    assert child.wait(timeout=1.5) == 130
+                    # Main's own shutdown hook gives the interrupted run up to 3s to unwind before
+                    # abandoning it; this margin must clear that, not just the common case.
+                    assert child.wait(timeout=4) == 130
                 finally:
                     if child.poll() is None:
                         child.kill()
