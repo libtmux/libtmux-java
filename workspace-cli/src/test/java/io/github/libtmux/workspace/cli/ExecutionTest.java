@@ -1911,6 +1911,46 @@ final class ExecutionTest {
         }
     }
 
+    /**
+     * A window option written under a session's `options:` reaches every window the document
+     * builds, not just the temporary one tmux applies it to and the load then deletes.
+     */
+    @Test
+    void aWindowOptionUnderSessionOptionsReachesEveryWindow() throws Exception {
+        Path source = directory.resolve("pane-base-index.yaml");
+        Path socket = directory.resolve("pane-base-index-socket");
+        Files.writeString(source, """
+                session_name: pbi
+                options:
+                  pane-base-index: 1
+                  default-shell: /bin/sh
+                windows:
+                  - window_name: one
+                    panes: [null, null]
+                  - window_name: two
+                    panes: [null, null]
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, result.code(), result.err());
+                assertEquals(
+                        java.util.List.of(1, 2, 1, 2),
+                        server.panes().stream()
+                                .map(io.github.libtmux.Pane::index)
+                                .toList(),
+                        result.toString());
+                assertEquals(
+                        "/bin/sh",
+                        server.sessions().getFirst().options().all().get("default-shell"),
+                        "a session option must still be applied at session scope");
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** An unrecognised builder option is said and ignored, never a refusal of the whole document. */
     @Test
     void anUnknownBuilderOptionWarnsAndLoads() throws Exception {
