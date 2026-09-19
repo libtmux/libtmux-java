@@ -214,7 +214,7 @@ result is one document; a `--ndjson` stream is one record per line, each with an
 stream lives beside the tests, so a record that gains, loses or renames a field
 is a diff rather than a surprise.
 
-A failure names one `code`. These ten are the whole set, shared with the other
+A failure names one `code`. The table below is the whole set, shared with the other
 ports of this tool, so the same condition answers with the same name whichever
 one a script calls:
 
@@ -240,7 +240,7 @@ Declining a prompt is an answer, not a failure: nothing is written, nothing is
 an error, and the command says what it did not do. A prompt that cannot be
 asked for want of a terminal is `usage`.
 
-Two names sit outside that set, and neither is a verdict on the request.
+Names outside that set are not a verdict on the request.
 `interrupted` says the process was signalled and reports where it stopped, with
 exit 130. `log_unavailable` says a `--log-file` sink that opened stopped
 accepting records; it is reported separately and leaves the command's own
