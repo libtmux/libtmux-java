@@ -5,6 +5,24 @@ API changes that require updates to calling code are recorded here. See
 
 ## Next release
 
+### A tmux release candidate keeps its name and counts as its release
+
+`TmuxVersion` now carries the pre-release a version named, so a server running
+`3.8-rc` reads back and prints as `3.8-rc` rather than `3.8`. Two consequences
+for calling code.
+
+Comparison treats a candidate as the release it names: `atLeast` against `3.8`
+is met by `3.8-rc`, because tmux freezes features at the candidate and a 3.8
+candidate behaves as 3.8 does. A candidate still sorts above the `next-3.8`
+development build tracking toward it, still below `3.8a`, and is still not
+`equals` to `3.8` — so code branching on `equals` sees a value it did not see
+before, while code branching on `atLeast` gains the candidate.
+
+The record gained a fifth component, `preRelease`. The four-argument
+constructor still exists and builds a version with none, so existing calls
+compile and behave as before; only `equals`, `hashCode` and `toString` widen to
+take the new component into account.
+
 ### Non-ASCII text reaches tmux on any locale
 
 A command carrying text this JVM cannot encode as an argument — any non-ASCII
