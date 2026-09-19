@@ -19,9 +19,9 @@ import java.util.Objects;
  * explicit rather than hidden: one place where a wrong field name or a text operator on a number
  * becomes a runtime failure, and the type system everywhere else.
  */
-public final class LegacyFilters {
+public final class KeywordFilters {
 
-    private LegacyFilters() {}
+    private KeywordFilters() {}
 
     /**
      * Parses {@code field__operator} keys into a conjunction, in the map's iteration order.
@@ -124,7 +124,7 @@ public final class LegacyFilters {
          *     the field's type does not support
          */
         public FilterExpr<T> parse(Map<String, String> filters) {
-            return LegacyFilters.parse(filters, this);
+            return KeywordFilters.parse(filters, this);
         }
 
         Map<String, Object> fields() {

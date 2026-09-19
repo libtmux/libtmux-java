@@ -12,9 +12,9 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /** The edge parser turns untrusted strings into the same expressions, or refuses. */
-final class LegacyFiltersTest {
+final class KeywordFiltersTest {
 
-    private static final LegacyFilters.FieldCatalog<Pane> CATALOG = LegacyFilters.FieldCatalog.<Pane>builder()
+    private static final KeywordFilters.FieldCatalog<Pane> CATALOG = KeywordFilters.FieldCatalog.<Pane>builder()
             .add("command", Pane_.command())
             .add("index", Pane_.index())
             .add("active", Pane_.active())

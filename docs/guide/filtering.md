@@ -116,13 +116,13 @@ client to filter, while `search_panes` searches only rendered terminal text.
 ## Filters that arrive as strings
 
 A CLI flag, a config file or a stored query carries the field and the operator as
-untrusted text. `LegacyFilters` is the one supported way in, so the rest of the
+untrusted text. `KeywordFilters` is the one supported way in, so the rest of the
 library never has to accept that shape. The key is `field__operator`; a bare
 field name means equality.
 
 ```java
 // Given: Server server
-var catalog = LegacyFilters.FieldCatalog.<Pane>builder()
+var catalog = KeywordFilters.FieldCatalog.<Pane>builder()
         .add("index", Pane_.index())
         .add("active", Pane_.active())
         .build();

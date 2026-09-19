@@ -73,6 +73,14 @@ throws `LibTmuxException` only when this JVM cannot represent that name.
 pane.currentPathText().isEmpty();      // → false
 ```
 
+### `LegacyFilters` is now `KeywordFilters`
+
+The class parses the `name__contains=dev` form that Python libtmux takes as
+keyword arguments, for callers holding such strings in a CLI flag, a config
+file or a stored query. Nothing about it is legacy — the name said it was
+deprecated here, which it is not. Rename the import and the calls; the API is
+otherwise unchanged, including the nested `FieldCatalog`.
+
 ### Exception and guard names
 
 Replace the old imports, catch types and calls, then recompile:
