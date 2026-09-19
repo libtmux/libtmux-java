@@ -12,6 +12,7 @@ import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -22,6 +23,34 @@ import org.junit.jupiter.api.Test;
  * shows up as the library misbehaving.
  */
 final class FakeTmuxTest {
+
+    /**
+     * A value holding {@code $} and a name is the one shape that makes the library ask which tmux it
+     * is talking to, because 3.4 escapes it differently. The fake has to answer that, or the first
+     * consumer to store a path in one meets a failure this double invented.
+     */
+    @Test
+    void aValueThatMakesTheLibraryAskTheVersionStillRoundTrips() {
+        FakeTmux tmux = new FakeTmux();
+        tmux.addSession("work");
+
+        try (Server server = tmux.server()) {
+            server.environment().set("AWKWARD", "$HOME/bin");
+            // The shape that ends a value, spelled inside one and then ending a line. The parser
+            // takes the last terminator on a line, so a one-line forgery cannot fool it; a forged
+            // one that ends a line can, and only the escaping tmux does stops it being read as the
+            // end. This is what pins that the double escapes at all.
+            server.environment().set("QUOTED", "before\"; export QUOTED;\nafter");
+            server.environment().remove("WITHHELD");
+
+            assertEquals(Optional.of("$HOME/bin"), server.environment().get("AWKWARD"));
+            assertEquals(
+                    Optional.of("before\"; export QUOTED;\nafter"),
+                    server.environment().get("QUOTED"));
+            assertTrue(server.environment().isRemoved("WITHHELD"));
+            assertEquals(Optional.empty(), server.environment().get("NEVER_SET"));
+        }
+    }
 
     @Test
     void anEmptyServerHasNothingInIt() {

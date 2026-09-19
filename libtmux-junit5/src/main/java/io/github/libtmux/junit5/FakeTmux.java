@@ -11,6 +11,7 @@ import io.github.libtmux.transport.TmuxTransport;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -154,6 +155,10 @@ public final class FakeTmux implements TmuxTransport {
     private final List<FakeSession> sessions = new ArrayList<>();
     private final List<List<String>> sent = new ArrayList<>();
     private final Map<String, List<String>> screens = new HashMap<>();
+
+    /** One store per scope tmux keeps: the empty key is the server's, a target names a session's. */
+    private final Map<String, Map<String, Optional<String>>> environment = new LinkedHashMap<>();
+
     private int nextSession;
     private int nextWindow;
     private int nextPane;
@@ -267,6 +272,8 @@ public final class FakeTmux implements TmuxTransport {
             case "list-panes" -> listing(flags, panes(flags));
             case "list-clients" -> ok();
             case "capture-pane" -> capture(flags);
+            case "set-environment" -> setEnvironment(flags);
+            case "show-environment" -> showEnvironment(flags);
             case "has-session" -> hasSession(flags);
             case "new-session" -> newSession(flags);
             case "new-window" -> newWindow(flags);
@@ -314,6 +321,92 @@ public final class FakeTmux implements TmuxTransport {
         Optional<Target> target = flags.value("-t") == null ? active() : resolve(flags.value("-t"));
         Map<String, String> context = target.map(this::context).orElseGet(this::serverContext);
         return ok(Formats.expand(rest.getFirst(), context::get));
+    }
+
+    /** {@code set-environment [-gruF] [-t session] -- name [value]}. */
+    private CommandResult setEnvironment(Flags flags) {
+        List<String> rest = flags.positional();
+        if (rest.isEmpty()) {
+            return new CommandResult(1, List.of(), List.of("usage: set-environment [-gru] [-t target] name [value]"));
+        }
+        Map<String, Optional<String>> scope =
+                environment.computeIfAbsent(environmentScope(flags), key -> new LinkedHashMap<>());
+        String name = rest.getFirst();
+        if (flags.has("-u")) {
+            scope.remove(name);
+        } else if (flags.has("-r")) {
+            scope.put(name, Optional.empty());
+        } else {
+            String value = rest.size() > 1 ? rest.get(1) : "";
+            scope.put(name, Optional.of(flags.has("-F") ? Formats.expand(value, serverContext()::get) : value));
+        }
+        return ok();
+    }
+
+    /**
+     * {@code show-environment [-gs] [-t session] [-- name]}.
+     *
+     * <p>The shell form is escaped the way tmux escapes it, so a test using this double drives the
+     * library's own parser rather than stepping around it — which is the point of modelling tmux
+     * here instead of answering what the library hoped for. An absent name is a failure, as tmux
+     * reports it, and that failure is the library's answer for "not set".
+     */
+    private CommandResult showEnvironment(Flags flags) {
+        Map<String, Optional<String>> scope = environment.getOrDefault(environmentScope(flags), Map.of());
+        List<String> wanted = flags.positional();
+        if (!wanted.isEmpty()) {
+            String name = wanted.getFirst();
+            if (!scope.containsKey(name)) {
+                return new CommandResult(1, List.of(), List.of("unknown variable: " + name));
+            }
+            return new CommandResult(0, asLines(reported(name, scope.get(name), flags.has("-s"))), List.of());
+        }
+        return new CommandResult(
+                0,
+                scope.entrySet().stream()
+                        .map(held -> reported(held.getKey(), held.getValue(), flags.has("-s")))
+                        .flatMap(line -> asLines(line).stream())
+                        .toList(),
+                List.of());
+    }
+
+    /**
+     * A value's own newlines are newlines on the wire, so a multi-line value really does arrive as
+     * several lines. Handing it back as one string would let the library's parser close a value at
+     * the first terminator it saw and still look right, which is the mistake this double exists to
+     * catch rather than hide.
+     */
+    private static List<String> asLines(String reported) {
+        return List.of(reported.split("\n", -1));
+    }
+
+    /** The server's store unless a session is named without {@code -g}. */
+    private static String environmentScope(Flags flags) {
+        String session = flags.value("-t");
+        return session == null || flags.has("-g") ? "" : session;
+    }
+
+    private static String reported(String name, Optional<String> value, boolean shell) {
+        if (value.isEmpty()) {
+            return shell ? "unset " + name + ";" : "-" + name;
+        }
+        if (!shell) {
+            return name + "=" + value.get();
+        }
+        return name + "=\"" + escapedForShell(value.get()) + "\"; export " + name + ";";
+    }
+
+    /** tmux escapes exactly {@code $}, a backtick, {@code "} and {@code \\}, each with one backslash. */
+    private static String escapedForShell(String value) {
+        StringBuilder out = new StringBuilder(value.length() + 8);
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            if (character == '$' || character == '`' || character == '"' || character == '\\') {
+                out.append('\\');
+            }
+            out.append(character);
+        }
+        return out.toString();
     }
 
     private CommandResult listing(Flags flags, List<Map<String, String>> rows) {
@@ -650,7 +743,9 @@ public final class FakeTmux implements TmuxTransport {
                 "split-window", Set.of("-t", "-l", "-c", "-F", "-e", "-s", "-S", "-R", "-m"),
                 "capture-pane", Set.of("-t", "-S", "-E", "-b"),
                 "select-pane", Set.of("-t", "-T"),
-                "if-shell", Set.of("-t"));
+                "if-shell", Set.of("-t"),
+                "set-environment", Set.of("-t"),
+                "show-environment", Set.of("-t"));
 
         private static final Set<String> DEFAULT_VALUED = Set.of("-t", "-F", "-b", "-c");
 

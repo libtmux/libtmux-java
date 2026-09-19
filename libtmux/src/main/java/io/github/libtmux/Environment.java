@@ -230,9 +230,18 @@ public final class Environment {
         return -1;
     }
 
-    /** What tmux 3.4 puts the extra backslash in front of, and the other releases do not. */
+    /**
+     * What tmux 3.4 puts the extra backslash in front of, and the other releases do not.
+     *
+     * <p>ASCII letters only, because that is what tmux tests for: measured on 3.4, {@code $é} takes
+     * one backslash where {@code $e} takes two. Reading it as any letter would take a backslash off
+     * a value that really held {@code \$é}.
+     */
     private static boolean beginsAName(char character) {
-        return character == '_' || character == '{' || Character.isLetter(character);
+        return character == '_'
+                || character == '{'
+                || (character >= 'a' && character <= 'z')
+                || (character >= 'A' && character <= 'Z');
     }
 
     private static String withoutTheExtraBackslash(String value) {
