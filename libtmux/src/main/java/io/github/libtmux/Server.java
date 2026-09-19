@@ -610,6 +610,16 @@ public final class Server implements AutoCloseable {
         return Options.global(this);
     }
 
+    /**
+     * The server's environment, which every session inherits and every new process is given.
+     *
+     * <p>Set here to change what a pane opened later sees — a refreshed {@code SSH_AUTH_SOCK} after
+     * reconnecting, say. A pane already running has its own copy and is not affected.
+     */
+    public Environment environment() {
+        return Environment.global(this);
+    }
+
     /** The global hooks every session inherits. */
     public Hooks hooks() {
         return Hooks.global(this);

@@ -114,6 +114,14 @@ public final class Session {
         return Options.session(server, snapshot, state.id());
     }
 
+    /**
+     * This session's own environment, which a process started in it is given on top of the
+     * server's.
+     */
+    public Environment environment() {
+        return Environment.session(server, snapshot, state.id());
+    }
+
     /** This session's own hooks. */
     public Hooks hooks() {
         return Hooks.session(server, snapshot, state.id());

@@ -199,6 +199,19 @@ In a real pane those two variables are already set, so `TmuxEnvironment.current(
 takes nothing and returns empty when there is no pane to describe. This README is
 not running inside one, so the example supplies them.
 
+### Change what a later pane will see
+
+tmux keeps an environment per server and per session, and gives it to every
+process it starts afterwards — so this is how a long-running session hands a
+refreshed value to panes opened from now on.
+
+```java
+// Given: Server server
+server.environment().set("LIBTMUX_TOKEN", "abc123");
+
+server.environment().get("LIBTMUX_TOKEN").orElseThrow();   // → abc123
+```
+
 ## Avoid unnecessary round trips
 
 `server.batch()` sends independent commands in one invocation. `server.chain()`

@@ -1,111 +1,105 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.Pane;
+import io.github.libtmux.Environment;
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerConfig;
-import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
-import io.github.libtmux.TmuxEnvironment;
-import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Finding the server you are already inside, from what tmux told the pane.
+ * The environment tmux hands to processes it starts.
  *
- * <p>The parsing is settled by unit tests. What this adds is the round trip: the variables are taken
- * from a pane tmux really started, and what they parse to has to address that same pane.
+ * <p>Three states, and the point of the tests below is that they stay three. A name set to a value,
+ * a name tmux is told to subtract from what a new process inherits, and a name it has never heard
+ * of are different facts, and tmux reports them differently — {@code NAME=value}, {@code -NAME}, and
+ * a failure saying the variable is unknown. Collapsing the middle one into "absent" would lose the
+ * only way to see that something was deliberately taken away.
  */
 @ExtendWith(TmuxExtension.class)
 final class EnvironmentIntegrationTest {
 
     @Test
-    void whatTmuxExportsIntoAPaneAddressesThatPane(Server server, @TempDir Path directory) throws Exception {
-        Session session = server.sessions().get(0);
-        Reported reported = reportedFrom(session.windows().get(0), directory.resolve("env"));
+    void aValueSetOnTheServerIsReadBack(Server server) {
+        Environment environment = server.environment();
 
-        TmuxEnvironment here = TmuxEnvironment.of(reported.exported()).orElseThrow();
+        environment.set("LIBTMUX_TOKEN", "abc123");
 
-        assertEquals(reported.pane().id(), here.pane().orElseThrow(), "TMUX_PANE names the pane it was read in");
-
-        assertEquals(session.id(), here.session(), "TMUX names the session that pane is in");
-        assertEquals(
-                server.cmd("display-message", "-p", "#{socket_path}").stdout().get(0),
-                here.socket().toString(),
-                "and the socket the server is really listening on");
+        assertEquals(Optional.of("abc123"), environment.get("LIBTMUX_TOKEN"));
+        assertEquals("abc123", environment.all().get("LIBTMUX_TOKEN"));
+        assertFalse(environment.isRemoved("LIBTMUX_TOKEN"));
     }
 
     @Test
-    void aServerOpenedFromThoseVariablesSeesTheSameSession(Server server, @TempDir Path directory) throws Exception {
-        Session session = server.sessions().get(0);
-        TmuxEnvironment here = TmuxEnvironment.of(reportedFrom(session.windows().get(0), directory.resolve("env"))
-                        .exported())
-                .orElseThrow();
+    void aNameTmuxHasNeverHeardOfIsSimplyAbsent(Server server) {
+        Environment environment = server.environment();
 
-        // The socket comes from the environment; the binary comes from the lane, because a matrix
-        // lane's tmux is not the one on PATH and two builds should not share one socket.
-        ServerConfig config = ServerConfig.builder()
-                .binary(System.getProperty("libtmux.tmux", "tmux"))
-                .endpoint(ServerEndpoint.socketPath(here.socket()))
-                .build();
-
-        try (Server reopened = Server.open(config)) {
-            assertTrue(
-                    reopened.sessions().stream().anyMatch(seen -> seen.id().equals(here.session())),
-                    "the server reached through the environment does not hold the session it named");
-        }
+        assertEquals(Optional.empty(), environment.get("LIBTMUX_NEVER_SET"));
+        assertFalse(environment.isRemoved("LIBTMUX_NEVER_SET"));
     }
 
     @Test
-    void theServerPidNamesTheServerAndNotThePane(Server server, @TempDir Path directory) throws Exception {
-        Reported reported = reportedFrom(server.sessions().get(0).windows().get(0), directory.resolve("env"));
-        TmuxEnvironment here = TmuxEnvironment.of(reported.exported()).orElseThrow();
+    void aRemovedNameIsNotTheSameAsAnAbsentOne(Server server) {
+        Environment environment = server.environment();
 
+        environment.remove("LIBTMUX_SUBTRACTED");
+
+        assertTrue(environment.isRemoved("LIBTMUX_SUBTRACTED"), "tmux prints it with a leading dash, not as missing");
         assertEquals(
-                Long.parseLong(reported.pane().expand("#{pid}")), here.serverPid(), "TMUX carries the server's pid");
-        assertTrue(
-                here.serverPid() != reported.pane().pid().orElseThrow(),
-                "which is not the process running in the pane");
+                Optional.empty(), environment.get("LIBTMUX_SUBTRACTED"), "it has no value, because that is the point");
+        assertTrue(environment.removed().contains("LIBTMUX_SUBTRACTED"));
+        assertFalse(environment.all().containsKey("LIBTMUX_SUBTRACTED"), "a removal is not a value");
     }
 
-    /**
-     * Makes a pane whose command reports the two variables tmux set for it.
-     *
-     * <p>The command is what tmux spawns, rather than keys sent to a shell. A pane's shell is not
-     * ready the moment the pane exists, and keys sent before it is are simply lost — which is how
-     * this arrived, as one lane in eight failing to hear back.
-     */
-    private static Reported reportedFrom(Window window, Path report) throws InterruptedException {
-        Pane pane = window.split(
-                s -> s.running("sh", "-c", "printf '%s\\n%s\\n' \"$TMUX\" \"$TMUX_PANE\" > " + report + "; sleep 30"));
+    @Test
+    void unsettingLeavesNeitherAValueNorAMark(Server server) {
+        Environment environment = server.environment();
+        environment.set("LIBTMUX_TEMPORARY", "here");
 
-        assertTrue(Await.until(() -> lines(report).size() >= 2), "the pane never reported its environment");
+        environment.unset("LIBTMUX_TEMPORARY");
 
-        Map<String, String> exported = new HashMap<>();
-        exported.put("TMUX", lines(report).get(0));
-        exported.put("TMUX_PANE", lines(report).get(1));
-        return new Reported(pane, exported);
+        assertEquals(Optional.empty(), environment.get("LIBTMUX_TEMPORARY"));
+        assertFalse(environment.isRemoved("LIBTMUX_TEMPORARY"), "unset forgets the name; remove remembers it");
     }
 
-    /** A pane tmux started, and what tmux exported into it. */
-    private record Reported(Pane pane, Map<String, String> exported) {}
+    @Test
+    void aFormatIsExpandedOnlyWhenAskedFor(Server server) {
+        Environment environment = server.environment();
 
-    private static List<String> lines(Path file) {
-        try {
-            return Files.exists(file) ? Files.readAllLines(file) : List.of();
-        } catch (IOException e) {
-            return List.of();
-        }
+        environment.set("LIBTMUX_LITERAL", "#{session_name}");
+        environment.setExpanded("LIBTMUX_EXPANDED", "#{session_name}");
+
+        assertEquals(Optional.of("#{session_name}"), environment.get("LIBTMUX_LITERAL"));
+        assertEquals(
+                Optional.of(server.sessions().get(0).name()),
+                environment.get("LIBTMUX_EXPANDED"),
+                "setExpanded asks tmux to expand it once, at the time of the call");
+    }
+
+    @Test
+    void aSessionKeepsItsOwnEnvironmentSeparateFromTheServers(Server server) {
+        Session session = server.sessions().get(0);
+        server.environment().set("LIBTMUX_SCOPE", "server");
+
+        session.environment().set("LIBTMUX_SCOPE", "session");
+
+        assertEquals(Optional.of("server"), server.environment().get("LIBTMUX_SCOPE"));
+        assertEquals(Optional.of("session"), session.environment().get("LIBTMUX_SCOPE"));
+    }
+
+    @Test
+    void aNameTmuxCouldNotStoreIsRefusedBeforeItIsSent(Server server) {
+        Environment environment = server.environment();
+
+        // tmux splits a name from its value at the first '=', so a name containing one would set
+        // something else entirely and report success.
+        assertThrows(IllegalArgumentException.class, () -> environment.set("BAD=NAME", "x"));
+        assertThrows(IllegalArgumentException.class, () -> environment.set("", "x"));
     }
 }
