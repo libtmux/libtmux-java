@@ -153,23 +153,47 @@ public final class Layouts {
             if (candidate.tmuxName().equals(layout)) candidate.requireSupported(running);
         }
         return named(layout, running)
-                .orElseThrow(
-                        () -> new IllegalArgumentException("not a unique layout for tmux " + running + ": " + layout))
+                .orElseThrow(() -> ambiguous(layout, running))
                 .tmuxName();
     }
 
     private static Optional<Layout> named(String value, TmuxVersion version) {
         if (value.isEmpty()) return Optional.empty();
-        List<Layout> available = Arrays.stream(Layout.values())
-                .filter(layout -> version.atLeast(layout.since()))
-                .toList();
+        List<Layout> available = availableAt(version);
         for (Layout layout : available) {
             if (layout.tmuxName().equals(value)) return Optional.of(layout);
         }
-        List<Layout> matches = available.stream()
+        List<Layout> matches = prefixedBy(available, value);
+        return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
+    }
+
+    private static List<Layout> availableAt(TmuxVersion version) {
+        return Arrays.stream(Layout.values())
+                .filter(layout -> version.atLeast(layout.since()))
+                .toList();
+    }
+
+    private static List<Layout> prefixedBy(List<Layout> candidates, String value) {
+        return candidates.stream()
                 .filter(layout -> layout.tmuxName().startsWith(value))
                 .toList();
-        return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
+    }
+
+    /**
+     * An abbreviation that used to resolve on its own and now matches more than one name, because a
+     * later release added a layout that shares its prefix. Names every candidate and the release
+     * that introduced the collision, rather than only saying the name did not resolve.
+     */
+    private static IllegalArgumentException ambiguous(String layout, TmuxVersion running) {
+        List<Layout> matches = prefixedBy(availableAt(running), layout);
+        if (matches.size() < 2) {
+            return new IllegalArgumentException("not a unique layout for tmux " + running + ": " + layout);
+        }
+        String names = matches.stream().map(Layout::tmuxName).collect(java.util.stream.Collectors.joining(", "));
+        TmuxVersion introduced =
+                matches.stream().map(Layout::since).max(TmuxVersion::compareTo).orElseThrow();
+        return new IllegalArgumentException("not a unique layout for tmux " + running + ": " + layout + "; matches "
+                + names + ", ambiguous since tmux " + introduced + "; use the full name");
     }
 
     /** The running daemon's version where one answers, else the client binary's own; never starts a daemon. */
