@@ -85,14 +85,21 @@ final class ServerScriptingIntegrationTest {
             throws Exception {
         Path expanded = directory.resolve("expanded");
         Path literal = directory.resolve("literal");
+        Path probe = directory.resolve("probe");
 
         // The literalized command goes first, so by the time the expanded one has landed the
         // literal one has had at least as long to fire. Asserting its absence straight after
         // dispatching it would pass even if literalization did nothing, because #() is asynchronous.
         server.runShell(TmuxFormats.literal("echo '#(touch " + literal + ")' > /dev/null"));
         server.runShell("echo '#(touch " + expanded + ")' > /dev/null");
+        // A control for #() dispatch itself, isolated from run-shell's own argument expansion.
+        server.expand("#(touch " + probe + ")");
 
-        assertTrue(Await.until(() -> Files.exists(expanded)), "tmux expands a format inside shell quotes");
+        boolean expandedRan = Await.until(() -> Files.exists(expanded));
+        assertTrue(
+                expandedRan,
+                () -> "tmux expands a format inside shell quotes; a #() job through display-message "
+                        + (Files.exists(probe) ? "still ran" : "did not run either"));
         assertFalse(Files.exists(literal), "a literalized value must reach the shell as text");
     }
 
