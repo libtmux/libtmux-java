@@ -20,7 +20,10 @@ val laneTasks =
             val tests = sourceSets.test.get()
             testClassesDirs = tests.output.classesDirs
             classpath = tests.runtimeClasspath
-            useJUnitPlatform { excludeTags("fixture", "carrier", "benchmark") }
+            // "locale" joins the excludes for the same reason "carrier" is here: it needs a JVM
+            // started differently — one whose platform encoding is not UTF-8 — so running it in an
+            // ordinary fork asserts nothing and fails saying so.
+            useJUnitPlatform { excludeTags("fixture", "carrier", "benchmark", "locale") }
 
             // Resolved lazily: the task is registered whether or not a matrix exists, so asking for
             // it without one fails loudly instead of the lane silently not existing.

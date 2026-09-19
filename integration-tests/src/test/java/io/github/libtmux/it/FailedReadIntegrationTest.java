@@ -81,9 +81,15 @@ final class FailedReadIntegrationTest {
         assertFalse(server.hasSession("no-such-session"));
     }
 
+    /**
+     * A name tmux has no option for, rather than an unset {@code @user} one: tmux accepts any
+     * {@code @} name as a user option, and 3.2a answers an unset one with an empty value where 3.7
+     * calls it invalid. Only a name that is not an option at all means the same thing on every
+     * supported release.
+     */
     @Test
     void anOptionTmuxDoesNotKnowIsStillEmpty(Server server) {
-        assertEquals(Optional.empty(), server.globalOptions().get("@never-set-by-anyone"));
+        assertEquals(Optional.empty(), server.globalOptions().get("not-an-option"));
     }
 
     // ------------------------------------------------------------------- a read that failed

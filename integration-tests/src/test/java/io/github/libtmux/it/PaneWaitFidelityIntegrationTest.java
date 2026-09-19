@@ -7,6 +7,7 @@ import io.github.libtmux.Dimensions;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.WakeReason;
+import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.time.Duration;
 import java.util.List;
@@ -29,14 +30,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 @ExtendWith(TmuxExtension.class)
 final class PaneWaitFidelityIntegrationTest {
 
+    /**
+     * Sized by resizing the window rather than the session: a detached session cannot be given a
+     * size before tmux 3.3, and {@code resize-pane} does not move a lone pane in a detached session
+     * at all — measured on 3.2a, where the width stayed 80 — while {@code resize-window} does.
+     */
     private static Pane shell(Server server, String name, int columns) throws InterruptedException {
-        Pane pane = server.newSession(session -> session.named(name)
-                        .running("env", "PS1=$ ", "ENV=", "/bin/sh")
-                        .sized(new Dimensions(columns, 24)))
+        Window window = server.newSession(session -> session.named(name).running("env", "PS1=$ ", "ENV=", "/bin/sh"))
                 .windows()
-                .get(0)
-                .panes()
                 .get(0);
+        window.resizeTo(new Dimensions(columns, 24));
+        Pane pane = window.refresh().panes().get(0);
         assertEquals(WakeReason.SIGNALLED, pane.awaitText("$", Duration.ofSeconds(10)), "the shell drew a prompt");
         return pane;
     }

@@ -1,6 +1,8 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Pane;
@@ -98,15 +100,22 @@ final class LeadingDashIntegrationTest {
         assertTrue(server.channel(UNKNOWN).drain(), "the signal was stored under the name, so draining finds it");
     }
 
+    /**
+     * Nothing runs a program called {@code -Z} either way, so this compares the two forms rather
+     * than reading tmux's words for the failure: with the terminator the argument reaches the shell
+     * and the shell complains, without it tmux refuses to parse it and complains itself. The
+     * wording of both changed across the supported range; that they differ did not.
+     */
     @Test
     void aShellCommandCanBeginWithADash(Server server) {
-        // Nothing runs a program called -Z, and run-shell reports that as the command failing
-        // rather than as tmux refusing to parse it. Only the second would be this library's doing.
-        List<String> reported = server.cmd(List.of("run-shell", "--", UNKNOWN)).stderr();
+        List<String> reachedTheShell =
+                server.cmd(List.of("run-shell", "--", UNKNOWN)).stderr();
+        List<String> refusedByTmux = server.cmd(List.of("run-shell", UNKNOWN)).stderr();
 
-        assertTrue(
-                reported.stream().noneMatch(line -> line.contains("unknown flag")),
-                "the argument reached the shell as a command: " + reported);
+        assertNotEquals(
+                refusedByTmux,
+                reachedTheShell,
+                "the terminator made no difference, so the argument never reached the shell");
     }
 
     /**
@@ -116,10 +125,11 @@ final class LeadingDashIntegrationTest {
      */
     @Test
     void theRawCommandEscapeHatchDoesNotInsertTheTerminator(Server server) {
-        List<String> reported = server.cmd("run-shell", UNKNOWN).stderr();
-
-        assertTrue(
-                reported.stream().anyMatch(line -> line.contains("unknown flag")),
-                "cmd is the way past the typed API, so it does not quietly rewrite the argv: " + reported);
+        // tmux's own wording for a rejected flag changed across the supported range — 3.2a says
+        // "unknown option -- Z" and 3.7 "unknown flag -Z" — so this asserts that it refused, which
+        // is the fact, rather than how it said so.
+        assertFalse(
+                server.cmd("run-shell", UNKNOWN).succeeded(),
+                "cmd is the way past the typed API, so it does not quietly rewrite the argv");
     }
 }
