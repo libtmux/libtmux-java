@@ -1,6 +1,7 @@
 package io.github.libtmux;
 
 import io.github.libtmux.batch.Batch;
+import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
@@ -559,23 +560,71 @@ public final class Server implements AutoCloseable {
     }
 
     Map<String, String> variables(List<String> names, Function<String, String> expand) {
-        Objects.requireNonNull(names, "names");
         Objects.requireNonNull(expand, "expand");
+        RowFormat format = RowFormat.of(requireVariableNames(names).toArray(String[]::new));
+        // One expansion for every name, not one per name: they are read at the same moment, and a
+        // caller asking for eight fields no longer pays for eight tmux processes.
+        List<RowFormat.Row> rows =
+                format.rows(List.of(expand.apply(format.template()).split("\n", -1)));
+        if (rows.size() != 1) {
+            throw new LibTmuxException("tmux answered " + rows.size() + " rows for one set of variables");
+        }
+        Map<String, String> values = new LinkedHashMap<>();
+        for (String name : names) {
+            values.put(name, rows.getFirst().text(name));
+        }
+        return Collections.unmodifiableMap(values);
+    }
+
+    /**
+     * Chosen fields for every pane on the server, from one listing.
+     *
+     * <p>For what a capture does not carry — {@code pane_tty}, {@code pane_dead_status}, {@code
+     * pane_start_command}, any of tmux's pane formats. Asking each pane is a tmux process per pane
+     * and a view no single moment held; this is one {@code list-panes}, so every value is from the
+     * same instant.
+     *
+     * <pre>{@code
+     * Map<PaneId, Map<String, String>> ttys = server.paneFields(List.of("pane_tty", "pane_dead"));
+     * }</pre>
+     *
+     * @param names tmux format variable names, at most 32
+     * @return each pane's values keyed by the names asked for, in tmux's pane order
+     * @throws IllegalArgumentException if a name is not a tmux variable name
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the listing otherwise fails
+     */
+    public Map<PaneId, Map<String, String>> paneFields(List<String> names) {
+        List<String> fields = new ArrayList<>(List.of("pane_id"));
+        fields.addAll(requireVariableNames(names));
+        RowFormat format = RowFormat.of(fields.toArray(String[]::new));
+        Map<PaneId, Map<String, String>> panes = new LinkedHashMap<>();
+        for (RowFormat.Row row : format.rows(
+                run(List.of("list-panes", "-a", "-F", format.template())).stdout())) {
+            Map<String, String> values = new LinkedHashMap<>();
+            for (String name : names) {
+                values.put(name, row.text(name));
+            }
+            panes.put(new PaneId(row.text("pane_id")), Collections.unmodifiableMap(values));
+        }
+        return Collections.unmodifiableMap(panes);
+    }
+
+    private static List<String> requireVariableNames(List<String> names) {
+        Objects.requireNonNull(names, "names");
         if (names.isEmpty()) {
             throw new IllegalArgumentException("variable names are empty");
         }
         if (names.size() > 32) {
             throw new IllegalArgumentException("at most 32 tmux variables may be read at once");
         }
-        Map<String, String> values = new LinkedHashMap<>();
         for (String name : names) {
             if (!VARIABLE_NAME.matcher(name).matches()) {
                 throw new IllegalArgumentException(
                         "invalid tmux variable '" + name + "'; expected [A-Za-z][A-Za-z0-9_]*");
             }
-            values.put(name, expand.apply("#{" + name + "}"));
         }
-        return Collections.unmodifiableMap(values);
+        return names;
     }
 
     /** Enables or disables mouse handling for sessions on this server. */
