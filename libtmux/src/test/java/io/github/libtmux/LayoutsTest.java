@@ -36,7 +36,12 @@ final class LayoutsTest {
         }
         try (VersionTransport transport = new VersionTransport(new CommandResult(0, List.of("3.7c"), List.of()));
                 Server server = server(transport)) {
-            assertThrows(IllegalArgumentException.class, () -> Layouts.require("main-h", server, 1));
+            IllegalArgumentException ambiguous =
+                    assertThrows(IllegalArgumentException.class, () -> Layouts.require("main-h", server, 1));
+            String message = String.valueOf(ambiguous.getMessage());
+            assertTrue(message.contains("main-horizontal"), message);
+            assertTrue(message.contains("main-horizontal-mirrored"), message);
+            assertTrue(message.contains("tmux 3.5"), message);
             assertEquals("main-horizontal", Layouts.require("main-horizontal", server, 1));
             assertEquals("main-horizontal-mirrored", Layouts.require("main-horizontal-m", server, 1));
         }
