@@ -231,6 +231,15 @@ one a script calls:
 | `destination_exists` | the destination a capture was told to write is taken |
 | `usage` | the command was invoked in a way that cannot be carried out |
 
+A layout name is `invalid_workspace` when no tmux accepts it, and `tmux_failed`
+when this daemon will not take one another would: `main-horizontal-mirrored`
+arrived in 3.5, and `main-h` stopped being a unique abbreviation there. The
+document is the same either way; the daemon is not.
+
+Declining a prompt is an answer, not a failure: nothing is written, nothing is
+an error, and the command says what it did not do. A prompt that cannot be
+asked for want of a terminal is `usage`.
+
 Two names sit outside that set, and neither is a verdict on the request.
 `interrupted` says the process was signalled and reports where it stopped, with
 exit 130. `log_unavailable` says a `--log-file` sink that opened stopped

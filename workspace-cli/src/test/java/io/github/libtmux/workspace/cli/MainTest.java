@@ -631,13 +631,13 @@ final class MainTest {
         assertEquals(document, new ObjectMapper().readTree(Files.readString(target)));
     }
 
-    /** A save that needs confirmation but has no terminal is `confirmation_required`. */
+    /** A save that cannot ask for confirmation is a usage refusal: the request cannot be carried out. */
     @Test
-    void convertWithoutYesAndNoTerminalReportsConfirmationRequired() throws Exception {
+    void convertWithoutYesAndNoTerminalIsARefusalAboutTheInvocation() throws Exception {
         Path source = directory.resolve("confirm.yaml");
         Files.writeString(source, "session_name: confirm\nwindows: []\n");
         Result result = invoke("convert", source.toString(), "--save-to", "confirm.json");
-        assertEquals(1, result.code(), result.toString());
+        assertEquals(2, result.code(), result.toString());
         assertFalse(Files.exists(directory.resolve("confirm.json")));
         assertEquals("Error: confirmation requires a terminal; pass --yes\n", result.err());
     }

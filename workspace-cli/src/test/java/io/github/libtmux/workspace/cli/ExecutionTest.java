@@ -2135,29 +2135,79 @@ final class ExecutionTest {
         }
     }
 
-    /** A capture never writes a document a load refuses: both ends apply one name rule. */
+    /**
+     * A capture never writes a document a load refuses: both ends apply one name rule.
+     *
+     * <p>Whether tmux will even make a session whose name holds its target separators is tmux's
+     * decision and differs across the supported range — some releases rewrite the dot, one refuses
+     * the name outright, the newest keep it — so only the last can produce the capture this guards.
+     */
     @Test
     void freezeRefusesASessionNameLoadWouldNotRead() throws Exception {
         Path socket = directory.resolve("freeze-name-socket");
         Path destination = directory.resolve("frozen.yaml");
         try (Server server = server(socket)) {
             try {
-                server.newSession("my.proj");
-                Result refused = invoke(
-                        "freeze", "my.proj", "-S", socket.toString(), "--save-to", destination.toString(), "--json");
-                assertEquals(1, refused.code(), refused.toString());
-                assertEquals(
-                        "invalid_workspace",
-                        new ObjectMapper().readTree(refused.err()).path("code").asText(),
-                        refused.err());
-                assertFalse(Files.exists(destination), refused.toString());
-
                 server.newSession("plain");
                 Result captured = invoke(
                         "freeze", "plain", "-S", socket.toString(), "--save-to", destination.toString(), "--json");
                 assertEquals(0, captured.code(), captured.toString());
                 Result reloaded = invoke("load", destination.toString(), "-d", "-S", socket.toString(), "--json");
                 assertEquals(0, reloaded.code(), reloaded.toString());
+
+                String dotted;
+                try {
+                    dotted = server.newSession("my.proj").name();
+                } catch (RuntimeException refusedByTmux) {
+                    dotted = "";
+                }
+                org.junit.jupiter.api.Assumptions.assumeTrue(
+                        dotted.indexOf('.') >= 0, "this tmux will not keep a dot in a session name");
+                Path unaddressable = directory.resolve("unaddressable.yaml");
+                Result refused = invoke(
+                        "freeze", dotted, "-S", socket.toString(), "--save-to", unaddressable.toString(), "--json");
+                assertEquals(1, refused.code(), refused.toString());
+                assertEquals(
+                        "invalid_workspace",
+                        new ObjectMapper().readTree(refused.err()).path("code").asText(),
+                        refused.err());
+                assertFalse(Files.exists(unaddressable), refused.toString());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /**
+     * A layout name this daemon will not take, where another would, is the daemon's answer.
+     * `main-horizontal-mirrored` arrived in 3.5 and `main-h` stopped being unique there, so exactly
+     * one of the two is refused by any supported tmux and neither is a defect in the document.
+     */
+    @Test
+    void aLayoutThisDaemonWillNotTakeIsReportedAsTmuxsAnswer() throws Exception {
+        Path socket = directory.resolve("layout-version-socket");
+        int refusals = 0;
+        try (Server server = server(socket)) {
+            try {
+                for (String layout : java.util.List.of("main-h", "main-horizontal-mirrored")) {
+                    Path source = directory.resolve("layout-" + layout + ".yaml");
+                    Files.writeString(
+                            source,
+                            "session_name: layout-" + layout + "\nwindows:\n  - layout: " + layout
+                                    + "\n    panes: [null, null]\n");
+                    Result result = invoke(
+                            "load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                    if (result.code() == 0) continue;
+                    refusals++;
+                    assertEquals(
+                            "tmux_failed",
+                            new ObjectMapper()
+                                    .readTree(result.err())
+                                    .path("code")
+                                    .asText(),
+                            result.err());
+                }
+                assertEquals(1, refusals, "exactly one of the two is version-sensitive on any supported tmux");
             } finally {
                 if (server.isAlive()) server.killServer();
             }

@@ -94,7 +94,7 @@ final class Execution {
             for (WorkspacePlan plan : plans) {
                 for (WorkspacePlan.Window window : plan.windows()) {
                     if (!window.layout().isEmpty())
-                        Layouts.require(window.layout(), server, window.panes().size());
+                        requireLayout(window.layout(), server, window.panes().size());
                 }
             }
             // Resolved before anything is built: refuses a different server outright, and a prompt
@@ -413,7 +413,7 @@ final class Execution {
                 window.selectLayout(Layout.TILED);
             }
             if (!spec.layout().isEmpty()) {
-                String canonical = Layouts.require(spec.layout(), server, panes.size());
+                String canonical = requireLayout(spec.layout(), server, panes.size());
                 Optional<Layout> layout = java.util.Arrays.stream(Layout.values())
                         .filter(value -> value.tmuxName().equals(canonical))
                         .findFirst();
@@ -537,6 +537,24 @@ final class Execution {
                         Machine.Code.USAGE,
                         2,
                         "Python extension append cannot use before_script: tmuxp can delete the borrowed session on failure");
+    }
+
+    /** A serialized layout carries tmux's own checksum before its body. */
+    private static final java.util.regex.Pattern SERIALIZED = java.util.regex.Pattern.compile("^[0-9a-f]{4},");
+
+    /**
+     * A named layout the document may legitimately carry and this daemon will not take is the
+     * daemon's answer, not the document's: the same file loads against another tmux. A serialized
+     * tree that does not fit its panes is the document's, and stays that way.
+     */
+    private static String requireLayout(String layout, Server server, int panes) {
+        try {
+            return Layouts.require(layout, server, panes);
+        } catch (UnsupportedTmuxVersion | IllegalArgumentException refused) {
+            if (SERIALIZED.matcher(layout).find()) throw refused;
+            throw new Main.Failure(
+                    Machine.Code.TMUX_FAILED, 1, java.util.Objects.toString(refused.getMessage(), "layout refused"));
+        }
     }
 
     private static void reserveIndexes(WorkspacePlan plan, Set<Integer> occupied) {
