@@ -21,6 +21,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -28,6 +29,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 @ExtendWith(TmuxExtension.class)
 final class EchoContractTest {
+
+    @BeforeEach
+    void shellReady(Server server) throws InterruptedException {
+        Pane pane = server.panes().getFirst();
+        pane.respawn("env", "PS1=echo-test> ", "ENV=/dev/null", "/bin/sh", "-i");
+        TextOutcome prompt = pane.awaitText("echo-test> ", Duration.ofSeconds(1));
+        assertTrue(prompt == TextOutcome.APPEARED || prompt == TextOutcome.PRESENT_AT_ENTRY);
+    }
 
     @Test
     void shortAnswerNeverMasksLongerRealOutput(Server server) {
@@ -96,7 +105,7 @@ final class EchoContractTest {
         WaitingForText.Waited waited = WaitingForText.waitFor(
                 TestCalls.on(server, "pane_id", pane, "patterns", List.of(marker), "timeout", 1));
 
-        assertEquals("TIMED_OUT", waited.outcome());
+        assertEquals("TIMED_OUT", waited.outcome(), waited.toString());
         assertTrue(
                 waited.output().stream().noneMatch(line -> line.contains(marker)),
                 "the unsubmitted line leaked into the caller-visible output: " + waited.output());
@@ -213,9 +222,6 @@ final class EchoContractTest {
     @ValueSource(booleans = {false, true})
     void aWrappedUnsubmittedEchoDoesNotBecomeOutput(boolean resize, Server server) throws Exception {
         Pane target = server.panes().getFirst();
-        target.respawn("env", "PS1=echo-test> ", "ENV=/dev/null", "/bin/sh", "-i");
-        TextOutcome prompt = target.awaitText("echo-test> ", Duration.ofSeconds(1));
-        assertTrue(prompt == TextOutcome.APPEARED || prompt == TextOutcome.PRESENT_AT_ENTRY);
         String pane = target.id().value();
         server.cmd("resize-window", "-t", pane, "-x", "80", "-y", "24");
         Typing.sendKeys(TestCalls.on(
