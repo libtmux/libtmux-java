@@ -170,6 +170,34 @@ final class PaneWaitTest {
         }
     }
 
+    /**
+     * The interval is the caller's to choose, and it is what a wait spends: each look is a read.
+     * Counted in the fixture's own reads, over a wait with nothing to find.
+     */
+    @Test
+    void aWaitLooksAsOftenAsItIsToldToAndNoMore() throws InterruptedException {
+        SlowTmux often = new SlowTmux();
+        SlowTmux rarely = new SlowTmux();
+        try (Server fast = often.server();
+                Server slow = rarely.server()) {
+            fast.panes().get(0).awaitText("never", Duration.ofMillis(400), Duration.ofMillis(20));
+            slow.panes().get(0).awaitText("never", Duration.ofMillis(400), Duration.ofMillis(200));
+        }
+
+        assertTrue(
+                often.reads.get() > 2 * rarely.reads.get(),
+                "20 ms looked far more than 200 ms: " + often.reads.get() + " against " + rarely.reads.get());
+        assertTrue(
+                rarely.reads.get() <= 4, "a 400 ms wait every 200 ms looks about three times: " + rarely.reads.get());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new SlowTmux()
+                        .server()
+                        .panes()
+                        .get(0)
+                        .awaitText("x", Duration.ofSeconds(1), Duration.ofMillis(1)));
+    }
+
     /** "Is it there now?" is a zero timeout, and it still gets one real read. */
     @Test
     void aZeroTimeoutStillAnswersWhatIsAlreadyThere() throws InterruptedException {

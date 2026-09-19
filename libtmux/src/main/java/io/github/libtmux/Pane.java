@@ -39,6 +39,8 @@ public final class Pane {
      */
     private static final Duration POLL = Duration.ofMillis(50);
 
+    private static final Duration SHORTEST_POLL = Duration.ofMillis(10);
+
     /**
      * The least a wait's first read is given, and the budget for telling a dead server from a read
      * that failed.
@@ -368,6 +370,20 @@ public final class Pane {
      *     rather than a timeout and so is not reported as one
      */
     public TextOutcome awaitText(String text, Duration timeout) throws InterruptedException {
+        return awaitText(text, timeout, POLL);
+    }
+
+    /**
+     * As {@link #awaitText(String, Duration)}, looking every {@code every} rather than every 50 ms.
+     *
+     * <p>Each look is a tmux process, so the interval is a trade the caller can see: a wait for a
+     * ten-minute build looking every 50 ms starts twelve thousand of them, and one looking every two
+     * seconds starts three hundred and notices up to two seconds late.
+     *
+     * @param every how long to leave between looks, at least 10 ms
+     * @throws IllegalArgumentException if {@code every} is shorter than 10 ms
+     */
+    public TextOutcome awaitText(String text, Duration timeout, Duration every) throws InterruptedException {
         Objects.requireNonNull(text, "text");
         // Read once, here, rather than on every look. The record ages out, and a wait that re-read it
         // would stop discounting the echo partway through — so a command slower than that age answered
@@ -383,7 +399,8 @@ public final class Pane {
                     }
                     return found;
                 },
-                timeout);
+                timeout,
+                every);
         return switch (ended) {
             case SIGNALLED -> reading[1] ? TextOutcome.PRESENT_AT_ENTRY : TextOutcome.APPEARED;
             case TIMED_OUT -> TextOutcome.TIMED_OUT;
@@ -465,8 +482,18 @@ public final class Pane {
      * @throws InterruptedException if the waiting thread is interrupted
      */
     public WakeReason await(Predicate<Pane> settled, Duration timeout) throws InterruptedException {
+        return await(settled, timeout, POLL);
+    }
+
+    /**
+     * As {@link #await(Predicate, Duration)}, looking every {@code every} rather than every 50 ms.
+     *
+     * @param every how long to leave between looks, at least 10 ms
+     * @throws IllegalArgumentException if {@code every} is shorter than 10 ms
+     */
+    public WakeReason await(Predicate<Pane> settled, Duration timeout, Duration every) throws InterruptedException {
         Objects.requireNonNull(settled, "settled");
-        return awaitCondition(bounded -> settled.test(bounded.refresh().through(server)), timeout);
+        return awaitCondition(bounded -> settled.test(bounded.refresh().through(server)), timeout, every);
     }
 
     /**
@@ -483,8 +510,14 @@ public final class Pane {
      * pane" the same way, so that one gets a second look to tell {@link WakeReason#SERVER_GONE} from a
      * failure that belongs to the caller.
      */
-    private WakeReason awaitCondition(Predicate<Pane> poll, Duration timeout) throws InterruptedException {
+    private WakeReason awaitCondition(Predicate<Pane> poll, Duration timeout, Duration every)
+            throws InterruptedException {
         Objects.requireNonNull(timeout, "timeout");
+        Objects.requireNonNull(every, "every");
+        if (every.compareTo(SHORTEST_POLL) < 0) {
+            throw new IllegalArgumentException("looking more often than every " + SHORTEST_POLL.toMillis()
+                    + " ms spends a tmux process per look for no reading a person could tell apart: " + every);
+        }
         if (timeout.isNegative()) {
             throw new IllegalArgumentException("timeout is negative: " + timeout);
         }
@@ -511,7 +544,7 @@ public final class Pane {
             if (remaining <= 0) {
                 return WakeReason.TIMED_OUT;
             }
-            TimeUnit.NANOSECONDS.sleep(Math.min(POLL.toNanos(), remaining));
+            TimeUnit.NANOSECONDS.sleep(Math.min(every.toNanos(), remaining));
             if (System.nanoTime() >= deadline) {
                 return WakeReason.TIMED_OUT;
             }
