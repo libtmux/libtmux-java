@@ -16,9 +16,9 @@ final class Machine {
     /**
      * The {@code code} a machine-readable failure can carry.
      *
-     * <p>The first ten are shared with the other ports of this tool: the same condition answers
-     * with the same name whichever one a script calls, and a failure of the workspace operation
-     * names one of those and nothing else.
+     * <p>The shared codes come first: the same condition answers with the same name whichever port
+     * of this tool a script calls, and a failure of the workspace operation names one of those and
+     * nothing else.
      *
      * <p>{@link #INTERRUPTED} and {@link #LOG_UNAVAILABLE} sit outside that set and are documented
      * in the README as doing so. Neither is a verdict on the request: one says the process was
@@ -72,9 +72,9 @@ final class Machine {
      * The {@code event} an {@code --ndjson} stream can carry.
      *
      * <p>Three places read these names — the log level a record is written at, the progress display,
-     * and a consumer's own parser — and they were three independent switches over string literals,
-     * where a new name silently fell through all of them. The level travels with the name here so
-     * that cannot happen again.
+     * and a consumer's own parser — and each was its own switch over string literals, where a new
+     * name silently fell through all of them. The level travels with the name here so that cannot
+     * happen again.
      */
     enum Event {
         /** The invocation began. Carries nothing; written to the log only. */

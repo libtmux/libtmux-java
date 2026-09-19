@@ -89,7 +89,7 @@ final class Children {
             throws IOException, InterruptedException {
         var command = new ArrayList<>(argv);
         command.set(0, executable(context, command.getFirst()));
-        // Containment needs all three: the process table to read, setsid to make the group, and ps
+        // Containment needs the process table to read, setsid to make the group, and ps
         // to ask what is left in it. Without any one of them the group is not made, so a child that
         // exits cleanly is not failed over a check that could not run.
         Optional<String> lister = lookup(context, "ps");

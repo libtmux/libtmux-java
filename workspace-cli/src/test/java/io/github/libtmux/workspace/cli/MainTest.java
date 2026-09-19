@@ -43,7 +43,7 @@ final class MainTest {
 
     /**
      * The machine vocabulary is closed. Consumers and the other ports read these names, so a
-     * failure may not invent one, and a tenth may not be added without this saying so.
+     * failure may not invent one, and one may not be added to the set without this saying so.
      */
     @Test
     void everyMachineFailureCodeComesFromTheSharedSet() throws Exception {
