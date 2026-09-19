@@ -512,23 +512,6 @@ public final class Server implements AutoCloseable {
         return (space < 0 ? line : line.substring(0, space)).equals(name);
     }
 
-    /** Binds a key to a tmux command. */
-    public void bindKey(String key, List<String> command) {
-        List<String> argv = new ArrayList<>(List.of("bind-key", "--", key));
-        argv.addAll(command);
-        run(argv);
-    }
-
-    /** Removes a key binding. */
-    public void unbindKey(String key) {
-        run(List.of("unbind-key", "--", key));
-    }
-
-    /** Every key binding, as tmux prints them. */
-    public List<String> listKeys() {
-        return withoutStartingServer("list-keys").stdout();
-    }
-
     /**
      * Runs a read that tmux would otherwise answer by starting a daemon.
      *
@@ -539,14 +522,18 @@ public final class Server implements AutoCloseable {
      * the way every other read does.
      */
     private CommandResult withoutStartingServer(String command) {
+        return withoutStartingServer(List.of(command));
+    }
+
+    CommandResult withoutStartingServer(List<String> command) {
         List<String> argv = new ArrayList<>(config.endpointCommand());
         argv.add(1, "-N");
         CommandResult result =
-                transport.execute(new CommandRequest(argv, List.of(List.of(command)), config.defaultTimeout(), ""));
+                transport.execute(new CommandRequest(argv, List.of(command), config.defaultTimeout(), ""));
         if (result.succeeded()) {
             return result;
         }
-        throw failed(command, result);
+        throw failed(command.getFirst(), result);
     }
 
     /** One of this server's wait-for channels, which is where a signal is sent and waited for. */
@@ -671,6 +658,11 @@ public final class Server implements AutoCloseable {
         InterruptedException interrupted = new InterruptedException("interrupted while waiting on channel " + channel);
         interrupted.initCause(cause);
         return interrupted;
+    }
+
+    /** The server's key bindings: {@code prefix} when binding, every table when listing. */
+    public Keys keys() {
+        return new Keys(this, null);
     }
 
     /** The server's paste buffers, which every session shares. */

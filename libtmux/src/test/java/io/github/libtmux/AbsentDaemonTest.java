@@ -39,7 +39,7 @@ final class AbsentDaemonTest {
         sites.put("clients", Server::clients);
         sites.put("version", Server::version);
         sites.put("requireAlive", Server::requireAlive);
-        sites.put("listKeys", Server::listKeys);
+        sites.put("keys.list", server -> server.keys().list());
         sites.put("listCommands", Server::listCommands);
         sites.put("messages", Server::messages);
         sites.put("expand", server -> server.expand("#{pid}"));
@@ -57,7 +57,7 @@ final class AbsentDaemonTest {
         sites.put("environment.set", server -> server.environment().set("K", "v"));
         sites.put("buffers.set", server -> server.buffers().set("b", "v"));
         sites.put("hooks.set", server -> server.hooks().set("after-new-window", "display-message hi"));
-        sites.put("bindKey", server -> server.bindKey("F12", List.of("display-message", "hi")));
+        sites.put("keys.bind", server -> server.keys().bind("F12", List.of("display-message", "hi")));
         sites.put("sourceFile", server -> server.sourceFile(Path.of("/tmp/nothing.conf")));
         sites.put("runShell", server -> server.runShell("true"));
         sites.put("newSession", server -> {

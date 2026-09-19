@@ -55,7 +55,7 @@ final class FailedReadIntegrationTest {
     void anAbsentDaemonIsItsOwnAnswer(@TempDir Path scratch) {
         try (Server server = at(scratch.resolve("nobody-home"), "tmux")) {
             assertThrows(ServerNotRunningException.class, () -> server.hasSession("build"));
-            assertThrows(ServerNotRunningException.class, server::listKeys);
+            assertThrows(ServerNotRunningException.class, () -> server.keys().list());
             assertThrows(ServerNotRunningException.class, server::listCommands);
             assertThrows(
                     ServerNotRunningException.class,
@@ -80,7 +80,8 @@ final class FailedReadIntegrationTest {
             assertThrows(
                     ServerNotRunningException.class, () -> server.environment().set("K", "v"));
             assertThrows(ServerNotRunningException.class, () -> server.buffers().set("b", "v"));
-            assertThrows(ServerNotRunningException.class, () -> server.bindKey("F12", List.of("display-message", "x")));
+            assertThrows(
+                    ServerNotRunningException.class, () -> server.keys().bind("F12", List.of("display-message", "x")));
             assertThrows(ServerNotRunningException.class, server::messages);
             assertThrows(ServerNotRunningException.class, () -> server.hooks().all());
             assertThrows(ServerNotRunningException.class, () -> server.buffers().list());
@@ -116,7 +117,7 @@ final class FailedReadIntegrationTest {
         Path socket = scratch.resolve("untouched");
 
         try (Server server = at(socket, "tmux")) {
-            assertThrows(ServerNotRunningException.class, server::listKeys);
+            assertThrows(ServerNotRunningException.class, () -> server.keys().list());
         }
 
         assertFalse(
@@ -170,7 +171,7 @@ final class FailedReadIntegrationTest {
      */
     private static void assertReadsFailRatherThanAnswer(Server server) {
         assertFailedRead("hasSession", () -> server.hasSession("build"));
-        assertFailedRead("listKeys", server::listKeys);
+        assertFailedRead("listKeys", () -> server.keys().list());
         assertFailedRead("listCommands", server::listCommands);
         assertFailedRead("options.get", () -> server.globalOptions().get("history-limit"));
         assertFailedRead("requireAlive", server::requireAlive);

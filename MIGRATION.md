@@ -22,7 +22,7 @@ read.
 
 ### Four reads raise where they used to answer
 
-`Server.hasSession`, `Options.get`, `Server.listKeys` and `Server.requireAlive`
+`Server.hasSession`, `Options.get`, `Server.listKeys` (now `Keys.list`) and `Server.requireAlive`
 answered a failed read as though it had found nothing. They now raise, and only
 `ServerNotRunningException` means an absent daemon:
 
@@ -37,6 +37,25 @@ answered a failed read as though it had found nothing. They now raise, and only
 A missing session is still `false`, and an option tmux does not know is still
 empty. Catch `ServerNotRunningException` where you start a daemon on demand,
 and `LibTmuxException` for a read that could not be made.
+
+### Key bindings are a view: `server.keys()`
+
+`bindKey`, `unbindKey` and `listKeys` moved to `Keys`, like buffers, options,
+hooks and the environment, and gained key tables: `in("root")` names one.
+Binding without one uses `prefix`, as before; listing without one lists every
+table, as before.
+
+| Was | Is |
+| --- | --- |
+| `server.bindKey(key, command)` | `server.keys().bind(key, command)` |
+| `server.unbindKey(key)` | `server.keys().unbind(key)` |
+| `server.listKeys()` | `server.keys().list()` |
+
+```java
+// Given: Server server
+server.keys().bind("F12", java.util.List.of("display-message", "hello"));
+server.keys().unbind("F12");
+```
 
 ### `Window.layout()` answers a `WindowLayout`
 
