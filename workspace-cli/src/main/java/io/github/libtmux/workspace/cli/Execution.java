@@ -454,6 +454,10 @@ final class Execution {
                                 .put("pane_id", pane.id().value())
                                 .put("pane_index", index));
             }
+            // Splits are made detached, which would leave the window on its first pane. tmuxp's are
+            // not, so it ends on the last one created; a pane naming focus overrides both.
+            if (spec.panes().stream().noneMatch(WorkspacePlan.Pane::focus))
+                panes.getLast().select();
             apply(window.options(), spec.optionsAfter(), effects);
             // A new session defaults to its first window; an appended one leaves the
             // client where it was unless a window explicitly asks for focus.

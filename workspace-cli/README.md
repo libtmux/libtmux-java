@@ -136,8 +136,11 @@ daemon, or the selected client when no daemon is listening. Saved layouts must
 have a valid checksum, a nonempty tree and enough pane cells. tmux still owns
 geometry correction and pruning, and can reject a layout during application.
 A window naming no `layout` tiles its panes; tmuxp instead stacks them,
-halving each split. A window or pane naming no `focus` keeps the first one
-active; tmuxp keeps the last. Both are deliberate differences from tmuxp.
+halving each split. That is a deliberate difference from tmuxp. A window naming
+no `focus` keeps the first window active, which tmuxp does not. A pane naming
+no `focus` leaves the last pane of its window active, which is what tmuxp
+leaves: panes are created detached here and selected afterwards, rather than
+each split taking the cursor with it.
 
 Explicit window indexes are reserved before implicit windows receive free
 indexes from `base-index`. Append reserves indexes from later input files and
