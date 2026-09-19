@@ -228,8 +228,17 @@ one a script calls:
 | `destination_exists` | the destination a capture was told to write is taken |
 | `usage` | the command was invoked in a way that cannot be carried out |
 
-`interrupted` is the one name outside that set, and it is not a verdict on the
-request: the process was signalled and reports where it stopped, with exit 130.
+Two names sit outside that set, and neither is a verdict on the request.
+`interrupted` says the process was signalled and reports where it stopped, with
+exit 130. `log_unavailable` says a `--log-file` sink that opened stopped
+accepting records; it is reported separately and leaves the command's own
+result and exit status alone. A `--log-file` that cannot be opened in the first
+place is `usage`, like any other invocation problem.
+
+A command's `status` is decided by what each of its results retained, not by
+which codes its errors carry. Loading two files where the first builds a
+session and the second does not match its own is `partial`: the first session
+is still there.
 
 An `--ndjson` stream carries these events:
 

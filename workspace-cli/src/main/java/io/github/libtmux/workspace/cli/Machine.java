@@ -16,9 +16,14 @@ final class Machine {
     /**
      * The {@code code} a machine-readable failure can carry.
      *
-     * <p>The set is shared with the other ports of this tool: the same condition answers with the
-     * same name whichever one a script calls. {@link #INTERRUPTED} is the exception, and is not a
-     * verdict on the request — it says the process was signalled and stopped where it stood.
+     * <p>The first ten are shared with the other ports of this tool: the same condition answers
+     * with the same name whichever one a script calls, and a failure of the workspace operation
+     * names one of those and nothing else.
+     *
+     * <p>{@link #INTERRUPTED} and {@link #LOG_UNAVAILABLE} sit outside that set and are documented
+     * in the README as doing so. Neither is a verdict on the request: one says the process was
+     * signalled, the other that this tool's own plumbing stopped working. A condition that is about
+     * how the command was invoked is {@link #USAGE}, not an exception of its own.
      */
     enum Code {
         /** The named workspace does not exist where discovery looked. */
@@ -42,7 +47,9 @@ final class Machine {
         /** The command was invoked in a way that cannot be carried out. */
         USAGE("usage"),
         /** The process was signalled; what it reports is where it stopped, not a verdict. */
-        INTERRUPTED("interrupted");
+        INTERRUPTED("interrupted"),
+        /** The log sink stopped accepting records after it was opened. */
+        LOG_UNAVAILABLE("log_unavailable");
 
         private final String wire;
 

@@ -126,7 +126,8 @@ final class Reporter implements AutoCloseable {
         } catch (IOException failure) {
             if (failure instanceof java.io.InterruptedIOException) throw failure;
             logFailed = true;
-            Main.diagnostic(context, machine(), Machine.Code.USAGE, "logging failed: " + failure.getMessage());
+            Main.diagnostic(
+                    context, machine(), Machine.Code.LOG_UNAVAILABLE, "logging failed: " + failure.getMessage());
         }
     }
 
@@ -147,7 +148,8 @@ final class Reporter implements AutoCloseable {
         try {
             log.close();
         } catch (IOException failure) {
-            Main.diagnostic(context, machine(), Machine.Code.USAGE, "closing log failed: " + failure.getMessage());
+            Main.diagnostic(
+                    context, machine(), Machine.Code.LOG_UNAVAILABLE, "closing log failed: " + failure.getMessage());
         }
     }
 
