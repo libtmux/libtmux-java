@@ -884,7 +884,7 @@ final class ExecutionTest {
                 "kept", new ObjectMapper().readTree(result.out()).path("x-note").asText());
     }
 
-    /** Costs the readiness budget in full: the pane is held at the origin so the poll never wins. */
+    /** The pane is held at the origin so the poll never wins; a shortened budget keeps this fast. */
     @Test
     void readinessTimeoutWarnsAndStillSendsCommands() throws Exception {
         Path source = directory.resolve("timeout.yaml");
@@ -900,8 +900,16 @@ final class ExecutionTest {
                 """);
         try (Server server = server(socket)) {
             try {
-                Result result =
-                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--ndjson");
+                Result result = invoke(
+                        java.util.Map.of("LIBTMUX_TEST_READY_TIMEOUT_MS", "100"),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--ndjson");
                 assertEquals(0, result.code(), result.err());
                 var records = result.out()
                         .lines()

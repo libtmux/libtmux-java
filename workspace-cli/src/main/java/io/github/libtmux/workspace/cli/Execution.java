@@ -48,7 +48,7 @@ final class Execution {
     }
 
     /** A missing tmux is its own answer, not the shared code the PATH lookup reports. */
-    private static String tmuxExecutable(Main.Context context) {
+    static String tmuxExecutable(Main.Context context) {
         try {
             return Children.executable(context, context.environment().getOrDefault("LIBTMUX_TEST_TMUX", "tmux"));
         } catch (Main.Missing absent) {
@@ -439,7 +439,7 @@ final class Execution {
                 WorkspacePlan.Pane config = spec.panes().get(index);
                 if (readiness && config.shell().isEmpty() && !config.commands().isEmpty()) {
                     effects.put("stage", "readiness");
-                    if (!ready(pane))
+                    if (!ready(context, pane))
                         report.event(
                                 Machine.Event.WARNING,
                                 Documents.JSON
@@ -641,14 +641,20 @@ final class Execution {
         }
     }
 
-    private static boolean ready(Pane pane) throws InterruptedException {
-        long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+    private static boolean ready(Main.Context context, Pane pane) throws InterruptedException {
+        long deadline = System.nanoTime() + readyTimeout(context).toNanos();
         do {
             String cursor = pane.expand("#{cursor_x}:#{cursor_y}");
             if (!cursor.isEmpty() && !cursor.equals("0:0")) return true;
             Thread.sleep(50);
         } while (System.nanoTime() < deadline);
         return false;
+    }
+
+    /** Overridable only so a test can afford to hold a pane at the origin for the whole budget. */
+    private static Duration readyTimeout(Main.Context context) {
+        String override = context.environment().get("LIBTMUX_TEST_READY_TIMEOUT_MS");
+        return override == null ? Duration.ofSeconds(2) : Duration.ofMillis(Long.parseLong(override));
     }
 
     /**
