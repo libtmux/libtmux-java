@@ -1149,7 +1149,7 @@ final class ProcessTest {
     }
 
     @Test
-    void aFullLogCannotReplaceTheOriginalPartialLoadResult() throws Exception {
+    void aFullLogCannotReplaceTheOriginalLoadResult() throws Exception {
         Path source = directory.resolve("failed.yaml");
         Path socket = directory.resolve("failed-log");
         Files.writeString(

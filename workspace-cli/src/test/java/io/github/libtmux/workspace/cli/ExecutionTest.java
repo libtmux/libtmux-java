@@ -2107,6 +2107,34 @@ final class ExecutionTest {
         }
     }
 
+    /** A server that has gone took the session with it: nothing is retained, so nothing is claimed. */
+    @Test
+    void aLoadWhoseServerVanishedClaimsNothingIsLeft() throws Exception {
+        Path source = directory.resolve("vanished.yaml");
+        Path socket = directory.resolve("vanished-socket");
+        Path script = directory.resolve("vanish.sh");
+        Files.writeString(
+                script,
+                "'" + System.getProperty("libtmux.tmux", "tmux") + "' -S '" + socket + "' kill-server\nexit 1\n");
+        Files.writeString(
+                source, "session_name: vanished\nbefore_script: /bin/sh " + script + "\nwindows:\n  - panes: [null]\n");
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(1, result.code(), result.toString());
+                var document = new ObjectMapper().readTree(result.out());
+                assertEquals("error", document.path("status").asText(), result.toString());
+                var effects = document.path("errors").path(0).path("effects");
+                assertTrue(effects.path("session_removed").asBoolean(), result.toString());
+                assertFalse(effects.path("changed").asBoolean(), result.toString());
+                assertFalse(server.isAlive(), result.toString());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** A capture never writes a document a load refuses: both ends apply one name rule. */
     @Test
     void freezeRefusesASessionNameLoadWouldNotRead() throws Exception {
