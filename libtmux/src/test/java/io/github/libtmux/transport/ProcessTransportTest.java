@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -795,11 +796,18 @@ final class ProcessTransportTest {
 
     @Test
     void anIdleTransportStartsNoPumpThreads() {
-        long before = pumpThreads();
+        // Which threads, not how many. Pump threads are named alike across transports and an earlier
+        // test's can still be draining a child it timed out, so a count falls while this one is
+        // taken and reads as a difference this transport did not make - it saw two, then none, and
+        // called that a failure. Only a thread that was not there before is one this constructor
+        // started.
+        Set<Thread> before = pumpThreadSet();
         ProcessTransport transport = new ProcessTransport(2);
 
         try {
-            assertEquals(before, pumpThreads(), "an idle transport does not need process-pipe workers");
+            Set<Thread> started = pumpThreadSet();
+            started.removeAll(before);
+            assertEquals(Set.of(), started, "an idle transport does not need process-pipe workers");
         } finally {
             transport.close();
         }
@@ -856,10 +864,10 @@ final class ProcessTransportTest {
                 .findAny();
     }
 
-    private static long pumpThreads() {
+    private static Set<Thread> pumpThreadSet() {
         return Thread.getAllStackTraces().keySet().stream()
                 .filter(thread -> thread.getName().startsWith("libtmux-pump-"))
-                .count();
+                .collect(java.util.stream.Collectors.toCollection(java.util.HashSet::new));
     }
 
     private static boolean awaitDead(long pid) throws InterruptedException {
