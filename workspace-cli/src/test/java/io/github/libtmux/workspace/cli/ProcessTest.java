@@ -1149,6 +1149,108 @@ final class ProcessTest {
     }
 
     /**
+     * The existing-session question is asked once, about the last input only. Declining it must
+     * leave that one input untouched without aborting the load: every input before it still builds
+     * and counts toward the result, and the tool says in the open what it did not do.
+     */
+    @Test
+    void interactiveExistingSessionPromptOnlyScopesTheDeclinedInput() throws Exception {
+        Path first = directory.resolve("prompt-scope-first.yaml");
+        Path second = directory.resolve("prompt-scope-second.yaml");
+        Path socket = directory.resolve("prompt-scope-socket");
+        Files.writeString(first, "session_name: fresh\nwindows:\n  - panes: [null]\n");
+        Files.writeString(
+                second,
+                "session_name: standing\nwindows:\n  - panes: [null]\n  - window_name: extra\n    panes: [null]\n");
+        String script = """
+                import fcntl, os, pty, shlex, subprocess, sys, termios, time
+                launcher, first, second, socket, tmux, scratch = sys.argv[1:]
+                env = dict(os.environ, TERM='xterm', LIBTMUX_TEST_TMUX=tmux)
+                env.pop('TMUX', None)
+                env.pop('TMUX_PANE', None)
+                prefix = [tmux, '-S', socket]
+                master, slave = pty.openpty()
+                os.set_blocking(master, False)
+                def terminal():
+                    os.setsid()
+                    fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+                child = subprocess.Popen(prefix + ['attach-session', '-t', 'keeper'],
+                    stdin=slave, stdout=slave, stderr=slave, env=env, preexec_fn=terminal)
+                def screen():
+                    try: os.read(master, 65536)
+                    except (BlockingIOError, OSError): pass
+                    return subprocess.check_output(prefix + ['capture-pane', '-p', '-t', 'keeper'], text=True)
+                def wait_for(needle, budget):
+                    until = time.monotonic() + budget
+                    text = screen()
+                    while needle not in text and time.monotonic() < until:
+                        time.sleep(.025)
+                        text = screen()
+                    return text
+                try:
+                    text = wait_for('workspace-ready>', 4)
+                    assert 'workspace-ready>' in text, text
+                    status = os.path.join(scratch, 'exit-status')
+                    command = shlex.join(['env', 'LIBTMUX_TEST_TMUX=' + tmux, launcher, 'load', first, second])
+                    command += '; printf %s $? >' + shlex.quote(status)
+                    subprocess.run(prefix + ['send-keys', '-t', 'keeper', '-l', command], check=True)
+                    subprocess.run(prefix + ['send-keys', '-t', 'keeper', 'Enter'], check=True)
+                    text = wait_for('already running', 5)
+                    assert 'standing is already running' in text, text
+                    assert 'fresh is already running' not in text, \
+                        'only the last input is ever asked about'
+                    subprocess.run(prefix + ['send-keys', '-t', 'keeper', '-l', 'n'], check=True)
+                    subprocess.run(prefix + ['send-keys', '-t', 'keeper', 'Enter'], check=True)
+                    until = time.monotonic() + 5
+                    text = screen()
+                    while not os.path.exists(status) and time.monotonic() < until:
+                        time.sleep(.025)
+                        text = screen()
+                    assert os.path.exists(status), text
+                    assert open(status).read() == '0', text
+                    assert 'Not attached' in text, 'declining must say in the open what it did not do: ' + text
+                    built = subprocess.run(prefix + ['has-session', '-t', 'fresh'], capture_output=True).returncode == 0
+                    assert built, 'the input before the declined one must still build'
+                    windows = subprocess.check_output(prefix + ['list-windows', '-t', 'standing'], text=True).splitlines()
+                    assert len(windows) == 1, 'the declined input must be left exactly as found: ' + repr(windows)
+                    final = subprocess.check_output(prefix + ['list-clients', '-F', '#{session_name}'], text=True).strip()
+                    assert final == 'fresh', final
+                finally:
+                    subprocess.run(prefix + ['kill-server'], capture_output=True)
+                    if child.poll() is None:
+                        child.wait(timeout=2)
+                    os.close(slave)
+                    os.close(master)
+                """;
+        try (Server server = Server.builder()
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .binary(System.getProperty("libtmux.tmux", "tmux"))
+                .build()) {
+            server.newSession(spec ->
+                    spec.named("keeper").running("/bin/sh", "-i").env("ENV", "").env("PS1", "workspace-ready> "));
+            server.newSession("standing");
+            try {
+                Process child = new ProcessBuilder(
+                                "python3",
+                                "-c",
+                                script,
+                                System.getProperty("workspace.cli.launcher"),
+                                first.toString(),
+                                second.toString(),
+                                socket.toString(),
+                                System.getProperty("libtmux.tmux", "tmux"),
+                                directory.toString())
+                        .redirectError(ProcessBuilder.Redirect.INHERIT)
+                        .start();
+                assertTrue(child.waitFor(15, TimeUnit.SECONDS));
+                assertEquals(0, child.exitValue());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /**
      * Declining a prompt is an answer, not a failure. Only a real terminal can be asked, so this is
      * the only place the answer can be given: every other test reaches the same code with --yes or
      * --json, which skip the question entirely.

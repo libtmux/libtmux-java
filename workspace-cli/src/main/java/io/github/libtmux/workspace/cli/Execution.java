@@ -101,6 +101,11 @@ final class Execution {
             // here can still turn this load into a detached or an appended one.
             Optional<AttachTarget> target =
                     detached || append ? Optional.empty() : Optional.of(attachTarget(context, server));
+            // Set only when the existing-session question below is answered "n". It marks the last
+            // plan alone, because that is the only one the question is ever asked about: declining
+            // leaves that one input untouched while every other input still builds, so the load
+            // itself is never aborted by an answer about a single session.
+            boolean lastDeclined = false;
             if (target.isPresent() && !report.machine() && !yes && Main.terminal()) {
                 AttachTarget resolved = target.orElseThrow();
                 boolean exists = server.isAlive()
@@ -108,8 +113,9 @@ final class Execution {
                                 .anyMatch(session ->
                                         session.name().equals(plans.getLast().name()));
                 if (exists) {
-                    if (promptAnswer(context, plans.getLast().name() + " is already running. Attach? [Y/n] ", 'y')
-                            == 'n') return;
+                    lastDeclined =
+                            promptAnswer(context, plans.getLast().name() + " is already running. Attach? [Y/n] ", 'y')
+                                    == 'n';
                 } else if (resolved.insideTmux()) {
                     char answer = promptAnswer(
                             context,
@@ -132,6 +138,12 @@ final class Execution {
             Session last = null;
             for (int index = 0; index < plans.size(); index++) {
                 WorkspacePlan plan = plans.get(index);
+                if (lastDeclined && index == plans.size() - 1) {
+                    // Scoped to this one input: it is left exactly as found, and nothing about it
+                    // counts toward the envelope below. Earlier inputs already built normally.
+                    report.line("subject", "Not attached", plan.name());
+                    continue;
+                }
                 ObjectNode effects = Documents.JSON
                         .createObjectNode()
                         .put("input_index", index)
