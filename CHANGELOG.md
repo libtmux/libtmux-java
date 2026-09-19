@@ -12,6 +12,140 @@ production.
 
 ## Unreleased
 
+### Added
+
+- **`Pane.run` runs a command to completion and reports its output and exit
+  status.** (#17)
+
+- **`Server.within` bounds commands made through the returned handle.** (#17)
+
+- **Pane waits accept a polling interval** for callers that need less frequent
+  reads. (#17)
+
+- **Server and session environments can be read and changed.**
+  `Environment.effective` reports what new processes inherit. (#17)
+
+- **`OptionKey` reads and writes options as their declared types.** (#17)
+
+- **Hook commands accept argument lists** through `Hooks.set` and
+  `Hooks.append`. (#17)
+
+- **`Server.paneFields` reads selected fields across all panes.** (#17)
+
+- **Pane filters can match title, path, size, and position.** (#17)
+
+- **`FakeTmux` tests library consumers without starting tmux.** It is available
+  in `libtmux-junit5`. (#17)
+
+- **The core artifact declares the Java module `io.github.libtmux`.** Internal
+  packages are encapsulated on the module path. (#17)
+
+- **`Pane.dead` reports whether a pane process has exited.** (#17)
+
+- **`Pane.position` reports a pane's terminal coordinates.** (#17)
+
+- **`Window.previousLayout` cycles backward through preset layouts.** (#17)
+
+- **Command names can be logged through `System.Logger` at `DEBUG`** without
+  exposing arguments. (#17)
+
+- **MCP `send_keys` and `send_keys_batch` accept `enter`** to submit literal
+  text in one call. (#17)
+
+### Changed
+
+- **Failed reads throw instead of returning false or empty results.** An absent
+  daemon raises `ServerNotRunningException`; see [migration
+  guidance](MIGRATION.md#failed-live-reads). (#17)
+
+- **`server.keys()` replaces `bindKey`, `unbindKey`, and `listKeys`.** See
+  [migration guidance](MIGRATION.md#key-bindings-are-a-view-serverkeys). (#17)
+
+- **Text waits distinguish existing text from new output.** This changes
+  `Pane.awaitText` and MCP `wait_for_text`; see [migration
+  guidance](MIGRATION.md#paneawaittext-answers-with-textoutcome-not-wakereason).
+  (#17)
+
+- **`Window.layout` distinguishes classic and JSON layouts.** See [migration
+  guidance](MIGRATION.md#windowlayout-answers-a-windowlayout). (#17)
+
+- **Control notifications expose typed events and identifiers.** See the
+  [migration guide](MIGRATION.md). (#17)
+
+- **`Pane.pid` reports an absent process explicitly.** See [migration
+  guidance](MIGRATION.md#panepid-returns-optionallong). (#17)
+
+- **`raiseIfDead` becomes `requireAlive`; renamed exceptions end in
+  `Exception`.** See [migration
+  guidance](MIGRATION.md#exception-and-guard-names). (#17)
+
+- **Interactive pane chooser methods are removed.** Use `Server.cmd` for
+  attached-terminal commands; see [migration
+  guidance](MIGRATION.md#the-interactive-chooser-methods-on-pane-are-removed).
+  (#17)
+
+- **The keyword filter parser is removed.** Use typed filters or `FilterJson`;
+  see [migration guidance](MIGRATION.md#legacyfilters-is-removed). (#17)
+
+- **Snapshot construction requires server identity.** See [migration
+  guidance](MIGRATION.md#serversnapshotof-needs-the-servers-identity). (#17)
+
+- **Error Prone flags discarded replacement handles.** Retain rename, retitle,
+  and refresh results; see [migration
+  guidance](MIGRATION.md#discarded-replacement-handles). (#17)
+
+- **Control clients request JSON layout notifications when tmux supports them.**
+  See [migration
+  guidance](MIGRATION.md#controlclientattach-requests-json-layouts-on-connect).
+  (#17)
+
+### Fixed
+
+- **Text waits discount recognized echoes of library input.** Exact output
+  repeats and partial redraws remain ambiguous; wait for a cold shell's prompt
+  before typing. (#17)
+
+- **Pane waits find text wrapped across terminal rows.** (#17)
+
+- **Non-ASCII arguments and output survive non-UTF-8 JVM locales.** See
+  [migration guidance](MIGRATION.md#non-ascii-text-reaches-tmux-on-any-locale).
+  (#17)
+
+- **Caller text beginning with a dash stays positional.** This includes typing,
+  shell commands, creation programs, popups, and pipes; raw `cmd` arguments
+  remain caller-controlled. (#17)
+
+- **Forgotten server and control-client handles no longer keep the JVM running
+  indefinitely.** (#17)
+
+- **Cancelling a channel wait consistently throws `InterruptedException`.** See
+  [migration
+  guidance](MIGRATION.md#a-cancelled-channel-wait-throws-interruptedexception).
+  (#17)
+
+- **Development and release-candidate tmux version strings can be read.** (#17)
+
+- **tmux 3.3 supports prompt history, window start directories, and detached
+  session sizes** without requiring the later 3.3a patch. (#17)
+
+- **Sized sessions can be created before the tmux server is running.** (#17)
+
+- **Layout selection accepts JSON layouts and unique preset prefixes when
+  supported by tmux.** Unsupported layouts are refused before dispatch. (#17)
+
+- **MCP rename reports the name tmux actually assigned.** (#17)
+
+- **Failed commands report tmux diagnostics or the process-launch reason.**
+  (#17)
+
+- **Session-scoped control subscriptions receive updates consistently across
+  tmux versions.** (#17)
+
+- **MCP stop keys cannot interleave with newly admitted typing.** Active runs
+  can still be interrupted. (#17)
+
+- **`NamedServerFixture` accepts platform temporary-directory symlinks.** (#17)
+
 ## 0.0.1-alpha.11 — 2026-09-12
 
 ### Added
