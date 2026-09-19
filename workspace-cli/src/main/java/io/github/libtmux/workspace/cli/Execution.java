@@ -430,9 +430,7 @@ final class Execution {
             }
             if (!spec.layout().isEmpty()) {
                 String canonical = requireLayout(spec.layout(), server, panes.size());
-                Optional<Layout> layout = java.util.Arrays.stream(Layout.values())
-                        .filter(value -> value.tmuxName().equals(canonical))
-                        .findFirst();
+                Optional<Layout> layout = Layout.byTmuxName(canonical);
                 if (layout.isPresent()) window.selectLayout(layout.orElseThrow());
                 else window.applyLayout(canonical);
             }

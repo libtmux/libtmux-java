@@ -95,17 +95,8 @@ final class WorkspaceApplier {
 
     private static void applyLayout(Window window, Optional<String> layout, int panes) {
         layout.map(value -> Layouts.require(value, window.server(), panes))
-                .ifPresent(
-                        value -> builtIn(value).ifPresentOrElse(window::selectLayout, () -> window.applyLayout(value)));
-    }
-
-    private static Optional<Layout> builtIn(String layout) {
-        for (Layout candidate : Layout.values()) {
-            if (candidate.tmuxName().equals(layout)) {
-                return Optional.of(candidate);
-            }
-        }
-        return Optional.empty();
+                .ifPresent(value -> Layout.byTmuxName(value)
+                        .ifPresentOrElse(window::selectLayout, () -> window.applyLayout(value)));
     }
 
     private static void runCommands(List<BuiltWindow> windows) {
