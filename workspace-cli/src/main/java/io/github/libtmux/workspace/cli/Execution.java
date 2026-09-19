@@ -815,6 +815,7 @@ final class Execution {
                                     "session_not_found",
                                     1,
                                     name.isEmpty() ? "select a live session by name" : "no session named " + name));
+            WorkspacePlan.requireAddressableName(session.name(), "; rename " + session.name() + " before capturing it");
             ObjectNode captured = Documents.JSON.createObjectNode().put("session_name", session.name());
             captured.set("options", Documents.JSON.valueToTree(session.options().all()));
             String defaultShell = session.options().get("default-shell").orElse("");

@@ -1882,6 +1882,35 @@ final class ExecutionTest {
         }
     }
 
+    /** A capture never writes a document a load refuses: both ends apply one name rule. */
+    @Test
+    void freezeRefusesASessionNameLoadWouldNotRead() throws Exception {
+        Path socket = directory.resolve("freeze-name-socket");
+        Path destination = directory.resolve("frozen.yaml");
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("my.proj");
+                Result refused = invoke(
+                        "freeze", "my.proj", "-S", socket.toString(), "--save-to", destination.toString(), "--json");
+                assertEquals(1, refused.code(), refused.toString());
+                assertEquals(
+                        "invalid_workspace",
+                        new ObjectMapper().readTree(refused.err()).path("code").asText(),
+                        refused.err());
+                assertFalse(Files.exists(destination), refused.toString());
+
+                server.newSession("plain");
+                Result captured = invoke(
+                        "freeze", "plain", "-S", socket.toString(), "--save-to", destination.toString(), "--json");
+                assertEquals(0, captured.code(), captured.toString());
+                Result reloaded = invoke("load", destination.toString(), "-d", "-S", socket.toString(), "--json");
+                assertEquals(0, reloaded.code(), reloaded.toString());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** Reuse is a comparison: a running session missing a window the document asks for is not "ok". */
     @Test
     void reusingASessionMissingADocumentWindowIsNotReportedAsSuccess() throws Exception {
