@@ -828,6 +828,24 @@ final class RunningCommandsTest {
         }
     }
 
+    /**
+     * The interrupt reaches through a run and nothing else. Against a pane no run holds it takes the
+     * pane the ordinary way, so it cannot have its keys interleaved with another operation's line;
+     * only a pane a run is holding is passed through, and that run goes on owning it.
+     */
+    @Test
+    void anInterruptOwnsAFreePaneAndOnlyReachesThroughARun(Server server) {
+        Pane pane = server.panes().getFirst();
+        PaneInputCohort.Resolution free = PaneInputCohort.resolve(pane);
+
+        try (PaneInputReservations.Lease held = PaneInputReservations.interrupting(free, "send_keys")) {
+            assertNotNull(held);
+            assertInputOwned(server, pane.id().value());
+        }
+
+        assertTrue(inputAvailable(server, pane.id().value()), "the interrupt never gave the pane back");
+    }
+
     private static void assertInputOwned(Server server, String pane) {
         IllegalStateException refused = assertThrows(
                 IllegalStateException.class, () -> Typing.pasteText(TestCalls.on(server, "pane_id", pane, "text", "")));
