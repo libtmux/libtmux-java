@@ -135,13 +135,27 @@ throws `LibTmuxException` only when this JVM cannot represent that name.
 pane.currentPathText().isEmpty();      // → false
 ```
 
-### `LegacyFilters` is now `KeywordFilters`
+### The interactive chooser methods on `Pane` are removed
 
-The class parses the `name__contains=dev` form that Python libtmux takes as
-keyword arguments, for callers holding such strings in a CLI flag, a config
-file or a stored query. Nothing about it is legacy — the name said it was
-deprecated here, which it is not. Rename the import and the calls; the API is
-otherwise unchanged, including the nested `FieldCatalog`.
+`clockMode`, `chooseTree`, `customizeMode`, `chooseBuffer`, `chooseClient`, the
+three `findWindow` overloads and `FindSpec` are gone. They open something for a
+person at an attached client, and a program cannot observe what happens next. To
+open one anyway, send tmux's own command; `Pane.mode()` still reports the mode
+and `exitMode()` still leaves it. To find a window, filter `Server.windows()`.
+
+```java
+// Given: Pane pane
+pane.server().cmd("choose-tree", "-t", pane.id().value());
+```
+
+### `LegacyFilters` is removed
+
+It parsed the `name__contains=dev` form Python libtmux takes as keyword
+arguments, which is Python's calling convention rather than anything a Java
+caller writes. Build a `FilterExpr` from the typed fields in code; for a filter
+that arrives as text — a CLI flag, a config file, a stored query — read it with
+`FilterJson.readString` from `libtmux-jackson`, which checks it against a model
+and fails closed on any name the model did not declare.
 
 ### Exception and guard names
 
