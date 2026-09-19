@@ -64,8 +64,9 @@ public final class Server implements AutoCloseable {
      *
      * <p>Keep {@code :} and {@code .} out of the name. tmux decides what to do with them and changes
      * its mind across the supported range: 3.2a through 3.6 rewrite each one to {@code _}, 3.7
-     * refuses the name, and 3.7a onwards keeps it — where it then cannot address the session,
-     * because a target splits on both. {@link Session#name()} reports what tmux settled on.
+     * refuses the name, and 3.7a onwards keeps it — where a bare {@code -t} target still misreads the
+     * delimiter, so {@link #hasSession} and {@link #killSession} resolve the id by comparing names
+     * instead of building one. {@link Session#name()} reports what tmux settled on.
      */
     public Session newSession(String name) {
         return newSession(SessionSpec.builder().named(name).build());
@@ -108,7 +109,7 @@ public final class Server implements AutoCloseable {
 
     /** Whether a session with this name exists. */
     public boolean hasSession(String name) {
-        return cmd("has-session", "-t", "=" + name).succeeded();
+        return sessionNamed(name).isPresent();
     }
 
     /**
@@ -121,7 +122,20 @@ public final class Server implements AutoCloseable {
      */
     public void killSession(String name) {
         Objects.requireNonNull(name, "name");
-        run(List.of("kill-session", "-t", "=" + name));
+        Session session = sessionNamed(name).orElseThrow(() -> new ObjectDoesNotExist("no session is named " + name));
+        run(List.of("kill-session", "-t", session.id().value()));
+    }
+
+    /**
+     * The session whose name matches exactly, found by listing and comparing in this process rather
+     * than through {@code -t}: tmux's own exact-match prefix is applied to the string after a target
+     * is split on {@code :} and {@code .}, so a name holding either defeats it, and {@link #newSession}
+     * already resolves this same way for the session it just made.
+     */
+    private Optional<Session> sessionNamed(String name) {
+        return sessions().stream()
+                .filter(session -> session.name().equals(name))
+                .findFirst();
     }
 
     /**

@@ -194,6 +194,13 @@ production.
 
 ### Fixed
 
+- **`Server.hasSession` and `Server.killSession` find a session whose name
+  holds `.` or `:`.** tmux 3.7a and later keep such a name as given, but both
+  methods addressed the session with an exact-match target, which tmux splits
+  on those same characters first, so `hasSession` answered false for a session
+  that existed and `killSession` refused to end it. Both now find the session
+  by comparing names and act on its id. (#16)
+
 - **`WorkspaceBuilder` builds a window with more than four panes.** Splitting
   the previous pane on every new pane runs out of rows before the fifth at a
   default 80x24 terminal; it rebalances with a tiled layout between splits
