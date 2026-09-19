@@ -16,23 +16,40 @@ import java.util.regex.Pattern;
  * nothing later's patches guarantee, so it sorts strictly between the two — above every patch of the
  * release before it, below the release it names and every patch of that.
  *
+ * <p>A release candidate, {@code 3.8-rc}, compares equal to the release it names. tmux freezes
+ * features at the candidate, so it has everything the release will and differs only in fixes —
+ * measured, not assumed: a 3.8 candidate writes JSON layouts and empties a dead pane's pid exactly
+ * as 3.8 does, and a feature gated on 3.8 works on it. It is not {@code equals} to the release, and
+ * it is written back exactly as tmux wrote it, which matters beyond display: every capture is
+ * fenced on the version tmux reports, and a candidate printed as {@code 3.8} failed that fence on
+ * every read.
+ *
  * @param major the major number
  * @param minor the minor number
  * @param patch the patch letter, or empty for an unlettered release
  * @param development whether this is a {@code next-M.m} build rather than the release {@code M.m}
  *     itself
+ * @param preRelease the release candidate this is, such as {@code rc} or {@code rc2}, or empty for a
+ *     release
  */
-public record TmuxVersion(int major, int minor, String patch, boolean development) implements Comparable<TmuxVersion> {
+public record TmuxVersion(int major, int minor, String patch, boolean development, String preRelease)
+        implements Comparable<TmuxVersion> {
 
-    private static final Pattern RELEASE = Pattern.compile("^(next-)?(\\d+)\\.(\\d+)([a-z]*)");
+    private static final Pattern RELEASE = Pattern.compile("^(next-)?(\\d+)\\.(\\d+)([a-z]*)(?:-(rc\\d*))?");
 
     public TmuxVersion {
         Objects.requireNonNull(patch, "patch");
+        Objects.requireNonNull(preRelease, "preRelease");
+    }
+
+    /** A release or a development build, without a release candidate. */
+    public TmuxVersion(int major, int minor, String patch, boolean development) {
+        this(major, minor, patch, development, "");
     }
 
     /** A released version — the ordinary case, and every version literal this library names. */
     public TmuxVersion(int major, int minor, String patch) {
-        this(major, minor, patch, false);
+        this(major, minor, patch, false, "");
     }
 
     /**
@@ -51,7 +68,8 @@ public record TmuxVersion(int major, int minor, String patch, boolean developmen
                 Integer.parseInt(release.group(2)),
                 Integer.parseInt(release.group(3)),
                 release.group(4),
-                release.group(1) != null);
+                release.group(1) != null,
+                release.group(5) == null ? "" : release.group(5));
     }
 
     /** Whether this version has everything the given one has. */
@@ -71,7 +89,8 @@ public record TmuxVersion(int major, int minor, String patch, boolean developmen
         }
         if (development != other.development) {
             // A next-M.m build has not shipped everything M.m's own patches will carry, so it
-            // sorts below the release it names, whatever either side's patch letter is.
+            // sorts below the release it names, whatever either side's patch letter is. A release
+            // candidate is not ordered apart from its release at all: features are frozen at it.
             return development ? -1 : 1;
         }
         // An unlettered release precedes its own patches, which empty-string ordering already gives.
@@ -80,6 +99,7 @@ public record TmuxVersion(int major, int minor, String patch, boolean developmen
 
     @Override
     public String toString() {
-        return (development ? "next-" : "") + major + "." + minor + patch;
+        return (development ? "next-" : "") + major + "." + minor + patch
+                + (preRelease.isEmpty() ? "" : "-" + preRelease);
     }
 }

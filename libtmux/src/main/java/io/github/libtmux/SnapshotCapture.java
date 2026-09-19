@@ -157,7 +157,8 @@ final class SnapshotCapture {
         if (pid <= 0) {
             throw new LibTmuxException("tmux reported a malformed server pid: " + pid);
         }
-        return Optional.of(new ServerProcess(pid, TmuxVersion.parse(row.text("version"))));
+        String version = row.text("version");
+        return Optional.of(new ServerProcess(pid, TmuxVersion.parse(version), version));
     }
 
     private static boolean daemonGenuinelyAbsent(String message) {
@@ -168,7 +169,7 @@ final class SnapshotCapture {
     private ServerSnapshot capture(ServerProcess process) {
         boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
         RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
-        Batch listings = server.batch(process.pid(), process.version());
+        Batch listings = server.batch(process.pid(), process.reported());
         listings.add(listing(SESSIONS, "list-sessions"));
         listings.add(listing(WINDOWS, "list-windows", "-a"));
         listings.add(listing(paneFormat, "list-panes", "-a"));
@@ -277,5 +278,9 @@ final class SnapshotCapture {
         return fields;
     }
 
-    record ServerProcess(long pid, TmuxVersion version) {}
+    /**
+     * @param reported the version exactly as tmux wrote it, which is what the capture's fence
+     *     compares — not the parsed version's text, which need not be byte for byte the same
+     */
+    record ServerProcess(long pid, TmuxVersion version, String reported) {}
 }

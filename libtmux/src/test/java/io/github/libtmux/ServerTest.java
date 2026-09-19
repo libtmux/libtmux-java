@@ -516,6 +516,35 @@ final class ServerTest {
         }
     }
 
+    /**
+     * The defect this pins: a release candidate reports its version as {@code 3.8-rc}, the parsed
+     * version printed as {@code 3.8}, and the fence compared the two — so every capture of a tmux
+     * 3.8 release candidate looked like a server replaced mid-read, and failed. Found by the first
+     * matrix lane ever to run one.
+     */
+    @Test
+    void aReleaseCandidateIsTheServerItSaysItIs(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return GroupedTmux.execute(request, 4242L, "3.8-rc", argv -> switch (argv.get(0)) {
+                    case "display-message" ->
+                        new CommandResult(0, List.of(String.join(separator, "4242", "3.8-rc")), List.of());
+                    default -> new CommandResult(0, List.of(), List.of());
+                });
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            assertEquals(List.of(), server.sessions(), "a 3.8-rc server with nothing in it reads as that");
+            assertEquals("3.8-rc", server.version().toString());
+        }
+    }
+
     /** The fence refuses a replaced server before a listing runs, so there is no first capture. */
     @Test
     void snapshotRetriesAChangedIncarnationAndKeepsOnlyTheSecondCapture(@TempDir Path directory) throws IOException {

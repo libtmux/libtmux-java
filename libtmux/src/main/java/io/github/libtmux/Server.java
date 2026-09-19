@@ -1097,7 +1097,9 @@ public final class Server implements AutoCloseable {
      * <p>Both halves, because a pid alone is reusable: a different tmux landing on the one just
      * probed would answer as if it were the server the rows are being read from.
      */
-    Batch batch(long pid, TmuxVersion version) {
+    Batch batch(long pid, String version) {
+        // The version as tmux reported it, compared as text: any rewriting of it — a parsed version
+        // printing 3.8-rc as 3.8 — fails this fence on every read, and it did.
         String fence = "#{&&:#{==:#{pid}," + pid + "},#{==:#{version}," + version + "}}";
         return new Batch(commands -> guarded(pid, fence, CommandStrings.group(commands), ""));
     }

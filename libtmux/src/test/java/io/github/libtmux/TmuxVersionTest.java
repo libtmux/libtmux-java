@@ -58,4 +58,33 @@ final class TmuxVersionTest {
     void aVersionConstructedFromTheThreeArgFormIsNotADevelopmentBuild() {
         assertFalse(new TmuxVersion(3, 9, "").development());
     }
+
+    /** A release candidate is written back exactly as tmux wrote it. */
+    @Test
+    void aReleaseCandidateRoundTrips() {
+        assertEquals("3.8-rc", TmuxVersion.parse("3.8-rc").toString());
+        assertEquals("3.9-rc2", TmuxVersion.parse("3.9-rc2").toString());
+        assertEquals("3.7c", TmuxVersion.parse("3.7c").toString());
+    }
+
+    /**
+     * A release candidate has what its release has — tmux freezes features at the candidate, and a
+     * 3.8 candidate behaves as 3.8 does on every lane-tested gate — so it compares equal to it, above
+     * the development build tracking toward it. It is still not the release: not {@code equals} to it.
+     */
+    @Test
+    void aReleaseCandidateComparesAsItsRelease() {
+        TmuxVersion previous = TmuxVersion.parse("3.7c");
+        TmuxVersion development = TmuxVersion.parse("next-3.8");
+        TmuxVersion candidate = TmuxVersion.parse("3.8-rc");
+        TmuxVersion release = TmuxVersion.parse("3.8");
+        TmuxVersion patch = TmuxVersion.parse("3.8a");
+
+        assertTrue(previous.compareTo(development) < 0);
+        assertTrue(development.compareTo(candidate) < 0, "a development build precedes the candidate");
+        assertEquals(0, candidate.compareTo(release), "features are frozen at the candidate");
+        assertTrue(candidate.compareTo(patch) < 0);
+        assertTrue(candidate.atLeast(release), "a gate on the release is met by its candidate");
+        assertTrue(!candidate.equals(release), "and the candidate is still not the release");
+    }
 }
