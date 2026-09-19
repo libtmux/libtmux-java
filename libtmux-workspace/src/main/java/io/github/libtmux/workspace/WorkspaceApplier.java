@@ -75,6 +75,10 @@ final class WorkspaceApplier {
             Window window = index == 0 ? firstWindow(session, spec.name()) : session.newWindow(spec.name());
             for (int pane = 1; pane < spec.panes().size(); pane++) {
                 window.split();
+                // Halving each pane in turn runs out of rows before the fifth at a default terminal
+                // size; rebalancing after every split reclaims them. The window's own layout, applied
+                // below, still has the final say.
+                window.selectLayout(Layout.TILED);
             }
             applyLayout(window, spec.layout(), spec.panes().size());
             List<Pane> panes = window.refresh().panes();
