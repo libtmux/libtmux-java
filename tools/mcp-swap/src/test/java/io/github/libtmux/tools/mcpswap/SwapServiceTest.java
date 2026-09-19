@@ -42,6 +42,9 @@ final class SwapServiceTest {
     void setUp() throws IOException {
         home = temporary.resolve("home");
         Files.createDirectory(home);
+        // Real, because PathRoute resolves every path it hands the hook (macOS aliases /tmp under
+        // /private); comparisons here must land in the same space.
+        home = home.toRealPath();
         environment = Map.of(
                 "XDG_CONFIG_HOME", home.resolve(".config").toString(),
                 "XDG_STATE_HOME", home.resolve(".state").toString());
