@@ -55,6 +55,10 @@ final class PaneWaitTest {
      *
      * <p>The text lands five milliseconds after a 120 ms deadline, which is before a poll that slept
      * a full interval past the deadline would look — and so exactly what that poll would report.
+     *
+     * <p>Timed from the wait's own first read, not from the test's clock: the wait's deadline is
+     * measured from when it starts, and a loaded machine can start it late enough that a margin taken
+     * from the test's clock slides inside the deadline and the text is legitimately seen.
      */
     @Test
     void textThatAppearsAfterTheDeadlineIsNotReported() throws InterruptedException {
@@ -62,7 +66,7 @@ final class PaneWaitTest {
         try (Server server = tmux.server()) {
             Pane pane = server.panes().get(0);
             Duration timeout = Duration.ofMillis(120);
-            tmux.textFrom = System.nanoTime() + timeout.plusMillis(5).toNanos();
+            tmux.textAfterFirstRead = timeout.plusMillis(5);
 
             assertEquals(TextOutcome.TIMED_OUT, pane.awaitText("listening", timeout));
         }
@@ -285,6 +289,8 @@ final class PaneWaitTest {
         private final AtomicLong recordClock = new AtomicLong();
         private volatile Duration captureTakes = Duration.ZERO;
         private volatile long textFrom = Long.MAX_VALUE;
+        private volatile @Nullable Duration textAfterFirstRead;
+        private volatile long firstRead = Long.MIN_VALUE;
         private volatile int secondsPerRead;
         private volatile @Nullable List<String> screen;
         private volatile int screenChangesAfter = Integer.MAX_VALUE;
@@ -339,7 +345,13 @@ final class PaneWaitTest {
             if (scripted != null) {
                 return new CommandResult(0, read > screenChangesAfter ? screenAfterwards : scripted, List.of());
             }
-            String shown = System.nanoTime() >= textFrom ? "server listening" : "booting";
+            long now = System.nanoTime();
+            if (firstRead == Long.MIN_VALUE) {
+                firstRead = now;
+            }
+            Duration after = textAfterFirstRead;
+            boolean arrived = after == null ? now >= textFrom : now - firstRead >= after.toNanos();
+            String shown = arrived ? "server listening" : "booting";
             return new CommandResult(0, List.of(shown), List.of());
         }
 
