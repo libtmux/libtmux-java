@@ -1214,7 +1214,8 @@ final class ProcessTest {
                     windows = subprocess.check_output(prefix + ['list-windows', '-t', 'standing'], text=True).splitlines()
                     assert len(windows) == 1, 'the declined input must be left exactly as found: ' + repr(windows)
                     final = subprocess.check_output(prefix + ['list-clients', '-F', '#{session_name}'], text=True).strip()
-                    assert final == 'fresh', final
+                    assert final == 'keeper', \
+                        'a decline answers one question; it must not move the client to a session it was never asked about: ' + final
                 finally:
                     subprocess.run(prefix + ['kill-server'], capture_output=True)
                     if child.poll() is None:
