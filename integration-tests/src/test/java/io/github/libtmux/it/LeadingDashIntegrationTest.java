@@ -111,7 +111,7 @@ final class LeadingDashIntegrationTest {
     }
 
     @Test
-    void aWaitChannelCanBeNamedWithALeadingDash(Server server) {
+    void aWaitChannelCanBeNamedWithALeadingDash(Server server) throws InterruptedException {
         // A signal with nobody waiting is remembered, so draining is the cheapest proof that the
         // wait addressed the same channel the signal did rather than reading either as a flag.
         server.channel(UNKNOWN).signal();

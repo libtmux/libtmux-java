@@ -102,6 +102,45 @@ final class PaneWaitTest {
         }
     }
 
+    /**
+     * The two blocking waits answer a cancellation the same way.
+     *
+     * <p>The defect this pins: a pane wait threw {@link InterruptedException} while a channel wait
+     * threw an unchecked transport failure with the flag left set, so a caller cancelling one and
+     * cancelling the other had to handle two different things. The transport here does what the
+     * process transport does — it cannot declare the checked exception, so it re-sets the flag and
+     * reports a failure — and the channel wait has to read that as the cancellation it is.
+     */
+    @Test
+    void aCancelledChannelWaitIsACancellationRatherThanAFailure() {
+        TmuxTransport interruptible = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                Thread.currentThread().interrupt();
+                throw new io.github.libtmux.transport.TmuxTransportException(
+                        "interrupted before dispatch",
+                        io.github.libtmux.transport.DispatchOutcome.NOT_DISPATCHED,
+                        new InterruptedException());
+            }
+
+            @Override
+            public void close() {}
+        };
+        try (Server server = Server.using(
+                ServerConfig.builder()
+                        .endpoint(ServerEndpoint.namedSocket("fixture"))
+                        .build(),
+                interruptible)) {
+            try {
+                assertThrows(
+                        InterruptedException.class,
+                        () -> server.channel("ready").await(Duration.ofSeconds(5)));
+            } finally {
+                Thread.interrupted();
+            }
+        }
+    }
+
     /** "Is it there now?" is a zero timeout, and it still gets one real read. */
     @Test
     void aZeroTimeoutStillAnswersWhatIsAlreadyThere() throws InterruptedException {

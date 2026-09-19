@@ -110,7 +110,12 @@ final class RunningCommands {
             }
 
             long started = System.nanoTime();
-            WakeReason wake = server.channel(channel).await(timeout);
+            WakeReason wake;
+            try {
+                wake = server.channel(channel).await(timeout);
+            } catch (InterruptedException cancelled) {
+                throw Waits.cancelled(cancelled);
+            }
             double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
 
             Screen.Fresh fresh =

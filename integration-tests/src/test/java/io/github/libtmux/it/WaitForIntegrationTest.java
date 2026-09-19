@@ -50,7 +50,7 @@ final class WaitForIntegrationTest {
     }
 
     @Test
-    void nothingSignallingIsATimeoutRatherThanAWake(Server server) {
+    void nothingSignallingIsATimeoutRatherThanAWake(Server server) throws InterruptedException {
         assertEquals(WakeReason.TIMED_OUT, server.channel("never-signalled").await(SHORT));
     }
 
@@ -59,7 +59,7 @@ final class WaitForIntegrationTest {
      * possibly from an earlier run of a different program. Draining is how a caller starts clean.
      */
     @Test
-    void aStaleSignalIsConsumedByDrainingRatherThanSatisfyingTheNextWait(Server server) {
+    void aStaleSignalIsConsumedByDrainingRatherThanSatisfyingTheNextWait(Server server) throws InterruptedException {
         server.channel("stale").signal();
 
         assertTrue(server.channel("stale").drain(), "the buffered signal was there");
@@ -71,7 +71,7 @@ final class WaitForIntegrationTest {
     }
 
     @Test
-    void anUndrainedStaleSignalWouldHaveSatisfiedTheWait(Server server) {
+    void anUndrainedStaleSignalWouldHaveSatisfiedTheWait(Server server) throws InterruptedException {
         server.channel("undrained").signal();
 
         assertEquals(

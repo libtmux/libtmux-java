@@ -40,6 +40,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * scheduler, and either one unable to run stops the client from making progress. The reader only
  * resolves replies and fills bounded subscription buffers; subscriber code runs on the thread that
  * pulls a value.
+ *
+ * <p><strong>Threads.</strong> {@link #send} may be called from several threads at once: requests
+ * queue in the order they arrive and each caller gets its own reply. A subscription is read by one
+ * thread at a time.
+ *
+ * <p><strong>Close it.</strong> The client holds an attached tmux client, which is what makes tmux
+ * push output to it, and closing is what detaches that client and stops its threads. A client that
+ * is forgotten does not hold the JVM open — its threads are daemons — and the attached tmux client
+ * exits once the JVM does, because it reads its commands from a pipe that closes with it. Until then
+ * it is listed among the session's clients like any other.
  */
 public final class ControlClient implements AutoCloseable {
 
@@ -68,10 +78,16 @@ public final class ControlClient implements AutoCloseable {
         BufferedWriter requests =
                 new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
         this.writer = new ControlWriter(requests, ControlWriter.DEFAULT_CAPACITY, this::terminate);
+        // Daemons, unlike the process transport's drains. Those let go once idle, which is what
+        // stops a forgotten transport holding the JVM; these are attached to a live tmux and are
+        // never idle, so the same treatment would not help and a forgotten client kept the JVM alive
+        // forever — for a command-line program, indistinguishable from a deadlock. Nothing is lost by
+        // letting go at exit: send() blocks its caller until the reply arrives, so a call in flight
+        // is held by the thread that made it.
         this.reader = new Thread(this::read, "libtmux-control");
-        this.reader.setDaemon(false);
+        this.reader.setDaemon(true);
         this.errorReader = new Thread(this::drainErrors, "libtmux-control-stderr");
-        this.errorReader.setDaemon(false);
+        this.errorReader.setDaemon(true);
         this.errorReader.start();
     }
 

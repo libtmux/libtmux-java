@@ -36,6 +36,35 @@ import org.junit.jupiter.api.extension.ExtendWith;
 @ExtendWith(TmuxExtension.class)
 final class ControlModeIntegrationTest {
 
+    /**
+     * The defect this pins: a client nobody closed kept the JVM alive forever, because its three
+     * threads were not daemons and none of them ever goes idle — they are attached to a live tmux.
+     * A forgotten {@code close()} cost twenty-five seconds of a test timeout here and, for a
+     * command-line program, is indistinguishable from a deadlock.
+     *
+     * <p>Every thread it starts is asserted rather than the exit itself, because a JVM that refuses
+     * to exit can only be measured by giving up on it. Nothing is lost by letting go at exit:
+     * {@code send} blocks its caller until the reply arrives, so a call in flight is held by the
+     * thread that made it.
+     */
+    @Test
+    void aClientNobodyClosedDoesNotHoldTheJvmOpen(Server server) {
+        Session session = server.sessions().get(0);
+        List<String> nonDaemon = new ArrayList<>();
+
+        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
+            assertTrue(client.isAlive(), "the client has to be running for its threads to exist");
+            Thread.getAllStackTraces().keySet().stream()
+                    .filter(thread -> thread.getName().startsWith("libtmux-control"))
+                    .filter(Thread::isAlive)
+                    .filter(thread -> !thread.isDaemon())
+                    .map(Thread::getName)
+                    .forEach(nonDaemon::add);
+        }
+
+        assertEquals(List.of(), nonDaemon, "these threads would keep a JVM alive after a forgotten close");
+    }
+
     private static ControlClient attach(Server server) {
         Session session = server.sessions().get(0);
         return ControlClient.attach(server.config(), session.id());

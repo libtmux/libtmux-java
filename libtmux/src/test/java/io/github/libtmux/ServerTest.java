@@ -249,7 +249,8 @@ final class ServerTest {
     }
 
     @Test
-    void aWaitWithSignalCapacityPreservesAPredispatchTimeout(@TempDir Path directory) throws IOException {
+    void aWaitWithSignalCapacityPreservesAPredispatchTimeout(@TempDir Path directory)
+            throws IOException, InterruptedException {
         TmuxTimeoutException failure =
                 new TmuxTimeoutException("waiting admission timed out", DispatchOutcome.NOT_DISPATCHED, null);
         java.util.concurrent.atomic.AtomicBoolean waiting = new java.util.concurrent.atomic.AtomicBoolean();

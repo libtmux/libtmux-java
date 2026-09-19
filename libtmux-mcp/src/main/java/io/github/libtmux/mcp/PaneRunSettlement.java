@@ -21,6 +21,9 @@ final class PaneRunSettlement {
             boolean waited = true;
             try {
                 pane.server().channel(channel).await(delay);
+            } catch (InterruptedException cancelled) {
+                Thread.currentThread().interrupt();
+                return;
             } catch (RuntimeException failure) {
                 if (Thread.currentThread().isInterrupted()) {
                     return;

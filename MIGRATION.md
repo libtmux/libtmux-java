@@ -35,14 +35,23 @@ A missing session is still `false`, and an option tmux does not know is still
 empty. Catch `ServerNotRunningException` where you start a daemon on demand,
 and `LibTmuxException` for a read that could not be made.
 
-### A modular consumer no longer needs the annotation jars
+### A cancelled channel wait throws `InterruptedException`
 
-The core requires JSpecify and Error Prone's annotations `static` rather than
-`transitive static`. Nothing changes for a consumer on the classpath. A consumer
-with its own `module-info.java` that was adding both jars to its module path to
-get past `module not found: org.jspecify` can stop; one that wants to read this
-API's nullness with NullAway keeps JSpecify on its own path, where its own code
-needs it anyway.
+`Channel.await`, `Channel.awaitReservingCapacity` and `Channel.drain` now declare
+`InterruptedException`, as `Pane.awaitText` already did. An interrupted channel
+wait used to raise an unchecked `TmuxTransportException` with the interrupt flag
+left set, so cancelling one kind of wait and cancelling the other had to be
+handled two different ways. Add `throws InterruptedException` at the call site,
+or catch it and restore the flag.
+
+```java
+// Given: Server server
+try {
+    server.channel("ready").await(java.time.Duration.ofSeconds(30));
+} catch (InterruptedException cancelled) {
+    Thread.currentThread().interrupt();
+}
+```
 
 ### `Pane.awaitText` answers with `TextOutcome`, not `WakeReason`
 

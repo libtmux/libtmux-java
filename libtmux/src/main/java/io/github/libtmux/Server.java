@@ -39,6 +39,13 @@ import org.jspecify.annotations.Nullable;
  * and those are not daemons, so that a reply being read when a program ends is finished rather than
  * truncated. They do let go once they have been idle, so forgetting to close delays a JVM's exit by
  * seconds instead of preventing it — but only closing releases them at once.
+ *
+ * <p><strong>Threads.</strong> Share one freely. A server holds nothing a call changes, its transport
+ * is thread-safe by contract, and the record of what was typed into each pane is concurrent; calls
+ * from several threads run side by side, bounded by the transport's own admission. The same goes
+ * for every {@link Session}, {@link Window} and {@link Pane} it hands out: each is an immutable view
+ * of one capture, and a method that changes tmux changes tmux rather than the handle. Close it once,
+ * after the last call on any thread.
  */
 public final class Server implements AutoCloseable {
 
@@ -576,7 +583,8 @@ public final class Server implements AutoCloseable {
         globalOptions().set("mouse", enabled ? "on" : "off");
     }
 
-    WakeReason awaitChannel(String channel, Duration timeout, boolean reserveSignalCapacity) {
+    WakeReason awaitChannel(String channel, Duration timeout, boolean reserveSignalCapacity)
+            throws InterruptedException {
         try {
             CommandRequest request = request(List.of("wait-for", "--", channel), timeout);
             if (reserveSignalCapacity) {
@@ -585,13 +593,35 @@ public final class Server implements AutoCloseable {
                 transport.execute(request);
             }
         } catch (io.github.libtmux.transport.TmuxTimeoutException e) {
+            if (Thread.interrupted()) {
+                throw cancelled(channel, e);
+            }
             if (reserveSignalCapacity && e.outcome() == DispatchOutcome.NOT_DISPATCHED) {
                 throw e;
             }
             // The transport killed the waiting client at the deadline; nothing signalled it.
             return isAlive() ? WakeReason.TIMED_OUT : WakeReason.SERVER_GONE;
+        } catch (io.github.libtmux.transport.TmuxTransportException e) {
+            if (Thread.interrupted()) {
+                throw cancelled(channel, e);
+            }
+            throw e;
         }
         return isAlive() ? WakeReason.SIGNALLED : WakeReason.SERVER_GONE;
+    }
+
+    /**
+     * A cancelled wait, told from a wait that failed.
+     *
+     * <p>A transport cannot raise {@link InterruptedException}: its one method does not declare one.
+     * So it re-sets the flag and reports the failure the interrupt caused, and the flag is what says
+     * which of the two happened. Reported the way {@link Pane#awaitText} reports it, because a caller
+     * cancelling one wait and cancelling the other is doing the same thing.
+     */
+    private static InterruptedException cancelled(String channel, Throwable cause) {
+        InterruptedException interrupted = new InterruptedException("interrupted while waiting on channel " + channel);
+        interrupted.initCause(cause);
+        return interrupted;
     }
 
     /** The server's paste buffers, which every session shares. */

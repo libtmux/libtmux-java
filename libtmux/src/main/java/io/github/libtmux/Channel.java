@@ -50,8 +50,10 @@ public final class Channel {
      *
      * @param timeout how long to wait
      * @return why the wait ended, which is never simply "successfully"
+     * @throws InterruptedException if the waiting thread is interrupted, which is a cancellation
+     *     rather than a timeout and so is not reported as one
      */
-    public WakeReason await(Duration timeout) {
+    public WakeReason await(Duration timeout) throws InterruptedException {
         return server.awaitChannel(name, timeout, false);
     }
 
@@ -63,8 +65,10 @@ public final class Channel {
      * concurrency.
      *
      * @throws io.github.libtmux.transport.TmuxTransportException if the wait could not be dispatched
+     * @throws InterruptedException if the waiting thread is interrupted, which is a cancellation
+     *     rather than a timeout and so is not reported as one
      */
-    public WakeReason awaitReservingCapacity(Duration timeout) {
+    public WakeReason awaitReservingCapacity(Duration timeout) throws InterruptedException {
         return server.awaitChannel(name, timeout, true);
     }
 
@@ -72,8 +76,9 @@ public final class Channel {
      * Consumes a signal already waiting, so a stale one cannot satisfy a later wait.
      *
      * @return whether a signal was there to consume
+     * @throws InterruptedException if the waiting thread is interrupted
      */
-    public boolean drain() {
+    public boolean drain() throws InterruptedException {
         return await(DRAIN_TIMEOUT) == WakeReason.SIGNALLED;
     }
 
