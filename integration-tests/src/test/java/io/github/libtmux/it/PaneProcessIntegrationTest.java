@@ -147,6 +147,17 @@ final class PaneProcessIntegrationTest {
     // ----------------------------------------------------------------------------------- piping
 
     @Test
+    void aDashPrefixedPipeCommandCannotRetargetAnotherPane(Server server) {
+        Pane original = onlyPane(server);
+        Pane sibling = original.split();
+        sibling.pipeTo("cat > /dev/null");
+
+        original.pipeTo("-t" + sibling.id().value());
+
+        assertEquals("1", sibling.expand("#{pane_pipe}"));
+    }
+
+    @Test
     void aPipedPaneSendsWhatItPrintsToTheCommand(Server server, @TempDir Path directory) throws Exception {
         Path captured = directory.resolve("piped");
         Pane pane = onlyPane(server);

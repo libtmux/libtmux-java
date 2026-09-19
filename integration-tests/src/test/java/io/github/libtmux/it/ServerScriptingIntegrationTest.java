@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
 import io.github.libtmux.TmuxFormats;
 import io.github.libtmux.TmuxVersion;
@@ -62,6 +63,15 @@ final class ServerScriptingIntegrationTest {
     }
 
     // ------------------------------------------------------------------------------- run-shell
+
+    @Test
+    void aDashPrefixedShellCommandIsNotAnOption(Server server) {
+        server.globalOptions().set("default-shell", "/bin/sh");
+        assertThrows(LibTmuxException.class, () -> server.runShell("-b"));
+        if (!losesShellOutput(server)) {
+            assertThrows(LibTmuxException.class, () -> server.runShellCapturing("-b"));
+        }
+    }
 
     /** The effect happens on every release, whatever the release says about the output. */
     @Test

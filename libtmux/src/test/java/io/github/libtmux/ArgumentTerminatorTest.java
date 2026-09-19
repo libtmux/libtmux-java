@@ -22,11 +22,6 @@ import org.junit.jupiter.api.Test;
  * {@code -nfoo} as "name it foo", wrote nothing, and reported success. Every public method that
  * hands tmux a value the caller chose is driven here with a value beginning with a dash, and the
  * options must already be ended when it arrives.
- *
- * <p>The exceptions are the three methods whose argument is a shell command tmux expands. Ending the
- * options there stops {@code #(...)} expanding on some releases and not others, which would change
- * what the method means by release — worse than the dash it guards. They are listed by name so that
- * adding a fourth is a decision rather than an omission.
  */
 final class ArgumentTerminatorTest {
 
@@ -39,6 +34,10 @@ final class ArgumentTerminatorTest {
     void everyCallerValueReachesTmuxWithTheOptionsAlreadyEnded() {
         Map<String, Consumer<Server>> sites = new LinkedHashMap<>();
         sites.put("Server.expand", server -> server.expand(DASHED));
+        sites.put("Server.runShell", server -> server.runShell(DASHED));
+        sites.put("Server.runShellCapturing", server -> server.runShellCapturing(DASHED));
+        sites.put("Window.displayPopup", server -> server.windows().get(0).displayPopup(DASHED));
+        sites.put("Pane.pipeTo", server -> server.panes().get(0).pipeTo(DASHED));
         sites.put("Keys.bind", server -> server.keys().bind(DASHED, List.of("display-message", "hi")));
         sites.put("Keys.unbind", server -> server.keys().unbind(DASHED));
         sites.put("Server.sourceFile", server -> server.sourceFile(Path.of(DASHED)));
@@ -89,6 +88,19 @@ final class ArgumentTerminatorTest {
         });
 
         assertTrue(unguarded.isEmpty(), "tmux would read these caller values as flags: " + unguarded);
+    }
+
+    @Test
+    void creationCommandsEndOptionsBeforeTheProgram() {
+        TmuxVersion version = new TmuxVersion(3, 7, "c");
+        List<List<String>> commands = List.of(
+                SessionSpec.builder().running(DASHED).build().argv("#{pane_id}", () -> version),
+                WindowSpec.builder().running(DASHED).build().argv("$0", "#{pane_id}", version),
+                SplitSpec.builder().running(DASHED).build().argv("%0", "#{pane_id}", version));
+
+        for (List<String> argv : commands) {
+            assertTrue(guarded(argv), "tmux would read the program as flags: " + argv);
+        }
     }
 
     /**

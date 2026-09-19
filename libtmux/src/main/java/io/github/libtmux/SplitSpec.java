@@ -209,8 +209,12 @@ public final class SplitSpec {
         argv.add("-P");
         argv.add("-F");
         argv.add(format);
+        List<String> command = trailingCommand();
         // Last, because everything after the command belongs to the command.
-        argv.addAll(trailingCommand());
+        if (!command.isEmpty()) {
+            argv.add("--");
+            argv.addAll(command);
+        }
         return List.copyOf(argv);
     }
 

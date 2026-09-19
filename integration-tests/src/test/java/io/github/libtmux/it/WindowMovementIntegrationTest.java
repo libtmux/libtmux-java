@@ -12,6 +12,7 @@ import io.github.libtmux.PaneEdges;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
+import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -109,6 +110,18 @@ final class WindowMovementIntegrationTest {
         assertEquals(window.id(), now.id(), "the window survives");
         assertEquals(1, now.panes().size());
         assertTrue(now.panes().get(0).pid().orElseThrow() != before, "but what runs in it was started again");
+    }
+
+    @Test
+    void aDashPrefixedPopupCommandIsNotACloseRequest(Server server) {
+        server.globalOptions().set("default-shell", "/bin/sh");
+        Window window = server.windows().getFirst();
+        try (ControlClient attached = ControlClient.attach(
+                server.config(), server.sessions().getFirst().id())) {
+            assertTrue(attached.send("display-message", "-p", "ready").succeeded());
+
+            assertThrows(LibTmuxException.class, () -> window.displayPopup("-C"));
+        }
     }
 
     /** tmux draws a popup for a client, and a detached fixture session has none. */

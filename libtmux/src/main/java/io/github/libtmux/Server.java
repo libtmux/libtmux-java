@@ -374,16 +374,10 @@ public final class Server implements AutoCloseable {
      * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
      * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
      * mean it to be expanded.
-     *
-     * <p>Deliberately without the {@code --} every other caller value here gets. tmux expands
-     * {@code #(...)} in this command — which is what {@link TmuxFormats#literal} exists to prevent
-     * — and measured on 3.7c the terminator stops that expansion while 3.2a expands either way.
-     * Ending the options would change what this method means, differently by release. A shell
-     * command beginning with a dash is refused by tmux instead; spell it {@code ./-thing}.
      */
     public void runShell(String command) {
         Objects.requireNonNull(command, "command");
-        run(List.of("run-shell", command));
+        run(List.of("run-shell", "--", command));
     }
 
     /**
@@ -398,12 +392,6 @@ public final class Server implements AutoCloseable {
      * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
      * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
      * mean it to be expanded.
-     *
-     * <p>Deliberately without the {@code --} every other caller value here gets. tmux expands
-     * {@code #(...)} in this command — which is what {@link TmuxFormats#literal} exists to prevent
-     * — and measured on 3.7c the terminator stops that expansion while 3.2a expands either way.
-     * Ending the options would change what this method means, differently by release. A shell
-     * command beginning with a dash is refused by tmux instead; spell it {@code ./-thing}.
      */
     public List<String> runShellCapturing(String command) {
         Objects.requireNonNull(command, "command");
@@ -413,7 +401,7 @@ public final class Server implements AutoCloseable {
                     "reading what run-shell printed is broken between tmux 3.3a and 3.4, and this server runs "
                             + running);
         }
-        return run(List.of("run-shell", command)).stdout();
+        return run(List.of("run-shell", "--", command)).stdout();
     }
 
     /** Every command this tmux knows, as it prints them. */

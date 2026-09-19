@@ -22,6 +22,8 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Making windows and sessions against a real tmux, on whichever release the lane is running.
@@ -42,6 +44,27 @@ final class CreationIntegrationTest {
     private static final TmuxVersion HONOURS_EXTRAS_SINCE = new TmuxVersion(3, 3, "");
 
     // ------------------------------------------------------------------------------ new-window
+
+    @ParameterizedTest
+    @ValueSource(strings = {"session", "window", "split"})
+    void aDashPrefixedProgramReachesTheCreatedPane(String kind, Server server) {
+        server.globalOptions().set("remain-on-exit", "on");
+        Pane pane =
+                switch (kind) {
+                    case "session" ->
+                        server.newSession(s -> s.running("-d")).activePane().orElseThrow();
+                    case "window" ->
+                        server.sessions()
+                                .getFirst()
+                                .newWindow(w -> w.running("-d"))
+                                .activePane()
+                                .orElseThrow();
+                    case "split" -> server.panes().getFirst().split(s -> s.running("-d"));
+                    default -> throw new IllegalArgumentException(kind);
+                };
+
+        assertEquals("-d", pane.expand("#{pane_start_command}"));
+    }
 
     @Test
     void aWindowCanBeNamedAndGivenACommand(Server server) throws InterruptedException {

@@ -848,11 +848,7 @@ public final class Pane {
      */
     public void pipeTo(String shellCommand) {
         Objects.requireNonNull(shellCommand, "shellCommand");
-        // Deliberately without the -- every other caller value here gets, for the reason
-        // Server#runShell gives: tmux expands #(...) in this command, and on some releases the
-        // terminator stops it. A shell command beginning with a dash is refused by tmux instead;
-        // spell it ./-thing.
-        server.run(snapshot, List.of("pipe-pane", "-O", "-t", state.id().value(), shellCommand));
+        server.run(snapshot, List.of("pipe-pane", "-O", "-t", state.id().value(), "--", shellCommand));
     }
 
     /** Stops sending this pane's output anywhere. Doing so twice is not an error. */

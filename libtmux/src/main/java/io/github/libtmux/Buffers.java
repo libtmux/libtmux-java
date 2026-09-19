@@ -55,8 +55,7 @@ public final class Buffers {
      *
      * <p>The contents end the options, because they are the one argument here tmux would otherwise
      * read as flags: {@code set("clip", "-nfoo")} used to rename the buffer to {@code foo} and write
-     * nothing, and report success. {@code set-buffer} expands no formats, so ending the options
-     * costs nothing — unlike {@link Server#runShell}, where it would.
+     * nothing, and report success.
      */
     public void set(String name, String contents) {
         server.run(List.of("set-buffer", "-b", name, "--", contents));

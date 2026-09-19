@@ -159,7 +159,10 @@ public final class WindowSpec {
         argv.add("-F");
         argv.add(format);
         // Last, because everything after the command belongs to the command.
-        argv.addAll(command);
+        if (!command.isEmpty()) {
+            argv.add("--");
+            argv.addAll(command);
+        }
         return List.copyOf(argv);
     }
 
