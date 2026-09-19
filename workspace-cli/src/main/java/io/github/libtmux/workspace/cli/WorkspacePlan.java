@@ -25,13 +25,16 @@ record WorkspacePlan(
         List<String> beforeScript,
         Readiness readiness,
         List<Window> windows,
-        List<String> warnings,
+        List<Warning> warnings,
         @Nullable ObjectNode extension) {
     enum Readiness {
         AUTO,
         ALWAYS,
         NEVER
     }
+
+    /** Something the document asks for that loading will not do, said once and carried on. */
+    record Warning(String code, String message) {}
 
     record Command(String text, boolean enter, Duration before, Duration after) {}
 
@@ -75,7 +78,7 @@ record WorkspacePlan(
         requireAddressableName(name, "; load with -s to choose another name");
         Path parent = source.getParent();
         if (parent == null) throw invalid("workspace source has no parent");
-        List<String> warnings = new ArrayList<>();
+        List<Warning> warnings = new ArrayList<>();
         Path directory = directory(context, root, context.directory(), parent, checkDirectories, warnings);
         Path directoryBase = root.hasNonNull("start_directory") ? directory : parent;
         Path scriptDirectory =
@@ -118,7 +121,7 @@ record WorkspacePlan(
         Map<String, String> environment = mapping(context, root.path("environment"), true);
         Map<String, String> options = mapping(context, root.path("options"), false);
         Map<String, String> globalOptions = mapping(context, root.path("global_options"), false);
-        Readiness readiness = readiness(root.path("workspace_builder_options"));
+        Readiness readiness = readiness(root.path("workspace_builder_options"), warnings);
         JsonNode windowNodes = root.path("windows");
         if (!windowNodes.isArray() || windowNodes.isEmpty()) throw invalid("windows must be a nonempty array");
         List<Window> windows = new ArrayList<>();
@@ -223,9 +226,16 @@ record WorkspacePlan(
                 null);
     }
 
-    private static Readiness readiness(JsonNode catalog) {
+    /** An unrecognised builder option is said and ignored; it never refuses the document. */
+    private static Readiness readiness(JsonNode catalog, List<Warning> warnings) {
         if (catalog.isMissingNode() || catalog.isNull()) return Readiness.AUTO;
-        keys(catalog, Set.of("pane_readiness"), "workspace_builder_options");
+        if (!catalog.isObject()) throw invalid("workspace_builder_options must be a mapping");
+        catalog.fieldNames().forEachRemaining(name -> {
+            if (!name.equals("pane_readiness") && !name.startsWith("x-"))
+                warnings.add(new Warning(
+                        "unsupported_builder_option",
+                        "workspace_builder_options." + name + " is not implemented by native loading; ignored"));
+        });
         JsonNode value = catalog.path("pane_readiness");
         if (value.isMissingNode() || value.isNull()) return Readiness.AUTO;
         return switch (value.asText().strip().toLowerCase(java.util.Locale.ROOT)) {
@@ -312,13 +322,15 @@ record WorkspacePlan(
             Path inherited,
             Path relativeBase,
             boolean checkDirectories,
-            List<String> warnings) {
+            List<Warning> warnings) {
         JsonNode value = node.path("start_directory");
         if (value.isMissingNode() || value.isNull()) return inherited;
         Path resolved =
                 relativeBase.resolve(text(context, value, "start_directory")).normalize();
         if (checkDirectories && !Files.isDirectory(resolved))
-            warnings.add("start_directory is not a directory, tmux will fall back to $HOME: " + resolved);
+            warnings.add(new Warning(
+                    "start_directory_missing",
+                    "start_directory is not a directory, tmux will fall back to $HOME: " + resolved));
         return resolved;
     }
 

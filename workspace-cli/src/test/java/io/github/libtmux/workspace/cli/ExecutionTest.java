@@ -1882,6 +1882,61 @@ final class ExecutionTest {
         }
     }
 
+    /**
+     * Readiness is about the shell owning the terminal, not about which shell it is. A pane whose
+     * shell never draws is waited for and then reported, where the zsh-only rule sent immediately
+     * and said nothing.
+     */
+    @Test
+    void aPaneIsWaitedForWhateverItsShellIs() throws Exception {
+        Path source = directory.resolve("readiness.yaml");
+        Path socket = directory.resolve("readiness-socket");
+        Files.writeString(source, """
+                session_name: readiness
+                options:
+                  default-shell: /bin/cat
+                windows:
+                  - panes:
+                      - echo ready
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--ndjson");
+                assertEquals(0, result.code(), result.err());
+                assertTrue(result.out().contains("pane_readiness_timeout"), result.out());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /** An unrecognised builder option is said and ignored, never a refusal of the whole document. */
+    @Test
+    void anUnknownBuilderOptionWarnsAndLoads() throws Exception {
+        Path source = directory.resolve("builder-options.yaml");
+        Path socket = directory.resolve("builder-options-socket");
+        Files.writeString(source, """
+                session_name: builder
+                workspace_builder_options:
+                  pane_readiness: never
+                  not_a_builder_option: 1
+                windows:
+                  - panes: [null]
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--ndjson");
+                assertEquals(0, result.code(), result.err());
+                assertTrue(result.out().contains("not_a_builder_option"), result.out());
+                assertTrue(server.hasSession("builder"), result.toString());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** A capture never writes a document a load refuses: both ends apply one name rule. */
     @Test
     void freezeRefusesASessionNameLoadWouldNotRead() throws Exception {

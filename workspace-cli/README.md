@@ -147,12 +147,15 @@ requested indexes when `renumber-windows` is enabled, then restores its local
 or inherited setting. Restoration failures appear in the partial result.
 
 `workspace_builder_options.pane_readiness` accepts `auto` (the default),
-`always`, `never`, or boolean aliases. Automatic readiness waits for zsh;
-`always` also waits for other shells. The check waits up to two seconds for the
-pane cursor to move from its origin before sending commands. Cursor movement is
-a heuristic, not a guarantee that the shell is ready. A timeout warns and
-continues. Blank panes and explicit launch commands never wait or query
-the shell policy. A pane's `shell` overrides `window_shell`; `pane_shell` is an
+`always`, `never`, or boolean aliases. `auto` and `always` both wait, whatever
+the pane's shell is, because the problem is that a shell owns its terminal only
+once it has drawn: a command sent before that is echoed by the tty and then
+redrawn by the line editor, so the pane shows it twice. The check waits up to
+two seconds for the pane cursor to move from its origin before sending
+commands. Cursor movement is a heuristic, not a guarantee that the shell is
+ready. A timeout warns and continues. Blank panes and explicit launch commands
+never wait. An unrecognised key under `workspace_builder_options` is a warning,
+not a refusal. A pane's `shell` overrides `window_shell`; `pane_shell` is an
 alias. Setting both pane keys is an error.
 
 Pane-level `enter`, `sleep_before` and `sleep_after` set command defaults.
