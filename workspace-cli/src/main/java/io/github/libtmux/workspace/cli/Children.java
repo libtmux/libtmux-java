@@ -2,6 +2,7 @@ package io.github.libtmux.workspace.cli;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.libtmux.Dimensions;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -343,8 +344,9 @@ final class Children {
         boolean interactive = !args.hasMatchedOption("-c");
         if (interactive && !Main.controllingTerminal())
             throw Main.usage("interactive Python shell requires a terminal; use -c for captured output");
+        Main.Context bridge = withSelectedTmuxFirstOnPath(context);
         var command = new ArrayList<>(
-                List.of(python(context, report), "-u", "-c", "from tmuxp.cli import cli; cli()", "shell"));
+                List.of(python(bridge, report), "-u", "-c", "from tmuxp.cli import cli; cli()", "shell"));
         if (!interactive) {
             command.add("-c");
             command.add(code);
@@ -370,8 +372,8 @@ final class Children {
             if (!value.isEmpty()) command.add(value);
         }
         Output output = interactive
-                ? terminal(context, command)
-                : run(context, command, context.directory(), report, Duration.ofHours(24));
+                ? terminal(bridge, command)
+                : run(bridge, command, bridge.directory(), report, Duration.ofHours(24));
         complete(
                 report,
                 output.value()
@@ -379,6 +381,33 @@ final class Children {
                         .put("command", "shell")
                         .put("status", output.status() == 0 ? "ok" : "error"),
                 output.status());
+    }
+
+    /**
+     * tmuxp resolves its own {@code tmux} from {@code PATH}, independent of the one this CLI
+     * selected; a socket built by one and addressed by the other can be a version the wire protocol
+     * refuses. Putting the selected tmux's directory first makes {@code shutil.which} find it too.
+     */
+    private static Main.Context withSelectedTmuxFirstOnPath(Main.Context context) {
+        Path directory;
+        try {
+            directory =
+                    Path.of(Execution.tmuxExecutable(context)).toAbsolutePath().getParent();
+        } catch (Main.Failure unavailable) {
+            return context;
+        }
+        if (directory == null) return context;
+        var environment = new java.util.HashMap<>(context.environment());
+        String path = environment.get("PATH");
+        environment.put(
+                "PATH", path == null || path.isEmpty() ? directory.toString() : directory + File.pathSeparator + path);
+        return new Main.Context(
+                environment,
+                context.directory(),
+                context.input(),
+                context.output(),
+                context.error(),
+                context.processError());
     }
 
     /**
