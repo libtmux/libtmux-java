@@ -52,6 +52,7 @@ final class MainTest {
                 "invalid_workspace",
                 "unsupported_key",
                 "session_not_found",
+                "session_mismatch",
                 "tmux_unavailable",
                 "tmux_failed",
                 "script_failed",

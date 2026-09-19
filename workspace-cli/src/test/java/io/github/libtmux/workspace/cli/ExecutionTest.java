@@ -2085,9 +2085,10 @@ final class ExecutionTest {
                         invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
                 assertEquals(1, missing.code(), missing.toString());
                 var document = new ObjectMapper().readTree(missing.out());
-                assertEquals("partial", document.path("status").asText(), missing.toString());
-                assertTrue(
-                        document.path("errors").path(0).path("message").asText().contains("two"), missing.toString());
+                assertEquals("error", document.path("status").asText(), missing.toString());
+                var failure = document.path("errors").path(0);
+                assertEquals("session_mismatch", failure.path("code").asText(), missing.toString());
+                assertTrue(failure.path("message").asText().contains("two"), missing.toString());
                 assertEquals(1, server.windows().size(), missing.toString());
 
                 session.refresh().newWindow("two");
