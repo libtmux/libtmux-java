@@ -177,7 +177,9 @@ final class PaneCommandFrameTest {
         Path wrapper = temporary.resolve("bin").resolve("tmux-wrapper");
         Files.createDirectories(wrapper.getParent());
 
-        String socketName = "frame-" + temporary.getFileName();
+        // Short: intendedRoot is already unique per test, and a unix socket path is capped near 104
+        // bytes — tighter still once macOS resolves /tmp to /private/tmp.
+        String socketName = "frame";
         ServerEndpoint endpoint =
                 switch (kind) {
                     case "default" -> ServerEndpoint.defaultSocket();
