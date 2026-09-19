@@ -220,8 +220,12 @@ try (ControlClient client = ControlClient.attach(server.config(), session.id());
 
     client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
 
-    PaneOutput arrived = output.next(Duration.ofSeconds(5)).orElseThrow();
-    arrived.data().contains("streamed");  // → true
+    // Output arrives in frames as tmux flushes it, so one line can span several.
+    StringBuilder seen = new StringBuilder();
+    while (seen.indexOf("streamed") < 0) {
+        seen.append(output.next(Duration.ofSeconds(5)).orElseThrow().data());
+    }
+    seen.indexOf("streamed") >= 0;  // → true
 }
 ```
 
