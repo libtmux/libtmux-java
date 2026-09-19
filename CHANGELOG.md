@@ -12,6 +12,173 @@ production.
 
 ## Unreleased
 
+### Added
+
+- **`Pane.awaitText` distinguishes text already on the pane from text that
+  just appeared**, via a new `TextOutcome`; MCP `wait_for_text` reports the
+  same case as `PRESENT_AT_ENTRY` instead of a timeout indistinguishable from
+  no match. (#17)
+- **`awaitText` and `await` take a look interval alongside their timeout**, so
+  a ten-minute wait no longer polls every 50 ms. (#17)
+- **Key bindings are a view: `server.keys()` replaces `bindKey`, `unbindKey`,
+  and `listKeys`**, and `in(table)` reaches any key table, including `root`.
+  (#17)
+- **`Server.paneFields` reads chosen fields for every pane in one listing**,
+  instead of one tmux process per pane. (#17)
+- **Options read as their declared type.** `OptionKey<T>` names an option's
+  type — text, number, or flag — for `Options.get`/`set`; string methods
+  remain for undeclared options. (#17)
+- **A hook command can be given as words**: `Hooks.set`/`append` now take
+  `List<String>` and quote each word for tmux, so quotes and formats survive
+  intact. (#17)
+- **`Window.layout()` answers a sealed `WindowLayout`** — `Classic` or `Json`
+  (tmux 3.8+, which names each cell's pane) — instead of a string a caller
+  had to inspect. (#17)
+- **Control events have a typed reading**: `ControlEvent.notification()`
+  answers a sealed `Notification` for `switch`, with an `Unknown` case for
+  anything newer. (#17)
+- **`FakeTmux`, in the new `libtmux-junit5` module, tests code that uses this
+  library without a real tmux**, answering the way tmux answers rather than a
+  hand-built stub. (#17)
+- **`Pane.run` runs a command to its end and answers a `PaneRun`** with its
+  exit status and output, correct even with no trailing newline or a line
+  wider than the pane; a `C-c`-stopped command reports that status. (#17)
+- **Every command tmux runs can be logged**, through `System.Logger` at
+  `DEBUG` — never the arguments, which can carry pane contents. (#17)
+- **`Server.within(Duration)` bounds every command made through the returned
+  handle**, including a capture — not only `isAlive`/`killServer` as before.
+  (#17)
+- **`Environment.effective()`** answers what a process actually inherits —
+  the server's environment overlaid by the session's, minus what it marked
+  unset — alongside `Options.effective()`. (#17)
+- **`TypedText` and `Pane.noteTyped` record text that reached a pane**, so a
+  wait does not mistake this library's own typing for pane output. (#17)
+- **`ServerNotRunningException` names an absent daemon**, replacing a plain
+  `LibTmuxException` on every read and mutation, so it can be caught
+  specifically. (#17)
+- **Error Prone flags a discarded replacement handle** on `Session.rename`,
+  `Window.rename`, `Pane.retitle`, and entity `refresh`; retain the return to
+  see updated state. (#17)
+- **`TmuxVersion` parses a development build and a release candidate**,
+  instead of rejecting `next-M.m` outright; a development build sorts between
+  the releases either side of it. (#17)
+- **`Pane.dead()` reads live whether a pane's process has exited**, throwing
+  for a pane that is completely gone rather than reporting it alive. (#17)
+- **`Pane.position()` and `Window.previousLayout()`** fill the one gap
+  `size()`/`edges()` left, and `next-layout`'s missing direction. (#17)
+- **MCP `send_keys`/`send_keys_batch` gain an `enter` flag** that presses
+  Enter after literal text in one call, since `literal:true` with
+  `["Enter"]` types four letters instead. (#17)
+- **`Server.environment()` and `Session.environment()` read and change what
+  tmux hands new processes** — set, list, unset, and mark removed. A value
+  keeps its literal `$` on tmux 3.4. (#17)
+- **A pane filter can also match on title, path, size, and position.**
+  `Pane_` gains `title`, `path`, `width`, `height`, `left`, and `top`, so
+  picking a pane out by any of them no longer costs a round trip per pane.
+  (#17)
+
+### Changed
+
+- **`libtmux` ships as a real Java module**; `internal` is unreachable on a
+  module path, and nothing changes on a classpath. (#17)
+- **Reads now fail rather than reporting a miss.** `hasSession`,
+  `Options.get`, `listKeys`, `requireAlive`, live listings/lookups/snapshots,
+  and `Buffers.show`/`delete` used to answer a failed read the same as a
+  genuine one; each now throws, `ServerNotRunningException` for an absent
+  daemon. (#17)
+- **The MCP `get_server_info` tool answers `running: false` for a daemon that
+  exited mid-call**, and other MCP listings surface a failed read instead of
+  an empty one. (#17)
+- **`Server.raiseIfDead` is renamed to `requireAlive`**, with no forwarding
+  alias. (#17)
+- **Public exception names gain the Java `Exception` suffix**:
+  `ObjectDoesNotExistException`, `UnsupportedTmuxVersionException`; no
+  aliases for the old names. (#17)
+- **`Pane.pid()` returns `OptionalLong` instead of `long`.** `0` meant both
+  "no process" and, on tmux 3.8+, one that ran and died; update a primitive
+  read to `orElseThrow()` or `isEmpty()`. (#17)
+- **`ControlClient.attach` requests JSON layouts on connect**, so layout
+  notifications agree with a plain client on tmux 3.8+; harmless earlier.
+  (#17)
+- **MCP tool descriptions lead with what a tool does; the safety
+  classification now comes last**, not first. (#17)
+
+### Fixed
+
+- **`Pane.awaitText` and MCP `wait_for_text` no longer match this library's
+  own echoed input**, using `TypedText` to exclude it. (#17)
+- **A pane wait no longer misses text a terminal wrapped across rows.** Waits
+  now read rejoined rows, matching what `capture()` already showed. (#17)
+- **Non-ASCII text reaches tmux and comes back correctly on any JVM
+  locale**, including `LANG=C`. Unencodable arguments travel over standard
+  input as UTF-8; replies arrive with `-u`; a pane's directory is carried as
+  text. (#17)
+- **`Server.variables` and `Pane.variables` read every name in one
+  command**, not one tmux process per name. (#17)
+- **A forgotten `Server` or `ControlClient` no longer holds the JVM open
+  forever.** An idle drain now releases its thread, and `ControlClient`'s own
+  threads are daemons; work in flight is unaffected. (#17)
+- **Cancelling a wait now consistently throws `InterruptedException`**, from
+  both `Channel.await` and `Pane.awaitText`. (#17)
+- **An environment value holding a newline is read back whole**, instead of
+  fracturing into extra or wrongly-removed variables; a name holding a
+  newline is refused. (#17)
+- **Caller text beginning with a dash is no longer read as a tmux flag.**
+  `pane.send("-R")` used to reset the terminal instead of typing it; every
+  method handing tmux caller text now ends option parsing first. `cmd(...)`
+  still passes an argv through untouched. (#17)
+- **A failed command says how it failed**: every message carries the exit
+  status, and names the binary when tmux printed nothing. (#17)
+- **An MCP tool error for an absent daemon says to check the socket**, not
+  only on an empty listing. (#17)
+- **`Layouts.require` — shared by `CommandChain.arrange`, the workspace
+  applier, and MCP `select_layout` — accepts a JSON layout and a unique
+  preset prefix, and refuses a layout name the running tmux predates.** (#17)
+- **Version-gated behavior no longer misfires around tmux 3.3.**
+  `promptHistory`, `clearPromptHistory`, a window's start directory, and a
+  detached session's size had their floor set one patch too high, at 3.3a;
+  and sizing a session's first call against a fresh socket now falls back to
+  `tmux -V` instead of needing a daemon that call would start. (#17)
+- **The MCP `rename` tool reports the name tmux actually settled on**, not
+  the requested one. (#17)
+- **`Server.newSession` reports tmux's own failure reason, or names the
+  binary**, instead of an unchecked exception when tmux exits 0 having
+  created nothing. (#17)
+- **`ControlClient.watch`'s session-scope target is normalized to the empty
+  string**, the only spelling tmux documents and every release honors. (#17)
+- **MCP `send_keys` carrying only stop keys now reserves a free pane before
+  typing**, so another operation admitted at the same instant no longer has
+  its line interleaved with the interrupt's keys; a pane a run already holds
+  still passes through to that run. (#17)
+
+### Removed
+
+- **The interactive-chooser methods on `Pane` are removed**: `clockMode`,
+  `chooseTree`, `customizeMode`, `chooseBuffer`, `chooseClient`,
+  `findWindow`, and `FindSpec` — each opens something only a person at an
+  attached client can act on. `copyMode()` and `exitMode()` stay. (#17)
+- **`LegacyFilters`, and the `name__contains=dev` keyword filter parser it
+  implemented, is removed.** Build a filter with `Fields`, or read one from
+  text with `FilterJson.readString`. (#17)
+- **`ServerSnapshot.of`'s pid-only overload is removed**; the identity-less
+  overload is now package-private. (#17)
+
+### Documented
+
+- **Two contracts that were always true are now documented**: what a
+  changing method returns (a handle only when the caller needs one), and
+  that a `Server` and its handles may be shared across threads. (#17)
+- **`Pane.split` and `SplitSpec.Builder.running` say a fast-exiting command
+  can make the split itself fail**, even though tmux made and ran the pane.
+  (#17)
+- **Two README Quickstart snippets, and one in `docs/guide/filtering.md`,
+  now create their own session** instead of depending on one the docs
+  harness happened to have. (#17)
+- **`docs/guide/streaming.md` covers pausing and muting a pane**, including
+  the server-wide freeze that applies to every client on tmux 3.7+. (#17)
+- **`Layouts` and `Window.applyLayout` say a classic layout string does not
+  restore pane identity** — only a JSON layout (3.8+) carries pane ids. (#17)
+
 ## 0.0.1-alpha.11 — 2026-09-12
 
 ### Added
