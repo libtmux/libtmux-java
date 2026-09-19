@@ -32,6 +32,12 @@ val localeTest =
         // this lane is about.
         environment("LC_ALL", "C")
 
+        // The macOS JDK encodes arguments and file names as UTF-8 whatever the locale says, so no
+        // variable can put this lane's JVM in the state it tests there.
+        onlyIf("the JVM on macOS always encodes with UTF-8") {
+            !System.getProperty("os.name").startsWith("Mac")
+        }
+
         // A tag that stopped matching would reduce this fork to nothing, and an empty run reports
         // success. The lane has to prove it ran at all before its green means anything.
         val results = reports.junitXml.outputLocation
