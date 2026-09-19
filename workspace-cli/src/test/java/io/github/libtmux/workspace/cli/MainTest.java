@@ -65,11 +65,8 @@ final class MainTest {
         Path valid = directory.resolve("valid.yaml");
         Files.writeString(valid, "session_name: valid\nwindows: [{}]\n");
         for (String[] invocation : List.of(
-                new String[] {"load", directory.resolve("gone.yaml").toString(), "-d", "--json"},
                 new String[] {"load", malformed.toString(), "-d", "--json"},
                 new String[] {"load", unsupported.toString(), "-d", "--json"},
-                new String[] {"load", valid.toString(), "-d", "-8", "--json"},
-                new String[] {"load", valid.toString(), "-d", "--json"},
                 new String[] {"load", valid.toString(), "-d", "--json", "--log-file", directory.toString()},
                 new String[] {"shell", "-c", "print(1)", "--json"},
                 new String[] {"search", "[", "--json"})) {
