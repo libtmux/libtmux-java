@@ -84,7 +84,10 @@ final class OperationBenchmark {
         }
     }
 
-    private record Measured(String label, long millis, int dispatches, String output) {}
+    private record Measured(String label, long millis, long low, long high, int dispatches, String output) {}
+
+    /** One run of a scenario, before the samples are taken together. */
+    private record Sample(long millis, int dispatches, String output) {}
 
     @Test
     void writeTheOperationTable(@TempDir Path directory) throws Exception {
@@ -318,9 +321,40 @@ final class OperationBenchmark {
 
     // ------------------------------------------------------------------------------- measuring
 
+    /**
+     * Runs a scenario this many times and reports the middle one with the spread either side.
+     *
+     * <p>One run is a number, not a measurement: a fresh server, a cold page cache and whatever else
+     * the machine is doing all land in it. Three says whether the number is worth reading, and the
+     * dispatch count has to be the same every time or the scenario is not doing the same work.
+     */
+    private static final int SAMPLES = 3;
+
     private Measured measure(Path root, String scenario, Consumer<Server> setUp, Function<Server, String> work)
             throws IOException {
-        Path home = root.resolve(scenario.replace("()", "").replace(' ', '-'));
+        List<Long> timings = new ArrayList<>(SAMPLES);
+        String output = "";
+        int dispatches = -1;
+        for (int sample = 0; sample < SAMPLES; sample++) {
+            Sample taken = once(root, scenario, sample, setUp, work);
+            timings.add(taken.millis());
+            output = taken.output();
+            if (dispatches < 0) {
+                dispatches = taken.dispatches();
+            } else if (taken.dispatches() != dispatches) {
+                throw new AssertionError(
+                        "%s dispatched %d commands on one run and %d on another, so these rows would be comparing different work"
+                                .formatted(scenario, taken.dispatches(), dispatches));
+            }
+        }
+        List<Long> sorted = timings.stream().sorted().toList();
+        return new Measured(
+                scenario, sorted.get(sorted.size() / 2), sorted.getFirst(), sorted.getLast(), dispatches, output);
+    }
+
+    private Sample once(Path root, String scenario, int sample, Consumer<Server> setUp, Function<Server, String> work)
+            throws IOException {
+        Path home = root.resolve(scenario.replace("()", "").replace(' ', '-') + "-" + sample);
         Files.createDirectories(home);
         Path config = home.resolve("empty.conf");
         Files.writeString(config, "");
@@ -345,7 +379,7 @@ final class OperationBenchmark {
             long millis = (System.nanoTime() - started) / 1_000_000;
             int dispatches = counting.dispatches.get() - before;
             server.killServer();
-            return new Measured(scenario, millis, dispatches, output);
+            return new Sample(millis, dispatches, output);
         } finally {
             counting.close();
         }
@@ -366,10 +400,14 @@ final class OperationBenchmark {
                 .append(tmux)
                 .append("`, ")
                 .append(ROUNDS)
-                .append(" rounds per scenario, on one machine at one moment. ")
-                .append("Each `ProcessTransport` dispatch starts a tmux process, so the dispatch count ")
-                .append("is the cost and the milliseconds are one machine's rendering of it. Read the ")
-                .append("shape.\n\n");
+                .append(" rounds per scenario, each scenario run ")
+                .append(SAMPLES)
+                .append(" times on a fresh server. A wall clock shows the middle run, and the fastest ")
+                .append("and slowest either side of it where they differ, so a row that moved is not ")
+                .append("read as a row that means something. Each `ProcessTransport` dispatch starts a ")
+                .append("tmux process, so the dispatch count is the cost and the milliseconds are one ")
+                .append("machine's rendering of it; the count is identical across the runs or the table ")
+                .append("is not written at all. Read the shape.\n\n");
 
         out.append("## Collapsing round trips\n\n")
                 .append("The same ")
@@ -408,7 +446,7 @@ final class OperationBenchmark {
                 .append("| --- | --- | --- | --- |\n");
         for (Measured row : waits) {
             long added = Math.max(0, row.millis() - (long) WAIT_ROUNDS * DELAY_MILLIS) / WAIT_ROUNDS;
-            out.append("| `%s` | %d ms | %d ms | %d |%n".formatted(row.label(), row.millis(), added, row.dispatches()));
+            out.append("| `%s` | %s | %d ms | %d |%n".formatted(row.label(), spread(row), added, row.dispatches()));
         }
         out.append("\nThree different costs, not one ranking. A poll spends a tmux process every 50 ms, ")
                 .append("so its count grows with how long it waits, and it notices up to one interval ")
@@ -434,8 +472,15 @@ final class OperationBenchmark {
         out.append("| %s | wall clock | commands dispatched |%n".formatted(heading))
                 .append("| --- | --- | --- |\n");
         for (Measured row : rows) {
-            out.append("| `%s` | %d ms | %d |%n".formatted(row.label(), row.millis(), row.dispatches()));
+            out.append("| `%s` | %s | %d |%n".formatted(row.label(), spread(row), row.dispatches()));
         }
+    }
+
+    /** The middle run, and the fastest and slowest either side of it when they differ. */
+    private static String spread(Measured row) {
+        return row.low() == row.high()
+                ? "%d ms".formatted(row.millis())
+                : "%d ms (%d-%d)".formatted(row.millis(), row.low(), row.high());
     }
 
     private static List<String> labelled(List<Measured> rows) {
