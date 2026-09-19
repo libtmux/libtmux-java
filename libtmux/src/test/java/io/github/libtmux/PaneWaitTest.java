@@ -170,32 +170,38 @@ final class PaneWaitTest {
         }
     }
 
-    /**
-     * The interval is the caller's to choose, and it is what a wait spends: each look is a read.
-     * Counted in the fixture's own reads, over a wait with nothing to find.
-     */
+    /** Scheduling delays may lengthen a poll interval, but must never shorten it. */
     @Test
-    void aWaitLooksAsOftenAsItIsToldToAndNoMore() throws InterruptedException {
-        SlowTmux often = new SlowTmux();
-        SlowTmux rarely = new SlowTmux();
-        try (Server fast = often.server();
-                Server slow = rarely.server()) {
-            fast.panes().get(0).awaitText("never", Duration.ofMillis(400), Duration.ofMillis(20));
-            slow.panes().get(0).awaitText("never", Duration.ofMillis(400), Duration.ofMillis(200));
+    void aWaitLeavesTheRequestedIntervalBetweenReads() throws InterruptedException {
+        for (Duration every : List.of(Duration.ofMillis(20), Duration.ofMillis(200))) {
+            List<Long> started = new ArrayList<>();
+            List<Long> finished = new ArrayList<>();
+            SlowTmux tmux = new SlowTmux() {
+                @Override
+                CommandResult capture(Duration deadline) {
+                    started.add(System.nanoTime());
+                    CommandResult result = super.capture(deadline);
+                    finished.add(System.nanoTime());
+                    return result;
+                }
+            };
+            tmux.screen = List.of();
+            tmux.screenAfterReads(1, List.of("ready"));
+            try (Server server = tmux.server()) {
+                assertEquals(
+                        TextOutcome.APPEARED, server.panes().get(0).awaitText("ready", Duration.ofSeconds(1), every));
+            }
+
+            assertEquals(2, started.size());
+            Duration gap = Duration.ofNanos(started.get(1) - finished.get(0));
+            assertTrue(gap.compareTo(every) >= 0, "requested " + every + " between reads, observed " + gap);
         }
 
-        assertTrue(
-                often.reads.get() > 2 * rarely.reads.get(),
-                "20 ms looked far more than 200 ms: " + often.reads.get() + " against " + rarely.reads.get());
-        assertTrue(
-                rarely.reads.get() <= 4, "a 400 ms wait every 200 ms looks about three times: " + rarely.reads.get());
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> new SlowTmux()
-                        .server()
-                        .panes()
-                        .get(0)
-                        .awaitText("x", Duration.ofSeconds(1), Duration.ofMillis(1)));
+        try (Server server = new SlowTmux().server()) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> server.panes().get(0).awaitText("x", Duration.ofSeconds(1), Duration.ofMillis(1)));
+        }
     }
 
     /** "Is it there now?" is a zero timeout, and it still gets one real read. */
@@ -361,7 +367,7 @@ final class PaneWaitTest {
             };
         }
 
-        private CommandResult capture(Duration deadline) {
+        CommandResult capture(Duration deadline) {
             if (captureTakes.compareTo(deadline) > 0) {
                 pause(deadline);
                 throw new TmuxTimeoutException("capture-pane outlived its deadline", null);
