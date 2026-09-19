@@ -2068,6 +2068,45 @@ final class ExecutionTest {
         }
     }
 
+    /** With no pane naming focus, a window is left on its last pane, which is where tmuxp leaves it. */
+    @Test
+    void aWindowWithNoDeclaredFocusIsLeftOnItsLastPane() throws Exception {
+        Path source = directory.resolve("focus.yaml");
+        Path socket = directory.resolve("focus-socket");
+        Files.writeString(source, """
+                session_name: focus
+                windows:
+                  - window_name: implicit
+                    panes: [null, null, null]
+                  - window_name: declared
+                    panes:
+                      - shell_command: null
+                        focus: true
+                      - null
+                      - null
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, result.code(), result.err());
+                for (var window : server.windows()) {
+                    var panes = window.panes();
+                    int active = java.util.stream.IntStream.range(0, panes.size())
+                            .filter(index -> panes.get(index).active())
+                            .findFirst()
+                            .orElse(-1);
+                    assertEquals(
+                            window.name().equals("declared") ? 0 : panes.size() - 1,
+                            active,
+                            window.name() + " active pane");
+                }
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** A capture never writes a document a load refuses: both ends apply one name rule. */
     @Test
     void freezeRefusesASessionNameLoadWouldNotRead() throws Exception {
