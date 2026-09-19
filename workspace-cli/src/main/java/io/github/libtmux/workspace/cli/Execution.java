@@ -324,7 +324,10 @@ final class Execution {
                 throw new Main.Failure("script_failed", 1, "before_script exited with " + output.status());
         }
         effects.put("stage", "options");
-        apply(session.options(), plan.options(), effects);
+        Map<String, String> windowScoped = windowScoped(server, plan.options());
+        Map<String, String> sessionScoped = new java.util.LinkedHashMap<>(plan.options());
+        sessionScoped.keySet().removeAll(windowScoped.keySet());
+        apply(session.options(), sessionScoped, effects);
         apply(server.globalOptions(), plan.globalOptions(), effects);
         for (var variable : plan.environment().entrySet()) {
             server.run(List.of("set-environment", "-t", session.id().value(), variable.getKey(), variable.getValue()));
@@ -394,6 +397,7 @@ final class Execution {
                 bootstrap = null;
                 effects.put("stage", "windows");
             }
+            apply(window.options(), windowScoped, effects);
             apply(window.options(), spec.options(), effects);
             for (int index = 1; index < spec.panes().size(); index++) {
                 WorkspacePlan.Pane pane = spec.panes().get(index);
@@ -608,6 +612,30 @@ final class Execution {
             Thread.sleep(50);
         } while (System.nanoTime() < deadline);
         return false;
+    }
+
+    /**
+     * The entries of a session's {@code options:} that tmux keeps at window scope.
+     *
+     * <p>tmux accepts one of these against a session and quietly lands it on that session's current
+     * window, which for a load is the temporary window it is about to delete. They go to each window
+     * the document builds instead. Which names those are is asked of the running tmux, because the
+     * set differs between releases.
+     */
+    private static Map<String, String> windowScoped(Server server, Map<String, String> options) {
+        Map<String, String> scoped = new java.util.LinkedHashMap<>();
+        if (options.isEmpty()) return scoped;
+        Set<String> known = new HashSet<>();
+        for (String line : server.run(List.of("show-options", "-g", "-w")).stdout()) {
+            int space = line.indexOf(' ');
+            String name = space < 0 ? line : line.substring(0, space);
+            int subscript = name.indexOf('[');
+            known.add(subscript < 0 ? name : name.substring(0, subscript));
+        }
+        options.forEach((key, value) -> {
+            if (known.contains(key)) scoped.put(key, value);
+        });
+        return scoped;
     }
 
     private static void apply(Options target, Map<String, String> values, ObjectNode effects) {
