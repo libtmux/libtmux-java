@@ -924,13 +924,13 @@ final class MainTest {
         Files.writeString(
                 source,
                 "session_name: readiness\nworkspace_builder_options: {unknown: true}\nwindows:\n  - panes: [null]\n");
-        Result unknownKey = invoke("load", source.toString(), "-d", "--json");
-        assertEquals(1, unknownKey.code());
-        assertEquals("", unknownKey.out());
+        WorkspacePlan unknownKey = WorkspacePlan.read(context, source, "");
+        assertEquals(1, unknownKey.warnings().size(), unknownKey.warnings().toString());
         assertEquals(
-                "unsupported_key",
-                new ObjectMapper().readTree(unknownKey.err()).path("code").asText());
-        assertTrue(unknownKey.err().contains("workspace_builder_options"), unknownKey.err());
+                "unsupported_builder_option", unknownKey.warnings().getFirst().code());
+        assertTrue(
+                unknownKey.warnings().getFirst().message().contains("workspace_builder_options.unknown"),
+                unknownKey.warnings().toString());
     }
 
     @Test
@@ -1106,8 +1106,9 @@ final class MainTest {
         WorkspacePlan plan = WorkspacePlan.read(context, source, "");
         assertEquals(missing, plan.directory());
         assertEquals(1, plan.warnings().size(), plan.warnings().toString());
+        assertEquals("start_directory_missing", plan.warnings().getFirst().code());
         assertTrue(
-                plan.warnings().getFirst().contains("not a directory"),
+                plan.warnings().getFirst().message().contains("not a directory"),
                 plan.warnings().toString());
     }
 

@@ -77,13 +77,13 @@ final class Execution {
             Path source = Catalog.resolve(context, sources[index], "load");
             WorkspacePlan plan = WorkspacePlan.read(
                     context, source, index == sources.length - 1 ? args.matchedOptionValue("-s", "") : "");
-            for (String warning : plan.warnings())
+            for (WorkspacePlan.Warning warning : plan.warnings())
                 report.event(
                         "warning",
                         Documents.JSON
                                 .createObjectNode()
-                                .put("code", "start_directory_missing")
-                                .put("message", warning));
+                                .put("code", warning.code())
+                                .put("message", warning.message()));
             plans.add(plan);
         }
         requireAppendExtensionCompatibility(plans, append);
@@ -330,16 +330,14 @@ final class Execution {
             server.run(List.of("set-environment", "-t", session.id().value(), variable.getKey(), variable.getValue()));
             effects.put("changed", true);
         }
+        // Every pane that will be typed into waits for its own shell, whichever shell that is: the
+        // shell owns the terminal only once it has drawn, and a command sent before that is echoed
+        // by the tty and then redrawn by the line editor.
         boolean readiness = plan.readiness() != WorkspacePlan.Readiness.NEVER
                 && plan.windows().stream()
                         .flatMap(window -> window.panes().stream())
                         .anyMatch(pane ->
                                 pane.shell().isEmpty() && !pane.commands().isEmpty());
-        if (readiness && plan.readiness() == WorkspacePlan.Readiness.AUTO) {
-            effects.put("stage", "readiness");
-            String shell = session.options().get("default-shell").orElse("");
-            readiness = shell.equals("zsh") || shell.endsWith("/zsh");
-        }
         Set<Integer> occupied = new HashSet<>();
         Session current = plan.beforeScript().isEmpty() ? session : session.refresh();
         for (Window window : current.windows())
