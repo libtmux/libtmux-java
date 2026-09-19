@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.BufferInfo;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
@@ -56,6 +57,24 @@ final class LeadingDashIntegrationTest {
         pane.send(UNKNOWN);
 
         assertTrue(Await.until(() -> pane.capture().stream().anyMatch(row -> row.contains(UNKNOWN))));
+    }
+
+    /**
+     * The defect this pins: buffer contents were the one caller value tmux still read as flags.
+     * {@code set("clip", "-nfoo")} renamed the buffer to {@code foo}, wrote nothing at all, and
+     * reported success — the quietest shape this failure takes.
+     */
+    @Test
+    void bufferContentsAreDataRatherThanFlags(Server server) {
+        server.buffers().set("clip", "original");
+
+        server.buffers().set("clip", "-nfoo");
+
+        assertEquals("-nfoo", server.buffers().show("clip"), "the contents are what was written");
+        assertEquals(
+                List.of("clip"),
+                server.buffers().list().stream().map(BufferInfo::name).toList(),
+                "and -n was not read as a rename");
     }
 
     @Test

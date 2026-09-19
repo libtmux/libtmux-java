@@ -50,9 +50,16 @@ public final class Buffers {
         return List.copyOf(buffers);
     }
 
-    /** Puts text in a named buffer, replacing whatever was there. */
+    /**
+     * Puts text in a named buffer, replacing whatever was there.
+     *
+     * <p>The contents end the options, because they are the one argument here tmux would otherwise
+     * read as flags: {@code set("clip", "-nfoo")} used to rename the buffer to {@code foo} and write
+     * nothing, and report success. {@code set-buffer} expands no formats, so ending the options
+     * costs nothing — unlike {@link Server#runShell}, where it would.
+     */
     public void set(String name, String contents) {
-        server.run(List.of("set-buffer", "-b", name, contents));
+        server.run(List.of("set-buffer", "-b", name, "--", contents));
     }
 
     /**
@@ -102,11 +109,11 @@ public final class Buffers {
 
     /** Writes a buffer's contents to a file. */
     public void save(String name, Path file) {
-        server.run(List.of("save-buffer", "-b", name, file.toString()));
+        server.run(List.of("save-buffer", "-b", name, "--", file.toString()));
     }
 
     /** Reads a file into a named buffer. */
     public void load(String name, Path file) {
-        server.run(List.of("load-buffer", "-b", name, file.toString()));
+        server.run(List.of("load-buffer", "-b", name, "--", file.toString()));
     }
 }

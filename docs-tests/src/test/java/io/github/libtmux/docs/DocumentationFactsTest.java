@@ -72,6 +72,31 @@ final class DocumentationFactsTest {
     }
 
     /**
+     * Three methods hand tmux a shell command without ending the options first, because tmux expands
+     * {@code #(...)} in one and the terminator stops that expansion on some releases and not others.
+     * That is a decision, and a reader who finds it undocumented cannot tell it from the oversight
+     * that let {@code set-buffer} read a caller's text as flags.
+     */
+    @Test
+    void everyMethodThatSkipsTheOptionsTerminatorSaysWhy() {
+        String core = "libtmux/src/main/java/io/github/libtmux/";
+        Map<String, String> skipped = Map.of(
+                core + "Server.java",
+                "run-shell",
+                core + "Pane.java",
+                "pipe-pane",
+                core + "Window.java",
+                "display-popup");
+
+        List<String> silent = skipped.entrySet().stream()
+                .filter(entry -> !read(entry.getKey()).contains("Deliberately without the"))
+                .map(entry -> entry.getKey() + " (" + entry.getValue() + ")")
+                .toList();
+
+        assertEquals(List.of(), silent, "a method skips the options terminator without saying why");
+    }
+
+    /**
      * An internal tracker id in a published source is a reference a reader cannot follow.
      *
      * <p>They arrive honestly — a comment written while a ticket was open — and then ship. The

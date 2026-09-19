@@ -322,6 +322,10 @@ public final class Window {
      * mean it to be expanded.
      */
     public void displayPopup(String shellCommand) {
+        // Deliberately without the -- every other caller value here gets, for the reason
+        // Server#runShell gives: tmux expands #(...) in this command, and on some releases the
+        // terminator stops it. A shell command beginning with a dash is refused by tmux instead;
+        // spell it ./-thing.
         server.run(snapshot, List.of("display-popup", "-E", "-t", target(), shellCommand));
     }
 
