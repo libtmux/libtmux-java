@@ -774,12 +774,25 @@ public final class Server implements AutoCloseable {
     /**
      * This server, with every command bounded by a deadline of the caller's choosing.
      *
-     * <p>Shares this server's transport, so it has the same identity and every handle taken through
-     * it is interchangeable with this server's; closing it releases nothing. {@link #toBuilder} is not
-     * how to spell this: a server that owns its transport hands a derived server a transport of its
-     * own, which a wait polling every fifty milliseconds would multiply.
+     * <p>The per-call deadline. Every read and change made through the result, and through every
+     * handle taken from it, gives tmux this long rather than the server's default:
+     *
+     * <pre>{@code
+     * List<String> screen = server.within(Duration.ofMillis(500)).panes().get(0).capture();
+     * }</pre>
+     *
+     * <p>Shares this server's transport, so it has the same identity and its handles compare equal
+     * to this server's; closing it releases nothing. {@link #toBuilder} is not how to spell this: a
+     * server that owns its transport hands a derived server a transport of its own, which a caller
+     * bounding many calls would multiply.
+     *
+     * @throws IllegalArgumentException if the timeout is not positive
      */
-    Server within(Duration timeout) {
+    public Server within(Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout");
+        if (timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("timeout is not positive: " + timeout);
+        }
         return new Server(config.toBuilder().defaultTimeout(timeout).build(), transport, false, echo);
     }
 

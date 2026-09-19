@@ -58,6 +58,22 @@ Retain the returned handle to read the changed name. The earlier handle keeps
 its original captured state, even after a successful mutation or `refresh()`.
 Equality still compares identity, so the two handles above compare equal.
 
+One rule decides what a changing method returns: **a handle when it produces
+one you need, and nothing otherwise.** A created window or pane is new, so
+`newWindow`, `split` and `breakOut` return it. A renamed or retitled object is
+found again by its new label, so `rename` and `retitle` return it under that
+label. Every other change — `select`, `resizeTo`, `moveTo`, `selectLayout`,
+`send` — returns nothing, and the handle you hold still describes the moment it
+was captured. Call `refresh()` for the state after:
+
+```java
+// Given: Window window
+window.resizeTo(new Dimensions(100, 30));
+
+window.size();             // → 80x24
+window.refresh().size();   // → 100x30
+```
+
 `Session.rename`, `Window.rename`, `Pane.retitle`, and each handle's `refresh`
 carry `@CheckReturnValue`. Error Prone rejects a call that discards their results.
 If the effect alone is needed, make that choice explicit:

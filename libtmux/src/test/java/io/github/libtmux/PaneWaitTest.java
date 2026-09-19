@@ -141,6 +141,31 @@ final class PaneWaitTest {
         }
     }
 
+    /**
+     * A caller bounds one call without building a second server: every command made through the
+     * view, and through the handles it hands out, carries the view's deadline.
+     */
+    @Test
+    void aDeadlineChosenForOneCallReachesTmuxWithThatCall() {
+        List<Duration> seen = new ArrayList<>();
+        SlowTmux tmux = new SlowTmux() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                seen.add(request.timeout());
+                return super.execute(request);
+            }
+        };
+        try (Server server = tmux.server()) {
+            Duration bound = Duration.ofMillis(750);
+
+            var unused = server.within(bound).panes().get(0).capture();
+
+            assertTrue(seen.size() >= 2, "a listing and a capture both reached tmux");
+            assertTrue(seen.stream().allMatch(bound::equals), "every command carried the chosen deadline: " + seen);
+            assertThrows(IllegalArgumentException.class, () -> server.within(Duration.ZERO));
+        }
+    }
+
     /** "Is it there now?" is a zero timeout, and it still gets one real read. */
     @Test
     void aZeroTimeoutStillAnswersWhatIsAlreadyThere() throws InterruptedException {
@@ -253,7 +278,7 @@ final class PaneWaitTest {
      * A tmux whose capture can be made slow or late, and which honours the deadline a request carries
      * the way the process transport does: by giving up at it.
      */
-    private static final class SlowTmux implements TmuxTransport {
+    private static class SlowTmux implements TmuxTransport {
 
         private final AtomicInteger liveness = new AtomicInteger();
         private final AtomicInteger reads = new AtomicInteger();
