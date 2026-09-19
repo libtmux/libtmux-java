@@ -160,8 +160,12 @@ final class Documents {
         Path target = destination.isEmpty()
                 ? source.resolveSibling(stem(source) + "." + format)
                 : context.directory().resolve(Catalog.expand(context, destination));
-        if (!report.machine() && !Main.flag(args, "--yes"))
-            confirm(context, "Save " + Catalog.mask(context, target) + "?");
+        if (!report.machine()
+                && !Main.flag(args, "--yes")
+                && !confirm(context, "Save " + Catalog.mask(context, target) + "?")) {
+            report.line("subject", "Not saved", Catalog.mask(context, target));
+            return;
+        }
         try {
             write(target, value, format, Main.flag(args, "--force"));
         } catch (java.nio.file.FileAlreadyExistsException exists) {
@@ -185,13 +189,18 @@ final class Documents {
         return dot < 0 ? name : name.substring(0, dot);
     }
 
-    static void confirm(Main.Context context, String prompt) throws IOException {
-        if (!Main.terminal())
-            throw new Main.Failure(Machine.Code.USAGE, 1, "confirmation requires a terminal; pass --yes");
+    /**
+     * Asks, and says whether the answer was yes.
+     *
+     * <p>Saying no is an answer, not a failure: the caller does nothing and reports that. Only
+     * being unable to ask at all refuses, because then the request cannot be carried out as given.
+     */
+    static boolean confirm(Main.Context context, String prompt) throws IOException {
+        if (!Main.terminal()) throw Main.usage("confirmation requires a terminal; pass --yes");
         context.error().write((Reporter.safe(prompt) + " [y/N] ").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         context.error().flush();
         int answer = context.input().read();
-        if (answer != 'y' && answer != 'Y') throw new Main.Failure(Machine.Code.USAGE, 1, "operation cancelled");
+        return answer == 'y' || answer == 'Y';
     }
 
     private static ObjectNode importSource(Main.Context context, Path source, ObjectNode document, String kind) {

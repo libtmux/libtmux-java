@@ -1148,6 +1148,63 @@ final class ProcessTest {
         }
     }
 
+    /**
+     * Declining a prompt is an answer, not a failure. Only a real terminal can be asked, so this is
+     * the only place the answer can be given: every other test reaches the same code with --yes or
+     * --json, which skip the question entirely.
+     */
+    @Test
+    void decliningTheSavePromptWritesNothingAndSucceeds() throws Exception {
+        Path source = directory.resolve("declined.yaml");
+        Path target = directory.resolve("declined.json");
+        Path status = directory.resolve("declined-status");
+        Path transcript = directory.resolve("declined-transcript");
+        Files.writeString(source, "session_name: declined\nwindows: []\n");
+        String script = """
+                import os, pty, sys
+                launcher, workspace, destination, status, transcript = sys.argv[1:]
+                pid, fd = pty.fork()
+                if pid == 0:
+                    os.execve(launcher, [launcher, 'convert', workspace, '--save-to', destination],
+                        dict(os.environ, TERM='xterm'))
+                os.write(fd, b'n\\n')
+                seen = bytearray()
+                while True:
+                    try:
+                        chunk = os.read(fd, 65536)
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    seen.extend(chunk)
+                os.close(fd)
+                code = os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1])
+                open(status, 'w').write(str(code))
+                open(transcript, 'wb').write(bytes(seen))
+                """;
+        Process probe = new ProcessBuilder(
+                        "python3",
+                        "-c",
+                        script,
+                        System.getProperty("workspace.cli.launcher"),
+                        source.toString(),
+                        target.toString(),
+                        status.toString(),
+                        transcript.toString())
+                .redirectError(ProcessBuilder.Redirect.INHERIT)
+                .start();
+        try {
+            assertTrue(probe.waitFor(20, TimeUnit.SECONDS));
+            assertEquals(0, probe.exitValue());
+            String shown = Files.readString(transcript);
+            assertEquals("0", Files.readString(status).strip(), shown);
+            assertFalse(Files.exists(target), shown);
+            assertTrue(shown.contains("Not saved"), shown);
+        } finally {
+            if (probe.isAlive()) probe.destroyForcibly().waitFor();
+        }
+    }
+
     @Test
     void aFullLogCannotReplaceTheOriginalLoadResult() throws Exception {
         Path source = directory.resolve("failed.yaml");
