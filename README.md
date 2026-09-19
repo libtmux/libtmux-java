@@ -148,6 +148,19 @@ build.name();                        // → build
 `exactlyOne` raises `NoMatchException` for none and `MultipleMatchesException`
 for several, because those are different bugs in the calling code.
 
+### Run a command to its end
+
+When the command is yours, run it rather than typing it and reading the screen:
+the status is the shell's and the output is only the command's.
+
+```java
+// Given: Pane pane
+PaneRun ran = pane.run("printf 'built\\n'; exit 3", Duration.ofSeconds(30));
+
+ran.exitStatus().getAsInt();   // → 3
+ran.output();                  // → [built]
+```
+
 ### Send keys and read what a pane shows
 
 ```java

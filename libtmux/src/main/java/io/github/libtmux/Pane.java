@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -388,6 +389,55 @@ public final class Pane {
             case TIMED_OUT -> TextOutcome.TIMED_OUT;
             case SERVER_GONE -> TextOutcome.SERVER_GONE;
         };
+    }
+
+    /**
+     * Runs a shell command in this pane to its end, and answers with its exit status and output.
+     *
+     * <p><strong>Reach for this first</strong> whenever the command is yours. Nothing is inferred from
+     * the screen: the command runs in a subshell of the pane's own shell, whose exit trap reports
+     * {@code $?} and signals a private {@code wait-for} channel, so the wait is tmux's and the status
+     * is the shell's. The output is what the command printed and nothing else — not the typed line,
+     * not the prompt — cut out between two markers the plumbing prints around it.
+     *
+     * <pre>{@code
+     * PaneRun built = pane.run("make test", Duration.ofMinutes(5));
+     * if (!built.succeeded()) {
+     *     System.err.println(String.join("\n", built.output()));
+     * }
+     * }</pre>
+     *
+     * <p>It runs in the shell a person set up — its directory, its environment, a virtualenv someone
+     * activated — which is the reason to type it there rather than start a process of your own. The
+     * pane has to be running a POSIX shell for the typed line to mean what it says.
+     *
+     * <p>A command still running at the deadline keeps running; the answer carries what it had printed
+     * by then, and {@link PaneRun#exact()} is false.
+     *
+     * @param command a line of shell, run as {@code eval} would run it
+     * @param timeout how long to wait for it to end
+     * @throws IllegalStateException if the pane is not running a POSIX shell
+     * @throws InterruptedException if the waiting thread is interrupted
+     */
+    public PaneRun run(String command, Duration timeout) throws InterruptedException {
+        Objects.requireNonNull(command, "command");
+        Objects.requireNonNull(timeout, "timeout");
+        PaneCommand.requirePosixShell(currentCommandNow());
+        PaneCommand frame = PaneCommand.fresh();
+        List<String> tmux = List.of(server.config().binaryPath(), "-S", expand("#{socket_path}"));
+        sendLine(frame.typed(tmux, command));
+
+        WakeReason woke = server.channel(frame.channel()).await(timeout);
+        if (woke == WakeReason.SERVER_GONE) {
+            return new PaneRun(PaneRun.Outcome.SERVER_GONE, OptionalInt.empty(), List.of(), false);
+        }
+        // Rows rejoined, so a line the command printed wider than the pane comes back as it printed it,
+        // and the typed line — which wraps — is one line that holds the markers without equalling one.
+        PaneCommand.Framed framed =
+                frame.frame(capture(spec -> spec.fromStartOfHistory().joiningWrappedLines()));
+        return woke == WakeReason.SIGNALLED
+                ? new PaneRun(PaneRun.Outcome.FINISHED, framed.status(), framed.lines(), framed.exact())
+                : new PaneRun(PaneRun.Outcome.TIMED_OUT, OptionalInt.empty(), framed.lines(), false);
     }
 
     /**
