@@ -38,6 +38,23 @@ A missing session is still `false`, and an option tmux does not know is still
 empty. Catch `ServerNotRunningException` where you start a daemon on demand,
 and `LibTmuxException` for a read that could not be made.
 
+### `ServerSnapshot.of` needs the server's identity
+
+The public overload taking a capture time and a pid but no `TmuxVersion` is
+gone, and the overload taking no identity at all is package-private. A handle
+built from either failed at its first real operation, because every handle
+command is fenced on the server's pid and version, so neither belonged in the
+public API. Build one with the overload that takes both.
+
+```java
+// Given: Server server
+io.github.libtmux.snapshot.ServerSnapshot.of(
+        java.time.Instant.now(),
+        server.snapshot().serverPid().orElseThrow(),
+        server.version(),
+        java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of());
+```
+
 ### Key bindings are a view: `server.keys()`
 
 `bindKey`, `unbindKey` and `listKeys` moved to `Keys`, like buffers, options,
