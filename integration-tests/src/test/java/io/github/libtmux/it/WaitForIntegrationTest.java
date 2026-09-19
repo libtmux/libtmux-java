@@ -113,9 +113,16 @@ final class WaitForIntegrationTest {
         // output has to arrive, and keys sent into a shell that has not started never produce any.
         pane.await(drawn -> drawn.capture().stream().anyMatch(line -> !line.isBlank()), Duration.ofSeconds(10));
 
-        pane.sendLine("echo waited-for-this");
+        // The typed line must not contain the text, or the shell's echo alone could satisfy the
+        // wait: printf assembles it only when the command runs.
+        pane.sendLine("printf 'waited-%s\\n' for-this");
 
-        assertEquals(TextOutcome.APPEARED, pane.awaitText("waited-for-this", SHORT));
+        // Whether the shell answered before the wait's first read is scheduling, not behaviour, so
+        // both outcomes mean the pane produced it; PaneWaitFidelityIntegrationTest pins the split.
+        TextOutcome outcome = pane.awaitText("waited-for-this", Duration.ofSeconds(10));
+        assertTrue(
+                outcome == TextOutcome.APPEARED || outcome == TextOutcome.PRESENT_AT_ENTRY,
+                "the wait did not see the pane's own output: " + outcome);
     }
 
     @Test

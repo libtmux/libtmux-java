@@ -48,7 +48,8 @@ screen is the right answer, and it is a heuristic:
 
 ```java
 // Given: Pane pane
-pane.sendLine("echo listening on 8080");
+// A daemon takes a moment to come up; an instant echo could beat the wait's first look.
+pane.sendLine("sleep 1; echo listening on 8080");
 
 pane.awaitText("listening on", Duration.ofSeconds(10));   // → APPEARED
 ```
