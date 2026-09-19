@@ -1,6 +1,7 @@
 package io.github.libtmux;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,6 +20,7 @@ final class ServerConfigTest {
         assertEquals("tmux", config.binary());
         assertEquals(ServerEndpoint.defaultSocket(), config.endpoint());
         assertEquals(Optional.empty(), config.configFile());
+        assertFalse(config.force256Colors());
         assertTrue(config.defaultTimeout().toSeconds() > 0, "a request must have a deadline it can reach");
     }
 
@@ -88,6 +90,19 @@ final class ServerConfigTest {
                 .build();
 
         assertEquals("[tmux, -L, fixture]", config.endpointCommand().toString());
+    }
+
+    @Test
+    void colorChoiceSurvivesCopiesAndCanReturnToDetection() {
+        try (Server server = Server.builder().force256Colors(true).build()) {
+            ServerConfig config = server.config();
+            assertTrue(config.force256Colors());
+            assertEquals(java.util.List.of("tmux", "-2"), config.endpointCommand());
+            assertTrue(config.toBuilder().build().force256Colors());
+            ServerConfig detected = config.toBuilder().force256Colors(false).build();
+            assertFalse(detected.force256Colors());
+            assertEquals(java.util.List.of("tmux"), detected.endpointCommand());
+        }
     }
 
     @Test

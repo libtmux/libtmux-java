@@ -12,6 +12,231 @@ production.
 
 ## Unreleased
 
+### Added
+
+- **`tmux-workspace` is a native application module.** It discovers, loads,
+  captures, converts and imports tmuxp workspaces, with JSON and NDJSON output,
+  terminal load progress and generated Bash completion. (#16)
+
+- **`--generate` also produces Zsh or Fish completion, or the flag schema,
+  alongside the original Bash target.** Distinct native parameter labels keep
+  each subcommand's own choices from replacing another's in the generated
+  script, including options inherited from a parent command. `--json` returns
+  the script in a structured artifact and `--ndjson` emits one completed event;
+  plain generation prints the original bytes. (#16)
+
+- **An attached `load` run from inside tmux asks before switching or appending,
+  and before replacing an already-running session.** Interactively, with a
+  terminal and without `--yes`, a new session offers switch (default), detached
+  or append; an existing session offers to attach (default) or leave it alone. A
+  multi-input load asks at most once, about the last input's session; declining
+  leaves only that one input's session untouched and reports `Not attached`,
+  while every other input still builds and counts toward the result. `convert`'s
+  `Save <path>?` prompt works the same way: declining writes nothing and reports
+  `Not saved`, exit 0. Neither prompt fires for a script: without a terminal,
+  with `--yes`, or with `--json`/`--ndjson`, `load` proceeds without asking;
+  lacking a terminal to ask at all is instead a `usage` refusal, exit 2. Every
+  prompt reads its answer as a whole line, through one shared reader. (#16)
+
+- **`session_name` refuses a colon or a period, and `freeze` applies the same
+  rule to the name it is asked to capture, before tmux is asked anything.**
+  tmux's answer to a `:` or `.` in a session name changes across the supported
+  range: rewritten to `_` through 3.6, refused outright on 3.7, and kept from
+  3.7a on — but only an explicit `name:` terminator then selects it, so a bare
+  `-t name` still misreads the delimiter as a window separator. No spelling
+  survives the whole range, so both ends refuse the name outright —
+  `invalid_workspace`, exit 1, no file written — whether or not a session
+  already holds it, naming the `-s` remedy `load` already has for its own
+  refusal. (#16)
+
+- **An attached `load` resolves its own invoking pane before building
+  anything.** `TMUX` must parse and name the daemon on the target socket,
+  `TMUX_PANE` must be a pane there, and a client must be attached to that pane's
+  session, each diagnosed apart and refused before the first mutation, exit 2,
+  if any of it fails. Aimed at a tmux server other than the invoking pane's, it
+  refuses the same way, naming `-d` as the way to load without attaching. A
+  `run-shell` key binding sets `TMUX` but no terminal and no `TMUX_PANE`;
+  switching needs neither, and falls back to tmux's most recently active client
+  when the invoking pane cannot be identified. Outside tmux, a terminal or a
+  resolvable pane is still required, except for `-d`, which beats `--append`,
+  ignoring it, and builds a new detached session with no current pane needed. An
+  attached load's client inherits this process's own terminal descriptors, so it
+  draws the session it switches to. (#16)
+
+- **Reusing a running session compares it against the document.** A `load` whose
+  session already exists names any window the document asks for that the session
+  does not have, reports `status` `error` and exit 1 under `session_mismatch`,
+  and leaves the session exactly as found rather than rebuilding it. A failed
+  `--append` names the windows it kept; an appended window whose `window_index`
+  collides with one already in the target session reports `tmux_failed`, exit 1,
+  tmux's own reason for the failure, and nothing the append could not finish is
+  left behind. Appending moves the client only when an appended window sets
+  `focus: true`, and the human summary then reads `Appended <session>`, naming
+  the session that received the windows. (#16)
+
+- **A `load` that creates a session and cannot finish building it removes that
+  session.** `status` `error`, `session_removed`, nothing retained, covering a
+  failing `before_script` and any later tmux option, layout or window failure
+  alike. A session `--append` borrowed, one the document reused, and one the
+  Python bridge owns are never removed this way, and an interrupted load reports
+  `partial` with what it built. (#16)
+
+- **Machine-readable error codes name the actual condition.** `load` of a
+  missing file reports `workspace_not_found`; a malformed document or an invalid
+  value reports `invalid_workspace`, including a layout name no running tmux
+  accepts; a refused key reports `unsupported_key` and suggests the `x-` prefix;
+  `freeze` or `shell` against a session that does not exist reports
+  `session_not_found`; a `before_script` that exits nonzero reports
+  `script_failed`; a missing tmux executable reports `tmux_unavailable`; a tmux
+  command that fails while building, including a layout name valid only for
+  another tmux release, reports `tmux_failed`; an existing `--save-to`
+  destination without `--force` reports `destination_exists`; and confirmation
+  needed without a terminal reports `confirmation_required`. `interrupted` and
+  `log_unavailable` stay outside this shared set: one says the process was
+  signalled, the other that this tool's own log sink stopped accepting records,
+  neither a verdict on the workspace. `load`'s `--json`/`--ndjson` envelope
+  carries the same code in its own `errors[]` entry for the input it failed on,
+  alongside `input`, `input_index`, `session_id`, `session_name` and `reused`.
+  Every `--json`/`--ndjson` error record carries `schema_version`. (#16)
+
+- **`load --ndjson` brackets a `before_script` or Python-bridge run with
+  `script-started` and `script-completed` around its `script-output` records**,
+  all three naming `input_index`; `script-completed` also carries `child_status`
+  and `truncated`. `pane-created`, `pane-completed`, `window-created` and
+  `window-completed` all carry `input_index` and `session_id`; the pane events
+  also carry `pane_index`, and `window-completed` carries `window_index`.
+  `session-created` lists only the window and pane tmux itself insists on
+  creating once they can survive, not a temporary one a load later removes.
+  (#16)
+
+- **Human-mode `load` prints `Created session <name>` or `Reused session <name>`
+  per session.** Its progress line reads `0/1 win, 0 pane` until a window's own
+  pane count is known. Human-mode errors and warnings print a plain sentence,
+  such as `Error: <message>`. `debug-info` without `--json`/`--ndjson` prints
+  readable `label  value` lines. (#16)
+
+- **A window option under a session's `options:` reaches every window the
+  document builds**, read from the running tmux's own window-scope option set; a
+  window's own `options:` still wins. A window with no pane naming `focus` is
+  left on its last pane; a pane's command waits for that pane's shell, whatever
+  shell it runs, before it is sent. An unrecognised `workspace_builder_options`
+  key is a warning rather than a refusal of the whole document, and warnings
+  carry their own code. An `x-` prefixed key is inert — accepted, ignored,
+  preserved by `convert` — at every level of a workspace: document, window or
+  pane. A window naming no `layout` tiles its panes rather than tmuxp's halving
+  stack. (#16)
+
+- **A pane with no `start_directory` anywhere starts in the invocation
+  directory, matching tmuxp.** An explicit relative `start_directory` resolves
+  against its own level's parent directory rather than always the document's — a
+  window's `./sub` under a session rooted elsewhere resolves under that
+  session's directory. One naming a path tmux cannot use is a warning, not a
+  refusal: `load` continues and reports which directory was missing, and a
+  `before_script` still runs from the invocation directory when its own is
+  missing. `focus` accepts the quoted string `'true'`/`'false'` that `tmuxp
+  freeze` writes, alongside a YAML boolean; any other value is still refused. A
+  pane's command expands `~` and `$VAR` the same way every other workspace value
+  does — names, directories, option values — leaving an undefined variable as
+  written. (#16)
+
+- **`freeze <name>` names which session it could not find**, whether the server
+  has no session by that name or has not started at all. Writing a file needs an
+  explicit `--save-to`; `--json` and `--ndjson` still capture to stdout, and
+  plain `freeze` with none of the three is a usage error — a live session's name
+  is tmux's to choose, and can hold `/` or match a variable like `$HOME`. A
+  scripted `freeze --save-to` needs no `--yes`, since the destination itself is
+  consent; `--force` still governs replacing a file already there, and
+  `--save-to` falls back to a move when the destination's filesystem reports it
+  cannot link. `freeze` omits `shell_command` for a pane running the session's
+  own default shell, and still captures it as a single-element array for any
+  other command. (#16)
+
+- **Imports validate a translated workspace before publishing it.** Tmuxinator
+  command arrays stay in one pane; Teamocil command groups, options and first
+  focus survive native loading; an imported directory keeps its invocation
+  context when the saved file moves; unsupported lifecycle, runtime or
+  before-synchronization behaviour is refused rather than silently discarded or
+  saved as something the native loader cannot use. A Tmuxinator import refuses
+  unexpanded ERB markup before writing or overwriting anything; Teamocil
+  sources, which no template engine reads, keep such text literal. (#16)
+
+- **A Python bridge failure says which failure it was**: a missing interpreter,
+  a wrong `tmuxp` version, a timed-out probe and a probe that left a process
+  holding the captured streams each report the probe's own error text as the
+  cause. A `shell` whose bridge interpreter cannot import `tmuxp` reports that
+  one sentence, the probe's own last stderr line, and `shell --help` names
+  `TMUX_WORKSPACE_PYTHON` in the command that fails, not only in the error.
+  (#16)
+
+- **An attached `load` sizes a session it creates from the terminal it runs in,
+  not tmux's 80x24 default.** `TMUXP_DEFAULT_COLUMNS`/`TMUXP_DEFAULT_ROWS` (else
+  `COLUMNS`/`ROWS`, else 80x24) seed the size, the invoking terminal overrides
+  it when stdout is one, and `COLUMNS`/`LINES` override that;
+  `TMUXP_DETECT_TERMINAL_SIZE` set to anything but `1` disables detection. Every
+  window a load creates inherits the session's real size. (#16)
+
+- **`shell -c` and `edit` print a child's output once in human mode**, not a
+  second copy with control characters escaped after the live stream. Child
+  containment resolves `ps` and `kill` on `PATH`, and the terminal-size probes
+  resolve `sh` and `stty` the same way; a `ps` that is not installed leaves
+  containment off rather than failing the script. A capture drain still reading
+  after the command finished does not report a stray `logging failed`: closing
+  the log takes the same lock its writers hold and stops further records. (#16)
+
+- **`Layouts.require` resolves a layout name against a specific tmux version,
+  and `Layout.byTmuxName` looks one up directly.** A built-in name, a unique
+  abbreviation, or a saved layout tree valid for the given pane count is
+  accepted; an abbreviation ambiguous for the running release names the matching
+  layouts and the tmux release that introduced the collision between them. A
+  daemon that exits mid-check is treated as absent, like other version probes,
+  and falls back to the selected client's version. `libtmux-mcp`'s
+  `select_layout` tool accepts the same abbreviations and saved layouts. (#16)
+
+### Fixed
+
+- **`Server.hasSession` and `Server.killSession` find a session whose name
+  holds `.` or `:`.** tmux 3.7a and later keep such a name as given, but both
+  methods addressed the session with an exact-match target, which tmux splits
+  on those same characters first, so `hasSession` answered false for a session
+  that existed and `killSession` refused to end it. Both now find the session
+  by comparing names and act on its id. (#16)
+
+- **`WorkspaceBuilder` builds a window with more than four panes.** Splitting
+  the previous pane on every new pane runs out of rows before the fifth at a
+  default 80x24 terminal; it rebalances with a tiled layout between splits
+  instead. (#16)
+
+- **`Server.newSession` resolves a version-gated `SessionSpec` field without
+  requiring an already-running daemon.** A size for the first session on a cold
+  socket asked that socket for its own version before the session existed; the
+  check now falls back to the client binary's own version. (#16)
+
+- **`WindowSpec` honours an absolute window start directory on tmux 3.2a.** Only
+  a relative one is refused below 3.3a, the first release that resolves it
+  against the caller's directory rather than the server's own and silently falls
+  back to `$HOME`. (#16)
+
+- **`Options.all()` and `Options.effective()` keep a custom option's own
+  trailing `*`, and `effective()` no longer returns an empty value for an option
+  set only at a parent scope.** A wide listing's inherited-value marker is now
+  stripped only from a built-in name, and the per-name value read carries the
+  same listing flags the name came from. (#16)
+
+- **`Options` reads recover correct values on tmux 3.4 and 3.5.** Those releases
+  escape `-v` value-only output ambiguously; a read now decodes the normal
+  listing instead, preserving control characters and literal escape sequences,
+  using the captured daemon version or a checked query to the selected daemon.
+  (#16)
+
+- **`CommandResult.stdout` preserves carriage returns.** Subprocess stdout now
+  splits only at LF instead of normalizing CR and CRLF to LF; diagnostic stderr
+  keeps its existing normalization. (#16)
+
+- **`Layouts.require` accepts a saved layout longer than tmux's previous
+  8191-character limit.** The core and `libtmux-mcp` accept any structurally
+  valid tree; tmux still owns geometry, pruning and command transport limits.
+  (#16)
+
 ## 0.0.1-alpha.11 — 2026-09-12
 
 ### Added

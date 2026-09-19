@@ -47,7 +47,7 @@ public final class WatchPaneOutput {
             // about command replies and nothing else.
             try (ControlClient client = ControlClient.attach(server.config(), session.id());
                     EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
-                client.send("send-keys", "-t", session.name(), "echo watched", "Enter");
+                client.send("send-keys", "-t", session.id().value(), "echo watched", "Enter");
 
                 long deadline = System.nanoTime() + watchFor.toNanos();
                 while (System.nanoTime() < deadline && seen.isEmpty()) {

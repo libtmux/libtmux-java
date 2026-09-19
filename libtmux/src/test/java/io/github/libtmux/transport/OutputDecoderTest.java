@@ -12,11 +12,8 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * The observable shape callers already depend on, which is CPython's.
- *
- * <p>These vectors are differential: each was executed against Python libtmux and against a real
- * child process before being written down. Interior blank stdout lines survive while trailing ones
- * do not, and stderr loses every empty element wherever it appears. The asymmetry is deliberate.
+ * Stdout uses tmux's LF framing and preserves carriage returns in values. Interior blank stdout
+ * lines survive while trailing ones do not, and stderr loses every empty element.
  */
 final class OutputDecoderTest {
 
@@ -28,13 +25,15 @@ final class OutputDecoderTest {
                 Arguments.of("repeated final newlines", "alpha\n\n\n".getBytes(UTF_8), List.of("alpha")),
                 Arguments.of("interior blank line", "alpha\n\nbeta\n".getBytes(UTF_8), List.of("alpha", "", "beta")),
                 Arguments.of("empty output", new byte[0], List.of()),
-                Arguments.of("CRLF", bytes(0x61, 0x0d, 0x0a, 0x62, 0x0d, 0x0a), List.of("a", "b")),
-                Arguments.of("lone CR", bytes(0x61, 0x0d, 0x62), List.of("a", "b")));
+                Arguments.of("CRLF", bytes(0x61, 0x0d, 0x0a, 0x62, 0x0d, 0x0a), List.of("a\r", "b\r")),
+                Arguments.of("lone CR", bytes(0x61, 0x0d, 0x62), List.of("a\rb")),
+                Arguments.of("final CR", bytes(0x61, 0x0d), List.of("a\r")),
+                Arguments.of("CR-only value", bytes(0x0d, 0x0a), List.of("\r")));
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("stdoutVectors")
-    void stdoutMatchesPython(String behavior, byte[] raw, List<String> expected) {
+    void stdoutPreservesValuesBetweenLineFeeds(String behavior, byte[] raw, List<String> expected) {
         assertEquals(expected, OutputDecoder.stdoutLines(raw), behavior);
     }
 
@@ -42,6 +41,7 @@ final class OutputDecoderTest {
     void stderrDropsEveryEmptyElementWhereverItAppears() {
         assertEquals(List.of("x", "y"), OutputDecoder.stderrLines("\n\nx\n\ny\n".getBytes(UTF_8)));
         assertEquals(List.of(), OutputDecoder.stderrLines(new byte[0]));
+        assertEquals(List.of("x", "y", "z"), OutputDecoder.stderrLines("\r\nx\r\ny\rz\r\n".getBytes(UTF_8)));
     }
 
     @Test

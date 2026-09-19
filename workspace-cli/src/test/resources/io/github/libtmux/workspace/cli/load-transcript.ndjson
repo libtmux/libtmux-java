@@ -1,0 +1,15 @@
+{"schema_version":1,"command":"load","event":"started","sequence":1,"inputs":1}
+{"schema_version":1,"command":"load","event":"workspace-started","sequence":2,"input_index":0,"input":"~/transcript.yaml","session_name":"transcript","window_total":2,"session_pane_total":3,"owned_session":false,"stage":"resolve","window_ids":[],"pane_ids":[]}
+{"schema_version":1,"command":"load","event":"session-created","sequence":3,"input_index":0,"input":"~/transcript.yaml","session_name":"transcript","window_total":2,"session_pane_total":3,"owned_session":true,"stage":"resolve","window_ids":[],"pane_ids":[],"changed":true,"session_id":"$0","reused":false}
+{"schema_version":1,"command":"load","event":"window-created","sequence":4,"input_index":0,"session_id":"$0","window_id":"@1","window_index":0,"pane_total":2,"window_name":"first"}
+{"schema_version":1,"command":"load","event":"pane-created","sequence":5,"input_index":0,"session_id":"$0","window_id":"@1","pane_id":"%1","pane_index":0}
+{"schema_version":1,"command":"load","event":"pane-created","sequence":6,"input_index":0,"session_id":"$0","window_id":"@1","pane_id":"%2","pane_index":1}
+{"schema_version":1,"command":"load","event":"pane-completed","sequence":7,"input_index":0,"session_id":"$0","window_id":"@1","pane_id":"%1","pane_index":0}
+{"schema_version":1,"command":"load","event":"pane-completed","sequence":8,"input_index":0,"session_id":"$0","window_id":"@1","pane_id":"%2","pane_index":1}
+{"schema_version":1,"command":"load","event":"window-completed","sequence":9,"input_index":0,"session_id":"$0","window_id":"@1","window_index":0}
+{"schema_version":1,"command":"load","event":"window-created","sequence":10,"input_index":0,"session_id":"$0","window_id":"@2","window_index":1,"pane_total":1,"window_name":"second"}
+{"schema_version":1,"command":"load","event":"pane-created","sequence":11,"input_index":0,"session_id":"$0","window_id":"@2","pane_id":"%3","pane_index":0}
+{"schema_version":1,"command":"load","event":"pane-completed","sequence":12,"input_index":0,"session_id":"$0","window_id":"@2","pane_id":"%3","pane_index":0}
+{"schema_version":1,"command":"load","event":"window-completed","sequence":13,"input_index":0,"session_id":"$0","window_id":"@2","window_index":1}
+{"schema_version":1,"command":"load","event":"workspace-completed","sequence":14,"input_index":0,"input":"~/transcript.yaml","session_name":"transcript","window_total":2,"session_pane_total":3,"owned_session":true,"stage":"completed","window_ids":["@1","@2"],"pane_ids":["%1","%2","%3"],"changed":true,"session_id":"$0","reused":false}
+{"schema_version":1,"command":"load","event":"completed","sequence":15,"status":"ok","results":[{"input_index":0,"input":"~/transcript.yaml","session_name":"transcript","window_total":2,"session_pane_total":3,"owned_session":true,"stage":"completed","window_ids":["@1","@2"],"pane_ids":["%1","%2","%3"],"changed":true,"session_id":"$0","reused":false}],"errors":[]}

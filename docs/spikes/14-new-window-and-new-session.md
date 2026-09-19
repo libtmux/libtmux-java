@@ -20,20 +20,42 @@ Unlike `split-window`, which gained six flags in 3.7, there is nothing here for
 a version rule to protect. What differs between releases is behaviour, not
 vocabulary.
 
-## 3.2a ignores two things it accepts
+## Window directories and detached session dimensions
+
+`new-window -c` starts the window's command in an absolute directory on every
+supported release, 3.2a included. A fresh isolated server and an explicit
+`/bin/sh` command writing `pwd` to a file verify the directory after the child
+starts.
+
+What 3.2a lacks is the resolution step. `spawn_pane` hands the argument to the
+child unchanged, so a relative path is resolved against whatever directory the
+server was started in, and the child falls back to `$HOME` when that misses.
+3.3a added the branch that prefixes a non-absolute `-c` with the requesting
+client's working directory, which is the calling process:
+
+```c
+/* spawn.c, 3.3a */
+if (*cwd != '/') {
+        xasprintf(&new_cwd, "%s/%s", server_client_get_cwd(c, target->s), cwd);
+```
 
 | asked for                     | 3.2a        | 3.3a onwards |
 | ----------------------------- | ----------- | ------------ |
-| `new-window -c <dir>`         | **ignored** | honoured     |
+| `new-window -c /abs/dir`      | honoured    | honoured     |
+| `new-window -c sub`           | **$HOME**   | honoured     |
 | `new-session -d -x 100 -y 40` | **80x23**   | `100x40`     |
 
-Both exit zero. The directory case is the sharper one, because `split-window -c`
-*does* work on 3.2a — so the same flag on the same server is honoured by one
-command and dropped by another, and no error distinguishes them.
+A relative directory is refused below 3.3a rather than sent, on the same
+reasoning as the 3.7 split options: a window that silently started in the home
+directory is indistinguishable from the window that was asked for. An absolute
+one is not gated at all.
 
-Both are refused rather than dropped, on the same reasoning as the 3.7 split
-options: a window that silently started somewhere else is indistinguishable from
-the window that was asked for.
+Detached session dimensions remain refused on 3.2a under the existing measured
+rule. They were not remeasured by the window-directory probe.
+
+`split-window`, `new-session` and `respawn-pane` reach the same `spawn_pane`
+code and drop a relative directory the same way on 3.2a. Only `new-window` is
+gated so far.
 
 ## `-S` reports nothing
 
@@ -79,9 +101,14 @@ $ tmux -S "$sock" -f /dev/null new-window -d -S -n reused -P -F '#{window_id}'
 $ tmux -S "$sock" -f /dev/null new-session -d -s sized -x 100 -y 40 -P -F '#{window_width}x#{window_height}'
 ```
 
+Run from a directory that holds neither `sub` nor the server, so the 3.2a
+fallback is visible:
+
+```console
+$ tmux -S "$sock" new-window -d -n rel -c sub -P -F '#{pane_current_path}'
+```
+
 ## Not covered
 
 - `new-session -E`, which suppresses `update-environment`.
 - `new-session -t`, which groups a new session with an existing one.
-- Whether 3.2a's `-c` is dropped at parse time or at spawn time; only the
-  outcome was measured.

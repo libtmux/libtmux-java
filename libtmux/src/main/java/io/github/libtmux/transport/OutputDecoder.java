@@ -5,22 +5,21 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Turns a drained pipe into lines the way callers already expect.
+ * Turns a drained pipe into lines while preserving tmux values.
  *
  * <p>tmux emits pane content, so the bytes are not guaranteed to be UTF-8. A malformed byte is
  * escaped as {@code \xNN} rather than replaced with U+FFFD, which keeps the original byte
  * recoverable and matches what CPython's {@code backslashreplace} produces.
  *
- * <p>The two channels split differently: stdout keeps interior blank lines and drops only trailing
- * ones, stderr drops every blank wherever it appears. That asymmetry is not a tidy rule, it is the
- * observable shape callers depend on.
+ * <p>tmux frames stdout with LF; CR is value data, including before LF. Stdout keeps interior blank
+ * lines and drops trailing ones. Diagnostic stderr normalizes CRLF and CR to LF and drops all blanks.
  */
 final class OutputDecoder {
 
     private OutputDecoder() {}
 
     static List<String> stdoutLines(byte[] bytes) {
-        List<String> lines = split(decode(bytes));
+        List<String> lines = split(Utf8.backslashReplace(bytes));
         int end = lines.size();
         while (end > 0 && lines.get(end - 1).isEmpty()) {
             end--;

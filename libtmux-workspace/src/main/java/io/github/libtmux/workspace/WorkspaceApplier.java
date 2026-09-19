@@ -44,15 +44,17 @@ final class WorkspaceApplier {
 
     private static void validate(Server server, Workspace workspace) {
         for (WindowSpec window : workspace.windows()) {
-            window.layout().ifPresent(value -> {
-                Layouts.require(value);
-                builtIn(value).ifPresent(layout -> layout.requireSupported(server.version()));
-            });
+            window.layout()
+                    .ifPresent(value ->
+                            Layouts.require(value, server, window.panes().size()));
         }
     }
 
     private static void cleanupStaging(Server server, String staging, Throwable failure) {
         try {
+            // By name, not server.killSession: a lost new-session reply leaves no id to resolve, so
+            // the generated name is the only handle. Safe as an exact match here specifically because
+            // staging is always "libtmux-ws-" plus a UUID, which never holds ':' or '.'.
             CommandResult cleanup = server.cmd("kill-session", "-t", "=" + staging);
             if (!cleanup.succeeded() && cleanup.stderr().stream().noneMatch(WorkspaceApplier::alreadyAbsent)) {
                 failure.addSuppressed(new LibTmuxException(
@@ -76,8 +78,12 @@ final class WorkspaceApplier {
             Window window = index == 0 ? firstWindow(session, spec.name()) : session.newWindow(spec.name());
             for (int pane = 1; pane < spec.panes().size(); pane++) {
                 window.split();
+                // Halving each pane in turn runs out of rows before the fifth at a default terminal
+                // size; rebalancing after every split reclaims them. The window's own layout, applied
+                // below, still has the final say.
+                window.selectLayout(Layout.TILED);
             }
-            applyLayout(window, spec.layout());
+            applyLayout(window, spec.layout(), spec.panes().size());
             List<Pane> panes = window.refresh().panes();
             requirePaneCount(panes, spec);
             windows.add(new BuiltWindow(spec, panes));
@@ -90,18 +96,10 @@ final class WorkspaceApplier {
         return name.isEmpty() ? window : window.rename(name);
     }
 
-    private static void applyLayout(Window window, Optional<String> layout) {
-        layout.ifPresent(
-                value -> builtIn(value).ifPresentOrElse(window::selectLayout, () -> window.applyLayout(value)));
-    }
-
-    private static Optional<Layout> builtIn(String layout) {
-        for (Layout candidate : Layout.values()) {
-            if (candidate.tmuxName().equals(layout)) {
-                return Optional.of(candidate);
-            }
-        }
-        return Optional.empty();
+    private static void applyLayout(Window window, Optional<String> layout, int panes) {
+        layout.map(value -> Layouts.require(value, window.server(), panes))
+                .ifPresent(value -> Layout.byTmuxName(value)
+                        .ifPresentOrElse(window::selectLayout, () -> window.applyLayout(value)));
     }
 
     private static void runCommands(List<BuiltWindow> windows) {

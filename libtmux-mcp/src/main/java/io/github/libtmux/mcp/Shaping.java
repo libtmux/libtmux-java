@@ -1,6 +1,7 @@
 package io.github.libtmux.mcp;
 
 import io.github.libtmux.Layout;
+import io.github.libtmux.Layouts;
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
@@ -122,13 +123,17 @@ final class Shaping {
     }
 
     static Changed selectLayout(Call call) {
-        Window window = Targets.window(call.server(), call.string("window_id"));
         String asked = call.string("layout");
-        Layout layout = layoutNamed(asked)
-                .orElseThrow(() ->
-                        new IllegalArgumentException("'" + asked + "' is not a layout; use one of " + layoutNames()));
-        window.selectLayout(layout);
-        return new Changed("window", window.id().value(), layout.name(), null);
+        String layout = Layouts.require(layoutNamed(asked).map(Layout::tmuxName).orElse(asked), call.server(), 1);
+        Window window = Targets.window(call.server(), call.string("window_id"));
+        Optional<Layout> named = layoutNamed(layout);
+        if (named.isPresent()) {
+            window.selectLayout(named.orElseThrow());
+        } else {
+            window.applyLayout(layout);
+        }
+        return new Changed(
+                "window", window.id().value(), named.map(Layout::name).orElse(layout), null);
     }
 
     static Changed resizePane(Call call) {
@@ -247,11 +252,5 @@ final class Shaping {
         return Arrays.stream(Layout.values())
                 .filter(candidate -> candidate.name().equals(wanted))
                 .findFirst();
-    }
-
-    static List<String> layoutNames() {
-        return Arrays.stream(Layout.values())
-                .map(value -> value.name().toLowerCase(Locale.ROOT).replace('_', '-'))
-                .toList();
     }
 }

@@ -89,11 +89,11 @@ final class ProcessTransportTest {
                     transport.execute(shell("printf 'a\\377'", GENEROUS)).stdout(),
                     "a byte that is not UTF-8 stays recoverable");
             assertEquals(
-                    List.of("a", "b"),
+                    List.of("a\r", "b\r"),
                     transport
                             .execute(shell("printf 'a\\r\\nb\\r\\n'", GENEROUS))
                             .stdout(),
-                    "universal newlines");
+                    "LF separates records while carriage returns remain data");
             assertEquals(
                     List.of("alpha", "", "beta"),
                     transport
@@ -754,11 +754,12 @@ final class ProcessTransportTest {
 
     @Test
     void anIdleTransportStartsNoPumpThreads() {
-        long before = pumpThreads();
+        var before = pumpThreads();
         ProcessTransport transport = new ProcessTransport(2);
 
         try {
-            assertEquals(before, pumpThreads(), "an idle transport does not need process-pipe workers");
+            // Workers from previously closed transports may finish between snapshots.
+            assertTrue(before.containsAll(pumpThreads()), "an idle transport does not need process-pipe workers");
         } finally {
             transport.close();
         }
@@ -815,10 +816,10 @@ final class ProcessTransportTest {
                 .findAny();
     }
 
-    private static long pumpThreads() {
+    private static List<Thread> pumpThreads() {
         return Thread.getAllStackTraces().keySet().stream()
                 .filter(thread -> thread.getName().startsWith("libtmux-pump-"))
-                .count();
+                .toList();
     }
 
     private static boolean awaitDead(long pid) throws InterruptedException {

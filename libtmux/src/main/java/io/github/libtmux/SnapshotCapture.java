@@ -217,7 +217,8 @@ final class SnapshotCapture {
                 new WindowId(row.text("window_id")));
     }
 
-    private static boolean serverAbsent(String message) {
+    /** What tmux says when no server answered, whichever of the three ways the client found out. */
+    static boolean serverAbsent(String message) {
         return message.contains("no server running")
                 || message.contains("server exited unexpectedly")
                 || message.contains("(No such file or directory)");

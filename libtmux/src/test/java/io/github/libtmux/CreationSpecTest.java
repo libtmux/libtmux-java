@@ -93,27 +93,31 @@ final class CreationSpecTest {
         assertEquals(List.of("journalctl", "-f"), argv.subList(argv.size() - 2, argv.size()));
     }
 
+    @Test
+    void aWindowStartDirectoryIsPassedToTmux() {
+        List<String> argv = WindowSpec.builder().in(Path.of("/srv")).build().argv("$1", FORMAT, V37B);
+        assertEquals("/srv", argv.get(argv.indexOf("-c") + 1));
+    }
+
     /**
-     * 3.2a takes {@code -c} on new-window and drops it, while honouring the same flag on
-     * split-window. Nothing in the exit status says so, which is why this is refused rather than
-     * sent.
+     * An absolute directory is honoured on every supported release; a relative one is resolved
+     * against the server's working directory before 3.3a, which is not the caller's.
      */
     @Test
-    void aStartDirectoryForAWindowIsRefusedOnTheReleaseThatIgnoresIt() {
-        WindowSpec spec = WindowSpec.builder().in(Path.of("/srv")).build();
+    void aRelativeWindowStartDirectoryIsRefusedBefore33a() {
+        WindowSpec relative = WindowSpec.builder().in(Path.of("sub")).build();
 
-        UnsupportedTmuxVersion refused =
-                assertThrows(UnsupportedTmuxVersion.class, () -> spec.argv("$1", FORMAT, V32A));
+        List<String> honoured = relative.argv("$1", FORMAT, V33A);
 
-        assertEquals(
-                "a start directory for a new window requires tmux 3.3a, but this server runs 3.2a",
-                refused.getMessage());
-        assertDoesNotThrow(() -> spec.argv("$1", FORMAT, V33A));
+        assertThrows(UnsupportedTmuxVersion.class, () -> relative.argv("$1", FORMAT, V32A));
+        assertEquals("sub", honoured.get(honoured.indexOf("-c") + 1));
+        assertDoesNotThrow(
+                () -> WindowSpec.builder().in(Path.of("/srv")).build().argv("$1", FORMAT, V32A));
     }
 
     @Test
-    void aWindowWithoutADirectoryIsFineOnEveryRelease() {
-        assertDoesNotThrow(() -> WindowSpec.builder().named("plain").build().argv("$1", FORMAT, V32A));
+    void aWindowWithoutADirectoryUsesTmuxDefaults() {
+        assertDoesNotThrow(() -> WindowSpec.builder().named("plain").build().argv("$1", FORMAT, V37B));
     }
 
     // ----------------------------------------------------------------------------- new-session

@@ -1,5 +1,10 @@
 package io.github.libtmux;
 
+import java.util.Arrays;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+
 /**
  * One of tmux's built-in pane arrangements.
  *
@@ -33,6 +38,19 @@ public enum Layout {
     /** The name tmux knows this by. */
     public String tmuxName() {
         return name;
+    }
+
+    private static final Map<String, Layout> BY_TMUX_NAME =
+            Arrays.stream(values()).collect(java.util.stream.Collectors.toMap(Layout::tmuxName, Function.identity()));
+
+    /**
+     * The layout with this exact tmux name, or empty if none matches.
+     *
+     * <p>One map built once, so a caller that already has a canonical name does not repeat the scan
+     * over {@link #values()} that resolving an abbreviation already did.
+     */
+    public static Optional<Layout> byTmuxName(String name) {
+        return Optional.ofNullable(BY_TMUX_NAME.get(name));
     }
 
     /**
