@@ -65,10 +65,11 @@ final class Children {
     static Output script(
             Main.Context context, List<String> argv, Path directory, Reporter report, Duration timeout, int inputIndex)
             throws IOException, InterruptedException {
-        report.event("script-started", Documents.JSON.createObjectNode().put("input_index", inputIndex));
+        report.event(
+                Machine.Event.SCRIPT_STARTED, Documents.JSON.createObjectNode().put("input_index", inputIndex));
         Output output = run(context, argv, directory, report, timeout, true, inputIndex);
         report.event(
-                "script-completed",
+                Machine.Event.SCRIPT_COMPLETED,
                 Documents.JSON
                         .createObjectNode()
                         .put("input_index", inputIndex)
@@ -223,7 +224,7 @@ final class Children {
                             .put("stream", channel)
                             .put("text", chunk);
                     if (inputIndex != null) record.put("input_index", inputIndex);
-                    report.event("script-output", record);
+                    report.event(Machine.Event.SCRIPT_OUTPUT, record);
                 }
             }
         }
@@ -466,7 +467,7 @@ final class Children {
     // ran (see Reporter.event); a summary line here would print the whole capture a second time,
     // with control characters escaped, which is what a script reading the last line then captures.
     private static void complete(Reporter report, ObjectNode result, int status) throws IOException {
-        if (report.streaming()) report.event(status == 0 ? "completed" : "failed", result);
+        if (report.streaming()) report.event(status == 0 ? Machine.Event.COMPLETED : Machine.Event.FAILED, result);
         else if (report.machine()) report.document(result);
         if (status != 0) throw new Main.Failure(Machine.Code.SCRIPT_FAILED, status, "child exited with " + status);
     }

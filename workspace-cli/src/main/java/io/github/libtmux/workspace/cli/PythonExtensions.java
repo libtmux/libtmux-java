@@ -134,7 +134,7 @@ final class PythonExtensions {
             payload.set("server", selection);
             Files.writeString(request, payload.toString());
             report.event(
-                    "warning",
+                    Machine.Event.WARNING,
                     Documents.JSON
                             .createObjectNode()
                             .put("code", "python_extension_bridge")

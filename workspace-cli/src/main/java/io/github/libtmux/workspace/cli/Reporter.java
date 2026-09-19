@@ -98,13 +98,13 @@ final class Reporter implements AutoCloseable {
         };
     }
 
-    synchronized void record(String level, String event, ObjectNode data, boolean echo) throws IOException {
+    synchronized void record(String level, Machine.Event event, ObjectNode data, boolean echo) throws IOException {
         if (closed || logFailed || severity(level) < logLevel) return;
         ObjectNode value = data.deepCopy()
                 .put("schema_version", Machine.SCHEMA_VERSION)
                 .put("command", command)
                 .put("level", level)
-                .put("event", event)
+                .put("event", event.wire())
                 .put("time", Instant.now().toString());
         byte[] encoded = (Documents.JSON.writeValueAsString(value) + "\n").getBytes(StandardCharsets.UTF_8);
         try {
@@ -120,7 +120,7 @@ final class Reporter implements AutoCloseable {
                                     ? "warning"
                                     : level.equals("error") || level.equals("critical") ? "error" : "info",
                             Character.toUpperCase(level.charAt(0)) + level.substring(1),
-                            data.path("message").asText(event));
+                            data.path("message").asText(event.wire()));
                 context.error().flush();
             }
         } catch (IOException failure) {
@@ -165,18 +165,15 @@ final class Reporter implements AutoCloseable {
         context.output().flush();
     }
 
-    synchronized void event(String name, ObjectNode data) throws IOException {
+    synchronized void event(Machine.Event name, ObjectNode data) throws IOException {
         if (closed) return;
-        String level =
-                switch (name) {
-                    case "failed" -> "error";
-                    case "warning" -> "warning";
-                    case "started", "completed", "workspace-completed", "script-output" -> "info";
-                    default -> "debug";
-                };
-        record(level, name, data, !name.equals("failed") && !(name.equals("script-output") && !machine()));
+        record(
+                name.level(),
+                name,
+                data,
+                name != Machine.Event.FAILED && !(name == Machine.Event.SCRIPT_OUTPUT && !machine()));
         if (progress != null) progress.event(name, data);
-        if (!machine() && name.equals("script-output")) {
+        if (!machine() && name == Machine.Event.SCRIPT_OUTPUT) {
             OutputStream stream = data.path("stream").asText().equals("stderr") ? context.error() : context.output();
             stream.write(data.path("text").asText().getBytes(StandardCharsets.UTF_8));
             stream.flush();
@@ -187,7 +184,7 @@ final class Reporter implements AutoCloseable {
                     .createObjectNode()
                     .put("schema_version", Machine.SCHEMA_VERSION)
                     .put("command", command)
-                    .put("event", name)
+                    .put("event", name.wire())
                     .put("sequence", ++sequence);
             event.setAll(data);
             document(event);
