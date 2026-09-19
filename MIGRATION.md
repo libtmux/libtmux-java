@@ -38,6 +38,20 @@ A missing session is still `false`, and an option tmux does not know is still
 empty. Catch `ServerNotRunningException` where you start a daemon on demand,
 and `LibTmuxException` for a read that could not be made.
 
+### `ControlEvent` names panes and windows with their own types
+
+`ControlEvent.paneId()` answers `Optional<PaneId>` and `windowId()`
+`Optional<WindowId>`, where both answered `Optional<String>`; compare with a
+handle's `id()` rather than its `id().value()`. The record gained a fourth
+component, `notification()`, its typed reading; the three-argument constructor
+remains and derives it.
+
+<!-- snippet: compile-only: an event needs a control client and a change to report; ControlWatchIntegrationTest runs the comparison against real tmux -->
+```java
+// Given: Window window, ControlEvent event
+event.windowId().filter(window.id()::equals).isPresent();
+```
+
 ### A cancelled channel wait throws `InterruptedException`
 
 `Channel.await`, `Channel.awaitReservingCapacity` and `Channel.drain` now declare

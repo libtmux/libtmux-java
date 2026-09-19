@@ -11,6 +11,7 @@ import io.github.libtmux.Window;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.control.ControlEvent;
 import io.github.libtmux.control.EventSubscription;
+import io.github.libtmux.control.Notification;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.time.Duration;
 import java.util.Optional;
@@ -103,7 +104,7 @@ final class ControlWatchIntegrationTest {
                                                     .filter("distinctly-named"::equals)
                                                     .isPresent()
                                             && event.windowId()
-                                                    .filter(made.id().value()::equals)
+                                                    .filter(made.id()::equals)
                                                     .isPresent()),
                     "the watched value did not carry its target window");
         }
@@ -143,6 +144,31 @@ final class ControlWatchIntegrationTest {
                     window.refresh().layout(),
                     jsonField,
                     "the control client's own layout-change disagreed with a plain client's #{window_layout}");
+        }
+    }
+
+    /**
+     * The typed reading of a real notification, from a real tmux: a window renamed to a name with a
+     * run of spaces in it arrives as that name, and as the window it happened to.
+     */
+    @Test
+    void aRenameArrivesTypedWithItsNameWhole(Server server) throws Exception {
+        Session session = server.sessions().get(0);
+        Window window = session.windows().get(0);
+
+        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+                EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
+            var unused = window.rename("build  logs");
+
+            Optional<ControlEvent> renamed = awaitMatchingEvent(
+                    events,
+                    event -> event.notification() instanceof Notification.WindowRenamed,
+                    Duration.ofSeconds(10));
+
+            assertEquals(
+                    new Notification.WindowRenamed(window.id(), "build  logs", true),
+                    renamed.orElseThrow(() -> new AssertionError("no window-renamed notification arrived"))
+                            .notification());
         }
     }
 

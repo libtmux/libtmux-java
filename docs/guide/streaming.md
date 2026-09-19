@@ -66,10 +66,12 @@ can end up reading past the lines it was watching for.
 **You want to keep watching rather than wait once:** that is the control client
 below.
 
-Every wait answers with a `WakeReason` — `SIGNALLED`, `TIMED_OUT` or
-`SERVER_GONE` — and never with a boolean, because tmux reports a server that
-died under the waiter as a successful wake. "Nothing printed it" and "the server
-is gone" call for opposite recovery, so they are different answers.
+Every wait answers with a reason and never with a boolean, because tmux reports
+a server that died under the waiter as a successful wake. "Nothing printed it"
+and "the server is gone" call for opposite recovery, so they are different
+answers. A channel answers with `WakeReason`; a text wait with `TextOutcome`,
+which also tells text that appeared from text already there; `Pane.run` with a
+`PaneRun` that carries the exit status and output.
 
 ### The rung this ladder does not name
 
@@ -114,6 +116,31 @@ first one. The loop above is bounded by the timeout each `next` carries.
 Each subscriber chooses a fixed buffer capacity. A full buffer drops its oldest
 value, and `droppedCount()` reports the exact loss. The control reader only fills
 those buffers; caller code runs on the thread that calls `next()`.
+
+## Pushed changes
+
+The same client is told about changes as they happen — a window created or
+renamed, a session switched, a layout moved — without asking. Each arrives as a
+`ControlEvent`, and `notification()` is its typed reading, for matching on:
+
+```java
+// Given: Server server, Session session
+try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
+
+    var unused = session.windows().get(0).rename("build logs");
+
+    Notification seen = events.next(Duration.ofSeconds(5)).orElseThrow().notification();
+    while (!(seen instanceof Notification.WindowRenamed)) {
+        seen = events.next(Duration.ofSeconds(5)).orElseThrow().notification();
+    }
+    ((Notification.WindowRenamed) seen).name();   // → build logs
+}
+```
+
+The set is sealed with an `Unknown` case: tmux adds notifications between
+releases, and one this library does not model yet still arrives, as `Unknown`,
+with `kind()` and `fields()` carrying what tmux wrote.
 
 ## Pausing and muting a pane
 
