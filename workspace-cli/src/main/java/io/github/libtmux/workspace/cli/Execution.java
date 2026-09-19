@@ -194,7 +194,11 @@ final class Execution {
                                     ? "Appended"
                                     : effects.path("reused").asBoolean() ? "Reused session" : "Created session",
                             effects.path("session_name").asText());
-            if (!detached && !append && last != null) attach(server, last, context, target.orElseThrow());
+            // A decline answers one question, attach, about one input. Acting on it by
+            // switching the client to some other session is answering a question that was never
+            // asked; not moving them leaves a state they can see and change themselves.
+            if (!detached && !append && !lastDeclined && last != null)
+                attach(server, last, context, target.orElseThrow());
         }
     }
 
