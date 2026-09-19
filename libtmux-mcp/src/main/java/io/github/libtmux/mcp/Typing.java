@@ -107,7 +107,9 @@ final class Typing {
                             + " waits for it correctly; reach for capture_since or wait_for_text here only for input"
                             + " that is not a command to run to completion. Either way, a wait_for_text pattern that"
                             + " repeats text from these keys can match the pane's own echo of them rather than what"
-                            + " runs.");
+                            + " runs - and on a pane whose shell has not drawn its first prompt yet, that echo can"
+                            + " land glued to the prompt with nothing separating them, which defeats even the"
+                            + " matching this server does to discount it.");
         }
     }
 
