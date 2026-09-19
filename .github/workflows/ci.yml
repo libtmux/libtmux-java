@@ -49,7 +49,8 @@ jobs:
           # the ones Gradle published rather than trusted because it is committed here.
           validate-wrappers: true
 
-      - run: ./gradlew check --stacktrace
+      # Runs every check task instead of stopping at the first failure, so one run names them all.
+      - run: ./gradlew check --stacktrace --continue
 
       # A real-tmux suite that leaves servers running would be invisible here and expensive on a
       # developer's machine. The runner is discarded either way, so this is the only place the
@@ -96,7 +97,8 @@ jobs:
         with:
           validate-wrappers: true
 
-      - run: ./gradlew check --stacktrace
+      # Runs every check task instead of stopping at the first failure, so one run names them all.
+      - run: ./gradlew check --stacktrace --continue
 
       # No /proc on macOS, so a server's own command line comes from ps rather than cmdline.
       - name: No tmux server outlived the suite
