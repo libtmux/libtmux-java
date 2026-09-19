@@ -1882,6 +1882,91 @@ final class ExecutionTest {
         }
     }
 
+    /** Reuse is a comparison: a running session missing a window the document asks for is not "ok". */
+    @Test
+    void reusingASessionMissingADocumentWindowIsNotReportedAsSuccess() throws Exception {
+        Path source = directory.resolve("reuse.yaml");
+        Path socket = directory.resolve("reuse-socket");
+        Files.writeString(source, """
+                session_name: reuse
+                windows:
+                  - window_name: one
+                    panes: [null]
+                  - window_name: two
+                    panes: [null]
+                """);
+        try (Server server = server(socket)) {
+            try {
+                var session = server.newSession("reuse");
+                session.windows().getFirst().rename("one");
+                Result missing =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(1, missing.code(), missing.toString());
+                var document = new ObjectMapper().readTree(missing.out());
+                assertEquals("partial", document.path("status").asText(), missing.toString());
+                assertTrue(
+                        document.path("errors").path(0).path("message").asText().contains("two"), missing.toString());
+                assertEquals(1, server.windows().size(), missing.toString());
+
+                session.refresh().newWindow("two");
+                Result complete =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
+                assertEquals(0, complete.code(), complete.toString());
+                assertEquals(
+                        "ok",
+                        new ObjectMapper()
+                                .readTree(complete.out())
+                                .path("status")
+                                .asText(),
+                        complete.toString());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /** An append that fails partway keeps what it added, and the failure says which windows those are. */
+    @Test
+    void aFailedAppendNamesTheWindowsItKeeps() throws Exception {
+        Path source = directory.resolve("append-kept.yaml");
+        Path socket = directory.resolve("append-kept-socket");
+        Files.writeString(source, """
+                session_name: ignored
+                windows:
+                  - window_name: kept
+                    panes: [null]
+                  - window_name: broken
+                    options:
+                      not-a-tmux-option: invalid
+                    panes: [null]
+                """);
+        try (Server server = server(socket)) {
+            try {
+                server.newSession("borrowed");
+                Result failed = invoke(
+                        inherited(server, socket),
+                        "load",
+                        source.toString(),
+                        "--append",
+                        "-S",
+                        socket.toString(),
+                        "--json");
+                assertEquals(1, failed.code(), failed.toString());
+                var document = new ObjectMapper().readTree(failed.out());
+                assertEquals("partial", document.path("status").asText(), failed.toString());
+                String message = document.path("errors").path(0).path("message").asText();
+                assertTrue(message.contains("windows kept:"), failed.toString());
+                assertTrue(message.contains("kept"), failed.toString());
+                assertTrue(
+                        server.windows().stream()
+                                .anyMatch(window -> window.name().equals("kept")),
+                        failed.toString());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** Human mode says which a load did, one session at a time, not "1 workspaces" either way. */
     @Test
     void humanLoadSummaryDistinguishesCreatedFromReused() throws Exception {
