@@ -40,14 +40,20 @@ final class Children {
     private record Capture(String text, boolean truncated) {}
 
     static String executable(Main.Context context, String name) {
+        return lookup(context, name).orElseThrow(() -> new Main.Missing("executable is not on PATH: " + name));
+    }
+
+    /** The same lookup for a program whose absence is not itself a failure. */
+    static Optional<String> lookup(Main.Context context, String name) {
         if (name.contains("/"))
-            return context.directory().resolve(name).normalize().toString();
+            return Optional.of(context.directory().resolve(name).normalize().toString());
         for (String directory : context.environment().getOrDefault("PATH", "").split(":", -1)) {
             if (directory.isEmpty()) continue;
             Path candidate = context.directory().resolve(directory).resolve(name);
-            if (Files.isExecutable(candidate) && !Files.isDirectory(candidate)) return candidate.toString();
+            if (Files.isExecutable(candidate) && !Files.isDirectory(candidate))
+                return Optional.of(candidate.toString());
         }
-        throw new Main.Missing("executable is not on PATH: " + name);
+        return Optional.empty();
     }
 
     static Output run(Main.Context context, List<String> argv, Path directory, Reporter report, Duration timeout)
@@ -82,7 +88,13 @@ final class Children {
             throws IOException, InterruptedException {
         var command = new ArrayList<>(argv);
         command.set(0, executable(context, command.getFirst()));
-        boolean grouped = Files.isDirectory(Path.of("/proc/self")) && Files.isExecutable(Path.of("/usr/bin/setsid"));
+        // Containment needs all three: the process table to read, setsid to make the group, and ps
+        // to ask what is left in it. Without any one of them the group is not made, so a child that
+        // exits cleanly is not failed over a check that could not run.
+        Optional<String> lister = lookup(context, "ps");
+        boolean grouped = Files.isDirectory(Path.of("/proc/self"))
+                && Files.isExecutable(Path.of("/usr/bin/setsid"))
+                && lister.isPresent();
         if (grouped) command.addFirst("/usr/bin/setsid");
         ProcessBuilder builder = new ProcessBuilder(command).directory(directory.toFile());
         builder.environment().clear();
@@ -109,7 +121,7 @@ final class Children {
             }
             Capture out = result(stdout);
             Capture err = result(stderr);
-            if (grouped && hasCapturedDescendant(child.pid())) {
+            if (grouped && hasCapturedDescendant(lister.orElseThrow(), child.pid())) {
                 throw new Main.Failure(
                         Machine.Code.SCRIPT_FAILED, 1, "child left a process using captured output streams");
             }
@@ -117,7 +129,7 @@ final class Children {
             return new Output(child.exitValue(), out.text(), err.text(), out.truncated() || err.truncated());
         } finally {
             if (!success) {
-                if (grouped) terminateGroup(child.pid());
+                if (grouped) terminateGroup(context, child.pid());
                 descendants.forEach(ProcessHandle::destroyForcibly);
                 child.descendants().forEach(ProcessHandle::destroyForcibly);
                 child.destroyForcibly();
@@ -126,8 +138,8 @@ final class Children {
         }
     }
 
-    static boolean hasCapturedDescendant(long group) throws IOException, InterruptedException {
-        Process list = new ProcessBuilder("/bin/ps", "-o", "pid=", "--sid", Long.toString(group)).start();
+    static boolean hasCapturedDescendant(String lister, long group) throws IOException, InterruptedException {
+        Process list = new ProcessBuilder(lister, "-o", "pid=", "--sid", Long.toString(group)).start();
         try {
             if (!list.waitFor(1, TimeUnit.SECONDS)) throw new IOException("owned process lookup timed out");
             String pids = new String(list.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -161,10 +173,12 @@ final class Children {
         }
     }
 
-    private static void terminateGroup(long group) {
+    private static void terminateGroup(Main.Context context, long group) {
+        Optional<String> killer = lookup(context, "kill");
+        if (killer.isEmpty()) return;
         boolean interrupted = Thread.interrupted();
         try {
-            Process kill = new ProcessBuilder("/bin/kill", "-KILL", "--", "-" + group)
+            Process kill = new ProcessBuilder(killer.orElseThrow(), "-KILL", "--", "-" + group)
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .redirectError(ProcessBuilder.Redirect.DISCARD)
                     .start();
@@ -367,6 +381,18 @@ final class Children {
     }
 
     /**
+     * The shell snippet that reports one descriptor's size in terminal cells.
+     *
+     * <p>Empty when {@code stty} is not installed, which is not a failure: a size nobody could
+     * measure is a size the caller does without.
+     */
+    static Optional<String> sizeScript(Main.Context context, int descriptor, String destination) {
+        return lookup(context, "stty")
+                .map(measure -> "test -t " + descriptor + " || exit 1; " + measure + " size <&" + descriptor + " "
+                        + destination);
+    }
+
+    /**
      * The real process's stdout size in terminal cells, or empty when it is not a terminal.
      *
      * <p>Gated on {@link Main.Context#processError()} like {@link LoadProgress}: a test's redirected
@@ -374,7 +400,10 @@ final class Children {
      */
     static Optional<Dimensions> stdoutSize(Main.Context context) throws IOException, InterruptedException {
         if (!context.processError()) return Optional.empty();
-        var builder = new ProcessBuilder("/bin/sh", "-c", "test -t 1 || exit 1; /bin/stty size <&1 >&2")
+        Optional<String> script = sizeScript(context, 1, ">&2");
+        Optional<String> shell = lookup(context, "sh");
+        if (script.isEmpty() || shell.isEmpty()) return Optional.empty();
+        var builder = new ProcessBuilder(shell.orElseThrow(), "-c", script.orElseThrow())
                 .redirectOutput(ProcessBuilder.Redirect.INHERIT);
         builder.environment().clear();
         builder.environment().putAll(context.environment());
