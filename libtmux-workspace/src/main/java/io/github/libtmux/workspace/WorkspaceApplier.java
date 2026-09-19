@@ -52,6 +52,9 @@ final class WorkspaceApplier {
 
     private static void cleanupStaging(Server server, String staging, Throwable failure) {
         try {
+            // By name, not server.killSession: a lost new-session reply leaves no id to resolve, so
+            // the generated name is the only handle. Safe as an exact match here specifically because
+            // staging is always "libtmux-ws-" plus a UUID, which never holds ':' or '.'.
             CommandResult cleanup = server.cmd("kill-session", "-t", "=" + staging);
             if (!cleanup.succeeded() && cleanup.stderr().stream().noneMatch(WorkspaceApplier::alreadyAbsent)) {
                 failure.addSuppressed(new LibTmuxException(
