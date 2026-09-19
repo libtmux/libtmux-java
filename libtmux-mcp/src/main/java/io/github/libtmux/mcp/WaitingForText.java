@@ -64,14 +64,7 @@ final class WaitingForText {
         List<TextPatterns.Matcher> stops = all.subList(wantedSources.size(), all.size());
 
         int budget = Trim.lineBudget(call);
-        // A pane a caller just typed into can echo that text back before this wait even starts
-        // watching; matching it there would report the caller's own input as the pane's answer
-        // Excluded up front, from both matching and the lines a caller sees, using only what
-        // this process itself just sent - nothing about a screen capture says "this line is an
-        // echo" on its own.
-        // Read once, here. What a pane is holding ages out, so asking again on every look would
-        // stop discounting the echo partway through a wait — and a command worth waiting for is
-        // exactly one that outlives the record.
+        // Refresh pending input after each capture, while retaining submitted echoes this wait saw.
         TypedText typed = TypedText.in(pane);
         long started = System.nanoTime();
 
@@ -84,10 +77,11 @@ final class WaitingForText {
             // printed is on screen whether it arrived a second ago or an hour ago, and a wait that
             // only looks forward from this instant would never see it, timing out with empty output
             // even while capture_pane shows the very thing it was asked for.
-            Screen.Fresh entry = Screen.completeOnly(pane);
+            Screen.Fresh entry = Screen.completeOnly(pane, typed);
             cursor = entry.cursor();
-            List<String> entryLines = typed.withoutEcho(entry.lines());
-            Waited early = presentAtEntry(pane, timeout, wanted, stops, budget, entryLines, cursor, started);
+            List<String> entryLines = entry.searchable();
+            Waited early =
+                    presentAtEntry(pane, timeout, wanted, stops, budget, entryLines, entry.lines(), cursor, started);
             if (early != null) {
                 return early;
             }
@@ -100,21 +94,21 @@ final class WaitingForText {
         String hitLine = null;
 
         while (true) {
-            Screen.Fresh fresh = Screen.since(pane, cursor, budget);
+            Screen.Fresh fresh = Screen.since(pane, cursor, budget, typed);
             cursor = fresh.cursor();
-            List<String> freshLines = typed.withoutEcho(fresh.lines());
+            List<String> freshLines = fresh.searchable();
             retained = Trim.append(retained, freshLines, budget);
 
             // Failure first: a build that has already printed "error:" is not going to print
             // "Listening on", and the wait that notices is the one that returns in seconds.
-            Found stopped = find(stops, freshLines);
+            Found stopped = find(stops, freshLines, fresh.lines());
             if (stopped != null) {
                 outcome = "STOPPED";
                 hit = stopped.matcher();
                 hitLine = stopped.line();
                 break;
             }
-            Found found = find(wanted, freshLines);
+            Found found = find(wanted, freshLines, fresh.lines());
             if (found != null) {
                 outcome = "MATCHED";
                 hit = found.matcher();
@@ -123,7 +117,7 @@ final class WaitingForText {
             }
             if (wanted.isEmpty() && !freshLines.isEmpty()) {
                 outcome = "MATCHED";
-                hitLine = freshLines.get(freshLines.size() - 1);
+                hitLine = fresh.lines().get(freshLines.size() - 1);
                 break;
             }
             if (System.nanoTime() >= deadline) {
@@ -197,10 +191,11 @@ final class WaitingForText {
             List<TextPatterns.Matcher> stops,
             int budget,
             List<String> entryLines,
+            List<String> originals,
             Cursor cursor,
             long started) {
-        Found stopped = find(stops, entryLines);
-        Found found = find(wanted, entryLines);
+        Found stopped = find(stops, entryLines, originals);
+        Found found = find(wanted, entryLines, originals);
         Found hitFound = stopped != null ? stopped : found;
         if (hitFound == null) {
             return null;
@@ -232,15 +227,17 @@ final class WaitingForText {
 
     private record Found(TextPatterns.Matcher matcher, String line) {}
 
-    private static @Nullable Found find(List<TextPatterns.Matcher> matchers, List<String> lines) {
-        for (String line : lines) {
+    private static @Nullable Found find(
+            List<TextPatterns.Matcher> matchers, List<String> lines, List<String> originals) {
+        for (int index = 0; index < lines.size(); index++) {
+            String line = lines.get(index);
             for (TextPatterns.Matcher matcher : matchers) {
                 if (matcher.matches(line)) {
-                    return new Found(matcher, line);
+                    return new Found(matcher, originals.get(index));
                 }
             }
         }
-        return findAcrossWrappedRows(matchers, lines);
+        return findAcrossWrappedRows(matchers, lines, originals);
     }
 
     /**
@@ -253,7 +250,8 @@ final class WaitingForText {
      * capture-pane -J} because the cursor this wait hands back counts rows as tmux reports them, and
      * a capture with fewer rows than tmux counted no longer lines up with it.
      */
-    private static @Nullable Found findAcrossWrappedRows(List<TextPatterns.Matcher> matchers, List<String> lines) {
+    private static @Nullable Found findAcrossWrappedRows(
+            List<TextPatterns.Matcher> matchers, List<String> lines, List<String> originals) {
         if (lines.size() < 2) {
             return null;
         }
@@ -264,7 +262,7 @@ final class WaitingForText {
         String text = joined.toString();
         for (TextPatterns.Matcher matcher : matchers) {
             if (matcher.matches(text)) {
-                return new Found(matcher, text);
+                return new Found(matcher, String.join("", originals));
             }
         }
         return null;

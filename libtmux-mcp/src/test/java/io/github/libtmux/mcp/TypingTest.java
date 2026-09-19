@@ -8,10 +8,12 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.libtmux.LibTmuxException;
+import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.SplitSpec;
 import io.github.libtmux.TmuxVersion;
+import io.github.libtmux.TypedText;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
@@ -39,6 +41,95 @@ import org.junit.jupiter.params.provider.ValueSource;
 final class TypingTest {
 
     private static final TmuxVersion SAFE_PASTE_CLEANUP = new TmuxVersion(3, 4, "");
+
+    /**
+     * The defect this pins: recording an echo after the tmux dispatch it describes left a window
+     * where a concurrent wait could read the pane's new content before anything existed to discount
+     * it. Intercepting the very {@code send-keys} request this call makes and checking the record at
+     * that instant - not by racing a real wait against real timing - pins the ordering directly.
+     */
+    @Test
+    void keysAreRecordedBeforeDispatchSoAWaitCannotSeeThemUnrecorded(Server server) throws Exception {
+        String pane = server.panes().getFirst().id().value();
+        List<Boolean> alreadyDiscounted = new ArrayList<>();
+        Pane[] targetHolder = new Pane[1];
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport observing = borrowing(request -> {
+                if (hasCommand(request, "send-keys")) {
+                    List<String> masked = TypedText.in(targetHolder[0]).withoutEcho(List.of("ordering-marker"));
+                    alreadyDiscounted.add(masked.equals(List.of("")));
+                }
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), observing)) {
+                targetHolder[0] = measured.panes().getFirst();
+                Typing.sendKeys(
+                        TestCalls.on(measured, "pane_id", pane, "keys", List.of("ordering-marker"), "literal", true));
+            }
+        }
+
+        assertEquals(List.of(true), alreadyDiscounted, "the record must exist before the dispatch it was made for");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void synchronizedRecipientsAreRecordedBeforeDispatch(boolean literal, Server server) {
+        Pane source = server.panes().getFirst();
+        source.split(SplitSpec.builder().build());
+        source.window().synchronizePanes();
+        List<List<Boolean>> discounted = new ArrayList<>();
+        List<Pane> targets = new ArrayList<>();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport observing = borrowing(request -> {
+                if (hasCommand(request, "send-keys")) {
+                    discounted.add(targets.stream()
+                            .map(pane -> TypedText.in(pane)
+                                    .withoutEcho(List.of("cohort-marker"))
+                                    .equals(List.of("")))
+                            .toList());
+                }
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), observing)) {
+                targets.addAll(measured.panes());
+                Typing.sendKeys(TestCalls.on(
+                        measured,
+                        "pane_id",
+                        source.id().value(),
+                        "keys",
+                        List.of("cohort-marker"),
+                        "literal",
+                        literal,
+                        "enter",
+                        true));
+            }
+        }
+        assertEquals(List.of(List.of(true, true), List.of(true, true)), discounted);
+    }
+
+    /** A dispatch that never reaches tmux must not leave anything behind to discount later output. */
+    @Test
+    void aDispatchFailureDuringSendKeysRollsBackTheRecordedEcho(Server server) {
+        String pane = server.panes().getFirst().id().value();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport refusing = borrowing(request -> {
+                if (hasCommand(request, "send-keys")) {
+                    throw new IllegalStateException("synthetic send-keys failure");
+                }
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), refusing)) {
+                Pane target = measured.panes().getFirst();
+
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> Typing.sendKeys(TestCalls.on(
+                                measured, "pane_id", pane, "keys", List.of("rolled-back-marker"), "literal", true)));
+
+                assertTrue(TypedText.in(target).isEmpty(), "a failed dispatch must not leave anything discounted");
+            }
+        }
+    }
 
     @Test
     void keysAreSentByNameSoAnInterruptInterrupts(Server server) {
@@ -881,7 +972,7 @@ final class TypingTest {
         assertNoOwnedBuffers(server);
     }
 
-    private static String captureOf(Server server, String pane) {
+    static String captureOf(Server server, String pane) {
         return String.join("\n", server.cmd("capture-pane", "-p", "-t", pane).stdout());
     }
 
@@ -922,7 +1013,7 @@ final class TypingTest {
                 .noneMatch(buffer -> buffer.name().startsWith("libtmux-paste-")));
     }
 
-    private static TmuxTransport borrowing(java.util.function.Function<CommandRequest, CommandResult> execute) {
+    static TmuxTransport borrowing(java.util.function.Function<CommandRequest, CommandResult> execute) {
         return new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
@@ -934,7 +1025,7 @@ final class TypingTest {
         };
     }
 
-    private static boolean hasCommand(CommandRequest request, String command) {
+    static boolean hasCommand(CommandRequest request, String command) {
         return request.commands().stream()
                 .anyMatch(argv ->
                         argv.getFirst().equals(command) || argv.stream().anyMatch(part -> part.contains(command)));
@@ -954,7 +1045,7 @@ final class TypingTest {
                 .toList();
     }
 
-    private static void await(CountDownLatch latch) {
+    static void await(CountDownLatch latch) {
         try {
             if (!latch.await(5, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("timed out arranging concurrent input");
@@ -965,7 +1056,7 @@ final class TypingTest {
         }
     }
 
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
+    static boolean await(BooleanSupplier condition) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
         while (System.nanoTime() < deadline) {
             if (condition.getAsBoolean()) {

@@ -6,7 +6,9 @@ import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
+import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTimeoutException;
+import io.github.libtmux.transport.TmuxTransportException;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -325,15 +327,15 @@ public final class Pane {
 
     /**
      * Notes text that reached this pane without going through this handle, so a wait discounts its
-     * echo the way it discounts text sent through {@link #sendLine}.
+     * echo the way it discounts text sent through {@link #sendLiteral}.
      *
-     * <p>What this is for is tmux's {@code synchronize-panes}: typing into one pane types into every
-     * pane in its window, and this library sees only the pane it addressed. Whoever turned that on
-     * knows which panes are involved and this does not, so it is told rather than detected.
+     * <p>Use this for input delivered outside this handle. Input sent through {@link #sendKeys}
+     * or {@link #sendLiteral} already records synchronized recipients. Include a trailing line break
+     * when the external write submitted its line; otherwise the text remains pending.
      */
     public void noteTyped(String text) {
         Objects.requireNonNull(text, "text");
-        server.echo().record(state.id(), text);
+        server.echo().recordLiteral(identity(), state.id(), text).confirm();
     }
 
     /**
@@ -385,9 +387,6 @@ public final class Pane {
      */
     public TextOutcome awaitText(String text, Duration timeout, Duration every) throws InterruptedException {
         Objects.requireNonNull(text, "text");
-        // Read once, here, rather than on every look. The record ages out, and a wait that re-read it
-        // would stop discounting the echo partway through — so a command slower than that age answered
-        // its own wait, which is exactly the wait that needed to be right.
         TypedText typed = TypedText.in(this);
         boolean[] reading = {true, false};
         WakeReason ended = awaitCondition(
@@ -609,34 +608,85 @@ public final class Pane {
      *
      * <p>Separate from {@link #sendLine} rather than a boolean, so a call site says which it means.
      *
-     * <p>Recorded as an echo, because tmux types anything here that is not one of its key names and a
-     * terminal echoes what is typed. A key name costs nothing to record: {@code Enter} presses a key
-     * rather than typing five characters, so it is not on screen for a wait to discount.
+     * <p>Recorded as an echo before dispatch, through the same key model {@link #sendKeys} uses,
+     * because tmux types anything here that is not one of its key names and a terminal echoes what
+     * is typed.
      */
     public void send(String keys) {
-        server.run(snapshot, List.of("send-keys", "-t", state.id().value(), "--", keys));
-        server.echo().record(state.id(), keys);
+        sendKeys(List.of(keys));
     }
 
     /**
      * Sends an ordered group of key names to this pane, as tmux resolves them.
      *
-     * <p>Each entry is a key name, so {@code C-c} interrupts rather than typing three characters.
-     * {@link #sendLiteral} is the other reading of the same list; they are separate methods for the
-     * reason {@link #send} and {@link #sendLine} are.
+     * <p>Each entry is resolved through tmux's key table; an unknown name is typed as text.
+     * Recorded input includes effective synchronized recipients. Known dispatch failures undo the
+     * record; uncertain delivery retains it. {@link #sendLiteral} types every entry literally.
      */
     public void sendKeys(List<String> keys) {
-        server.run(snapshot, sendKeysArgv(keys, false));
+        sendKeys(keys, () -> {});
+    }
+
+    /**
+     * As {@link #sendKeys(List)}, after a caller validates the prepared input destination.
+     *
+     * <p>The callback runs after recipient discovery and immediately before recording and dispatch.
+     * If it throws, no keys are sent and no echo is recorded.
+     *
+     * @param beforeSend validates current input ownership
+     */
+    public void sendKeys(List<String> keys, Runnable beforeSend) {
+        Objects.requireNonNull(beforeSend, "beforeSend");
+        List<String> argv = sendKeysArgv(keys, false);
+        List<PaneId> recipients = keyRecipients();
+        beforeSend.run();
+        List<PaneEcho.Recorded> recorded = recipients.stream()
+                .map(id -> server.echo().recordKeys(identity(), id, keys))
+                .toList();
+        try {
+            server.run(snapshot, argv);
+        } catch (RuntimeException failure) {
+            recorded.forEach(record -> settleFailure(record, failure));
+            throw failure;
+        }
+        recorded.forEach(PaneEcho.Recorded::confirm);
     }
 
     /**
      * Sends an ordered group of strings to this pane as the characters they spell.
      *
-     * <p>Nothing is resolved as a key name, so {@code C-c} types those three characters.
+     * <p>Nothing is resolved as a key name, so {@code C-c} types those three characters. Recorded
+     * before dispatch, with a line break in the joined text treated as tmux treats it: a submit the
+     * instant it reaches the pane, whether or not the caller also presses Enter afterward.
      */
     public void sendLiteral(List<String> keys) {
-        server.run(snapshot, sendKeysArgv(keys, true));
-        server.echo().record(state.id(), String.join("", keys));
+        sendLiteral(keys, () -> {});
+    }
+
+    /**
+     * As {@link #sendLiteral(List)}, after a caller validates the prepared input destination.
+     *
+     * <p>The callback runs after recipient discovery and immediately before recording and dispatch.
+     * If it throws, no keys are sent and no echo is recorded.
+     *
+     * @param beforeSend validates current input ownership
+     */
+    public void sendLiteral(List<String> keys, Runnable beforeSend) {
+        Objects.requireNonNull(beforeSend, "beforeSend");
+        List<String> argv = sendKeysArgv(keys, true);
+        String joined = String.join("", keys);
+        List<PaneId> recipients = keyRecipients();
+        beforeSend.run();
+        List<PaneEcho.Recorded> recorded = recipients.stream()
+                .map(id -> server.echo().recordLiteral(identity(), id, joined))
+                .toList();
+        try {
+            server.run(snapshot, argv);
+        } catch (RuntimeException failure) {
+            recorded.forEach(record -> settleFailure(record, failure));
+            throw failure;
+        }
+        recorded.forEach(PaneEcho.Recorded::confirm);
     }
 
     private List<String> sendKeysArgv(List<String> keys, boolean literal) {
@@ -656,8 +706,48 @@ public final class Pane {
     /** Sends a line to this pane and presses Enter, which is how a command gets run. */
     public void sendLine(String command) {
         Objects.requireNonNull(command, "command");
-        server.run(snapshot, List.of("send-keys", "-l", "-t", state.id().value(), "--", command + "\r"));
-        server.echo().record(state.id(), command);
+        sendLiteral(List.of(command + "\r"));
+    }
+
+    private List<PaneId> keyRecipients() {
+        if (!"1".equals(expand("#{pane_synchronized}"))) {
+            return List.of(state.id());
+        }
+        RowFormat format = RowFormat.of(
+                "pane_id",
+                "pane_synchronized",
+                "pane_in_mode",
+                "pane_dead",
+                "pane_input_off",
+                "window_zoomed_flag",
+                "pane_active");
+        List<String> rows = server.run(
+                        snapshot, List.of("list-panes", "-t", state.id().value(), "-F", format.template()))
+                .stdout();
+        return format.rows(rows).stream()
+                .filter(row -> row.text("pane_id").equals(state.id().value())
+                        || (row.flag("pane_synchronized")
+                                && !row.flag("pane_in_mode")
+                                && !row.flag("pane_dead")
+                                && !row.flag("pane_input_off")
+                                && (!row.flag("window_zoomed_flag") || row.flag("pane_active"))))
+                .map(row -> new PaneId(row.text("pane_id")))
+                .sorted(java.util.Comparator.comparing(PaneId::value))
+                .toList();
+    }
+
+    private static void settleFailure(PaneEcho.Recorded recorded, RuntimeException failure) {
+        if (failure instanceof TmuxTransportException transportFailure
+                && transportFailure.outcome() != DispatchOutcome.NOT_DISPATCHED) {
+            recorded.confirm();
+        } else {
+            recorded.rollback();
+        }
+    }
+
+    /** Which server incarnation this pane's echo record belongs to. */
+    private ServerIdentity identity() {
+        return server.identity(snapshot);
     }
 
     /**
@@ -905,6 +995,10 @@ public final class Pane {
             throw new UnsupportedTmuxVersionException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
         }
         String buffer = "libtmux-paste-" + UUID.randomUUID();
+        // Recorded before dispatch: a wait already watching this pane must never see the pasted
+        // content on screen before the record that discounts it exists. Rolled back below if the
+        // paste never lands.
+        PaneEcho.Recorded recorded = server.echo().recordLiteral(identity(), state.id(), text);
         try {
             server.runTogether(
                     snapshot,
@@ -920,8 +1014,8 @@ public final class Pane {
                                     buffer,
                                     "-t",
                                     state.id().value())));
-            server.echo().record(state.id(), text);
         } catch (RuntimeException failure) {
+            settleFailure(recorded, failure);
             try {
                 server.buffers().delete(buffer);
             } catch (RuntimeException ignored) {
@@ -929,6 +1023,7 @@ public final class Pane {
             }
             throw failure;
         }
+        recorded.confirm();
     }
 
     /**
@@ -952,10 +1047,22 @@ public final class Pane {
         try {
             server.runTogether(snapshot, text, List.of(List.of("load-buffer", "-b", buffer, "-")));
             beforePaste.run();
-            server.run(
-                    snapshot,
-                    List.of("paste-buffer", "-d", "-b", buffer, "-t", state.id().value()));
-            server.echo().record(state.id(), text);
+            PaneEcho.Recorded recorded = server.echo().recordLiteral(identity(), state.id(), text);
+            try {
+                server.run(
+                        snapshot,
+                        List.of(
+                                "paste-buffer",
+                                "-d",
+                                "-b",
+                                buffer,
+                                "-t",
+                                state.id().value()));
+            } catch (RuntimeException failure) {
+                settleFailure(recorded, failure);
+                throw failure;
+            }
+            recorded.confirm();
         } catch (RuntimeException failure) {
             try {
                 server.buffers().delete(buffer);
@@ -992,6 +1099,7 @@ public final class Pane {
     /** Closes this pane. */
     public void kill() {
         server.run(snapshot, List.of("kill-pane", "-t", state.id().value()));
+        server.echo().forget(identity(), state.id());
     }
 
     /**

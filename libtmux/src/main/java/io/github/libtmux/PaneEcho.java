@@ -3,41 +3,242 @@ package io.github.libtmux;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.LongSupplier;
+import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 
-/**
- * What this library last typed into each pane, so a wait can tell the pane's answer from its own
- * question.
- *
- * <p>A terminal echoes what is typed at it. A caller that sends a command and then waits for
- * something the command's own text contains — {@code sendLine("./build --target release")} followed
- * by a wait for {@code release} — would otherwise be answered by the echo, immediately, before the
- * command has done anything. No capture can recognise an echo on its own: the only party that knows
- * what was typed is whoever typed it, which is why this is recorded rather than detected.
- *
- * <p>Several texts are kept per pane, not one. A caller that types a command and then presses Enter
- * makes two calls, and remembering only the latest would forget the command and leave the echo
- * matchable again.
- *
- * <p>Held per server rather than globally, and briefly: a wait started long after the typing is
- * watching for something else by then. {@link TypedText} is how a watcher reads this — once, when it
- * starts — and why reading it once is the whole point.
- */
+/** Tracks pending and recently submitted input under each server incarnation and pane id. */
 final class PaneEcho {
 
-    /**
-     * Long enough to cover the gap between typing and a wait starting, short enough that a pane
-     * reused for something else is not still suppressing text that only looks like an old echo.
-     */
-    private static final Duration TTL = Duration.ofSeconds(10);
+    private static final Duration RECENT_TTL = Duration.ofSeconds(10);
 
-    /** A command and the keys that submit it, with room to spare; the oldest is dropped. */
-    private static final int KEPT_PER_PANE = 4;
+    private static final Duration ABANDONED_AFTER = Duration.ofHours(1);
 
-    private final Map<PaneId, List<Entry>> recent = new ConcurrentHashMap<>();
+    private static final int KEPT_PER_PANE = 32;
+
+    private static final int MAX_PENDING_CHARS = 4_096;
+
+    private record Key(ServerIdentity identity, PaneId pane) {}
+
+    private record Entry(String text, long recordedAtNanos) {}
+
+    private record PaneEchoState(
+            List<String> pendingLines,
+            boolean pendingCaptured,
+            boolean trackable,
+            List<Entry> recent,
+            long lastTouchedNanos,
+            ReentrantLock dispatch) {
+        static PaneEchoState fresh(long now) {
+            return new PaneEchoState(List.of(), false, true, List.of(), now, new ReentrantLock());
+        }
+    }
+
+    private static String currentLine(PaneEchoState state) {
+        List<String> lines = state.pendingLines();
+        return lines.isEmpty() ? "" : lines.get(lines.size() - 1);
+    }
+
+    record Live(List<String> pending, List<String> recent) {
+        static final Live NONE = new Live(List.of(), List.of());
+    }
+
+    private record Plan(PaneEchoState eager, PaneEchoState confirmed) {}
+
+    private static final List<String> SUBMIT_KEYS = List.of("C-m", "Enter", "KPEnter");
+    private static final List<String> KILL_KEYS = List.of("C-c", "C-u");
+    private static final List<String> ERASE_KEYS = List.of("BSpace", "C-h");
+    private static final List<String> NOOP_KEYS = List.of("DC");
+
+    private static final Pattern UNHANDLED_KEY_NAME = Pattern.compile(
+            "^(?:BTab|Down|End|Escape|F(?:[1-9]|1[0-2])|Home|IC|Left|NPage|PPage|PageDown|PageUp" + "|Right|Tab|Up)$");
+
+    private static final Pattern CONTROL_OR_META_COMBO = Pattern.compile("^(?:C|M|S)(?:-(?:C|M|S))*-.");
+
+    private enum Kind {
+        SUBMIT,
+        KILL,
+        ERASE,
+        NOOP,
+        UNKNOWN,
+        TEXT
+    }
+
+    private record KeyEffect(Kind kind, String text) {
+        static final KeyEffect SUBMIT = new KeyEffect(Kind.SUBMIT, "");
+        static final KeyEffect KILL = new KeyEffect(Kind.KILL, "");
+        static final KeyEffect ERASE = new KeyEffect(Kind.ERASE, "");
+        static final KeyEffect NOOP = new KeyEffect(Kind.NOOP, "");
+        static final KeyEffect UNKNOWN = new KeyEffect(Kind.UNKNOWN, "");
+
+        static KeyEffect text(String text) {
+            return new KeyEffect(Kind.TEXT, text);
+        }
+    }
+
+    private static KeyEffect classifyKey(String key) {
+        if (SUBMIT_KEYS.contains(key)) {
+            return KeyEffect.SUBMIT;
+        }
+        if (KILL_KEYS.contains(key)) {
+            return KeyEffect.KILL;
+        }
+        if (ERASE_KEYS.contains(key)) {
+            return KeyEffect.ERASE;
+        }
+        if (NOOP_KEYS.contains(key)) {
+            return KeyEffect.NOOP;
+        }
+        if (key.equals("Space")) {
+            return KeyEffect.text(" ");
+        }
+        if (key.codePointCount(0, key.length()) == 1) {
+            return KeyEffect.text(key);
+        }
+        if (UNHANDLED_KEY_NAME.matcher(key).matches()
+                || CONTROL_OR_META_COMBO.matcher(key).find()) {
+            return KeyEffect.UNKNOWN;
+        }
+        return KeyEffect.text(key);
+    }
+
+    private static String dropLastCodePoint(String text) {
+        if (text.isEmpty()) {
+            return text;
+        }
+        int cut = text.offsetByCodePoints(text.length(), -1);
+        return text.substring(0, cut);
+    }
+
+    private static List<Entry> pushRecent(List<Entry> recent, String text, long now) {
+        if (text.isEmpty() || text.length() > MAX_PENDING_CHARS) {
+            return recent;
+        }
+        List<Entry> kept = new ArrayList<>(recent);
+
+        if (!kept.isEmpty() && kept.get(kept.size() - 1).text().equals(text)) {
+            kept.set(kept.size() - 1, new Entry(text, now));
+        } else {
+            kept.add(new Entry(text, now));
+        }
+        return List.copyOf(kept.subList(Math.max(0, kept.size() - KEPT_PER_PANE), kept.size()));
+    }
+
+    private static Plan planKeys(PaneEchoState current, List<String> keys, long now) {
+        List<KeyEffect> effects = new ArrayList<>();
+        for (String key : keys) {
+            KeyEffect effect = classifyKey(key);
+            if (effect.kind() == Kind.TEXT) {
+                effects.addAll(literalEffects(effect.text()));
+            } else {
+                effects.add(effect);
+            }
+        }
+        return planEffects(current, effects, now);
+    }
+
+    private static Plan planEffects(PaneEchoState current, List<KeyEffect> effects, long now) {
+        String line = currentLine(current);
+        boolean captured = current.pendingCaptured();
+        boolean trackable = current.trackable();
+        List<Entry> recent = current.recent();
+        List<String> settling = new ArrayList<>();
+        for (KeyEffect effect : effects) {
+            switch (effect.kind()) {
+                case TEXT -> {
+                    String grown = trackable ? line + effect.text() : "";
+                    trackable &= grown.length() <= MAX_PENDING_CHARS;
+
+                    line = grown.length() > MAX_PENDING_CHARS ? "" : grown;
+                    captured = false;
+                }
+                case NOOP -> {}
+                case UNKNOWN -> {
+                    trackable = false;
+
+                    line = "";
+                    captured = false;
+                }
+                case ERASE -> {
+                    // Shell redraws can leave the pre-erase text visible; retain it once per edit run.
+
+                    if (!captured) {
+                        if (!line.isEmpty()) {
+                            settling.add(line);
+                        }
+                        recent = pushRecent(recent, line, now);
+                    }
+                    captured = true;
+
+                    line = dropLastCodePoint(line);
+                }
+                case SUBMIT, KILL -> {
+                    trackable = true;
+                    if (!line.isEmpty()) {
+                        settling.add(line);
+                    }
+                    recent = pushRecent(recent, line, now);
+                    line = "";
+                    captured = false;
+                }
+            }
+        }
+        PaneEchoState confirmed = new PaneEchoState(
+                line.isEmpty() ? List.of() : List.of(line), captured, trackable, recent, now, current.dispatch());
+        if (settling.isEmpty()) {
+            return new Plan(confirmed, confirmed);
+        }
+        List<String> eagerLines =
+                new ArrayList<>(settling.subList(Math.max(0, settling.size() - KEPT_PER_PANE), settling.size()));
+        if (!line.isEmpty()) {
+            eagerLines.add(line);
+        }
+        PaneEchoState eager = new PaneEchoState(
+                List.copyOf(eagerLines),
+                current.pendingCaptured(),
+                trackable,
+                current.recent(),
+                now,
+                current.dispatch());
+        return new Plan(eager, confirmed);
+    }
+
+    private static Plan planLiteral(PaneEchoState current, String text, long now) {
+        return text.isEmpty() ? new Plan(current, current) : planEffects(current, literalEffects(text), now);
+    }
+
+    private static List<KeyEffect> literalEffects(String text) {
+        List<KeyEffect> effects = new ArrayList<>();
+        int from = 0;
+        for (int at = 0; at < text.length(); at++) {
+            char character = text.charAt(at);
+            KeyEffect effect =
+                    switch (character) {
+                        case '\r', '\n' -> KeyEffect.SUBMIT;
+                        case '\b', '\u007f' -> KeyEffect.ERASE;
+                        case '\u0003', '\u0015' -> KeyEffect.KILL;
+                        default -> Character.isISOControl(character) ? KeyEffect.UNKNOWN : null;
+                    };
+            if (effect != null) {
+                if (at > from) {
+                    effects.add(KeyEffect.text(text.substring(from, at)));
+                }
+                effects.add(effect);
+                from = at + 1;
+            }
+        }
+        if (from < text.length()) {
+            effects.add(KeyEffect.text(text.substring(from)));
+        }
+        return effects;
+    }
+
+    private final Map<Key, PaneEchoState> states = new ConcurrentHashMap<>();
 
     private final LongSupplier nanoTime;
 
@@ -45,85 +246,157 @@ final class PaneEcho {
         this(System::nanoTime);
     }
 
-    /** Takes its clock, so a gate can age a record out without waiting for it. */
     PaneEcho(LongSupplier nanoTime) {
         this.nanoTime = nanoTime;
     }
 
-    private record Entry(String text, long recordedAtNanos) {}
+    final class Recorded {
+        private final Key key;
+        private final @Nullable PaneEchoState before;
+        private final PaneEchoState eager;
+        private final PaneEchoState confirmed;
+        private boolean settled;
 
-    /** Records literal text just sent to a pane, keeping what that pane had. */
-    void record(PaneId pane, String text) {
-        if (text.isEmpty()) {
-            return;
+        private Recorded(Key key, @Nullable PaneEchoState before, PaneEchoState eager, PaneEchoState confirmed) {
+            this.key = key;
+            this.before = before;
+            this.eager = eager;
+            this.confirmed = confirmed;
         }
-        long now = nanoTime.getAsLong();
-        Entry entry = new Entry(text, now);
-        // Aged records go when anything is recorded, not only when their own pane is waited on: a
-        // long-lived server types into many panes it never waits on, and each would otherwise keep
-        // its last few lines here for as long as the server lives.
-        recent.values().removeIf(held -> held.stream().allMatch(old -> now - old.recordedAtNanos() > TTL.toNanos()));
-        recent.compute(pane, (id, held) -> {
-            List<Entry> kept = new ArrayList<>(held == null ? List.of() : held);
-            // The same text twice is one record, freshened: a second copy would change nothing but
-            // the age of what is kept, and would push an older, different echo out of the list.
-            if (!kept.isEmpty() && kept.get(kept.size() - 1).text().equals(text)) {
-                kept.set(kept.size() - 1, entry);
-            } else {
-                kept.add(entry);
+
+        // Only confirmed submissions enter a wait's persistent discount set.
+        void confirm() {
+            if (settled) {
+                return;
             }
-            return List.copyOf(kept.subList(Math.max(0, kept.size() - KEPT_PER_PANE), kept.size()));
+            settled = true;
+            try {
+                long now = nanoTime.getAsLong();
+                List<Entry> recent = confirmed.recent().stream()
+                        .map(entry -> entry.recordedAtNanos() == confirmed.lastTouchedNanos()
+                                ? new Entry(entry.text(), now)
+                                : entry)
+                        .toList();
+                states.replace(
+                        key,
+                        eager,
+                        new PaneEchoState(
+                                confirmed.pendingLines(),
+                                confirmed.pendingCaptured(),
+                                confirmed.trackable(),
+                                recent,
+                                now,
+                                confirmed.dispatch()));
+            } finally {
+                eager.dispatch().unlock();
+            }
+        }
+
+        // An older transaction must not overwrite a newer dispatch's state.
+        void rollback() {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            try {
+                if (before == null) {
+                    states.remove(key, eager);
+                } else {
+                    states.replace(key, eager, before);
+                }
+            } finally {
+                eager.dispatch().unlock();
+            }
+        }
+    }
+
+    private Recorded mutate(ServerIdentity identity, PaneId pane, PlannedMutation planner) {
+        long now = nanoTime.getAsLong();
+        sweep(now);
+        Key key = new Key(identity, pane);
+        while (true) {
+            PaneEchoState observed = states.computeIfAbsent(key, ignored -> PaneEchoState.fresh(now));
+            // Serialize dispatches to one pane without blocking captures or unrelated panes.
+            observed.dispatch().lock();
+            PaneEchoState current = states.get(key);
+            if (current == null || !current.dispatch().equals(observed.dispatch())) {
+                observed.dispatch().unlock();
+                continue;
+            }
+            try {
+                Plan plan = planner.plan(current, nanoTime.getAsLong());
+                states.put(key, plan.eager());
+                PaneEchoState before = current.trackable()
+                                && current.pendingLines().isEmpty()
+                                && current.recent().isEmpty()
+                        ? null
+                        : current;
+                return new Recorded(key, before, plan.eager(), plan.confirmed());
+            } catch (RuntimeException | Error failure) {
+                observed.dispatch().unlock();
+                throw failure;
+            }
+        }
+    }
+
+    private interface PlannedMutation {
+        Plan plan(PaneEchoState current, long now);
+    }
+
+    private void sweep(long now) {
+        states.forEach((key, state) -> {
+            boolean expired = now - state.lastTouchedNanos() > ABANDONED_AFTER.toNanos()
+                    || (state.trackable()
+                            && state.pendingLines().isEmpty()
+                            && state.recent().stream()
+                                    .allMatch(entry -> now - entry.recordedAtNanos() > RECENT_TTL.toNanos()));
+            if (expired && !state.dispatch().isLocked() && state.dispatch().tryLock()) {
+                try {
+                    if (!state.dispatch().hasQueuedThreads()) {
+                        states.remove(key, state);
+                    }
+                } finally {
+                    state.dispatch().unlock();
+                }
+            }
         });
     }
 
-    /** How many panes hold a record, for a gate on what is kept. */
-    int size() {
-        return recent.size();
+    Recorded recordLiteral(ServerIdentity identity, PaneId pane, String text) {
+        return mutate(identity, pane, (state, now) -> planLiteral(state, text, now));
     }
 
-    /** The texts this library typed into the pane that are young enough to still be on screen. */
-    List<String> recentFor(PaneId pane) {
-        List<Entry> held = recent.get(pane);
-        if (held == null) {
-            return List.of();
-        }
+    Recorded recordKeys(ServerIdentity identity, PaneId pane, List<String> keys) {
+        return mutate(identity, pane, (state, now) -> planKeys(state, keys, now));
+    }
+
+    int size() {
+        return states.size();
+    }
+
+    void forget(ServerIdentity identity, PaneId pane) {
+        states.remove(new Key(identity, pane));
+    }
+
+    Live liveFor(ServerIdentity identity, PaneId pane) {
         long now = nanoTime.getAsLong();
-        List<String> young = held.stream()
-                .filter(entry -> now - entry.recordedAtNanos() <= TTL.toNanos())
+        sweep(now);
+        PaneEchoState state = states.get(new Key(identity, pane));
+        if (state == null) {
+            return Live.NONE;
+        }
+        List<String> fresh = state.recent().stream()
+                .filter(entry -> now - entry.recordedAtNanos() <= RECENT_TTL.toNanos())
                 .map(Entry::text)
                 .toList();
-        if (young.isEmpty()) {
-            recent.remove(pane, held);
-        }
-        return young;
+        return new Live(state.pendingLines(), fresh);
     }
 
-    /**
-     * Removes each echo from the pane's lines, wherever it stands as a whole.
-     *
-     * <p>An occurrence is taken out only when it is not part of a longer word on either side. That is
-     * what tells the question from the answer when the answer merely contains the question: {@code id}
-     * comes off {@code $ id} and stays inside {@code uid=1000}, and {@code ls} comes off {@code $ ls}
-     * and stays inside {@code tools}.
-     *
-     * <p>Only a word boundary, and not "ends its line", because a shell draws its own things straight
-     * after what was typed: zsh puts {@code %} there, and a right-hand prompt follows it on the same
-     * row. A rule that insisted on the end of the line let those echoes through to answer the wait,
-     * which is the one failure this exists to prevent. The cost is that output which repeats the
-     * typed text as a word of its own loses that word — {@code make: ***} becomes {@code : ***} after
-     * typing {@code make} — and its answer, {@code Stop.}, is still there.
-     *
-     * <p>Every such occurrence, not only the first, because a shell can draw the typed line more than
-     * once — a prompt that redraws itself on submit shows it twice — and a rule that took one copy
-     * left the other to answer the wait. What this cannot do is tell an echo from output that repeats
-     * what was typed; a wait for exactly that is not a wait a screen can answer.
-     *
-     * <p>The lines are scanned as one string so that an echo the terminal broke across rows is still
-     * found, with the row boundaries kept so "the end of its line" means what it says.
-     */
     static List<String> withoutEcho(List<String> lines, List<String> echoes) {
         List<String> shown = lines;
-        for (String echo : echoes) {
+        for (String echo : echoes.stream()
+                .sorted(Comparator.comparingInt(String::length).reversed())
+                .toList()) {
             shown = withoutEcho(shown, echo);
         }
         return shown;
@@ -174,7 +447,6 @@ final class PaneEcho {
         return kept;
     }
 
-    /** Whether this occurrence is not part of a longer word on either side. */
     private static boolean standsAsAnEcho(String text, int at, int end, String echo, int[] lineStart) {
         boolean opens = at == 0
                 || startsARow(lineStart, at)

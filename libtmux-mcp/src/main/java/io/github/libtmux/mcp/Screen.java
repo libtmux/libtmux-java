@@ -2,6 +2,7 @@ package io.github.libtmux.mcp;
 
 import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
+import io.github.libtmux.TypedText;
 import io.github.libtmux.batch.BatchResult;
 import io.github.libtmux.batch.OperationResult;
 import java.util.ArrayList;
@@ -44,7 +45,11 @@ final class Screen {
      * @param cursor where to resume next time
      * @param continuous whether these lines follow the ones already delivered
      */
-    record Fresh(List<String> lines, Cursor cursor, boolean continuous) {}
+    record Fresh(List<String> lines, List<String> searchable, Cursor cursor, boolean continuous) {
+        Fresh(List<String> lines, Cursor cursor, boolean continuous) {
+            this(lines, lines, cursor, continuous);
+        }
+    }
 
     /** Everything the pane shows, when a caller has no cursor yet. */
     static Fresh from(Pane pane) {
@@ -58,10 +63,25 @@ final class Screen {
      * screen: checking it against {@link #from}'s raw capture instead would let a pending input
      * line the caller just typed count as a match, however new the bytes are.
      */
-    static Fresh completeOnly(Pane pane) {
+    static Fresh completeOnly(Pane pane, TypedText typed) {
         Look look = look(pane, 0);
         List<String> complete = look.complete();
-        return new Fresh(complete, Cursor.of(look.serverPid(), pane.id().value(), complete), true);
+        return discount(
+                new Fresh(complete, Cursor.of(look.serverPid(), pane.id().value(), complete), true), look, typed);
+    }
+
+    private static Fresh discount(Fresh fresh, Look look, @Nullable TypedText typed) {
+        if (typed == null) {
+            return fresh;
+        }
+        // Keep the unfinished row while masking: it can hold the tail of a wrapped input line.
+        List<String> masked = typed.withoutEcho(look.lines());
+        int end = look.complete().size();
+        return new Fresh(
+                fresh.lines(),
+                List.copyOf(masked.subList(end - fresh.lines().size(), end)),
+                fresh.cursor(),
+                fresh.continuous());
     }
 
     /**
@@ -84,6 +104,10 @@ final class Screen {
 
     /** What arrived since {@code from}, and where to resume. */
     static Fresh since(Pane pane, @Nullable Cursor from, int budget) {
+        return since(pane, from, budget, null);
+    }
+
+    static Fresh since(Pane pane, @Nullable Cursor from, int budget, @Nullable TypedText typed) {
         if (from == null) {
             return from(pane);
         }
@@ -95,15 +119,18 @@ final class Screen {
         Look look = look(pane, budget + SLACK_LINES);
         Fresh answer = resolve(from, look);
         if (answer != null) {
-            return answer;
+            return discount(answer, look, typed);
         }
         Look recovery = look(pane, CURSOR_RECOVERY_LINES);
         Fresh resumed = resolve(from, recovery);
         if (resumed != null) {
-            return resumed;
+            return discount(resumed, recovery, typed);
         }
         List<String> written = recovery.complete();
-        return new Fresh(List.copyOf(written), Cursor.of(recovery.serverPid(), paneId, written), false);
+        return discount(
+                new Fresh(List.copyOf(written), Cursor.of(recovery.serverPid(), paneId, written), false),
+                recovery,
+                typed);
     }
 
     static int cursorRecoveryLines() {

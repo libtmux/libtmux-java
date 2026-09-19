@@ -76,27 +76,20 @@ final class Typing {
         try (PaneInputReservations.Lease lease = stopping
                 ? PaneInputReservations.interrupting(cohort, "send_keys")
                 : PaneInputReservations.keys(cohort, "send_keys")) {
-            PaneInputCohort.Resolution fresh = PaneInputCohort.resolve(pane, cohort.caller());
-            List<String> resolved = lease.requireSameKeys(fresh);
+            Runnable beforeSend = () -> lease.requireSameKeys(PaneInputCohort.resolve(pane, cohort.caller()));
+            List<String> resolved = cohort.configuredKeyRecipientIds();
             // A boolean is right here and wrong on Pane: this one is a tool argument off the wire,
             // not a choice a reader of this file makes.
             if (literal) {
-                pane.sendLiteral(keys);
-                // sendLiteral records the echo for the pane it addressed. Under synchronize-panes the
-                // same keys land in every pane of the window, which only the cohort knows about, so
-                // the rest are told here.
-                String typed = String.join("", keys);
-                resolved.stream()
-                        .filter(id -> !id.equals(pane.id().value()))
-                        .forEach(id -> Targets.pane(pane.server(), id).noteTyped(typed));
+                pane.sendLiteral(keys, beforeSend);
             } else {
-                pane.sendKeys(keys);
+                pane.sendKeys(keys, beforeSend);
             }
             if (enter) {
                 // A keypress, sent by name, inside the same reservation as the text above - nothing
                 // else can interleave between typing a line and submitting it, and this can never be
                 // the "-l typed the word Enter" trap because it never goes through sendLiteral.
-                pane.sendKeys(List.of("Enter"));
+                pane.sendKeys(List.of("Enter"), beforeSend);
             }
             return new Sent(
                     pane.id().value(),
@@ -109,7 +102,8 @@ final class Typing {
                             + " repeats text from these keys can match the pane's own echo of them rather than what"
                             + " runs - and on a pane whose shell has not drawn its first prompt yet, that echo can"
                             + " land glued to the prompt with nothing separating them, which defeats even the"
-                            + " matching this server does to discount it.");
+                            + " matching this server does to discount it: wait for the prompt before typing into a"
+                            + " cold shell.");
         }
     }
 

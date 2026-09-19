@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -81,7 +82,7 @@ final class RunningCommands {
         requirePosixShell(currentCommand);
         PaneInputReservations.Lease lease = PaneInputReservations.run(initial, "run_shell_command");
         boolean retained = false;
-        boolean possiblyDispatched = false;
+        AtomicBoolean possiblyDispatched = new AtomicBoolean();
         Pane freshPane = pane;
         PaneCommand run = PaneCommand.fresh();
         try {
@@ -93,14 +94,16 @@ final class RunningCommands {
             String line = run.typed(commandFrame.client(), command);
             String typed = suppressHistory ? line : line.stripLeading();
             freshPane = Targets.pane(server, pane.id().value());
-            String freshCommand = lease.requireSameRun(PaneInputCohort.resolve(freshPane, call.caller()));
-            requirePosixShell(freshCommand);
-            possiblyDispatched = true;
+            Pane target = freshPane;
             try {
-                freshPane.sendLine(typed);
+                freshPane.sendLiteral(List.of(typed + "\r"), () -> {
+                    String freshCommand = lease.requireSameRun(PaneInputCohort.resolve(target, call.caller()));
+                    requirePosixShell(freshCommand);
+                    possiblyDispatched.set(true);
+                });
             } catch (TmuxTransportException failure) {
                 if (failure.outcome() == DispatchOutcome.NOT_DISPATCHED) {
-                    possiblyDispatched = false;
+                    possiblyDispatched.set(false);
                 }
                 throw failure;
             }
@@ -140,7 +143,7 @@ final class RunningCommands {
                     Waits.asSeconds(timeout),
                     note(wake, framed));
         } catch (RuntimeException failure) {
-            if (possiblyDispatched && !retained) {
+            if (possiblyDispatched.get() && !retained) {
                 retained = true;
                 PaneRunSettlement.retain(lease, freshPane, run);
             }

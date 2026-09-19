@@ -367,7 +367,11 @@ final class Catalog {
         tools.add(tool(
                 "wait_for_text",
                 "Wait for pane text",
-                "Waits for new pane output without accepting executable input.",
+                "Waits for new pane output without accepting executable input. Discounts recognized input"
+                        + " from this server while pending and for ten seconds after submission. Output identical"
+                        + " to that input and partially redrawn echoes are ambiguous; use run_shell_command for"
+                        + " commands you start. Wait for the"
+                        + " prompt before typing into a cold shell.",
                 INSPECT,
                 NONE,
                 effects(OBSERVE),
@@ -810,7 +814,8 @@ final class Catalog {
                 "Send keys",
                 "Sends input to the target's configured effective synchronized cohort without waiting for output. "
                         + "Every configured member must be live, nonmodal, and neither caller nor attended. Reports "
-                        + "configured pane ids observed before dispatch, not delivery receipts.",
+                        + "configured pane ids observed before dispatch, not delivery receipts. wait_for_text"
+                        + " discounts recognized input; wait for the prompt before typing into a cold shell.",
                 EXECUTE,
                 PANE_INPUT,
                 effects(OBSERVE, CHANGE),
