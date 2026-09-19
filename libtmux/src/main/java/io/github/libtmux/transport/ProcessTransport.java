@@ -439,7 +439,10 @@ public final class ProcessTransport implements TmuxTransport {
             live.add(running);
             return running;
         } catch (IOException e) {
-            throw new TmuxTransportException("could not start tmux", DispatchOutcome.NOT_DISPATCHED, e);
+            // The JDK's own message already names the binary and the errno text; dropping it is how a
+            // misconfigured binary that fails to exec at all reads as a bare, contentless refusal.
+            throw new TmuxTransportException(
+                    "could not start tmux: " + e.getMessage(), DispatchOutcome.NOT_DISPATCHED, e);
         } finally {
             gate.lock();
             try {
