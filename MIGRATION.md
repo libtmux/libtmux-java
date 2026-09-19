@@ -35,6 +35,15 @@ A missing session is still `false`, and an option tmux does not know is still
 empty. Catch `ServerNotRunningException` where you start a daemon on demand,
 and `LibTmuxException` for a read that could not be made.
 
+### A modular consumer no longer needs the annotation jars
+
+The core requires JSpecify and Error Prone's annotations `static` rather than
+`transitive static`. Nothing changes for a consumer on the classpath. A consumer
+with its own `module-info.java` that was adding both jars to its module path to
+get past `module not found: org.jspecify` can stop; one that wants to read this
+API's nullness with NullAway keeps JSpecify on its own path, where its own code
+needs it anyway.
+
 ### `Pane.awaitText` answers with `TextOutcome`, not `WakeReason`
 
 The return type changed. `WakeReason.SIGNALLED` became two answers, because a

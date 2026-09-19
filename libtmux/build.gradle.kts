@@ -35,6 +35,35 @@ tasks.jar {
     }
 }
 
+// Every other lint stays on. -exports fires only because the annotations above are required
+// statically and not transitively, which is the point: a consumer never sees them at runtime, and
+// making them transitive to silence this made every modular consumer fail to compile.
+tasks.compileJava { options.compilerArgs.add("-Xlint:-exports") }
+
+// A consumer with a module descriptor of its own, compiled against the built jar and nothing else.
+// The descriptor check above reads what the jar declares; this reads what a consumer can do with it,
+// which is a different question and the one that was wrong: the jar declared exactly what it meant
+// to and consumers still could not compile.
+val moduleConsumer =
+    tasks.register<JavaCompile>("moduleConsumerCompile") {
+        group = "verification"
+        description = "Compiles a modular consumer against the published jar with nothing else on its module path."
+        val jar = tasks.jar.flatMap { it.archiveFile }
+        source = fileTree("src/moduleConsumer/java")
+        destinationDirectory = layout.buildDirectory.dir("module-consumer")
+        classpath = files()
+        javaCompiler = javaToolchains.compilerFor(java.toolchain)
+        options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
+        options.compilerArgumentProviders.add(
+            CommandLineArgumentProvider {
+                listOf("--module-path", jar.get().asFile.absolutePath)
+            }
+        )
+        inputs.file(jar)
+    }
+
+tasks.check { dependsOn(moduleConsumer) }
+
 tasks.named<Test>("test") { useJUnitPlatform { excludeTags("carrier") } }
 
 // The carrier gate needs a scheduler with exactly one carrier. That is a JVM-wide setting, so it
