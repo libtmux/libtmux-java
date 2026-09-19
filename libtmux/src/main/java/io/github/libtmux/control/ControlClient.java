@@ -6,6 +6,7 @@ import io.github.libtmux.ServerConfig;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.internal.ProcessTree;
+import io.github.libtmux.internal.Utf8;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTimeoutException;
 import io.github.libtmux.transport.TmuxTransportException;
@@ -101,6 +102,10 @@ public final class ControlClient implements AutoCloseable {
         }
         List<String> command = new ArrayList<>(config.endpointCommand());
         command.addAll(List.of("-C", "attach-session", "-t", session.value()));
+        // The same guard CommandRequest applies to every other process this library starts. A
+        // control client's own commands travel as UTF-8 over its standard input and are unaffected,
+        // but this argv is encoded by the JVM like any other.
+        Utf8.requireEncodableArguments(command);
         Process process;
         try {
             process = new ProcessBuilder(command).start();

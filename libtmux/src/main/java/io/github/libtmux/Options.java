@@ -68,6 +68,10 @@ public final class Options {
      * @return empty only when tmux does not know the option, which it reports as an error; an option
      *     genuinely set to the empty string comes back as an empty value, not as absent. A value
      *     spanning several lines comes back whole
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the read otherwise fails, including a name tmux finds ambiguous —
+     *     option names may be abbreviated, and a prefix matching several is a question tmux
+     *     declined to answer rather than an option it does not have
      */
     public Optional<String> get(String name) {
         var result = cmd(argv("show-options", List.of("-A", "-v", "--", name)));

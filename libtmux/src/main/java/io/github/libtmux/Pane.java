@@ -860,6 +860,7 @@ public final class Pane {
                                     buffer,
                                     "-t",
                                     state.id().value())));
+            server.echo().record(state.id(), text);
         } catch (RuntimeException failure) {
             try {
                 server.buffers().delete(buffer);
@@ -894,6 +895,7 @@ public final class Pane {
             server.run(
                     snapshot,
                     List.of("paste-buffer", "-d", "-b", buffer, "-t", state.id().value()));
+            server.echo().record(state.id(), text);
         } catch (RuntimeException failure) {
             try {
                 server.buffers().delete(buffer);

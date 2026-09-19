@@ -5,7 +5,8 @@ plugins { id("libtmux.published-library") }
 dependencies { compileOnly(libs.errorprone.annotations) }
 
 // The core resolves nothing at runtime. Anything that would change that belongs in another module.
-tasks.jar { manifest { attributes("Automatic-Module-Name" to "io.github.libtmux") } }
+// No Automatic-Module-Name: module-info.java names this module, and the manifest attribute is
+// ignored once a descriptor is present — two spellings of one name, one of which cannot be checked.
 
 // The module descriptor is the only thing that actually hides io.github.libtmux.internal: its three
 // classes are public because several packages here share them, and on a classpath that makes them
