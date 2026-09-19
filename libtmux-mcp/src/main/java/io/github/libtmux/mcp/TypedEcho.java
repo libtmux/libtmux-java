@@ -6,7 +6,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * What this process itself most recently typed into a pane, literally - so a wait started right
- * after can recognise the pane's own echo of it rather than reading it as new output (D10).
+ * after can recognise the pane's own echo of it rather than reading it as new output.
  *
  * <p>No capture can say "this line is an echo" on its own; the only party that knows what was
  * typed is whichever call typed it. Key <em>names</em> are not recorded - {@code Enter} is not

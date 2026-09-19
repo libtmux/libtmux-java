@@ -72,6 +72,76 @@ final class DocumentationFactsTest {
     }
 
     /**
+     * An internal tracker id in a published source is a reference a reader cannot follow.
+     *
+     * <p>They arrive honestly — a comment written while a ticket was open — and then ship. The
+     * sentence around one always says the thing anyway, so the tag is pure cost to everyone outside
+     * the project, in Javadoc that goes to Maven Central.
+     */
+    @Test
+    void noPublishedSourceCitesAnInternalTrackerId() throws IOException {
+        Pattern tag = Pattern.compile("\\b(?:JAVA[0-9]*-[0-9]+|D[0-9]{1,2})\\b");
+        List<String> found = new ArrayList<>();
+        for (String module : PUBLISHED) {
+            Path sources = ROOT.resolve(module).resolve("src/main");
+            if (!Files.isDirectory(sources)) {
+                continue;
+            }
+            try (Stream<Path> tree = Files.walk(sources)) {
+                for (Path file : tree.filter(Files::isRegularFile).toList()) {
+                    String name = file.getFileName().toString();
+                    if (!name.endsWith(".java") && !name.endsWith(".kt")) {
+                        continue;
+                    }
+                    String text = Files.readString(file);
+                    Matcher cited = tag.matcher(text);
+                    while (cited.find()) {
+                        // A version or a dimension is not a ticket: require it to read as a citation.
+                        int at = cited.start();
+                        String around = text.substring(Math.max(0, at - 2), Math.min(text.length(), cited.end() + 1));
+                        if (around.startsWith("(") || around.startsWith(" (") || around.endsWith(":")) {
+                            found.add(ROOT.relativize(file) + ": " + cited.group());
+                        }
+                    }
+                }
+            }
+        }
+
+        assertEquals(List.of(), found, "a published source cites an internal tracker id");
+    }
+
+    /**
+     * The supported range is the README's strongest claim, and the only one a reader cannot check.
+     *
+     * <p>"That range is not a claim" is true exactly while the matrix runs its ends. A release
+     * added to the workflow and not to the README understates what is tested; one removed from the
+     * workflow and left in the README is a promise nothing keeps. A spelled-out count is worse
+     * again — it was "eight" against a nine-lane matrix — so prose says "every supported release"
+     * and the ends are checked here.
+     */
+    @Test
+    void theReadmeNamesTheEndsOfTheMatrixItClaims() {
+        Matcher lanes = Pattern.compile("tmux:\\s*\\[([^\\]]+)]").matcher(read(".github/workflows/tmux-matrix.yml"));
+        assertTrue(lanes.find(), "the matrix workflow names no tmux versions");
+        List<String> running = Pattern.compile("'([^']+)'")
+                .matcher(lanes.group(1))
+                .results()
+                .map(found -> found.group(1))
+                .toList();
+        assertTrue(running.size() > 1, "a range needs two ends: " + running);
+
+        String readme = read("README.md");
+        String claimed = running.get(0) + " through " + running.get(running.size() - 1);
+
+        assertTrue(readme.contains(claimed), "the README does not claim the range the matrix runs: " + claimed);
+        assertFalse(
+                Pattern.compile("\\b(?:five|six|seven|eight|nine|ten|eleven|twelve)\\s+supported\\s+releases\\b")
+                        .matcher(readme)
+                        .find(),
+                "the README spells out a release count, which drifts the moment a lane is added");
+    }
+
+    /**
      * Every coordinate a document tells someone to paste names the version this build would publish.
      *
      * <p>An install block is the first thing copied and the last thing updated.

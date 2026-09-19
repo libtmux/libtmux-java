@@ -245,7 +245,7 @@ public final class ControlClient implements AutoCloseable {
      * {@code %N}, {@code %*}, {@code @N} or {@code @*} only - a session id or an arbitrary word was
      * never a spelling the manual promises, even though 3.2a and 3.7c happen to accept one leniently
      * (confirmed against the matrix). On master the same non-empty, non-{@code %}/{@code @} target
-     * is accepted by the parser but delivers nothing, silently (JAVA2-4). The empty string is the one
+     * is accepted by the parser but delivers nothing, silently. The empty string is the one
      * spelling confirmed to mean "the attached session" and to actually fire on every tested release,
      * so anything that does not name a pane or window is normalized to it rather than passed through.
      */

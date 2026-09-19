@@ -174,10 +174,8 @@ record ToolSpec(
             Set<String> nestedAuthority,
             OutputSchema output,
             Function<Call, Object> answer) {
-        // The distinguishing sentence first, the safety/capability classification last (JAVA2-5):
-        // a client that reads only the first sentence of a description - the shared coordinator's
-        // own summarization did - could not tell any tool in a toolset apart from its siblings when
-        // the identical classification led every one of them.
+        // The distinguishing sentence goes first and the safety/capability classification
+        // last, so a client reading only the first sentence can tell tools in a toolset apart.
         String description = details + " " + opener(name, toolset, processReach, outputClasses);
         return new ToolSpec(
                 name,

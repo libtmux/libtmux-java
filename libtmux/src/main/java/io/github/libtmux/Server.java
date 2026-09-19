@@ -650,7 +650,7 @@ public final class Server implements AutoCloseable {
      * matrix), and {@link #version()}'s own {@link ServerNotRunningException} does not keep that
      * distinction once raised. Falling back to {@code binaryVersion} for that case would report the
      * configured binary's own version as though it were the daemon's — exactly the guarantee this
-     * method exists to keep (JAVA2-8).
+     * method exists to keep.
      */
     private TmuxVersion versionForCreation() {
         return capture.processForCreation()

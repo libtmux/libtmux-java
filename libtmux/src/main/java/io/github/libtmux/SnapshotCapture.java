@@ -123,7 +123,7 @@ final class SnapshotCapture {
     /**
      * As {@link #process}, except a live daemon this client cannot actually talk to is never folded
      * into "no daemon" - used only by {@link Server#versionForCreation}, the one caller for which
-     * that distinction matters (JAVA2-8).
+     * that distinction matters.
      *
      * <p>tmux reports both the same way from a client's side: "no server running"/"(No such file or
      * directory)" for a socket nothing is listening on, and "server exited unexpectedly" for a

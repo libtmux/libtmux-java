@@ -37,7 +37,7 @@ final class Typing {
      *
      * <p>{@code literal} governs the keys named here, never {@code enter}: tmux's own {@code -l}
      * treats every one of its arguments as literal text, so a caller sending {@code ["Enter"]} in a
-     * second, separate {@code literal:true} call types the word instead of pressing it (JAVA2-7) -
+     * second, separate {@code literal:true} call types the word instead of pressing it -
      * the trap this flag exists to make unnecessary. {@code enter} always presses the key.
      */
     static Sent sendKeys(Call call) {

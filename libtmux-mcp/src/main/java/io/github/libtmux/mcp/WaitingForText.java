@@ -65,7 +65,7 @@ final class WaitingForText {
         int budget = Trim.lineBudget(call);
         // A pane a caller just typed into can echo that text back before this wait even starts
         // watching; matching it there would report the caller's own input as the pane's answer
-        // (D10). Excluded up front, from both matching and the lines a caller sees, using only what
+        // Excluded up front, from both matching and the lines a caller sees, using only what
         // this process itself just sent - nothing about a screen capture says "this line is an
         // echo" on its own.
         Optional<String> recentEcho = TypedEcho.recentFor(pane.id().value());
@@ -76,7 +76,7 @@ final class WaitingForText {
         if (cursorArgument.isPresent()) {
             cursor = Cursor.decode(cursorArgument.get());
         } else {
-            // D1: with no cursor to resume from, "now" is not "empty" - text the pane already
+            // With no cursor to resume from, "now" is not "empty" - text the pane already
             // printed is on screen whether it arrived a second ago or an hour ago, and a wait that
             // only looks forward from this instant would never see it, timing out with empty output
             // even while capture_pane shows the very thing it was asked for.
@@ -178,7 +178,7 @@ final class WaitingForText {
 
     /**
      * A wanted or stop pattern already on the pane's screen the moment this call started, distinct
-     * from a fresh match found while watching (D1). Only reachable when the caller passed no {@code
+     * from a fresh match found while watching. Only reachable when the caller passed no {@code
      * cursor}: chaining a cursor from an earlier call means the caller already has this screen, and
      * "present at entry" would just repeat that earlier answer.
      *

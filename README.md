@@ -384,7 +384,7 @@ What that means in practice:
 - **Only the newest release is supported.** There are no backports.
 - **Pin an exact version.** A range will move under you.
 - What is *not* alpha is the tmux correctness: the whole real-tmux suite runs
-  against all eight supported releases on every push.
+  against every supported release on every push.
 
 Changes are recorded in [`CHANGELOG.md`](CHANGELOG.md); how a release is cut is
 in [`RELEASING.md`](RELEASING.md).
