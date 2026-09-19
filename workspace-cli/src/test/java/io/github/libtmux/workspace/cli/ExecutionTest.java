@@ -2035,6 +2035,39 @@ final class ExecutionTest {
         }
     }
 
+    /**
+     * The event stream is the contract this module is consumed through, so it is committed rather
+     * than described: a record that gains, loses or renames a field shows up here as a diff.
+     */
+    @Test
+    void theLoadEventStreamMatchesItsCommittedTranscript() throws Exception {
+        Path source = directory.resolve("transcript.yaml");
+        Path socket = directory.resolve("transcript-socket");
+        Files.writeString(source, """
+                session_name: transcript
+                windows:
+                  - window_name: first
+                    panes: [null, null]
+                  - window_name: second
+                    panes: [null]
+                """);
+        try (Server server = server(socket)) {
+            try {
+                Result result =
+                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--ndjson");
+                assertEquals(0, result.code(), result.err());
+                String expected;
+                try (var committed = ExecutionTest.class.getResourceAsStream("load-transcript.ndjson")) {
+                    expected = new String(
+                            java.util.Objects.requireNonNull(committed).readAllBytes(), StandardCharsets.UTF_8);
+                }
+                assertEquals(expected.strip(), result.out().strip());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** A capture never writes a document a load refuses: both ends apply one name rule. */
     @Test
     void freezeRefusesASessionNameLoadWouldNotRead() throws Exception {

@@ -152,7 +152,8 @@ final class Documents {
         if (destination.isEmpty() && report.machine()) {
             if (report.streaming()) {
                 report.event(
-                        "completed", JSON.createObjectNode().put("status", "ok").set("workspace", value));
+                        Machine.Event.COMPLETED,
+                        JSON.createObjectNode().put("status", "ok").set("workspace", value));
             } else report.document(value);
             return;
         }
@@ -173,7 +174,7 @@ final class Documents {
                 .put("status", "ok")
                 .put("destination", Catalog.mask(context, target))
                 .put("format", format);
-        if (report.streaming()) report.event("completed", saved);
+        if (report.streaming()) report.event(Machine.Event.COMPLETED, saved);
         else if (report.machine()) report.document(saved);
         else report.line("success", "Saved", Catalog.mask(context, target));
     }

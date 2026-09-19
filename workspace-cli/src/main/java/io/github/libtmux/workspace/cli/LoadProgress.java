@@ -103,9 +103,9 @@ final class LoadProgress {
         }
     }
 
-    void event(String name, JsonNode data) throws IOException {
+    void event(Machine.Event name, JsonNode data) throws IOException {
         switch (name) {
-            case "workspace-started" -> {
+            case WORKSPACE_STARTED -> {
                 active = true;
                 session = data.path("session_name").asText();
                 workspace = data.path("input").asText();
@@ -118,27 +118,27 @@ final class LoadProgress {
                 scriptDrawn = false;
                 draw(true);
             }
-            case "window-created" -> {
+            case WINDOW_CREATED -> {
                 window = data.path("window_name").asText();
                 windowIndex++;
                 paneTotal = data.path("pane_total").asInt();
                 paneIndex = panesDone = 0;
                 draw(false);
             }
-            case "pane-created" -> {
+            case PANE_CREATED -> {
                 paneIndex++;
                 draw(false);
             }
-            case "pane-completed" -> {
+            case PANE_COMPLETED -> {
                 panesDone++;
                 sessionPanesDone++;
                 draw(false);
             }
-            case "window-completed" -> {
+            case WINDOW_COMPLETED -> {
                 windowsDone++;
                 draw(false);
             }
-            case "script-output" -> {
+            case SCRIPT_OUTPUT -> {
                 clear();
                 String text = data.path("text").asText();
                 if (panelRows == 0) return;
@@ -162,11 +162,18 @@ final class LoadProgress {
                     oldest.remove();
                 }
             }
-            case "workspace-completed", "completed", "failed" -> {
+            case WORKSPACE_COMPLETED, COMPLETED, FAILED -> {
                 active = false;
                 clear();
             }
-            default -> {}
+            // Listed rather than defaulted: a new event has to be considered here.
+            case COMMAND_STARTED,
+                    COMMAND_FAILED,
+                    STARTED,
+                    WARNING,
+                    SESSION_CREATED,
+                    SCRIPT_STARTED,
+                    SCRIPT_COMPLETED -> {}
         }
     }
 

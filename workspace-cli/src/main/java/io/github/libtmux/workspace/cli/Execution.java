@@ -80,7 +80,7 @@ final class Execution {
                     context, source, index == sources.length - 1 ? args.matchedOptionValue("-s", "") : "");
             for (WorkspacePlan.Warning warning : plan.warnings())
                 report.event(
-                        "warning",
+                        Machine.Event.WARNING,
                         Documents.JSON
                                 .createObjectNode()
                                 .put("code", warning.code())
@@ -127,7 +127,8 @@ final class Execution {
                 throw Main.usage("attached load requires a terminal; pass -d");
             Optional<Session> borrowed = append ? Optional.of(appendTarget(context, server)) : Optional.empty();
             ArrayNode results = Documents.JSON.createArrayNode();
-            report.event("started", Documents.JSON.createObjectNode().put("inputs", plans.size()));
+            report.event(
+                    Machine.Event.STARTED, Documents.JSON.createObjectNode().put("inputs", plans.size()));
             Session last = null;
             for (int index = 0; index < plans.size(); index++) {
                 WorkspacePlan plan = plans.get(index);
@@ -146,12 +147,12 @@ final class Execution {
                         .put("stage", "resolve");
                 effects.putArray("window_ids");
                 effects.putArray("pane_ids");
-                report.event("workspace-started", effects.deepCopy());
+                report.event(Machine.Event.WORKSPACE_STARTED, effects.deepCopy());
                 try {
                     last = build(
                             context, server, plans.subList(index, plans.size()), borrowed, python, report, effects);
                     results.add(effects);
-                    report.event("workspace-completed", effects.deepCopy());
+                    report.event(Machine.Event.WORKSPACE_COMPLETED, effects.deepCopy());
                 } catch (RuntimeException | IOException | InterruptedException failure) {
                     boolean retained = rollback(server, effects, failure);
                     boolean partial = retained || !results.isEmpty();
@@ -165,13 +166,13 @@ final class Execution {
                     results.add(effects.deepCopy());
                     ObjectNode summary = summary(partial ? "partial" : "error", results);
                     summary.withArray("errors").add(error);
-                    if (report.streaming()) report.event("failed", summary);
+                    if (report.streaming()) report.event(Machine.Event.FAILED, summary);
                     else if (report.machine()) report.document(summary);
                     throw failure;
                 }
             }
             ObjectNode summary = summary("ok", results);
-            if (report.streaming()) report.event("completed", summary);
+            if (report.streaming()) report.event(Machine.Event.COMPLETED, summary);
             else if (report.machine()) report.document(summary);
             else
                 for (JsonNode effects : results)
@@ -301,7 +302,7 @@ final class Execution {
             for (Window window : session.windows()) occupied.add(window.index().value());
             for (WorkspacePlan reserved : reservations) reserveIndexes(reserved, occupied);
         }
-        if (!append) report.event("session-created", effects.deepCopy());
+        if (!append) report.event(Machine.Event.SESSION_CREATED, effects.deepCopy());
         // Listed only after the event: tmux insists on a first window, and this one is killed as
         // soon as the workspace has a window of its own. It is reported while it can still survive.
         if (bootstrap != null) {
@@ -380,7 +381,7 @@ final class Execution {
             panes.add(window.panes().getFirst());
             effects.withArray("pane_ids").add(panes.getFirst().id().value());
             report.event(
-                    "window-created",
+                    Machine.Event.WINDOW_CREATED,
                     Documents.JSON
                             .createObjectNode()
                             .put("input_index", inputIndex)
@@ -426,7 +427,7 @@ final class Execution {
                     effects.put("stage", "readiness");
                     if (!ready(pane))
                         report.event(
-                                "warning",
+                                Machine.Event.WARNING,
                                 Documents.JSON
                                         .createObjectNode()
                                         .put("code", "pane_readiness_timeout")
@@ -444,7 +445,7 @@ final class Execution {
                 }
                 if (config.focus()) pane.select();
                 report.event(
-                        "pane-completed",
+                        Machine.Event.PANE_COMPLETED,
                         Documents.JSON
                                 .createObjectNode()
                                 .put("input_index", inputIndex)
@@ -458,7 +459,7 @@ final class Execution {
             // client where it was unless a window explicitly asks for focus.
             if ((!append && focused == null) || spec.focus()) focused = window;
             report.event(
-                    "window-completed",
+                    Machine.Event.WINDOW_COMPLETED,
                     Documents.JSON
                             .createObjectNode()
                             .put("input_index", inputIndex)
@@ -649,7 +650,7 @@ final class Execution {
             Pane pane, Window window, int inputIndex, String sessionId, int paneIndex, Reporter report)
             throws IOException {
         report.event(
-                "pane-created",
+                Machine.Event.PANE_CREATED,
                 Documents.JSON
                         .createObjectNode()
                         .put("input_index", inputIndex)
@@ -883,7 +884,7 @@ final class Execution {
                     throw Main.usage("freeze writes where --save-to says, or to stdout with --json or --ndjson");
                 if (report.streaming()) {
                     result.set("workspace", captured);
-                    report.event("completed", result);
+                    report.event(Machine.Event.COMPLETED, result);
                 } else report.document(captured);
             } else {
                 // An explicit --save-to is consent to that destination; --force alone governs
@@ -898,7 +899,7 @@ final class Execution {
                             "destination already exists: " + Catalog.mask(context, path));
                 }
                 result.put("destination", Catalog.mask(context, path)).put("format", format);
-                if (report.streaming()) report.event("completed", result);
+                if (report.streaming()) report.event(Machine.Event.COMPLETED, result);
                 else if (report.machine()) report.document(result);
                 else if (!Main.flag(args, "--quiet")) report.line("success", "Saved", Catalog.mask(context, path));
             }

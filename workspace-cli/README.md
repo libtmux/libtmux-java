@@ -203,6 +203,66 @@ Load and child-process output stream as escaped, flushed events. Machine output
 never includes ANSI styling or implicit prompts. Interactive editors and Python
 shells use the controlling terminal while their result remains on stdout.
 
+### The machine contract
+
+Every machine-readable record carries `schema_version` and `command`. A `--json`
+result is one document; a `--ndjson` stream is one record per line, each with an
+`event` and a `sequence` counting from 1. A committed transcript of a load's
+stream lives beside the tests, so a record that gains, loses or renames a field
+is a diff rather than a surprise.
+
+A failure names one `code`. These ten are the whole set, shared with the other
+ports of this tool, so the same condition answers with the same name whichever
+one a script calls:
+
+| Code | Condition |
+| --- | --- |
+| `workspace_not_found` | the named workspace is not where discovery looked |
+| `invalid_workspace` | the document parsed, and does not describe a workspace |
+| `unsupported_key` | the document uses a key native loading does not implement |
+| `session_not_found` | the session the command names is not on the server |
+| `session_mismatch` | the named session exists and is not what the document describes |
+| `tmux_unavailable` | tmux could not be found or run |
+| `tmux_failed` | tmux ran and refused, or the server changed under the command |
+| `script_failed` | a child program could not be run, or ended badly |
+| `destination_exists` | the destination a capture was told to write is taken |
+| `usage` | the command was invoked in a way that cannot be carried out |
+
+`interrupted` is the one name outside that set, and it is not a verdict on the
+request: the process was signalled and reports where it stopped, with exit 130.
+
+An `--ndjson` stream carries these events:
+
+| Event | Says |
+| --- | --- |
+| `started` | the command's work began, with `inputs` |
+| `workspace-started` | one input began, with that input's `effects` so far |
+| `session-created` | a session this load owns now exists |
+| `window-created` | a window exists, with `pane_total` still to come |
+| `pane-created` | a pane exists; its commands have not been sent |
+| `pane-completed` | a pane has had its commands sent |
+| `window-completed` | a window and every pane in it are done |
+| `workspace-completed` | one input finished, with its `effects` |
+| `script-started` | a child program is about to run |
+| `script-output` | a fragment of a child's output, naming its `stream` |
+| `script-completed` | a child ended, with `child_status` and `truncated` |
+| `warning` | something asked for that will not happen, with its own `code` |
+| `completed` | the command finished, carrying its whole result |
+| `failed` | the command stopped, carrying the result up to the failure |
+
+A load's `effects` record describes one input: `input`, `input_index`,
+`session_id`, `session_name`, `reused`, `owned_session`, `changed`,
+`window_total`, `session_pane_total`, `window_ids`, `pane_ids`, and `stage` —
+the point the load reached, one of `resolve`, `windows_preflight`,
+`before_script`, `options`, `readiness`, `windows`, `commands`, `finalize`,
+`completed` or `reused`. A load that removed the session it created adds
+`session_removed`. A Python-bridge load adds `engine`, `effects_scope` and
+`effects_unknown`, because what it reports is observed topology rather than
+operations it performed.
+
+The envelope's `status` is `ok`, `partial` or `error`. `partial` means effects
+were retained; `error` means none were.
+
 Human output uses semantic colors. `NO_COLOR` disables styling, followed by the
 explicit `--color` policy. Automatic color also recognizes `FORCE_COLOR`,
 `CLICOLOR_FORCE` and `CLICOLOR`.

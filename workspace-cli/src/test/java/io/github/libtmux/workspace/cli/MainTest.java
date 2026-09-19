@@ -671,12 +671,13 @@ final class MainTest {
                 OutputStream.nullOutputStream(),
                 err);
         Reporter report = new Reporter(context, parsed);
-        report.event("started", Documents.JSON.createObjectNode());
+        report.event(Machine.Event.STARTED, Documents.JSON.createObjectNode());
         long written = Files.size(logFile);
         String reported = err.toString(StandardCharsets.UTF_8);
         report.close();
 
-        report.event("script-output", Documents.JSON.createObjectNode().put("stream", "stdout"));
+        report.event(
+                Machine.Event.SCRIPT_OUTPUT, Documents.JSON.createObjectNode().put("stream", "stdout"));
 
         assertEquals(written, Files.size(logFile));
         assertEquals(reported, err.toString(StandardCharsets.UTF_8));

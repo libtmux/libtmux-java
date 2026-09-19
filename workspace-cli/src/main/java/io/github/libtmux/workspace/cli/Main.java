@@ -182,7 +182,7 @@ public final class Main {
             }
             try (Reporter report = new Reporter(context, parsed)) {
                 try {
-                    report.record("debug", "command-started", Documents.JSON.createObjectNode(), true);
+                    report.record("debug", Machine.Event.COMMAND_STARTED, Documents.JSON.createObjectNode(), true);
                     if (parsed.hasMatchedOption("--generate")) {
                         if (parsed.hasSubcommand()) throw usage("--generate cannot accompany a command");
                         String target = parsed.matchedOptionValue("--generate", "schema");
@@ -202,7 +202,7 @@ public final class Main {
                                         .put("format", target)
                                         .put("script", script)
                                         .put("status", "ok");
-                                if (report.streaming()) report.event("completed", artifact);
+                                if (report.streaming()) report.event(Machine.Event.COMPLETED, artifact);
                                 else report.document(artifact);
                             } else output.write(script.getBytes(StandardCharsets.UTF_8));
                         } else report.document(Reporter.metadata(command.getCommandSpec()));
@@ -238,7 +238,7 @@ public final class Main {
                     try {
                         report.record(
                                 "error",
-                                "command-failed",
+                                Machine.Event.COMMAND_FAILED,
                                 Documents.JSON
                                         .createObjectNode()
                                         .put("message", Objects.toString(failure.getMessage(), "command failed")),
