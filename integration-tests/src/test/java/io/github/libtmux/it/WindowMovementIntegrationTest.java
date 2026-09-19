@@ -11,9 +11,10 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.PaneEdges;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
+import io.github.libtmux.WakeReason;
 import io.github.libtmux.Window;
-import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -113,15 +114,27 @@ final class WindowMovementIntegrationTest {
     }
 
     @Test
-    void aDashPrefixedPopupCommandIsNotACloseRequest(Server server) {
+    void aDashPrefixedPopupCommandIsNotACloseRequest(Server server) throws InterruptedException {
         server.globalOptions().set("default-shell", "/bin/sh");
-        Window window = server.windows().getFirst();
-        try (ControlClient attached = ControlClient.attach(
-                server.config(), server.sessions().getFirst().id())) {
-            assertTrue(attached.send("display-message", "-p", "ready").succeeded());
+        Pane terminal = server.panes().getFirst();
+        Session popupSession = server.newSession("popup");
+        Window window = popupSession.windows().getFirst();
+        String socket =
+                server.cmd("display-message", "-p", "#{socket_path}").stdout().getFirst();
+        server.hooks().set("client-attached", List.of("wait-for", "-S", "popup-client-ready"));
+        terminal.respawn(
+                "env",
+                "-u",
+                "TMUX",
+                server.config().binaryPath(),
+                "-S",
+                socket,
+                "attach-session",
+                "-t",
+                popupSession.id().value());
+        assertEquals(WakeReason.SIGNALLED, server.channel("popup-client-ready").await(Duration.ofSeconds(1)));
 
-            assertThrows(LibTmuxException.class, () -> window.displayPopup("-C"));
-        }
+        assertThrows(LibTmuxException.class, () -> window.displayPopup("-C"));
     }
 
     /** tmux draws a popup for a client, and a detached fixture session has none. */
