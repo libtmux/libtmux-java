@@ -2136,11 +2136,9 @@ final class ExecutionTest {
     }
 
     /**
-     * A capture never writes a document a load refuses: both ends apply one name rule.
-     *
-     * <p>Whether tmux will even make a session whose name holds its target separators is tmux's
-     * decision and differs across the supported range — some releases rewrite the dot, one refuses
-     * the name outright, the newest keep it — so only the last can produce the capture this guards.
+     * A capture never writes a document a load refuses: both ends apply one name rule, and freeze
+     * checks it on the requested name alone before tmux is asked anything — so the answer holds on
+     * every supported tmux, whether or not a session by that name is running.
      */
     @Test
     void freezeRefusesASessionNameLoadWouldNotRead() throws Exception {
@@ -2155,6 +2153,33 @@ final class ExecutionTest {
                 Result reloaded = invoke("load", destination.toString(), "-d", "-S", socket.toString(), "--json");
                 assertEquals(0, reloaded.code(), reloaded.toString());
 
+                Path unaddressable = directory.resolve("unaddressable.yaml");
+                Result refused = invoke(
+                        "freeze", "my.proj", "-S", socket.toString(), "--save-to", unaddressable.toString(), "--json");
+                assertEquals(1, refused.code(), refused.toString());
+                assertEquals(
+                        "invalid_workspace",
+                        new ObjectMapper().readTree(refused.err()).path("code").asText(),
+                        refused.err());
+                assertFalse(Files.exists(unaddressable), refused.toString());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
+    /**
+     * 3.7a onward keeps a dot in a session's name verbatim, real but misread by a bare {@code -t
+     * name} — only an explicit {@code name:} terminator selects it. The name-first guard never sees
+     * this session, since no name was typed for it to check; the auto-select path that lands on it
+     * as the sole session must still be refused by the write-side guard on its actual name, rather
+     * than captured because the caller never spelled the name aloud.
+     */
+    @Test
+    void freezeRefusesTheAutoSelectedSessionOnItsActualName() throws Exception {
+        Path socket = directory.resolve("freeze-existing-dotted-socket");
+        try (Server server = server(socket)) {
+            try {
                 String dotted;
                 try {
                     dotted = server.newSession("my.proj").name();
@@ -2164,8 +2189,8 @@ final class ExecutionTest {
                 org.junit.jupiter.api.Assumptions.assumeTrue(
                         dotted.indexOf('.') >= 0, "this tmux will not keep a dot in a session name");
                 Path unaddressable = directory.resolve("unaddressable.yaml");
-                Result refused = invoke(
-                        "freeze", dotted, "-S", socket.toString(), "--save-to", unaddressable.toString(), "--json");
+                Result refused =
+                        invoke("freeze", "-S", socket.toString(), "--save-to", unaddressable.toString(), "--json");
                 assertEquals(1, refused.code(), refused.toString());
                 assertEquals(
                         "invalid_workspace",

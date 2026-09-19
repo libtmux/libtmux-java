@@ -1123,7 +1123,11 @@ final class MainTest {
                 invalid.err());
     }
 
-    /** tmux uses ':' and '.' as the session:window.pane separators; a name holding either is unaddressable. */
+    /**
+     * tmux rewrites, refuses or keeps ':' and '.' depending on its version, and even kept verbatim a
+     * bare -t name misreads the delimiter as a window separator, so no spelling survives every
+     * supported tmux.
+     */
     @Test
     void sessionNameRefusesTmuxTargetSeparators() throws Exception {
         Path source = directory.resolve("h8.yaml");
