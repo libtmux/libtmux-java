@@ -1,9 +1,38 @@
+import java.lang.module.ModuleFinder
+
 plugins { id("libtmux.published-library") }
 
 dependencies { compileOnly(libs.errorprone.annotations) }
 
 // The core resolves nothing at runtime. Anything that would change that belongs in another module.
 tasks.jar { manifest { attributes("Automatic-Module-Name" to "io.github.libtmux") } }
+
+// The module descriptor is the only thing that actually hides io.github.libtmux.internal: its three
+// classes are public because several packages here share them, and on a classpath that makes them
+// everyone's. Read back off the built jar rather than asserted in a test, because tests run on the
+// classpath — in the unnamed module, where the descriptor is not there to check.
+tasks.jar {
+    val built = archiveFile
+    doLast {
+        val descriptor = ModuleFinder.of(built.get().asFile.toPath())
+            .findAll()
+            .firstOrNull()
+            ?.descriptor()
+            ?: error("the published jar carries no module descriptor")
+        require(descriptor.name() == "io.github.libtmux") {
+            "the published module is named ${descriptor.name()}"
+        }
+        val exported = descriptor.exports().map { it.source() }.toSet()
+        require("io.github.libtmux.internal" !in exported) {
+            "the published module exports io.github.libtmux.internal"
+        }
+        val packages = descriptor.packages().filterNot { it == "io.github.libtmux.internal" }
+        val unexported = packages - exported
+        require(unexported.isEmpty()) {
+            "the published module hides packages a caller needs: $unexported"
+        }
+    }
+}
 
 tasks.named<Test>("test") { useJUnitPlatform { excludeTags("carrier") } }
 

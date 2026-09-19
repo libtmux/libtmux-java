@@ -233,7 +233,7 @@ README, and each is [on Maven Central](https://central.sonatype.com/namespace/io
 
 - **[`libtmux`](libtmux/)** — the library itself. Transport, snapshots,
   entities, options, hooks, batching, control mode, query model.
-  **No runtime dependencies.**
+  **No runtime dependencies**, and a real Java module, `io.github.libtmux`.
 
 - **[`libtmux-bom`](libtmux-bom/)** — name a version once, and every coordinate
   below follows it.
