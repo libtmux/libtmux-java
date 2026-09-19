@@ -28,13 +28,24 @@ final class TmuxVersionIntegrationTest {
 
     /**
      * The guard on the matrix. When a lane declares which tmux it is for, the running server has to
-     * agree; without this the eight lanes could all be the same tmux.
+     * agree; without this the lanes could all be the same tmux.
+     *
+     * <p>The {@code master} preview lane names no fixed version — it tracks whatever upstream's
+     * development head reports next — so it is verified as a {@code next-M.m} build instead of an
+     * exact match.
      */
     @Test
     void theLaneRanTheTmuxItIsNamedAfter(Server server) {
         String expected = System.getProperty("libtmux.tmux.expected");
         org.junit.jupiter.api.Assumptions.assumeTrue(
                 expected != null, "not a matrix lane; the ordinary suite uses whichever tmux is on PATH");
+
+        if ("master".equals(expected)) {
+            assertTrue(
+                    server.version().development(),
+                    "the master lane did not run a development build: " + server.version());
+            return;
+        }
 
         assertEquals(
                 TmuxVersion.parse(expected),
