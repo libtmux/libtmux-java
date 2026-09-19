@@ -38,24 +38,6 @@ Reading needs no change: every command now passes `-u`, so tmux no longer
 replaces non-ASCII in a reply with `_` for a client whose locale it cannot
 read.
 
-### Four reads raise where they used to answer
-
-`Server.hasSession`, `Options.get`, `Server.listKeys` (now `Keys.list`) and `Server.requireAlive`
-answered a failed read as though it had found nothing. They now raise, and only
-`ServerNotRunningException` means an absent daemon:
-
-| Read | Was | Now |
-| --- | --- | --- |
-| `hasSession` on an unreachable socket | `false` | `LibTmuxException` |
-| `Options.get` on an unreachable socket | `Optional.empty()` | `LibTmuxException` |
-| `listKeys` on any failure | `List.of()` | raises |
-| `listKeys` with no daemon | started one, listed its tables | `ServerNotRunningException` |
-| `requireAlive` on an unreachable socket | `ServerNotRunningException` | `LibTmuxException` |
-
-A missing session is still `false`, and an option tmux does not know is still
-empty. Catch `ServerNotRunningException` where you start a daemon on demand,
-and `LibTmuxException` for a read that could not be made.
-
 ### `ServerSnapshot.of` needs the server's identity
 
 The public overload taking a capture time and a pid but no `TmuxVersion` is
@@ -265,14 +247,27 @@ server.isAlive();                      // → true
 Live listings, finders and snapshot capture throw when a read fails. An
 absent daemon throws `ServerNotRunningException`; any other failed capture
 throws `LibTmuxException`. A missing object in a successful capture still
-produces an empty `Optional`. Catch `ServerNotRunningException` to start a
-daemon on demand, and `LibTmuxException` for any other failed read; do not
-treat either as an empty server. `server.cmd(...)` still returns a completed
-nonzero exit as result data, while `server.run(...)` throws.
+produces an empty `Optional`.
 
-`Server.hasSession`, `Buffers.show` and `Buffers.delete` follow the same rule:
-all three now throw `ServerNotRunningException` for an absent daemon instead
-of answering as though nothing matched.
+These reads also distinguish absence from a failed read:
+
+| Read | Was | Now |
+| --- | --- | --- |
+| `Server.hasSession` on an unreachable socket | `false` | `LibTmuxException` |
+| `Options.get` on an unreachable socket | `Optional.empty()` | `LibTmuxException` |
+| `Server.listKeys` (now `Keys.list`) on any failure | `List.of()` | raises |
+| `listKeys` with no daemon | started one, listed its tables | `ServerNotRunningException` |
+| `Server.requireAlive` on an unreachable socket | `ServerNotRunningException` | `LibTmuxException` |
+
+A missing session is still `false`, and an option tmux does not know is still
+empty. `Buffers.show` and `Buffers.delete` also throw
+`ServerNotRunningException` for an absent daemon instead of answering as
+though nothing matched.
+
+Catch `ServerNotRunningException` to start a daemon on demand, and
+`LibTmuxException` for any other failed read; do not treat either as an empty
+server. `server.cmd(...)` still returns a completed nonzero exit as result
+data, while `server.run(...)` throws.
 
 A finder requires a running daemon. `server.newSession("build")` can start
 one; [`BuildAWorkspace`][workspace-example] shows how to handle both an

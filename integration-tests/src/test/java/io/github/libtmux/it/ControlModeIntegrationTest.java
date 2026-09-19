@@ -77,8 +77,8 @@ final class ControlModeIntegrationTest {
     /**
      * The defect this pins: a client nobody closed kept the JVM alive forever, because its three
      * threads were not daemons and none of them ever goes idle — they are attached to a live tmux.
-     * A forgotten {@code close()} cost twenty-five seconds of a test timeout here and, for a
-     * command-line program, is indistinguishable from a deadlock.
+     * A forgotten {@code close()} must not keep a command-line program alive after its work
+     * has finished.
      *
      * <p>Every thread it starts is asserted rather than the exit itself, because a JVM that refuses
      * to exit can only be measured by giving up on it. Nothing is lost by letting go at exit:
