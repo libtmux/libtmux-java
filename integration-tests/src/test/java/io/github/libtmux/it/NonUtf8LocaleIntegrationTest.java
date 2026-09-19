@@ -13,10 +13,13 @@ import io.github.libtmux.Session;
 import io.github.libtmux.UnencodableTextException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.junit5.TmuxSocketPath;
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.ProcessTransport;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Tag;
@@ -29,10 +32,11 @@ import org.junit.jupiter.api.io.TempDir;
  * images.
  *
  * <p>Two separate things go wrong there and this pins both. Outbound, the JVM encodes a child's
- * arguments with the platform encoding, so {@code é} leaves as {@code ?} and tmux names a session
- * after it. Inbound, tmux replaces every non-ASCII character in a reply with {@code _} for a client
- * it does not believe reads UTF-8, so a name or a directory read back is a different string from
- * the one tmux holds.
+ * arguments with the platform encoding, so {@code é} would leave as {@code ?} and tmux would name a
+ * session after it; the library sends such commands over standard input instead, which it encodes
+ * itself. Inbound, tmux replaces every non-ASCII character in a reply with {@code _} for a client
+ * it does not believe reads UTF-8, so a name or a directory read back would be a different string
+ * from the one tmux holds.
  *
  * <p>Run by the {@code localeTest} task, which forks a JVM under {@code LC_ALL=C}. The first test
  * here refuses to let the rest pass vacuously on a developer's UTF-8 machine.
@@ -55,21 +59,61 @@ final class NonUtf8LocaleIntegrationTest {
                         + " the wrong reason");
     }
 
+    /**
+     * The defect this pins: text this JVM could not encode as an argument was refused outright, so a
+     * container on the default locale could not name a session {@code café} at all — and asking
+     * whether one existed threw while finding it by name worked. Commands that cannot travel as
+     * arguments now travel over standard input, which this library writes as UTF-8 itself.
+     */
     @Test
-    void textThisJvmCannotEncodeIsRefusedRatherThanQuietlyCorrupted(Server server) {
-        UnencodableTextException refused =
-                assertThrows(UnencodableTextException.class, () -> server.newSession(ACCENTED));
+    void textThisJvmCannotEncodeAsAnArgumentStillReachesTmuxIntact(Server server) {
+        Session created = server.newSession(ACCENTED);
 
-        String reported = String.valueOf(refused.getMessage());
-        assertTrue(reported.contains("U+00E9"), "the message names the character that cannot travel");
-        assertTrue(reported.contains("LC_ALL"), "and the environment change that fixes it");
-        assertFalse(
-                reported.contains(ACCENTED),
-                "a tmux argument carries session names and pane content, so the text itself stays out of a"
-                        + " message that reaches a log");
+        assertEquals(ACCENTED, created.name(), "tmux holds the name it was given");
+        assertTrue(server.hasSession(ACCENTED), "and asking for it by name agrees with finding it");
+        assertEquals(ACCENTED, server.session(ACCENTED).orElseThrow().name());
         assertTrue(
-                server.sessions().stream().noneMatch(session -> session.name().startsWith("caf")),
+                server.sessions().stream().noneMatch(session -> session.name().equals("caf?")),
                 "nothing was created under a mangled name");
+    }
+
+    /** Every kind of write, not only a name: each takes a different command to tmux. */
+    @Test
+    void everyWriteCarriesTextThisJvmCannotEncode(Server server) {
+        Pane pane = server.panes().get(0);
+
+        Pane retitled = pane.retitle(ACCENTED);
+        server.buffers().set("accented", ACCENTED);
+        server.environment().set("ACCENTED", ACCENTED);
+        server.globalOptions().set("@accented", ACCENTED);
+
+        assertEquals(ACCENTED, retitled.title());
+        assertEquals(ACCENTED, server.buffers().show("accented"));
+        assertEquals(Optional.of(ACCENTED), server.environment().get("ACCENTED"));
+        assertEquals(Optional.of(ACCENTED), server.globalOptions().get("@accented"));
+    }
+
+    /**
+     * Standard input has room for one thing. When a command already reads it there is no second
+     * route, and the text is refused rather than corrupted — naming the character and the fix, and
+     * keeping the text itself out of a message that may reach a log.
+     */
+    @Test
+    void textWithNoRouteLeftIsRefusedRatherThanQuietlyCorrupted(Server server) {
+        try (ProcessTransport transport = new ProcessTransport(1)) {
+            UnencodableTextException refused = assertThrows(
+                    UnencodableTextException.class,
+                    () -> transport.execute(CommandRequest.of(
+                            server.config().endpointCommand(),
+                            List.of("load-buffer", "-b", ACCENTED, "-"),
+                            Duration.ofSeconds(5),
+                            "contents")));
+
+            String reported = String.valueOf(refused.getMessage());
+            assertTrue(reported.contains("U+00E9"), "the message names the character that cannot travel");
+            assertTrue(reported.contains("LC_ALL"), "and the environment change that fixes it");
+            assertFalse(reported.contains(ACCENTED), "and keeps the text itself out of a message bound for a log");
+        }
     }
 
     @Test

@@ -1,6 +1,8 @@
 package io.github.libtmux.transport;
 
+import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.internal.ProcessTree;
+import io.github.libtmux.internal.Utf8;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.IOException;
@@ -154,9 +156,10 @@ public final class ProcessTransport implements TmuxTransport {
         return execute(request, true);
     }
 
-    private CommandResult execute(CommandRequest request, boolean waiting) {
+    private CommandResult execute(CommandRequest asked, boolean waiting) {
         requireOpen();
-        requireDispatchable(request.commands());
+        requireDispatchable(asked.commands());
+        CommandRequest request = carriable(asked);
         @Nullable Semaphore waitingPermit = waiting ? waitingAdmission : null;
         if (waiting && waitingPermit == null) {
             throw new TmuxTransportException(
@@ -280,6 +283,38 @@ public final class ProcessTransport implements TmuxTransport {
         } finally {
             gate.unlock();
         }
+    }
+
+    /**
+     * The request as a process this JVM starts can carry it.
+     *
+     * <p>A JVM encodes a child's arguments with the platform's encoding, which the locale decides
+     * before {@code main} and nothing changes afterwards. Under {@code LANG=C} — the default in most
+     * container images — that is ASCII, and {@code é} would reach tmux as {@code ?}. Standard input
+     * has no such limit: this library writes it as UTF-8 itself. So when the commands cannot travel
+     * as arguments they travel as a script tmux reads there with {@code source-file -}, which is on
+     * every supported release, answers with the same output, exit status and error, and reaches an
+     * absent daemon the same way without starting one.
+     *
+     * <p>Written as one line, quoted as {@code if-shell} already quotes every handle command, so tmux
+     * stops at the first failure exactly as it does for arguments: a batch means the same thing
+     * either way. Only when standard input is already carrying something is there no second route,
+     * and then the text is refused rather than corrupted.
+     */
+    private static CommandRequest carriable(CommandRequest request) {
+        if (request.commands().stream().allMatch(Utf8::encodable)) {
+            return request;
+        }
+        if (!request.input().isEmpty()) {
+            for (List<String> command : request.commands()) {
+                Utf8.requireEncodableArguments(command);
+            }
+        }
+        return new CommandRequest(
+                request.endpoint(),
+                List.of(List.of("source-file", "-")),
+                request.timeout(),
+                CommandStrings.group(request.commands()) + "\n");
     }
 
     /** POSIX {@code execve} takes NUL-terminated strings, so an embedded NUL cannot survive. */

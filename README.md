@@ -339,14 +339,16 @@ bug. See [the Scala guide](docs/guide/scala.md).
 
 JDK 21 or newer.
 
-**A UTF-8 locale, to pass non-ASCII text to tmux.** A JVM encodes a child
-process's arguments with the platform's encoding, which the locale decides
-before `main` runs, so under `LANG=C` — the default in most container images —
-`é` would reach tmux as `?` and name a session after it. The library refuses
-that text rather than corrupting it; set `LC_ALL=C.UTF-8` in the environment,
-which is the only thing that fixes it (`-Dfile.encoding` does not). Reading is
-unaffected either way: every command says it reads UTF-8, so what tmux sends
-back arrives whole whatever the locale.
+**Any locale.** A JVM encodes a child process's arguments with the platform's
+encoding, which the locale decides before `main` runs, so under `LANG=C` — the
+default in most container images — `é` would reach tmux as `?`. When a command
+carries text the JVM cannot encode, the library sends it over tmux's standard
+input instead, which it writes as UTF-8 itself; names, titles, buffers, options,
+environment values and typed text all arrive intact. Reading is unaffected
+either way: every command says it reads UTF-8, so what tmux sends back arrives
+whole whatever the locale. Only `Pane.currentPath()` still needs a UTF-8 locale,
+because a `Path` in this JVM cannot name the directory; `currentPathText()` reads
+it anywhere.
 
 tmux 3.2a through 3.7c. That range is not a claim: the whole real-tmux suite runs
 against every one of those releases, and each lane checks it really ran the tmux

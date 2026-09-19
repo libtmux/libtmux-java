@@ -43,13 +43,11 @@ public record CommandRequest(List<String> endpoint, List<List<String>> commands,
         if (timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException("timeout is not positive");
         }
-        // Every process this library starts is built from one of these, so the JVM's own encoding
-        // limit is answered once here rather than at each call site. Input is exempt: it reaches
-        // tmux as bytes this library encodes, not as an argument the JVM encodes.
+        // The endpoint is tmux's own argv — which binary, which socket — and nothing but argv can
+        // carry it, so text this JVM cannot encode there is refused here. The commands are not:
+        // they are data a transport chooses how to deliver, and ProcessTransport delivers them over
+        // standard input when this JVM cannot encode them as arguments.
         Utf8.requireEncodableArguments(endpoint);
-        for (List<String> command : commands) {
-            Utf8.requireEncodableArguments(command);
-        }
     }
 
     /** A request for one command, which is every request but a batch. */

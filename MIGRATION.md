@@ -5,13 +5,16 @@ API changes that require updates to calling code are recorded here. See
 
 ## Next release
 
-### Non-ASCII text needs a UTF-8 locale
+### Non-ASCII text reaches tmux on any locale
 
-Commands now refuse text this JVM cannot encode instead of letting tmux receive
-`?` in its place. `UnencodableTextException`, a `LibTmuxException` subtype,
-names the character and the fix. Set `LC_ALL` or `LANG` to a UTF-8 locale before
-the JVM starts; `-Dfile.encoding` and `-Dsun.jnu.encoding` are read too late to
-help. ASCII is unaffected on every locale.
+A command carrying text this JVM cannot encode as an argument — any non-ASCII
+text under `LANG=C`, the default in most container images — is sent over tmux's
+standard input instead, with `source-file -`, and arrives intact. No change is
+needed. `UnencodableTextException`, a `LibTmuxException` subtype, remains for
+the one case with no second route: a command that already reads standard input,
+or an endpoint — the binary or socket path — this JVM cannot encode, since
+nothing but an argument can carry those. It names the character and the fix,
+`LC_ALL=C.UTF-8`, and never the text itself.
 
 Reading needs no change: every command now passes `-u`, so tmux no longer
 replaces non-ASCII in a reply with `_` for a client whose locale it cannot

@@ -38,16 +38,30 @@ public final class Utf8 {
      *     encoding is not UTF-8
      */
     public static void requireEncodableArguments(List<String> argv) {
+        int refused = firstUnencodable(argv);
+        if (refused >= 0) {
+            throw unencodable(refused);
+        }
+    }
+
+    /** Whether this JVM can hand every one of these to a child process intact. */
+    public static boolean encodable(List<String> argv) {
+        return firstUnencodable(argv) < 0;
+    }
+
+    /** The first code point this JVM would corrupt as an argument, or -1 when there is none. */
+    private static int firstUnencodable(List<String> argv) {
         if (ARGUMENTS_ARE_UTF8) {
-            return;
+            return -1;
         }
         for (String argument : argv) {
             for (int index = 0; index < argument.length(); index++) {
                 if (argument.charAt(index) > 0x7f) {
-                    throw unencodable(argument.codePointAt(index));
+                    return argument.codePointAt(index);
                 }
             }
         }
+        return -1;
     }
 
     /**
