@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -60,6 +61,53 @@ final class FailedReadIntegrationTest {
                     ServerNotRunningException.class,
                     () -> server.globalOptions().get("history-limit"));
             assertThrows(ServerNotRunningException.class, server::requireAlive);
+        }
+    }
+
+    /**
+     * Every method, not the handful that remembered to check. The classification used to live at each
+     * site that cared, so seven reads and every mutation reported a missing daemon as an ordinary
+     * failure carrying tmux's own wording — the one thing the migration notes tell a caller it can
+     * catch instead of matching on a message.
+     */
+    @Test
+    void aMutationOnAnAbsentDaemonSaysSoToo(@TempDir Path scratch) {
+        try (Server server = at(scratch.resolve("nobody-home"), "tmux")) {
+            assertThrows(ServerNotRunningException.class, () -> server.killSession("build"));
+            assertThrows(
+                    ServerNotRunningException.class,
+                    () -> server.globalOptions().set("@x", "1"));
+            assertThrows(
+                    ServerNotRunningException.class, () -> server.environment().set("K", "v"));
+            assertThrows(ServerNotRunningException.class, () -> server.buffers().set("b", "v"));
+            assertThrows(ServerNotRunningException.class, () -> server.bindKey("F12", List.of("display-message", "x")));
+            assertThrows(ServerNotRunningException.class, server::messages);
+            assertThrows(ServerNotRunningException.class, () -> server.hooks().all());
+            assertThrows(ServerNotRunningException.class, () -> server.buffers().list());
+            assertThrows(
+                    ServerNotRunningException.class, () -> server.environment().all());
+        }
+    }
+
+    /**
+     * What "no daemon" is recognised by, asserted against the tmux each lane actually runs.
+     *
+     * <p>The distinction rests on substrings of tmux's own stderr, because tmux offers no exit code
+     * for it. A release that reworded this would turn every absent-daemon answer into an ordinary
+     * failure, silently, and the migration notes tell callers to branch on exactly that difference.
+     */
+    @Test
+    void tmuxStillWordsAnAbsentDaemonTheWayThisLibraryReadsIt(@TempDir Path scratch) {
+        try (Server server = at(scratch.resolve("nobody-home"), "tmux")) {
+            ServerNotRunningException absent =
+                    assertThrows(ServerNotRunningException.class, () -> server.hasSession("build"));
+
+            String said = String.valueOf(absent.getMessage());
+            assertTrue(
+                    said.contains("no server running")
+                            || said.contains("server exited unexpectedly")
+                            || said.contains("(No such file or directory)"),
+                    "this tmux words an absent daemon in a way the library no longer recognises: " + said);
         }
     }
 

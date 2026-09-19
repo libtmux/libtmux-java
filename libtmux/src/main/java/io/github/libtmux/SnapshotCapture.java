@@ -258,11 +258,8 @@ final class SnapshotCapture {
     /** Reads one listing's rows, insisting tmux actually ran it. */
     private List<RowFormat.Row> rows(RowFormat format, OperationResult operation, String command) {
         if (operation.outcome() != OperationOutcome.COMPLETE) {
-            throw new LibTmuxException(Server.failure(
-                    command,
-                    server.config().binary(),
-                    operation.outcome().name().toLowerCase(Locale.ROOT).replace('_', ' '),
-                    operation.stderr()));
+            throw server.failed(
+                    command, operation.outcome().name().toLowerCase(Locale.ROOT).replace('_', ' '), operation.stderr());
         }
         return format.rows(operation.stdout());
     }

@@ -151,9 +151,6 @@ public final class Server implements AutoCloseable {
         if (result.succeeded()) {
             return true;
         }
-        if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
-            throw new ServerNotRunningException("no tmux server is answering on this endpoint");
-        }
         // "no" is the answer to "is there a session called this", and tmux says so in those words
         // on every supported release. Anything else it reports — a socket this user cannot open, a
         // binary that is not tmux — is not an answer to the question, and reporting it as one is
@@ -213,10 +210,8 @@ public final class Server implements AutoCloseable {
         }
         // Not simply !isAlive(): that answers false for every refusal, so a socket this user cannot
         // open, or a binary that is not tmux, was reported as a server that is not running — which
-        // sends a caller to start one when starting one is not the problem.
-        if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
-            throw new ServerNotRunningException("no tmux server is answering on this endpoint");
-        }
+        // sends a caller to start one when starting one is not the problem. failed() tells the two
+        // apart from what tmux said.
         throw failed("display-message", result);
     }
 
@@ -229,7 +224,23 @@ public final class Server implements AutoCloseable {
      * stop there.
      */
     LibTmuxException failed(String command, CommandResult result) {
-        return new LibTmuxException(failure(command, config.binary(), "exit " + result.exitCode(), result.stderr()));
+        return failed(command, "exit " + result.exitCode(), result.stderr());
+    }
+
+    /**
+     * As {@link #failed(String, CommandResult)}, for an outcome no exit code describes.
+     *
+     * <p>Both end here so that "no daemon" is decided once. It used to be decided at each site that
+     * cared, which is why seven reads and every mutation reported a missing server as an ordinary
+     * failure while the fifteen reads that had the check reported it as {@link
+     * ServerNotRunningException} — the one thing {@code MIGRATION.md} tells a caller it can catch
+     * instead of matching on a message.
+     */
+    LibTmuxException failed(String command, String status, List<String> stderr) {
+        String message = failure(command, config.binary(), status, stderr);
+        return stderr.stream().anyMatch(Server::serverAbsent)
+                ? new ServerNotRunningException(message)
+                : new LibTmuxException(message);
     }
 
     /**
@@ -526,9 +537,6 @@ public final class Server implements AutoCloseable {
                 transport.execute(new CommandRequest(argv, List.of(List.of(command)), config.defaultTimeout(), ""));
         if (result.succeeded()) {
             return result;
-        }
-        if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
-            throw new ServerNotRunningException("no tmux server is answering on this endpoint");
         }
         throw failed(command, result);
     }

@@ -78,9 +78,6 @@ public final class Options {
         if (result.succeeded()) {
             return Optional.of(String.join("\n", result.stdout()));
         }
-        if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
-            throw new ServerNotRunningException("no tmux server is answering on this endpoint");
-        }
         // The documented meaning of empty, in tmux's own words on every supported release. Any
         // other failure is a failed read, and answering it with "tmux does not know that option"
         // makes this method say something it did not find out.

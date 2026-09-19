@@ -178,9 +178,6 @@ public final class Environment {
         if (result.succeeded()) {
             return Optional.ofNullable(repaired(parse(result.stdout())).get(name));
         }
-        if (result.stderr().stream().anyMatch(Server::serverAbsent)) {
-            throw new ServerNotRunningException("no tmux server is answering on this endpoint");
-        }
         if (result.stderr().stream().anyMatch(line -> line.contains("unknown variable"))) {
             return Optional.empty();
         }

@@ -73,9 +73,6 @@ public final class Buffers {
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.equals("no buffer " + name))) {
             throw new ObjectDoesNotExistException("no buffer named '" + name + "'");
         }
-        if (!result.succeeded() && result.stderr().stream().anyMatch(Server::serverAbsent)) {
-            throw new ServerNotRunningException("no tmux server is answering on this endpoint");
-        }
         if (!result.succeeded()) {
             throw server.failed("show-buffer", result);
         }
@@ -98,9 +95,6 @@ public final class Buffers {
         CommandResult result = server.cmd(List.of("delete-buffer", "-b", name));
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.equals("unknown buffer: " + name))) {
             throw new ObjectDoesNotExistException("no buffer named '" + name + "'");
-        }
-        if (!result.succeeded() && result.stderr().stream().anyMatch(Server::serverAbsent)) {
-            throw new ServerNotRunningException("no tmux server is answering on this endpoint");
         }
         if (!result.succeeded()) {
             throw server.failed("delete-buffer", result);
