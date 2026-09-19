@@ -20,6 +20,7 @@ import io.github.libtmux.transport.TmuxTransportException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -44,6 +45,17 @@ final class ServerTest {
                 .endpoint(ServerEndpoint.socketPath(directory.resolve("s")))
                 .configFile(config)
                 .build();
+    }
+
+    /**
+     * A binary that is not tmux: exits 0 and prints nothing, on every platform. {@code /bin/true}
+     * answers this on Linux but not macOS, which keeps it only under {@code /usr/bin}.
+     */
+    private static Path notTmux(Path directory) throws IOException {
+        Path binary = directory.resolve("not-tmux");
+        Files.writeString(binary, "#!/bin/sh\nexit 0\n");
+        Files.setPosixFilePermissions(binary, PosixFilePermissions.fromString("rwx------"));
+        return binary;
     }
 
     /**
@@ -740,18 +752,19 @@ final class ServerTest {
      */
     @Test
     void aBinaryThatIsNotTmuxFailsSessionCreationWithATypedMessage(@TempDir Path directory) throws IOException {
-        ServerConfig notTmux = ServerConfig.builder()
-                .binary("/bin/true")
+        Path binary = notTmux(directory);
+        ServerConfig notTmuxConfig = ServerConfig.builder()
+                .binary(binary.toString())
                 .endpoint(ServerEndpoint.socketPath(directory.resolve("s")))
                 .build();
 
-        try (Server server = Server.open(notTmux)) {
+        try (Server server = Server.open(notTmuxConfig)) {
             // assertThrows itself is the regression guard: an ArrayIndexOutOfBoundsException
             // would not satisfy LibTmuxException.class and would fail this call as an unexpected type.
             LibTmuxException failure = assertThrows(LibTmuxException.class, () -> server.newSession("x"));
 
             assertTrue(
-                    String.valueOf(failure.getMessage()).contains("/bin/true"),
+                    String.valueOf(failure.getMessage()).contains(binary.toString()),
                     "names the binary a caller misconfigured: " + failure.getMessage());
         }
     }
@@ -765,17 +778,18 @@ final class ServerTest {
      */
     @Test
     void aBinaryThatIsNotTmuxNamesItselfEvenWhenAVersionProbeRunsFirst(@TempDir Path directory) throws IOException {
-        ServerConfig notTmux = ServerConfig.builder()
-                .binary("/bin/true")
+        Path binary = notTmux(directory);
+        ServerConfig notTmuxConfig = ServerConfig.builder()
+                .binary(binary.toString())
                 .endpoint(ServerEndpoint.socketPath(directory.resolve("s")))
                 .build();
 
-        try (Server server = Server.open(notTmux)) {
+        try (Server server = Server.open(notTmuxConfig)) {
             LibTmuxException failure = assertThrows(
                     LibTmuxException.class, () -> server.newSession(s -> s.sized(new Dimensions(120, 40))));
 
             assertTrue(
-                    String.valueOf(failure.getMessage()).contains("/bin/true"),
+                    String.valueOf(failure.getMessage()).contains(binary.toString()),
                     "names the binary rather than describing a malformed row: " + failure.getMessage());
         }
     }

@@ -49,6 +49,18 @@ final class FailedReadIntegrationTest {
         return locked.resolve("s");
     }
 
+    /**
+     * A binary that is not tmux: exits with {@code status} and prints nothing, on every platform.
+     * {@code /bin/false} answers this on Linux but not macOS, which keeps it only under {@code
+     * /usr/bin}.
+     */
+    private static Path exitingBinary(Path scratch, int status) throws IOException {
+        Path binary = scratch.resolve("not-tmux");
+        Files.writeString(binary, "#!/bin/sh\nexit " + status + "\n");
+        Files.setPosixFilePermissions(binary, PosixFilePermissions.fromString("rwx------"));
+        return binary;
+    }
+
     // ------------------------------------------------------------- a read that found nothing
 
     @Test
@@ -154,14 +166,15 @@ final class FailedReadIntegrationTest {
     }
 
     @Test
-    void aBinaryThatIsNotTmuxIsNotAnEmptyServer(@TempDir Path scratch) {
-        try (Server server = at(scratch.resolve("s"), "/bin/false")) {
+    void aBinaryThatIsNotTmuxIsNotAnEmptyServer(@TempDir Path scratch) throws IOException {
+        Path notTmux = exitingBinary(scratch, 1);
+        try (Server server = at(scratch.resolve("s"), notTmux.toString())) {
             assertReadsFailRatherThanAnswer(server);
 
             LibTmuxException reported = assertThrows(LibTmuxException.class, server::sessions);
             String message = String.valueOf(reported.getMessage());
             assertTrue(message.contains("exit 1"), "the message carries how tmux ended: " + message);
-            assertTrue(message.contains("/bin/false"), "and which binary it was: " + message);
+            assertTrue(message.contains(notTmux.toString()), "and which binary it was: " + message);
         }
     }
 
