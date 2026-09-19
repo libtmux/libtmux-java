@@ -75,12 +75,14 @@ final class NamedServerFixtureTest {
     void aQuarantineReachedThroughAnAncestorLinkIsAccepted(@TempDir Path directory) throws Exception {
         Path real = Files.createDirectory(directory.resolve("real"));
         Path link = Files.createSymbolicLink(directory.resolve("link"), real);
-        Path root = Files.createDirectory(real.resolve("q"));
+        // Both the quarantine and the socket are spelled through the same link, as a caller's own
+        // TMUX_TMPDIR and everything built under it would be — not through two different names.
+        Path root = Files.createDirectory(link.resolve("q"));
         Path socket = root.resolve("ltj-anc-" + ProcessHandle.current().pid());
 
         try (Server server = openPath(socket, directory)) {
             server.newSession("ancestor-link");
-            try (NamedServerFixture fixture = NamedServerFixture.own(server, socket, link.resolve("q"))) {
+            try (NamedServerFixture fixture = NamedServerFixture.own(server, socket, root)) {
                 assertEquals(socket.toRealPath(), fixture.socket());
                 assertTrue(server.hasSession("ancestor-link"));
             }
