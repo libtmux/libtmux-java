@@ -35,6 +35,24 @@ A wide listing marks an inherited name with a trailing star — `status-left*`.
 That star never reaches you: the name you look up is the name you get back, and
 `all()` already answers which scope set it.
 
+## As their types
+
+`OptionKey` names an option and how its value reads, so a number comes back as
+an `Integer` and a flag as a `Boolean` rather than as `"on"`:
+
+```java
+// Given: Session session
+session.options().set(OptionKey.HISTORY_LIMIT, 50_000);
+
+session.options().get(OptionKey.HISTORY_LIMIT).orElseThrow();   // → 50000
+```
+
+A few options every supported release types the same way are constants. For any
+other, declare one — `OptionKey.flag("visual-bell")`, `OptionKey.number(...)`,
+`OptionKey.text(...)` — since tmux adds options between releases and a
+catalogue here would be wrong on the ones it did not track. A key with the wrong
+type fails naming the option rather than guessing.
+
 ## Writing without replacing
 
 ```java

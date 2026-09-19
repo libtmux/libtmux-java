@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
@@ -85,6 +86,23 @@ public final class Options {
             return Optional.empty();
         }
         throw server.failed("show-options", result);
+    }
+
+    /**
+     * As {@link #get(String)}, read as the key's type.
+     *
+     * @throws LibTmuxException if tmux reports a value the key's type cannot hold, which means the
+     *     key was declared with the wrong type
+     */
+    public <T> Optional<T> get(OptionKey<T> key) {
+        Objects.requireNonNull(key, "key");
+        return get(key.name()).map(key::read);
+    }
+
+    /** As {@link #set(String, String)}, written the way tmux reads the key's type. */
+    public <T> void set(OptionKey<T> key, T value) {
+        Objects.requireNonNull(key, "key");
+        set(key.name(), key.write(value));
     }
 
     /** Every option set at this scope, in tmux's order. Inherited values are not listed. */
