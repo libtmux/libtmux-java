@@ -6,6 +6,7 @@ import io.github.libtmux.ServerConfig;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.internal.ProcessTree;
+import io.github.libtmux.internal.Utf8;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTimeoutException;
 import io.github.libtmux.transport.TmuxTransportException;
@@ -39,10 +40,24 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * scheduler, and either one unable to run stops the client from making progress. The reader only
  * resolves replies and fills bounded subscription buffers; subscriber code runs on the thread that
  * pulls a value.
+ *
+ * <p><strong>Threads.</strong> {@link #send} may be called from several threads at once: requests
+ * queue in the order they arrive and each caller gets its own reply. A subscription is read by one
+ * thread at a time.
+ *
+ * <p><strong>Close it.</strong> The client holds an attached tmux client, which is what makes tmux
+ * push output to it, and closing is what detaches that client and stops its threads. A client that
+ * is forgotten does not hold the JVM open — its threads are daemons — and the attached tmux client
+ * exits once the JVM does, because it reads its commands from a pipe that closes with it. Until then
+ * it is listed among the session's clients like any other.
  */
 public final class ControlClient implements AutoCloseable {
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
+
+    /** The same seam as the process transport's, since this client starts its own process. */
+    private static final System.Logger LOG = System.getLogger(ControlClient.class.getName());
+
     private static final long EXIT_MILLIS = 5_000;
 
     private final Process process;
@@ -67,10 +82,16 @@ public final class ControlClient implements AutoCloseable {
         BufferedWriter requests =
                 new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
         this.writer = new ControlWriter(requests, ControlWriter.DEFAULT_CAPACITY, this::terminate);
+        // Daemons, unlike the process transport's drains. Those let go once idle, which is what
+        // stops a forgotten transport holding the JVM; these are attached to a live tmux and are
+        // never idle, so the same treatment would not help and a forgotten client kept the JVM alive
+        // forever — for a command-line program, indistinguishable from a deadlock. Nothing is lost by
+        // letting go at exit: send() blocks its caller until the reply arrives, so a call in flight
+        // is held by the thread that made it.
         this.reader = new Thread(this::read, "libtmux-control");
-        this.reader.setDaemon(false);
+        this.reader.setDaemon(true);
         this.errorReader = new Thread(this::drainErrors, "libtmux-control-stderr");
-        this.errorReader.setDaemon(false);
+        this.errorReader.setDaemon(true);
         this.errorReader.start();
     }
 
@@ -101,6 +122,10 @@ public final class ControlClient implements AutoCloseable {
         }
         List<String> command = new ArrayList<>(config.endpointCommand());
         command.addAll(List.of("-C", "attach-session", "-t", session.value()));
+        // The same guard CommandRequest applies to every other process this library starts. A
+        // control client's own commands travel as UTF-8 over its standard input and are unaffected,
+        // but this argv is encoded by the JVM like any other.
+        Utf8.requireEncodableArguments(command);
         Process process;
         try {
             process = new ProcessBuilder(command).start();
@@ -129,7 +154,30 @@ public final class ControlClient implements AutoCloseable {
             throw failure;
         }
         client.writer.start();
+        client.requestJsonLayouts();
+        LOG.log(System.Logger.Level.DEBUG, "tmux control client attached to session {0}", session.value());
         return client;
+    }
+
+    /**
+     * Asks tmux to report layouts as JSON on notifications this client receives, matching what a
+     * plain client already gets from {@code #{window_layout}} on tmux 3.8+.
+     *
+     * <p>Without this, this client's own {@code %layout-change} carries the classic string even on a
+     * server new enough to write JSON elsewhere: the same window's layout then disagrees depending
+     * on which kind of client read it — the mismatch a {@code watch}ed layout format or a parsed
+     * notification would otherwise hit. Measured harmless back to 3.2a: {@code refresh-client -f
+     * new-layouts} completes with no error on every supported release, just with nothing to change
+     * before 3.8, so this is sent unconditionally rather than gated on a version.
+     */
+    private void requestJsonLayouts() {
+        ControlReply reply = send("refresh-client", "-f", "new-layouts");
+        if (reply.outcome() != OperationOutcome.COMPLETE) {
+            LibTmuxException failure =
+                    new LibTmuxException("could not request JSON layouts on attach: " + reply.lines());
+            closeAfterFailure(failure);
+            throw failure;
+        }
     }
 
     /** Runs one command and waits for its reply. */
@@ -163,7 +211,19 @@ public final class ControlClient implements AutoCloseable {
         if (closed.get() || failed) {
             throw new IllegalStateException("control client is not usable");
         }
-        return writer.exchange(line(argv), timeout);
+        long started = System.nanoTime();
+        ControlReply reply = writer.exchange(line(argv), timeout);
+        // The verb and never its arguments, for the reason the process transport gives: an argument
+        // carries what a caller typed, and a log a library opens is no place for it.
+        if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
+            LOG.log(
+                    System.Logger.Level.DEBUG,
+                    "tmux control {0} {1} in {2} ms",
+                    argv.get(0),
+                    reply.outcome().name().toLowerCase(java.util.Locale.ROOT).replace('_', ' '),
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+        }
+        return reply;
     }
 
     /**
@@ -211,11 +271,24 @@ public final class ControlClient implements AutoCloseable {
      *
      * @param name what to call it; registering the same name again replaces the old one
      * @param target {@code %*} for every pane, {@code @*} for every window, a specific {@code %id} or
-     *     {@code @id}, or anything else for the attached session
+     *     {@code @id}, or the attached session (pass {@code ""} - see below)
      * @param format a tmux format, such as {@code #{pane_current_command}}
      */
     public ControlReply watch(String name, String target, String format) {
-        return send("refresh-client", "-B", name + ":" + target + ":" + format);
+        return send("refresh-client", "-B", name + ":" + sessionScopeNormalized(target) + ":" + format);
+    }
+
+    /**
+     * tmux(1) documents {@code refresh-client -B name:what:format}'s {@code what} as empty,
+     * {@code %N}, {@code %*}, {@code @N} or {@code @*} only - a session id or an arbitrary word was
+     * never a spelling the manual promises, even though 3.2a and 3.7c happen to accept one leniently
+     * (confirmed against the matrix). On master the same non-empty, non-{@code %}/{@code @} target
+     * is accepted by the parser but delivers nothing, silently. The empty string is the one
+     * spelling confirmed to mean "the attached session" and to actually fire on every tested release,
+     * so anything that does not name a pane or window is normalized to it rather than passed through.
+     */
+    private static String sessionScopeNormalized(String target) {
+        return target.startsWith("%") || target.startsWith("@") ? target : "";
     }
 
     /** Stops a watch. tmux reads a name with no colon in it as one to remove. */

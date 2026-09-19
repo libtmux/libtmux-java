@@ -32,11 +32,21 @@ tasks.withType<Test>().configureEach {
     val root = rootProject.layout.projectDirectory
     val documents =
         rootProject.fileTree(root) {
-            include("README.md", "*/README.md", "docs/guide/*.md", "docs/parity/*.md")
+            include("README.md", "MIGRATION.md", "*/README.md", "docs/guide/*.md", "docs/parity/*.md")
+        }
+
+    // The sources too: two gates here read them — for tracker ids, and for the methods that say
+    // why they leave tmux's options open — and a planted codename passed while the task sat up to
+    // date, exactly as the snippets once did.
+    val sources =
+        rootProject.fileTree(root) {
+            include("*/src/main/**/*.java", "*/src/main/**/*.kt", "*/src/test/**/*.java", "*/src/test/**/*.kt")
+            exclude("**/build/**")
         }
 
     inputs.files(classpath)
     inputs.files(documents).withPropertyName("documentation").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(sources).withPropertyName("sources").withPathSensitivity(PathSensitivity.RELATIVE)
 
     doFirst { systemProperty("libtmux.docs.classpath", classpath.asPath) }
     systemProperty("libtmux.docs.root", root.asFile.path)

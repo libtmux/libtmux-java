@@ -14,6 +14,9 @@ they are the part of a project nobody compiles and everybody reads first.
 | [`BuildAWorkspace`](src/main/java/io/github/libtmux/examples/BuildAWorkspace.java) | making a session, a window, a split, and choosing a layout |
 | [`FindPanesRunning`](src/main/java/io/github/libtmux/examples/FindPanesRunning.java) | typed filters over a capture, without asking tmux twice |
 | [`WatchPaneOutput`](src/main/java/io/github/libtmux/examples/WatchPaneOutput.java) | control mode: reading `%output` as tmux pushes it |
+| [`WatchWhatChanges`](src/main/java/io/github/libtmux/examples/WatchWhatChanges.java) | control mode: typed notifications as the server changes |
+| [`RunACommand`](src/main/java/io/github/libtmux/examples/RunACommand.java) | running a command to its exit status, not reading the screen |
+| [`ServeTmuxOverMcp`](src/main/java/io/github/libtmux/examples/ServeTmuxOverMcp.java) | serving this tmux to a model over MCP |
 
 ## Run one
 

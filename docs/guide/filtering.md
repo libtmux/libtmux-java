@@ -5,7 +5,8 @@ unchanged, and — unlike a lambda — it can also be printed, stored, or transl
 into another system's filter language.
 
 ```java
-server.sessions().get(0).newWindow("editor");
+// Given: Server server
+server.newSession("build").newWindow("editor");
 
 List<Window> editors = server.windows().stream()
         .filter(Window_.name().startsWith("edit"))
@@ -114,32 +115,12 @@ client to filter, while `search_panes` searches only rendered terminal text.
 
 ## Filters that arrive as strings
 
-A CLI flag, a config file or a stored query carries the field and the operator as
-untrusted text. `LegacyFilters` is the one supported way in, so the rest of the
-library never has to accept that shape. The key is `field__operator`; a bare
-field name means equality.
-
-```java
-var catalog = LegacyFilters.FieldCatalog.<Pane>builder()
-        .add("index", Pane_.index())
-        .add("active", Pane_.active())
-        .build();
-
-FilterExpr<Pane> here = catalog.parse(Map.of("index__lt", "1"));
-
-here.describe();                     // → (pane_index < 1)
-server.panes().stream().filter(here).toList().size();    // → 1
-```
-
-The catalog decides which identifiers a caller may name, so an unknown field is
-refused rather than guessed. Note what `describe` prints: the catalog key is the
-alias you chose to expose, but the expression underneath carries tmux's own
-`pane_index`, which is what keeps it meaningful to a port that is not this one.
-
-Everything this refuses is a compile error in the typed form — a text operator on
-a number field, an ordering operator on text, a value of the wrong type. That is
-the trade made explicit: one place where a wrong name becomes a runtime failure,
-and the type system everywhere else.
+A CLI flag, a config file or a stored query carries a filter as untrusted text.
+Read it with the wire form above: `FilterJson.readString` checks the document
+against a model and refuses any field, relation or operator the model did not
+declare, so a wrong name fails closed rather than being guessed. The core takes
+no string form of its own, which keeps the typed expression the only thing the
+rest of the library accepts.
 
 ## Taking a filter in your own API
 

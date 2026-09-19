@@ -1,7 +1,68 @@
+import java.lang.module.ModuleFinder
+
 plugins { id("libtmux.published-library") }
 
+dependencies { compileOnly(libs.errorprone.annotations) }
+
 // The core resolves nothing at runtime. Anything that would change that belongs in another module.
-tasks.jar { manifest { attributes("Automatic-Module-Name" to "io.github.libtmux") } }
+// No Automatic-Module-Name: module-info.java names this module, and the manifest attribute is
+// ignored once a descriptor is present — two spellings of one name, one of which cannot be checked.
+
+// The module descriptor is the only thing that actually hides io.github.libtmux.internal: its three
+// classes are public because several packages here share them, and on a classpath that makes them
+// everyone's. Read back off the built jar rather than asserted in a test, because tests run on the
+// classpath — in the unnamed module, where the descriptor is not there to check.
+tasks.jar {
+    val built = archiveFile
+    doLast {
+        val descriptor = ModuleFinder.of(built.get().asFile.toPath())
+            .findAll()
+            .firstOrNull()
+            ?.descriptor()
+            ?: error("the published jar carries no module descriptor")
+        require(descriptor.name() == "io.github.libtmux") {
+            "the published module is named ${descriptor.name()}"
+        }
+        val exported = descriptor.exports().map { it.source() }.toSet()
+        require("io.github.libtmux.internal" !in exported) {
+            "the published module exports io.github.libtmux.internal"
+        }
+        val packages = descriptor.packages().filterNot { it == "io.github.libtmux.internal" }
+        val unexported = packages - exported
+        require(unexported.isEmpty()) {
+            "the published module hides packages a caller needs: $unexported"
+        }
+    }
+}
+
+// Every other lint stays on. -exports fires only because the annotations above are required
+// statically and not transitively, which is the point: a consumer never sees them at runtime, and
+// making them transitive to silence this made every modular consumer fail to compile.
+tasks.compileJava { options.compilerArgs.add("-Xlint:-exports") }
+
+// A consumer with a module descriptor of its own, compiled against the built jar and nothing else.
+// The descriptor check above reads what the jar declares; this reads what a consumer can do with it,
+// which is a different question and the one that was wrong: the jar declared exactly what it meant
+// to and consumers still could not compile.
+val moduleConsumer =
+    tasks.register<JavaCompile>("moduleConsumerCompile") {
+        group = "verification"
+        description = "Compiles a modular consumer against the published jar with nothing else on its module path."
+        val jar = tasks.jar.flatMap { it.archiveFile }
+        source = fileTree("src/moduleConsumer/java")
+        destinationDirectory = layout.buildDirectory.dir("module-consumer")
+        classpath = files()
+        javaCompiler = javaToolchains.compilerFor(java.toolchain)
+        options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
+        options.compilerArgumentProviders.add(
+            CommandLineArgumentProvider {
+                listOf("--module-path", jar.get().asFile.absolutePath)
+            }
+        )
+        inputs.file(jar)
+    }
+
+tasks.check { dependsOn(moduleConsumer) }
 
 tasks.named<Test>("test") { useJUnitPlatform { excludeTags("carrier") } }
 
@@ -28,3 +89,158 @@ val carrierTest =
     }
 
 tasks.check { dependsOn(carrierTest) }
+
+// ------------------------------------------------------------------------------- API-diff gate
+
+// This project's API carries no compatibility guarantee (see CONTRIBUTING.md): a release may break
+// callers without notice. What it promises instead is that every break is written down. This gate
+// compares the built jar against the last released one and fails when a binary-incompatible change
+// touches a public type that MIGRATION.md's "## Next release" section does not name.
+val apiBaselineVersion = providers.gradleProperty("libtmuxApiBaseline")
+
+val japicmpTool = configurations.create("japicmpTool") { isCanBeConsumed = false }
+val apiBaselineJar =
+    configurations.create("apiBaselineJar") {
+        isCanBeConsumed = false
+        isTransitive = false
+    }
+
+dependencies {
+    "japicmpTool"("com.github.siom79.japicmp:japicmp:${libs.versions.japicmp.get()}:jar-with-dependencies")
+    apiBaselineVersion.orNull?.let { "apiBaselineJar"("io.github.libtmux:libtmux:$it") }
+}
+
+// Lenient: an unresolvable baseline (no network, or a version not yet published) is reported by the
+// gate below rather than by a hard failure here, which would also break every offline build.
+val apiBaselineFiles = apiBaselineJar.incoming.artifactView { isLenient = true }.files
+
+val apiDiffReport = layout.buildDirectory.file("reports/japicmp/report.xml")
+
+val generateApiDiffReport =
+    tasks.register<JavaExec>("generateApiDiffReport") {
+        group = "verification"
+        description = "Runs japicmp comparing this build's jar against the last released one."
+        classpath = japicmpTool
+        mainClass.set("japicmp.JApiCmp")
+
+        val newJar = tasks.jar.flatMap { it.archiveFile }
+        val report = apiDiffReport
+
+        inputs.file(newJar)
+        inputs.files(apiBaselineFiles).optional(true)
+        outputs.file(report)
+
+        onlyIf { !apiBaselineFiles.isEmpty }
+
+        doFirst {
+            report.get().asFile.parentFile.mkdirs()
+            args(
+                "--old",
+                apiBaselineFiles.singleFile.absolutePath,
+                "--new",
+                newJar.get().asFile.absolutePath,
+                "-a",
+                "public",
+                // The module descriptor, not Java accessibility, is what actually hides this package
+                // (see the module-descriptor check above); a caller can never reach it either way.
+                "--exclude",
+                "io.github.libtmux.internal",
+                "--ignore-missing-classes",
+                "--xml-file",
+                report.get().asFile.absolutePath,
+            )
+        }
+    }
+
+tasks.register("checkApiDiffAgainstMigrationNotes") {
+    group = "verification"
+    description = "Fails when a binary-incompatible public API change is missing from MIGRATION.md."
+    dependsOn(generateApiDiffReport)
+
+    val report = apiDiffReport
+    val migrationNotes = rootProject.file("MIGRATION.md")
+    val baselineVersion = apiBaselineVersion
+    val baselineResolvable = provider { !apiBaselineFiles.isEmpty }
+    inputs.file(migrationNotes)
+
+    doLast {
+        if (!baselineVersion.isPresent) {
+            logger.warn("API gate skipped: no libtmuxApiBaseline property is set")
+            return@doLast
+        }
+        if (!baselineResolvable.get()) {
+            logger.warn(
+                "API gate skipped: io.github.libtmux:libtmux:${baselineVersion.get()} is not " +
+                    "resolvable from the configured repositories"
+            )
+            return@doLast
+        }
+
+        val nextRelease = run {
+            val notes = migrationNotes.readText()
+            val start = notes.indexOf("## Next release")
+            require(start >= 0) { "MIGRATION.md has no \"## Next release\" section" }
+            val end = notes.indexOf("\n## ", start + 1).let { if (it < 0) notes.length else it }
+            notes.substring(start, end)
+        }
+
+        val document = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+            .newDocumentBuilder()
+            .parse(report.get().asFile)
+        val classes = document.getElementsByTagName("class")
+
+        val undocumented = sortedSetOf<String>()
+        for (i in 0 until classes.length) {
+            val element = classes.item(i) as org.w3c.dom.Element
+            if (element.getAttribute("binaryCompatible") != "false") continue
+            val fqn = element.getAttribute("fullyQualifiedName")
+            // A nested class folds into its enclosing top-level class: MIGRATION.md documents a
+            // break at the granularity it names things, and a caller never imports a class by its
+            // binary $-name.
+            val simpleName = fqn.substringAfterLast('.').substringBefore('$')
+            val named = Regex("\\b${Regex.escape(simpleName)}\\b").containsMatchIn(nextRelease)
+            if (!named) undocumented += "$fqn (as $simpleName)"
+        }
+
+        require(undocumented.isEmpty()) {
+            "binary-incompatible change(s) not recorded in MIGRATION.md's \"## Next release\" section:\n" +
+                undocumented.joinToString("\n") { "  $it" }
+        }
+        logger.lifecycle("every binary-incompatible public API change is recorded in MIGRATION.md")
+    }
+}
+
+tasks.check { dependsOn("checkApiDiffAgainstMigrationNotes") }
+
+// ------------------------------------------------------------------------------------- SBOM
+
+// The claim in README.md ("No runtime dependencies") is falsifiable, so the SBOM the build already
+// produces (see libtmux.published-library.gradle.kts) is read back rather than trusted: a component
+// listed here is a runtime dependency the README does not know about.
+val checkSbomHasNoRuntimeDependencies =
+    tasks.register("checkSbomHasNoRuntimeDependencies") {
+        group = "verification"
+        description = "Fails when the core's SBOM lists a runtime dependency, or was not produced."
+        val bom = tasks.named<org.cyclonedx.gradle.CyclonedxDirectTask>("cyclonedxDirectBom").flatMap { it.jsonOutput }
+        dependsOn(tasks.named("cyclonedxDirectBom"))
+        inputs.file(bom)
+
+        doLast {
+            val file = bom.get().asFile
+            require(file.isFile) { "the SBOM was not produced at ${file.absolutePath}" }
+
+            val document = (groovy.json.JsonSlurper().parse(file) as Map<*, *>)
+            val metadata = document["metadata"] as Map<*, *>?
+            val componentName = (metadata?.get("component") as Map<*, *>?)?.get("name")
+            require(componentName == "libtmux") { "the SBOM's own component is named $componentName, not libtmux" }
+
+            val components = document["components"] as List<*>? ?: emptyList<Any>()
+            require(components.isEmpty()) {
+                "the core's SBOM lists ${components.size} runtime dependency(ies), " +
+                    "but the core resolves nothing at runtime: $components"
+            }
+            logger.lifecycle("the SBOM names libtmux and lists no runtime dependencies")
+        }
+    }
+
+tasks.check { dependsOn(checkSbomHasNoRuntimeDependencies) }

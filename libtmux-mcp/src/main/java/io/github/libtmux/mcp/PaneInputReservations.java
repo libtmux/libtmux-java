@@ -6,8 +6,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -15,37 +17,72 @@ import java.util.Set;
 final class PaneInputReservations {
 
     private static final Object MONITOR = new Object();
-    private static final Set<PaneKey> HELD = new HashSet<>();
+
+    /** Each owned pane and the operation owning it, so an interrupt can tell whose it is. */
+    private static final Map<PaneKey, String> HELD = new HashMap<>();
+
+    /** The operation whose retained ownership an interrupt is allowed to reach through. */
+    private static final String RUN = "run_shell_command";
 
     private PaneInputReservations() {}
 
     static Lease keys(PaneInputCohort.Resolution initial, String operation) {
         initial.requireKeyRecipients(operation);
-        return acquire(initial, initial.keyRecipients(), operation);
+        return acquire(initial, initial.keyRecipients(), operation, false);
+    }
+
+    /**
+     * A lease for keys that can only stop what is running, rather than type anything.
+     *
+     * <p>A run that passed its deadline keeps the pane while its command is still going, and tells
+     * the caller to interrupt it. That advice has to be reachable, so an interrupt passes through a
+     * run's ownership instead of being refused by it — otherwise the one server that can start a
+     * command that hangs is the one that cannot stop it. It owns nothing itself: the run still owns
+     * the pane, until its command reports and releases it.
+     *
+     * <p>It reaches through a run and nothing else. A pane no run holds is taken the ordinary way,
+     * owned for as long as the keys take and released after, so an interrupt never gives up the
+     * exclusion the other operations rely on; only the panes a run is holding are passed through,
+     * and those the run goes on owning.
+     */
+    static Lease interrupting(PaneInputCohort.Resolution initial, String operation) {
+        initial.requireKeyRecipients(operation);
+        return acquire(initial, initial.keyRecipients(), operation, true);
     }
 
     static Lease paste(PaneInputCohort.Resolution initial, String operation) {
         initial.requirePasteTarget(operation);
-        return acquire(initial, List.of(initial.source()), operation);
+        return acquire(initial, List.of(initial.source()), operation, false);
     }
 
     static Lease run(PaneInputCohort.Resolution initial, String operation) {
         initial.requireSingularCommandPane(operation);
-        return acquire(initial, initial.keyRecipients(), operation);
+        return acquire(initial, initial.keyRecipients(), operation, false);
     }
 
     private static Lease acquire(
-            PaneInputCohort.Resolution initial, List<PaneInputCohort.Member> members, String operation) {
+            PaneInputCohort.Resolution initial,
+            List<PaneInputCohort.Member> members,
+            String operation,
+            boolean interrupting) {
         Signature signature = Signature.capture(initial, members, operation);
         Set<PaneKey> panes = signature.keys(members);
         DaemonIdentity daemon = DaemonIdentity.capture(initial.authority());
+        Set<PaneKey> owned = new HashSet<>();
         synchronized (MONITOR) {
-            if (panes.stream().anyMatch(HELD::contains)) {
-                throw new IllegalStateException(operation + " refuses pane input already owned by another operation");
+            for (PaneKey pane : panes) {
+                String holder = HELD.get(pane);
+                if (holder != null && !(interrupting && holder.equals(RUN))) {
+                    throw new IllegalStateException(
+                            operation + " refuses pane input already owned by another operation");
+                }
+                if (holder == null) {
+                    owned.add(pane);
+                }
             }
-            HELD.addAll(panes);
+            owned.forEach(pane -> HELD.put(pane, operation));
         }
-        return new Lease(operation, initial.authority(), daemon, signature, panes);
+        return new Lease(operation, initial.authority(), daemon, signature, owned);
     }
 
     static final class Lease implements AutoCloseable {
@@ -54,7 +91,9 @@ final class PaneInputReservations {
         private final PaneInputCohort.Authority authority;
         private final DaemonIdentity daemon;
         private final Signature initial;
-        private final Set<PaneKey> panes;
+        /** The panes this lease put in {@link #HELD}: all of them, or the ones no run was holding. */
+        private final Set<PaneKey> owned;
+
         private boolean closed;
 
         private Lease(
@@ -62,12 +101,12 @@ final class PaneInputReservations {
                 PaneInputCohort.Authority authority,
                 DaemonIdentity daemon,
                 Signature initial,
-                Set<PaneKey> panes) {
+                Set<PaneKey> owned) {
             this.operation = operation;
             this.authority = authority;
             this.daemon = daemon;
             this.initial = initial;
-            this.panes = Set.copyOf(panes);
+            this.owned = Set.copyOf(owned);
         }
 
         List<String> requireSameKeys(PaneInputCohort.Resolution fresh) {
@@ -96,7 +135,7 @@ final class PaneInputReservations {
 
         private void requireSame(Signature fresh) {
             synchronized (MONITOR) {
-                if (closed || !HELD.containsAll(panes)) {
+                if (closed || !HELD.keySet().containsAll(owned)) {
                     throw new IllegalStateException(operation + " lost pane input ownership");
                 }
                 if (!initial.equals(fresh)) {
@@ -109,7 +148,7 @@ final class PaneInputReservations {
         public void close() {
             synchronized (MONITOR) {
                 if (!closed) {
-                    HELD.removeAll(panes);
+                    HELD.keySet().removeAll(owned);
                     closed = true;
                 }
             }

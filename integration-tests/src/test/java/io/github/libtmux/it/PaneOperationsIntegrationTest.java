@@ -132,7 +132,7 @@ final class PaneOperationsIntegrationTest {
 
             pane.sendLiteral(List.of(input));
 
-            assertTrue(Await.output(pane, input), "tmux parsed caller input as an option: " + input);
+            assertTrue(Await.shown(pane, input), "tmux parsed caller input as an option: " + input);
         }
     }
 
@@ -151,10 +151,10 @@ final class PaneOperationsIntegrationTest {
 
         typed.sendLiteral(List.of("C-c"));
         interrupted.sendLine("sleep 97");
-        assertTrue(Await.output(interrupted, "sleep 97"), "the command has to be running to be interrupted");
+        assertTrue(Await.shown(interrupted, "sleep 97"), "the command has to be running to be interrupted");
         interrupted.sendKeys(List.of("C-c"));
 
-        assertTrue(Await.output(typed, "C-c"), "literal input is the characters it spells");
+        assertTrue(Await.shown(typed, "C-c"), "literal input is the characters it spells");
         assertTrue(
                 Await.output(interrupted, "^C")
                         || !interrupted.refresh().currentCommand().contains("sleep"),

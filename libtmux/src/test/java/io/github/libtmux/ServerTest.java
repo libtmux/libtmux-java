@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
@@ -247,7 +249,8 @@ final class ServerTest {
     }
 
     @Test
-    void aWaitWithSignalCapacityPreservesAPredispatchTimeout(@TempDir Path directory) throws IOException {
+    void aWaitWithSignalCapacityPreservesAPredispatchTimeout(@TempDir Path directory)
+            throws IOException, InterruptedException {
         TmuxTimeoutException failure =
                 new TmuxTimeoutException("waiting admission timed out", DispatchOutcome.NOT_DISPATCHED, null);
         java.util.concurrent.atomic.AtomicBoolean waiting = new java.util.concurrent.atomic.AtomicBoolean();
@@ -284,7 +287,7 @@ final class ServerTest {
     }
 
     @Test
-    void malformedOrInconsistentListingsRespectStrictAndLenientBoundaries(@TempDir Path directory) throws IOException {
+    void liveReadsPreserveMalformedOrInconsistentCaptures(@TempDir Path directory) throws IOException {
         String separator = RowFormat.of("field").separator();
         for (String sessionRow : List.of(
                 String.join(separator, "$0", "alpha", "maybe", "0"),
@@ -294,7 +297,10 @@ final class ServerTest {
                 LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
 
                 assertTrue(failure.getCause() instanceof IllegalArgumentException, failure.toString());
-                assertEquals(List.of(), server.sessions(), "lenient listings collapse hydration failures to empty");
+                assertAll(liveReads(server).stream().map(read -> () -> {
+                    LibTmuxException rejected = assertThrows(LibTmuxException.class, read);
+                    assertTrue(rejected.getCause() instanceof IllegalArgumentException, rejected.toString());
+                }));
             }
         }
     }
@@ -310,20 +316,131 @@ final class ServerTest {
     }
 
     @Test
-    void snapshotDistinguishesAnAbsentServerFromAnIdentityProbeFailure(@TempDir Path directory) throws IOException {
+    void liveReadsRejectFailedIdentityProbes(@TempDir Path directory) throws IOException {
         try (Server server = Server.using(config(directory), new RefusingTransport("permission denied"))) {
-            LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
-
-            assertTrue(String.valueOf(failure.getMessage()).contains("permission denied"));
+            assertAll(liveReads(server).stream().map(read -> () -> {
+                LibTmuxException failure = assertThrows(LibTmuxException.class, read);
+                assertFalse(failure instanceof ServerNotRunningException, "not a missing daemon: " + failure);
+            }));
         }
         for (String absent : List.of(
-                "no server running on /tmp/s",
+                "no server running on /tmp/libtmux-java-test/missing",
                 "server exited unexpectedly",
-                "error connecting to /tmp/s (No such file or directory)")) {
+                "error connecting to /tmp/libtmux-java-test/missing (No such file or directory)")) {
             try (Server server = Server.using(config(directory), new RefusingTransport(absent))) {
-                assertTrue(server.snapshot().sessions().isEmpty(), absent);
+                assertAll(
+                        absent,
+                        liveReads(server).stream()
+                                .map(read -> () -> assertThrows(ServerNotRunningException.class, read)));
             }
         }
+    }
+
+    @Test
+    void liveReadsKeepTransportAndTimeoutDiagnostics(@TempDir Path directory) throws IOException {
+        IOException cause = new IOException("reader failed");
+        for (TmuxTransportException failure : List.of(
+                new TmuxTransportException("capture pipe failed", DispatchOutcome.UNKNOWN, cause),
+                new TmuxTimeoutException("admission timed out", DispatchOutcome.NOT_DISPATCHED, cause))) {
+            TmuxTransport transport = new TmuxTransport() {
+                @Override
+                public CommandResult execute(CommandRequest request) {
+                    throw failure;
+                }
+
+                @Override
+                public void close() {}
+            };
+            try (Server server = Server.using(config(directory), transport)) {
+                assertAll(liveReads(server).stream()
+                        .map(read -> () -> assertSame(failure, assertThrows(TmuxTransportException.class, read))));
+            }
+        }
+    }
+
+    @Test
+    void liveReadsRejectAMissingOrNonExecutableBinary(@TempDir Path directory) throws IOException {
+        Path binary = directory.resolve("not-executable");
+        Files.writeString(binary, "#!/bin/sh\nexit 0\n");
+        for (Path unavailable : List.of(directory.resolve("missing-binary"), binary)) {
+            try (Server server = Server.open(
+                    config(directory).toBuilder().binary(unavailable.toString()).build())) {
+                assertAll(liveReads(server).stream().map(read -> () -> {
+                    TmuxTransportException failure = assertThrows(TmuxTransportException.class, read);
+                    assertEquals(DispatchOutcome.NOT_DISPATCHED, failure.outcome());
+                    assertTrue(failure.getCause() instanceof IOException);
+                }));
+            }
+        }
+    }
+
+    @Test
+    void liveReadsRejectAnAbsentDaemon(@TempDir Path directory) throws IOException {
+        try (Server server = Server.open(config(directory))) {
+            assertAll(
+                    liveReads(server).stream().map(read -> () -> assertThrows(ServerNotRunningException.class, read)));
+        }
+    }
+
+    @Test
+    void aLiveServerCanSuccessfullyReportNoSessions(@TempDir Path directory) throws IOException {
+        try (Server server = Server.open(config(directory))) {
+            try {
+                server.run(List.of("new-session", "-d", "-s", "temporary"));
+                server.run(List.of("set-option", "-s", "exit-empty", "off"));
+                server.run(List.of("kill-session", "-t", "=temporary"));
+
+                assertTrue(server.isAlive());
+                assertTrue(server.snapshot().serverPid().isPresent());
+                assertEquals(List.of(), server.sessions());
+                assertEquals(List.of(), server.clients());
+                assertTrue(server.session("temporary").isEmpty());
+            } finally {
+                server.killServer();
+            }
+        }
+    }
+
+    @Test
+    void bufferListingsPreserveFailures(@TempDir Path directory) throws IOException {
+        for (String refusal : List.of("permission denied", "no server running", "list-buffers failed")) {
+            try (Server server = Server.using(config(directory), new RefusingTransport(refusal))) {
+                LibTmuxException failure = assertThrows(
+                        LibTmuxException.class, () -> server.buffers().list());
+                assertTrue(String.valueOf(failure.getMessage()).contains(refusal));
+            }
+        }
+        try (Server server = Server.open(config(directory))) {
+            assertThrows(LibTmuxException.class, () -> server.buffers().list());
+        }
+    }
+
+    /** {@code show} must not fold an absent daemon into "no buffer named that", as it once did. */
+    @Test
+    void showingABufferDistinguishesAnAbsentDaemonFromAMissingName(@TempDir Path directory) throws IOException {
+        try (Server server = Server.using(config(directory), new RefusingTransport("no buffer never-set"))) {
+            assertThrows(
+                    ObjectDoesNotExistException.class, () -> server.buffers().show("never-set"));
+        }
+        try (Server server = Server.using(config(directory), new RefusingTransport("no server running"))) {
+            assertThrows(ServerNotRunningException.class, () -> server.buffers().show("never-set"));
+        }
+    }
+
+    private static List<Executable> liveReads(Server server) {
+        return List.of(
+                server::snapshot,
+                server::sessions,
+                server::windows,
+                server::panes,
+                server::clients,
+                server::attachedSessions,
+                () -> server.session("missing"),
+                () -> server.session(new SessionId("$99")),
+                () -> server.pane(new PaneId("%99")),
+                () -> server.window(new io.github.libtmux.snapshot.WindowContext(
+                        new SessionId("$99"), new WindowIndex(0), new WindowId("@99"))),
+                () -> server.windows(new WindowId("@99")));
     }
 
     @Test
@@ -357,6 +474,18 @@ final class ServerTest {
             assertTrue(snapshot.panes().isEmpty());
             assertTrue(snapshot.clients().isEmpty());
             assertEquals(2, requests.get(), "tmux refused the rest of the group, which cost no further request");
+            assertEquals(List.of(), server.sessions());
+            assertEquals(List.of(), server.windows());
+            assertEquals(List.of(), server.panes());
+            assertEquals(List.of(), server.clients());
+            assertEquals(List.of(), server.attachedSessions());
+            assertTrue(server.session("missing").isEmpty());
+            assertTrue(server.session(new SessionId("$99")).isEmpty());
+            assertTrue(server.pane(new PaneId("%99")).isEmpty());
+            assertTrue(server.window(new io.github.libtmux.snapshot.WindowContext(
+                            new SessionId("$99"), new WindowIndex(0), new WindowId("@99")))
+                    .isEmpty());
+            assertEquals(List.of(), server.windows(new WindowId("@99")));
         }
     }
 
@@ -384,6 +513,35 @@ final class ServerTest {
 
         try (Server server = Server.using(config(directory), transport)) {
             assertThrows(LibTmuxException.class, server::snapshot);
+        }
+    }
+
+    /**
+     * The defect this pins: a release candidate reports its version as {@code 3.8-rc}, the parsed
+     * version printed as {@code 3.8}, and the fence compared the two — so every capture of a tmux
+     * 3.8 release candidate looked like a server replaced mid-read, and failed. Found by the first
+     * matrix lane ever to run one.
+     */
+    @Test
+    void aReleaseCandidateIsTheServerItSaysItIs(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return GroupedTmux.execute(request, 4242L, "3.8-rc", argv -> switch (argv.get(0)) {
+                    case "display-message" ->
+                        new CommandResult(0, List.of(String.join(separator, "4242", "3.8-rc")), List.of());
+                    default -> new CommandResult(0, List.of(), List.of());
+                });
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            assertEquals(List.of(), server.sessions(), "a 3.8-rc server with nothing in it reads as that");
+            assertEquals("3.8-rc", server.version().toString());
         }
     }
 
@@ -457,6 +615,215 @@ final class ServerTest {
 
             assertTrue(String.valueOf(failure.getMessage()).contains("changed during snapshot"));
         }
+    }
+
+    /**
+     * A pane with no process reports {@code pane_pid} as {@code 0} on every released tmux through
+     * 3.7c; the built development tmux this port has no CI lane for reports it as an empty string
+     * instead — confirmed directly against that binary with {@code split-window -E} and a pane
+     * whose command has already exited, neither of which this test needs live tmux to prove. A
+     * capture used to crash on the empty count before ever reaching a caller's own dead-pane check.
+     */
+    @Test
+    void snapshotTreatsAnEmptyPanePidAsNoProcess(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                return GroupedTmux.execute(request, 4242L, "3.6", argv -> switch (argv.get(0)) {
+                    case "display-message" ->
+                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6")), List.of());
+                    case "list-sessions" ->
+                        new CommandResult(0, List.of(String.join(separator, "$0", "only", "1", "1")), List.of());
+                    case "list-windows" ->
+                        new CommandResult(
+                                0,
+                                List.of(String.join(separator, "$0", "@0", "0", "only", "1", "1", "0", "80", "24", "")),
+                                List.of());
+                    case "list-panes" ->
+                        new CommandResult(
+                                0,
+                                List.of(String.join(
+                                        separator, "$0", "@0", "0", "%0", "0", "1", "zsh", "80", "24", "0", "0", "",
+                                        "/tmp", "", "0", "0", "0", "0")),
+                                List.of());
+                    default -> new CommandResult(0, List.of(), List.of());
+                });
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            List<Pane> panes = server.panes();
+
+            assertEquals(1, panes.size());
+            assertTrue(
+                    panes.get(0).pid().isEmpty(), "an empty pane_pid must read as no process, not crash the capture");
+        }
+    }
+
+    // --------------------------------------------------------------------------- version gates
+
+    /**
+     * The guard asks the daemon rather than trusting a version string, so it cannot fail the way a
+     * version predicate can: a floor fitted to the two adjacent releases a matrix happens to run,
+     * one lettered patch off from what tmux's own history says. Proven by making the two disagree -
+     * a version the constant would refuse, with {@code list-commands} naming the command anyway, and
+     * the reverse - and checking the daemon's answer is the one that wins.
+     */
+    @Test
+    void promptHistoryAsksTheDaemonRatherThanTrustingAVersionString(@TempDir Path directory) throws IOException {
+        try (Server server =
+                Server.using(config(directory), listingCommands("3.2a", "show-prompt-history (showphist) [-T type]"))) {
+            assertDoesNotThrow(server::promptHistory, "list-commands names it, so a low version must not refuse");
+            assertDoesNotThrow(server::clearPromptHistory);
+        }
+        try (Server server = Server.using(config(directory), listingCommands("99.0"))) {
+            UnsupportedTmuxVersionException refused =
+                    assertThrows(UnsupportedTmuxVersionException.class, server::promptHistory);
+
+            assertTrue(
+                    String.valueOf(refused.getMessage()).contains("3.3"),
+                    "the refusal still names the release most callers will recognise: " + refused.getMessage());
+            assertThrows(UnsupportedTmuxVersionException.class, server::clearPromptHistory);
+        }
+    }
+
+    /**
+     * An older client cannot talk to a newer daemon at all - confirmed against the matrix,
+     * a 3.2a client against a 3.7c daemon on the same socket fails outright, {@code server exited
+     * unexpectedly}. tmux reports that identically to "no daemon ever started here", so {@code
+     * versionForCreation} used to read it as "no daemon" and quietly substitute the configured
+     * binary's own {@code -V}, inverting {@link Server#version()}'s documented guarantee that it
+     * reports the running server's version rather than the binary's.
+     */
+    @Test
+    void versionForCreationDoesNotSubstituteTheBinarysVersionForADaemonItCannotReach(@TempDir Path directory)
+            throws IOException {
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                List<String> argv = request.commands().get(0);
+                if (argv.get(0).equals("-V")) {
+                    // The binary answers -V without ever touching the socket, whatever is on it.
+                    return new CommandResult(0, List.of("tmux 3.2a"), List.of());
+                }
+                return new CommandResult(1, List.of(), List.of("server exited unexpectedly"));
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            LibTmuxException failure = assertThrows(
+                    LibTmuxException.class, () -> server.newSession(s -> s.sized(new Dimensions(120, 40))));
+
+            assertFalse(
+                    failure instanceof UnsupportedTmuxVersionException,
+                    "must not claim a version for a daemon it never actually asked: " + failure);
+            assertTrue(
+                    String.valueOf(failure.getMessage()).contains("server exited unexpectedly"),
+                    "tmux's own words, not a guess: " + failure.getMessage());
+        }
+    }
+
+    // ------------------------------------------------------------------------- session creation
+
+    /**
+     * {@code /bin/true} exits 0 and prints nothing, which {@code run} cannot tell apart
+     * from tmux genuinely succeeding with an empty answer. Before this, an empty {@code stdout} list
+     * reached {@code SessionId(reported.get(0))} directly and threw an unchecked collection
+     * exception with neither tmux's stderr nor the configured binary in it.
+     */
+    @Test
+    void aBinaryThatIsNotTmuxFailsSessionCreationWithATypedMessage(@TempDir Path directory) throws IOException {
+        ServerConfig notTmux = ServerConfig.builder()
+                .binary("/bin/true")
+                .endpoint(ServerEndpoint.socketPath(directory.resolve("s")))
+                .build();
+
+        try (Server server = Server.open(notTmux)) {
+            // assertThrows itself is the regression guard: an ArrayIndexOutOfBoundsException
+            // would not satisfy LibTmuxException.class and would fail this call as an unexpected type.
+            LibTmuxException failure = assertThrows(LibTmuxException.class, () -> server.newSession("x"));
+
+            assertTrue(
+                    String.valueOf(failure.getMessage()).contains("/bin/true"),
+                    "names the binary a caller misconfigured: " + failure.getMessage());
+        }
+    }
+
+    /**
+     * The same misconfiguration, but with a spec that forces a version probe first
+     * ({@code versionForCreation} -&gt; {@code version()} -&gt; the server identity read). Before
+     * this, {@code /bin/true}'s empty answer produced "tmux did not report exactly one server
+     * identity row" - a message that reads like a transient parsing problem with a real tmux, not
+     * "the configured binary is not tmux at all".
+     */
+    @Test
+    void aBinaryThatIsNotTmuxNamesItselfEvenWhenAVersionProbeRunsFirst(@TempDir Path directory) throws IOException {
+        ServerConfig notTmux = ServerConfig.builder()
+                .binary("/bin/true")
+                .endpoint(ServerEndpoint.socketPath(directory.resolve("s")))
+                .build();
+
+        try (Server server = Server.open(notTmux)) {
+            LibTmuxException failure = assertThrows(
+                    LibTmuxException.class, () -> server.newSession(s -> s.sized(new Dimensions(120, 40))));
+
+            assertTrue(
+                    String.valueOf(failure.getMessage()).contains("/bin/true"),
+                    "names the binary rather than describing a malformed row: " + failure.getMessage());
+        }
+    }
+
+    /**
+     * An explicit socket under a directory that does not exist is a path the
+     * operator chose, so it is reported rather than created. tmux prints {@code error creating ...}
+     * and exits 0 - the same empty-output shape as {@code /bin/true} above, reached through ordinary
+     * misconfiguration rather than a non-tmux binary.
+     */
+    @Test
+    void aSocketUnderAMissingDirectoryFailsSessionCreationWithTmuxsOwnReason(@TempDir Path directory)
+            throws IOException {
+        ServerConfig missingDirectory = ServerConfig.builder()
+                .endpoint(ServerEndpoint.socketPath(directory.resolve("missing").resolve("s")))
+                .build();
+
+        try (Server server = Server.open(missingDirectory)) {
+            LibTmuxException failure = assertThrows(LibTmuxException.class, () -> server.newSession("x"));
+
+            assertTrue(
+                    String.valueOf(failure.getMessage()).contains("error creating"),
+                    "tmux's own reason, not a generic message: " + failure.getMessage());
+        }
+    }
+
+    /**
+     * A transport that answers the identity probe with {@code version} and {@code list-commands}
+     * with {@code lines}, whatever the real relationship between the two would be.
+     */
+    private static TmuxTransport listingCommands(String version, String... lines) {
+        String separator = RowFormat.of("field").separator();
+        return new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                List<String> argv = request.commands().get(0);
+                if (argv.get(0).equals("display-message")) {
+                    return new CommandResult(0, List.of(String.join(separator, "4242", version)), List.of());
+                }
+                if (argv.get(0).equals("list-commands")) {
+                    return new CommandResult(0, List.of(lines), List.of());
+                }
+                return new CommandResult(0, List.of(), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
     }
 
     // -------------------------------------------------------------------------------- builders

@@ -12,11 +12,11 @@ package io.github.libtmux;
  * throwable is serializable, so exposing a {@link TmuxVersion} here would mean making that
  * serializable too, and no caller has needed to read them apart from the text.
  */
-public final class UnsupportedTmuxVersion extends LibTmuxException {
+public final class UnsupportedTmuxVersionException extends LibTmuxException {
 
     private static final long serialVersionUID = 1L;
 
-    UnsupportedTmuxVersion(String feature, TmuxVersion required, TmuxVersion running) {
+    UnsupportedTmuxVersionException(String feature, TmuxVersion required, TmuxVersion running) {
         super(feature + " requires tmux " + required + ", but this server runs " + running);
     }
 
@@ -27,7 +27,7 @@ public final class UnsupportedTmuxVersion extends LibTmuxException {
      * in 3.3a and 3.4, and reports it again from 3.5. "Requires 3.5" would be a lie to a 3.2a
      * caller, for whom it works.
      */
-    UnsupportedTmuxVersion(String message) {
+    UnsupportedTmuxVersionException(String message) {
         super(message);
     }
 }

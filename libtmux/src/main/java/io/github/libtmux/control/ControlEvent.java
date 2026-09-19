@@ -1,5 +1,7 @@
 package io.github.libtmux.control;
 
+import io.github.libtmux.PaneId;
+import io.github.libtmux.WindowId;
 import java.util.List;
 import java.util.Optional;
 
@@ -10,18 +12,30 @@ import java.util.Optional;
  * renamed, a layout moving — without anything asking. That is the difference between watching a
  * server and polling one.
  *
- * <p>The kind is tmux's own notification name with the leading {@code %} removed, and the fields are
- * what followed it. Deliberately not modelled one record per kind: tmux adds notifications between
- * releases, and a closed set here would drop the ones a newer tmux sends.
+ * <p>Two readings of one line. {@link #notification()} is typed, for matching on: a sealed set of
+ * what tmux sends, with a {@link Notification.Unknown} case so that a notification a newer tmux adds
+ * still arrives rather than being dropped. {@link #kind()}, {@link #fields()} and {@link #value()}
+ * are what tmux wrote, word by word, for anything the typed reading does not cover.
  *
  * @param kind the notification name, such as {@code window-add} or {@code subscription-changed}
  * @param fields the words that followed it, before any {@code :} separator
  * @param value what followed a {@code :} separator, which only a subscription carries
+ * @param notification the same notification, typed
  */
-public record ControlEvent(String kind, List<String> fields, Optional<String> value) {
+public record ControlEvent(String kind, List<String> fields, Optional<String> value, Notification notification) {
 
     public ControlEvent {
         fields = List.copyOf(fields);
+    }
+
+    /**
+     * An event from its words, with the typed reading taken from them.
+     *
+     * <p>A name is rejoined from the words with single spaces, so one tmux wrote with a run of them
+     * reads back with one. {@link #parse} reads the line tmux wrote and has no such loss.
+     */
+    public ControlEvent(String kind, List<String> fields, Optional<String> value) {
+        this(kind, fields, value, Notification.read(kind, String.join(" ", fields), value));
     }
 
     /**
@@ -44,7 +58,12 @@ public record ControlEvent(String kind, List<String> fields, Optional<String> va
         if (words.length == 0 || words[0].isEmpty()) {
             return Optional.empty();
         }
-        return Optional.of(new ControlEvent(words[0], List.of(words).subList(1, words.length), value));
+        String kind = words[0];
+        // The text after the name exactly as tmux wrote it, so a name holding a run of spaces is read
+        // back as that name.
+        String rest = head.length() > kind.length() ? head.substring(kind.length() + 1) : "";
+        return Optional.of(new ControlEvent(
+                kind, List.of(words).subList(1, words.length), value, Notification.read(kind, rest, value)));
     }
 
     /** The name a subscription was registered under, for an event that came from one. */
@@ -53,12 +72,18 @@ public record ControlEvent(String kind, List<String> fields, Optional<String> va
     }
 
     /** The first field naming a pane, which is how an event says which pane it is about. */
-    public Optional<String> paneId() {
-        return fields.stream().filter(field -> field.startsWith("%")).findFirst();
+    public Optional<PaneId> paneId() {
+        return fields.stream()
+                .filter(field -> field.startsWith("%") && field.length() > 1)
+                .findFirst()
+                .map(PaneId::new);
     }
 
     /** The first field naming a window. */
-    public Optional<String> windowId() {
-        return fields.stream().filter(field -> field.startsWith("@")).findFirst();
+    public Optional<WindowId> windowId() {
+        return fields.stream()
+                .filter(field -> field.startsWith("@") && field.length() > 1)
+                .findFirst()
+                .map(WindowId::new);
     }
 }

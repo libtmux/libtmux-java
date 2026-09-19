@@ -25,15 +25,28 @@ permissions:
 
 jobs:
   lanes:
-    name: tmux ${{ matrix.tmux }}
+    # Preview lanes carry their own label: this is the only place a reader sees which entries the
+    # supported range does not include, since the README and the matrix property list only the rest.
+    name: tmux ${{ matrix.tmux }}${{ matrix.experimental && ' (preview, not supported)' || '' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ matrix.tmux == 'master' && 25 || 15 }}
+    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       fail-fast: false
       matrix:
-        # Must match the lanes in build-logic/src/main/kotlin/libtmux.tmux-matrix.gradle.kts, which
-        # is the source of truth. The agree step below fails if they drift apart.
-        tmux: ['3.2a', '3.3a', '3.4', '3.5', '3.6', '3.7', '3.7a', '3.7b', '3.7c']
+        # Must match the required lanes in build-logic/src/main/kotlin/libtmux.tmux-matrix.gradle.kts
+        # (its `lanes` list), which is the source of truth. The agree step below fails if they drift
+        # apart. This is also what DocumentationFactsTest reads the README's claimed range from, so a
+        # preview lane belongs in `include` below and never here.
+        tmux: ['3.2a', '3.3', '3.3a', '3.4', '3.5', '3.6', '3.7', '3.7a', '3.7b', '3.7c']
+        # Ahead of the supported range, matching the plugin's `previewLanes` list: 3.8-rc is a
+        # candidate for a release not yet cut, and master is upstream's development branch, not a
+        # version. Both may fail and neither moves the README's claimed range.
+        include:
+          - tmux: '3.8-rc'
+            experimental: true
+          - tmux: master
+            experimental: true
     steps:
       - uses: actions/checkout@v7
 
@@ -53,9 +66,17 @@ jobs:
           sudo apt-get install --no-install-recommends -y \
             build-essential libevent-dev libncurses-dev bison pkg-config
 
+      # master has no release tarball to build from a tag, so it is checked out and autoreconf'd
+      # instead. autoconf and automake are needed only for that.
+      - name: Build dependencies for a git checkout
+        if: matrix.tmux == 'master'
+        run: sudo apt-get install --no-install-recommends -y autoconf automake
+
       # Keyed by version alone: a released tarball does not change, so a hit is the same binary the
-      # miss would have built.
+      # miss would have built. master has no such tarball and is never cached: it is upstream's
+      # development head, which moves on every commit.
       - name: Restore tmux ${{ matrix.tmux }}
+        if: matrix.tmux != 'master'
         id: tmux-cache
         uses: actions/cache@v6
         with:
@@ -63,7 +84,7 @@ jobs:
           key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
 
       - name: Build tmux ${{ matrix.tmux }}
-        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        if: matrix.tmux != 'master' && steps.tmux-cache.outputs.cache-hit != 'true'
         env:
           LANE: ${{ matrix.tmux }}
         run: |
@@ -74,6 +95,19 @@ jobs:
           tar -xzf "$work/tmux.tar.gz" -C "$work"
           cd "$work/tmux-$LANE"
           ./configure --prefix="$HOME/tmux-builds/$LANE"
+          make -j"$(nproc)"
+          make install
+
+      # No release, no tag even: master is a moving branch, so it is built the way a contributor
+      # without a dist tarball would, generating the files a tarball normally ships pre-built.
+      - name: Build tmux master from a git checkout
+        if: matrix.tmux == 'master'
+        run: |
+          set -eux
+          git clone --depth 1 https://github.com/tmux/tmux.git "$HOME/tmux-src-master"
+          cd "$HOME/tmux-src-master"
+          sh autogen.sh
+          ./configure --prefix="$HOME/tmux-builds/master"
           make -j"$(nproc)"
           make install
 
@@ -93,7 +127,7 @@ jobs:
           validate-wrappers: true
 
       # One lane rather than testTmuxMatrix: each version builds and runs on its own runner, so the
-      # eight of them take the time of the slowest instead of the sum.
+      # lanes take the time of the slowest instead of the sum.
       - name: Run the real-tmux suite
         env:
           LANE: ${{ matrix.tmux }}

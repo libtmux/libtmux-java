@@ -56,6 +56,23 @@ otherwise have to go and ask. A sixth needs the same defence.
 No screenshot carries information that exists only in the screenshot. Images go
 stale, do not survive grep, and reach a screen reader as nothing.
 
+## Migration notes
+
+Put API breakages and upgrade instructions in the root
+[`MIGRATION.md`](../MIGRATION.md) file. Cover renames, removals, and changes to
+defaults or failure contracts with a concrete replacement or instructions for
+callers. Add notes under `## Next release`; the maintainer assigns the version
+when releasing.
+
+The README and getting-started guide show the current API. Link to
+`MIGRATION.md` with a short upgrading sentence instead of embedding migration
+sections there. Keep the changelog entry brief: state the impact and
+replacement, then link to the migration notes for detailed steps.
+
+Migration examples remain part of `docs-tests`. Use its `does-not-compile`
+directive for obsolete Java examples that demonstrate a rejected API; current
+replacement examples must compile and run.
+
 ## Changelog
 
 `CHANGELOG.md` is a ledger for the people who consume releases, not a rendering

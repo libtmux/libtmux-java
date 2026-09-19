@@ -217,3 +217,7 @@ Two behaviours worth knowing:
 5. Tag. The Release workflow runs `check`, uploads, and stops.
 6. Open [the Portal](https://central.sonatype.com/publishing/deployments) and
    publish the deployment, or drop it.
+7. Bump `libtmuxApiBaseline` in `gradle.properties` to the version just
+   released. The core's API-diff gate compares every later change against that
+   property, not against `libtmuxVersion`, so the next round of development
+   starts measured against what was actually shipped.

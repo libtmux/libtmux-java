@@ -1,6 +1,8 @@
 package io.github.libtmux.transport;
 
+import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.internal.ProcessTree;
+import io.github.libtmux.internal.Utf8;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.IOException;
@@ -61,7 +63,18 @@ public final class ProcessTransport implements TmuxTransport {
     private static final int DEFAULT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
     private static final long RECLAIM_MILLIS = 5_000;
     private static final long TERMINATION_SECONDS = 60;
+
+    /**
+     * How long a pump with nothing to do keeps its thread, and so how long an unclosed transport
+     * keeps a JVM alive after its last command. Long enough that an ordinary burst of commands
+     * reuses threads rather than making new ones, short enough that a program which forgot to close
+     * still exits promptly.
+     */
+    private static final long IDLE_PUMP_SECONDS = 10;
+
     private static final ProcessStarter SYSTEM_STARTER = command -> new ProcessBuilder(command).start();
+
+    private static final System.Logger LOG = System.getLogger(ProcessTransport.class.getName());
 
     private final Semaphore admission;
     private final @Nullable Semaphore waitingAdmission;
@@ -102,6 +115,16 @@ public final class ProcessTransport implements TmuxTransport {
     }
 
     ProcessTransport(int maxConcurrentProcesses, int maxOutputBytes, ProcessStarter starter, LongSupplier nanoTime) {
+        this(maxConcurrentProcesses, maxOutputBytes, starter, nanoTime, TimeUnit.SECONDS.toNanos(IDLE_PUMP_SECONDS));
+    }
+
+    /** As above, with the idle-pump timeout a test can shorten rather than wait out. */
+    ProcessTransport(
+            int maxConcurrentProcesses,
+            int maxOutputBytes,
+            ProcessStarter starter,
+            LongSupplier nanoTime,
+            long idlePumpNanos) {
         if (maxConcurrentProcesses < 1) {
             throw new IllegalArgumentException("maxConcurrentProcesses is not positive");
         }
@@ -111,6 +134,15 @@ public final class ProcessTransport implements TmuxTransport {
         this.admission = new Semaphore(maxConcurrentProcesses);
         this.waitingAdmission = maxConcurrentProcesses == 1 ? null : new Semaphore(maxConcurrentProcesses - 1);
         this.pumps = (ThreadPoolExecutor) Executors.newFixedThreadPool(3 * maxConcurrentProcesses, factory());
+        // An idle pump lets go of the JVM. The threads are not daemons on purpose — work in flight
+        // has to finish, and a drain abandoned halfway is a truncated reply reported as a whole one
+        // — but "in flight" is the point, not "ever used". Without this a caller who forgot to
+        // close a transport kept a JVM alive forever after its last command, which for a
+        // command-line program is indistinguishable from a deadlock. A pump that is running holds
+        // the JVM exactly as before; one that has had nothing to do for this long does not, and the
+        // pool makes another the moment there is work.
+        this.pumps.setKeepAliveTime(idlePumpNanos, TimeUnit.NANOSECONDS);
+        this.pumps.allowCoreThreadTimeOut(true);
         this.maxOutputBytes = maxOutputBytes;
         this.starter = Objects.requireNonNull(starter, "starter");
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
@@ -126,9 +158,66 @@ public final class ProcessTransport implements TmuxTransport {
         return execute(request, true);
     }
 
-    private CommandResult execute(CommandRequest request, boolean waiting) {
+    /**
+     * Runs one request, and says so at {@code DEBUG} on this class's {@link System.Logger}.
+     *
+     * <p>The seam is the JDK's own, so it costs a consumer no dependency and reaches whatever they
+     * already route logging to: {@code java.util.logging} by default, SLF4J or Log4j through their
+     * {@code System.LoggerFinder} bridges. Enable {@code DEBUG} on {@code io.github.libtmux} to see
+     * every command tmux ran, how long it took and how it ended.
+     *
+     * <p>Only the command verbs are written, never their arguments. An argument carries session
+     * names, pane contents and whatever a caller typed — a password sent to a prompt among them —
+     * and none of that belongs in a log a library opens on a caller's behalf.
+     */
+    private CommandResult execute(CommandRequest asked, boolean waiting) {
+        long started = System.nanoTime();
+        try {
+            CommandResult result = dispatch(asked, waiting);
+            if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
+                LOG.log(
+                        System.Logger.Level.DEBUG,
+                        "tmux {0} exited {1} in {2} ms",
+                        verbs(asked),
+                        result.exitCode(),
+                        elapsedMillis(started));
+            }
+            return result;
+        } catch (RuntimeException failure) {
+            if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
+                String outcome = failure instanceof TmuxTransportException transport
+                        ? transport
+                                .outcome()
+                                .name()
+                                .toLowerCase(java.util.Locale.ROOT)
+                                .replace('_', ' ')
+                        : failure.getClass().getSimpleName();
+                LOG.log(
+                        System.Logger.Level.DEBUG,
+                        "tmux {0} failed ({1}) after {2} ms",
+                        verbs(asked),
+                        outcome,
+                        elapsedMillis(started));
+            }
+            throw failure;
+        }
+    }
+
+    /** The first word of each command: what ran, without anything a caller put in it. */
+    private static String verbs(CommandRequest request) {
+        return request.commands().stream()
+                .map(command -> command.get(0))
+                .collect(java.util.stream.Collectors.joining(" then "));
+    }
+
+    private static long elapsedMillis(long startedNanos) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
+    }
+
+    private CommandResult dispatch(CommandRequest asked, boolean waiting) {
         requireOpen();
-        requireDispatchable(request.commands());
+        requireDispatchable(asked.commands());
+        CommandRequest request = carriable(asked);
         @Nullable Semaphore waitingPermit = waiting ? waitingAdmission : null;
         if (waiting && waitingPermit == null) {
             throw new TmuxTransportException(
@@ -252,6 +341,38 @@ public final class ProcessTransport implements TmuxTransport {
         } finally {
             gate.unlock();
         }
+    }
+
+    /**
+     * The request as a process this JVM starts can carry it.
+     *
+     * <p>A JVM encodes a child's arguments with the platform's encoding, which the locale decides
+     * before {@code main} and nothing changes afterwards. Under {@code LANG=C} — the default in most
+     * container images — that is ASCII, and {@code é} would reach tmux as {@code ?}. Standard input
+     * has no such limit: this library writes it as UTF-8 itself. So when the commands cannot travel
+     * as arguments they travel as a script tmux reads there with {@code source-file -}, which is on
+     * every supported release, answers with the same output, exit status and error, and reaches an
+     * absent daemon the same way without starting one.
+     *
+     * <p>Written as one line, quoted as {@code if-shell} already quotes every handle command, so tmux
+     * stops at the first failure exactly as it does for arguments: a batch means the same thing
+     * either way. Only when standard input is already carrying something is there no second route,
+     * and then the text is refused rather than corrupted.
+     */
+    private static CommandRequest carriable(CommandRequest request) {
+        if (request.commands().stream().allMatch(Utf8::encodable)) {
+            return request;
+        }
+        if (!request.input().isEmpty()) {
+            for (List<String> command : request.commands()) {
+                Utf8.requireEncodableArguments(command);
+            }
+        }
+        return new CommandRequest(
+                request.endpoint(),
+                List.of(List.of("source-file", "-")),
+                request.timeout(),
+                CommandStrings.group(request.commands()) + "\n");
     }
 
     /** POSIX {@code execve} takes NUL-terminated strings, so an embedded NUL cannot survive. */
@@ -486,7 +607,10 @@ public final class ProcessTransport implements TmuxTransport {
         }
     }
 
-    /** Non-daemon, so an unclosed transport is a visible leak rather than a silent JVM exit. */
+    /**
+     * Non-daemon, so a drain in flight finishes rather than being abandoned halfway and reported as
+     * a whole reply. An idle one times out instead, so forgetting to close still lets a JVM exit.
+     */
     private static ThreadFactory factory() {
         AtomicInteger index = new AtomicInteger();
         return runnable -> {

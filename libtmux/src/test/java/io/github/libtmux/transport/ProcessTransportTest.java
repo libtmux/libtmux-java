@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -54,6 +55,47 @@ final class ProcessTransportTest {
 
     private static CommandRequest bash(String script, Duration timeout) {
         return CommandRequest.of(List.of("/bin/bash"), List.of("-c", script), timeout);
+    }
+
+    // ----------------------------------------------------------------------------- logging
+
+    /**
+     * Every command is visible to whoever turns logging on, and nothing a caller put in one is.
+     *
+     * <p>The seam is {@link System.Logger}, so this reads it through {@code java.util.logging}, the
+     * JDK's default backend, which is what a consumer who routes nothing anywhere gets.
+     */
+    @Test
+    void eachCommandIsLoggedByVerbAndNeverByItsArguments() {
+        java.util.logging.Logger jul = java.util.logging.Logger.getLogger(ProcessTransport.class.getName());
+        List<String> written = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.logging.Handler capture = new java.util.logging.Handler() {
+            @Override
+            public void publish(java.util.logging.LogRecord entry) {
+                written.add(java.text.MessageFormat.format(entry.getMessage(), entry.getParameters()));
+            }
+
+            @Override
+            public void flush() {}
+
+            @Override
+            public void close() {}
+        };
+        java.util.logging.Level before = jul.getLevel();
+        jul.setLevel(java.util.logging.Level.FINE);
+        jul.addHandler(capture);
+        try (ProcessTransport transport = new ProcessTransport(1)) {
+            transport.execute(
+                    CommandRequest.of(List.of("/bin/sh"), List.of("-c", "printf hunter2-secret; exit 3"), GENEROUS));
+        } finally {
+            jul.removeHandler(capture);
+            jul.setLevel(before);
+        }
+
+        assertEquals(1, written.size(), "one command, one line: " + written);
+        String line = written.get(0);
+        assertTrue(line.contains("-c") && line.contains("exited 3"), "it says what ran and how it ended: " + line);
+        assertFalse(line.contains("hunter2"), "and nothing a caller put in the command: " + line);
     }
 
     // ------------------------------------------------------------------ channels and exit status
@@ -754,11 +796,18 @@ final class ProcessTransportTest {
 
     @Test
     void anIdleTransportStartsNoPumpThreads() {
-        long before = pumpThreads();
+        // Which threads, not how many. Pump threads are named alike across transports and an earlier
+        // test's can still be draining a child it timed out, so a count falls while this one is
+        // taken and reads as a difference this transport did not make - it saw two, then none, and
+        // called that a failure. Only a thread that was not there before is one this constructor
+        // started.
+        Set<Thread> before = pumpThreadSet();
         ProcessTransport transport = new ProcessTransport(2);
 
         try {
-            assertEquals(before, pumpThreads(), "an idle transport does not need process-pipe workers");
+            Set<Thread> started = pumpThreadSet();
+            started.removeAll(before);
+            assertEquals(Set.of(), started, "an idle transport does not need process-pipe workers");
         } finally {
             transport.close();
         }
@@ -815,10 +864,10 @@ final class ProcessTransportTest {
                 .findAny();
     }
 
-    private static long pumpThreads() {
+    private static Set<Thread> pumpThreadSet() {
         return Thread.getAllStackTraces().keySet().stream()
                 .filter(thread -> thread.getName().startsWith("libtmux-pump-"))
-                .count();
+                .collect(java.util.stream.Collectors.toCollection(java.util.HashSet::new));
     }
 
     private static boolean awaitDead(long pid) throws InterruptedException {
@@ -1004,5 +1053,50 @@ final class ProcessTransportTest {
         try (TmuxTransport transport = new ProcessTransport()) {
             assertNotNull(transport.execute(shell("true", GENEROUS)));
         }
+    }
+
+    /**
+     * A forgotten {@code close()} must not keep the JVM alive forever.
+     *
+     * <p>The pumps are not daemon threads, so that a drain in flight finishes rather than being
+     * abandoned halfway and reported as a whole reply. That is right while there is work and wrong
+     * once there is none: before this, any program that ran one command and forgot to close hung at
+     * exit, which for a command-line tool is indistinguishable from a deadlock. An idle pump now
+     * lets go of its thread, and the JVM with it.
+     *
+     * <p>Runs with the timeout shortened, so the gate costs a moment rather than the ten seconds a
+     * real one waits.
+     */
+    @Test
+    void anIdlePumpStopsHoldingTheJvmOpen() throws InterruptedException {
+        ProcessTransport transport = new ProcessTransport(
+                1,
+                1_024,
+                command -> new ProcessBuilder(command).start(),
+                System::nanoTime,
+                Duration.ofMillis(100).toNanos());
+        try {
+            assertEquals(
+                    List.of("used"),
+                    transport.execute(shell("echo used", GENEROUS)).stdout());
+            assertTrue(livePumpThreads() > 0, "a command that ran must have had pumps to drain it");
+
+            long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+            while (livePumpThreads() > 0 && System.nanoTime() < deadline) {
+                Thread.sleep(25);
+            }
+
+            assertEquals(0, livePumpThreads(), "an idle pump kept its thread, so an unclosed transport pins the JVM");
+        } finally {
+            transport.close();
+        }
+    }
+
+    /** Counts this transport's own threads, which are the ones that would hold a JVM open. */
+    private static long livePumpThreads() {
+        return Thread.getAllStackTraces().keySet().stream()
+                .filter(Thread::isAlive)
+                .filter(thread -> thread.getName().startsWith("libtmux-pump-"))
+                .count();
     }
 }

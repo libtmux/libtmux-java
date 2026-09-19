@@ -1,6 +1,5 @@
 package io.github.libtmux.workspace;
 
-import io.github.libtmux.Layout;
 import io.github.libtmux.Layouts;
 import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
@@ -45,8 +44,7 @@ final class WorkspaceApplier {
     private static void validate(Server server, Workspace workspace) {
         for (WindowSpec window : workspace.windows()) {
             window.layout().ifPresent(value -> {
-                Layouts.require(value);
-                builtIn(value).ifPresent(layout -> layout.requireSupported(server.version()));
+                Layouts.require(value, server.version());
             });
         }
     }
@@ -90,18 +88,17 @@ final class WorkspaceApplier {
         return name.isEmpty() ? window : window.rename(name);
     }
 
+    /**
+     * A preset name or an unambiguous prefix of one goes through {@link Window#selectLayout}, the
+     * enum path that cannot misspell a name into something 3.3a crashes on; anything else — the
+     * classic checksummed form or JSON — goes through {@link Window#applyLayout}. Resolved the same
+     * way {@link #validate} already checked it, against the same server's version, so a layout that
+     * passed validation cannot fall through to {@code applyLayout} and be refused there as neither
+     * form it recognises.
+     */
     private static void applyLayout(Window window, Optional<String> layout) {
-        layout.ifPresent(
-                value -> builtIn(value).ifPresentOrElse(window::selectLayout, () -> window.applyLayout(value)));
-    }
-
-    private static Optional<Layout> builtIn(String layout) {
-        for (Layout candidate : Layout.values()) {
-            if (candidate.tmuxName().equals(layout)) {
-                return Optional.of(candidate);
-            }
-        }
-        return Optional.empty();
+        layout.ifPresent(value -> Layouts.builtIn(value, window.server().version())
+                .ifPresentOrElse(window::selectLayout, () -> window.applyLayout(value)));
     }
 
     private static void runCommands(List<BuiltWindow> windows) {

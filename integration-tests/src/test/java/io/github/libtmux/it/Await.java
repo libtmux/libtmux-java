@@ -1,7 +1,7 @@
 package io.github.libtmux.it;
 
 import io.github.libtmux.Pane;
-import io.github.libtmux.WakeReason;
+import io.github.libtmux.TextOutcome;
 import java.time.Duration;
 import java.util.function.BooleanSupplier;
 
@@ -37,15 +37,28 @@ final class Await {
     }
 
     /**
+     * Whether the pane displays the text within the budget, whoever put it there.
+     *
+     * <p>The counterpart to {@link #output}, for a test that has to confirm its own typing arrived.
+     * A wait discounts what this library typed, on purpose — that is the caller's question coming
+     * back, not the pane's answer — so only a capture can say the characters reached the pane.
+     */
+    static boolean shown(Pane pane, String expected) {
+        return until(() -> pane.capture().stream().anyMatch(line -> line.contains(expected)));
+    }
+
+    /**
      * Whether the pane showed the text within the budget.
      *
      * <p>The library's own wait, not another copy of one. It reports why it ended; this suite only
      * ever needs whether the text arrived, so the reason is collapsed here rather than at every
-     * call site.
+     * call site. Text already on screen counts as arrived: a caller asking this question does not
+     * care whether it beat the wait there.
      */
     static boolean output(Pane pane, String expected) {
         try {
-            return pane.awaitText(expected, Duration.ofMillis(ATTEMPTS * INTERVAL_MILLIS)) == WakeReason.SIGNALLED;
+            TextOutcome outcome = pane.awaitText(expected, Duration.ofMillis(ATTEMPTS * INTERVAL_MILLIS));
+            return outcome == TextOutcome.APPEARED || outcome == TextOutcome.PRESENT_AT_ENTRY;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;

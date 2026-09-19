@@ -36,8 +36,10 @@ final class ControlWriter {
         this.output = output;
         this.waiting = new ArrayBlockingQueue<>(capacity, true);
         this.failed = failed;
+        // A daemon for the reason the reader is one: this thread waits on a queue that a live client
+        // never stops feeding, so it would hold the JVM forever if the client were forgotten.
         this.thread = new Thread(this::run, "libtmux-control-writer");
-        this.thread.setDaemon(false);
+        this.thread.setDaemon(true);
     }
 
     /** Records the attach request dispatched by the process invocation. */

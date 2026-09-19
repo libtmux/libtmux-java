@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 final class CreationSpecTest {
 
     private static final TmuxVersion V32A = new TmuxVersion(3, 2, "a");
+    private static final TmuxVersion V33 = new TmuxVersion(3, 3, "");
     private static final TmuxVersion V33A = new TmuxVersion(3, 3, "a");
     private static final TmuxVersion V37B = new TmuxVersion(3, 7, "b");
     private static final String FORMAT = "#{window_id}";
@@ -97,17 +98,22 @@ final class CreationSpecTest {
      * 3.2a takes {@code -c} on new-window and drops it, while honouring the same flag on
      * split-window. Nothing in the exit status says so, which is why this is refused rather than
      * sent.
+     *
+     * <p>3.2a and 3.3a alone cannot tell the real floor from one lettered patch too high - both
+     * take the same branch either way - so the discriminating case is the plain 3.3 answer neither
+     * lane in the matrix ever sends.
      */
     @Test
     void aStartDirectoryForAWindowIsRefusedOnTheReleaseThatIgnoresIt() {
         WindowSpec spec = WindowSpec.builder().in(Path.of("/srv")).build();
 
-        UnsupportedTmuxVersion refused =
-                assertThrows(UnsupportedTmuxVersion.class, () -> spec.argv("$1", FORMAT, V32A));
+        UnsupportedTmuxVersionException refused =
+                assertThrows(UnsupportedTmuxVersionException.class, () -> spec.argv("$1", FORMAT, V32A));
 
         assertEquals(
-                "a start directory for a new window requires tmux 3.3a, but this server runs 3.2a",
+                "a start directory for a new window requires tmux 3.3, but this server runs 3.2a",
                 refused.getMessage());
+        assertDoesNotThrow(() -> spec.argv("$1", FORMAT, V33));
         assertDoesNotThrow(() -> spec.argv("$1", FORMAT, V33A));
     }
 
@@ -134,16 +140,24 @@ final class CreationSpecTest {
         assertEquals("40", argv.get(argv.indexOf("-y") + 1));
     }
 
-    /** 3.2a accepts {@code -x}/{@code -y} for a detached session and gives it the default size. */
+    /**
+     * 3.2a accepts {@code -x}/{@code -y} for a detached session and gives it the default size.
+     *
+     * <p>3.2a and 3.3a alone cannot tell the real floor from one lettered patch too high - both
+     * take the same branch either way - so the discriminating case is the plain 3.3 answer neither
+     * lane in the matrix ever sends.
+     */
     @Test
     void aSizeIsRefusedOnTheReleaseThatIgnoresIt() {
         SessionSpec spec = SessionSpec.builder().sized(new Dimensions(120, 40)).build();
 
-        UnsupportedTmuxVersion refused =
-                assertThrows(UnsupportedTmuxVersion.class, () -> spec.argv(FORMAT, () -> V32A));
+        UnsupportedTmuxVersionException refused =
+                assertThrows(UnsupportedTmuxVersionException.class, () -> spec.argv(FORMAT, () -> V32A));
 
         assertEquals(
-                "a size for a detached session requires tmux 3.3a, but this server runs 3.2a", refused.getMessage());
+                "a size for a detached session requires tmux 3.3, but this server runs 3.2a", refused.getMessage());
+        assertDoesNotThrow(() -> spec.argv(FORMAT, () -> V33));
+        assertDoesNotThrow(() -> spec.argv(FORMAT, () -> V33A));
     }
 
     /**
@@ -234,44 +248,5 @@ final class CreationSpecTest {
                 "$2",
                 window.argv("$2", FORMAT, V37B)
                         .get(window.argv("$2", FORMAT, V37B).indexOf("-t") + 1));
-    }
-
-    // ------------------------------------------------------------------------------ finding
-
-    /** tmux looks in every field when told nothing, so saying so would narrow rather than widen. */
-    @Test
-    void aFindNamesNoFieldWhenItWantsThemAll() {
-        assertEquals(
-                List.of("find-window", "-t", "%1", "build"),
-                FindSpec.builder().matching("build").build().argv("%1"));
-    }
-
-    @Test
-    void namingAFieldNarrowsToTheOnesNamed() {
-        assertEquals(
-                List.of("find-window", "-N", "-t", "%1", "build"),
-                FindSpec.builder().matching("build").inName().build().argv("%1"));
-        assertEquals(
-                List.of("find-window", "-N", "-T", "-t", "%1", "build"),
-                FindSpec.builder().matching("build").inName().inTitle().build().argv("%1"));
-    }
-
-    @Test
-    void howAMatchIsReadIsSeparateFromWhereItIsLookedFor() {
-        assertEquals(
-                List.of("find-window", "-C", "-i", "-r", "-Z", "-t", "%1", "^err"),
-                FindSpec.builder()
-                        .matching("^err")
-                        .inContent()
-                        .ignoringCase()
-                        .asRegex()
-                        .zooming()
-                        .build()
-                        .argv("%1"));
-    }
-
-    @Test
-    void aFindWithNothingToMatchIsRejected() {
-        assertThrows(IllegalArgumentException.class, () -> FindSpec.builder().build());
     }
 }

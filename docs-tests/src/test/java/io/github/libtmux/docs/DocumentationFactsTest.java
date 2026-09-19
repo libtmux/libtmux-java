@@ -1,6 +1,7 @@
 package io.github.libtmux.docs;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -30,6 +31,19 @@ import org.junit.jupiter.api.Test;
 final class DocumentationFactsTest {
 
     private static final Path ROOT = Path.of(System.getProperty("libtmux.docs.root", "."));
+
+    /** Every module with sources, published or not: a codename is no clearer in a test. */
+    private static final List<String> SOURCE_MODULES = List.of(
+            "libtmux",
+            "libtmux-jackson",
+            "libtmux-junit5",
+            "libtmux-kotlin",
+            "libtmux-mcp",
+            "libtmux-workspace",
+            "benchmarks",
+            "docs-tests",
+            "examples",
+            "integration-tests");
 
     /** Published modules, which is what a reader is told to depend on. */
     private static final List<String> PUBLISHED = List.of(
@@ -68,6 +82,111 @@ final class DocumentationFactsTest {
                 Pattern.compile("^libtmuxVersion=(.+)$", Pattern.MULTILINE).matcher(read("gradle.properties"));
         assertTrue(declared.find(), "gradle.properties names no version");
         return declared.group(1).replace("-SNAPSHOT", "");
+    }
+
+    /**
+     * Three methods hand tmux a shell command without ending the options first, because tmux expands
+     * {@code #(...)} in one and the terminator stops that expansion on some releases and not others.
+     * That is a decision, and a reader who finds it undocumented cannot tell it from the oversight
+     * that let {@code set-buffer} read a caller's text as flags.
+     */
+    @Test
+    void everyMethodThatSkipsTheOptionsTerminatorSaysWhy() {
+        String core = "libtmux/src/main/java/io/github/libtmux/";
+        Map<String, String> skipped = Map.of(
+                core + "Server.java",
+                "run-shell",
+                core + "Pane.java",
+                "pipe-pane",
+                core + "Window.java",
+                "display-popup");
+
+        List<String> silent = skipped.entrySet().stream()
+                .filter(entry -> !read(entry.getKey()).contains("Deliberately without the"))
+                .map(entry -> entry.getKey() + " (" + entry.getValue() + ")")
+                .toList();
+
+        assertEquals(List.of(), silent, "a method skips the options terminator without saying why");
+    }
+
+    /**
+     * An internal tracker id in any source is a reference a reader cannot follow.
+     *
+     * <p>They arrive honestly — a comment written while a ticket was open, a marker string named after
+     * the ticket that needed it — and then stay. The sentence around one always says the thing anyway,
+     * so the tag is pure cost to everyone outside the project. Tests too: a test is where a reader goes
+     * to learn why a behaviour exists, and a codename there answers nothing.
+     */
+    @Test
+    void noSourceCitesAnInternalTrackerId() throws IOException {
+        // A ticket-shaped id is one wherever it sits. A short D-number could be a dimension or a
+        // drive, so that one counts only where it reads as a citation.
+        Pattern ticket = Pattern.compile("\\bJAVA[0-9]*-[A-Z0-9]+");
+        Pattern shortId = Pattern.compile("\\bD[0-9]{1,2}\\b");
+        List<String> found = new ArrayList<>();
+        for (String module : SOURCE_MODULES) {
+            for (String set : List.of("src/main", "src/test")) {
+                Path sources = ROOT.resolve(module).resolve(set);
+                if (!Files.isDirectory(sources)) {
+                    continue;
+                }
+                try (Stream<Path> tree = Files.walk(sources)) {
+                    for (Path file : tree.filter(Files::isRegularFile).toList()) {
+                        String name = file.getFileName().toString();
+                        if (!name.endsWith(".java") && !name.endsWith(".kt") && !name.endsWith(".kts")) {
+                            continue;
+                        }
+                        String text = Files.readString(file);
+                        Matcher cited = ticket.matcher(text);
+                        while (cited.find()) {
+                            found.add(ROOT.relativize(file) + ": " + cited.group());
+                        }
+                        Matcher brief = shortId.matcher(text);
+                        while (brief.find()) {
+                            int at = brief.start();
+                            String around =
+                                    text.substring(Math.max(0, at - 2), Math.min(text.length(), brief.end() + 1));
+                            if (around.startsWith("(") || around.startsWith(" (") || around.endsWith(":")) {
+                                found.add(ROOT.relativize(file) + ": " + brief.group());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        assertEquals(List.of(), found, "a source cites an internal tracker id");
+    }
+
+    /**
+     * The supported range is the README's strongest claim, and the only one a reader cannot check.
+     *
+     * <p>"That range is not a claim" is true exactly while the matrix runs its ends. A release
+     * added to the workflow and not to the README understates what is tested; one removed from the
+     * workflow and left in the README is a promise nothing keeps. A spelled-out count is worse
+     * again — it was "eight" against a nine-lane matrix — so prose says "every supported release"
+     * and the ends are checked here.
+     */
+    @Test
+    void theReadmeNamesTheEndsOfTheMatrixItClaims() {
+        Matcher lanes = Pattern.compile("tmux:\\s*\\[([^\\]]+)]").matcher(read(".github/workflows/tmux-matrix.yml"));
+        assertTrue(lanes.find(), "the matrix workflow names no tmux versions");
+        List<String> running = Pattern.compile("'([^']+)'")
+                .matcher(lanes.group(1))
+                .results()
+                .map(found -> found.group(1))
+                .toList();
+        assertTrue(running.size() > 1, "a range needs two ends: " + running);
+
+        String readme = read("README.md");
+        String claimed = running.get(0) + " through " + running.get(running.size() - 1);
+
+        assertTrue(readme.contains(claimed), "the README does not claim the range the matrix runs: " + claimed);
+        assertFalse(
+                Pattern.compile("\\b(?:five|six|seven|eight|nine|ten|eleven|twelve)\\s+supported\\s+releases\\b")
+                        .matcher(readme)
+                        .find(),
+                "the README spells out a release count, which drifts the moment a lane is added");
     }
 
     /**
@@ -118,6 +237,27 @@ final class DocumentationFactsTest {
         }
     }
 
+    /**
+     * Every example program is in the index that introduces them.
+     *
+     * <p>The examples exist because nobody compiles what everybody reads first, and an example
+     * nothing points at is no better than one nothing runs. Two had been written and never listed
+     * when this gate was added.
+     */
+    @Test
+    void everyExampleIsListedWhereExamplesAreIntroduced() throws IOException {
+        Path programs = ROOT.resolve("examples/src/main/java/io/github/libtmux/examples");
+        String index = read("examples/README.md");
+        List<String> missing = new ArrayList<>();
+        try (Stream<Path> found = Files.list(programs)) {
+            found.filter(file -> file.getFileName().toString().endsWith(".java"))
+                    .map(file -> file.getFileName().toString().replace(".java", ""))
+                    .filter(name -> !index.contains("`" + name + "`"))
+                    .forEach(missing::add);
+        }
+        assertEquals(List.of(), missing, "examples/README.md does not list every example");
+    }
+
     /** An unrun example reads exactly like an executed one, so it has to say which it is. */
     @Test
     void anExampleInALanguageNothingBuildsSaysThatItIsUnchecked() {
@@ -139,7 +279,7 @@ final class DocumentationFactsTest {
 
     /** Everything a reader is expected to act on, which is what Documentation.readable also covers. */
     private static List<String> readerFacing() {
-        List<String> found = new ArrayList<>(List.of("README.md"));
+        List<String> found = new ArrayList<>(List.of("README.md", "MIGRATION.md"));
         PUBLISHED.forEach(module -> found.add(module + "/README.md"));
         found.add("libtmux-bom/README.md");
         try (Stream<Path> guides = Files.list(ROOT.resolve("docs/guide"))) {
@@ -175,19 +315,53 @@ final class DocumentationFactsTest {
     @Test
     void theParityDocumentsCallTheirTestsPlannedWhileTheyAre() {
         for (String document : PARITY) {
-            Set<String> named = claimedContractTests().keySet();
-            if (named.stream().anyMatch(type -> sourceOf(type).isPresent())) {
+            if (!anyContractTestStillUnwritten(claimedContractTests(List.of(document)))) {
                 continue;
             }
             assertTrue(read(document).contains("planned parity"), document + " no longer says its tests are planned");
         }
     }
 
+    /**
+     * One written contract test must not clear the document of naming the rest as planned.
+     *
+     * <p>{@code ServerTest} exists, so a document citing it alongside a still-unwritten class has to
+     * keep saying "planned parity" for the one that is; a check that stops at the first resolved
+     * class would miss that.
+     */
+    @Test
+    void aWrittenContractTestDoesNotClearAStillPlannedSibling() {
+        Map<String, Set<String>> mixed = new TreeMap<>();
+        mixed.put("ServerTest", Set.of("liveReadsRejectAnAbsentDaemon"));
+        mixed.put("NoSuchDocsFixtureContract", Set.of("aPlannedMethod"));
+
+        assertTrue(anyContractTestStillUnwritten(mixed), "a real class must not mask an unwritten sibling");
+    }
+
+    /** The clean control: once every cited class is real, nothing is left to call planned. */
+    @Test
+    void everyContractTestBeingWrittenClearsThePlannedRequirement() {
+        Map<String, Set<String>> allWritten = new TreeMap<>();
+        allWritten.put("ServerTest", Set.of("liveReadsRejectAnAbsentDaemon"));
+
+        assertFalse(anyContractTestStillUnwritten(allWritten), "an all-real citation set still reads as unwritten");
+    }
+
+    /** Whether a contract test the map cites has no matching source yet. */
+    private static boolean anyContractTestStillUnwritten(Map<String, Set<String>> claimed) {
+        return claimed.keySet().stream().anyMatch(type -> sourceOf(type).isEmpty());
+    }
+
     /** Every {@code Class#method} the parity documents name, grouped by the class that would hold it. */
     private static Map<String, Set<String>> claimedContractTests() {
+        return claimedContractTests(PARITY);
+    }
+
+    /** As {@link #claimedContractTests()}, but read from only the given documents. */
+    private static Map<String, Set<String>> claimedContractTests(List<String> documents) {
         Map<String, Set<String>> claimed = new TreeMap<>();
         Pattern cited = Pattern.compile("<code>([A-Z][A-Za-z0-9]*)#([A-Za-z0-9_]+)</code>");
-        for (String document : PARITY) {
+        for (String document : documents) {
             cited.matcher(read(document))
                     .results()
                     .forEach(found -> claimed.computeIfAbsent(found.group(1), type -> new TreeSet<>())

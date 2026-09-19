@@ -65,7 +65,9 @@ final class RowFramingIntegrationTest {
 
         Pane pane = session.activePane().orElseThrow();
 
-        assertEquals(awkward, pane.currentPath());
+        // Real path: tmux reports the directory with symlinks resolved, and a temporary directory can
+        // sit behind one — on macOS /var is /private/var.
+        assertEquals(awkward.toRealPath(), pane.currentPath());
         assertEquals(2, server.sessions().size(), "a listing must not come back empty because of it");
     }
 

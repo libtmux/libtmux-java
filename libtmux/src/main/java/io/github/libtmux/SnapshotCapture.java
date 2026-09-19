@@ -11,12 +11,14 @@ import io.github.libtmux.snapshot.SessionState;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.snapshot.WindowState;
 import io.github.libtmux.transport.CommandResult;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.function.Predicate;
 
 /**
  * Reads a whole tmux server into one snapshot.
@@ -54,6 +56,8 @@ final class SnapshotCapture {
         "pane_current_command",
         "pane_width",
         "pane_height",
+        "pane_left",
+        "pane_top",
         "pane_title",
         "pane_current_path",
         "pane_pid",
@@ -65,7 +69,13 @@ final class SnapshotCapture {
 
     private static final RowFormat PANES = RowFormat.of(PANE_FIELDS);
 
-    /** tmux gained pane_floating_flag in 3.7; before that the format expands to nothing. */
+    /**
+     * tmux gained {@code pane_floating_flag} at {@code 87aaff5f} ("Bring some new formats from the
+     * floating panes work"), which {@code git tag --contains} places on 3.7 and nothing earlier;
+     * before that the format expands to nothing, indistinguishable from a real pane answering false.
+     * Not probeable: an unknown format variable and a false one both expand empty, and {@link
+     * Server#listCommands} lists commands, not the format variables a running tmux understands.
+     */
     private static final TmuxVersion FLOATING_SINCE = new TmuxVersion(3, 7, "");
 
     private static final String FLOATING = "pane_floating_flag";
@@ -83,14 +93,11 @@ final class SnapshotCapture {
 
     /** One attempt, empty when the server was replaced under it. */
     Optional<ServerSnapshot> attempt() {
-        Optional<ServerProcess> observed = process();
-        if (observed.isEmpty()) {
-            return Optional.of(ServerSnapshot.of(Instant.now(), List.of(), List.of(), List.of(), List.of()));
-        }
-        ServerProcess process = observed.orElseThrow();
+        ServerProcess process = process()
+                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
         try {
             return Optional.of(capture(process));
-        } catch (ObjectDoesNotExist replaced) {
+        } catch (ObjectDoesNotExistException replaced) {
             // The fence answered: this is no longer the server the identity came from.
             return Optional.empty();
         } catch (RuntimeException failure) {
@@ -110,30 +117,59 @@ final class SnapshotCapture {
 
     /** Reads process identity and version together so neither can come from a different server. */
     Optional<ServerProcess> process() {
+        return identity(Server::serverAbsent);
+    }
+
+    /**
+     * As {@link #process}, except a live daemon this client cannot actually talk to is never folded
+     * into "no daemon" - used only by {@link Server#versionForCreation}, the one caller for which
+     * that distinction matters.
+     *
+     * <p>tmux reports both the same way from a client's side: "no server running"/"(No such file or
+     * directory)" for a socket nothing is listening on, and "server exited unexpectedly" for a
+     * daemon that refused this client's handshake - confirmed against the matrix, a 3.2a client
+     * against a 3.7c daemon on the same socket fails the second way, rc 1. {@link #process} still
+     * folds both into "no daemon" for every other caller, which asks "is there a server I can read
+     * from" and for which a daemon this client cannot use is no more usable than none at all.
+     */
+    Optional<ServerProcess> processForCreation() {
+        return identity(SnapshotCapture::daemonGenuinelyAbsent);
+    }
+
+    private Optional<ServerProcess> identity(Predicate<String> absent) {
         CommandResult result = server.cmd("display-message", "-p", PROCESS.template());
         if (!result.succeeded()) {
-            if (result.stderr().stream().anyMatch(SnapshotCapture::serverAbsent)) {
+            if (result.stderr().stream().anyMatch(absent)) {
                 return Optional.empty();
             }
-            throw new LibTmuxException("tmux display-message failed: " + String.join("; ", result.stderr()));
+            throw server.failed("display-message", result);
         }
         List<RowFormat.Row> reported = PROCESS.rows(result.stdout());
+        if (reported.isEmpty()) {
+            throw new LibTmuxException(
+                    server.config().binary() + " exited 0 and reported nothing for tmux's own identity; is it tmux?");
+        }
         if (reported.size() != 1) {
-            throw new LibTmuxException("tmux did not report exactly one server identity row");
+            throw new LibTmuxException("tmux did not report exactly one server identity row: " + reported);
         }
         RowFormat.Row row = reported.get(0);
         long pid = row.count("pid");
         if (pid <= 0) {
             throw new LibTmuxException("tmux reported a malformed server pid: " + pid);
         }
-        return Optional.of(new ServerProcess(pid, TmuxVersion.parse(row.text("version"))));
+        String version = row.text("version");
+        return Optional.of(new ServerProcess(pid, TmuxVersion.parse(version), version));
+    }
+
+    private static boolean daemonGenuinelyAbsent(String message) {
+        return message.contains("no server running") || message.contains("(No such file or directory)");
     }
 
     /** The whole hierarchy in one invocation, fenced against the identity just read. */
     private ServerSnapshot capture(ServerProcess process) {
         boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
         RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
-        Batch listings = server.batch(process.pid(), process.version());
+        Batch listings = server.batch(process.pid(), process.reported());
         listings.add(listing(SESSIONS, "list-sessions"));
         listings.add(listing(WINDOWS, "list-windows", "-a"));
         listings.add(listing(paneFormat, "list-panes", "-a"));
@@ -174,9 +210,10 @@ final class SnapshotCapture {
                     row.flag("pane_active"),
                     row.text("pane_current_command"),
                     new Dimensions(row.number("pane_width"), row.number("pane_height")),
+                    new PanePosition(row.number("pane_left"), row.number("pane_top")),
                     row.text("pane_title"),
-                    Path.of(row.text("pane_current_path")),
-                    row.count("pane_pid"),
+                    row.text("pane_current_path"),
+                    panePid(row),
                     new PaneEdges(
                             row.flag("pane_at_top"),
                             row.flag("pane_at_bottom"),
@@ -194,6 +231,23 @@ final class SnapshotCapture {
         return ServerSnapshot.of(Instant.now(), process.pid(), process.version(), sessions, windows, panes, clients);
     }
 
+    /**
+     * A pane with no process reports {@code pane_pid} as {@code 0} on every released tmux through
+     * 3.7c, and as an empty string on the built development tmux this port has no CI lane for. That
+     * development tmux reports the same empty string for a pane that ran a real process and then
+     * died with {@code remain-on-exit} — the two are indistinguishable from this field alone there;
+     * {@link Pane#dead()} is the live read that tells them apart. Either raw form collapses to
+     * {@link OptionalLong#empty()} rather than a literal {@code 0}, so a caller cannot mistake the
+     * sentinel for a real pid.
+     */
+    private static OptionalLong panePid(RowFormat.Row row) {
+        if (row.text("pane_pid").isEmpty()) {
+            return OptionalLong.empty();
+        }
+        long pid = row.count("pane_pid");
+        return pid == 0 ? OptionalLong.empty() : OptionalLong.of(pid);
+    }
+
     private static List<String> listing(RowFormat format, String... command) {
         List<String> argv = new ArrayList<>(command.length + 2);
         argv.addAll(List.of(command));
@@ -203,9 +257,10 @@ final class SnapshotCapture {
     }
 
     /** Reads one listing's rows, insisting tmux actually ran it. */
-    private static List<RowFormat.Row> rows(RowFormat format, OperationResult operation, String command) {
+    private List<RowFormat.Row> rows(RowFormat format, OperationResult operation, String command) {
         if (operation.outcome() != OperationOutcome.COMPLETE) {
-            throw new LibTmuxException("tmux " + command + " failed: " + String.join("; ", operation.stderr()));
+            throw server.failed(
+                    command, operation.outcome().name().toLowerCase(Locale.ROOT).replace('_', ' '), operation.stderr());
         }
         return format.rows(operation.stdout());
     }
@@ -217,17 +272,15 @@ final class SnapshotCapture {
                 new WindowId(row.text("window_id")));
     }
 
-    private static boolean serverAbsent(String message) {
-        return message.contains("no server running")
-                || message.contains("server exited unexpectedly")
-                || message.contains("(No such file or directory)");
-    }
-
     private static String[] withFloating() {
         String[] fields = Arrays.copyOf(PANE_FIELDS, PANE_FIELDS.length + 1);
         fields[PANE_FIELDS.length] = FLOATING;
         return fields;
     }
 
-    record ServerProcess(long pid, TmuxVersion version) {}
+    /**
+     * @param reported the version exactly as tmux wrote it, which is what the capture's fence
+     *     compares — not the parsed version's text, which need not be byte for byte the same
+     */
+    record ServerProcess(long pid, TmuxVersion version, String reported) {}
 }

@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.Server;
 import io.github.libtmux.TmuxFormats;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,9 +20,9 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Asking the server to run things and to say what it knows.
  *
- * <p>{@code run-shell} reports its command's output on 3.2a, loses it in 3.3a and 3.4, and reports it
- * again from 3.5. That is a hole in the middle of the range rather than a floor, so both branches
- * assert here and the version arithmetic is spelled out rather than assumed.
+ * <p>{@code run-shell} reports its command's output on 3.2a, loses it from 3.3 through 3.4, and
+ * reports it again from 3.5. That is a hole in the middle of the range rather than a floor, so both
+ * branches assert here and the version arithmetic is spelled out rather than assumed.
  */
 @ExtendWith(TmuxExtension.class)
 final class ServerScriptingIntegrationTest {
@@ -99,8 +99,8 @@ final class ServerScriptingIntegrationTest {
     @Test
     void readingWhatTheCommandPrintedWorksOrRefuses(Server server) {
         if (losesShellOutput(server)) {
-            UnsupportedTmuxVersion refused =
-                    assertThrows(UnsupportedTmuxVersion.class, () -> server.runShellCapturing("echo captured-me"));
+            UnsupportedTmuxVersionException refused = assertThrows(
+                    UnsupportedTmuxVersionException.class, () -> server.runShellCapturing("echo captured-me"));
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("run-shell"),
@@ -113,17 +113,17 @@ final class ServerScriptingIntegrationTest {
     }
 
     /**
-     * A refusal must not be a silent one: the releases that lose the output are exactly 3.3a and
-     * 3.4, and every other lane has to take the capturing path.
+     * A refusal must not be a silent one: the releases that lose the output are exactly 3.3, 3.3a
+     * and 3.4, and every other lane has to take the capturing path.
      */
     @Test
-    void exactlyTheTwoBrokenReleasesRefuse(Server server) {
+    void exactlyTheThreeBrokenReleasesRefuse(Server server) {
         String lane = System.getProperty("libtmux.tmux.expected");
         if (lane == null) {
             return; // not a matrix lane; the ordinary suite runs whichever tmux is on PATH
         }
 
-        boolean expectedToRefuse = List.of("3.3a", "3.4").contains(lane);
+        boolean expectedToRefuse = List.of("3.3", "3.3a", "3.4").contains(lane);
 
         assertEquals(expectedToRefuse, losesShellOutput(server), "lane " + lane + " disagrees with the version rule");
     }

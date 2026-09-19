@@ -21,7 +21,15 @@ import org.jspecify.annotations.Nullable;
  */
 public final class CaptureSpec {
 
-    /** {@code -T} arrived in 3.4, {@code -M} in 3.6, and {@code -H} and {@code -L} in 3.7. */
+    /**
+     * {@code -T} arrived in 3.4, {@code -M} in 3.6, and {@code -H} and {@code -L} in 3.7 - confirmed
+     * against every matrix release's own {@code list-commands} output, not only the two adjacent to
+     * each floor. Not converted to a probe reading that output: a flag's presence there is not always
+     * trustworthy evidence on its own - {@code cmd-split-window.c}'s own args spec shows {@code -l}
+     * both declared to take a value and also listed among the boolean cluster in the generated usage
+     * line, so a prober that trusted the cluster's shape alone would be reading a line tmux itself
+     * gets inconsistent.
+     */
     private static final TmuxVersion TRIM_SINCE = new TmuxVersion(3, 4, "");
 
     private static final TmuxVersion MODE_SCREEN_SINCE = new TmuxVersion(3, 6, "");
@@ -64,7 +72,7 @@ public final class CaptureSpec {
     /**
      * The command that reads the pane.
      *
-     * @throws UnsupportedTmuxVersion if the spec asks for something {@code running} does not have
+     * @throws UnsupportedTmuxVersionException if the spec asks for something {@code running} does not have
      */
     List<String> argv(String target, TmuxVersion running) {
         require(trimTrailing, TRIM_SINCE, running, "trimming trailing space");
@@ -106,7 +114,7 @@ public final class CaptureSpec {
 
     private static void require(boolean wanted, TmuxVersion since, TmuxVersion running, String feature) {
         if (wanted && !running.atLeast(since)) {
-            throw new UnsupportedTmuxVersion(feature, since, running);
+            throw new UnsupportedTmuxVersionException(feature, since, running);
         }
     }
 

@@ -258,9 +258,13 @@ meaningful — tmux reports a server that died under a waiter as a *successful*
 wake, so "it worked" is never the answer on its own.
 
 Completion runs inside the pane's trusted POSIX shell: an inherited inner
-subshell contains the authored command, while an outer exit trap emits its status
-and signals through one absolute tmux client and the server's resolved `-S`
-socket. Ordinary output aliases and functions are tolerated; pre-existing
+subshell contains the authored command, while an outer trap emits its status and
+signals through one absolute tmux client and the server's resolved `-S` socket.
+That trap is armed for interrupt and terminate as well as exit. A command still
+running at the deadline keeps the pane, so nothing else can type into the line it
+occupies; `send_keys` with only stop keys — `C-c`, `C-\` — is let through that,
+because it is what ends the command rather than competing with it, and it is what
+the timeout's own note tells you to send. Ordinary output aliases and functions are tolerated; pre-existing
 functions named `trap`, `eval`, `exit`, or exactly like that resolved client are
 outside this boundary. Marker `display-message` calls honor the selected trusted
 server's command aliases and hooks.
@@ -280,8 +284,12 @@ deadline, and what comes back is a timeout instead of the error. Patterns are
 plain text unless you pass `regex` — a model asking for `[FAILED]` means those
 eight characters, not a character class.
 
-Only output arriving *after* the call counts, so text already on the screen from
-an hour ago cannot satisfy a wait for something that has not happened yet.
+Text already on the screen when a cursorless call starts is never reported as a
+fresh match — it did not just happen — but it is not hidden either: the outcome
+comes back `PRESENT_AT_ENTRY` rather than `MATCHED`, with the text included, so a
+call made moments after the output landed does not read as a timeout with
+nothing in it. Pass the returned `cursor` to a later call to watch only for what
+comes after.
 
 Every wait is capped (30 s by default, 2 minutes hard) and reports the ceiling it
 actually enforced. The cap protects the agent's turn, not the connection: a tool
@@ -484,6 +492,7 @@ is worth testing against real tmux and attaching it to a transport is not.
 
 <!-- snippet: compile-only: overStdio reads standard input until the client closes it -->
 ```java
+// Given: ServerConfig config
 Server server = Server.open(config);
 
 // Serves on stdin and stdout, reading until the client closes the stream.

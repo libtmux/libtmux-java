@@ -35,11 +35,16 @@ final class Channels {
         String channel = call.string("channel");
         Duration timeout = Waits.requested(call);
         boolean drained = call.flag("drain_first", false);
-        if (drained) {
-            call.server().channel(channel).drain();
-        }
         long started = System.nanoTime();
-        WakeReason wake = call.server().channel(channel).awaitReservingCapacity(timeout);
+        WakeReason wake;
+        try {
+            if (drained) {
+                var unused = call.server().channel(channel).drain();
+            }
+            wake = call.server().channel(channel).awaitReservingCapacity(timeout);
+        } catch (InterruptedException cancelled) {
+            throw Waits.cancelled(cancelled);
+        }
         double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
         return new Woke(
                 channel, wake.name(), Math.round(seconds * 100) / 100.0, Waits.asSeconds(timeout), note(wake, drained));
@@ -76,7 +81,12 @@ final class Channels {
 
     static Drained drain(Call call) {
         String channel = call.string("channel");
-        boolean had = call.server().channel(channel).drain();
+        boolean had;
+        try {
+            had = call.server().channel(channel).drain();
+        } catch (InterruptedException cancelled) {
+            throw Waits.cancelled(cancelled);
+        }
         return new Drained(
                 channel,
                 had,

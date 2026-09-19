@@ -1,6 +1,7 @@
 package io.github.libtmux.transport;
 
 import io.github.libtmux.internal.CommandStrings;
+import io.github.libtmux.internal.Utf8;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -42,6 +43,11 @@ public record CommandRequest(List<String> endpoint, List<List<String>> commands,
         if (timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException("timeout is not positive");
         }
+        // The endpoint is tmux's own argv — which binary, which socket — and nothing but argv can
+        // carry it, so text this JVM cannot encode there is refused here. The commands are not:
+        // they are data a transport chooses how to deliver, and ProcessTransport delivers them over
+        // standard input when this JVM cannot encode them as arguments.
+        Utf8.requireEncodableArguments(endpoint);
     }
 
     /** A request for one command, which is every request but a batch. */

@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.ObjectDoesNotExist;
+import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -505,6 +505,34 @@ final class RunningCommandsTest {
         assertTrue(await(() -> inputAvailable(server, pane)), "the valid status marker did not release the pane");
     }
 
+    /**
+     * The note a timed-out run hands back tells the caller to interrupt the command, so interrupting
+     * has to be something this server will do. The run still owns the pane, and a lock that refuses
+     * the one key which ends what it is waiting for leaves the server that started a hung command
+     * unable to stop it. Written against dash, whose exit trap alone does not run on an interrupt,
+     * so the run would go on owning the pane even once the key got through.
+     */
+    @Test
+    void aTimedOutRunTakesTheInterruptItsNoteAdvises(Server server, @TempDir Path temporary) throws Exception {
+        Pane dash = shellPane(server, "interrupted", "/bin/dash");
+        // The cohort's signature carries the pane's current command, and a window just created has
+        // not settled on one yet; running before it does is refused as state that changed after
+        // setup, which is the check working, not this behaviour failing.
+        ready(dash, temporary.resolve("interrupt-ready"), ":");
+        String pane = dash.id().value();
+
+        RunningCommands.Ran ran =
+                RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "sleep 300", "timeout", 0.5));
+
+        assertEquals("TIMED_OUT", ran.outcome());
+        assertTrue(String.valueOf(ran.note()).contains("C-c"), String.valueOf(ran.note()));
+        assertInputOwned(server, pane);
+
+        Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of("C-c")));
+
+        assertTrue(await(() -> inputAvailable(server, pane)), "the interrupt never released the pane");
+    }
+
     @Test
     void aDeadPaneProvesRetainedOwnershipEnded(Server server) throws Exception {
         Pane pane = server.panes().getFirst();
@@ -723,8 +751,8 @@ final class RunningCommandsTest {
 
     @Test
     void aPaneThatIsNotThereSaysWhichToolFindsOne(Server server) {
-        ObjectDoesNotExist refused = assertThrows(
-                ObjectDoesNotExist.class,
+        ObjectDoesNotExistException refused = assertThrows(
+                ObjectDoesNotExistException.class,
                 () -> RunningCommands.run(TestCalls.on(server, "pane_id", "%999", "command", "true")));
 
         String message = String.valueOf(refused.getMessage());
@@ -798,6 +826,24 @@ final class RunningCommandsTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("interrupted while arranging concurrent command delivery", e);
         }
+    }
+
+    /**
+     * The interrupt reaches through a run and nothing else. Against a pane no run holds it takes the
+     * pane the ordinary way, so it cannot have its keys interleaved with another operation's line;
+     * only a pane a run is holding is passed through, and that run goes on owning it.
+     */
+    @Test
+    void anInterruptOwnsAFreePaneAndOnlyReachesThroughARun(Server server) {
+        Pane pane = server.panes().getFirst();
+        PaneInputCohort.Resolution free = PaneInputCohort.resolve(pane);
+
+        try (PaneInputReservations.Lease held = PaneInputReservations.interrupting(free, "send_keys")) {
+            assertNotNull(held);
+            assertInputOwned(server, pane.id().value());
+        }
+
+        assertTrue(inputAvailable(server, pane.id().value()), "the interrupt never gave the pane back");
     }
 
     private static void assertInputOwned(Server server, String pane) {

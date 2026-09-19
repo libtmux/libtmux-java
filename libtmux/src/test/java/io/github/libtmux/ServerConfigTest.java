@@ -77,7 +77,7 @@ final class ServerConfigTest {
                 .build();
 
         assertEquals(
-                "[tmux, -L, fixture, -f, /tmp/empty.conf]",
+                "[tmux, -u, -L, fixture, -f, /tmp/empty.conf]",
                 config.endpointCommand().toString());
     }
 
@@ -87,7 +87,22 @@ final class ServerConfigTest {
                 .endpoint(ServerEndpoint.namedSocket("fixture"))
                 .build();
 
-        assertEquals("[tmux, -L, fixture]", config.endpointCommand().toString());
+        assertEquals("[tmux, -u, -L, fixture]", config.endpointCommand().toString());
+    }
+
+    /**
+     * Not cosmetic and not conditional: tmux decides from the environment whether its client reads
+     * UTF-8, and replaces every non-ASCII character in a reply to a client it judges otherwise. A
+     * library cannot leave that to whatever locale the caller's JVM was started in.
+     */
+    @Test
+    void everyCommandDeclaresThatThisClientReadsUtf8() {
+        ServerConfig config = ServerConfig.builder().build();
+
+        assertEquals(
+                "-u",
+                config.endpointCommand().get(1),
+                "the flag rides with the binary, so no call site can send a command without it");
     }
 
     @Test

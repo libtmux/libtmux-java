@@ -206,7 +206,7 @@ final class HandleTest {
 
             secondLink.expand("#{window_index}");
             assertEquals(
-                    CommandStrings.stringify(List.of("display-message", "-p", "-t", "$1:3", "#{window_index}")),
+                    CommandStrings.stringify(List.of("display-message", "-p", "-t", "$1:3", "--", "#{window_index}")),
                     last(transport));
 
             secondLink.unlink();
@@ -353,18 +353,20 @@ final class HandleTest {
                 }
                 case "list-panes" -> {
                     rows.add(row(
-                            "$0", "@7", "0", "%1", "0", "1", "nvim", "80", "24", "t", "/tmp", "11", "1", "1", "1",
-                            "1"));
+                            "$0", "@7", "0", "%1", "0", "1", "nvim", "80", "24", "0", "0", "t", "/tmp", "11", "1", "1",
+                            "1", "1"));
                     rows.add(row(
-                            "$0", "@7", "0", "%2", "1", "0", "zsh", "80", "24", "t", "/tmp", "12", "1", "1", "1", "1"));
+                            "$0", "@7", "0", "%2", "1", "0", "zsh", "80", "24", "0", "0", "t", "/tmp", "12", "1", "1",
+                            "1", "1"));
                     rows.add(row(
-                            "$1", "@7", "3", "%1", "0", "1", "nvim", "80", "24", "t", "/tmp", "11", "1", "1", "1",
-                            "1"));
+                            "$1", "@7", "3", "%1", "0", "1", "nvim", "80", "24", "0", "0", "t", "/tmp", "11", "1", "1",
+                            "1", "1"));
                     rows.add(row(
-                            "$1", "@7", "3", "%2", "1", "0", "zsh", "80", "24", "t", "/tmp", "12", "1", "1", "1", "1"));
+                            "$1", "@7", "3", "%2", "1", "0", "zsh", "80", "24", "0", "0", "t", "/tmp", "12", "1", "1",
+                            "1", "1"));
                     rows.add(row(
-                            "$1", "@8", "4", "%3", "0", "1", "tail", "80", "24", "t", "/tmp", "13", "1", "1", "1",
-                            "1"));
+                            "$1", "@8", "4", "%3", "0", "1", "tail", "80", "24", "0", "0", "t", "/tmp", "13", "1", "1",
+                            "1", "1"));
                 }
                 case "list-clients" -> rows.add(row("/dev/pts/3", "$0"));
                 // Reported as 3.6 so the snapshot uses the format without pane_floating_flag,

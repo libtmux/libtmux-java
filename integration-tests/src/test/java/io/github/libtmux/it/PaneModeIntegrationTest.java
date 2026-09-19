@@ -2,12 +2,10 @@ package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneMode;
 import io.github.libtmux.Server;
-import io.github.libtmux.Session;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
 import java.util.Optional;
@@ -18,10 +16,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 /**
  * The modes a pane can be put into, and getting back out of them.
  *
- * <p>Every one of these works on a server with no client attached, which is not obvious: a chooser
- * is something a client draws. tmux sets the mode on the pane regardless, and a client renders it
- * whenever one arrives. The two that need something to choose from are the exception, and say so by
- * doing nothing.
+ * <p>The library enters only copy mode itself. The others — a clock, the browsers — are for a person
+ * at an attached client, and are entered here through {@code cmd} to show that a pane reports them and
+ * leaves them all the same way. Every one works on a server with no client attached, which is not
+ * obvious: a chooser is something a client draws, and tmux sets the mode on the pane regardless.
  */
 @ExtendWith(TmuxExtension.class)
 final class PaneModeIntegrationTest {
@@ -34,9 +32,9 @@ final class PaneModeIntegrationTest {
     @Test
     void eachModeReportsItselfByTmuxsOwnName(Server server) {
         assertEquals(Optional.of(PaneMode.COPY), enter(server, Pane::copyMode));
-        assertEquals(Optional.of(PaneMode.CLOCK), enter(server, Pane::clockMode));
-        assertEquals(Optional.of(PaneMode.TREE), enter(server, Pane::chooseTree));
-        assertEquals(Optional.of(PaneMode.OPTIONS), enter(server, Pane::customizeMode));
+        assertEquals(Optional.of(PaneMode.CLOCK), enter(server, by("clock-mode")));
+        assertEquals(Optional.of(PaneMode.TREE), enter(server, by("choose-tree")));
+        assertEquals(Optional.of(PaneMode.OPTIONS), enter(server, by("customize-mode")));
     }
 
     /**
@@ -46,7 +44,7 @@ final class PaneModeIntegrationTest {
     @Test
     void leavingWorksWhicheverModeThePaneIsIn(Server server) {
         for (Consumer<Pane> mode :
-                List.<Consumer<Pane>>of(Pane::copyMode, Pane::clockMode, Pane::chooseTree, Pane::customizeMode)) {
+                List.<Consumer<Pane>>of(Pane::copyMode, by("clock-mode"), by("choose-tree"), by("customize-mode"))) {
             Pane pane = onlyPane(server);
             mode.accept(pane);
             assertTrue(pane.mode().isPresent(), "the pane never entered the mode");
@@ -66,91 +64,6 @@ final class PaneModeIntegrationTest {
         assertEquals(Optional.empty(), pane.mode());
     }
 
-    /**
-     * tmux declines to show a chooser with nothing in it, and reports that by succeeding and leaving
-     * the pane alone. Asking the pane is the only way to tell that from having entered.
-     */
-    @Test
-    void theBufferChooserOpensOnlyOnceThereIsABufferToChoose(Server server) {
-        Pane pane = onlyPane(server);
-
-        pane.chooseBuffer();
-        assertEquals(Optional.empty(), pane.mode(), "there is nothing to choose yet");
-
-        server.buffers().set("chooser-fodder", "something");
-        pane.chooseBuffer();
-
-        assertEquals(Optional.of(PaneMode.BUFFER), pane.mode());
-    }
-
-    @Test
-    void theClientChooserLeavesADetachedPaneAlone(Server server) {
-        // The chooser has nothing to offer only while nothing is attached. A control carrier
-        // attaches a client to carry commands at all, which gives the chooser something to list.
-        assumeTrue(server.clients().isEmpty(), "a carrier has a client attached, so there is one to choose");
-
-        Pane pane = onlyPane(server);
-
-        pane.chooseClient();
-
-        assertEquals(Optional.empty(), pane.mode(), "no client is attached, so there is none to choose");
-    }
-
-    // ------------------------------------------------------------------------------ find-window
-
-    /**
-     * Despite the name it selects nothing: the active window is where it was, and the pane is in the
-     * browser instead. The flags held still from 3.2a to 3.7b, so this is behaviour and not a
-     * version rule.
-     *
-     * <p>Compared by id rather than by name. {@code automatic-rename} takes a window's name from
-     * what its pane is running, so entering the browser renames the window to {@code [tmux]} — the
-     * label moves even though the window does not.
-     */
-    @Test
-    void findingAWindowOpensTheBrowserRatherThanGoingThere(Server server) {
-        Session session = server.sessions().get(0);
-        session.newWindow(w -> w.named("editor").detached());
-        var activeBefore = session.refresh().activeWindow().orElseThrow().id();
-        Pane pane = onlyPane(server);
-
-        pane.findWindow(f -> f.matching("editor").inName());
-
-        assertEquals(Optional.of(PaneMode.TREE), pane.mode(), "the pane is in the browser");
-        assertEquals(
-                activeBefore,
-                session.refresh().activeWindow().orElseThrow().id(),
-                "and the active window did not move");
-    }
-
-    /** A match that found nothing enters the browser too, which is why nothing here claims it did. */
-    @Test
-    void aMatchThatFoundNothingIsNotReported(Server server) {
-        Pane pane = onlyPane(server);
-
-        pane.findWindow(f -> f.matching("no-window-carries-this").inName());
-
-        assertEquals(Optional.of(PaneMode.TREE), pane.mode(), "tmux opens the browser either way");
-    }
-
-    @Test
-    void aWindowCanBeSoughtInAnyFieldAndAnyWay(Server server) {
-        Pane pane = onlyPane(server);
-
-        pane.findWindow("anything");
-        assertEquals(Optional.of(PaneMode.TREE), pane.mode());
-        pane.exitMode();
-
-        pane.findWindow(f -> f.matching("anything").inContent());
-        assertEquals(Optional.of(PaneMode.TREE), pane.mode());
-        pane.exitMode();
-
-        // Title, case-insensitivity and regex are what the three named methods could not reach.
-        pane.findWindow(
-                f -> f.matching("^ANY").inTitle().inName().ignoringCase().asRegex());
-        assertEquals(Optional.of(PaneMode.TREE), pane.mode());
-    }
-
     // -------------------------------------------------------------------------------- expanding
 
     @Test
@@ -164,6 +77,11 @@ final class PaneModeIntegrationTest {
                 Integer.toString(window.index().value()),
                 window.expand("#{window_index}"),
                 "a window resolves its own index, not the session's active one");
+    }
+
+    /** Enters a mode the way a person would, through tmux's own command for it. */
+    private static Consumer<Pane> by(String command) {
+        return pane -> pane.server().cmd(command, "-t", pane.id().value());
     }
 
     private static Optional<PaneMode> enter(Server server, Consumer<Pane> mode) {
