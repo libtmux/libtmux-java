@@ -199,8 +199,20 @@ final class Documents {
         if (!Main.terminal()) throw Main.usage("confirmation requires a terminal; pass --yes");
         context.error().write((Reporter.safe(prompt) + " [y/N] ").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         context.error().flush();
-        int answer = context.input().read();
-        return answer == 'y' || answer == 'Y';
+        String line = promptLine(context);
+        return line != null && !line.isEmpty() && (line.charAt(0) == 'y' || line.charAt(0) == 'Y');
+    }
+
+    /**
+     * One line typed in answer to a prompt, or null at end of input.
+     *
+     * <p>The one place a prompt reads stdin, so two prompts asked in the same process cannot
+     * disagree about whether a typed line's unread bytes belong to the next question.
+     */
+    static @Nullable String promptLine(Main.Context context) throws IOException {
+        return new java.io.BufferedReader(
+                        new java.io.InputStreamReader(context.input(), java.nio.charset.StandardCharsets.UTF_8))
+                .readLine();
     }
 
     private static ObjectNode importSource(Main.Context context, Path source, ObjectNode document, String kind) {

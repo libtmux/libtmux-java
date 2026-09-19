@@ -806,9 +806,7 @@ final class Execution {
     private static char promptAnswer(Main.Context context, String prompt, char fallback) throws IOException {
         context.error().write(prompt.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         context.error().flush();
-        String line = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(context.input(), java.nio.charset.StandardCharsets.UTF_8))
-                .readLine();
+        String line = Documents.promptLine(context);
         return line == null || line.strip().isEmpty()
                 ? fallback
                 : Character.toLowerCase(line.strip().charAt(0));
