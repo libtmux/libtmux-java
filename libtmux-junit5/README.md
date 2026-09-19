@@ -3,7 +3,8 @@
 **A JUnit 5 extension that gives each test its own tmux server, and guarantees it
 is gone afterwards.**
 
-For testing *your* code against real tmux — not for testing libtmux.
+For testing *your* code against real tmux — not for testing libtmux — or, with
+`FakeTmux`, without it.
 
 `io.github.libtmux:libtmux-junit5` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-junit5).
 
@@ -118,6 +119,34 @@ $ ./gradlew test -Dlibtmux.tmux=/path/to/tmux
 
 Which is how one suite runs against a whole matrix of releases — see
 [`scripts/tmux-matrix.sh`](../scripts/tmux-matrix.sh).
+
+## Without tmux
+
+`FakeTmux` is a tmux server that is not there, for code whose interest in tmux
+ends at the calls it makes. It answers the way tmux answers rather than the way
+a stub would: listings are rendered from the templates the library sends, so a
+snapshot of it is a real snapshot and every handle works; a handle is refused
+once the server is replaced, as tmux refuses one; a group stops at its first
+failure. It models sessions, windows, panes and what each pane shows. It does
+not run a shell: keys sent to a pane are recorded, not typed.
+
+```java
+FakeTmux tmux = new FakeTmux();
+PaneId editor = tmux.addSession("work");
+tmux.show(editor, "$ make", "make: Nothing to be done.");
+
+try (Server server = tmux.server()) {
+    Pane pane = server.pane(editor).orElseThrow();
+    pane.capture().get(1);            // → make: Nothing to be done.
+    pane.sendLine("make test");
+}
+
+tmux.sent().getLast().getFirst();     // → send-keys
+```
+
+`restart()` replaces the server under every handle made so far, which is how to
+test code that has to survive one. For behaviour that depends on tmux itself —
+what a release does with a flag, how a shell echoes — use the extension above.
 
 ## Keep servers off other people's sockets
 

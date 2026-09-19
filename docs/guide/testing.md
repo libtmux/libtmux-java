@@ -57,6 +57,13 @@ This is enforced by the build rather than by every test remembering, because the
 code under test is exactly what is allowed to be wrong. The suite asserts the
 quarantine is in place.
 
+## Without tmux
+
+When the code under test only makes calls, a real server is more than it needs.
+`FakeTmux` answers the library the way tmux does — listings, handles, fences,
+groups — from a model of sessions, windows and panes, and records every command
+it was sent. See [the module README](../../libtmux-junit5/README.md#without-tmux).
+
 ## Running against every supported tmux
 
 The real-tmux suites run against each release the library supports, given a tree
