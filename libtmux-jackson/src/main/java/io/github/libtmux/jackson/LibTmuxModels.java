@@ -22,6 +22,12 @@ public final class LibTmuxModels {
             .field(Pane_.command())
             .field(Pane_.index())
             .field(Pane_.active())
+            .field(Pane_.title())
+            .field(Pane_.path())
+            .field(Pane_.width())
+            .field(Pane_.height())
+            .field(Pane_.left())
+            .field(Pane_.top())
             .build();
 
     private static final FilterModel<Window> WINDOW = FilterModel.<Window>builtIn("window")
