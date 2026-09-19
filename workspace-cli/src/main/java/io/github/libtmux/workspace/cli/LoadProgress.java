@@ -71,8 +71,10 @@ final class LoadProgress {
             throw Main.usage("progress lines must be an integer at least -1");
         }
         if (lines < -1) throw Main.usage("progress lines must be an integer at least -1");
-        var builder = new ProcessBuilder(
-                        "/bin/sh", "-c", "test -t 2 || exit 1; /bin/stty size <&2 2>/dev/null || printf '24 80\\n'")
+        java.util.Optional<String> script = Children.sizeScript(context, 2, "2>/dev/null || printf '24 80\\n'");
+        java.util.Optional<String> shell = Children.lookup(context, "sh");
+        if (script.isEmpty() || shell.isEmpty()) return null;
+        var builder = new ProcessBuilder(shell.orElseThrow(), "-c", script.orElseThrow())
                 .redirectError(ProcessBuilder.Redirect.INHERIT);
         builder.environment().clear();
         builder.environment().putAll(context.environment());

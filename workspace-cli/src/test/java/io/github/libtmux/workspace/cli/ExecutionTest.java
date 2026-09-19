@@ -1977,6 +1977,64 @@ final class ExecutionTest {
         }
     }
 
+    /**
+     * Child containment resolves its helpers where the invocation says, and a helper that is not
+     * installed leaves the containment off rather than failing a script that succeeded.
+     */
+    @Test
+    void childContainmentResolvesItsHelpersOnPath() throws Exception {
+        Path bin = Files.createDirectories(directory.resolve("bin"));
+        Path complaining = bin.resolve("ps");
+        Files.writeString(complaining, "#!/bin/sh\nprintf 'no process table here\\n' >&2\nexit 1\n");
+        assertTrue(complaining.toFile().setExecutable(true));
+        Path empty = Files.createDirectories(directory.resolve("empty-bin"));
+        Path source = directory.resolve("contained.yaml");
+        Path socket = directory.resolve("contained-socket");
+        Files.writeString(source, """
+                session_name: contained
+                before_script: /bin/sh -c 'exit 0'
+                windows:
+                  - panes: [null]
+                """);
+        var context = new Main.Context(
+                new HashMap<>(System.getenv()),
+                directory,
+                InputStream.nullInputStream(),
+                java.io.OutputStream.nullOutputStream(),
+                java.io.OutputStream.nullOutputStream());
+        String tmux = Children.executable(context, System.getProperty("libtmux.tmux", "tmux"));
+        try (Server server = server(socket)) {
+            try {
+                Result refused = invoke(
+                        java.util.Map.of("PATH", bin.toString(), "LIBTMUX_TEST_TMUX", tmux),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(1, refused.code(), refused.toString());
+                assertTrue(refused.err().contains("no process table here"), refused.err());
+
+                Result absent = invoke(
+                        java.util.Map.of("PATH", empty.toString(), "LIBTMUX_TEST_TMUX", tmux),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--json");
+                assertEquals(0, absent.code(), absent.toString());
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     /** A capture never writes a document a load refuses: both ends apply one name rule. */
     @Test
     void freezeRefusesASessionNameLoadWouldNotRead() throws Exception {

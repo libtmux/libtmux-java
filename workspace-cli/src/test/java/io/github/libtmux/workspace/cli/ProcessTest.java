@@ -594,7 +594,7 @@ final class ProcessTest {
     /** A lookup ps could not run must not read as a session holding nothing; both exit non-zero. */
     @Test
     void anUnusableOwnedProcessLookupIsNotReadAsAnEmptySession() {
-        assertThrows(java.io.IOException.class, () -> Children.hasCapturedDescendant(-1));
+        assertThrows(java.io.IOException.class, () -> Children.hasCapturedDescendant("/bin/ps", -1));
     }
 
     @Test
