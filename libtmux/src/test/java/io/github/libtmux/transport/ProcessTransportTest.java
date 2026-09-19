@@ -313,9 +313,9 @@ final class ProcessTransportTest {
     @Test
     void outputOverflowReclaimsDescendantsBeforeTheRootCanDisappear(@TempDir Path directory) throws Exception {
         Path descendantPid = directory.resolve("descendant.pid");
-        String script = "(trap '' HUP TERM; echo \"$BASHPID\" > \"$1.tmp\"; "
-                + "mv \"$1.tmp\" \"$1\"; exec sleep 30) </dev/null >/dev/null 2>&1 & "
-                + "while [ ! -f \"$1\" ]; do :; done; "
+        // $! rather than $BASHPID: macOS's stock /bin/bash is 3.2, which predates $BASHPID (4.0).
+        String script = "(trap '' HUP TERM; exec sleep 30) </dev/null >/dev/null 2>&1 & "
+                + "child=$!; echo \"$child\" > \"$1.tmp\"; mv \"$1.tmp\" \"$1\"; "
                 + "while :; do printf 1234567890; done";
         long descendant = -1;
         CommandRequest request = CommandRequest.of(
@@ -339,8 +339,9 @@ final class ProcessTransportTest {
     void cleanupDoesNotAdoptADescendantSpawnedAfterItsOwnershipSnapshot(@TempDir Path directory) throws Exception {
         Path descendantPid = directory.resolve("detached.pid");
         Path ready = directory.resolve("ready");
-        String script = "sleep 1; trap '(trap \"\" HUP TERM; echo \"$BASHPID\" > \"$1.tmp\"; "
-                + "mv \"$1.tmp\" \"$1\"; exec sleep 30) </dev/null >/dev/null 2>&1 & "
+        // $! rather than $BASHPID: macOS's stock /bin/bash is 3.2, which predates $BASHPID (4.0).
+        String script = "sleep 1; trap '(trap \"\" HUP TERM; exec sleep 30) </dev/null >/dev/null 2>&1 & "
+                + "descendant=$!; echo \"$descendant\" > \"$1.tmp\"; mv \"$1.tmp\" \"$1\"; "
                 + "while :; do :; done' TERM; "
                 + "ready=0; while :; do sleep 30 & child=$!; "
                 + "if [ \"$ready\" = 0 ]; then echo ready > \"$2.tmp\"; mv \"$2.tmp\" \"$2\"; ready=1; fi; "
@@ -543,9 +544,10 @@ final class ProcessTransportTest {
     @Test
     void closeIsBoundedWhenADescendantInheritsTheChildPipes(@TempDir Path directory) throws Exception {
         Path descendantPid = directory.resolve("descendant.pid");
+        // $! rather than $BASHPID: macOS's stock /bin/bash is 3.2, which predates $BASHPID (4.0).
         String script = "trap 'exit 0' TERM; "
-                + "(trap '' HUP TERM; echo \"$BASHPID\" > \"$1.tmp\"; "
-                + "mv \"$1.tmp\" \"$1\"; exec sleep 30) & wait";
+                + "(trap '' HUP TERM; exec sleep 30) & "
+                + "child=$!; echo \"$child\" > \"$1.tmp\"; mv \"$1.tmp\" \"$1\"; wait";
         CommandRequest request = CommandRequest.of(
                 List.of("/bin/bash"), List.of("-c", script, "probe", descendantPid.toString()), GENEROUS);
         ProcessTransport transport = new ProcessTransport();
