@@ -626,6 +626,9 @@ final class ProcessTest {
 
     @Test
     void exitedEditorCannotLeaveAnOwnedOutputPipeOpen() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                Files.isDirectory(Path.of("/proc/self")) && Files.isExecutable(Path.of("/usr/bin/setsid")),
+                "Reparented output ownership requires the Linux setsid session.");
         Path source = directory.resolve("workspace.yaml");
         Files.writeString(source, "session_name: editor\nwindows: []\n");
         var builder = command("edit", source.toString(), "--ndjson");
