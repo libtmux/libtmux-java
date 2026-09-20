@@ -11,10 +11,11 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.SessionSpec;
 import io.github.libtmux.SplitSpec;
-import io.github.libtmux.UnsupportedTmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowSpec;
 import java.io.IOException;
@@ -108,10 +109,9 @@ final class Execution {
             boolean lastDeclined = false;
             if (target.isPresent() && !report.machine() && !yes && Main.terminal()) {
                 AttachTarget resolved = target.orElseThrow();
-                boolean exists = server.isAlive()
-                        && server.sessions().stream()
-                                .anyMatch(session ->
-                                        session.name().equals(plans.getLast().name()));
+                boolean exists = existingSessions(server).stream()
+                        .anyMatch(
+                                session -> session.name().equals(plans.getLast().name()));
                 if (exists) {
                     lastDeclined =
                             promptAnswer(context, plans.getLast().name() + " is already running. Attach? [Y/n] ", 'y')
@@ -219,7 +219,7 @@ final class Execution {
         if (!effects.path("owned_session").asBoolean() || interrupted) return true;
         String id = effects.path("session_id").asText();
         try {
-            server.sessions().stream()
+            existingSessions(server).stream()
                     .filter(session -> session.id().value().equals(id))
                     .findFirst()
                     .ifPresent(Session::kill);
@@ -271,11 +271,9 @@ final class Execution {
         WorkspacePlan plan = pending.getFirst();
         boolean append = borrowed.isPresent();
         List<WorkspacePlan> reservations = append ? pending : List.of(plan);
-        Optional<Session> existing = server.isAlive()
-                ? server.sessions().stream()
-                        .filter(session -> session.name().equals(plan.name()))
-                        .findFirst()
-                : Optional.empty();
+        Optional<Session> existing = existingSessions(server).stream()
+                .filter(session -> session.name().equals(plan.name()))
+                .findFirst();
         if (!append && existing.isPresent()) {
             Session session = existing.orElseThrow();
             effects.put("session_id", session.id().value())
@@ -554,7 +552,7 @@ final class Execution {
     }
 
     /** A serialized layout carries tmux's own checksum before its body. */
-    private static final java.util.regex.Pattern SERIALIZED = java.util.regex.Pattern.compile("^[0-9a-f]{4},");
+    private static final java.util.regex.Pattern SERIALIZED = java.util.regex.Pattern.compile("^[0-9a-fA-F]{4},");
 
     /**
      * A named layout the document may legitimately carry and this daemon will not take is the
@@ -564,8 +562,10 @@ final class Execution {
     private static String requireLayout(String layout, Server server, int panes) {
         try {
             return Layouts.require(layout, server, panes);
-        } catch (UnsupportedTmuxVersion | IllegalArgumentException refused) {
-            if (SERIALIZED.matcher(layout).find()) throw refused;
+        } catch (UnsupportedTmuxVersionException | IllegalArgumentException refused) {
+            if (SERIALIZED.matcher(layout).find()
+                    || (layout.stripLeading().startsWith("{") && refused instanceof IllegalArgumentException))
+                throw refused;
             throw new Main.Failure(
                     Machine.Code.TMUX_FAILED, 1, java.util.Objects.toString(refused.getMessage(), "layout refused"));
         }
@@ -604,7 +604,7 @@ final class Execution {
         if (size.isEmpty()) return server.newSession(spec.build());
         try {
             return server.newSession(spec.sized(size.orElseThrow()).build());
-        } catch (UnsupportedTmuxVersion tooOld) {
+        } catch (UnsupportedTmuxVersionException tooOld) {
             return server.newSession(SessionSpec.builder()
                     .named(plan.name())
                     .in(plan.directory())
@@ -869,13 +869,21 @@ final class Execution {
         }
     }
 
+    static List<Session> existingSessions(Server server) {
+        try {
+            return server.sessions();
+        } catch (ServerNotRunningException absent) {
+            return List.of();
+        }
+    }
+
     static void freeze(Main.Context context, ParseResult args, Reporter report) throws IOException {
         String name = args.matchedPositionalValue(0, "");
         // Refused on the name alone, before tmux is even asked: a name load would reject makes the
         // document useless regardless of whether a session happens to hold it right now.
         if (!name.isEmpty()) WorkspacePlan.requireAddressableName(name, "; rename it before capturing it");
         try (Server server = server(context, args)) {
-            List<Session> sessions = server.sessions();
+            List<Session> sessions = existingSessions(server);
             Session session = name.isEmpty() && sessions.size() == 1
                     ? sessions.getFirst()
                     : sessions.stream()

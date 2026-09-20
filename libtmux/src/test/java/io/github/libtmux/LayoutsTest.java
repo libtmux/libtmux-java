@@ -1,6 +1,7 @@
 package io.github.libtmux;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,7 +11,6 @@ import io.github.libtmux.transport.TmuxTransport;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -136,12 +136,7 @@ final class LayoutsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(
-            strings = {
-                "t",
-                "even-h",
-                "b25d,80x24,0,0,0"
-            })
+    @ValueSource(strings = {"t", "even-h", "b25d,80x24,0,0,0"})
     void syntaxValidationLeavesValidNamesAndGeometryForTmux(String layout) {
         assertEquals(layout, Layouts.require(layout));
     }
@@ -151,7 +146,9 @@ final class LayoutsTest {
         try (VersionTransport transport = new VersionTransport(new CommandResult(0, List.of("3.4"), List.of()));
                 Server server = server(transport)) {
             assertEquals("main-horizontal", Layouts.require("main-h", server, 1));
-            assertThrows(UnsupportedTmuxVersionException.class, () -> Layouts.require("main-horizontal-mirrored", server, 1));
+            assertThrows(
+                    UnsupportedTmuxVersionException.class,
+                    () -> Layouts.require("main-horizontal-mirrored", server, 1));
             assertEquals(List.of("display-message", "display-message"), transport.commands);
         }
         try (VersionTransport transport = new VersionTransport(new CommandResult(0, List.of("3.7c"), List.of()));
@@ -213,8 +210,7 @@ final class LayoutsTest {
 
     @Test
     void numericFieldsRespectPositiveSizesAndSignedBounds() {
-        assertEquals(
-                serialized("80x24,0,0,2147483647"), Layouts.require(serialized("80x24,0,0,2147483647")));
+        assertEquals(serialized("80x24,0,0,2147483647"), Layouts.require(serialized("80x24,0,0,2147483647")));
         for (String body : List.of("4294967296x1,0,0", "1x1,0,4294967296", "1x1,0,0,4294967296")) {
             assertThrows(IllegalArgumentException.class, () -> Layouts.require(serialized(body)), body);
         }
@@ -235,6 +231,56 @@ final class LayoutsTest {
         String body = "1x1,0,0{".repeat(256) + "1x1,0,0" + "}".repeat(256);
         assertEquals(serialized(body), Layouts.require(serialized(body)));
         assertThrows(IllegalArgumentException.class, () -> Layouts.require(serialized("1x1,0,0{" + body + "}")));
+    }
+
+    @Test
+    void workspaceJsonPreflightCountsCellsAndRejectsNativeGrammarErrors() {
+        String layout = "{\"V\":2,\"L\":{\"t\":\"p\",\"w\":80,\"h\":24,\"x\":0,\"y\":0,\"i\":0}}";
+        try (VersionTransport transport = new VersionTransport(new CommandResult(0, List.of("3.8-rc"), List.of()));
+                Server server = server(transport)) {
+            assertEquals(layout, Layouts.require(layout, server, 1));
+            assertThrows(IllegalArgumentException.class, () -> Layouts.require(layout, server, 2));
+            for (String invalid : List.of(
+                    layout.replace("\"V\":2", "\"V\":2e0"),
+                    layout.replace("\"V\":2", "\"V\":2,\"V\":2"),
+                    layout.replace("\"V\"", "\"\\u0056\""),
+                    layout.replace("\"w\":80", "\"w\":0"),
+                    layout.replace("\"i\":0", "\"i\":-1"),
+                    layout.replace("\"i\":0", "\"i\":0,\"c\":[]"),
+                    layout.replace("\"V\":2", "\"extra\":null,\"V\":2"))) {
+                assertThrows(IllegalArgumentException.class, () -> Layouts.require(invalid, server, 1), invalid);
+            }
+        }
+        try (VersionTransport transport = new VersionTransport(new CommandResult(0, List.of("3.7c"), List.of()));
+                Server server = server(transport)) {
+            assertThrows(UnsupportedTmuxVersionException.class, () -> Layouts.require(layout, server, 1));
+        }
+    }
+
+    @Test
+    void jsonCellsKeepUniqueIndexesAndBoundTheirGrammar() {
+        var random = new java.util.Random(0x1a70);
+        for (int sample = 0; sample < 64; sample++) {
+            int width = random.nextInt(1, 5000);
+            String first = "{\"t\":\"p\",\"w\":" + width + ",\"h\":24,\"x\":0,\"y\":0,\"i\":0,\"a\":true}";
+            String second = first.replace("\"i\":0", "\"i\":1").replace("\"a\":true", "\"l\":0");
+            String layout = "{\"V\":2,\"L\":{\"t\":\"h\",\"w\":" + (width * 2 + 1) + ",\"h\":24,\"x\":0,\"y\":0,\"c\":["
+                    + first + "," + second + "]}}";
+            assertEquals(2, JsonLayout.leaves(layout));
+            assertThrows(IllegalArgumentException.class, () -> JsonLayout.leaves(layout.replace("\"i\":1", "\"i\":0")));
+            assertThrows(
+                    IllegalArgumentException.class, () -> JsonLayout.leaves(layout.replace("\"l\":0", "\"a\":true")));
+        }
+        String cell = "{\"t\":\"p\",\"w\":80,\"h\":24,\"x\":0,\"y\":0,\"i\":0}";
+        for (String extra : List.of("null", "\"\"", "[0]", "9223372036854775808", "2.0", "01")) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> JsonLayout.leaves("{\"V\":2,\"L\":" + cell + ",\"extra\":" + extra + "}"));
+        }
+        String prefix = "{\"V\":2,\"L\":" + cell + ",\"extra\":";
+        assertEquals(1, JsonLayout.leaves(prefix + "{\"extra\":".repeat(198) + "{}" + "}".repeat(199)));
+        String nested = prefix + "{\"extra\":".repeat(199) + "{}" + "}".repeat(200);
+        assertThrows(IllegalArgumentException.class, () -> JsonLayout.leaves(nested));
     }
 
     private static String serialized(String body) {
@@ -264,8 +310,22 @@ final class LayoutsTest {
             List<String> command = request.commands().getFirst();
             commands.add(command.getFirst());
             if (command.getFirst().equals("display-message")) {
-                assertEquals(List.of("display-message", "-p", "#{version}"), command);
-                return daemon;
+                assertEquals(
+                        List.of(
+                                "display-message",
+                                "-p",
+                                io.github.libtmux.format.RowFormat.of("pid", "version")
+                                        .template()),
+                        command);
+                if (!daemon.succeeded()) return daemon;
+                return new CommandResult(
+                        0,
+                        List.of(String.join(
+                                io.github.libtmux.format.RowFormat.of("pid", "version")
+                                        .separator(),
+                                "4242",
+                                String.join("\n", daemon.stdout()))),
+                        List.of());
             }
             assertEquals(List.of("-V"), command);
             return new CommandResult(0, List.of("tmux 3.7c"), List.of());

@@ -62,7 +62,7 @@ final class ServerTest {
         try (Server server = Server.using(config(directory), transport)) {
             assertEquals(java.util.Optional.of("a\rb"), server.globalOptions().get("@value"));
             assertEquals(
-                    List.of("show-options", "-g", "-A", "@value"),
+                    List.of("show-options", "-g", "-A", "--", "@value"),
                     requests.getLast().commands().getFirst());
             value.set(new CommandResult(0, List.of("@value a\\377\\376é"), List.of()));
             assertEquals(
@@ -76,9 +76,11 @@ final class ServerTest {
             assertThrows(LibTmuxException.class, () -> server.globalOptions().get("@value"));
             version.set(new CommandResult(1, List.of(), List.of("server exited unexpectedly")));
             value.set(new CommandResult(1, List.of(), List.of("server exited unexpectedly")));
-            assertTrue(server.globalOptions().get("@value").isEmpty());
+            assertThrows(
+                    ServerNotRunningException.class,
+                    () -> server.globalOptions().get("@value"));
             assertEquals(
-                    List.of("show-options", "-g", "-A", "-v", "@value"),
+                    List.of("show-options", "-g", "-A", "-v", "--", "@value"),
                     requests.getLast().commands().getFirst());
         }
     }

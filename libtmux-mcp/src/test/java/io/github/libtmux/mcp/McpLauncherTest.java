@@ -76,7 +76,7 @@ final class McpLauncherTest {
     void layoutWireAcceptsNativeAbbreviationsAndSavedTrees(Server server, TmuxSocketPath socket) {
         var window = server.windows().getFirst();
         window.split();
-        String saved = window.refresh().layout();
+        String saved = window.refresh().layout().value();
         try (McpSyncClient client = launch(socket.path())) {
             client.initialize();
             McpSchema.CallToolResult abbreviated = client.callTool(McpSchema.CallToolRequest.builder("select_layout")
@@ -100,7 +100,7 @@ final class McpLauncherTest {
                             .valueToTree(restored.structuredContent())
                             .path("what")
                             .asText());
-            assertEquals(saved, window.refresh().layout());
+            assertEquals(saved, window.refresh().layout().value());
             assertEquals(2, window.refresh().panes().size());
         }
     }
@@ -123,8 +123,9 @@ final class McpLauncherTest {
                     "ffff,80x24,0,0,0",
                     "even",
                     "79f5,80x24,0,0{39x23,0,0,0,40x24,40,0,1}",
+                    "8A08,1x1,0,0{39x24,0,0,0,40x24,40,0,1}",
                     mirrored ? "main-h" : "main-horizontal-mirrored")) {
-                String before = window.refresh().layout();
+                var before = window.refresh().layout();
                 McpSchema.CallToolResult refused = client.callTool(McpSchema.CallToolRequest.builder("select_layout")
                         .arguments(Map.of("window_id", window.id().value(), "layout", layout))
                         .build());
@@ -138,7 +139,6 @@ final class McpLauncherTest {
                     "EVEN_HORIZONTAL",
                     "even_horizontal",
                     "main-horizontal",
-                    "8A08,1x1,0,0{39x24,0,0,0,40x24,40,0,1}",
                     mirrored ? "main-horizontal-mirrored" : "main-h")) {
                 McpSchema.CallToolResult accepted = client.callTool(McpSchema.CallToolRequest.builder("select_layout")
                         .arguments(Map.of("window_id", window.id().value(), "layout", layout))

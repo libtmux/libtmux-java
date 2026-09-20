@@ -149,7 +149,9 @@ record WorkspacePlan(
             int index = node.has("window_index") ? integer(node.path("window_index"), "window_index") : -1;
             if (index >= 0 && !indexes.add(index)) throw invalid("duplicate window_index " + index);
             String layout = optionalText(context, node.path("layout"), "layout", "");
-            if (!layout.isEmpty()) Layouts.require(layout);
+            if (!layout.isEmpty()
+                    && Layouts.builtIn(layout, new io.github.libtmux.TmuxVersion(3, 4, ""))
+                            .isEmpty()) Layouts.require(layout);
             Path windowDirectory = directory(context, node, directory, directoryBase, checkDirectories, warnings);
             Path windowBase = node.hasNonNull("start_directory") ? windowDirectory : directoryBase;
             Map<String, String> windowEnvironment = mapping(context, node.path("environment"), true);

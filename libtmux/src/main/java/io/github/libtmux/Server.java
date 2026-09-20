@@ -169,7 +169,8 @@ public final class Server implements AutoCloseable {
      */
     public void killSession(String name) {
         Objects.requireNonNull(name, "name");
-        Session session = sessionNamed(name).orElseThrow(() -> new ObjectDoesNotExistException("no session is named " + name));
+        Session session =
+                sessionNamed(name).orElseThrow(() -> new ObjectDoesNotExistException("no session is named " + name));
         run(List.of("kill-session", "-t", session.id().value()));
     }
 
@@ -732,7 +733,7 @@ public final class Server implements AutoCloseable {
      * configured binary's own version as though it were the daemon's — exactly the guarantee this
      * method exists to keep.
      */
-    private TmuxVersion versionForCreation() {
+    TmuxVersion versionForCreation() {
         return capture.processForCreation()
                 .map(SnapshotCapture.ServerProcess::version)
                 .orElseGet(this::binaryVersion);

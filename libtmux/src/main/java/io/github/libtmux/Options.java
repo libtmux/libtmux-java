@@ -80,9 +80,8 @@ public final class Options {
      */
     public Optional<String> get(String name) {
         TmuxVersion version = listingVersion();
-        var result = cmd(argv("show-options", version == null
-                ? List.of("-A", "-v", "--", name)
-                : List.of("-A", "--", name)));
+        var result = cmd(
+                argv("show-options", version == null ? List.of("-A", "-v", "--", name) : List.of("-A", "--", name)));
         if (result.succeeded()) {
             if (version == null) return Optional.of(String.join("\n", result.stdout()));
             List<String> values = new ArrayList<>();

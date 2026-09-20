@@ -112,11 +112,11 @@ final class ServerConfigTest {
         try (Server server = Server.builder().force256Colors(true).build()) {
             ServerConfig config = server.config();
             assertTrue(config.force256Colors());
-            assertEquals(java.util.List.of("tmux", "-2"), config.endpointCommand());
+            assertEquals(java.util.List.of("tmux", "-u", "-2"), config.endpointCommand());
             assertTrue(config.toBuilder().build().force256Colors());
             ServerConfig detected = config.toBuilder().force256Colors(false).build();
             assertFalse(detected.force256Colors());
-            assertEquals(java.util.List.of("tmux"), detected.endpointCommand());
+            assertEquals(java.util.List.of("tmux", "-u"), detected.endpointCommand());
         }
     }
 

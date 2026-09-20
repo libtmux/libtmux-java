@@ -59,8 +59,11 @@ final class WorkspaceParser {
         rejectUnknown(window, WINDOW_FIELDS, path);
         String name =
                 optionalText(window.get("window_name"), path + ".window_name").orElse("");
-        Optional<String> layout =
-                optionalText(window.get("layout"), path + ".layout").map(Layouts::require);
+        Optional<String> layout = optionalText(window.get("layout"), path + ".layout")
+                .map(value -> Layouts.builtIn(value, new io.github.libtmux.TmuxVersion(3, 4, ""))
+                                .isPresent()
+                        ? value
+                        : Layouts.require(value));
 
         JsonNode paneNodes = window.get("panes");
         List<PaneSpec> panes = new ArrayList<>();

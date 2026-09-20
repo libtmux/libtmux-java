@@ -132,9 +132,12 @@ claiming rollback.
 
 All input layouts are checked before scripts run or sessions change. Named
 layouts accept unique abbreviations; version-sensitive names use the running
-daemon, or the selected client when no daemon is listening. Saved layouts must
-have a valid checksum, a nonempty tree and enough pane cells. tmux still owns
-geometry correction and pruning, and can reject a layout during application.
+daemon, or the selected client when no daemon is listening. Classic saved
+layouts require a valid checksum, consistent geometry, a nonempty tree, enough
+pane cells and at most 256 nested splits. This rejects malformed geometry even
+when tmux could repair or prune it. JSON layouts require tmux 3.8 (including its
+release candidate), valid cell structure and enough pane cells, with at most
+200 nested objects. tmux can still reject a layout during application.
 A window naming no `layout` tiles its panes; tmuxp instead stacks them,
 halving each split. That is a deliberate difference from tmuxp. A window naming
 no `focus` keeps the first window active, which tmuxp does not. A pane naming

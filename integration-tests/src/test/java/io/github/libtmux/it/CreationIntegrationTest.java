@@ -35,14 +35,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 @ExtendWith(TmuxExtension.class)
 final class CreationIntegrationTest {
 
-    /**
-     * The floor for both behaviours below is 3.3, not 3.3a: tmux's own {@code df3fe2aa} fix for the
-     * size case is already in tag 3.3, and {@code git log 3.3..3.3a} touches neither {@code
-     * spawn.c}, {@code cmd-new-session.c} nor {@code cmd-new-window.c} for either case. The matrix
-     * has no plain-3.3 lane, only 3.2a and 3.3a, so this is exercised against tmux's own history
-     * rather than a real 3.3 build.
-     */
-    private static final TmuxVersion HONOURS_EXTRAS_SINCE = new TmuxVersion(3, 3, "");
+    private static final TmuxVersion SIZE_SINCE = new TmuxVersion(3, 3, "");
+    private static final TmuxVersion RELATIVE_DIRECTORY_SINCE = new TmuxVersion(3, 3, "a");
 
     // ------------------------------------------------------------------------------ new-window
 
@@ -177,7 +171,7 @@ final class CreationIntegrationTest {
         Path relative = Path.of("").toAbsolutePath().relativize(real);
         Path written = real.resolve("seen");
 
-        if (server.version().atLeast(HONOURS_EXTRAS_SINCE)) {
+        if (server.version().atLeast(RELATIVE_DIRECTORY_SINCE)) {
             session.newWindow(w -> w.named("relative")
                     .in(relative)
                     .running("/bin/sh", "-c", "pwd > \"$1\"; sleep 30", "probe", written.toString()));
@@ -227,7 +221,7 @@ final class CreationIntegrationTest {
     void aSizeIsHonouredOrRefusedDependingOnTheRelease(Server server) {
         Dimensions wanted = new Dimensions(100, 40);
 
-        if (server.version().atLeast(HONOURS_EXTRAS_SINCE)) {
+        if (server.version().atLeast(SIZE_SINCE)) {
             Session sized = server.newSession(s -> s.named("sized").sized(wanted));
 
             assertEquals(wanted, sized.windows().get(0).size());
@@ -277,7 +271,7 @@ final class CreationIntegrationTest {
                 .endpoint(io.github.libtmux.ServerEndpoint.socketPath(socket))
                 .configFile(config)
                 .build())) {
-            if (server.version().atLeast(HONOURS_EXTRAS_SINCE)) {
+            if (server.version().atLeast(SIZE_SINCE)) {
                 Session sized = fresh.newSession(s -> s.named("sized").sized(wanted));
 
                 assertEquals(wanted, sized.windows().get(0).size());

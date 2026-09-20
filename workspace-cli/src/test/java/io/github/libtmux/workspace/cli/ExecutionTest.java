@@ -1062,7 +1062,11 @@ final class ExecutionTest {
                         Files.writeString(source, mapper.writeValueAsString(workspace));
                         Result result = invoke("load", source.toString(), "-d", "-S", socket.toString(), "--json");
                         assertEquals(
-                                item.path("expected_valid").path(version).asBoolean(),
+                                item.has("java_preflight_valid")
+                                        ? item.path("java_preflight_valid").asBoolean()
+                                        : item.path("expected_valid")
+                                                .path(version)
+                                                .asBoolean(),
                                 result.code() == 0,
                                 id + ": " + result);
                         assertEquals(pid, server.expand("#{pid}"), id);
@@ -1088,8 +1092,8 @@ final class ExecutionTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    void allLayoutsAreCheckedBeforeScriptsOrBorrowedStateChange(boolean append) throws Exception {
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void allLayoutsAreCheckedBeforeScriptsOrBorrowedStateChange(boolean append, boolean json) throws Exception {
         Path first = directory.resolve("first.yaml");
         Path second = directory.resolve("second.yaml");
         Path socket = directory.resolve("layout-socket");
@@ -1098,8 +1102,10 @@ final class ExecutionTest {
                 first,
                 "session_name: first\nbefore_script: /usr/bin/touch " + marker
                         + "\noptions:\n  '@changed': yes\nwindows:\n  - window_name: first\n");
+        String layout =
+                json ? "{\"V\":2,\"L\":{\"t\":\"p\",\"w\":80,\"h\":24,\"x\":0,\"y\":0,\"i\":0}}" : "B25D,80x24,0,0,0";
         Files.writeString(
-                second, "session_name: second\nwindows:\n  - layout: 'b25d,80x24,0,0,0'\n    panes: [null, null]\n");
+                second, "session_name: second\nwindows:\n  - layout: '" + layout + "'\n    panes: [null, null]\n");
         try (Server server = server(socket)) {
             try {
                 var keeper = server.newSession("keeper");
@@ -1119,6 +1125,11 @@ final class ExecutionTest {
                         socket.toString(),
                         "--json");
                 assertEquals(1, result.code(), result.toString());
+                assertEquals(
+                        json && !server.version().atLeast(io.github.libtmux.TmuxVersion.parse("3.8"))
+                                ? "tmux_failed"
+                                : "invalid_workspace",
+                        Documents.JSON.readTree(result.err()).path("code").asText());
                 assertFalse(Files.exists(marker), "no earlier input may run a script");
                 assertEquals(pid, server.expand("#{pid}"));
                 assertEquals(
@@ -1378,10 +1389,7 @@ final class ExecutionTest {
                             server.sessions().stream()
                                     .anyMatch(s -> s.id().value().equals(borrowedId)),
                             "a borrowed session must survive a failed before_script");
-                else
-                    assertTrue(
-                            server.sessions().stream().noneMatch(s -> s.name().equals("bsfail")),
-                            "the session the failed before_script created must not survive");
+                else assertFalse(server.isAlive(), "the failed load's only session must not survive");
             } finally {
                 if (server.isAlive()) server.killServer();
             }
@@ -2263,7 +2271,8 @@ final class ExecutionTest {
         try (Server server = server(socket)) {
             try {
                 var session = server.newSession("reuse");
-                session.windows().getFirst().rename("one");
+                var renamed = session.windows().getFirst().rename("one");
+                assertEquals("one", renamed.name());
                 Result missing =
                         invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
                 assertEquals(1, missing.code(), missing.toString());
@@ -2471,6 +2480,21 @@ final class ExecutionTest {
                         .path("reused")
                         .asBoolean());
                 assertEquals(2, server.windows().size());
+                Path frozen = directory.resolve("frozen.json");
+                Files.writeString(frozen, captured.toString());
+                server.killServer();
+                Result restored = invoke("load", frozen.toString(), "-d", "-S", socket.toString(), "--json");
+                assertEquals(0, restored.code(), restored.toString());
+                assertEquals(
+                        java.util.List.of(0, 4),
+                        server.windows().stream()
+                                .map(window -> window.index().value())
+                                .toList());
+                assertEquals(
+                        java.util.List.of(2, 1),
+                        server.windows().stream()
+                                .map(window -> window.panes().size())
+                                .toList());
             } finally {
                 if (server.isAlive()) server.killServer();
             }

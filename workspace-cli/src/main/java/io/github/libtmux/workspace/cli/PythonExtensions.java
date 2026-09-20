@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import java.io.IOException;
@@ -98,10 +99,18 @@ final class PythonExtensions {
             throws IOException, InterruptedException {
         Set<String> windows = new HashSet<>();
         Set<String> panes = new HashSet<>();
-        ServerSnapshot before = server.snapshot();
-        for (var window : before.windows())
-            windows.add(window.context().window().value());
-        for (var pane : before.panes()) panes.add(pane.id().value());
+        String daemon = "";
+        try {
+            ServerSnapshot before = server.snapshot();
+            for (var window : before.windows())
+                windows.add(window.context().window().value());
+            for (var pane : before.panes()) panes.add(pane.id().value());
+            daemon = server.expand("#{pid}:#{start_time}");
+            if (!daemon.startsWith(before.serverPid().orElseThrow() + ":"))
+                throw Main.usage("selected tmux daemon changed before Python extension execution");
+        } catch (ServerNotRunningException absent) {
+            if (borrowed.isPresent()) throw absent;
+        }
         if (borrowed.isPresent()) {
             effects.put("session_id", borrowed.orElseThrow().id().value());
         }
@@ -114,9 +123,6 @@ final class PythonExtensions {
             selection.put("socket_name", socket.name());
         server.config().configFile().ifPresent(path -> selection.put("config_file", path.toString()));
         if (server.config().force256Colors()) selection.put("colors", 256);
-        String daemon = before.serverPid().isPresent() ? server.expand("#{pid}:#{start_time}") : "";
-        if (!daemon.isEmpty() && !daemon.startsWith(before.serverPid().orElseThrow() + ":"))
-            throw Main.usage("selected tmux daemon changed before Python extension execution");
         Path scratch = Files.createTempDirectory("tmux-workspace-extension-");
         Path request = scratch.resolve("request.json");
         Path state = scratch.resolve("state.json");
@@ -167,7 +173,7 @@ final class PythonExtensions {
                 observe(server, plan, sessionId, daemon, windows, panes, effects);
             }
             String observed = effects.path("session_id").asText();
-            return server.sessions().stream()
+            return Execution.existingSessions(server).stream()
                     .filter(session -> session.id().value().equals(observed))
                     .findFirst()
                     .orElseThrow(() ->
@@ -223,6 +229,8 @@ final class PythonExtensions {
                 if (pane.context().session().equals(session.id())
                         && !beforePanes.contains(pane.id().value()))
                     effects.withArray("pane_ids").add(pane.id().value());
+        } catch (ServerNotRunningException absent) {
+            effects.put("target_present", false);
         } catch (RuntimeException unavailable) {
             effects.put("observation_error", String.valueOf(unavailable.getMessage()));
         } finally {

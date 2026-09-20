@@ -1,6 +1,5 @@
 package io.github.libtmux;
 
-import io.github.libtmux.transport.CommandResult;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -126,7 +125,9 @@ public final class Layouts {
      * Validates a layout for a window and resolves a built-in abbreviation to its full name.
      *
      * <p>Version-sensitive names use the running daemon, or the selected client only when no
-     * daemon is listening. Call this before creating windows or running setup scripts.
+     * daemon is listening. Classic geometry and JSON cell structure are checked along with pane
+     * counts. JSON layouts require tmux 3.8 and are limited to 200 nested objects, as in tmux.
+     * Call this before creating windows or running setup scripts.
      *
      * @param layout a built-in name, unique abbreviation or serialized tree
      * @param server the endpoint which will apply the layout
@@ -139,7 +140,13 @@ public final class Layouts {
     public static String require(String layout, Server server, int paneCount) {
         if (paneCount < 1) throw new IllegalArgumentException("pane count must be positive");
         if (!isJsonShaped(layout) && named(layout, new TmuxVersion(3, 4, "")).isEmpty()) require(layout);
-        if (isJsonShaped(layout)) return require(layout, version(server));
+        if (isJsonShaped(layout)) {
+            require(layout, version(server));
+            if (JsonLayout.leaves(layout) < paneCount) {
+                throw new IllegalArgumentException("layout has fewer cells than panes: " + layout);
+            }
+            return layout;
+        }
         int cells = leaves(layout);
         if (cells > 0) {
             if (cells < paneCount) throw new IllegalArgumentException("layout has fewer cells than panes: " + layout);
@@ -158,25 +165,7 @@ public final class Layouts {
     }
 
     private static Optional<Layout> named(String value, TmuxVersion version) {
-        if (value.isEmpty()) return Optional.empty();
-        List<Layout> available = availableAt(version);
-        for (Layout layout : available) {
-            if (layout.tmuxName().equals(value)) return Optional.of(layout);
-        }
-        List<Layout> matches = prefixedBy(available, value);
-        return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
-    }
-
-    private static List<Layout> availableAt(TmuxVersion version) {
-        return Arrays.stream(Layout.values())
-                .filter(layout -> version.atLeast(layout.since()))
-                .toList();
-    }
-
-    private static List<Layout> prefixedBy(List<Layout> candidates, String value) {
-        return candidates.stream()
-                .filter(layout -> layout.tmuxName().startsWith(value))
-                .toList();
+        return builtIn(value, version).filter(layout -> version.atLeast(layout.since()));
     }
 
     /**
@@ -185,7 +174,7 @@ public final class Layouts {
      * that introduced the collision, rather than only saying the name did not resolve.
      */
     private static IllegalArgumentException ambiguous(String layout, TmuxVersion running) {
-        List<Layout> matches = prefixedBy(availableAt(running), layout);
+        List<Layout> matches = prefixed(layout, supported(running));
         if (matches.size() < 2) {
             return new IllegalArgumentException("not a unique layout for tmux " + running + ": " + layout);
         }
@@ -196,25 +185,9 @@ public final class Layouts {
                 + names + ", ambiguous since tmux " + introduced + "; use the full name");
     }
 
-    /** The running daemon's version where one answers, else the client binary's own; never starts a daemon. */
-    static TmuxVersion version(Server server) {
-        CommandResult reply = server.cmd("display-message", "-p", "#{version}");
-        if (reply.succeeded()) return parsedVersion(reply, false);
-        String reason = String.join("\n", reply.stderr()).strip();
-        if (!(reason.startsWith("no server running on ")
-                || (reason.startsWith("error connecting to ") && reason.endsWith(" (No such file or directory)")))) {
-            throw new LibTmuxException("tmux display-message failed: " + reason);
-        }
-        return parsedVersion(server.cmd("-V"), true);
-    }
-
-    private static TmuxVersion parsedVersion(CommandResult reply, boolean client) {
-        if (!reply.succeeded())
-            throw new LibTmuxException("could not read tmux version: " + String.join("; ", reply.stderr()));
-        String value = String.join("\n", reply.stdout()).strip();
-        if (client && value.startsWith("tmux ")) value = value.substring(5);
+    private static TmuxVersion version(Server server) {
         try {
-            return TmuxVersion.parse(value);
+            return server.versionForCreation();
         } catch (IllegalArgumentException invalid) {
             throw new LibTmuxException("could not read tmux version", invalid);
         }

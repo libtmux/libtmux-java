@@ -191,6 +191,7 @@
   },
   {
     "id": "short-root-geometry",
+    "java_preflight_valid": false,
     "layout": "8a08,1x1,0,0{39x24,0,0,0,40x24,40,0,1}",
     "pane_count": 2,
     "expected_valid": {
@@ -381,6 +382,7 @@
   },
   {
     "id": "bad-inner-size-trimmed",
+    "java_preflight_valid": false,
     "layout": "79f5,80x24,0,0{39x23,0,0,0,40x24,40,0,1}",
     "pane_count": 1,
     "expected_valid": {
