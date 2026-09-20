@@ -31,6 +31,12 @@ production.
   now bound payload bytes as well as event count; see
   [migration guidance](MIGRATION.md#control-subscriptions-bound-bytes-and-report-termination).
 
+### Fixed
+
+- **`close-runtime!` waits for scheduled callback cancellation.**
+  Closing a runtime with finite pending callbacks no longer reports cleanup as
+  pending before its completion executor can terminate.
+
 ## 0.0.1-alpha.12 — 2026-09-19
 
 ### Added

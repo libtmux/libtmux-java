@@ -301,11 +301,19 @@
     ;; into the registry.
     (doseq [task @(.-tasks runtime)] (cancel! task))
     (when first-close?
-      (locking (.-lifecycle-lock runtime)
-        (doseq [^CompletableFuture stage @(.-callback-stages runtime)]
+      (let [stages (locking (.-lifecycle-lock runtime)
+                     @(.-callback-stages runtime))
+            cancelled (CountDownLatch. (count stages))]
+        (doseq [^CompletableFuture stage stages]
           (.execute completion
-                    ^Runnable #(.completeExceptionally stage (failure :cancelled :unknown)))))
-      (doseq [^ExecutorService executor workers] (.shutdownNow executor)))
+                    ^Runnable #(try
+                                 (.completeExceptionally stage (failure :cancelled :unknown))
+                                 (finally (.countDown cancelled)))))
+        (doseq [^ExecutorService executor workers] (.shutdownNow executor))
+        (.await cancelled
+                (max 0 (.toMillis TimeUnit/NANOSECONDS
+                                  (- deadline (System/nanoTime))))
+                TimeUnit/MILLISECONDS)))
     (doseq [^ExecutorService executor workers]
       (.awaitTermination executor
                          (max 0 (.toMillis TimeUnit/NANOSECONDS
