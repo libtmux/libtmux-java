@@ -166,6 +166,12 @@
           (System/setProperty property previous)
           (System/clearProperty property))))))
 
+(deftest selected-clojure-version-must-match
+  (let [expected (System/getProperty "libtmux.clojure.expected")]
+    (is (some? expected) "the integration runner must name its Clojure runtime")
+    (is (= expected (clojure-version))
+        "the integration runner must use the Clojure version it names")))
+
 (deftest changed-process-identity-is-not-owned
   (let [process (ProcessHandle/current)
         owned {:process process
