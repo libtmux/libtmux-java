@@ -1999,6 +1999,7 @@ final class ExecutionTest {
      */
     @Test
     void childContainmentResolvesItsHelpersOnPath() throws Exception {
+        boolean grouped = Files.isDirectory(Path.of("/proc/self")) && Files.isExecutable(Path.of("/usr/bin/setsid"));
         Path bin = Files.createDirectories(directory.resolve("bin"));
         Path complaining = bin.resolve("ps");
         Files.writeString(complaining, "#!/bin/sh\nprintf 'no process table here\\n' >&2\nexit 1\n");
@@ -2021,7 +2022,7 @@ final class ExecutionTest {
         String tmux = Children.executable(context, System.getProperty("libtmux.tmux", "tmux"));
         try (Server server = server(socket)) {
             try {
-                Result refused = invoke(
+                Result checked = invoke(
                         java.util.Map.of("PATH", bin.toString(), "LIBTMUX_TEST_TMUX", tmux),
                         "load",
                         source.toString(),
@@ -2031,8 +2032,10 @@ final class ExecutionTest {
                         "-f",
                         "/dev/null",
                         "--json");
-                assertEquals(1, refused.code(), refused.toString());
-                assertTrue(refused.err().contains("no process table here"), refused.err());
+                assertEquals(grouped ? 1 : 0, checked.code(), checked.toString());
+                if (grouped) assertTrue(checked.err().contains("no process table here"), checked.err());
+                else assertEquals("", checked.err());
+                if (server.isAlive()) server.killServer();
 
                 Result absent = invoke(
                         java.util.Map.of("PATH", empty.toString(), "LIBTMUX_TEST_TMUX", tmux),
@@ -2513,7 +2516,7 @@ final class ExecutionTest {
                 Result result = invoke("load", source.toString(), "-d", "-S", socket.toString(), "--json");
                 assertEquals(0, result.code(), result.err());
                 String cwd = server.panes().getFirst().currentPath().toString();
-                assertEquals(directory.toString(), cwd, cwd);
+                assertEquals(directory.toRealPath().toString(), cwd, cwd);
             } finally {
                 if (server.isAlive()) server.killServer();
             }
@@ -2537,7 +2540,7 @@ final class ExecutionTest {
                 Result result = invoke("load", source.toString(), "-d", "-S", socket.toString(), "--json");
                 assertEquals(0, result.code(), result.err());
                 String cwd = server.panes().getFirst().currentPath().toString();
-                assertEquals(sessionDirectory.resolve("sub/x").toString(), cwd, cwd);
+                assertEquals(sessionDirectory.resolve("sub/x").toRealPath().toString(), cwd, cwd);
             } finally {
                 if (server.isAlive()) server.killServer();
             }
@@ -2557,7 +2560,7 @@ final class ExecutionTest {
                 Result result = invoke("load", source.toString(), "-d", "-S", socket.toString(), "--json");
                 assertEquals(0, result.code(), result.err());
                 String cwd = server.panes().getFirst().currentPath().toString();
-                assertEquals(documentDirectory.resolve("sub").toString(), cwd, cwd);
+                assertEquals(documentDirectory.resolve("sub").toRealPath().toString(), cwd, cwd);
             } finally {
                 if (server.isAlive()) server.killServer();
             }
