@@ -2,6 +2,7 @@
   (:import [io.github.libtmux Server ServerConfig ServerConfig$Builder ServerEndpoint]
            [io.github.libtmux.junit5 NamedServerFixture]
            [io.github.libtmux.transport CommandResult]
+           [java.io IOException]
            [java.lang AutoCloseable ProcessHandle ProcessHandle$Info]
            [java.nio.file Files Path LinkOption]
            [java.nio.file.attribute BasicFileAttributes]
@@ -51,19 +52,26 @@
 (defn- basename [^String path]
   (when path (str (.getFileName (Path/of path (make-array String 0))))))
 
+(defn same-socket-path? [^Path expected ^String observed]
+  (try
+    (let [^"[Ljava.nio.file.LinkOption;" options (make-array LinkOption 0)
+          ^Path actual (Path/of observed (make-array String 0))]
+      (= (.toRealPath expected options) (.toRealPath actual options)))
+    (catch IOException _ false)
+    (catch java.nio.file.InvalidPathException _ false)))
+
 (defn- tmux-for-socket? [identity binary ^Path socket]
   (let [command (:command identity)
         arguments (:arguments identity)
         executable (basename command)
-        expected (basename binary)
-        socket (str (.toAbsolutePath socket))]
+        expected (basename binary)]
     (and (= expected executable)
          (some true?
                (map-indexed
                 (fn [index argument]
                   (and (= "-S" argument)
                        (< (inc index) (count arguments))
-                       (= socket (nth arguments (inc index)))))
+                       (same-socket-path? socket (nth arguments (inc index)))))
                 arguments)))))
 
 (defn- socket-key [^Path socket]
