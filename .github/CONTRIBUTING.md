@@ -32,7 +32,9 @@ answerable for how the whole library is tested.
 You need JDK 21 or newer and tmux on `PATH`. Nothing else — Gradle provisions
 the toolchain, and the library has no runtime dependencies. The workspace CLI
 adds its own runtime dependencies; its terminal regression tests also require
-Python 3 for the standard-library PTY driver.
+Python 3 for the standard-library PTY driver and Bash on `PATH` for interactive
+completion tests. On macOS, install Bash with Homebrew; the system Bash lacks
+the completion test's Readline hooks.
 
 `./gradlew` is the only supported entry point. A locally installed `gradle` is
 not: the wrapper pins the version the build was written against, and
