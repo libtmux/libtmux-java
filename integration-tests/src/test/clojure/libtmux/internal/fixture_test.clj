@@ -71,6 +71,10 @@
               (async/close-runtime! runtime)))]
       (when (map? owned)
         (is (false? (.isAlive ^ProcessHandle (:process owned))))
+        ;; Task completion is published before its virtual worker returns to
+        ;; the executor. Wait for that worker's terminal transition before
+        ;; asserting fixture ownership cleanup.
+        (.join ^Thread (:worker owned) 900)
         (is (false? (.isAlive ^Thread (:worker owned))))
         (is (not (exists? (:socket owned))))
         (is (not (exists? (:directory owned))))))))
