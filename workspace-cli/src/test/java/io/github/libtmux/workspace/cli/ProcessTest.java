@@ -26,6 +26,30 @@ import org.junit.jupiter.params.provider.ValueSource;
 /** Drives the installed launcher as a real process, which is why the whole class is tagged. */
 @org.junit.jupiter.api.Tag("distribution")
 final class ProcessTest {
+    private static final String PTY = """
+            import errno, os, select, subprocess, time
+            def drain_pty(fd):
+                chunks = []
+                while select.select([fd], [], [], 0)[0]:
+                    try: chunk = os.read(fd, 65536)
+                    except OSError as error:
+                        if error.errno == errno.EIO: break
+                        raise
+                    if not chunk: break
+                    chunks.append(chunk)
+                return b''.join(chunks)
+            def wait_pty(child, master, timeout):
+                until = time.monotonic() + timeout
+                while child.poll() is None:
+                    drain_pty(master)
+                    remaining = until - time.monotonic()
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(child.args, timeout)
+                    select.select([master], [], [], min(remaining, .025))
+                drain_pty(master)
+                return child.returncode
+            """;
+
     @TempDir
     Path directory;
 
@@ -54,7 +78,7 @@ final class ProcessTest {
             if (generator.isAlive()) generator.destroyForcibly().waitFor();
         }
         String script = """
-                import errno, os, pty, select, shlex, signal, sys, time
+                import errno, os, pty, select, shlex, shutil, signal, sys, time
                 root, completion = sys.argv[1:]
                 buffers, ready = root + '/buffers', root + '/ready'
                 cases = [
@@ -78,7 +102,7 @@ final class ProcessTest {
                 pid, fd = pty.fork()
                 if pid == 0:
                     os.chdir(root)
-                    os.execve('/bin/bash', ['bash', '--noprofile', '--norc'],
+                    os.execve(shutil.which('bash'), ['bash', '--noprofile', '--norc'],
                         dict(os.environ, TERM='xterm', HISTFILE='/dev/null'))
                 trace = bytearray()
                 joined = False
@@ -145,7 +169,8 @@ final class ProcessTest {
     @ValueSource(strings = {"tmuxinator", "teamocil"})
     void installedImportsLoadCommandsInOrderWithNativeFocusAndOptions(String kind) throws Exception {
         Path socket = directory.resolve("import-socket");
-        Path project = Files.createDirectories(directory.resolve("project/child"));
+        Path project =
+                Files.createDirectories(directory.resolve("project/child")).toRealPath();
         Path source = Files.createDirectories(directory.resolve("inputs")).resolve("source.json");
         Path saved = Files.createDirectories(directory.resolve("moved")).resolve("native.json");
         Path out = directory.resolve("output.json");
@@ -399,20 +424,19 @@ final class ProcessTest {
         Path global = Files.createDirectory(directory.resolve(".tmuxp"));
         Files.writeString(global.resolve("large.yaml"), "session_name: large\ntext: " + "x".repeat(100_000) + "\n");
         String script = """
-                import array, fcntl, os, signal, subprocess, sys, termios, time
+                import array, fcntl, os, select, signal, subprocess, sys, termios, time
                 reader, writer = os.pipe()
-                capacity = fcntl.fcntl(writer, fcntl.F_SETPIPE_SZ, 4096)
                 child = subprocess.Popen(sys.argv[1:], stdout=writer, stderr=subprocess.PIPE,
                     stdin=subprocess.DEVNULL)
-                os.close(writer)
                 try:
                     size = array.array('i', [0])
                     until = time.monotonic() + 4
                     while child.poll() is None and time.monotonic() < until:
                         fcntl.ioctl(reader, termios.FIONREAD, size, True)
-                        if size[0] == capacity: break
+                        if size[0] > 0 and not select.select([], [writer], [], 0)[1]: break
                         time.sleep(.01)
-                    assert size[0] == capacity and child.poll() is None, size[0]
+                    assert size[0] > 0 and not select.select([], [writer], [], 0)[1], size[0]
+                    assert child.poll() is None
                     child.send_signal(signal.SIGINT)
                     # Main's own shutdown hook gives the interrupted run up to 3s to unwind before
                     # abandoning it; this margin must clear that, not just the common case.
@@ -422,6 +446,7 @@ final class ProcessTest {
                         child.kill()
                         child.wait()
                     os.close(reader)
+                    os.close(writer)
                     child.stderr.close()
                 """;
         var builder = command("ls", "--full", "--json");
@@ -458,7 +483,7 @@ final class ProcessTest {
                 windows:
                   - panes: [null, null]
                 """.formatted(cancelled ? "sleep .08; " : "", cancelled ? "; sleep 30" : ""));
-        String script = """
+        String script = PTY + """
                 import fcntl, os, pty, select, signal, struct, subprocess, sys, termios, time
                 (launcher, source, socket, output, error, capture,
                     terminal_error, disabled, panel_lines, cancelled) = sys.argv[1:]
@@ -480,12 +505,12 @@ final class ProcessTest {
                     try:
                         until = time.monotonic() + 5
                         while child.poll() is None and time.monotonic() < until:
-                            if select.select([master], [], [], .025)[0]: chunks.append(os.read(master, 65536))
+                            if select.select([master], [], [], .025)[0]: chunks.append(drain_pty(master))
                             if cancelled == 'true' and not sent and b''.join(chunks).count(b'PROGRESS_progress_1_2') >= 3:
                                 child.send_signal(signal.SIGINT)
                                 sent = True
                         assert child.wait(timeout=1) == (130 if cancelled == 'true' else 0)
-                        while select.select([master], [], [], 0)[0]: chunks.append(os.read(master, 65536))
+                        chunks.append(drain_pty(master))
                     finally:
                         if child.poll() is None:
                             child.kill()
@@ -629,7 +654,7 @@ final class ProcessTest {
         Path source = directory.resolve("workspace.yaml");
         Path output = directory.resolve("result.json");
         Files.writeString(source, "session_name: editor\nwindows: []\n");
-        String script = """
+        String script = PTY + """
                 import fcntl, os, pty, subprocess, sys, termios
                 master, slave = pty.openpty()
                 def terminal():
@@ -639,7 +664,7 @@ final class ProcessTest {
                 with open(sys.argv[3], 'wb') as output:
                     child = subprocess.Popen([sys.argv[1], 'edit', sys.argv[2], '--json'], stdin=slave,
                         stdout=output, stderr=slave, env=env, preexec_fn=terminal)
-                    code = child.wait(timeout=5)
+                    code = wait_pty(child, master, 5)
                 os.close(slave)
                 os.close(master)
                 sys.exit(code)
@@ -696,7 +721,7 @@ final class ProcessTest {
         Path source = directory.resolve("workspace.yaml");
         Path socket = directory.resolve("attach");
         Files.writeString(source, "session_name: attached\nwindows:\n  - panes: [null]\n");
-        String script = """
+        String script = PTY + """
                 import fcntl, os, pty, subprocess, sys, termios, time
                 launcher, source, socket, tmux, destination, redirected = sys.argv[1:]
                 redirected = redirected == 'true'
@@ -717,6 +742,7 @@ final class ProcessTest {
                         until = time.monotonic() + 5
                         name = None
                         while child.poll() is None and time.monotonic() < until:
+                            drain_pty(master)
                             clients = subprocess.run([tmux, '-S', socket, 'list-clients', '-F', '#{client_name}'], capture_output=True, text=True)
                             if clients.returncode == 0 and clients.stdout.strip():
                                 connected = True
@@ -726,12 +752,13 @@ final class ProcessTest {
                         if connected:
                             # Give a working client time to draw before measuring what it wrote.
                             time.sleep(.3)
+                            drain_pty(master)
                             report = subprocess.run(
                                 [tmux, '-S', socket, 'display-message', '-p', '-t', name, '#{client_written}'],
                                 capture_output=True, text=True)
                             written = int(report.stdout.strip() or '0')
                             subprocess.run([tmux, '-S', socket, 'detach-client', '-t', name], check=True)
-                        code = child.wait(timeout=3)
+                        code = wait_pty(child, master, 3)
                     finally:
                         if child.poll() is None:
                             child.kill()
@@ -777,7 +804,7 @@ final class ProcessTest {
         Path source = directory.resolve("switch.yaml");
         Path socket = directory.resolve("switch");
         Files.writeString(source, "session_name: switched\nwindows:\n  - panes: [null]\n");
-        String script = """
+        String script = PTY + """
                 import fcntl, os, pty, shlex, subprocess, sys, termios, time
                 launcher, source, socket, tmux, scratch = sys.argv[1:]
                 env = dict(os.environ, TERM='xterm', LIBTMUX_TEST_TMUX=tmux)
@@ -839,7 +866,7 @@ final class ProcessTest {
                 finally:
                     subprocess.run(prefix + ['kill-server'], capture_output=True)
                     for master, slave, tty, child in clients:
-                        if child.poll() is None: child.wait(timeout=2)
+                        if child.poll() is None: wait_pty(child, master, 2)
                         os.close(slave)
                         os.close(master)
                 """;
@@ -880,7 +907,7 @@ final class ProcessTest {
         Path source = directory.resolve("runshell.yaml");
         Path socket = directory.resolve("runshell-switch");
         Files.writeString(source, "session_name: from-runshell\nwindows:\n  - panes: [null]\n");
-        String script = """
+        String script = PTY + """
                 import fcntl, os, pty, subprocess, sys, termios, time
                 launcher, source, socket, tmux, destination = sys.argv[1:]
                 prefix = [tmux, '-S', socket]
@@ -929,7 +956,7 @@ final class ProcessTest {
                 finally:
                     subprocess.run(prefix + ['kill-server'], capture_output=True)
                     if client.poll() is None:
-                        client.wait(timeout=2)
+                        wait_pty(client, master, 2)
                     os.close(slave)
                     os.close(master)
                 """;
@@ -971,7 +998,7 @@ final class ProcessTest {
         Path source = directory.resolve("prompt-new.yaml");
         Path socket = directory.resolve("prompt-new-socket");
         Files.writeString(source, "session_name: from-prompt\nwindows:\n  - panes: [null]\n");
-        String script = """
+        String script = PTY + """
                 import fcntl, os, pty, shlex, subprocess, sys, termios, time
                 launcher, source, socket, tmux, scratch = sys.argv[1:]
                 env = dict(os.environ, TERM='xterm', LIBTMUX_TEST_TMUX=tmux)
@@ -1025,7 +1052,7 @@ final class ProcessTest {
                 finally:
                     subprocess.run(prefix + ['kill-server'], capture_output=True)
                     if child.poll() is None:
-                        child.wait(timeout=2)
+                        wait_pty(child, master, 2)
                     os.close(slave)
                     os.close(master)
                 """;
@@ -1065,7 +1092,7 @@ final class ProcessTest {
         Path socket = directory.resolve("prompt-exists-socket");
         Files.writeString(
                 source, "session_name: home\nwindows:\n  - panes: [null]\n  - window_name: extra\n    panes: [null]\n");
-        String script = """
+        String script = PTY + """
                 import fcntl, os, pty, shlex, subprocess, sys, termios, time
                 launcher, source, socket, tmux, scratch = sys.argv[1:]
                 env = dict(os.environ, TERM='xterm', LIBTMUX_TEST_TMUX=tmux)
@@ -1119,7 +1146,7 @@ final class ProcessTest {
                 finally:
                     subprocess.run(prefix + ['kill-server'], capture_output=True)
                     if child.poll() is None:
-                        child.wait(timeout=2)
+                        wait_pty(child, master, 2)
                     os.close(slave)
                     os.close(master)
                 """;
@@ -1164,7 +1191,7 @@ final class ProcessTest {
         Files.writeString(
                 second,
                 "session_name: standing\nwindows:\n  - panes: [null]\n  - window_name: extra\n    panes: [null]\n");
-        String script = """
+        String script = PTY + """
                 import fcntl, os, pty, shlex, subprocess, sys, termios, time
                 launcher, first, second, socket, tmux, scratch = sys.argv[1:]
                 env = dict(os.environ, TERM='xterm', LIBTMUX_TEST_TMUX=tmux)
@@ -1221,7 +1248,7 @@ final class ProcessTest {
                 finally:
                     subprocess.run(prefix + ['kill-server'], capture_output=True)
                     if child.poll() is None:
-                        child.wait(timeout=2)
+                        wait_pty(child, master, 2)
                     os.close(slave)
                     os.close(master)
                 """;
