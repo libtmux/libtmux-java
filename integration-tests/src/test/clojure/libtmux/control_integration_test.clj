@@ -184,7 +184,7 @@
                (is (.isAlive process))
                (is (= (.pid (ProcessHandle/current)) (.pid ^ProcessHandle parent)))
                (is (some #{"-C"} argv))
-               (is (some #{(str socket)} argv))
+               (is (some #(fixture/same-socket-path? socket %) argv))
                (reset! owned {:process process :started started :argv argv
                               :exit (.onExit process)})
                (when exceptional? (throw expected))))
