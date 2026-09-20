@@ -36,6 +36,14 @@ compiler/JVM/tmux versions, command, exit status, test inventory, and owned
 resource cleanup evidence. Missing, skipped, failed, or differently sourced
 runs leave that job open.
 
+## Dispatch-only macOS release cells
+
+The existing Scala workflow accepts `include_macos_release=true` only through
+manual dispatch. It skips the pull-request smoke jobs and runs the remaining
+primary cells P05, P07, and P08 one at a time on macOS with tmux `3.7c`. This
+keeps routine pull-request CI at four running jobs while retaining an
+executable release-gate path for the remaining macOS producer evidence.
+
 ## Artifacts and Java prerequisites
 
 All four Scala coordinates use group `io.github.libtmux`:
