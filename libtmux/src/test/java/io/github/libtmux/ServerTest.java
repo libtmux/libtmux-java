@@ -321,14 +321,30 @@ final class ServerTest {
             public void close() {}
         };
         try (Server server = Server.using(config(directory), transport)) {
-            assertSame(failure, assertThrows(TmuxTransportException.class,
-                    () -> server.batch().add("display-message", "one").run()));
-            assertSame(failure, assertThrows(TmuxTransportException.class,
-                    () -> server.chain().then("display-message", "two").run()));
-            assertSame(failure, assertThrows(TmuxTransportException.class,
-                    () -> server.batchReservingCapacity().add("wait-for", "one").run()));
-            assertSame(failure, assertThrows(TmuxTransportException.class,
-                    () -> server.chainReservingCapacity().then("wait-for", "two").run()));
+            assertSame(
+                    failure,
+                    assertThrows(
+                            TmuxTransportException.class,
+                            () -> server.batch().add("display-message", "one").run()));
+            assertSame(
+                    failure,
+                    assertThrows(
+                            TmuxTransportException.class,
+                            () -> server.chain().then("display-message", "two").run()));
+            assertSame(
+                    failure,
+                    assertThrows(
+                            TmuxTransportException.class,
+                            () -> server.batchReservingCapacity()
+                                    .add("wait-for", "one")
+                                    .run()));
+            assertSame(
+                    failure,
+                    assertThrows(
+                            TmuxTransportException.class,
+                            () -> server.chainReservingCapacity()
+                                    .then("wait-for", "two")
+                                    .run()));
             assertEquals(2, ordinary.get());
             assertEquals(2, waiting.get());
         }
