@@ -57,7 +57,7 @@ jobs:
           "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
           echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
 
-      - run: ./gradlew check --stacktrace --continue
+      - run: ./gradlew :libtmux-mcp:test check --stacktrace --continue
 
       # A real-tmux suite that leaves servers running would be invisible here and expensive on a
       # developer's machine. The runner is discarded either way, so this is the only place the
@@ -105,7 +105,7 @@ jobs:
           validate-wrappers: true
 
       # Runs every check task instead of stopping at the first failure, so one run names them all.
-      - run: ./gradlew check --stacktrace --continue
+      - run: ./gradlew :libtmux-mcp:test check --stacktrace --continue
 
       # No /proc on macOS, so a server's own command line comes from ps rather than cmdline.
       - name: No tmux server outlived the suite
