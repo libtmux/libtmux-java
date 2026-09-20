@@ -12,6 +12,8 @@ production.
 
 ## Unreleased
 
+## 0.0.1-alpha.12 — 2026-09-19
+
 ### Added
 
 - **`Pane.run` runs a command to completion and reports its output and exit
