@@ -23,6 +23,35 @@ capture. Failed acquisition throws an `ExceptionInfo`; it is never represented
 as an empty collection. `data/data` returns a detached EDN projection without
 the Java refs required for effects or Java filter evaluation.
 
+## Resource scopes and laziness
+
+Acquisition returns eager captured values. A lazy `filter` or `map` over those
+values reads only Clojure data, so it can escape the `with-open` scope. An I/O
+operation such as `capture!` is different: realize it inside the scope that
+owns its server. Do not return `(map #(tm/capture! (:tmux/ref %)) panes)` from
+`with-open`; use `mapv`, `into`, or another eager reduction before closing.
+
+<!-- clojure-snippet: fixture -->
+```clojure
+(require '[libtmux.core :as tm]
+         '[libtmux.data :as data])
+
+(let [socket-path (java.nio.file.Path/of
+                   (System/getProperty "libtmux.docs.socket")
+                   (make-array String 0))
+      {:keys [lazy-names captures]}
+      (with-open [server (tm/open! {:socket-path socket-path})]
+        (let [session (tm/new-session! server {:name "docs-lazy"})
+              pane (first (data/panes (first (data/windows session))))]
+          {:lazy-names (->> (tm/sessions! server)
+                            (filter #(= "docs-lazy" (:session/name %)))
+                            (map :session/name))
+           :captures (mapv #(tm/capture! (:tmux/ref %) {:from :history})
+                           [pane])}))]
+  [(vec lazy-names) (count captures)])
+;; => [["docs-lazy"] 1]
+```
+
 <!-- clojure-snippet: fixture -->
 ```clojure
 (require '[libtmux.core :as tm]
