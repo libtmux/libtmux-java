@@ -11,7 +11,7 @@
            [java.util.concurrent TimeUnit]))
 
 (def ^:private ^Path socket-root (Path/of "/tmp/libtmux-java-test" (make-array String 0)))
-(def ^:dynamic *after-start* (fn [_]))
+(def ^:dynamic *after-start* (fn [_ _]))
 
 (defn- open-server [^Path socket ^Path config]
   (let [^ServerConfig$Builder builder (ServerConfig/builder)]
@@ -79,16 +79,20 @@
         ^BasicFileAttributes attributes (Files/readAttributes socket BasicFileAttributes options)]
     (.fileKey attributes)))
 
-(defn- capture-process [binary socket]
-  (let [matches (->> (iterator-seq (.iterator (ProcessHandle/allProcesses)))
-                     (map process-identity)
-                     (filter #(tmux-for-socket? % binary socket))
-                     vec)]
-    (when (> (count matches) 1)
-      (throw (ex-info "multiple tmux processes claim the fixture socket"
-                      {:socket socket :pids (mapv :pid matches)})))
-    (when-let [owned (first matches)]
-      (assoc owned :socket-key (socket-key socket)))))
+(defn- capture-process [^Server server ^Path socket]
+  (let [^CommandResult result (command! server ["display-message" "-p"
+                                                 "#{pid}\t#{socket_path}"])
+        rows (.stdout result)]
+    (when-not (.succeeded result)
+      (throw (ex-info "could not read fixture tmux identity" {:stderr (.stderr result)})))
+    (when-not (= 1 (count rows))
+      (throw (ex-info "tmux reported ambiguous fixture identities" {:rows rows})))
+    (let [[pid reported-socket] (.split ^String (first rows) "\\t" -1)
+          process (.orElseThrow (ProcessHandle/of (Long/parseLong pid)))]
+      (when-not (same-socket-path? socket reported-socket)
+        (throw (ex-info "tmux reported another fixture socket"
+                        {:socket socket :reported-socket reported-socket})))
+      (assoc (process-identity process) :socket-key (socket-key socket)))))
 
 (defn- same-process? [owned]
   (let [^ProcessHandle process (:process owned)
@@ -145,8 +149,8 @@
                                                  (str "clj-" (UUID/randomUUID))])]
           (when-not (.succeeded created)
             (throw (ex-info "could not start fixture tmux" {:stderr (.stderr created)}))))
-        (reset! captured (capture-process binary socket))
-        (*after-start* socket)
+        (reset! captured (capture-process server socket))
+        (*after-start* server socket)
         (let [^NamedServerFixture owner (NamedServerFixture/own server socket socket-root)]
           (try
             (let [expected (System/getProperty "libtmux.tmux.expected")
@@ -173,7 +177,7 @@
           (reset! primary failure)
           (when-not @captured
             (try
-              (reset! captured (capture-process binary socket))
+              (reset! captured (capture-process server socket))
               (catch Throwable cleanup
                 (.addSuppressed failure cleanup))))
           (when (and (nil? @captured)
