@@ -38,6 +38,7 @@ val clojureIntegrationTest =
         classpath = sourceSets.test.get().runtimeClasspath
         mainClass.set("clojure.main")
         args("-m", "libtmux.internal.test-runner", "test")
+        systemProperty("libtmux.clojure.expected", integrationClojureVersion)
         val namespaces =
             provider {
                 fileTree("src/test/clojure") { include("**/*_test.clj") }
