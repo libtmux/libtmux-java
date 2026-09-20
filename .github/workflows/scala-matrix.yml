@@ -48,9 +48,9 @@ jobs:
           grep -Fqx '| Primary: 8 cells | Both producers, both JDKs, both OSes, tmux 3.7c |' scala/docs/compatibility.md
           grep -Fqx '| tmux: 18 more cells | Both producers, Linux/JDK 21, each other required tmux |' scala/docs/compatibility.md
           grep -Fqx '| Consumers: 12 cells | Both OSes/JDKs, Scala 2.13.18, 3.3.8 and 3.9.0 |' scala/docs/compatibility.md
-          test "$(grep -Ec '^[[:space:]]+id: P0[2-8]$' .github/workflows/scala-matrix.yml)" -eq 7
-          test "$(grep -Ec '^[[:space:]]+id: T[0-9][0-9]$' .github/workflows/scala-matrix.yml)" -eq 18
-          test "$(grep -Ec '^[[:space:]]+id: C[0-9][0-9]$' .github/workflows/scala-matrix.yml)" -eq 12
+          test "$(grep -Ec '^[[:space:]]+- id: P0[2-8]$' .github/workflows/scala-matrix.yml)" -eq 7
+          test "$(grep -Ec '^[[:space:]]+- id: T[0-9][0-9]$' .github/workflows/scala-matrix.yml)" -eq 18
+          test "$(grep -Ec '^[[:space:]]+- id: C[0-9][0-9]$' .github/workflows/scala-matrix.yml)" -eq 12
 
   artifact-stage:
     name: P01 artifacts (Linux, JDK 21, Scala 2.13.18, tmux 3.7c)
