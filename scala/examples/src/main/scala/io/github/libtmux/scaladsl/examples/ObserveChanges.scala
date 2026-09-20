@@ -25,6 +25,7 @@ object ObserveChanges {
               SessionSpec
                 .builder()
                 .named(ExampleRuntime.name("scala-events"))
+                .firstWindowNamed("observed")
                 .running("cat")
                 .build()
             )
