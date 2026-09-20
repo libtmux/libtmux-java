@@ -1,54 +1,40 @@
 # Compatibility
 
-The versions below are verification targets. Full Scala matrix and installed
-consumer coverage remain unverified. Focused local tests establish their own
-contracts, not completion of a matrix cell. Java CI results alone do not prove
-the Scala facade, its documentation, or its installed artifacts.
+The pull-request workflow runs a small Scala smoke matrix. Java CI owns the
+cross-version tmux matrix; this workflow verifies the facade on tmux `3.7c`.
+Focused local tests establish their own contracts, not an exact-revision CI
+result. Java CI alone does not prove the Scala facade, documentation, or
+installed artifacts.
 
 ## Compilers and runtimes
 
 The [sbt build][build] shares sources between Scala 2.13.18 and 3.3.8 and emits
-JDK 21 bytecode. Required runtime targets are JDK 21 and 25 on Linux and macOS.
-Scala 3.9.0 is a downstream consumer target for the artifacts produced by
-3.3.8; it does not replace that producer. The [launcher pin][sbt-version]
-selects sbt 1.12.15.
+JDK 21 bytecode. The pull-request workflow uses JDK 21. The [launcher
+pin][sbt-version] selects sbt 1.12.15.
 
-The required tmux releases come from the [Java matrix definition][tmux-matrix]:
+The [Java matrix definition][tmux-matrix] supplies the supported tmux range:
 `3.2a`, `3.3`, `3.3a`, `3.4`, `3.5`, `3.6`, `3.7`, `3.7a`, `3.7b`, and `3.7c`.
-Preview lanes `3.8-rc` and `master` do not expand that set. A test must verify
-the selected executable's actual version; an extra installed release cannot
-substitute for a required lane.
+The Scala workflow verifies tmux `3.7c` and checks the selected executable's
+actual version.
 
-## Required coverage
+## Pull-request coverage
 
-The plan uses factorized coverage, with 26 distinct producer/runtime cells.
-It does not claim the full 80-cell OS/JDK/producer/tmux Cartesian product.
-
-| Group | Required combinations |
+| Job | Configuration |
 | --- | --- |
-| Primary: 8 cells | Both producers, both JDKs, both OSes, tmux 3.7c |
-| tmux: 18 more cells | Both producers, Linux/JDK 21, each other required tmux |
-| Consumers: 12 cells | Both OSes/JDKs, Scala 2.13.18, 3.3.8 and 3.9.0 |
+| Artifact stage | Linux, JDK 21, Scala 2.13.18, tmux 3.7c |
+| Scala runtime | Linux and macOS, JDK 21, Scala 3.3.8, tmux 3.7c |
+| Installed consumer | Linux, JDK 21, Scala 2.13.18, tmux 3.7c |
 
-Each primary cell includes compilation, formatting, unit and integration
-tests, executed documentation and examples, packaging, and cleanup. The tmux
-cells run the complete integration and executed-example contracts. The two
-Linux/JDK 21 primary cells also supply tmux 3.7c coverage when their source,
-artifacts, test inventory, invocation, and selected binary match. Older tmux
-releases on macOS or JDK 25 are outside this factorized set.
+The artifact and runtime jobs run formatting, unit and integration tests,
+executed documentation and examples, packaging, and cleanup. The consumer job
+runs independent sbt and Gradle consumers against the artifacts staged on
+Linux. Source dependencies, direct jar paths, and Maven-local fallback do not
+satisfy the consumer check.
 
-Each consumer cell must run through an independent sbt build and an independent
-Gradle or Maven build: 24 build-tool runs, using tmux 3.7c. All consume the same
-four artifacts staged from Linux/JDK 21, with recorded hashes. Rebuilding jars
-on each platform would not prove that the installed distribution travels
-between them. Source dependencies, direct jar paths, and Maven-local fallback
-do not satisfy these checks.
-
-A completed cell needs the exact source and artifact identities, actual
-compiler/JVM/tmux versions, command, exit status, whole-command duration,
-executed test inventory, and owned-resource cleanup evidence. Missing, skipped,
-failed, or differently sourced runs leave that cell open. A local run does not
-establish an exact-revision remote CI result.
+A completed job records its source and artifact identities, selected
+compiler/JVM/tmux versions, command, exit status, test inventory, and owned
+resource cleanup evidence. Missing, skipped, failed, or differently sourced
+runs leave that job open.
 
 ## Artifacts and Java prerequisites
 
@@ -98,7 +84,7 @@ does not create a tag, push, or release artifacts automatically.
 The facade preserves Java's version guards. [Named buffer deletion][buffers]
 rejects tmux before 3.4 because those versions can delete the wrong buffer.
 [`runShellCapturing`][java-server] rejects tmux 3.3a and 3.4, which lose the
-requested output. Required lanes must assert these unsupported results rather
+requested output. Java's tmux matrix asserts these unsupported results rather
 than skip the contract or substitute an empty successful result.
 
 Capture and buffer reads retain Java's normalized text, including its handling
