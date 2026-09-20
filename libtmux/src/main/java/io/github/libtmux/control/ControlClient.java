@@ -20,9 +20,12 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.ToLongFunction;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A tmux client that stays attached and answers one command at a time.
@@ -68,6 +71,8 @@ public final class ControlClient implements AutoCloseable {
     private final Thread reader;
     private final Thread errorReader;
     private final ControlProtocol protocol = new ControlProtocol();
+    private final List<EventSubscription<PaneOutputBytes>> byteSubscriptions = new CopyOnWriteArrayList<>();
+    private EventSubscription.@Nullable Termination termination;
     private final List<EventSubscription<PaneOutput>> outputSubscriptions = new CopyOnWriteArrayList<>();
     private final List<EventSubscription<ControlEvent>> eventSubscriptions = new CopyOnWriteArrayList<>();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -238,7 +243,10 @@ public final class ControlClient implements AutoCloseable {
     }
 
     /**
-     * Subscribes to terminal output tmux pushes.
+     * Subscribes to terminal output tmux pushes, retaining at most 16 MiB of UTF-8 text.
+     *
+     * <p>This compatibility API decodes each chunk independently. Use {@link #subscribeOutputBytes}
+     * and {@link PaneOutputDecoder} for characters split across chunks.
      *
      * @param capacity how many values this subscriber can retain before its oldest value is dropped
      * @return a pull subscription owned by the caller
@@ -246,11 +254,15 @@ public final class ControlClient implements AutoCloseable {
      * @throws IllegalStateException if the client has ended
      */
     public EventSubscription<PaneOutput> subscribeOutput(int capacity) {
-        return subscribe(outputSubscriptions, capacity);
+        return subscribe(
+                outputSubscriptions,
+                capacity,
+                ControlProtocol.DEFAULT_MAX_REPLY_BYTES,
+                value -> value.data().getBytes(StandardCharsets.UTF_8).length);
     }
 
     /**
-     * Subscribes to state changes tmux volunteers.
+     * Subscribes to state changes tmux volunteers, retaining at most 16 MiB of UTF-8 fields.
      *
      * @param capacity how many values this subscriber can retain before its oldest value is dropped
      * @return a pull subscription owned by the caller
@@ -258,7 +270,23 @@ public final class ControlClient implements AutoCloseable {
      * @throws IllegalStateException if the client has ended
      */
     public EventSubscription<ControlEvent> subscribeEvents(int capacity) {
-        return subscribe(eventSubscriptions, capacity);
+        return subscribeEvents(capacity, ControlProtocol.DEFAULT_MAX_REPLY_BYTES);
+    }
+
+    /** Subscribes to original pane bytes with independent event and payload byte limits. */
+    public EventSubscription<PaneOutputBytes> subscribeOutputBytes(int capacity, long maxBytes) {
+        return subscribe(byteSubscriptions, capacity, maxBytes, PaneOutputBytes::size);
+    }
+
+    /** Subscribes to state changes, bounding retained UTF-8 field bytes as well as event count. */
+    public EventSubscription<ControlEvent> subscribeEvents(int capacity, long maxBytes) {
+        return subscribe(eventSubscriptions, capacity, maxBytes, event -> {
+            long bytes = event.kind().getBytes(StandardCharsets.UTF_8).length;
+            for (String field : event.fields()) {
+                bytes += field.getBytes(StandardCharsets.UTF_8).length;
+            }
+            return bytes + event.value().orElse("").getBytes(StandardCharsets.UTF_8).length;
+        });
     }
 
     /**
@@ -302,8 +330,8 @@ public final class ControlClient implements AutoCloseable {
         boolean closeOwner = closed.compareAndSet(false, true);
         if (closeOwner) {
             processTree.captureDescendants();
+            closeSubscriptions(new EventSubscription.Termination(EventSubscription.EndReason.CLOSED, Optional.empty()));
             writer.close();
-            closeSubscriptions();
         }
         boolean reclaimed = processTree.terminate();
         if (!closeOwner) {
@@ -355,12 +383,18 @@ public final class ControlClient implements AutoCloseable {
                 if (result instanceof ControlProtocol.Reply reply) {
                     complete(reply.outcome(), reply.lines());
                 } else if (result instanceof ControlProtocol.Notification notification) {
-                    handleNotification(notification.line());
+                    handleNotification(notification.line(), line.bytes());
                 }
             }
-        } catch (IOException | ControlProtocol.LimitExceeded e) {
-            // The client ended. Everything still waiting is resolved below.
+        } catch (ControlProtocol.LimitExceeded | ControlLineReader.LimitExceeded | IllegalArgumentException e) {
+            closeSubscriptions(
+                    new EventSubscription.Termination(EventSubscription.EndReason.PROTOCOL_FAILURE, Optional.of(e)));
+        } catch (IOException e) {
+            closeSubscriptions(
+                    new EventSubscription.Termination(EventSubscription.EndReason.TRANSPORT_FAILURE, Optional.of(e)));
         } finally {
+            closeSubscriptions(
+                    new EventSubscription.Termination(EventSubscription.EndReason.UNKNOWN, Optional.empty()));
             writer.readerEnded();
         }
     }
@@ -373,13 +407,18 @@ public final class ControlClient implements AutoCloseable {
         }
     }
 
-    private void handleNotification(String line) {
+    private void handleNotification(String line, byte[] bytes) {
         if (line.startsWith("%output ")) {
+            offer(byteSubscriptions, PaneOutputBytes.parse(bytes));
             publish(line);
         } else if (line.startsWith("%")) {
             // Everything else tmux volunteers about its own state. A snapshot is still how state
             // is read; this only says when reading it again would be worth the trouble.
             ControlEvent.parse(line).ifPresent(this::announce);
+            if (line.equals("%exit") || line.startsWith("%exit ")) {
+                closeSubscriptions(new EventSubscription.Termination(
+                        EventSubscription.EndReason.CONTROL_EXIT, Optional.of(new IOException(line))));
+            }
         }
     }
 
@@ -389,7 +428,8 @@ public final class ControlClient implements AutoCloseable {
 
     private void terminate(TmuxTransportException failure) {
         failed = true;
-        closeSubscriptions();
+        closeSubscriptions(
+                new EventSubscription.Termination(EventSubscription.EndReason.TRANSPORT_FAILURE, Optional.of(failure)));
         if (!processTree.terminate()) {
             failure.addSuppressed(new IllegalStateException("control process tree was not reclaimed"));
         }
@@ -405,11 +445,12 @@ public final class ControlClient implements AutoCloseable {
         offer(outputSubscriptions, output);
     }
 
-    private <T> EventSubscription<T> subscribe(List<EventSubscription<T>> subscriptions, int capacity) {
+    private <T> EventSubscription<T> subscribe(
+            List<EventSubscription<T>> subscriptions, int capacity, long maxBytes, ToLongFunction<T> size) {
         if (subscriptionsClosed) {
             throw new IllegalStateException("control client has ended");
         }
-        EventSubscription<T> subscription = new EventSubscription<>(capacity, subscriptions::remove);
+        EventSubscription<T> subscription = new EventSubscription<>(capacity, maxBytes, size, subscriptions::remove);
         subscriptions.add(subscription);
         if (subscriptionsClosed) {
             subscription.close();
@@ -424,13 +465,18 @@ public final class ControlClient implements AutoCloseable {
         }
     }
 
-    private void closeSubscriptions() {
+    private synchronized void closeSubscriptions(EventSubscription.Termination reason) {
+        EventSubscription.Termination first = termination == null ? reason : termination;
+        termination = first;
         subscriptionsClosed = true;
+        for (EventSubscription<PaneOutputBytes> subscription : byteSubscriptions) {
+            subscription.end(first);
+        }
         for (EventSubscription<PaneOutput> subscription : outputSubscriptions) {
-            subscription.close();
+            subscription.end(first);
         }
         for (EventSubscription<ControlEvent> subscription : eventSubscriptions) {
-            subscription.close();
+            subscription.end(first);
         }
     }
 

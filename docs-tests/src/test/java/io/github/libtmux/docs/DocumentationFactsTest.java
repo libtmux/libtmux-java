@@ -38,6 +38,8 @@ final class DocumentationFactsTest {
             "libtmux-jackson",
             "libtmux-junit5",
             "libtmux-kotlin",
+            "libtmux-clojure",
+            "libtmux-clojure-core-async",
             "libtmux-mcp",
             "libtmux-workspace",
             "benchmarks",
@@ -47,7 +49,14 @@ final class DocumentationFactsTest {
 
     /** Published modules, which is what a reader is told to depend on. */
     private static final List<String> PUBLISHED = List.of(
-            "libtmux", "libtmux-jackson", "libtmux-junit5", "libtmux-kotlin", "libtmux-mcp", "libtmux-workspace");
+            "libtmux",
+            "libtmux-jackson",
+            "libtmux-junit5",
+            "libtmux-kotlin",
+            "libtmux-clojure",
+            "libtmux-clojure-core-async",
+            "libtmux-mcp",
+            "libtmux-workspace");
 
     /** The parity inventories, whose every row names the contract test that row will need. */
     private static final List<String> PARITY = List.of("docs/parity/python-api.md", "docs/parity/test-map.md");
@@ -62,11 +71,11 @@ final class DocumentationFactsTest {
             Pattern.compile("<artifactId>libtmux[a-z0-9-]*</artifactId>\\s*<version>([0-9][^<]*)</version>"),
             Pattern.compile("io\\.github\\.libtmux:[a-z0-9-]+ -> ([0-9][^\\s)]*)"));
 
-    /** Fences this build compiles and runs. A fence in any other source language is not checked. */
-    private static final Set<String> EXECUTED = Set.of("java", "kotlin");
+    /** Fences an owned documentation gate compiles and runs. */
+    private static final Set<String> EXECUTED = Set.of("java", "kotlin", "clojure");
 
     /** Source languages a guide may reasonably carry, whether or not anything here builds them. */
-    private static final Set<String> SOURCE = Set.of("java", "kotlin", "scala", "groovy");
+    private static final Set<String> SOURCE = Set.of("java", "kotlin", "clojure", "scala", "groovy");
 
     private static String read(String path) {
         try {

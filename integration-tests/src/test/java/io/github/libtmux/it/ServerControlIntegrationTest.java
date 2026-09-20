@@ -60,14 +60,13 @@ final class ServerControlIntegrationTest {
     }
 
     @Test
-    void aFalseConditionWithNoOtherCommandDoesNothing(Server server) throws Exception {
-        Session session = server.sessions().get(0);
-        String before = session.windows().get(0).name();
+    void aFalseConditionWithNoOtherCommandDoesNothing(Server server) {
+        String option = "@if-shell-guard";
+        server.globalOptions().set(option, "before");
 
-        server.ifShell("false", "rename-window should-not-run");
-        Thread.sleep(400);
+        server.ifShell("false", "set-option -g " + option + " should-not-run");
 
-        assertEquals(before, session.refresh().windows().get(0).name(), "something ran that should not have");
+        assertEquals("before", server.globalOptions().get(option).orElseThrow(), "something ran that should not have");
     }
 
     @Test

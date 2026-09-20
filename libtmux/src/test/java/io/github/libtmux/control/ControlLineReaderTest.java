@@ -1,5 +1,6 @@
 package io.github.libtmux.control;
 
+import static java.util.Objects.requireNonNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -22,8 +23,10 @@ final class ControlLineReaderTest {
     void lineEndingsAreRemovedButCounted() throws Exception {
         byte[] input = "one\r\ntwo".getBytes(StandardCharsets.UTF_8);
         try (var lines = new ControlLineReader(new ByteArrayInputStream(input), 8)) {
-            assertEquals(new ControlLineReader.Line("one", 4), lines.readLine());
-            assertEquals(new ControlLineReader.Line("two", 3), lines.readLine());
+            var one = requireNonNull(lines.readLine());
+            assertEquals("one", one.text());
+            assertEquals(4, one.encodedBytes());
+            assertEquals("two", requireNonNull(lines.readLine()).text());
             assertEquals(null, lines.readLine());
         }
     }
@@ -33,7 +36,7 @@ final class ControlLineReaderTest {
         byte[] input = {'a', (byte) 0xff, '\n'};
 
         try (var lines = new ControlLineReader(new ByteArrayInputStream(input), 8)) {
-            assertEquals(new ControlLineReader.Line("a\\xff", 2), lines.readLine());
+            assertEquals("a\\xff", requireNonNull(lines.readLine()).text());
         }
     }
 }

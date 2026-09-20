@@ -1,0 +1,24 @@
+{:paths ["libtmux-clojure/src/main/clojure"]
+ :deps {org.clojure/clojure {:mvn/version "1.12.4"}
+        io.github.libtmux/libtmux {:mvn/version "0.0.1-alpha.12-SNAPSHOT"}}
+ :aliases
+ {:test
+  {:extra-paths ["libtmux-clojure/src/test/clojure"
+                 "gradle/clojure-runner"]
+   :main-opts ["-m" "libtmux.internal.test-runner" "test"
+               "libtmux-clojure/src/test/clojure"]}
+  :adapter-test
+  {:extra-paths ["libtmux-clojure-core-async/src/main/clojure"
+                 "libtmux-clojure-core-async/src/test/clojure"
+                 "gradle/clojure-runner"]
+   :extra-deps {org.clojure/core.async {:mvn/version "1.8.741"}}
+   :main-opts ["-m" "libtmux.internal.test-runner" "test"
+               "libtmux-clojure-core-async/src/test/clojure"]}
+  :integration-test
+  {:extra-paths ["integration-tests/src/test/clojure"
+                 "libtmux-clojure-core-async/src/main/clojure"
+                 "gradle/clojure-runner"]
+   :extra-deps {io.github.libtmux/libtmux-junit5 {:mvn/version "0.0.1-alpha.12-SNAPSHOT"}
+                org.clojure/core.async {:mvn/version "1.8.741"}}
+   :main-opts ["-m" "libtmux.internal.test-runner" "test"
+               "integration-tests/src/test/clojure"]}}}
