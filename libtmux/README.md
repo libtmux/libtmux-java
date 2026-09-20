@@ -48,6 +48,7 @@ Needs JDK 21 and a tmux between 3.2a and 3.7c.
 
 <!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
+// Given: Path socket
 ServerConfig config = ServerConfig.builder()
         .endpoint(ServerEndpoint.socketPath(socket))   // wherever you want the server to live
         .build();
@@ -65,6 +66,7 @@ try (Server server = Server.open(config)) {
 What that leaves, read back:
 
 ```java
+// Given: Server server
 Session session = server.newSession("demo");
 Window window = session.newWindow("build");
 Pane pane = window.split();
@@ -86,6 +88,7 @@ session to its windows to their panes and back issues **no further commands**, s
 a traversal can never observe a half-changed server.
 
 ```java
+// Given: Server server
 Session session = server.sessions().get(0);
 
 int panes = session.windows().stream().mapToInt(w -> w.panes().size()).sum();
@@ -103,6 +106,7 @@ An expression is a `Predicate`, so it drops into a stream unchanged — and
 because the capture is already in hand, filtering costs nothing.
 
 ```java
+// Given: Server server
 server.sessions().get(0).newWindow("logs");
 
 List<Window> logs = server.windows().stream()
@@ -125,6 +129,7 @@ When you need exactly one, say so, and get a distinct failure for each way it ca
 go wrong:
 
 ```java
+// Given: Server server
 server.newSession("build");
 
 Session build = Selections.exactlyOne(
@@ -141,6 +146,7 @@ Full guide: **[Filtering](../docs/guide/filtering.md)**.
 ### Several commands, one invocation
 
 ```java
+// Given: Server server
 BatchResult result = server.batch()
         .add("new-window", "-d", "-n", "one")
         .add("new-window", "-d", "-n", "two")
@@ -157,6 +163,7 @@ which command failed or which never ran. Each operation gets its own outcome.
 ### Options and hooks
 
 ```java
+// Given: Server server
 Options options = server.sessions().get(0).options();
 
 options.set("status-left", "[libtmux]");
@@ -170,6 +177,7 @@ options.get("status-left").orElseThrow();                 // → [libtmux]
 the transport reports which happened rather than collapsing both:
 
 ```java
+// Given: Server server
 try {
     server.cmd(List.of("kill-session", "-t", "=gone"));
 } catch (TmuxTransportException e) {

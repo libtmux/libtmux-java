@@ -7,11 +7,11 @@ package io.github.libtmux;
  * this session, window or pane is gone. A caller can act on that — re-capture, or stop — where an
  * unreachable server calls for something else entirely.
  */
-public final class ObjectDoesNotExist extends LibTmuxException {
+public final class ObjectDoesNotExistException extends LibTmuxException {
 
     private static final long serialVersionUID = 1L;
 
-    public ObjectDoesNotExist(String message) {
+    public ObjectDoesNotExistException(String message) {
         super(message);
     }
 }

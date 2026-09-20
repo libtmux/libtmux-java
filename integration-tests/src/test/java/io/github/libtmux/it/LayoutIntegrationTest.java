@@ -1,14 +1,20 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.libtmux.Layout;
+import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
-import io.github.libtmux.UnsupportedTmuxVersion;
+import io.github.libtmux.TmuxVersion;
+import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
+import io.github.libtmux.WindowLayout;
 import io.github.libtmux.junit5.TmuxExtension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,7 +35,7 @@ final class LayoutIntegrationTest {
         Window window = split(server);
 
         for (Layout layout : Layout.values()) {
-            if (!server.version().atLeast(new io.github.libtmux.TmuxVersion(3, 5, ""))
+            if (!server.version().atLeast(new TmuxVersion(3, 5, ""))
                     && layout.tmuxName().contains("mirrored")) {
                 continue;
             }
@@ -42,13 +48,14 @@ final class LayoutIntegrationTest {
     @Test
     void aLayoutThisReleaseDoesNotHaveIsRefusedRatherThanSent(Server server) {
         Window window = split(server);
-        boolean hasMirrored = server.version().atLeast(new io.github.libtmux.TmuxVersion(3, 5, ""));
+        boolean hasMirrored = server.version().atLeast(new TmuxVersion(3, 5, ""));
 
         if (hasMirrored) {
             window.selectLayout(Layout.MAIN_VERTICAL_MIRRORED);
             assertTrue(server.isAlive());
         } else {
-            assertThrows(UnsupportedTmuxVersion.class, () -> window.selectLayout(Layout.MAIN_VERTICAL_MIRRORED));
+            assertThrows(
+                    UnsupportedTmuxVersionException.class, () -> window.selectLayout(Layout.MAIN_VERTICAL_MIRRORED));
             assertTrue(server.isAlive(), "a refusal must not have reached tmux");
         }
     }
@@ -57,7 +64,7 @@ final class LayoutIntegrationTest {
     void choosingALayoutChangesTheArrangement(Server server) {
         Window window = split(server);
         window.selectLayout(Layout.EVEN_HORIZONTAL);
-        String horizontal = window.refresh().layout();
+        WindowLayout horizontal = window.refresh().layout();
 
         window.selectLayout(Layout.EVEN_VERTICAL);
 
@@ -67,7 +74,7 @@ final class LayoutIntegrationTest {
     @Test
     void movingToTheNextLayoutIsAcceptedOnEveryRelease(Server server) {
         Window window = split(server);
-        String before = window.refresh().layout();
+        WindowLayout before = window.refresh().layout();
 
         window.nextLayout();
 
@@ -75,14 +82,48 @@ final class LayoutIntegrationTest {
         assertNotEquals(before, window.refresh().layout(), "next-layout did nothing");
     }
 
+    /**
+     * {@code previous-layout} steps back through tmux's preset cycle. The window starts on a preset
+     * because a fresh split is not a position in that cycle, so stepping back from one step forward
+     * would not return to it.
+     */
+    @Test
+    void movingToThePreviousLayoutIsAcceptedOnEveryRelease(Server server) {
+        Window window = split(server);
+        window.selectLayout(Layout.EVEN_HORIZONTAL);
+        WindowLayout before = window.refresh().layout();
+        window.nextLayout();
+
+        window.previousLayout();
+
+        assertTrue(server.isAlive());
+        assertEquals(before, window.refresh().layout(), "previous-layout did not undo next-layout");
+    }
+
     // ----------------------------------------------------------------------- the dangerous path
+
+    /** The form a window reports is the one its server writes: JSON from tmux 3.8, classic before. */
+    @Test
+    void aLayoutSaysWhichFormThisServerWrote(Server server) {
+        Window window = server.sessions().get(0).windows().get(0);
+        window.split();
+
+        WindowLayout layout = window.refresh().layout();
+
+        if (server.version().atLeast(new TmuxVersion(3, 8, ""))) {
+            assertInstanceOf(WindowLayout.Json.class, layout, "tmux 3.8 and later write JSON: " + layout);
+        } else {
+            assertInstanceOf(
+                    WindowLayout.Classic.class, layout, "releases before 3.8 write the classic form: " + layout);
+        }
+    }
 
     /** A layout tmux wrote round-trips, which is what applyLayout is for. */
     @Test
     void anExactArrangementCanBeReadBackAndRestored(Server server) {
         Window window = split(server);
         window.selectLayout(Layout.EVEN_HORIZONTAL);
-        String wanted = window.refresh().layout();
+        WindowLayout wanted = window.refresh().layout();
         window.selectLayout(Layout.EVEN_VERTICAL);
 
         window.applyLayout(wanted);
@@ -103,6 +144,10 @@ final class LayoutIntegrationTest {
         assertThrows(IllegalArgumentException.class, () -> window.applyLayout("not-a-layout"));
         assertThrows(IllegalArgumentException.class, () -> window.applyLayout(""));
         assertThrows(IllegalArgumentException.class, () -> window.applyLayout("abcd"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> window.applyLayout("-x"),
+                "a leading dash is a flag to select-layout, not a layout");
 
         assertTrue(server.isAlive(), "a refused layout must never have reached tmux");
         assertEquals(1, server.sessions().size(), "and no session was lost");
@@ -112,12 +157,51 @@ final class LayoutIntegrationTest {
     @Test
     void aLayoutWithTheWrongChecksumIsRefused(Server server) {
         Window window = split(server);
-        String real = window.refresh().layout();
+        String real = window.refresh().layout().value();
         String corrupted = "0000" + real.substring(4);
 
         assertThrows(IllegalArgumentException.class, () -> window.applyLayout(corrupted));
 
         assertTrue(server.isAlive());
+    }
+
+    /**
+     * JSON carries no checksum, so the guard can only ask whether this tmux could have written it.
+     * Below 3.8 the answer is always no, whatever the body says - refused before tmux sees it.
+     */
+    @Test
+    void aJsonShapedLayoutIsRefusedBeforeItsFloor(Server server) {
+        assumeTmuxOlderThanJsonLayouts(server);
+        Window window = split(server);
+
+        assertThrows(UnsupportedTmuxVersionException.class, () -> window.applyLayout("{}"));
+
+        assertTrue(server.isAlive(), "a refusal must not have reached tmux");
+    }
+
+    /**
+     * From 3.8, a JSON body that merely has the shape is tmux's own problem to refuse - and it does,
+     * with an ordinary error rather than the 3.3a crash. This is what proves the shape check does not
+     * need to parse the body: tmux itself is safe against one that only looks right.
+     */
+    @Test
+    void aJsonShapedLayoutThatIsNotRealIsRefusedByTmuxItself(Server server) {
+        assumeTmuxAtLeastJsonLayouts(server);
+        Window window = split(server);
+
+        assertThrows(LibTmuxException.class, () -> window.applyLayout("{}"));
+
+        assertTrue(server.isAlive(), "tmux must reject a fake JSON layout without dying");
+    }
+
+    private static final TmuxVersion JSON_LAYOUT_FLOOR = new TmuxVersion(3, 8, "");
+
+    private static void assumeTmuxOlderThanJsonLayouts(Server server) {
+        assumeFalse(server.version().atLeast(JSON_LAYOUT_FLOOR), "needs a tmux older than JSON layouts");
+    }
+
+    private static void assumeTmuxAtLeastJsonLayouts(Server server) {
+        assumeTrue(server.version().atLeast(JSON_LAYOUT_FLOOR), "needs a tmux with JSON layouts");
     }
 
     private static Window split(Server server) {

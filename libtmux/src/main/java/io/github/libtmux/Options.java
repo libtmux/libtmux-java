@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
@@ -68,13 +69,40 @@ public final class Options {
      * @return empty only when tmux does not know the option, which it reports as an error; an option
      *     genuinely set to the empty string comes back as an empty value, not as absent. A value
      *     spanning several lines comes back whole
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the read otherwise fails, including a name tmux finds ambiguous —
+     *     option names may be abbreviated, and a prefix matching several is a question tmux
+     *     declined to answer rather than an option it does not have
      */
     public Optional<String> get(String name) {
-        var result = cmd(argv("show-options", List.of("-A", "-v", name)));
-        if (!result.succeeded()) {
+        var result = cmd(argv("show-options", List.of("-A", "-v", "--", name)));
+        if (result.succeeded()) {
+            return Optional.of(String.join("\n", result.stdout()));
+        }
+        // The documented meaning of empty, in tmux's own words on every supported release. Any
+        // other failure is a failed read, and answering it with "tmux does not know that option"
+        // makes this method say something it did not find out.
+        if (result.stderr().stream().anyMatch(line -> line.contains("invalid option"))) {
             return Optional.empty();
         }
-        return Optional.of(String.join("\n", result.stdout()));
+        throw server.failed("show-options", result);
+    }
+
+    /**
+     * As {@link #get(String)}, read as the key's type.
+     *
+     * @throws LibTmuxException if tmux reports a value the key's type cannot hold, which means the
+     *     key was declared with the wrong type
+     */
+    public <T> Optional<T> get(OptionKey<T> key) {
+        Objects.requireNonNull(key, "key");
+        return get(key.name()).map(key::read);
+    }
+
+    /** As {@link #set(String, String)}, written the way tmux reads the key's type. */
+    public <T> void set(OptionKey<T> key, T value) {
+        Objects.requireNonNull(key, "key");
+        set(key.name(), key.write(value));
     }
 
     /** Every option set at this scope, in tmux's order. Inherited values are not listed. */
@@ -105,7 +133,7 @@ public final class Options {
             // -q so an option unset between the two requests reads as empty rather than ending the batch.
             Batch batch = snapshot == null ? server.batch() : server.batch(snapshot);
             do {
-                batch.add(argv("show-options", List.of("-q", "-v", names.get(to++))));
+                batch.add(argv("show-options", List.of("-q", "-v", "--", names.get(to++))));
             } while (to < names.size() && batch.length() < GROUP_BUDGET);
             record(names.subList(from, to), batch, options);
             from = to;
@@ -148,7 +176,7 @@ public final class Options {
 
     /** Sets one option at this scope. */
     public void set(String name, String value) {
-        run(argv("set-option", List.of(name, value)));
+        run(argv("set-option", List.of("--", name, value)));
     }
 
     /**
@@ -160,7 +188,7 @@ public final class Options {
      * @return whether the value was taken, false when this scope already set the option
      */
     public boolean setIfAbsent(String name, String value) {
-        return cmd(argv("set-option", List.of("-o", name, value))).succeeded();
+        return cmd(argv("set-option", List.of("-o", "--", name, value))).succeeded();
     }
 
     /**
@@ -170,7 +198,7 @@ public final class Options {
      * what a caller building a value up piece by piece wants.
      */
     public void append(String name, String suffix) {
-        run(argv("set-option", List.of("-a", name, suffix)));
+        run(argv("set-option", List.of("-a", "--", name, suffix)));
     }
 
     /**
@@ -184,12 +212,12 @@ public final class Options {
      * it to be expanded.
      */
     public void setExpanded(String name, String format) {
-        run(argv("set-option", List.of("-F", name, format)));
+        run(argv("set-option", List.of("-F", "--", name, format)));
     }
 
     /** Removes one option at this scope, so it falls back to whatever it inherits. */
     public void unset(String name) {
-        run(argv("set-option", List.of("-u", name)));
+        run(argv("set-option", List.of("-u", "--", name)));
     }
 
     private CommandResult cmd(List<String> argv) {

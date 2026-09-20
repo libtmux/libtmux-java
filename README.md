@@ -17,6 +17,7 @@ practical parity while reading as Java rather than as a translation.
 
 <!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
+// Given: Path socket
 ServerConfig config = ServerConfig.builder()
         .endpoint(ServerEndpoint.socketPath(socket))
         .build();
@@ -33,6 +34,7 @@ try (Server server = Server.open(config)) {
 Which leaves this behind, and reading it back is where the library earns its keep:
 
 ```java
+// Given: Server server
 Session session = server.newSession("demo");
 Window window = session.newWindow("build");
 Pane pane = window.split();
@@ -48,6 +50,14 @@ compiled and then run against a real tmux** by [`docs-tests`](docs-tests/). A
 snippet that stopped working fails the build; one that claims the compiler rejects
 it must actually be rejected.
 
+A fence's first line, `// Given: Server server` and the like, names what the
+snippet *reads* rather than builds — real code still needs its own imports and,
+for `Server`, a call such as the `Server.open(ServerConfig...)` shown above.
+`docs-tests` also hands every snippet a `Server` that already holds one session,
+so `server.sessions().get(0)` finds something without the snippet creating it
+first; a snippet that opens its own session instead — as several below do —
+depends on nothing already being there.
+
 ## Quickstart
 
 Each block below runs against a real tmux server, and every value after a `→` is
@@ -56,6 +66,7 @@ asserted. If any of them stopped being true, the build would fail.
 ### Create things
 
 ```java
+// Given: Server server
 Session session = server.newSession("demo");
 Window editor = session.newWindow("editor");
 Pane right = editor.split();
@@ -71,18 +82,20 @@ One read hands you handles. Walking them issues no further commands, so a
 traversal cannot see a half-changed server.
 
 ```java
-server.newSession("demo").newWindow("editor");
+// Given: Server server
+Window editor = server.newSession("demo").newWindow("editor");
 
 List<String> names = server.windows().stream().map(Window::name).sorted().toList();
 
 names.contains("editor");            // → true
-server.sessions().size();            // → 2
+editor.session().name();             // → demo
 ```
 
 ### Filter, without asking tmux again
 
 ```java
-server.sessions().get(0).newWindow("editor");
+// Given: Server server
+server.newSession("build").newWindow("editor");
 
 List<Window> editors = server.windows().stream()
         .filter(Window_.name().startsWith("edit"))
@@ -104,6 +117,7 @@ One read answers, and absence is a value rather than an exception, so the caller
 says whether it is a bug:
 
 ```java
+// Given: Server server
 server.newSession("build");
 
 server.session("build").orElseThrow().name();   // → build
@@ -113,6 +127,7 @@ server.session("absent").isPresent();           // → false
 Which is how "this session, or a new one" stays a single read:
 
 ```java
+// Given: Server server
 Session work = server.session("work").orElseGet(() -> server.newSession("work"));
 
 work.name();                         // → work
@@ -121,6 +136,7 @@ work.name();                         // → work
 ### Say how many you expect
 
 ```java
+// Given: Server server
 server.newSession("build");
 
 Session build = Selections.exactlyOne(
@@ -132,9 +148,23 @@ build.name();                        // → build
 `exactlyOne` raises `NoMatchException` for none and `MultipleMatchesException`
 for several, because those are different bugs in the calling code.
 
+### Run a command to its end
+
+When the command is yours, run it rather than typing it and reading the screen:
+the status is the shell's and the output is only the command's.
+
+```java
+// Given: Pane pane
+PaneRun ran = pane.run("printf 'built\\n'; exit 3", Duration.ofSeconds(30));
+
+ran.exitStatus().getAsInt();   // → 3
+ran.output();                  // → [built]
+```
+
 ### Send keys and read what a pane shows
 
 ```java
+// Given: Server server
 Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
 
 pane.sendLine("echo hello from libtmux");
@@ -145,6 +175,7 @@ pane.capture().isEmpty();            // → false
 ### Traverse in both directions
 
 ```java
+// Given: Server server
 Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
 
 pane.window().session().name();      // → libtmux
@@ -156,6 +187,7 @@ Nothing is hidden behind the typed API. Every object can reach tmux directly, an
 a nonzero exit is data rather than an exception:
 
 ```java
+// Given: Server server
 server.cmd("display-message", "-p", "#{version}").succeeded();   // → true
 server.cmd("kill-session", "-t", "=nope").succeeded();           // → false
 ```
@@ -167,6 +199,7 @@ ask where it is. tmux writes `TMUX` and `TMUX_PANE` into every pane it spawns,
 and `TmuxEnvironment` reads them back:
 
 ```java
+// Given: Path socket
 Map<String, String> inside = Map.of("TMUX", socket + ",1,$0", "TMUX_PANE", "%0");
 
 TmuxEnvironment here = TmuxEnvironment.of(inside).orElseThrow();
@@ -178,6 +211,35 @@ here.pane().orElseThrow().value();   // → %0
 In a real pane those two variables are already set, so `TmuxEnvironment.current()`
 takes nothing and returns empty when there is no pane to describe. This README is
 not running inside one, so the example supplies them.
+
+### Change what a later pane will see
+
+tmux keeps an environment per server and per session, and gives it to every
+process it starts afterwards — so this is how a long-running session hands a
+refreshed value to panes opened from now on.
+
+```java
+// Given: Server server
+server.environment().set("LIBTMUX_TOKEN", "abc123");
+
+server.environment().get("LIBTMUX_TOKEN").orElseThrow();   // → abc123
+```
+
+### See every command tmux ran
+
+The process transport and the control client log through the JDK's own
+`System.Logger`, so the library brings no logging dependency and reaches
+whatever you already route logging to — `java.util.logging` by default, SLF4J or
+Log4j through their bridges. Turn on `DEBUG` for `io.github.libtmux` and each
+command is one line: which ran, how it ended, how long it took.
+
+```text
+tmux list-sessions exited 0 in 4 ms
+tmux control display-message complete in 1 ms
+```
+
+Only the verb is written, never its arguments: those carry session names, pane
+contents and whatever was typed, a password at a prompt among them.
 
 ## Avoid unnecessary round trips
 
@@ -196,6 +258,7 @@ server. `refresh()` is how you look again.
 be printed, stored, or translated:
 
 ```java
+// Given: Server server
 List<Window> editors = server.windows().stream()
         .filter(Window_.name().startsWith("edit"))
         .toList();
@@ -212,7 +275,7 @@ README, and each is [on Maven Central](https://central.sonatype.com/namespace/io
 
 - **[`libtmux`](libtmux/)** — the library itself. Transport, snapshots,
   entities, options, hooks, batching, control mode, query model.
-  **No runtime dependencies.**
+  **No runtime dependencies**, and a real Java module, `io.github.libtmux`.
 
 - **[`libtmux-bom`](libtmux-bom/)** — name a version once, and every coordinate
   below follows it.
@@ -305,6 +368,17 @@ bug. See [the Scala guide](docs/guide/scala.md).
 
 JDK 21 or newer.
 
+**Any locale.** A JVM encodes a child process's arguments with the platform's
+encoding, which the locale decides before `main` runs, so under `LANG=C` — the
+default in most container images — `é` would reach tmux as `?`. When a command
+carries text the JVM cannot encode, the library sends it over tmux's standard
+input instead, which it writes as UTF-8 itself; names, titles, buffers, options,
+environment values and typed text all arrive intact. Reading is unaffected
+either way: every command says it reads UTF-8, so what tmux sends back arrives
+whole whatever the locale. Only `Pane.currentPath()` still needs a UTF-8 locale,
+because a `Path` in this JVM cannot name the directory; `currentPathText()` reads
+it anywhere.
+
 tmux 3.2a through 3.7c. That range is not a claim: the whole real-tmux suite runs
 against every one of those releases, and each lane checks it really ran the tmux
 it is named after.
@@ -314,6 +388,8 @@ $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds
 ```
 
 ## Documentation
+
+See the [migration notes](MIGRATION.md) when upgrading.
 
 - [Getting started](docs/guide/getting-started.md)
 - [Filtering](docs/guide/filtering.md)
@@ -352,7 +428,7 @@ What that means in practice:
 - **Only the newest release is supported.** There are no backports.
 - **Pin an exact version.** A range will move under you.
 - What is *not* alpha is the tmux correctness: the whole real-tmux suite runs
-  against all eight supported releases on every push.
+  against every supported release on every push.
 
 Changes are recorded in [`CHANGELOG.md`](CHANGELOG.md); how a release is cut is
 in [`RELEASING.md`](RELEASING.md).

@@ -34,9 +34,15 @@ public final class Channel {
         return name;
     }
 
-    /** Signals the channel, waking one waiter, or being remembered until something waits. */
+    /**
+     * Signals the channel, waking one waiter, or being remembered until something waits.
+     *
+     * <p>{@code -S} takes no argument of its own — it says which of wait-for's three modes this is —
+     * so the name that follows is a positional and needs the options ended before it, exactly as
+     * the wait does.
+     */
     public void signal() {
-        server.run(java.util.List.of("wait-for", "-S", name));
+        server.run(java.util.List.of("wait-for", "-S", "--", name));
     }
 
     /**
@@ -44,8 +50,10 @@ public final class Channel {
      *
      * @param timeout how long to wait
      * @return why the wait ended, which is never simply "successfully"
+     * @throws InterruptedException if the waiting thread is interrupted, which is a cancellation
+     *     rather than a timeout and so is not reported as one
      */
-    public WakeReason await(Duration timeout) {
+    public WakeReason await(Duration timeout) throws InterruptedException {
         return server.awaitChannel(name, timeout, false);
     }
 
@@ -57,8 +65,10 @@ public final class Channel {
      * concurrency.
      *
      * @throws io.github.libtmux.transport.TmuxTransportException if the wait could not be dispatched
+     * @throws InterruptedException if the waiting thread is interrupted, which is a cancellation
+     *     rather than a timeout and so is not reported as one
      */
-    public WakeReason awaitReservingCapacity(Duration timeout) {
+    public WakeReason awaitReservingCapacity(Duration timeout) throws InterruptedException {
         return server.awaitChannel(name, timeout, true);
     }
 
@@ -66,8 +76,9 @@ public final class Channel {
      * Consumes a signal already waiting, so a stale one cannot satisfy a later wait.
      *
      * @return whether a signal was there to consume
+     * @throws InterruptedException if the waiting thread is interrupted
      */
-    public boolean drain() {
+    public boolean drain() throws InterruptedException {
         return await(DRAIN_TIMEOUT) == WakeReason.SIGNALLED;
     }
 

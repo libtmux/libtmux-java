@@ -1,6 +1,7 @@
 package io.github.libtmux.mcp;
 
 import io.github.libtmux.Pane;
+import io.github.libtmux.PaneCommand;
 import java.time.Duration;
 
 /** Retains a dispatched run's pane ownership until its outcome is no longer uncertain. */
@@ -11,16 +12,19 @@ final class PaneRunSettlement {
 
     private PaneRunSettlement() {}
 
-    static void retain(PaneInputReservations.Lease lease, Pane pane, String channel, String endMarker) {
-        Thread.ofVirtual().name("libtmux-run-settlement").start(() -> settle(lease, pane, channel, endMarker));
+    static void retain(PaneInputReservations.Lease lease, Pane pane, PaneCommand run) {
+        Thread.ofVirtual().name("libtmux-run-settlement").start(() -> settle(lease, pane, run));
     }
 
-    private static void settle(PaneInputReservations.Lease lease, Pane pane, String channel, String endMarker) {
+    private static void settle(PaneInputReservations.Lease lease, Pane pane, PaneCommand run) {
         Duration delay = FIRST_PROBE;
         while (true) {
             boolean waited = true;
             try {
-                pane.server().channel(channel).await(delay);
+                pane.server().channel(run.channel()).await(delay);
+            } catch (InterruptedException cancelled) {
+                Thread.currentThread().interrupt();
+                return;
             } catch (RuntimeException failure) {
                 if (Thread.currentThread().isInterrupted()) {
                     return;
@@ -30,7 +34,7 @@ final class PaneRunSettlement {
 
             PaneInputCohort.Presence presence = lease.presence(pane);
             if (presence == PaneInputCohort.Presence.GONE
-                    || (presence == PaneInputCohort.Presence.PRESENT && hasStatusMarker(pane, endMarker))) {
+                    || (presence == PaneInputCohort.Presence.PRESENT && hasStatusMarker(pane, run))) {
                 lease.close();
                 return;
             }
@@ -41,10 +45,10 @@ final class PaneRunSettlement {
         }
     }
 
-    private static boolean hasStatusMarker(Pane pane, String endMarker) {
+    private static boolean hasStatusMarker(Pane pane, PaneCommand run) {
         try {
             for (String line : pane.capture()) {
-                if (RunningCommands.parseStatus(line.trim(), endMarker) != null) {
+                if (run.status(line.trim()).isPresent()) {
                     return true;
                 }
             }

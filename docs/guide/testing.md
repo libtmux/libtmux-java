@@ -20,6 +20,7 @@ The extension resolves `Server` and `TmuxSocketPath`. It never claims a bare
 What that hands you:
 
 ```java
+// Given: Server server, Path socket
 server.sessions().size();                          // → 1
 server.sessions().get(0).name();                   // → libtmux
 socket.startsWith("/tmp/libtmux-java-test/");      // → true
@@ -55,6 +56,13 @@ then reclaim only that inode after the process has exited.
 This is enforced by the build rather than by every test remembering, because the
 code under test is exactly what is allowed to be wrong. The suite asserts the
 quarantine is in place.
+
+## Without tmux
+
+When the code under test only makes calls, a real server is more than it needs.
+`FakeTmux` answers the library the way tmux does — listings, handles, fences,
+groups — from a model of sessions, windows and panes, and records every command
+it was sent. See [the module README](../../libtmux-junit5/README.md#without-tmux).
 
 ## Running against every supported tmux
 

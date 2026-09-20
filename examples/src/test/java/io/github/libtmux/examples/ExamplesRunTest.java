@@ -34,20 +34,25 @@ final class ExamplesRunTest {
     }
 
     @Test
+    void buildingAWorkspaceStartsADaemonWhenAbsent(Server server, TmuxSocketPath socket) {
+        server.killServer();
+        try {
+            String reported = BuildAWorkspace.run(socket.path());
+
+            assertTrue(reported.startsWith("session work has "), reported);
+            assertTrue(server.hasSession("work"));
+        } finally {
+            server.killServer();
+        }
+    }
+
+    @Test
     void findingPanesSelectsOnWhatIsRunning(Server server, TmuxSocketPath socket) throws InterruptedException {
         // The fixture's pane runs a shell, so the shell's own name is the one thing certain to match —
         // once it has settled. While the shell starts, tmux reports whatever its startup files are
         // running, locale for one, and a name read then matches nothing a moment later.
         Pane shell = server.panes().get(0);
-        String[] previous = {shell.currentCommand()};
-        shell.await(
-                fresh -> {
-                    boolean settled = fresh.currentCommand().equals(previous[0]);
-                    previous[0] = fresh.currentCommand();
-                    return settled;
-                },
-                Duration.ofSeconds(10));
-        String running = previous[0];
+        String running = settle(shell);
 
         List<Pane> found = FindPanesRunning.run(socket.path(), running);
 
@@ -57,10 +62,36 @@ final class ExamplesRunTest {
     }
 
     @Test
+    void runningACommandReportsTheStatusItExitedWith(Server server, TmuxSocketPath socket) throws InterruptedException {
+        settle(server.panes().get(0));
+
+        String reported = RunACommand.run(socket.path(), "printf 'built\\n'; exit 3");
+
+        assertEquals("exit 3, 1 line(s): built", reported);
+    }
+
+    @Test
     void watchingAPaneSeesWhatItPrints(TmuxSocketPath socket) {
         List<PaneOutput> seen = WatchPaneOutput.run(socket.path(), Duration.ofSeconds(30), output -> {});
 
         assertFalse(seen.isEmpty(), "attaching is what makes tmux push output, and none arrived");
+    }
+
+    /**
+     * The name of the command a pane is running, once it stops changing. A shell that is still
+     * starting reports whatever its startup files run — locale for one — and a name read then
+     * matches nothing a moment later, and is not a shell {@code Pane.run} will type at.
+     */
+    private static String settle(Pane shell) throws InterruptedException {
+        String[] previous = {shell.currentCommand()};
+        shell.await(
+                fresh -> {
+                    boolean settled = fresh.currentCommand().equals(previous[0]);
+                    previous[0] = fresh.currentCommand();
+                    return settled;
+                },
+                Duration.ofSeconds(10));
+        return previous[0];
     }
 
     @Test

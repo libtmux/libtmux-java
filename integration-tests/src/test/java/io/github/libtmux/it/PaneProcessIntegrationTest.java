@@ -1,12 +1,15 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -25,6 +28,53 @@ import org.junit.jupiter.api.io.TempDir;
 @ExtendWith(TmuxExtension.class)
 final class PaneProcessIntegrationTest {
 
+    /** {@code keepOnExit} ({@code split-window -k}), which a dead-and-kept pane needs here, requires tmux 3.7. */
+    private static final TmuxVersion REMAIN_ON_EXIT_SINCE = new TmuxVersion(3, 7, "");
+
+    /** tmux 3.8 stopped reporting a dead pane's stale {@code #{pane_pid}}. */
+    private static final TmuxVersion EMPTY_DEAD_PID_SINCE = new TmuxVersion(3, 8, "");
+
+    // ------------------------------------------------------------------------------- dead panes
+
+    /**
+     * {@code pid()} for a dead, kept pane is version-dependent, and there was no way to ask
+     * "is this pane dead" short of a raw {@code #{pane_dead}} round trip. {@code dead()} is that
+     * accessor, read live rather than from the capture.
+     */
+    @Test
+    void deadReadsLiveAndADeadPanesPidGoesEmptyFromTmux38(Server server) throws InterruptedException {
+        Pane original = onlyPane(server);
+        if (!server.version().atLeast(REMAIN_ON_EXIT_SINCE)) {
+            assertFalse(original.dead(), "a live pane on an ordinary shell is not dead");
+            return;
+        }
+
+        Pane kept = original.split(s -> s.keepOnExit().running("true"));
+        assertTrue(Await.until(() -> kept.refresh().dead()), "the kept pane never reported dead");
+
+        if (server.version().atLeast(EMPTY_DEAD_PID_SINCE)) {
+            assertTrue(kept.refresh().pid().isEmpty(), "tmux 3.8 and later report #{pane_pid} empty here");
+        } else {
+            assertTrue(kept.refresh().pid().isPresent(), "a released tmux keeps the exited process's stale pid");
+        }
+    }
+
+    /**
+     * {@code display-message -t} does not error on a target it cannot resolve — unlike
+     * every other command {@code Pane} sends — so a fully gone pane (no {@code remain-on-exit})
+     * answered {@code #{pane_dead}} with an empty line rather than tmux's own "can't find pane",
+     * and {@code dead()} read that empty answer as {@code false} instead of throwing as its own
+     * doc promised.
+     */
+    @Test
+    void deadThrowsForAPaneThatIsWhollyGoneRatherThanReportingFalse(Server server) {
+        Pane pane = onlyPane(server).split();
+
+        pane.kill();
+
+        assertThrows(ObjectDoesNotExistException.class, pane::dead);
+    }
+
     // -------------------------------------------------------------------------------- expanding
 
     @Test
@@ -33,7 +83,7 @@ final class PaneProcessIntegrationTest {
 
         assertEquals(Integer.toString(pane.index()), pane.expand("#{pane_index}"));
         assertEquals(pane.id().value(), pane.expand("#{pane_id}"));
-        assertEquals(Long.toString(pane.pid()), pane.expand("#{pane_pid}"));
+        assertEquals(Long.toString(pane.pid().orElseThrow()), pane.expand("#{pane_pid}"));
     }
 
     @Test
@@ -59,12 +109,12 @@ final class PaneProcessIntegrationTest {
     @Test
     void respawningReplacesTheProcessInThePane(Server server) throws InterruptedException {
         Pane pane = onlyPane(server);
-        long before = pane.pid();
+        long before = pane.pid().orElseThrow();
 
         pane.respawn();
 
         assertTrue(
-                Await.until(() -> pane.refresh().pid() != before),
+                Await.until(() -> pane.refresh().pid().orElseThrow() != before),
                 "the pane kept process " + before + " through a respawn");
         assertEquals(pane.id(), pane.refresh().id(), "and it is still the same pane");
     }
@@ -95,6 +145,17 @@ final class PaneProcessIntegrationTest {
     }
 
     // ----------------------------------------------------------------------------------- piping
+
+    @Test
+    void aDashPrefixedPipeCommandCannotRetargetAnotherPane(Server server) {
+        Pane original = onlyPane(server);
+        Pane sibling = original.split();
+        sibling.pipeTo("cat > /dev/null");
+
+        original.pipeTo("-t" + sibling.id().value());
+
+        assertEquals("1", sibling.expand("#{pane_pipe}"));
+    }
 
     @Test
     void aPipedPaneSendsWhatItPrintsToTheCommand(Server server, @TempDir Path directory) throws Exception {

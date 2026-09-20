@@ -254,7 +254,9 @@ final class MainTest {
             assertTrue(created.defaultTeardown());
 
             try (NamedServerFixture fixture = NamedServerFixture.own(firstServer, socket, root)) {
-                assertEquals(socket, fixture.socket());
+                // tmux answers -S literally, but the quarantine root itself may sit through a system
+                // ancestor link (macOS's /tmp), so the fixture reports the real path.
+                assertEquals(socket.toRealPath(), fixture.socket());
                 try (Server secondServer = Server.open(second.config())) {
                     SocketProfile existing = second.profile(secondServer);
                     assertEquals("existing", existing.serverState());

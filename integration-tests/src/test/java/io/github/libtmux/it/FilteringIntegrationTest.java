@@ -42,6 +42,34 @@ final class FilteringIntegrationTest {
         assertEquals(List.of("editor"), editors);
     }
 
+    /**
+     * A pane can be picked out by what a capture already carries — its title, its size, where it
+     * sits — without a round trip per pane. Only id, command, index and activity could be named
+     * before.
+     */
+    @Test
+    void aPaneIsFoundByItsTitleSizeAndPlace(Server server) {
+        Window window = server.sessions().get(0).windows().get(0);
+        window.resizeTo(new io.github.libtmux.Dimensions(120, 40));
+        Pane right = window.refresh().panes().get(0).split(spec -> spec.toRight());
+        var unused = right.retitle("logs");
+
+        List<Pane> panes = server.panes();
+
+        assertEquals(
+                List.of(right.id()),
+                panes.stream().filter(Pane_.title().is("logs")).map(Pane::id).toList());
+        assertEquals(
+                List.of(right.id()),
+                panes.stream()
+                        .filter(Pane_.left().greaterThan(0).and(Pane_.width().atMost(60)))
+                        .map(Pane::id)
+                        .toList(),
+                "the right half starts past column 0 and is at most half as wide");
+        assertTrue(panes.stream().allMatch(Pane_.top().is(0)), "a side-by-side split keeps both at the top");
+        assertTrue(panes.stream().noneMatch(Pane_.path().is("")), "every pane reports a directory");
+    }
+
     @Test
     void expressionsComposeWithAndOrAndNot(Server server) {
         server.sessions().get(0).newWindow("editor");

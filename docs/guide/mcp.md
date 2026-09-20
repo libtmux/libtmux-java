@@ -77,9 +77,11 @@ work bounded.
 ## Telling output apart from the plumbing
 
 `run_shell_command` has to know when a command finished and what it exited with.
-An outer subshell therefore arms an exit trap before starting the command. The
-trap sends the numeric status marker and signals a private tmux channel; the
-wait is tmux's own `wait-for`.
+An outer subshell therefore arms a trap before starting the command. The trap
+sends the numeric status marker and signals a private tmux channel; the wait is
+tmux's own `wait-for`. It is armed for interrupt and terminate as well as exit,
+so a command someone stops with `C-c` reports the status it was stopped with —
+commonly 130 — instead of leaving a wait with nothing to end it.
 
 The catch is that a shell echoes everything typed at it, so that plumbing lands on
 screen amongst the output. Matching it by its shape does not work: in a narrow
@@ -177,6 +179,7 @@ applications directly:
 
 <!-- snippet: compile-only: a watch reports a format when its value changes -->
 ```java
+// Given: Server server, Session session
 try (ControlClient client = ControlClient.attach(server.config(), session.id());
         EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
     client.watch("names", "@*", "#{window_name}");

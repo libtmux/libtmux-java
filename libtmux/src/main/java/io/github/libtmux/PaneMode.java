@@ -19,7 +19,7 @@ public enum PaneMode {
      */
     VIEW("view-mode"),
 
-    /** A clock. Entered by {@link Pane#clockMode()}. */
+    /** A clock, entered by tmux's {@code clock-mode}. */
     CLOCK("clock-mode"),
 
     /** The session and window browser, which the window finder also opens. */
@@ -31,7 +31,7 @@ public enum PaneMode {
     /** The paste-buffer browser. */
     BUFFER("buffer-mode"),
 
-    /** The option browser. Entered by {@link Pane#customizeMode()}. */
+    /** The option browser, entered by tmux's {@code customize-mode}. */
     OPTIONS("options-mode");
 
     private final String reported;

@@ -1,16 +1,16 @@
 package io.github.libtmux.mcp;
 
 import io.github.libtmux.Pane;
+import io.github.libtmux.PaneCommand;
 import io.github.libtmux.Server;
 import io.github.libtmux.WakeReason;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTransportException;
-import java.security.SecureRandom;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -24,9 +24,10 @@ import org.jspecify.annotations.Nullable;
  * <h2>How completion is known</h2>
  *
  * <p>An inner subshell evaluates the command with the pane shell's inherited environment, options,
- * traps, and functions. An outer subshell arms an exit trap first; that trap prints the numeric end
- * marker and signals a private channel through one absolute tmux executable and the live server's
- * exact {@code -S} socket. Waiting is tmux's own {@code wait-for}, so completion is not inferred
+ * traps, and functions. An outer subshell arms a trap first — for interrupt and terminate as well as
+ * exit, so a command stopped at the pane still reports what it was stopped with; that trap prints the
+ * numeric end marker and signals a private channel through one absolute tmux executable and the live
+ * server's exact {@code -S} socket. Waiting is tmux's own {@code wait-for}, so completion is not inferred
  * from the screen.
  *
  * <h2>How the output is separated from the plumbing</h2>
@@ -42,7 +43,6 @@ import org.jspecify.annotations.Nullable;
  */
 final class RunningCommands {
 
-    private static final SecureRandom RANDOM = new SecureRandom();
     private static final Set<String> POSIX_SHELLS = Set.of("sh", "ash", "bash", "dash", "ksh", "mksh", "pdksh", "zsh");
 
     private RunningCommands() {}
@@ -82,46 +82,53 @@ final class RunningCommands {
         requirePosixShell(currentCommand);
         PaneInputReservations.Lease lease = PaneInputReservations.run(initial, "run_shell_command");
         boolean retained = false;
-        boolean possiblyDispatched = false;
+        AtomicBoolean possiblyDispatched = new AtomicBoolean();
         Pane freshPane = pane;
-        String channel = "";
-        String endMark = "";
+        PaneCommand run = PaneCommand.fresh();
         try {
             PaneCommandFrame commandFrame = PaneCommandFrame.resolve(call);
 
-            String nonce = "lt" + HexFormat.of().formatHex(bytes());
-            String startMark = nonce + "-s";
-            endMark = nonce + "-e";
-            channel = "ch_" + nonce;
-
             Cursor before = Screen.from(pane).cursor();
-            String typed = payload(commandFrame, command, startMark, endMark, channel, suppressHistory);
+            // The framing is the library's own, so a run here and Pane.run are read back the same
+            // way; only the orchestration around it — the lease other clients wait on — is this server's.
+            String line = run.typed(commandFrame.client(), command);
+            String typed = suppressHistory ? line : line.stripLeading();
             freshPane = Targets.pane(server, pane.id().value());
-            String freshCommand = lease.requireSameRun(PaneInputCohort.resolve(freshPane, call.caller()));
-            requirePosixShell(freshCommand);
-            possiblyDispatched = true;
+            Pane target = freshPane;
             try {
-                freshPane.sendLine(typed);
+                freshPane.sendLiteral(List.of(typed + "\r"), () -> {
+                    String freshCommand = lease.requireSameRun(PaneInputCohort.resolve(target, call.caller()));
+                    requirePosixShell(freshCommand);
+                    possiblyDispatched.set(true);
+                });
             } catch (TmuxTransportException failure) {
                 if (failure.outcome() == DispatchOutcome.NOT_DISPATCHED) {
-                    possiblyDispatched = false;
+                    possiblyDispatched.set(false);
                 }
                 throw failure;
             }
 
             long started = System.nanoTime();
-            WakeReason wake = server.channel(channel).await(timeout);
+            WakeReason wake;
+            try {
+                wake = server.channel(run.channel()).await(timeout);
+            } catch (InterruptedException cancelled) {
+                throw Waits.cancelled(cancelled);
+            }
             double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
 
             Screen.Fresh fresh =
                     wake == WakeReason.SERVER_GONE ? null : Screen.since(freshPane, before, Trim.lineBudget(call));
-            Framed framed =
-                    fresh == null ? new Framed(List.of(), false, null) : frame(fresh.lines(), startMark, endMark);
-            Integer status = wake == WakeReason.SIGNALLED ? framed.status() : null;
+            PaneCommand.Framed framed = fresh == null
+                    ? new PaneCommand.Framed(List.of(), false, OptionalInt.empty())
+                    : run.frame(fresh.lines());
+            Integer status = wake == WakeReason.SIGNALLED && framed.status().isPresent()
+                    ? framed.status().getAsInt()
+                    : null;
             Trim.Trimmed trimmed = Trim.tail(framed.lines(), Trim.lineBudget(call));
             if (status == null) {
                 retained = true;
-                PaneRunSettlement.retain(lease, freshPane, channel, endMark);
+                PaneRunSettlement.retain(lease, freshPane, run);
             }
 
             return new Ran(
@@ -136,9 +143,9 @@ final class RunningCommands {
                     Waits.asSeconds(timeout),
                     note(wake, framed));
         } catch (RuntimeException failure) {
-            if (possiblyDispatched && !retained) {
+            if (possiblyDispatched.get() && !retained) {
                 retained = true;
-                PaneRunSettlement.retain(lease, freshPane, channel, endMark);
+                PaneRunSettlement.retain(lease, freshPane, run);
             }
             throw failure;
         } finally {
@@ -148,7 +155,7 @@ final class RunningCommands {
         }
     }
 
-    private static @Nullable String note(WakeReason wake, Framed framed) {
+    private static @Nullable String note(WakeReason wake, PaneCommand.Framed framed) {
         return switch (wake) {
             case TIMED_OUT ->
                 "The command is still running; the output above is what it had printed by the "
@@ -163,116 +170,6 @@ final class RunningCommands {
                         : "The output could not be separated from the shell's echo exactly, so it may include the "
                                 + "command line itself. This happens when output outgrew the pane's history.";
         };
-    }
-
-    /**
-     * The line typed at the pane's own interactive shell.
-     *
-     * <p>Run in that shell rather than a fresh one, so the command sees the environment a person set
-     * up there — a virtualenv, a loaded module, a directory someone changed into.
-     *
-     * <p>The leading space is a request, not a guarantee: bash honours it with {@code HISTCONTROL}
-     * set to {@code ignorespace} and zsh with {@code HIST_IGNORE_SPACE}, and a shell configured with
-     * neither records the line like any other.
-     */
-    private static String payload(
-            PaneCommandFrame frame,
-            String command,
-            String startMark,
-            String endMark,
-            String channel,
-            boolean suppressHistory) {
-        List<String> tmux = frame.client();
-        String start = Shell.quoteAll(append(tmux, "display-message", "-p", startMark));
-        String end =
-                Shell.quoteAll(append(tmux, "display-message", "-p")) + " " + Shell.quote(endMark + ":") + "\"$?\"";
-        String signal = Shell.quoteAll(append(tmux, "wait-for", "-S", channel));
-        String finish = end + "; " + signal + "; \\exit 0";
-        return (suppressHistory ? " " : "")
-                + "( \\trap "
-                + Shell.quote(finish)
-                + " 0; "
-                + start
-                + "; ( \\eval "
-                + Shell.quote(command)
-                + " ) )";
-    }
-
-    private static List<String> append(List<String> base, String... more) {
-        List<String> argv = new ArrayList<>(base);
-        argv.addAll(List.of(more));
-        return argv;
-    }
-
-    /** @param exact whether both markers were found, so what is returned is only the command's output */
-    private record Framed(
-            List<String> lines, boolean exact, @Nullable Integer status) {}
-
-    /**
-     * Keeps what lies strictly between the two marker lines.
-     *
-     * <p>Matched as complete marker forms after trimming, never by containment: the echo of the
-     * payload holds both markers as substrings and must not be mistaken for either.
-     */
-    private static Framed frame(List<String> lines, String startMark, String endMark) {
-        int start = -1;
-        for (int index = 0; index < lines.size(); index++) {
-            if (lines.get(index).trim().equals(startMark)) {
-                start = index;
-                break;
-            }
-        }
-
-        int end = -1;
-        Integer status = null;
-        for (int index = start < 0 ? 0 : start + 1; index < lines.size(); index++) {
-            String line = lines.get(index).trim();
-            Integer candidate = parseStatus(line, endMark);
-            if (candidate == null) {
-                continue;
-            }
-            end = index;
-            status = candidate;
-            if (start >= 0) {
-                break;
-            }
-        }
-        if (start < 0) {
-            // The frame is gone: output outgrew the history, or the command cleared the screen.
-            // Everything that is not obviously plumbing is better than nothing.
-            return new Framed(
-                    lines.stream()
-                            .filter(line -> !line.contains(startMark) && !line.contains(endMark))
-                            .toList(),
-                    false,
-                    status);
-        }
-        int last = end < 0 ? lines.size() : end;
-        return new Framed(List.copyOf(lines.subList(start + 1, last)), end >= 0, status);
-    }
-
-    static @Nullable Integer parseStatus(String line, String endMarker) {
-        String prefix = endMarker + ":";
-        if (!line.startsWith(prefix)) {
-            return null;
-        }
-        String encoded = line.substring(prefix.length());
-        if (encoded.isEmpty() || encoded.chars().anyMatch(value -> value < '0' || value > '9')) {
-            return null;
-        }
-        try {
-            int status = Integer.parseInt(encoded);
-            return status <= 255 && Integer.toString(status).equals(encoded) ? status : null;
-        } catch (NumberFormatException ignored) {
-            // A wrapped echo can begin with the prefix; only the numeric marker is plumbing.
-            return null;
-        }
-    }
-
-    private static byte[] bytes() {
-        byte[] value = new byte[16];
-        RANDOM.nextBytes(value);
-        return value;
     }
 
     private static void requirePosixShell(String current) {

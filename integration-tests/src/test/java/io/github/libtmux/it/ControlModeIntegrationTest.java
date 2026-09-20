@@ -36,6 +36,73 @@ import org.junit.jupiter.api.extension.ExtendWith;
 @ExtendWith(TmuxExtension.class)
 final class ControlModeIntegrationTest {
 
+    /**
+     * A control client starts its own process rather than going through the transport, so it logs
+     * through the same seam itself — and, like the transport, writes the verb and never what a caller
+     * put in the command.
+     */
+    @Test
+    void theControlClientLogsItsCommandsByVerbOnly(Server server) {
+        Session session = server.sessions().get(0);
+        java.util.logging.Logger jul = java.util.logging.Logger.getLogger(ControlClient.class.getName());
+        List<String> written = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.logging.Handler capture = new java.util.logging.Handler() {
+            @Override
+            public void publish(java.util.logging.LogRecord entry) {
+                written.add(java.text.MessageFormat.format(entry.getMessage(), entry.getParameters()));
+            }
+
+            @Override
+            public void flush() {}
+
+            @Override
+            public void close() {}
+        };
+        java.util.logging.Level before = jul.getLevel();
+        jul.setLevel(java.util.logging.Level.FINE);
+        jul.addHandler(capture);
+        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
+            client.send("display-message", "-p", "hunter2-secret");
+        } finally {
+            jul.removeHandler(capture);
+            jul.setLevel(before);
+        }
+
+        assertTrue(
+                written.stream().anyMatch(line -> line.startsWith("tmux control display-message complete")),
+                "the command is there by its verb: " + written);
+        assertTrue(written.stream().noneMatch(line -> line.contains("hunter2")), "and nothing it carried: " + written);
+    }
+
+    /**
+     * The defect this pins: a client nobody closed kept the JVM alive forever, because its three
+     * threads were not daemons and none of them ever goes idle — they are attached to a live tmux.
+     * A forgotten {@code close()} must not keep a command-line program alive after its work
+     * has finished.
+     *
+     * <p>Every thread it starts is asserted rather than the exit itself, because a JVM that refuses
+     * to exit can only be measured by giving up on it. Nothing is lost by letting go at exit:
+     * {@code send} blocks its caller until the reply arrives, so a call in flight is held by the
+     * thread that made it.
+     */
+    @Test
+    void aClientNobodyClosedDoesNotHoldTheJvmOpen(Server server) {
+        Session session = server.sessions().get(0);
+        List<String> nonDaemon = new ArrayList<>();
+
+        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
+            assertTrue(client.isAlive(), "the client has to be running for its threads to exist");
+            Thread.getAllStackTraces().keySet().stream()
+                    .filter(thread -> thread.getName().startsWith("libtmux-control"))
+                    .filter(Thread::isAlive)
+                    .filter(thread -> !thread.isDaemon())
+                    .map(Thread::getName)
+                    .forEach(nonDaemon::add);
+        }
+
+        assertEquals(List.of(), nonDaemon, "these threads would keep a JVM alive after a forgotten close");
+    }
+
     private static ControlClient attach(Server server) {
         Session session = server.sessions().get(0);
         return ControlClient.attach(server.config(), session.id());

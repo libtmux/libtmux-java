@@ -71,7 +71,9 @@ public final class NamedServerFixture implements AutoCloseable {
         Objects.requireNonNull(server, "server");
         Objects.requireNonNull(expectedSocket, "expectedSocket");
         Objects.requireNonNull(quarantine, "quarantine");
-        Path expected = expectedSocket.toAbsolutePath().normalize();
+        // Resolved because tmux answers -S literally while a caller's own root may still be spelled
+        // through an ancestor link (macOS's /tmp); authenticate() compares against the same form.
+        Path expected = expectedSocket.toAbsolutePath().normalize().toRealPath();
         return authenticate(
                 server,
                 candidate -> require(expected.equals(candidate), "tmux reported another server's socket " + candidate),
@@ -91,17 +93,19 @@ public final class NamedServerFixture implements AutoCloseable {
                 .orElseThrow(() -> new AssertionError("the reported tmux process is already gone"));
 
         Path normalizedQuarantine = configuredQuarantine.toAbsolutePath().normalize();
+        // macOS aliases /tmp into /private, so both spellings of the root are accepted below; a link
+        // under the root still changes the tail against a same-root respelling and is refused.
         Path quarantine = normalizedQuarantine.toRealPath();
-        require(
-                normalizedQuarantine.equals(quarantine),
-                "refusing to reclaim a socket through a linked quarantine path");
         Path reported = Path.of(fields[1]).toAbsolutePath().normalize();
         require(!Files.isSymbolicLink(reported), "refusing to reclaim a socket through a symbolic link");
         Path socket = reported.toRealPath();
-        require(reported.equals(socket), "refusing to reclaim a socket through a linked directory");
         require(
                 !socket.equals(quarantine) && socket.startsWith(quarantine),
                 "refusing to reclaim a socket outside this port's quarantine");
+        Path respelled = normalizedQuarantine.resolve(quarantine.relativize(socket));
+        require(
+                reported.equals(socket) || reported.equals(respelled),
+                "refusing to reclaim a socket through a linked directory");
         expectation.verify(socket);
         BasicFileAttributes owned = Files.readAttributes(socket, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
         require(isUnixSocket(socket), "tmux did not report a unix-domain socket inode");

@@ -3,6 +3,7 @@ package io.github.libtmux.docs;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URI;
@@ -37,10 +38,9 @@ import javax.tools.ToolProvider;
 final class SnippetCompiler {
 
     /**
-     * What every snippet may assume is in scope.
-     *
-     * <p>Documentation shows the interesting line, not the six before it that made a server, so the
-     * six are supplied here and the snippet is compiled as though written after them.
+     * The imports every snippet may use without writing them - the common ones, not a fixture.
+     * What a snippet may read without creating it is {@link #harnessHeader}'s concern, and is
+     * exactly what its own {@code // Given:} line asked for.
      */
     private static final String PREAMBLE = """
             import static org.junit.jupiter.api.Assertions.*;
@@ -69,35 +69,16 @@ final class SnippetCompiler {
             """;
 
     /**
-     * The scaffolding a set of statements needs before it is a compilation unit.
-     *
-     * <p>The fields are filled in before the body runs, from a fixture holding a real tmux server on
-     * a socket under this port's own root. A snippet that declares its own {@code server} shadows
-     * the field, which is what a reader copying it would get anyway.
+     * A binding a snippet reads but does not create, declared by a {@code // Given:} line: {@code
+     * Session session, Window window}. Named for the type a reader would already have to hand, so a
+     * reader who has never seen the harness still knows what to build.
      */
-    private static final String STATEMENT_HARNESS = """
-            @SuppressWarnings("all")
-            public class DocumentationSnippet {
-                public static Server server;
-                public static ServerConfig config;
-                public static Session session;
-                public static Window window;
-                public static Pane pane;
-                public static Options options;
-                public static Path socket;
-                public static Path directory;
-                public static Duration timeout;
-                public static String yamlString;
+    private record Given(String type, String name) {}
 
-                // Named in prose as what a caller would do next. What they do is the reader's
-                // business; that they are called is the snippet's.
-                static void retry() {}
-                static void reconcile() {}
+    /** The declaration on the first line of a snippet's body, if it has one. */
+    private static final Pattern GIVEN_LINE = Pattern.compile("^//\\s*Given:\\s*(.+?)\\s*$");
 
-                public static void snippet() throws Exception {
-            """;
-
-    /** Closes what {@link #STATEMENT_HARNESS} opened, once the snippet has been placed inside it. */
+    /** Closes what {@link #harnessHeader} opened, once the snippet has been placed inside it. */
     private static final String HARNESS_TAIL = """
 
                 }
@@ -133,12 +114,17 @@ final class SnippetCompiler {
         if (compiler == null) {
             throw new IllegalStateException("no system java compiler; run these tests on a JDK");
         }
-        String unit = snippet.shape() == Snippet.Shape.TYPE
-                ? PREAMBLE + "\n@SuppressWarnings(\"all\")\n" + snippet.code()
-                : PREAMBLE
-                        + STATEMENT_HARNESS
-                        + assertShownResults(snippet.code()).stripTrailing()
-                        + HARNESS_TAIL;
+        List<Given> given = List.of();
+        String unit;
+        if (snippet.shape() == Snippet.Shape.TYPE) {
+            unit = PREAMBLE + "\n@SuppressWarnings(\"all\")\n" + snippet.code();
+        } else {
+            given = parseGiven(snippet.code());
+            unit = PREAMBLE
+                    + harnessHeader(given)
+                    + assertShownResults(snippet.code()).stripTrailing()
+                    + HARNESS_TAIL;
+        }
 
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
         Path classes = temporaryDirectory();
@@ -155,7 +141,93 @@ final class SnippetCompiler {
                 .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
                 .map(diagnostic -> diagnostic.getMessage(Locale.ROOT))
                 .toList();
+        if (errors.isEmpty() && !given.isEmpty()) {
+            errors = unusedGivenErrors(given, snippet.code());
+        }
         return new Compiled(errors, classes);
+    }
+
+    /**
+     * The declarations a {@code // Given:} line names, or none if the snippet's first line is not
+     * one - in which case the harness offers nothing, and the snippet must be self-contained.
+     *
+     * @throws IllegalArgumentException if a declaration is not {@code Type name}
+     */
+    private static List<Given> parseGiven(String code) {
+        String firstLine = code.lines().findFirst().orElse("");
+        Matcher line = GIVEN_LINE.matcher(firstLine);
+        if (!line.matches()) {
+            return List.of();
+        }
+        List<Given> declared = new ArrayList<>();
+        for (String declaration : line.group(1).split(",\\s*", -1)) {
+            int space = declaration.trim().lastIndexOf(' ');
+            if (space < 0) {
+                throw new IllegalArgumentException(
+                        "malformed given declaration '" + declaration + "'; expected 'Type name'");
+            }
+            declared.add(new Given(
+                    declaration.trim().substring(0, space), declaration.trim().substring(space + 1)));
+        }
+        return List.copyOf(declared);
+    }
+
+    /**
+     * The scaffolding a set of statements needs before it is a compilation unit.
+     *
+     * <p>Only the bindings a {@code // Given:} line asked for become fields; everything else is left
+     * for the snippet to build itself, which is what a reader copying only the fence would have to
+     * do too. A snippet that declares its own binding of the same name shadows the field.
+     */
+    private static String harnessHeader(List<Given> given) {
+        StringBuilder header = new StringBuilder();
+        header.append("@SuppressWarnings(\"all\")\npublic class DocumentationSnippet {\n");
+        for (Given binding : given) {
+            header.append("    public static ")
+                    .append(binding.type())
+                    .append(' ')
+                    .append(binding.name())
+                    .append(";\n");
+        }
+        header.append("""
+
+                    // Named in prose as what a caller would do next. What they do is the reader's
+                    // business; that they are called is the snippet's.
+                    static void retry() {}
+                    static void reconcile() {}
+
+                    public static void snippet() throws Exception {
+                """);
+        return header.toString();
+    }
+
+    /**
+     * A binding named in a {@code // Given:} line that the snippet's body never reads is exactly as
+     * wrong as one it reads and never named: either way the line lies about what the fence needs.
+     * javac already catches the first half - an undeclared field is "cannot find symbol" - because
+     * {@link #harnessHeader} declares only what was asked for. This catches the second half, which
+     * javac has no opinion on: an unused field is not an error in Java the way an unused local is in
+     * Go, so the check is textual rather than the compiler's - comments (including the {@code //
+     * Given:} line itself) are stripped first, so a name only mentioned in prose does not count.
+     */
+    private static List<String> unusedGivenErrors(List<Given> given, String code) {
+        String body = code.substring(Math.min(code.indexOf('\n') + 1, code.length()));
+        String withoutComments = body.lines()
+                .map(line -> {
+                    int comment = line.indexOf("//");
+                    return comment < 0 ? line : line.substring(0, comment);
+                })
+                .reduce("", (all, line) -> all + line + "\n");
+        List<String> errors = new ArrayList<>();
+        for (Given binding : given) {
+            if (!Pattern.compile("\\b" + Pattern.quote(binding.name()) + "\\b")
+                    .matcher(withoutComments)
+                    .find()) {
+                errors.add("given declares '" + binding.name() + "' (" + binding.type()
+                        + ") but the snippet never uses it");
+            }
+        }
+        return errors;
     }
 
     /**
@@ -188,7 +260,9 @@ final class SnippetCompiler {
     /**
      * Runs a compiled snippet against the fixture it was given.
      *
-     * @param bindings what the harness's fields should hold; a real server, session, pane and socket
+     * @param bindings everything the harness could offer - a real server, session, pane and socket;
+     *     only the ones the snippet's {@code // Given:} line actually declared exist as fields on
+     *     the compiled class, so the rest are skipped rather than failing the run
      * @throws Throwable whatever the snippet threw, unwrapped, so a failure reads as the snippet's
      */
     void run(Compiled compiled, Map<String, Object> bindings) throws Throwable {
@@ -196,7 +270,13 @@ final class SnippetCompiler {
         try (URLClassLoader loader = new URLClassLoader(where, SnippetCompiler.class.getClassLoader())) {
             Class<?> type = Class.forName("DocumentationSnippet", true, loader);
             for (Map.Entry<String, Object> binding : bindings.entrySet()) {
-                type.getField(binding.getKey()).set(null, binding.getValue());
+                Field field;
+                try {
+                    field = type.getField(binding.getKey());
+                } catch (NoSuchFieldException notDeclared) {
+                    continue; // the Given: line did not ask for this one
+                }
+                field.set(null, binding.getValue());
             }
             Method snippet = type.getMethod("snippet");
             try {

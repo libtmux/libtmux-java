@@ -6,20 +6,63 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.ObjectDoesNotExist;
+import io.github.libtmux.LibTmuxException;
+import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerConfig;
+import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.Session;
+import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.WakeReason;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 
 /** The rest of the surface, against real tmux. */
 @ExtendWith(TmuxExtension.class)
 final class ToolsAgainstTmuxTest {
 
+    /** tmux 3.7 refuses ':' and '.' in a session name; every other supported release accepts it. */
+    private static final TmuxVersion REJECTS_DELIMITER = new TmuxVersion(3, 7, "");
+
+    private static final TmuxVersion ACCEPTS_DELIMITER_AGAIN = new TmuxVersion(3, 7, "a");
+
     // ---------------------------------------------------------------- knowing where you are
+
+    /**
+     * An MCP's own observation client must not read as an attached one. Ports that keep a
+     * long-lived control client for {@code wait_for_text} have to exclude it explicitly from
+     * {@code list_sessions}'s attached count; java is the reference here by construction - it polls
+     * plain captures and never attaches a control client of its own, so there is nothing to
+     * exclude. This pins that it stays that way: a {@code wait_for_text} call genuinely in flight,
+     * watching a pattern that will not appear, must not make the session look attached.
+     */
+    @Test
+    void listSessionsStaysUnattachedWhileAWaitForTextCallIsInFlight(Server server) throws Exception {
+        String pane = server.panes().get(0).id().value();
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.Future<WaitingForText.Waited> waiting =
+                    pool.submit(() -> WaitingForText.waitFor(TestCalls.on(
+                            server, "pane_id", pane, "patterns", List.of("never-appears-anywhere"), "timeout", 3)));
+            Thread.sleep(300); // let the wait actually start watching before checking mid-flight
+
+            Listings.Sessions sessions = Listings.sessions(server);
+
+            assertTrue(
+                    sessions.sessions().stream().noneMatch(Listings.SessionSummary::attached),
+                    "java attaches no control client for wait_for_text, so nothing should read as attached: "
+                            + sessions);
+            waiting.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
 
     @Test
     void panesAreListedWithTheIdOtherToolsTake(Server server) {
@@ -48,17 +91,64 @@ final class ToolsAgainstTmuxTest {
         assertEquals(2, server.panes().size());
     }
 
-    /** An empty listing has to say whether the server was empty or absent; a count cannot. */
     @Test
-    void anEmptyListingSaysWhetherThereIsAServerAtAll(Server server) {
+    void anAbsentDaemonFailsTheListing(Server server) {
         Listings.Sessions running = Listings.sessions(server);
         server.killServer();
-        Listings.Sessions gone = Listings.sessions(server);
 
         assertEquals(1, running.count());
-        assertEquals(null, running.note(), "a listing that found something says nothing extra");
-        assertEquals(0, gone.count());
-        assertTrue(String.valueOf(gone.note()).contains("No tmux server is running"), String.valueOf(gone.note()));
+        assertNull(running.note(), "a listing that found something says nothing extra");
+        assertThrows(LibTmuxException.class, () -> Listings.sessions(server));
+        assertThrows(LibTmuxException.class, () -> Listings.windows(TestCalls.on(server)));
+        assertThrows(LibTmuxException.class, () -> Listings.panes(TestCalls.on(server)));
+    }
+
+    /** One capture answers every field, so a dead daemon fails the whole answer, not part of it. */
+    @Test
+    void serverInfoReportsARunningServerFromOneCapture(Server server) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) Operations.serverInfo(TestCalls.on(server));
+
+        assertEquals(true, info.get("running"));
+        assertEquals(1, info.get("sessions"));
+    }
+
+    @Test
+    void serverInfoReportsAnAbsentDaemonRatherThanFailing(Server server) {
+        server.killServer();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) Operations.serverInfo(TestCalls.on(server));
+
+        assertEquals(false, info.get("running"));
+        assertEquals("unknown", info.get("version"));
+        assertEquals(0, info.get("sessions"));
+    }
+
+    /** No daemon means no name can already be taken, so this starts one instead of failing. */
+    @Test
+    void newSessionStartsADaemonRatherThanFailingOnAnAbsentOne(Server server) {
+        server.killServer();
+
+        Shaping.Made made = Shaping.newSession(TestCalls.on(server, "name", "revived"));
+
+        assertEquals("revived", made.name());
+        assertTrue(server.hasSession("revived"));
+    }
+
+    @Test
+    void emptyListingsDescribeCapturedState(Server server) {
+        server.run(List.of("set-option", "-s", "exit-empty", "off"));
+        server.sessions().getFirst().kill();
+
+        assertEquals(
+                "The capture contains no sessions.", Listings.sessions(server).note());
+        assertEquals(
+                "The capture contains no windows.",
+                Listings.windows(TestCalls.on(server)).note());
+        assertEquals(
+                "The capture contains no panes.",
+                Listings.panes(TestCalls.on(server)).note());
     }
 
     @Test
@@ -249,6 +339,26 @@ final class ToolsAgainstTmuxTest {
         assertEquals(1, server.sessions().size());
     }
 
+    /** tmux rewrites ':' and '.' in a name; the reply must say what it settled on, not what was asked. */
+    @Test
+    void renamingReportsWhatTmuxSettledOnRatherThanWhatWasAsked(Server server) {
+        Session session = server.sessions().get(0);
+        boolean refuses =
+                server.version().atLeast(REJECTS_DELIMITER) && !server.version().atLeast(ACCEPTS_DELIMITER_AGAIN);
+        if (refuses) {
+            assertThrows(
+                    LibTmuxException.class,
+                    () -> Shaping.rename(
+                            TestCalls.on(server, "target", session.id().value(), "name", "a.b")));
+            return;
+        }
+
+        Shaping.Changed renamed =
+                Shaping.rename(TestCalls.on(server, "target", session.id().value(), "name", "a.b"));
+
+        assertEquals(session.refresh().name(), renamed.what(), "the reply must match the name tmux actually kept");
+    }
+
     @Test
     void theServerTargetMeansTheWholeServer(Server server) {
         Shaping.Ended ended = Shaping.kill(TestCalls.on(server, "target", "server"));
@@ -357,7 +467,8 @@ final class ToolsAgainstTmuxTest {
 
     @Test
     void aTargetThatIsNotThereNamesTheToolThatFindsOne(Server server) {
-        ObjectDoesNotExist missing = assertThrows(ObjectDoesNotExist.class, () -> Targets.window(server, "@999"));
+        ObjectDoesNotExistException missing =
+                assertThrows(ObjectDoesNotExistException.class, () -> Targets.window(server, "@999"));
 
         assertTrue(String.valueOf(missing.getMessage()).contains("list_windows"), missing.getMessage());
     }
@@ -388,5 +499,43 @@ final class ToolsAgainstTmuxTest {
         assertTrue(global.unset().contains("LIBTMUX_JAVA_REMOVED"), "tmux said so as -NAME: " + global.unset());
         assertFalse(global.variables().containsKey("LIBTMUX_JAVA_REMOVED"));
         assertFalse(global.variables().keySet().stream().anyMatch(key -> key.startsWith("-")));
+    }
+
+    /**
+     * {@code layout_set_lookup} is a prefix match, so {@code even-h} resolves tmux's own way on
+     * every release. The tool used to look a layout up by exact name only, refusing a prefix real
+     * tmux accepts.
+     */
+    @Test
+    void selectLayoutAcceptsAUniquePresetPrefix(Server server) {
+        String windowId = server.sessions().get(0).windows().get(0).id().value();
+
+        Shaping.Changed changed = Shaping.selectLayout(TestCalls.on(server, "window_id", windowId, "layout", "even-h"));
+
+        assertEquals("EVEN_HORIZONTAL", changed.what());
+    }
+
+    /**
+     * An explicit socket under a directory that does not exist is a path the
+     * operator chose, so tmux's own {@code error creating ...} is surfaced rather than invented -
+     * the same fix {@code Server.newSession} has, reached here through the MCP tool. Before
+     * it, this call reached an uncaught {@code ArrayIndexOutOfBoundsException}, which the answer
+     * dispatcher in {@code TmuxMcpServer} does not catch, so it left the tool boundary as a
+     * transport-level failure instead of an {@code isError} result the model can read and act on.
+     */
+    @Test
+    void createSessionUnderAMissingSocketDirectoryReportsTmuxsOwnReason(@TempDir Path directory) throws IOException {
+        ServerConfig missingDirectory = ServerConfig.builder()
+                .endpoint(ServerEndpoint.socketPath(directory.resolve("missing").resolve("s")))
+                .build();
+
+        try (Server broken = Server.open(missingDirectory)) {
+            LibTmuxException failure = assertThrows(
+                    LibTmuxException.class, () -> Operations.createSession(TestCalls.on(broken, "session_name", "x")));
+
+            assertTrue(
+                    String.valueOf(failure.getMessage()).contains("error creating"),
+                    "tmux's own reason, not a generic message: " + failure.getMessage());
+        }
     }
 }

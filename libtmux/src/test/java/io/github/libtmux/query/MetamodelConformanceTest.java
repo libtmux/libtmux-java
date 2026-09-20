@@ -18,7 +18,19 @@ final class MetamodelConformanceTest {
         MetamodelConformance.assertConformant(Model.Pane_.class, Set.of("command", "index", "active"), false);
         MetamodelConformance.assertConformant(Model.Window_.class, Set.of("name"), false);
         MetamodelConformance.assertConformant(
-                Pane_.class, Set.of("pane_id", "pane_current_command", "pane_index", "pane_active"), false);
+                Pane_.class,
+                Set.of(
+                        "pane_id",
+                        "pane_current_command",
+                        "pane_index",
+                        "pane_active",
+                        "pane_title",
+                        "pane_current_path",
+                        "pane_width",
+                        "pane_height",
+                        "pane_left",
+                        "pane_top"),
+                false);
         MetamodelConformance.assertConformant(
                 Window_.class,
                 Set.of("window_id", "window_name", "window_index", "window_active", "window_linked"),

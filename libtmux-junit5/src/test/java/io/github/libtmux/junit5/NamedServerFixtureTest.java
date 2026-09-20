@@ -57,11 +57,59 @@ final class NamedServerFixtureTest {
             try (Server server = openPath(socket, directory)) {
                 server.newSession("explicit-" + run);
                 try (NamedServerFixture fixture = NamedServerFixture.own(server, socket, quarantine())) {
-                    assertEquals(socket, fixture.socket());
+                    // tmux answers -S literally, but the quarantine root itself may sit through a
+                    // system ancestor link (macOS's /tmp), so the fixture reports the real path.
+                    assertEquals(socket.toRealPath(), fixture.socket());
                     assertTrue(server.hasSession("explicit-" + run));
                 }
             }
             assertFalse(Files.exists(socket), "the explicit socket survived teardown");
+        }
+    }
+
+    /**
+     * A system-owned ancestor link (macOS resolves {@code /tmp} under {@code /private}) is not an
+     * attack: the quarantine root itself may sit behind one, and ownership must still work.
+     */
+    @Test
+    void aQuarantineReachedThroughAnAncestorLinkIsAccepted(@TempDir Path directory) throws Exception {
+        Path real = Files.createDirectory(directory.resolve("real"));
+        Path link = Files.createSymbolicLink(directory.resolve("link"), real);
+        // Both the quarantine and the socket are spelled through the same link, as a caller's own
+        // TMUX_TMPDIR and everything built under it would be — not through two different names.
+        Path root = Files.createDirectory(link.resolve("q"));
+        Path socket = root.resolve("ltj-anc-" + ProcessHandle.current().pid());
+
+        try (Server server = openPath(socket, directory)) {
+            server.newSession("ancestor-link");
+            try (NamedServerFixture fixture = NamedServerFixture.own(server, socket, root)) {
+                assertEquals(socket.toRealPath(), fixture.socket());
+                assertTrue(server.hasSession("ancestor-link"));
+            }
+            assertFalse(Files.exists(socket), "the socket survived teardown through the linked root");
+        }
+    }
+
+    /**
+     * A link planted below the quarantine root, rather than the root itself, still changes which
+     * directory the socket resolves into and must still be refused.
+     */
+    @Test
+    void aLinkBelowTheQuarantineIsStillRefused(@TempDir Path directory) throws Exception {
+        Path quarantine = Files.createDirectory(directory.resolve("q"));
+        Path real = Files.createDirectory(quarantine.resolve("real"));
+        Path link = Files.createSymbolicLink(quarantine.resolve("link"), real);
+        Path socket = link.resolve("ltj-below-" + ProcessHandle.current().pid());
+
+        try (Server server = openPath(socket, directory)) {
+            server.newSession("below-link");
+            try {
+                AssertionError refused =
+                        assertThrows(AssertionError.class, () -> NamedServerFixture.own(server, socket, quarantine));
+                assertTrue(String.valueOf(refused.getMessage()).contains("linked directory"), refused.getMessage());
+            } finally {
+                server.killServer();
+            }
         }
     }
 

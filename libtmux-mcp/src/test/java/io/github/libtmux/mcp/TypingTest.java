@@ -8,10 +8,12 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.libtmux.LibTmuxException;
+import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.SplitSpec;
 import io.github.libtmux.TmuxVersion;
+import io.github.libtmux.TypedText;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
@@ -40,6 +42,95 @@ final class TypingTest {
 
     private static final TmuxVersion SAFE_PASTE_CLEANUP = new TmuxVersion(3, 4, "");
 
+    /**
+     * The defect this pins: recording an echo after the tmux dispatch it describes left a window
+     * where a concurrent wait could read the pane's new content before anything existed to discount
+     * it. Intercepting the very {@code send-keys} request this call makes and checking the record at
+     * that instant - not by racing a real wait against real timing - pins the ordering directly.
+     */
+    @Test
+    void keysAreRecordedBeforeDispatchSoAWaitCannotSeeThemUnrecorded(Server server) throws Exception {
+        String pane = server.panes().getFirst().id().value();
+        List<Boolean> alreadyDiscounted = new ArrayList<>();
+        Pane[] targetHolder = new Pane[1];
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport observing = borrowing(request -> {
+                if (hasCommand(request, "send-keys")) {
+                    List<String> masked = TypedText.in(targetHolder[0]).withoutEcho(List.of("ordering-marker"));
+                    alreadyDiscounted.add(masked.equals(List.of("")));
+                }
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), observing)) {
+                targetHolder[0] = measured.panes().getFirst();
+                Typing.sendKeys(
+                        TestCalls.on(measured, "pane_id", pane, "keys", List.of("ordering-marker"), "literal", true));
+            }
+        }
+
+        assertEquals(List.of(true), alreadyDiscounted, "the record must exist before the dispatch it was made for");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void synchronizedRecipientsAreRecordedBeforeDispatch(boolean literal, Server server) {
+        Pane source = server.panes().getFirst();
+        source.split(SplitSpec.builder().build());
+        source.window().synchronizePanes();
+        List<List<Boolean>> discounted = new ArrayList<>();
+        List<Pane> targets = new ArrayList<>();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport observing = borrowing(request -> {
+                if (hasCommand(request, "send-keys")) {
+                    discounted.add(targets.stream()
+                            .map(pane -> TypedText.in(pane)
+                                    .withoutEcho(List.of("cohort-marker"))
+                                    .equals(List.of("")))
+                            .toList());
+                }
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), observing)) {
+                targets.addAll(measured.panes());
+                Typing.sendKeys(TestCalls.on(
+                        measured,
+                        "pane_id",
+                        source.id().value(),
+                        "keys",
+                        List.of("cohort-marker"),
+                        "literal",
+                        literal,
+                        "enter",
+                        true));
+            }
+        }
+        assertEquals(List.of(List.of(true, true), List.of(true, true)), discounted);
+    }
+
+    /** A dispatch that never reaches tmux must not leave anything behind to discount later output. */
+    @Test
+    void aDispatchFailureDuringSendKeysRollsBackTheRecordedEcho(Server server) {
+        String pane = server.panes().getFirst().id().value();
+        try (ProcessTransport processes = new ProcessTransport()) {
+            TmuxTransport refusing = borrowing(request -> {
+                if (hasCommand(request, "send-keys")) {
+                    throw new IllegalStateException("synthetic send-keys failure");
+                }
+                return processes.execute(request);
+            });
+            try (Server measured = Server.using(server.config(), refusing)) {
+                Pane target = measured.panes().getFirst();
+
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> Typing.sendKeys(TestCalls.on(
+                                measured, "pane_id", pane, "keys", List.of("rolled-back-marker"), "literal", true)));
+
+                assertTrue(TypedText.in(target).isEmpty(), "a failed dispatch must not leave anything discounted");
+            }
+        }
+    }
+
     @Test
     void keysAreSentByNameSoAnInterruptInterrupts(Server server) {
         String pane = server.panes().get(0).id().value();
@@ -65,6 +156,39 @@ final class TypingTest {
         assertTrue(await(() -> captureOf(server, pane).contains("-X-R-N")));
     }
 
+    /**
+     * Before {@code enter}, the only way to type a line and press Enter was two calls -
+     * {@code literal:true} for the text, then a second call for {@code ["Enter"]} - and the natural
+     * spelling for that second call, {@code literal:true} again, types the word "Enter" instead of
+     * pressing it: tmux's own {@code -l} treats every one of its arguments as literal text. One call
+     * with {@code enter:true} sends a real keypress and cannot hit that trap, because it never goes
+     * through the literal path at all.
+     *
+     * <p>The command is {@code printf} with a format specifier rather than {@code echo}, so the
+     * marker this asserts on ({@code typed-line-SUBMITTED}, with no {@code %s}) exists nowhere in the
+     * typed-but-unsubmitted line ({@code typed-line-%s}) - only in real output. A test built on
+     * {@code echo <marker>} would pass whether or not Enter was ever pressed, since the marker is on
+     * screen the instant it is typed, submitted or not.
+     */
+    @Test
+    void enterSubmitsTypedTextInOneCallWithoutTypingTheWordEnter(Server server) throws Exception {
+        String pane = server.panes().getFirst().id().value();
+
+        Typing.Sent sent = Typing.sendKeys(TestCalls.on(
+                server,
+                "pane_id",
+                pane,
+                "keys",
+                List.of("printf 'typed-line-%s\\n' SUBMITTED"),
+                "literal",
+                true,
+                "enter",
+                true));
+
+        assertEquals(1, sent.keys(), "the Enter keypress is not counted among the typed keys");
+        assertTrue(await(() -> captureOf(server, pane).contains("typed-line-SUBMITTED")), "the command never ran");
+    }
+
     @Test
     void leadingOptionNamesReachEveryBatchRoute(Server server) throws Exception {
         var first = server.panes().getFirst();
@@ -83,6 +207,31 @@ final class TypingTest {
         assertTrue(await(() -> captureOf(server, first.id().value()).contains("-X")));
         assertTrue(await(() -> captureOf(server, second.id().value()).contains("-R")));
         assertTrue(await(() -> captureOf(server, third.id().value()).contains("-N")));
+    }
+
+    /**
+     * As above, through {@code send_keys_batch}'s per-operation {@code enter} field. Same {@code
+     * printf} technique: the marker asserted on exists only in real output, not in the typed line.
+     */
+    @Test
+    void enterSubmitsTypedTextInOneBatchOperation(Server server) throws Exception {
+        String pane = server.panes().getFirst().id().value();
+        Map<String, Object> operation = Map.of(
+                "pane_id",
+                pane,
+                "keys",
+                List.of("printf 'typed-batch-%s\\n' SUBMITTED"),
+                "literal",
+                true,
+                "enter",
+                true);
+
+        Map<String, Object> batch =
+                map(Operations.sendKeysBatch(TestCalls.on(server, "operations", List.of(operation))));
+
+        assertEquals(1, batch.get("completed"));
+        assertTrue(rows(batch).stream().allMatch(row -> Boolean.TRUE.equals(row.get("success"))));
+        assertTrue(await(() -> captureOf(server, pane).contains("typed-batch-SUBMITTED")), "the command never ran");
     }
 
     @Test
@@ -823,7 +972,7 @@ final class TypingTest {
         assertNoOwnedBuffers(server);
     }
 
-    private static String captureOf(Server server, String pane) {
+    static String captureOf(Server server, String pane) {
         return String.join("\n", server.cmd("capture-pane", "-p", "-t", pane).stdout());
     }
 
@@ -864,7 +1013,7 @@ final class TypingTest {
                 .noneMatch(buffer -> buffer.name().startsWith("libtmux-paste-")));
     }
 
-    private static TmuxTransport borrowing(java.util.function.Function<CommandRequest, CommandResult> execute) {
+    static TmuxTransport borrowing(java.util.function.Function<CommandRequest, CommandResult> execute) {
         return new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
@@ -876,7 +1025,7 @@ final class TypingTest {
         };
     }
 
-    private static boolean hasCommand(CommandRequest request, String command) {
+    static boolean hasCommand(CommandRequest request, String command) {
         return request.commands().stream()
                 .anyMatch(argv ->
                         argv.getFirst().equals(command) || argv.stream().anyMatch(part -> part.contains(command)));
@@ -896,7 +1045,7 @@ final class TypingTest {
                 .toList();
     }
 
-    private static void await(CountDownLatch latch) {
+    static void await(CountDownLatch latch) {
         try {
             if (!latch.await(5, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("timed out arranging concurrent input");
@@ -907,7 +1056,7 @@ final class TypingTest {
         }
     }
 
-    private static boolean await(BooleanSupplier condition) throws InterruptedException {
+    static boolean await(BooleanSupplier condition) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
         while (System.nanoTime() < deadline) {
             if (condition.getAsBoolean()) {

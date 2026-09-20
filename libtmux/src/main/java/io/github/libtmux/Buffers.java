@@ -16,6 +16,16 @@ import java.util.List;
 public final class Buffers {
 
     private static final RowFormat LISTING = RowFormat.of("buffer_name", "buffer_size");
+
+    /**
+     * tmux's own history dates the fix to {@code 0f6227f4} ("When deleting or renaming a buffer and
+     * a buffer name is specified, complain if the buffer doesn't exist instead of silently deleting
+     * or renaming the most recent buffer", GitHub issue 3205); {@code git tag --contains} places it
+     * on {@code 3.4} and nothing earlier, so 3.3 and 3.3a both have the bug. Confirmed on the matrix:
+     * {@code set-buffer -b a x; set-buffer -b b y; delete-buffer -b nope} answers {@code unknown
+     * buffer: nope} on 3.4 and leaves both buffers, but on 3.3a it exits 0 and takes {@code b}, the
+     * one {@code delete-buffer} was never told to touch.
+     */
     static final TmuxVersion EXACT_NAMED_DELETE = new TmuxVersion(3, 4, "");
 
     private final Server server;
@@ -24,14 +34,15 @@ public final class Buffers {
         this.server = server;
     }
 
-    /** Every buffer the server holds, in tmux's order. */
+    /**
+     * Captures every buffer the server holds, in tmux's order.
+     *
+     * @return an immutable list, empty if the live server holds no buffers
+     * @throws LibTmuxException if the listing fails, including when no daemon is running
+     */
     public List<BufferInfo> list() {
         List<BufferInfo> buffers = new ArrayList<>();
-        var result = server.cmd(List.of("list-buffers", "-F", LISTING.template()));
-        if (!result.succeeded()) {
-            // An empty stack is not a failure worth raising for, and tmux says so with an error.
-            return List.of();
-        }
+        var result = server.run(List.of("list-buffers", "-F", LISTING.template()));
         for (String row : result.stdout()) {
             List<String> fields = LISTING.split(row);
             buffers.add(new BufferInfo(fields.get(0), Integer.parseInt(fields.get(1))));
@@ -39,20 +50,30 @@ public final class Buffers {
         return List.copyOf(buffers);
     }
 
-    /** Puts text in a named buffer, replacing whatever was there. */
+    /**
+     * Puts text in a named buffer, replacing whatever was there.
+     *
+     * <p>The contents end the options, because they are the one argument here tmux would otherwise
+     * read as flags: {@code set("clip", "-nfoo")} used to rename the buffer to {@code foo} and write
+     * nothing, and report success.
+     */
     public void set(String name, String contents) {
-        server.run(List.of("set-buffer", "-b", name, contents));
+        server.run(List.of("set-buffer", "-b", name, "--", contents));
     }
 
     /**
      * What a buffer holds.
      *
-     * @throws ObjectDoesNotExist if the server has no buffer by that name
+     * @throws ObjectDoesNotExistException if the server has no buffer by that name
+     * @throws ServerNotRunningException if no daemon is running
      */
     public String show(String name) {
-        var result = server.cmd(List.of("show-buffer", "-b", name));
+        CommandResult result = server.cmd(List.of("show-buffer", "-b", name));
+        if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.equals("no buffer " + name))) {
+            throw new ObjectDoesNotExistException("no buffer named '" + name + "'");
+        }
         if (!result.succeeded()) {
-            throw new ObjectDoesNotExist("no buffer named '" + name + "'");
+            throw server.failed("show-buffer", result);
         }
         return String.join("\n", result.stdout());
     }
@@ -60,31 +81,32 @@ public final class Buffers {
     /**
      * Removes a buffer by its exact name.
      *
-     * @throws ObjectDoesNotExist if the server has no buffer by that name
-     * @throws UnsupportedTmuxVersion before tmux 3.4, whose named deletion silently removes the top
+     * @throws ObjectDoesNotExistException if the server has no buffer by that name
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws UnsupportedTmuxVersionException before tmux 3.4, whose named deletion silently removes the top
      *     buffer when the name is absent
      */
     public void delete(String name) {
         TmuxVersion running = server.version();
         if (!running.atLeast(EXACT_NAMED_DELETE)) {
-            throw new UnsupportedTmuxVersion("deleting a buffer by exact name", EXACT_NAMED_DELETE, running);
+            throw new UnsupportedTmuxVersionException("deleting a buffer by exact name", EXACT_NAMED_DELETE, running);
         }
         CommandResult result = server.cmd(List.of("delete-buffer", "-b", name));
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.equals("unknown buffer: " + name))) {
-            throw new ObjectDoesNotExist("no buffer named '" + name + "'");
+            throw new ObjectDoesNotExistException("no buffer named '" + name + "'");
         }
         if (!result.succeeded()) {
-            throw new LibTmuxException("tmux delete-buffer failed: " + String.join("; ", result.stderr()));
+            throw server.failed("delete-buffer", result);
         }
     }
 
     /** Writes a buffer's contents to a file. */
     public void save(String name, Path file) {
-        server.run(List.of("save-buffer", "-b", name, file.toString()));
+        server.run(List.of("save-buffer", "-b", name, "--", file.toString()));
     }
 
     /** Reads a file into a named buffer. */
     public void load(String name, Path file) {
-        server.run(List.of("load-buffer", "-b", name, file.toString()));
+        server.run(List.of("load-buffer", "-b", name, "--", file.toString()));
     }
 }

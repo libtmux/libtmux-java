@@ -11,8 +11,10 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.PaneEdges;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
+import io.github.libtmux.WakeReason;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -101,14 +103,38 @@ final class WindowMovementIntegrationTest {
     @Test
     void respawningKeepsTheWindowAndReplacesWhatRuns(Server server) {
         Window window = server.sessions().get(0).windows().get(0);
-        long before = window.panes().get(0).pid();
+        long before = window.panes().get(0).pid().orElseThrow();
 
         window.respawn();
 
         Window now = window.refresh();
         assertEquals(window.id(), now.id(), "the window survives");
         assertEquals(1, now.panes().size());
-        assertTrue(now.panes().get(0).pid() != before, "but what runs in it was started again");
+        assertTrue(now.panes().get(0).pid().orElseThrow() != before, "but what runs in it was started again");
+    }
+
+    @Test
+    void aDashPrefixedPopupCommandIsNotACloseRequest(Server server) throws InterruptedException {
+        server.globalOptions().set("default-shell", "/bin/sh");
+        Pane terminal = server.panes().getFirst();
+        Session popupSession = server.newSession("popup");
+        Window window = popupSession.windows().getFirst();
+        String socket =
+                server.cmd("display-message", "-p", "#{socket_path}").stdout().getFirst();
+        server.hooks().set("client-attached", List.of("wait-for", "-S", "popup-client-ready"));
+        terminal.respawn(
+                "env",
+                "-u",
+                "TMUX",
+                server.config().binaryPath(),
+                "-S",
+                socket,
+                "attach-session",
+                "-t",
+                popupSession.id().value());
+        assertEquals(WakeReason.SIGNALLED, server.channel("popup-client-ready").await(Duration.ofSeconds(1)));
+
+        assertThrows(LibTmuxException.class, () -> window.displayPopup("-C"));
     }
 
     /** tmux draws a popup for a client, and a detached fixture session has none. */
@@ -163,11 +189,27 @@ final class WindowMovementIntegrationTest {
 
     @Test
     void aBoundKeyAppearsInTheListingAndCanBeRemoved(Server server) {
-        server.bindKey("F12", List.of("new-window", "-d", "-n", "bound"));
+        server.keys().bind("F12", List.of("new-window", "-d", "-n", "bound"));
 
-        assertTrue(server.listKeys().stream().anyMatch(line -> line.contains("F12")), "the binding is listed");
+        assertTrue(server.keys().list().stream().anyMatch(line -> line.contains("F12")), "the binding is listed");
 
-        server.unbindKey("F12");
-        assertFalse(server.listKeys().stream().anyMatch(line -> line.contains("F12")));
+        server.keys().unbind("F12");
+        assertFalse(server.keys().list().stream().anyMatch(line -> line.contains("F12")));
+    }
+
+    /** A binding made in a named table is listed in that table and not in another. */
+    @Test
+    void aBindingLivesInTheTableItWasMadeIn(Server server) {
+        server.keys().in("root").bind("F11", List.of("next-window"));
+
+        assertTrue(
+                server.keys().in("root").list().stream().anyMatch(line -> line.contains("F11")),
+                "listed in root, where it was bound");
+        assertFalse(
+                server.keys().in("prefix").list().stream().anyMatch(line -> line.contains(" F11 ")),
+                "and not in prefix");
+
+        server.keys().in("root").unbind("F11");
+        assertFalse(server.keys().in("root").list().stream().anyMatch(line -> line.contains(" F11 ")));
     }
 }

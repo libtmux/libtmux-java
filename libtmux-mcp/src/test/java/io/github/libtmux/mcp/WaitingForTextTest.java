@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
@@ -21,6 +22,31 @@ import org.junit.jupiter.api.extension.ExtendWith;
 @ExtendWith(TmuxExtension.class)
 final class WaitingForTextTest {
 
+    /**
+     * A long prompt pushes a short command's output past the pane's width, and tmux breaks the line
+     * to fit. Nothing in what the pane printed put that break there, so a row-by-row search must not
+     * be stopped by it. Found on CI, where one runner's hostname made the prompt long enough and a
+     * short local prompt never did: the wait timed out against text plainly on screen.
+     */
+    @Test
+    void outputTheTerminalWrappedForDisplayIsStillMatched(Server server) {
+        String pane = server.panes().get(0).id().value();
+        // Pin the width rather than inherit it: the break only happens when the
+        // prompt and the output together outrun the pane, and a wide default
+        // would hide exactly what this pins.
+        server.cmd("resize-window", "-t", pane, "-x", "80", "-y", "24");
+        // Longer than the pane is wide, so tmux has to break it wherever the
+        // prompt happens to leave the cursor.
+        String marker = "wrapped-" + "x".repeat(120) + "-marker";
+
+        send(server, pane, "(sleep 1; echo " + marker + ") &");
+
+        WaitingForText.Waited waited = WaitingForText.waitFor(
+                TestCalls.on(server, "pane_id", pane, "patterns", List.of(marker), "timeout", 20));
+
+        assertEquals("MATCHED", waited.outcome(), "output the wait saw: " + waited.output());
+    }
+
     @Test
     void textThatArrivesIsMatchedAndTheWaitEndsAtOnce(Server server) {
         String pane = server.panes().get(0).id().value();
@@ -29,18 +55,18 @@ final class WaitingForTextTest {
         WaitingForText.Waited waited = WaitingForText.waitFor(
                 TestCalls.on(server, "pane_id", pane, "patterns", List.of("the-server-is-ready"), "timeout", 20));
 
-        assertEquals("MATCHED", waited.outcome());
+        assertEquals("MATCHED", waited.outcome(), "output the wait saw: " + waited.output());
         assertEquals("the-server-is-ready", waited.matched());
         assertTrue(String.valueOf(waited.matchedLine()).contains("the-server-is-ready"));
         assertTrue(waited.seconds() < 15, "it must return on the match, not at the deadline");
     }
 
     /**
-     * The failure that makes a scraping wait untrustworthy. A pane already saying "ready" from before
-     * the call must not satisfy a wait for something that has not happened yet.
+     * Text already on screen when a cursorless wait starts is reported as {@code PRESENT_AT_ENTRY}
+     * with that text included - not a fresh {@code MATCHED}, and not a {@code TIMED_OUT} that hides it.
      */
     @Test
-    void textAlreadyOnScreenDoesNotSatisfyTheWait(Server server) {
+    void textAlreadyOnScreenIsReportedAsPresentAtEntryNotAFreshMatch(Server server) {
         String pane = server.panes().get(0).id().value();
         RunningCommands.run(TestCalls.on(server, "pane_id", pane, "command", "echo already-ready", "timeout", 15));
         // The wait has to start from a screen that already says it, or this is not that case.
@@ -49,7 +75,102 @@ final class WaitingForTextTest {
         WaitingForText.Waited waited = WaitingForText.waitFor(
                 TestCalls.on(server, "pane_id", pane, "patterns", List.of("already-ready"), "timeout", 2));
 
-        assertEquals("TIMED_OUT", waited.outcome(), "only output arriving after the call counts");
+        assertEquals("PRESENT_AT_ENTRY", waited.outcome(), "not a fresh match, and not an invisible one either");
+        assertEquals("already-ready", waited.matched());
+        assertTrue(
+                waited.output().stream().anyMatch(line -> line.contains("already-ready")),
+                "the text really is there; hiding it is the bug this fixes: " + waited.output());
+        assertTrue(waited.seconds() < 1, "answered from the entry screen, no watching needed");
+    }
+
+    /**
+     * Text typed but never submitted sits on the pending input line, not in anything the pane
+     * produced, so a cursorless wait for it stays a plain {@code TIMED_OUT}.
+     */
+    @Test
+    void unsubmittedTypedTextIsNeverPresentAtEntry(Server server) {
+        Pane pane = server.panes().get(0);
+        String marker = "pending-input-marker";
+        // A shell still starting up prints its first prompt straight after these unread bytes,
+        // with nothing between them, so the echo check cannot discount them.
+        assertEquals(
+                "SIGNALLED",
+                RunningCommands.run(
+                                TestCalls.on(server, "pane_id", pane.id().value(), "command", "true", "timeout", 15))
+                        .outcome(),
+                "the warm-up run never finished, so it still owns the pane");
+        Typing.sendKeys(
+                TestCalls.on(server, "pane_id", pane.id().value(), "keys", List.of("echo " + marker), "literal", true));
+
+        WaitingForText.Waited waited = WaitingForText.waitFor(
+                TestCalls.on(server, "pane_id", pane.id().value(), "patterns", List.of(marker), "timeout", 1));
+
+        assertEquals("TIMED_OUT", waited.outcome(), "the command was never run; there is nothing to report yet");
+        assertTrue(
+                waited.output().stream().noneMatch(line -> line.contains(marker)),
+                "the pending, unsubmitted line must not leak into the caller-visible output: " + waited.output());
+    }
+
+    /**
+     * {@code send_keys} then {@code wait_for_text} for the same marker must not match the
+     * typed command line itself, which a shell echoes back and which therefore contains the marker
+     * too. {@link io.github.libtmux.TypedText} is what makes the difference - go through the real MCP {@link Typing}
+     * operation rather than a raw {@code send-keys}, or nothing records the echo to exclude.
+     */
+    @Test
+    void sendThenWaitDoesNotMatchTheEchoedCommandLine(Server server) {
+        Pane pane = server.panes().get(0);
+        String marker = "echo-marker-cold";
+
+        typeAndSubmit(server, pane, "sleep 1; echo " + marker);
+
+        assertMatchedTheOutputNotTheEcho(server, pane, marker);
+    }
+
+    /** As above, against a shell whose prompt has already settled rather than a freshly split one. */
+    @Test
+    void sendThenWaitDoesNotMatchTheEchoedCommandLineOnAWarmShellEither(Server server) {
+        Pane pane = server.panes().get(0);
+        String marker = "echo-marker-warm";
+        // Asserted, not assumed: a run that does not finish keeps the pane, and the typing below
+        // would then be refused for owning rather than for anything this test is about.
+        assertEquals(
+                "SIGNALLED",
+                RunningCommands.run(
+                                TestCalls.on(server, "pane_id", pane.id().value(), "command", "true", "timeout", 15))
+                        .outcome(),
+                "the warm-up run never finished, so it still owns the pane");
+
+        typeAndSubmit(server, pane, "sleep 1; echo " + marker);
+
+        assertMatchedTheOutputNotTheEcho(server, pane, marker);
+    }
+
+    /**
+     * Types a line and submits it. The line sleeps before printing so its output lands after the
+     * wait takes its starting cursor; output already on screen by then does not count, and a fast
+     * shell would otherwise print it first.
+     */
+    private static void typeAndSubmit(Server server, Pane pane, String line) {
+        Typing.sendKeys(TestCalls.on(server, "pane_id", pane.id().value(), "keys", List.of(line), "literal", true));
+        Typing.sendKeys(TestCalls.on(server, "pane_id", pane.id().value(), "keys", List.of("Enter"), "literal", false));
+    }
+
+    private static void assertMatchedTheOutputNotTheEcho(Server server, Pane pane, String marker) {
+        // Generous on purpose: what is pinned here is which line matched, not how soon. The
+        // command sleeps a second before printing, and a five-second budget left barely four for a
+        // loaded machine to get there - it lost one lane of the matrix that way.
+        WaitingForText.Waited waited = WaitingForText.waitFor(
+                TestCalls.on(server, "pane_id", pane.id().value(), "patterns", List.of(marker), "timeout", 20));
+
+        assertEquals("MATCHED", waited.outcome(), "the output must eventually appear");
+        String matchedLine = String.valueOf(waited.matchedLine());
+        assertTrue(
+                matchedLine.contains(marker) && !matchedLine.contains("echo "),
+                "matched the typed command line, not its output: " + matchedLine);
+        assertTrue(
+                waited.output().stream().noneMatch(line -> line.contains("echo " + marker)),
+                "the echoed command line leaked into the caller-visible output: " + waited.output());
     }
 
     /** Without a stop pattern the same run is waited on until the deadline; with one it comes back. */
@@ -147,7 +268,7 @@ final class WaitingForTextTest {
         WaitingForText.Waited waited = WaitingForText.waitFor(
                 TestCalls.on(server, "pane_id", pane, "patterns", "lone-pattern-seen", "timeout", 20));
 
-        assertEquals("MATCHED", waited.outcome());
+        assertEquals("MATCHED", waited.outcome(), "output the wait saw: " + waited.output());
     }
 
     @Test
@@ -177,9 +298,19 @@ final class WaitingForTextTest {
         return false;
     }
 
-    /** Sent without waiting, which is what makes this the tool for output nobody here authored. */
+    /**
+     * Starts a command in the background and returns at once, without a tracked run to learn when
+     * it finishes - {@code wait_for_text} is for exactly that case, output nobody here is watching
+     * for through a command result.
+     *
+     * <p>Goes through {@link Typing#sendKeys}, the same as {@link #typeAndSubmit}, rather than a raw
+     * {@code send-keys}: every command here is an {@code echo <marker>} whose own typed-and-submitted
+     * text contains the marker too, on screen the instant it is submitted - before the backgrounded
+     * process prints anything. Only {@link io.github.libtmux.TypedText} can tell that line apart from real output, and
+     * only a call that goes through it gets recorded there.
+     */
     private static void send(Server server, String pane, String command) {
-        server.run(List.of("send-keys", "-l", "-t", pane, command));
-        server.run(List.of("send-keys", "-t", pane, "Enter"));
+        Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of(command), "literal", true));
+        Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of("Enter"), "literal", false));
     }
 }

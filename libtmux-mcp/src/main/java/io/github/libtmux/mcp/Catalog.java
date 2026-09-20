@@ -102,8 +102,8 @@ final class Catalog {
             if (tool.outputClasses().isEmpty()) {
                 throw new IllegalArgumentException(tool.name() + " has no output class");
             }
-            if (!tool.description().startsWith(tool.controlledOpener() + " ")) {
-                throw new IllegalArgumentException(tool.name() + " does not begin with its controlled opener");
+            if (!tool.description().endsWith(" " + tool.controlledOpener())) {
+                throw new IllegalArgumentException(tool.name() + " does not end with its controlled opener");
             }
             if (tool.processReach() == ToolSpec.ProcessReach.HOST_COMMAND) {
                 throw new IllegalArgumentException(tool.name() + " exposes prohibited host-command reach");
@@ -367,7 +367,11 @@ final class Catalog {
         tools.add(tool(
                 "wait_for_text",
                 "Wait for pane text",
-                "Waits for new pane output without accepting executable input.",
+                "Waits for new pane output without accepting executable input. Discounts recognized input"
+                        + " from this server while pending and for ten seconds after submission. Output identical"
+                        + " to that input and partially redrawn echoes are ambiguous; use run_shell_command for"
+                        + " commands you start. Wait for the"
+                        + " prompt before typing into a cold shell.",
                 INSPECT,
                 NONE,
                 effects(OBSERVE),
@@ -799,13 +803,19 @@ final class Catalog {
         List<Argument> keys = List.of(
                 paneId(),
                 strings("keys", "The key names or literal strings to send."),
-                flag("literal", "Send strings literally instead of as key names.", false));
+                flag("literal", "Send strings literally instead of as key names.", false),
+                flag(
+                        "enter",
+                        "Press Enter afterward, as a real keypress. Unlike a key named \"Enter\" sent under "
+                                + "literal:true, which types the four letters, this always submits.",
+                        false));
         tools.add(tool(
                 "send_keys",
                 "Send keys",
                 "Sends input to the target's configured effective synchronized cohort without waiting for output. "
                         + "Every configured member must be live, nonmodal, and neither caller nor attended. Reports "
-                        + "configured pane ids observed before dispatch, not delivery receipts.",
+                        + "configured pane ids observed before dispatch, not delivery receipts. wait_for_text"
+                        + " discounts recognized input; wait for the prompt before typing into a cold shell.",
                 EXECUTE,
                 PANE_INPUT,
                 effects(OBSERVE, CHANGE),
@@ -816,7 +826,8 @@ final class Catalog {
                 sinks(
                         input("pane_id", TMUX_LOOKUP),
                         input("keys", ToolSpec.InputSink.PANE_INPUT),
-                        input("literal", ToolSpec.InputSink.NONE)),
+                        input("literal", ToolSpec.InputSink.NONE),
+                        input("enter", ToolSpec.InputSink.PANE_INPUT)),
                 record(Typing.Sent.class, "note"),
                 Typing::sendKeys));
         tools.add(tool(
@@ -832,7 +843,8 @@ final class Catalog {
                 true,
                 true,
                 List.of(
-                        boundedObjects("operations", "Objects with pane_id, keys and optional literal fields.", 64),
+                        boundedObjects(
+                                "operations", "Objects with pane_id, keys and optional literal and enter fields.", 64),
                         optional("onError", "stop or continue; defaults to stop.")),
                 sinks(
                         input("operations", TMUX_LOOKUP, ToolSpec.InputSink.PANE_INPUT),

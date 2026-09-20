@@ -44,6 +44,14 @@ should not become the disclosure.
 run commands in every pane on that server. The tests keep each server under a
 directory of its own for isolation, not for secrecy.
 
+**A pane's typed echo is held in memory to filter it out.**
+`libtmux-mcp`'s `wait_for_text` discounts recognized echoes of text sent by
+this library. Pending input stays in memory while unsubmitted, is bounded per
+pane, and expires after an hour without another write. Submitted or erased
+lines expire after ten seconds; a live wait retains those echoes it has
+observed until that wait ends. Tracking writes nothing to disk or logs and
+sends nothing elsewhere; the text exists only for comparison with pane reads.
+
 ## Supported versions
 
 Before 1.0, only the latest release is supported.

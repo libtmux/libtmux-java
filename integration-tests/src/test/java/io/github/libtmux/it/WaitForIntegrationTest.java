@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.TextOutcome;
 import io.github.libtmux.WakeReason;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.time.Duration;
@@ -49,7 +50,7 @@ final class WaitForIntegrationTest {
     }
 
     @Test
-    void nothingSignallingIsATimeoutRatherThanAWake(Server server) {
+    void nothingSignallingIsATimeoutRatherThanAWake(Server server) throws InterruptedException {
         assertEquals(WakeReason.TIMED_OUT, server.channel("never-signalled").await(SHORT));
     }
 
@@ -58,7 +59,7 @@ final class WaitForIntegrationTest {
      * possibly from an earlier run of a different program. Draining is how a caller starts clean.
      */
     @Test
-    void aStaleSignalIsConsumedByDrainingRatherThanSatisfyingTheNextWait(Server server) {
+    void aStaleSignalIsConsumedByDrainingRatherThanSatisfyingTheNextWait(Server server) throws InterruptedException {
         server.channel("stale").signal();
 
         assertTrue(server.channel("stale").drain(), "the buffered signal was there");
@@ -70,7 +71,7 @@ final class WaitForIntegrationTest {
     }
 
     @Test
-    void anUndrainedStaleSignalWouldHaveSatisfiedTheWait(Server server) {
+    void anUndrainedStaleSignalWouldHaveSatisfiedTheWait(Server server) throws InterruptedException {
         server.channel("undrained").signal();
 
         assertEquals(
@@ -106,17 +107,29 @@ final class WaitForIntegrationTest {
     @Test
     void aPaneWaitSeesTextThePaneProduces(Server server) throws InterruptedException {
         Pane pane = server.sessions().getFirst().windows().getFirst().panes().getFirst();
+        // Wait for the shell to draw something before typing at it. Until awaitText stopped
+        // matching a command's own echo, this passed without the command ever running — the echo
+        // carried the text — so keys sent before the shell was listening cost nothing. Now the
+        // output has to arrive, and keys sent into a shell that has not started never produce any.
+        pane.await(drawn -> drawn.capture().stream().anyMatch(line -> !line.isBlank()), Duration.ofSeconds(10));
 
-        pane.sendLine("echo waited-for-this");
+        // The typed line must not contain the text, or the shell's echo alone could satisfy the
+        // wait: printf assembles it only when the command runs.
+        pane.sendLine("printf 'waited-%s\\n' for-this");
 
-        assertEquals(WakeReason.SIGNALLED, pane.awaitText("waited-for-this", SHORT));
+        // Whether the shell answered before the wait's first read is scheduling, not behaviour, so
+        // both outcomes mean the pane produced it; PaneWaitFidelityIntegrationTest pins the split.
+        TextOutcome outcome = pane.awaitText("waited-for-this", Duration.ofSeconds(10));
+        assertTrue(
+                outcome == TextOutcome.APPEARED || outcome == TextOutcome.PRESENT_AT_ENTRY,
+                "the wait did not see the pane's own output: " + outcome);
     }
 
     @Test
     void aPaneWaitForTextThatNeverComesIsATimeout(Server server) throws InterruptedException {
         Pane pane = server.sessions().getFirst().windows().getFirst().panes().getFirst();
 
-        assertEquals(WakeReason.TIMED_OUT, pane.awaitText("nothing-prints-this", Duration.ofMillis(600)));
+        assertEquals(TextOutcome.TIMED_OUT, pane.awaitText("nothing-prints-this", Duration.ofMillis(600)));
     }
 
     /**
@@ -128,7 +141,7 @@ final class WaitForIntegrationTest {
     @Test
     void aPaneWaitReadsFreshStateRatherThanTheCaptureItStartedFrom(Server server) throws InterruptedException {
         Pane stale = server.sessions().getFirst().windows().getFirst().panes().getFirst();
-        stale.retitle("waited-for-title");
+        var unused = stale.retitle("waited-for-title");
 
         assertEquals(WakeReason.SIGNALLED, stale.await(fresh -> fresh.title().equals("waited-for-title"), SHORT));
     }
@@ -144,11 +157,11 @@ final class WaitForIntegrationTest {
         Pane pane = server.sessions().getFirst().windows().getFirst().panes().getFirst();
         ExecutorService killer = Executors.newSingleThreadExecutor();
         try {
-            Future<WakeReason> waiting = killer.submit(() -> pane.awaitText("never-printed", Duration.ofSeconds(20)));
+            Future<TextOutcome> waiting = killer.submit(() -> pane.awaitText("never-printed", Duration.ofSeconds(20)));
             Thread.sleep(500);
             server.killServer();
 
-            assertEquals(WakeReason.SERVER_GONE, waiting.get(30, TimeUnit.SECONDS));
+            assertEquals(TextOutcome.SERVER_GONE, waiting.get(30, TimeUnit.SECONDS));
         } finally {
             killer.shutdownNow();
         }

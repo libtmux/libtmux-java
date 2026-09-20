@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.transport.CommandResult;
 import java.util.ArrayList;
@@ -58,17 +59,40 @@ public final class Hooks {
      * command joins the first.
      */
     public void set(String event, String command) {
-        run(argv("set-hook", List.of(event, command)));
+        run(argv("set-hook", List.of("--", event, command)));
+    }
+
+    /**
+     * As {@link #set(String, String)}, with the command as words rather than a line tmux parses.
+     *
+     * <p>Each word reaches tmux as itself, quoted for its command parser here, so a caller never has
+     * to: {@code set("after-new-window", List.of("display-message", "it's #{window_name}"))} binds
+     * exactly that message.
+     */
+    public void set(String event, List<String> command) {
+        set(event, words(command));
+    }
+
+    /** As {@link #append(String, String)}, with the command as words. */
+    public void append(String event, List<String> command) {
+        append(event, words(command));
+    }
+
+    private static String words(List<String> command) {
+        if (command.isEmpty()) {
+            throw new IllegalArgumentException("a hook command has no words");
+        }
+        return CommandStrings.stringify(command);
     }
 
     /** Binds another command to an event, after whatever is already bound to it. */
     public void append(String event, String command) {
-        run(argv("set-hook", List.of("-a", event, command)));
+        run(argv("set-hook", List.of("-a", "--", event, command)));
     }
 
     /** Removes everything bound to an event at this scope. */
     public void unset(String event) {
-        run(argv("set-hook", List.of("-u", event)));
+        run(argv("set-hook", List.of("-u", "--", event)));
     }
 
     /**
@@ -78,7 +102,7 @@ public final class Hooks {
      * and binds nothing.
      */
     public void run(String event) {
-        run(argv("set-hook", List.of("-R", event)));
+        run(argv("set-hook", List.of("-R", "--", event)));
     }
 
     /**
