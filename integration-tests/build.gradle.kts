@@ -7,11 +7,100 @@ plugins {
     id("libtmux.tmux-matrix")
 }
 
+val integrationClojureVersion =
+    providers.gradleProperty("libtmuxClojureVersion").getOrElse(libs.versions.clojure.get())
+
+repositories {
+    maven { url = uri("https://repo.clojars.org") }
+}
+
 dependencies {
     testImplementation(project(":libtmux"))
     testImplementation(project(":libtmux-jackson"))
     testImplementation(project(":libtmux-junit5"))
+    testImplementation(project(":libtmux-clojure"))
+    testImplementation(project(":libtmux-clojure-core-async"))
+    testImplementation("org.clojure:clojure:$integrationClojureVersion")
+    testImplementation(libs.manifold)
 }
+
+sourceSets.test {
+    resources.srcDir("src/test/clojure")
+    resources.srcDir(rootProject.file("gradle/clojure-runner"))
+    resources.exclude("agent/**")
+}
+
+val clojureIntegrationTest =
+    tasks.register<JavaExec>("clojureIntegrationTest") {
+        group = "verification"
+        description = "Runs the native Clojure real-tmux integration suite."
+        dependsOn(tasks.named("testClasses"))
+        classpath = sourceSets.test.get().runtimeClasspath
+        mainClass.set("clojure.main")
+        args("-m", "libtmux.internal.test-runner", "test")
+        val namespaces =
+            provider {
+                fileTree("src/test/clojure") { include("**/*_test.clj") }
+                    .files
+                    .sorted()
+                    .joinToString(",") { source ->
+                        source.relativeTo(file("src/test/clojure"))
+                            .invariantSeparatorsPath
+                            .removeSuffix(".clj")
+                            .replace('_', '-')
+                            .replace('/', '.')
+                    }
+            }
+        doFirst {
+            systemProperty(
+                "libtmux.clojure.test-namespaces",
+                providers.gradleProperty("libtmuxClojureTestNamespaces").orNull ?: namespaces.get(),
+            )
+        }
+        jvmArgs("-Dclojure.main.report=stderr")
+        javaLauncher.set(javaToolchains.launcherFor {
+            languageVersion.set(
+                JavaLanguageVersion.of(
+                    providers.gradleProperty("libtmuxJavaVersion").getOrElse("21").toInt(),
+                ),
+            )
+        })
+        environment.remove("TMUX")
+        environment.remove("TMUX_PANE")
+        environment("TMUX_TMPDIR", "/tmp/libtmux-java-test")
+        systemProperty("libtmux.docs.root", rootProject.projectDir.path)
+        systemProperty(
+            "libtmux.tmux",
+            providers.gradleProperty("libtmuxTmuxBinary").getOrElse("tmux"),
+        )
+        providers.gradleProperty("libtmuxTmuxExpected").orNull?.let {
+            systemProperty("libtmux.tmux.expected", it)
+        }
+        inputs.files(
+            rootProject.fileTree(rootProject.projectDir) {
+                include("README.md", "*/README.md", "docs/guide/*.md")
+            },
+        ).withPropertyName("clojureDocumentation")
+            .withPathSensitivity(PathSensitivity.RELATIVE)
+    }
+
+val prepareClojureIntegrationClasspath =
+    tasks.register("prepareClojureIntegrationClasspath") {
+        group = "build setup"
+        description = "Writes the reusable native Clojure integration classpath."
+        dependsOn(tasks.named("testClasses"))
+        val destination = layout.buildDirectory.file("clojure/integration-classpath.txt")
+        inputs.files(sourceSets.test.map { it.runtimeClasspath })
+        outputs.file(destination)
+        doLast {
+            destination.get().asFile.apply {
+                parentFile.mkdirs()
+                writeText(sourceSets.test.get().runtimeClasspath.asPath + "\n")
+            }
+        }
+    }
+
+tasks.named("check") { dependsOn(clojureIntegrationTest) }
 
 // The locale lane needs a JVM whose platform encoding is not UTF-8, which is a process-wide choice
 // read before main runs. So it gets its own fork rather than a flag, and the ordinary run excludes

@@ -102,9 +102,47 @@ val kotlinStaysDownstream =
         }
     }
 
+val clojureDependencyMetadata =
+    tasks.register("clojureDependencyMetadata") {
+        group = "verification"
+        description = "Checks deps.edn against the checked-in development dependency baseline."
+        val depsEdn = layout.projectDirectory.file("deps.edn")
+        val gradleProperties = layout.projectDirectory.file("gradle.properties")
+        inputs.files(depsEdn, gradleProperties)
+        doLast {
+            val declared = depsEdn.asFile.readText()
+            val clojureVersion = libs.versions.clojure.get()
+            val coreAsyncVersion = libs.versions.core.async.get()
+            val developmentVersion =
+                gradleProperties.asFile.useLines { lines ->
+                    lines.first { it.startsWith("libtmuxVersion=") }.substringAfter('=')
+                }
+            val expected =
+                mapOf(
+                    "org.clojure/clojure" to clojureVersion,
+                    "org.clojure/core.async" to coreAsyncVersion,
+                    "io.github.libtmux/libtmux" to developmentVersion,
+                    "io.github.libtmux/libtmux-junit5" to developmentVersion,
+            )
+            expected.forEach { (coordinate, version) ->
+                val declaredVersions =
+                    Regex("${Regex.escape(coordinate)}\\s+\\{:mvn/version\\s+\"([^\"]+)\"")
+                        .findAll(declared)
+                        .map { it.groupValues[1] }
+                        .toList()
+                require(declaredVersions.isNotEmpty()) {
+                    "deps.edn must declare $coordinate at the development baseline $version"
+                }
+                require(declaredVersions.all { it == version }) {
+                    "every deps.edn declaration of $coordinate must use the development baseline $version; found $declaredVersions"
+                }
+            }
+        }
+    }
+
 tasks.register("check") {
     group = "verification"
     description = "Every gate that must hold before publication."
     dependsOn(subprojects.filter { it.buildFile.exists() }.map { "${it.path}:check" })
-    dependsOn(platformCoversEveryPublishedModule, kotlinStaysDownstream)
+    dependsOn(platformCoversEveryPublishedModule, kotlinStaysDownstream, clojureDependencyMetadata)
 }

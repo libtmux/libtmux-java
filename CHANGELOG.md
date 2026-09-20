@@ -12,6 +12,25 @@ production.
 
 ## Unreleased
 
+### Added
+
+- **`Server.capture` returns handles from one captured graph.** Sessions,
+  window links, pane occurrences, clients, and metadata share the same capture;
+  traversing them issues no additional commands.
+
+- **Control output can retain its original bytes.**
+  `ControlClient.subscribeOutputBytes` exposes bounded byte subscriptions;
+  `PaneOutputDecoder` decodes UTF-8 across chunks with an explicit malformed
+  input policy. `EventSubscription.nextDelivery` associates each event with
+  its loss counters.
+
+### Changed
+
+- **Control subscriptions report why they ended and retain final output.**
+  Remote termination leaves queued events available to drain. Subscriptions
+  now bound payload bytes as well as event count; see
+  [migration guidance](MIGRATION.md#control-subscriptions-bound-bytes-and-report-termination).
+
 ## 0.0.1-alpha.12 — 2026-09-19
 
 ### Added

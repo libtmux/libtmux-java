@@ -5,6 +5,29 @@ API changes that require updates to calling code are recorded here. See
 
 ## Next release
 
+### Control subscriptions bound bytes and report termination
+
+Existing `ControlClient.subscribeOutput` and `subscribeEvents` subscriptions
+now retain at most 16 MiB of payload, in addition to their event limit. When a
+new event exceeds the byte budget, older events are dropped until it fits. An
+event larger than the entire budget is dropped after clearing queued events.
+`droppedCount()` and `droppedBytes()` expose this loss. Use `nextDelivery()` to
+read an event and its loss counters together.
+
+Use `subscribeOutputBytes(capacity, maxBytes)` when original pane bytes matter.
+The existing string events retain their per-chunk decoding behavior and cannot
+reconstruct UTF-8 split between notifications. Pass raw deliveries to
+`PaneOutputDecoder`, choosing `CodingErrorAction.REPORT` or `REPLACE`, for
+incremental text. At stream end, call `finish(paneId)` for each observed pane
+to handle an incomplete trailing character. Loss resets partial characters.
+
+`termination()` preserves the first observed cause. `CONTROL_EXIT` means the
+control attachment ended; it does not prove the daemon died. Raw EOF with no
+known cause remains `UNKNOWN`. Remote termination retains queued events, so
+drain until `nextDelivery()` returns empty before processing the terminal
+result. Explicit subscription `close()` discards its buffer and wakes readers.
+Those intentional discards are separate from overflow counts.
+
 ### A tmux release candidate keeps its name and counts as its release
 
 `TmuxVersion` now carries the pre-release a version named, so a server running

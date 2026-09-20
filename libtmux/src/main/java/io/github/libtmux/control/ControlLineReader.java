@@ -23,7 +23,29 @@ final class ControlLineReader implements Closeable {
         this.maxBytes = maxBytes;
     }
 
-    record Line(String text, int encodedBytes) {}
+    static final class Line {
+        private final String text;
+        private final int encodedBytes;
+        private final byte[] bytes;
+
+        Line(String text, int encodedBytes, byte[] bytes) {
+            this.text = text;
+            this.encodedBytes = encodedBytes;
+            this.bytes = bytes.clone();
+        }
+
+        String text() {
+            return text;
+        }
+
+        int encodedBytes() {
+            return encodedBytes;
+        }
+
+        byte[] bytes() {
+            return bytes.clone();
+        }
+    }
 
     @Nullable
     Line readLine() throws IOException {
@@ -37,7 +59,7 @@ final class ControlLineReader implements Closeable {
                 return line(bytes);
             }
             if (bytes.size() == maxBytes) {
-                throw new IOException("control line exceeded the " + maxBytes + " byte limit");
+                throw new LimitExceeded(maxBytes);
             }
             bytes.write(next);
         }
@@ -49,7 +71,18 @@ final class ControlLineReader implements Closeable {
         if (textLength > 0 && encoded[textLength - 1] == '\r') {
             textLength--;
         }
-        return new Line(Utf8.backslashReplace(Arrays.copyOf(encoded, textLength)), encoded.length);
+        return new Line(
+                Utf8.backslashReplace(Arrays.copyOf(encoded, textLength)),
+                encoded.length,
+                Arrays.copyOf(encoded, textLength));
+    }
+
+    static final class LimitExceeded extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        LimitExceeded(int limit) {
+            super("control line exceeded the " + limit + " byte limit");
+        }
     }
 
     @Override

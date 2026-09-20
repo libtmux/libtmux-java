@@ -147,6 +147,10 @@ final class ControlClientTest {
             assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
             assertFalse(client.isAlive(), "a missing reply leaves command attribution uncertain");
             assertTrue(events.isClosed(), "a subscriber cannot wait forever on an unusable client");
+            assertEquals(
+                    EventSubscription.EndReason.TRANSPORT_FAILURE,
+                    events.termination().orElseThrow().reason());
+            assertEquals(failure, events.termination().orElseThrow().cause().orElseThrow());
             assertThrows(IllegalStateException.class, () -> client.send("list-panes"));
         }
     }
@@ -175,6 +179,9 @@ final class ControlClientTest {
             client.close();
 
             assertEquals(Optional.empty(), waiting.get(1, TimeUnit.SECONDS));
+            assertEquals(
+                    EventSubscription.EndReason.CLOSED,
+                    output.termination().orElseThrow().reason());
         } finally {
             waiting.cancel(true);
             output.close();
@@ -351,6 +358,56 @@ final class ControlClientTest {
         } finally {
             if (child > 0) {
                 ProcessHandle.of(child).ifPresent(ProcessHandle::destroyForcibly);
+            }
+        }
+    }
+
+    @Test
+    void terminalReasonsPreserveServerProtocolAndUnknownEnds(@TempDir Path directory) throws Exception {
+        var cases = java.util.Map.of(
+                "printf '%%exit server exited\\n'", EventSubscription.EndReason.CONTROL_EXIT,
+                "printf '%%output malformed\\n'", EventSubscription.EndReason.PROTOCOL_FAILURE,
+                ":", EventSubscription.EndReason.UNKNOWN);
+        int index = 0;
+        for (var entry : cases.entrySet()) {
+            Path scratch = Files.createDirectory(directory.resolve("termination-" + index++));
+            ServerConfig config = fakeTmux(scratch, """
+                    printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                    IFS= read -r refresh
+                    printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                    IFS= read -r trigger
+                    """ + "printf '%%output %%1 final\\n'\n" + entry.getKey() + "\n");
+            var client = ControlClient.attach(config, new SessionId("$0"));
+            try (var events = client.subscribeOutputBytes(2, 128)) {
+                assertThrows(TmuxTransportException.class, () -> client.send("trigger"));
+                assertEquals(
+                        "final",
+                        new String(
+                                events.next(Duration.ofSeconds(1)).orElseThrow().data(),
+                                java.nio.charset.StandardCharsets.US_ASCII));
+                assertEquals(0, events.droppedCount());
+                assertTrue(events.next(Duration.ZERO).isEmpty());
+                assertEquals(
+                        entry.getValue(), events.termination().orElseThrow().reason());
+                if (entry.getValue() == EventSubscription.EndReason.CONTROL_EXIT) {
+                    assertEquals(
+                            "%exit server exited",
+                            events.termination()
+                                    .orElseThrow()
+                                    .cause()
+                                    .orElseThrow()
+                                    .getMessage());
+                }
+                if (entry.getValue() == EventSubscription.EndReason.PROTOCOL_FAILURE) {
+                    assertInstanceOf(
+                            IllegalArgumentException.class,
+                            events.termination().orElseThrow().cause().orElseThrow());
+                }
+                client.close();
+                assertEquals(
+                        entry.getValue(), events.termination().orElseThrow().reason());
+            } finally {
+                client.close();
             }
         }
     }

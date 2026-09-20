@@ -299,6 +299,42 @@ final class ServerTest {
     }
 
     @Test
+    void waitingGroupsReserveAdmissionAndPreserveTransportFailure(@TempDir Path directory) throws IOException {
+        AtomicInteger ordinary = new AtomicInteger();
+        AtomicInteger waiting = new AtomicInteger();
+        TmuxTransportException failure =
+                new TmuxTransportException("admission refused", DispatchOutcome.NOT_DISPATCHED, null);
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                ordinary.incrementAndGet();
+                throw failure;
+            }
+
+            @Override
+            public CommandResult executeWaiting(CommandRequest request) {
+                waiting.incrementAndGet();
+                throw failure;
+            }
+
+            @Override
+            public void close() {}
+        };
+        try (Server server = Server.using(config(directory), transport)) {
+            assertSame(failure, assertThrows(TmuxTransportException.class,
+                    () -> server.batch().add("display-message", "one").run()));
+            assertSame(failure, assertThrows(TmuxTransportException.class,
+                    () -> server.chain().then("display-message", "two").run()));
+            assertSame(failure, assertThrows(TmuxTransportException.class,
+                    () -> server.batchReservingCapacity().add("wait-for", "one").run()));
+            assertSame(failure, assertThrows(TmuxTransportException.class,
+                    () -> server.chainReservingCapacity().then("wait-for", "two").run()));
+            assertEquals(2, ordinary.get());
+            assertEquals(2, waiting.get());
+        }
+    }
+
+    @Test
     void liveReadsPreserveMalformedOrInconsistentCaptures(@TempDir Path directory) throws IOException {
         String separator = RowFormat.of("field").separator();
         for (String sessionRow : List.of(
@@ -442,6 +478,7 @@ final class ServerTest {
     private static List<Executable> liveReads(Server server) {
         return List.of(
                 server::snapshot,
+                server::capture,
                 server::sessions,
                 server::windows,
                 server::panes,

@@ -40,7 +40,14 @@ tasks.withType<Test>().configureEach {
     // date, exactly as the snippets once did.
     val sources =
         rootProject.fileTree(root) {
-            include("*/src/main/**/*.java", "*/src/main/**/*.kt", "*/src/test/**/*.java", "*/src/test/**/*.kt")
+            include(
+                "*/src/main/**/*.java",
+                "*/src/main/**/*.kt",
+                "*/src/main/**/*.clj",
+                "*/src/test/**/*.java",
+                "*/src/test/**/*.kt",
+                "*/src/test/**/*.clj",
+            )
             exclude("**/build/**")
         }
 

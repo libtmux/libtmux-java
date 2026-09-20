@@ -314,6 +314,16 @@ public final class Server implements AutoCloseable {
     }
 
     /**
+     * Collects a group that may wait for a release through this server's transport.
+     *
+     * <p>The transport reserves admission capacity for ordinary release commands. Encoding and
+     * positional attribution match {@link #batch()}.
+     */
+    public Batch batchReservingCapacity() {
+        return new Batch(commands -> transport.executeWaiting(request(commands, config.defaultTimeout(), "")));
+    }
+
+    /**
      * Starts a chain of commands where each one acts on what the last one made.
      *
      * <p>tmux moves its own current target as a group runs, so a chain needs no round trip to learn
@@ -321,6 +331,11 @@ public final class Server implements AutoCloseable {
      */
     public CommandChain chain() {
         return new CommandChain(batch(), this::versionForCreation);
+    }
+
+    /** Starts an implicit-target chain while reserving transport capacity for its release. */
+    public CommandChain chainReservingCapacity() {
+        return new CommandChain(batchReservingCapacity(), this::versionForCreation);
     }
 
     /**
@@ -899,6 +914,19 @@ public final class Server implements AutoCloseable {
         } catch (RuntimeException e) {
             throw new LibTmuxException("could not hydrate tmux snapshot: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Captures metadata and entity handles from one observed hierarchy.
+     *
+     * <p>Accessing the returned view or its captured relations issues no commands. Acquisition
+     * uses the same consistency checks and replacement retry as {@link #snapshot()}.
+     *
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
+     */
+    public CapturedServer capture() {
+        return new CapturedServer(this, snapshot());
     }
 
     /**
