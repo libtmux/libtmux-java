@@ -10,9 +10,9 @@
   (Files/exists socket
                 (make-array java.nio.file.LinkOption 0)))
 
-(defn- capture-fixture-process [binary socket]
+(defn- capture-fixture-process [server socket]
   (let [capture (ns-resolve 'libtmux.internal.fixture 'capture-process)]
-    (capture binary socket)))
+    (capture server socket)))
 
 (defn- tmux-for-socket? [identity binary socket]
   (let [matches? (ns-resolve 'libtmux.internal.fixture 'tmux-for-socket?)]
@@ -21,9 +21,9 @@
 (defn- await-exit! [^ProcessHandle process]
   (.get (.onExit process) 900 TimeUnit/MILLISECONDS))
 
-(defn- replace-fixture-daemon! [^Path socket]
+(defn- replace-fixture-daemon! [server ^Path socket]
   (let [binary (System/getProperty "libtmux.tmux" "tmux")
-        original (capture-fixture-process binary socket)
+        original (capture-fixture-process server socket)
         directory (.getParent socket)
         config (.resolve directory "foreign.conf")]
     (when-not original
@@ -36,7 +36,7 @@
                                      "new-session" "-d" "-s" "foreign-fixture"]
           ^Process process (.start (ProcessBuilder. arguments))
           completed? (.waitFor process 900 TimeUnit/MILLISECONDS)
-          replacement (capture-fixture-process binary socket)]
+          replacement (capture-fixture-process server socket)]
       (when-not (and completed? (zero? (.exitValue process)) replacement)
         (throw (ex-info "could not start a replacement tmux process" {:socket socket})))
       (assoc replacement :socket socket :config config))))
@@ -47,8 +47,8 @@
         ^libtmux.async.AsyncRuntime runtime (async/runtime! {:close-timeout-ms 900})
         task (async/submit! runtime options
                             #(fixture/with-owned-server
-                               (fn [{:keys [socket binary]}]
-                                 (let [owner (capture-fixture-process binary socket)]
+                               (fn [{:keys [server socket]}]
+                                 (let [owner (capture-fixture-process server socket)]
                                    (deliver started {:socket socket
                                                      :directory (.getParent ^Path socket)
                                                      :process (:process owner)
@@ -124,11 +124,30 @@
                      (throw (Exception. "fixture failure"))))))
     (is (not (exists? @seen)))))
 
+(deftest fixture-captures-the-daemon-with-a-live-client
+  (fixture/with-owned-server
+   (fn [{:keys [server socket binary]}]
+     (let [channel (str "fixture-process-" (java.util.UUID/randomUUID))
+           ^java.util.List client-arguments [binary "-S" (str socket)
+                                              "wait-for" channel]
+           ^Process client (.start (ProcessBuilder. client-arguments))]
+       (try
+         (is (.isAlive client))
+         (let [owned (capture-fixture-process server socket)]
+           (is (instance? ProcessHandle (:process owned)))
+           (is (not= (.pid client) (:pid owned))))
+         (finally
+           (let [^java.util.List signal-arguments [binary "-S" (str socket)
+                                                    "wait-for" "-S" channel]
+                 ^Process signal (.start (ProcessBuilder. signal-arguments))]
+             (.waitFor signal 900 TimeUnit/MILLISECONDS))
+           (.waitFor client 900 TimeUnit/MILLISECONDS)))))))
+
 (deftest server-is-removed-when-setup-fails-after-start
   (let [seen (atom nil)]
     (is (thrown? Exception
                  (binding [fixture/*after-start*
-                           (fn [socket]
+                           (fn [_ socket]
                              (reset! seen socket)
                              (throw (Exception. "setup failure")))]
                    (fixture/with-owned-server (fn [_])))))
@@ -165,8 +184,8 @@
   (let [replacement (atom nil)
         failure (try
                   (binding [fixture/*after-start*
-                            (fn [socket]
-                              (reset! replacement (replace-fixture-daemon! socket))
+                           (fn [server socket]
+                             (reset! replacement (replace-fixture-daemon! server socket))
                               (throw (ex-info "fixture process was replaced" {:socket socket})))]
                     (fixture/with-owned-server (fn [_])))
                   nil
