@@ -133,7 +133,9 @@ public final class Options {
             // -q so an option unset between the two requests reads as empty rather than ending the batch.
             Batch batch = snapshot == null ? server.batch() : server.batch(snapshot);
             do {
-                batch.add(argv("show-options", List.of("-q", "-v", "--", names.get(to++))));
+                List<String> arguments = new ArrayList<>(flags);
+                arguments.addAll(List.of("-q", "-v", "--", names.get(to++)));
+                batch.add(argv("show-options", arguments));
             } while (to < names.size() && batch.length() < GROUP_BUDGET);
             record(names.subList(from, to), batch, options);
             from = to;
@@ -165,10 +167,10 @@ public final class Options {
     }
 
     /**
-     * Every option in effect at this scope, including the ones inherited rather than set here.
+     * Every option tmux lists at this scope, including inherited built-in values.
      *
-     * <p>The wide counterpart to {@link #all()}: what tmux will act on, which for a session that
-     * sets nothing of its own is everything and not nothing.
+     * <p>Inherited user-option names are not listed by tmux. {@link #get(String)} still reads their
+     * effective values by name.
      */
     public Map<String, String> effective() {
         return read(List.of("-A"));

@@ -80,13 +80,15 @@ final class OptionWritesIntegrationTest {
 
     @Test
     void aScopeThatSetsNothingStillHasEverythingInEffect(Server server) {
+        server.globalOptions().set("history-limit", "1234");
         Options options = session(server).options();
 
         assertTrue(options.all().isEmpty(), "a fresh session sets nothing of its own");
-        assertFalse(options.effective().isEmpty(), "but it acts on what it inherits");
-        assertTrue(
-                options.effective().containsKey("status-left"),
-                options.effective().keySet().toString());
+        assertEquals(Optional.of("1234"), options.get("history-limit"));
+        var effective = options.effective();
+        assertFalse(effective.isEmpty(), "but it acts on what it inherits");
+        assertTrue(effective.containsKey("status-left"), effective.keySet().toString());
+        assertEquals("1234", effective.get("history-limit"), "inherited names keep their actual values");
     }
 
     @Test
