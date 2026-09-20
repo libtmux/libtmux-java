@@ -1,0 +1,97 @@
+name: Scala release
+
+# Scala artifacts are released only after their exact Java dependency is available from Central.
+# A Java tag does not satisfy that condition by itself, so an owner starts this workflow manually.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scala_version:
+        description: 'Scala artifact version, for example 0.0.1-alpha.12'
+        required: true
+        type: string
+      java_version:
+        description: 'Already published Java dependency version'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Validate release inputs
+        env:
+          SCALA_VERSION: ${{ inputs.scala_version }}
+          JAVA_VERSION: ${{ inputs.java_version }}
+        run: |
+          for version in "$SCALA_VERSION" "$JAVA_VERSION"; do
+            case "$version" in
+              *-SNAPSHOT|*-scala-dev.*)
+                echo "::error::not a released coordinate: $version"
+                exit 1
+                ;;
+            esac
+            printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|milestone|rc)\.[0-9]+)?$' || {
+              echo "::error::not a version this project publishes: $version"
+              exit 1
+            }
+          done
+
+      - name: Carry the passphrase only if the key has one
+        env:
+          PASSPHRASE: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if [ -n "$PASSPHRASE" ]; then
+            echo "PGP_PASSPHRASE=$PASSPHRASE" >> "$GITHUB_ENV"
+            echo "signing key has a passphrase"
+          else
+            echo "signing key has no passphrase"
+          fi
+
+      - name: Import signing key
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          keyring="$RUNNER_TEMP/libtmux-scala-gpg"
+          install -d -m 700 "$keyring"
+          printf '%s' "$SIGNING_KEY" | gpg --batch --homedir "$keyring" --import
+          echo "GNUPGHOME=$keyring" >> "$GITHUB_ENV"
+
+      - name: Stage signed Scala artifacts
+        env:
+          LIBTMUX_SCALA_RELEASE: central
+          LIBTMUX_SCALA_VERSION: ${{ inputs.scala_version }}
+          LIBTMUX_JAVA_VERSION: ${{ inputs.java_version }}
+        run: ./scala/sbtw stageSigned
+
+      - name: Verify signed staging
+        env:
+          SCALA_VERSION: ${{ inputs.scala_version }}
+        run: |
+          python3 scala/scripts/verify-signatures.py \
+            --stage scala/target/sona-staging \
+            --version "$SCALA_VERSION"
+
+      - name: Upload the Scala deployment
+        env:
+          LIBTMUX_SCALA_RELEASE: central
+          LIBTMUX_SCALA_VERSION: ${{ inputs.scala_version }}
+          LIBTMUX_JAVA_VERSION: ${{ inputs.java_version }}
+          SONATYPE_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.CENTRAL_PORTAL_PASSWORD }}
+        run: ./scala/sbtw sonaUpload
+
+      - name: What to do next
+        run: |
+          echo "::notice::Scala deployment uploaded. Open https://central.sonatype.com/publishing/deployments and publish or drop it."

@@ -8,53 +8,51 @@ plugins {
 
 // Aggregate entry points, so the gate is one command whatever the module layout becomes.
 
-/**
- * What this repository releases, checked rather than agreed.
- *
- * A module is published exactly when it applies `libtmux.published-library`, and the platform is
- * what a consumer uses to name one version for all of them. Those two facts have to agree, and
- * nothing in the language makes them: adding a module and forgetting the platform yields an artifact
- * on Central that the platform does not manage, which a consumer discovers as a version they have to
- * pin by hand for no stated reason.
- *
- * Directory names cannot carry this. A convention that published modules live somewhere particular
- * is unverifiable; this is a build failure.
- */
+// Scala publications are declared independently of Gradle; sbt verifies the same declaration
+// against its generated publications. This gate does not require sbt or staged artifacts.
 val platformCoversEveryPublishedModule =
     tasks.register("platformCoversEveryPublishedModule") {
         group = "verification"
         description = "Fails when a published module is missing from libtmux-bom, or vice versa."
 
         val platform = project(":libtmux-bom")
-        // Read at configuration time, so the task's own action holds values rather than projects.
-        //
-        // A module counts as published when it actually declares a publication, not when it merely
-        // applies the plugin. Applying maven-publish and declaring nothing produces a module that
-        // looks published to a build script and releases no artifact — which is exactly what
-        // libtmux-kotlin did until a publishToMavenLocal noticed the jar was missing.
+        val scalaPublications = layout.projectDirectory.file("scala/publications.txt").asFile
+        inputs.file(scalaPublications)
         val published = provider {
             subprojects
                 .filter { it != platform }
-                .filter { candidate ->
+                .flatMap { candidate ->
                     candidate.extensions
                         .findByType(PublishingExtension::class.java)
                         ?.publications
                         ?.withType(MavenPublication::class.java)
-                        ?.isNotEmpty() == true
+                        ?.map { "${it.groupId}:${it.artifactId}:${it.version}" }
+                        ?: emptyList()
                 }
-                .map { it.name }
                 .toSortedSet()
+        }
+        val declared = provider {
+            val rows = scalaPublications.readLines()
+            val coordinate = Regex("[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+")
+            require(rows.isNotEmpty()) { "scala/publications.txt must declare at least one publication." }
+            rows.forEachIndexed { index, row ->
+                require(coordinate.matches(row)) {
+                    "scala/publications.txt:${index + 1} must contain one group:artifact coordinate."
+                }
+            }
+            require(rows.size == rows.toSet().size) { "scala/publications.txt contains duplicate coordinates." }
+            rows.map { "$it:${platform.version}" }.toSortedSet()
         }
         val managed = provider {
             platform.configurations
                 .getByName("api")
                 .dependencyConstraints
-                .map { it.name }
+                .map { "${it.group}:${it.name}:${it.version}" }
                 .toSortedSet()
         }
 
         doLast {
-            val shipped = published.get()
+            val shipped = published.get() + declared.get()
             val listed = managed.get()
             require(shipped == listed) {
                 buildString {

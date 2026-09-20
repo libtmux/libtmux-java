@@ -351,7 +351,7 @@ installs every module into your local repository under the same coordinates.
 
 ## Kotlin and Scala
 
-Both work without a wrapper, because the core is annotated with
+Both can use the Java API directly, because the core is annotated with
 [JSpecify](https://jspecify.dev/) and carries no Scala version suffix.
 
 **Kotlin** sees the API as null-safe rather than as platform types — Kotlin has
@@ -360,9 +360,10 @@ the `Consumer<Builder>` overloads take trailing lambdas. `libtmux-kotlin` adds
 what Java cannot express: absence as `null` rather than `Optional`, and `!expr`
 on a filter.
 
-**Scala** consumes the Java artifacts directly. There is no `_2.13` or `_3`
-build, and there should not be — a Java artifact carrying a Scala suffix is a
-bug. See [the Scala guide](docs/guide/scala.md).
+**Scala** can consume the Java artifacts directly. This source tree also has an
+in-progress Scala facade with locally staged `_2.13` and `_3` artifacts; those
+suffixes apply only to the facade, never to the Java artifact. See the
+[Scala facade guide](scala/README.md) and [direct Java guide](docs/guide/scala.md).
 
 ## Requirements
 

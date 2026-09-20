@@ -22,5 +22,9 @@ dependencies {
         api(project(":libtmux-junit5"))
         api(project(":libtmux-mcp"))
         api(project(":libtmux-workspace"))
+        api("io.github.libtmux:libtmux-scala_2.13:${project.version}")
+        api("io.github.libtmux:libtmux-scala_3:${project.version}")
+        api("io.github.libtmux:libtmux-scala-cats_2.13:${project.version}")
+        api("io.github.libtmux:libtmux-scala-cats_3:${project.version}")
     }
 }
