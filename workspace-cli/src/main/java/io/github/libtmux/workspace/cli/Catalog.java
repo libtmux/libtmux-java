@@ -39,6 +39,13 @@ final class Catalog {
     static String mask(Main.Context context, Path path) {
         Path absolute = path.toAbsolutePath().normalize();
         Path home = home(context).toAbsolutePath().normalize();
+        if (!absolute.startsWith(home)) {
+            try {
+                home = home.toRealPath();
+            } catch (IOException unavailable) {
+                return absolute.toString();
+            }
+        }
         return absolute.startsWith(home)
                 ? "~" + (absolute.equals(home) ? "" : "/" + home.relativize(absolute))
                 : absolute.toString();

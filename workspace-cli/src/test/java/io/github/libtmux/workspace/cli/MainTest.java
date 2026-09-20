@@ -525,6 +525,30 @@ final class MainTest {
     }
 
     @Test
+    void homeMaskingRecognizesCanonicalPathsThroughASymlink() throws Exception {
+        Path home = Files.createDirectory(directory.resolve("home")).toRealPath();
+        Path alias = Files.createSymbolicLink(directory.resolve("home-link"), home);
+        Files.writeString(home.resolve("workspace.yaml"), "session_name: home\nwindows: []\n");
+        var context = new Main.Context(
+                Map.of("HOME", alias.toString()),
+                directory,
+                InputStream.nullInputStream(),
+                OutputStream.nullOutputStream(),
+                OutputStream.nullOutputStream());
+
+        Path source = Catalog.resolve(context, alias.resolve("workspace.yaml").toString(), "load");
+        assertEquals("~/workspace.yaml", Catalog.mask(context, source));
+        assertEquals("~", Catalog.mask(context, home));
+        assertEquals("~/missing.yaml", Catalog.mask(context, alias.resolve("missing.yaml")));
+        Path outside = home.resolveSibling("home-other").resolve("workspace.yaml");
+        assertEquals(outside.toString(), Catalog.mask(context, outside));
+
+        Files.delete(alias);
+        assertEquals("~/missing.yaml", Catalog.mask(context, alias.resolve("missing.yaml")));
+        assertEquals(source.toString(), Catalog.mask(context, source));
+    }
+
+    @Test
     void yamlAliasesAndMergesPreserveNestedValuesAndTextDates() throws Exception {
         Path source = directory.resolve("aliases.yaml");
         Files.writeString(source, """
