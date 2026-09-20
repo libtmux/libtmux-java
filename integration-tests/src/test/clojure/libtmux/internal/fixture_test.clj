@@ -14,6 +14,10 @@
   (let [capture (ns-resolve 'libtmux.internal.fixture 'capture-process)]
     (capture binary socket)))
 
+(defn- tmux-for-socket? [identity binary socket]
+  (let [matches? (ns-resolve 'libtmux.internal.fixture 'tmux-for-socket?)]
+    (matches? identity binary socket)))
+
 (defn- await-exit! [^ProcessHandle process]
   (.get (.onExit process) 900 TimeUnit/MILLISECONDS))
 
@@ -78,6 +82,29 @@
         (is (false? (.isAlive ^Thread (:worker owned))))
         (is (not (exists? (:socket owned))))
         (is (not (exists? (:directory owned))))))))
+
+(deftest fixture-recognizes-a-socket-through-an-ancestor-link
+  (let [attributes (make-array java.nio.file.attribute.FileAttribute 0)
+        root (Files/createTempDirectory (Path/of "/tmp/libtmux-java-test"
+                                                (make-array String 0))
+                                        "path-alias-" attributes)
+        real (.resolve root "real")
+        socket (.resolve real "s")
+        alias (.resolve root "alias")
+        linked-socket (.resolve alias "s")]
+    (try
+      (Files/createDirectory real attributes)
+      (Files/createFile socket attributes)
+      (Files/createSymbolicLink alias real attributes)
+      (is (true?
+           (tmux-for-socket? {:command "/usr/bin/tmux"
+                              :arguments ["-S" (str linked-socket)]}
+                             "/usr/bin/tmux" socket)))
+      (finally
+        (Files/deleteIfExists alias)
+        (Files/deleteIfExists socket)
+        (Files/deleteIfExists real)
+        (Files/deleteIfExists root)))))
 
 (deftest owned-server-is-removed-after-success
   (let [seen (atom nil)]
