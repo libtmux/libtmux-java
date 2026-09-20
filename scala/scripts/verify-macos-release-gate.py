@@ -115,6 +115,18 @@ def verify(path):
             ),
             "Manual release dispatch must skip " + job,
         )
+    stage_condition = (
+        "if: github.event_name != 'workflow_dispatch' || "
+        "!inputs.include_macos_release || inputs.include_macos_consumers"
+    )
+    require(
+        re.search(
+            r"^  artifact-stage:\n    " + re.escape(stage_condition) + r"\n",
+            text,
+            re.MULTILINE,
+        ),
+        "Manual macOS consumer dispatch must retain the Linux artifact stage",
+    )
     for task in TASKS:
         require(task in text, "Missing primary task: " + task)
     cells = cell_blocks(text, "P")
