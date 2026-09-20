@@ -141,6 +141,10 @@
           waiting (async/submit! runtime {:kind :wait} #(.await release))
           queued (async/submit! runtime identity)]
       (is (true? (async/cancel! queued)))
+      (let [outcome (try (deref queued 500 ::timeout)
+                         (catch clojure.lang.ExceptionInfo error error))]
+        (is (instance? clojure.lang.ExceptionInfo outcome))
+        (is (= :cancelled (:tmux/error (ex-data outcome)))))
       (is (instance? libtmux.async.Task (async/submit! runtime identity)))
       (.countDown release)
       (deref running 500 ::timeout)
