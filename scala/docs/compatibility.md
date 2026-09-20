@@ -44,6 +44,12 @@ primary cells P05, P07, and P08 one at a time on macOS with tmux `3.7c`. This
 keeps routine pull-request CI at four running jobs while retaining an
 executable release-gate path for the remaining macOS producer evidence.
 
+`include_macos_consumers=true` runs the Linux artifact-stage job, then C02
+through C07 one at a time on macOS. Each consumer cell uses that Linux stage
+and runs both independent sbt and Gradle consumers. It also skips the routine
+pull-request jobs, so the installed-consumer release gate does not expand the
+pull-request matrix.
+
 ## Artifacts and Java prerequisites
 
 All four Scala coordinates use group `io.github.libtmux`:

@@ -12,6 +12,14 @@ EXPECTED = {
     "P07": ("25", "2.13.18"),
     "P08": ("25", "3.3.8"),
 }
+CONSUMER_CELLS = {
+    "C02": ("21", "2.13.18"),
+    "C03": ("21", "3.3.8"),
+    "C04": ("21", "3.9.0"),
+    "C05": ("25", "2.13.18"),
+    "C06": ("25", "3.3.8"),
+    "C07": ("25", "3.9.0"),
+}
 TASKS = (
     "scalafmtSbtCheck",
     "scalafmtCheckAll",
@@ -32,11 +40,12 @@ def require(value, message):
         raise ValueError(message)
 
 
-def cell_blocks(text):
+def cell_blocks(text, prefix):
     return {
         matched.group("id"): matched.group("body")
         for matched in re.finditer(
-            r"^\s+- id: (?P<id>P\d+)\n(?P<body>(?:^\s{12}.+\n)+)",
+            r"^\s+- id: (?P<id>" + prefix + r"\d+)\n"
+            r"(?P<body>(?:^\s{12}.+\n)+)",
             text,
             re.MULTILINE,
         )
@@ -56,6 +65,17 @@ def verify(path):
         "default: false" in trigger.group("body") and
         "type: boolean" in trigger.group("body"),
         "Manual macOS release input must default to false",
+    )
+    consumer_trigger = re.search(
+        r"^      include_macos_consumers:\n(?P<body>(?:^        .+\n)+)",
+        text,
+        re.MULTILINE,
+    )
+    require(consumer_trigger, "Missing manual macOS consumer input")
+    require(
+        "default: false" in consumer_trigger.group("body") and
+        "type: boolean" in consumer_trigger.group("body"),
+        "Manual macOS consumer input must default to false",
     )
     manual = re.search(
         r"^  manual-macos-primary:\n(?P<body>(?:^    .+\n)+)",
@@ -83,9 +103,10 @@ def verify(path):
         "Pull-request smoke job does not enforce the manual gate contract",
     )
     smoke_condition = (
-        "if: github.event_name != 'workflow_dispatch' || !inputs.include_macos_release"
+        "if: github.event_name != 'workflow_dispatch' || "
+        "(!inputs.include_macos_release && !inputs.include_macos_consumers)"
     )
-    for job in ("artifact-stage", "producer-runtime", "installed-consumers"):
+    for job in ("producer-runtime", "installed-consumers"):
         require(
             re.search(
                 r"^  " + job + r":\n    " + re.escape(smoke_condition) + r"\n",
@@ -96,12 +117,48 @@ def verify(path):
         )
     for task in TASKS:
         require(task in text, "Missing primary task: " + task)
-    cells = cell_blocks(text)
+    cells = cell_blocks(text, "P")
     require(set(cells) == set(EXPECTED), "Wrong release cells: " + repr(sorted(cells)))
     for cell, (java, scala) in EXPECTED.items():
         body = cells[cell]
         require("java: '" + java + "'" in body, "Wrong JDK for " + cell)
         require("scala: " + scala in body, "Wrong Scala producer for " + cell)
+    consumers = re.search(
+        r"^  manual-macos-consumers:\n(?P<body>(?:^    .+\n)+)",
+        text,
+        re.MULTILINE,
+    )
+    require(consumers, "Missing manual macOS consumer job")
+    require(
+        "github.event_name == 'workflow_dispatch' && inputs.include_macos_consumers" in
+        consumers.group("body"),
+        "macOS consumer job must be dispatch-only",
+    )
+    require("needs: artifact-stage" in consumers.group("body"),
+            "macOS consumers must use the Linux artifact stage")
+    consumer_start = text.index("  manual-macos-consumers:")
+    following_job = re.search(
+        r"^  [a-z][a-z-]+:\n", text[consumer_start + 1:], re.MULTILINE
+    )
+    require(following_job, "macOS consumer job has no closing boundary")
+    consumer_end = consumer_start + 1 + following_job.start()
+    consumer_text = text[consumer_start:consumer_end]
+    require("max-parallel: 1" in consumer_text,
+            "macOS consumer cells must run one at a time")
+    require("scala-consumer-stage-${{ github.sha }}" in consumer_text,
+            "macOS consumers must download staged artifacts")
+    for value in ("--scala-stage", "--java-stage", "--scala-version",
+                  "--jdk \"$JAVA_HOME\"", "--tmux", "--output"):
+        require(value in consumer_text, "Missing consumer invocation argument: " + value)
+    require("No tmux server outlived" in consumer_text,
+            "Missing macOS consumer cleanup check")
+    consumer_cells = cell_blocks(text, "C")
+    require(set(consumer_cells) == set(CONSUMER_CELLS),
+            "Wrong consumer release cells: " + repr(sorted(consumer_cells)))
+    for cell, (java, scala) in CONSUMER_CELLS.items():
+        body = consumer_cells[cell]
+        require("java: '" + java + "'" in body, "Wrong consumer JDK for " + cell)
+        require("scala: " + scala in body, "Wrong consumer Scala for " + cell)
 
 
 def main():
