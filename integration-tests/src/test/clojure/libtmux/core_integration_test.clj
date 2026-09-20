@@ -1,8 +1,10 @@
 (ns libtmux.core-integration-test
   (:require [clojure.test :refer [deftest is]]
+            [libtmux.control :as control]
             [libtmux.core :as tmux]
             [libtmux.data :as data]
-            [libtmux.internal.fixture :as fixture]))
+            [libtmux.internal.fixture :as fixture])
+  (:import [java.lang AutoCloseable]))
 
 (deftest typed-effects-preserve-captured-data-and-explicit-reference
   (fixture/with-owned-server
@@ -71,6 +73,22 @@
          (is (nil? (tmux/refresh! (:tmux/ref linked))))
          (is (nil? (tmux/refresh! (:tmux/ref pane))))
          (is (some? (tmux/refresh! (:tmux/ref window)))))))))
+
+(deftest typed-client-operations-switch-and-detach-the-captured-client
+  (fixture/with-owned-server
+   (fn [{:keys [server]}]
+     (let [source (tmux/new-session! server {:name "client-source"})
+           target (tmux/new-session! server {:name "client-target"})]
+       (with-open [^AutoCloseable connection (control/attach! (:tmux/ref source))]
+         (let [client (data/one-or-none (tmux/clients! server))]
+           (is (some? client))
+           (is (nil? (tmux/switch-client! (:tmux/ref client) (:tmux/ref target))))
+           (is (= "client-target"
+                  (get-in (tmux/refresh! (:tmux/ref client))
+                          [:client/session :session/name])))
+           (is (nil? (tmux/detach-client! (:tmux/ref client))))
+           (is (nil? (tmux/refresh! (:tmux/ref client))))
+           (is (seq (tmux/sessions! server)))))))))
 
 (deftest closing-resources-does-not-kill-borrowed-server
   (fixture/with-owned-server
