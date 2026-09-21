@@ -229,17 +229,23 @@ final class SnapshotCapture {
     }
 
     /**
-     * The sessions that own a pane matching {@code format}, each read in full. Empty when the probe
-     * finds no pane, which is also what a server that ignores {@code -f} reports.
+     * The sessions a filtered listing names, each read in full. Empty when the probe finds nothing,
+     * which is also what a server that ignores {@code -f} reports.
+     *
+     * @param command the listing, such as {@code list-sessions} or {@code list-panes -a}
      */
-    Optional<ServerSnapshot> sessionsOfPanes(String format) {
+    Optional<ServerSnapshot> sessionsWhere(String format, String... command) {
         ServerProcess process = process()
                 .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
         RowFormat sessionOnly = RowFormat.of("session_id");
+        List<String> argv = new ArrayList<>();
+        argv.addAll(List.of(command));
+        argv.add("-f");
+        argv.add(format);
         Batch probe = server.batch(process.pid(), process.reported());
-        probe.add(listing(sessionOnly, "list-panes", "-a", "-f", format));
+        probe.add(listing(sessionOnly, argv.toArray(String[]::new)));
         LinkedHashSet<String> sessionIds = new LinkedHashSet<>();
-        for (RowFormat.Row row : rows(sessionOnly, probe.run().operations().get(0), "list-panes")) {
+        for (RowFormat.Row row : rows(sessionOnly, probe.run().operations().get(0), command[0])) {
             String id = row.text("session_id");
             if (!id.isEmpty()) {
                 sessionIds.add(id);

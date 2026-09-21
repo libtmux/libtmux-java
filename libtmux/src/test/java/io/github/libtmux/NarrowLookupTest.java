@@ -61,6 +61,37 @@ class NarrowLookupTest {
     }
 
     @Test
+    void aSafeSessionExpressionIsSentAsAFormat() {
+        List<String> sent = commands();
+        try (Server server = Server.using(ServerConfig.builder().build(), answering(sent))) {
+            assertTrue(server.sessions(Session_.name().is("build")).isEmpty());
+        }
+        String all = String.join("\n", sent);
+        assertTrue(all.contains("list-sessions"), all);
+        assertTrue(all.contains("#{==:#{session_name},build}"), all);
+    }
+
+    @Test
+    void aSafeWindowExpressionIsSentAsAFormat() {
+        List<String> sent = commands();
+        try (Server server = Server.using(ServerConfig.builder().build(), answering(sent))) {
+            assertTrue(server.windows(Window_.name().is("editor")).isEmpty());
+        }
+        String all = String.join("\n", sent);
+        assertTrue(all.contains("list-windows"), all);
+        assertTrue(all.contains("#{==:#{window_name},editor}"), all);
+    }
+
+    @Test
+    void aWindowRelationStaysLocal() {
+        List<String> sent = commands();
+        try (Server server = Server.using(ServerConfig.builder().build(), answering(sent))) {
+            assertTrue(server.windows(Window_.panes().any(Pane_.command().is("nvim"))).isEmpty());
+        }
+        assertFalse(String.join("\n", sent).contains("-f"));
+    }
+
+    @Test
     void anUnsafePaneExpressionStaysLocal() {
         List<String> sent = commands();
         try (Server server = Server.using(ServerConfig.builder().build(), answering(sent))) {

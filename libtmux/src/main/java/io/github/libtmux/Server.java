@@ -968,6 +968,32 @@ public final class Server implements AutoCloseable {
         }
     }
 
+    private ServerSnapshot captured(FilterExpr<?> expression, String... listing) {
+        return TmuxFilters.format(expression)
+                .flatMap(format -> capture.sessionsWhere(format, listing))
+                .orElseGet(this::snapshot);
+    }
+
+    /**
+     * The sessions this expression matches, captured now.
+     *
+     * <p>A safe expression is sent as {@code list-sessions -f}. The sessions that come back are still
+     * tested with the expression. A relation, an expression tmux cannot apply, or a probe that finds
+     * nothing, reads the whole server and filters that capture.
+     *
+     * @return an immutable list in tmux order
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
+     */
+    public List<Session> sessions(FilterExpr<Session> expression) {
+        Objects.requireNonNull(expression, "expression");
+        ServerSnapshot captured = captured(expression, "list-sessions");
+        return captured.sessions().stream()
+                .map(session -> new Session(this, captured, session))
+                .filter(expression)
+                .toList();
+    }
+
     /**
      * Every session, captured now.
      *
@@ -998,6 +1024,26 @@ public final class Server implements AutoCloseable {
     }
 
     /**
+     * The winlinks this expression matches, captured now.
+     *
+     * <p>A safe expression is sent as {@code list-windows -f}. The winlinks that come back are still
+     * tested with the expression. A relation, an expression tmux cannot apply, or a probe that finds
+     * nothing, reads the whole server and filters that capture.
+     *
+     * @return an immutable list in tmux order
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
+     */
+    public List<Window> windows(FilterExpr<Window> expression) {
+        Objects.requireNonNull(expression, "expression");
+        ServerSnapshot captured = captured(expression, "list-windows", "-a");
+        return captured.windows().stream()
+                .map(window -> new Window(this, captured, window))
+                .filter(expression)
+                .toList();
+    }
+
+    /**
      * Captures every pane on the server.
      *
      * @return an immutable list in tmux order
@@ -1024,9 +1070,7 @@ public final class Server implements AutoCloseable {
      */
     public List<Pane> panes(FilterExpr<Pane> expression) {
         Objects.requireNonNull(expression, "expression");
-        ServerSnapshot captured = TmuxFilters.format(expression)
-                .flatMap(capture::sessionsOfPanes)
-                .orElseGet(this::snapshot);
+        ServerSnapshot captured = captured(expression, "list-panes", "-a");
         return captured.panes().stream()
                 .map(pane -> new Pane(this, captured, pane))
                 .filter(expression)
