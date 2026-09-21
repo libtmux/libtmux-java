@@ -1,7 +1,9 @@
 # Releasing
 
-`0.0.1-alpha.1` is on Maven Central, published 16 August 2026. Both gates below
-are done, so cutting the next release is a tag and someone pressing publish.
+The first Java release, `0.0.1-alpha.1`, reached Maven Central on 16 August
+2026. The namespace and signing gates below are configured. The normal release
+path uses a tag; the same workflow also accepts a manual dispatch. Both paths
+upload a signed deployment for review in the Central Portal.
 
 ## Versions
 
@@ -11,20 +13,25 @@ are done, so cutting the next release is a tag and someone pressing publish.
 alpha < beta < milestone < rc < snapshot < (release) < sp
 ```
 
-so `0.0.1-alpha.1` sorts below everything this project could publish later, and
-`0.0.1-alpha.1-SNAPSHOT` — the value in `gradle.properties` — sorts below the
-release it precedes.
+An `-alpha.N` release sorts below every later qualifier and a final release. A
+matching `-SNAPSHOT` development version sorts below the release it precedes.
 
-Write the qualifier after a hyphen and the increment after a dot:
-`0.0.1-alpha.1`, never `0.0.1.alpha.1`. Maven treats a version that does not
-match `major[.minor[.increment]][-qualifier]` as one long qualifier string, and
-then nothing orders the way it looks like it should.
+Write the qualifier after a hyphen and its number after a dot:
+`major.minor.increment-alpha.N`, never `major.minor.increment.alpha.N`. Maven
+treats a version that does not match `major[.minor[.increment]][-qualifier]` as
+one long qualifier string, and then nothing orders the way it looks like it
+should.
 
-Cut a release by tagging. The workflow reads the version from the tag, refuses a
-snapshot, and refuses anything that is not a shape this project publishes:
+The normal release path is a tag. The workflow reads the version from it,
+refuses a snapshot, and refuses anything that is not a shape this project
+publishes:
 
 ```console
-$ git tag v0.0.1-alpha.1 && git push origin v0.0.1-alpha.1
+$ git tag v<release-version>
+```
+
+```console
+$ git push origin v<release-version>
 ```
 
 Nothing is ever committed with a release version in it — `gradle.properties`
@@ -186,7 +193,7 @@ which is the whole argument for a dedicated one.
 A Portal token is not an OSSRH token. OSSRH reached end of life on 30 June 2025,
 and anything naming `oss.sonatype.org` describes a service that no longer exists.
 
-## The plugin, already wired
+## The publishing plugin
 
 `com.vanniktech.maven.publish` is applied by `libtmux.publication`. Sonatype
 ships no first-party Gradle plugin, and this one talks to the Portal API
@@ -206,18 +213,19 @@ Two behaviours worth knowing:
   Someone has to open the Portal and publish it. A pending deployment can be
   dropped; a released one can never be unpublished.
 
-## The order to do this in
+## Java release sequence
 
-1. ~~Verify the namespace~~ — everything else is blocked on it, and it costs one
-   public repository and a minute. **Done.**
-2. ~~Create and publish the signing key.~~ **Done.**
-3. ~~Add the secrets.~~ **Done** — all four.
-4. Dry-run locally, which needs no key and no token:
-   `./gradlew publishToMavenLocal -PlibtmuxVersion=0.0.1-alpha.1`.
-5. Tag. The Release workflow runs `check`, uploads, and stops.
-6. Open [the Portal](https://central.sonatype.com/publishing/deployments) and
+The namespace, signing key, and CI secrets are already configured. For each
+release:
+
+1. Choose a non-snapshot version with the release shape the workflow accepts.
+2. Dry-run locally with that version, which needs no key and no token:
+   `./gradlew publishToMavenLocal -PlibtmuxVersion=<release-version>`.
+3. Tag the version. The Release workflow runs `check`, uploads, and stops. A
+   manual workflow dispatch accepts the same version when tagging is unsuitable.
+4. Open [the Portal](https://central.sonatype.com/publishing/deployments) and
    publish the deployment, or drop it.
-7. Bump `libtmuxApiBaseline` in `gradle.properties` to the version just
+5. Bump `libtmuxApiBaseline` in `gradle.properties` to the version just
    released. The core's API-diff gate compares every later change against that
    property, not against `libtmuxVersion`, so the next round of development
    starts measured against what was actually shipped.

@@ -13,7 +13,7 @@
 plugins { id("com.vanniktech.maven.publish") }
 
 group = "io.github.libtmux"
-version = providers.gradleProperty("libtmuxVersion").getOrElse("0.0.1-alpha.1-SNAPSHOT")
+version = providers.gradleProperty("libtmuxVersion").get()
 
 // Supplied by CI as ORG_GRADLE_PROJECT_signingInMemoryKey, and absent on a developer's machine. A
 // build that demanded it everywhere could not run publishToMavenLocal, which is how a publication
