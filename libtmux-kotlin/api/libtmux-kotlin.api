@@ -8,6 +8,10 @@ public final class io/github/libtmux/kotlin/FiltersKt {
 	public static final fun not (Lio/github/libtmux/query/FilterExpr;)Lio/github/libtmux/query/FilterExpr;
 }
 
+public final class io/github/libtmux/kotlin/ListsKt {
+	public static final fun readOnly (Ljava/util/List;)Ljava/util/List;
+}
+
 public final class io/github/libtmux/kotlin/OptionalsKt {
 	public static final fun activePaneOrNull (Lio/github/libtmux/Session;)Lio/github/libtmux/Pane;
 	public static final fun activeWindowOrNull (Lio/github/libtmux/Session;)Lio/github/libtmux/Window;

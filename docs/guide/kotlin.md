@@ -72,6 +72,9 @@ There is deliberately no `and`/`or` here — see `Filters.kt` for why an extensi
 of the same name as an existing method is a resolution puzzle nobody should have
 to solve.
 
+A Java `List` is a `MutableList` in Kotlin, including a capture that refuses
+`add`. `readOnly()` is a Kotlin `List` of the same elements.
+
 ## Reading a subscription
 
 `deliveries()` collects a control subscription as a `Flow`. A `Delivery.Gap` is
