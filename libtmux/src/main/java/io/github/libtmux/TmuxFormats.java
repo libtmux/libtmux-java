@@ -11,8 +11,8 @@ import java.util.Objects;
  * caller's {@code #} stays a {@code #}.
  *
  * <p>It cannot do that for an argument the caller composes: {@link Pane#pipeTo},
- * {@link Window#displayPopup}, {@link Server#runShell}, {@link Server#runShellCapturing} and
- * {@link Server#ifShell} all take a whole shell command, where format expansion is a documented
+ * {@link Window#displayPopup}, {@link Shell#run}, {@link Shell#capturing} and {@link Shell#choose}
+ * all take a whole shell command, where format expansion is a documented
  * tmux feature a caller may want — {@code #{pane_id}} in a filename, for instance. A caller
  * interpolating an untrusted value into one of those needs {@link #literal} on that value, which is
  * why this is public.

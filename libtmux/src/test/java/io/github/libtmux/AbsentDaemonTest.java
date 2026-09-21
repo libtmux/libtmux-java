@@ -59,7 +59,7 @@ final class AbsentDaemonTest {
         sites.put("hooks.set", server -> server.hooks().set("after-new-window", "display-message hi"));
         sites.put("keys.bind", server -> server.keys().bind("F12", List.of("display-message", "hi")));
         sites.put("sourceFile", server -> server.sourceFile(Path.of("/tmp/nothing.conf")));
-        sites.put("runShell", server -> server.runShell("true"));
+        sites.put("shell.run", server -> server.shell().run("true"));
         sites.put("newSession", server -> {
             var unused = server.newSession("s");
         });

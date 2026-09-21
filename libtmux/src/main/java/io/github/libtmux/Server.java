@@ -329,17 +329,6 @@ public final class Server implements AutoCloseable {
     }
 
     /**
-     * tmux lost run-shell's output in 3.3a and found it again in 3.5 - confirmed against the matrix:
-     * {@code run-shell "echo hi"} without an attached client prints {@code hi} on 3.2a and 3.5, and
-     * only {@code no current client} on 3.3a and 3.4. Not probeable through {@link #listCommands}:
-     * {@code run-shell} exists on every one of those releases, and its args are unchanged across the
-     * gap, so a probe reading either would answer the same wrong way everywhere in the range.
-     */
-    private static final TmuxVersion SHELL_OUTPUT_LOST = new TmuxVersion(3, 3, "");
-
-    private static final TmuxVersion SHELL_OUTPUT_FOUND = new TmuxVersion(3, 5, "");
-
-    /**
      * Expands a tmux format against the server, and answers with what it came to.
      *
      * <p>The server-wide counterpart to {@link Pane#expand}: fields such as {@code #{pid}} and
@@ -356,83 +345,14 @@ public final class Server implements AutoCloseable {
         return String.join("\n", reported);
     }
 
-    /**
-     * Runs a shell command through tmux, for its effect.
-     *
-     * <p>Nothing is claimed about what it printed — see {@link #runShellCapturing} for that, and for
-     * why the two are separate.
-     *
-     * @param command run by the user's shell, so it may redirect and pipe
-     *
-     * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
-     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
-     * mean it to be expanded.
-     */
-    public void runShell(String command) {
-        Objects.requireNonNull(command, "command");
-        run(List.of("run-shell", "--", command));
-    }
-
-    /**
-     * Runs a shell command through tmux and answers with what it printed.
-     *
-     * <p>Separate from {@link #runShell} because tmux 3.3a and 3.4 run the command and then report
-     * nothing, on every attempt. A caller who wants the effect is fine there; a caller who wants the
-     * output would silently get none, so this one refuses rather than answering emptily.
-     *
-     * @throws UnsupportedTmuxVersionException on the releases that lose the output
-     *
-     * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
-     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
-     * mean it to be expanded.
-     */
-    public List<String> runShellCapturing(String command) {
-        Objects.requireNonNull(command, "command");
-        TmuxVersion running = version();
-        if (running.atLeast(SHELL_OUTPUT_LOST) && !running.atLeast(SHELL_OUTPUT_FOUND)) {
-            throw new UnsupportedTmuxVersionException(
-                    "reading what run-shell printed is broken between tmux 3.3a and 3.4, and this server runs "
-                            + running);
-        }
-        return run(List.of("run-shell", "--", command)).stdout();
+    /** Shell commands run by tmux, and tmux commands chosen by a shell exit status. */
+    public Shell shell() {
+        return new Shell(this);
     }
 
     /** Every command this tmux knows, as it prints them. */
     public List<String> listCommands() {
         return withoutStartingServer("list-commands").stdout();
-    }
-
-    /**
-     * Runs one tmux command or another, according to whether a shell command succeeds.
-     *
-     * <p>The choosing happens inside tmux rather than here, which is the point: the condition and
-     * both outcomes go out as one request, so nothing can change between asking and acting.
-     *
-     *
-     * <p>tmux expands {@code #(...)} in the condition before a shell sees it, and shell quoting does
-     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
-     * mean it to be expanded.
-     * @param condition a shell command, judged by its exit status
-     * @param whenTrue the tmux command to run when the condition succeeds
-     */
-    public void ifShell(String condition, String whenTrue) {
-        Objects.requireNonNull(condition, "condition");
-        Objects.requireNonNull(whenTrue, "whenTrue");
-        run(List.of("if-shell", "--", condition, whenTrue));
-    }
-
-    /**
-     * Runs one tmux command or another, according to whether a shell command succeeds.
-     *
-     * @param condition a shell command, judged by its exit status
-     * @param whenTrue the tmux command to run when the condition succeeds
-     * @param whenFalse the tmux command to run when it does not
-     */
-    public void ifShell(String condition, String whenTrue, String whenFalse) {
-        Objects.requireNonNull(condition, "condition");
-        Objects.requireNonNull(whenTrue, "whenTrue");
-        Objects.requireNonNull(whenFalse, "whenFalse");
-        run(List.of("if-shell", "--", condition, whenTrue, whenFalse));
     }
 
     /** Locks every client attached to this server. */

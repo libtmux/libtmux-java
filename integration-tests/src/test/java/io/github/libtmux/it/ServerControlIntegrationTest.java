@@ -42,7 +42,7 @@ final class ServerControlIntegrationTest {
     void aTrueConditionRunsTheCommandItGuards(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        server.ifShell("true", "rename-window then-ran");
+        server.shell().choose("true", "rename-window then-ran");
 
         assertTrue(
                 Await.until(() ->
@@ -54,7 +54,7 @@ final class ServerControlIntegrationTest {
     void aFalseConditionRunsTheOtherOne(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        server.ifShell("false", "rename-window then-ran", "rename-window else-ran");
+        server.shell().choose("false", "rename-window then-ran", "rename-window else-ran");
 
         assertTrue(
                 Await.until(() ->
@@ -67,7 +67,7 @@ final class ServerControlIntegrationTest {
         Session session = server.sessions().get(0);
         String before = session.windows().get(0).rename("before").name();
 
-        server.ifShell("false", "rename-window should-not-run");
+        server.shell().choose("false", "rename-window should-not-run");
         Thread.sleep(400);
 
         assertEquals(before, session.refresh().windows().get(0).name(), "something ran that should not have");

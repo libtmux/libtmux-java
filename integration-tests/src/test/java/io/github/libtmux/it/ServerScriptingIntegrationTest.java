@@ -67,9 +67,9 @@ final class ServerScriptingIntegrationTest {
     @Test
     void aDashPrefixedShellCommandIsNotAnOption(Server server) {
         server.globalOptions().set("default-shell", "/bin/sh");
-        assertThrows(LibTmuxException.class, () -> server.runShell("-b"));
+        assertThrows(LibTmuxException.class, () -> server.shell().run("-b"));
         if (!losesShellOutput(server)) {
-            assertThrows(LibTmuxException.class, () -> server.runShellCapturing("-b"));
+            assertThrows(LibTmuxException.class, () -> server.shell().capturing("-b"));
         }
     }
 
@@ -78,7 +78,7 @@ final class ServerScriptingIntegrationTest {
     void aShellCommandRunsForItsEffectOnEveryRelease(Server server, @TempDir Path directory) throws Exception {
         Path touched = directory.resolve("ran");
 
-        server.runShell("touch " + touched);
+        server.shell().run("touch " + touched);
 
         assertTrue(Await.until(() -> Files.exists(touched)), "the command never ran");
     }
@@ -106,8 +106,8 @@ final class ServerScriptingIntegrationTest {
         // The literalized command goes first, so by the time the expanded one has landed the
         // literal one has had at least as long to fire. Asserting its absence straight after
         // dispatching it would pass even if literalization did nothing, because #() is asynchronous.
-        server.runShell(TmuxFormats.literal("echo '#(touch " + literal + ")' > /dev/null"));
-        server.runShell("echo '#(touch " + expanded + ")' > /dev/null");
+        server.shell().run(TmuxFormats.literal("echo '#(touch " + literal + ")' > /dev/null"));
+        server.shell().run("echo '#(touch " + expanded + ")' > /dev/null");
 
         assertTrue(Await.until(() -> Files.exists(expanded)), "tmux expands a format inside shell quotes");
         assertFalse(Files.exists(literal), "a literalized value must reach the shell as text");
@@ -117,13 +117,13 @@ final class ServerScriptingIntegrationTest {
     void readingWhatTheCommandPrintedWorksOrRefuses(Server server) {
         if (losesShellOutput(server)) {
             UnsupportedTmuxVersionException refused = assertThrows(
-                    UnsupportedTmuxVersionException.class, () -> server.runShellCapturing("echo captured-me"));
+                    UnsupportedTmuxVersionException.class, () -> server.shell().capturing("echo captured-me"));
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("run-shell"),
                     "the refusal says what is missing: " + refused.getMessage());
         } else {
-            List<String> printed = server.runShellCapturing("echo captured-me");
+            List<String> printed = server.shell().capturing("echo captured-me");
 
             assertTrue(printed.contains("captured-me"), "what came back: " + printed);
         }
