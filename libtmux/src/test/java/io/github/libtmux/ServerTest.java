@@ -725,6 +725,53 @@ final class ServerTest {
         }
     }
 
+    /** A command fake has no control carrier. Attach must not start the local tmux instead. */
+    @Test
+    void controlRefusesATransportThatStartsNoClient(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                List<String> argv = request.commands().get(0);
+                if (argv.stream().anyMatch(word -> word.contains("#{pid} #{version}"))) {
+                    return new CommandResult(0, List.of("4242 3.6"), List.of());
+                }
+                return GroupedTmux.execute(request, 4242L, "3.6", command -> switch (command.get(0)) {
+                    case "display-message" ->
+                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6")), List.of());
+                    case "list-sessions" ->
+                        new CommandResult(0, List.of(String.join(separator, "$0", "only", "1", "1")), List.of());
+                    case "list-windows" ->
+                        new CommandResult(
+                                0,
+                                List.of(String.join(separator, "$0", "@0", "0", "only", "1", "1", "0", "80", "24", "")),
+                                List.of());
+                    case "list-panes" ->
+                        new CommandResult(
+                                0,
+                                List.of(String.join(
+                                        separator, "$0", "@0", "0", "%0", "0", "1", "zsh", "80", "24", "0", "0", "",
+                                        "/tmp", "", "0", "0", "0", "0")),
+                                List.of());
+                    default -> new CommandResult(0, List.of(), List.of());
+                });
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            Session session = server.sessions().get(0);
+            IllegalStateException refused =
+                    assertThrows(IllegalStateException.class, () -> server.control(session));
+
+            assertTrue(
+                    String.valueOf(refused.getMessage()).contains("does not start control clients"),
+                    refused.getMessage());
+        }
+    }
+
     // --------------------------------------------------------------------------- version gates
 
     /**
