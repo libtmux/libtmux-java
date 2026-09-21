@@ -82,6 +82,11 @@ does not reconnect, and it does not undo a command tmux has already accepted.
 `awaitDelivery` waits for one step. Cancelling that wait leaves the subscription
 open. Its timeout is a `kotlin.time.Duration`.
 
+`await` and `awaitText` are suspending forms of the same waits. Cancelling
+one interrupts it. That is not a timeout, and it does not stop a program
+already running in the pane. A `wait-for` tmux has already accepted is not
+taken back.
+
 This module depends on kotlinx-coroutines. The core does not, and nothing
 written in Java may depend on this module.
 
