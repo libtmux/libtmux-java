@@ -39,7 +39,7 @@ Match the typed notification before acting on it.
 import _root_.cats.effect.IO
 import _root_.cats.syntax.all._
 import io.github.libtmux.control.Notification
-import io.github.libtmux.scaladsl.cats.{Control, Server}
+import io.github.libtmux.scaladsl.cats.{Control, Observation, Server}
 import scala.concurrent.duration._
 
 Server.resource[IO](config).use { server =>
@@ -50,6 +50,8 @@ Server.resource[IO](config).use { server =>
       control.events(16).use { observation =>
         for {
           received <- observation.stream
+            .map(Observation.value)
+            .unNone
             .map(_.notification())
             .collect { case event: Notification.SessionRenamed => event }
             .filter(event =>
@@ -69,8 +71,9 @@ Server.resource[IO](config).use { server =>
 }
 ```
 
-`events` has bounded buffering. Check `droppedCount` and reacquire a snapshot
-when the counter increases; an event stream cannot reconstruct dropped state.
+`events` has bounded buffering. A full buffer's next element is a gap. Check
+`droppedCount` and reacquire a snapshot when it increases; an event stream
+cannot reconstruct dropped state. A subscription does not reconnect.
 
 ## Documentation
 

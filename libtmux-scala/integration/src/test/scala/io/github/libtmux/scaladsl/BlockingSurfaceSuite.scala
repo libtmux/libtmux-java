@@ -11,7 +11,7 @@ import io.github.libtmux.{
   TmuxVersion,
   UnsupportedTmuxVersionException
 }
-import io.github.libtmux.control.{ControlClient, Notification}
+import io.github.libtmux.control.{ControlClient, ControlEndedException, Delivery, Notification}
 import io.github.libtmux.scaladsl.blocking.Server
 import io.github.libtmux.scaladsl.fixture.OwnedTmux
 import java.nio.file.Files
@@ -58,9 +58,13 @@ final class BlockingSurfaceSuite extends FunSuite {
         while (!matched) {
           val remaining = until - System.nanoTime()
           assert(remaining > 0, "client notification deadline expired")
-          val event = events.next(Duration.ofNanos(remaining)).toScala
-          assert(event.isDefined, "expected a client notification")
-          matched = matches(event.get.notification())
+          val step = events.next(Duration.ofNanos(remaining)).toScala
+          assert(step.isDefined, "expected a client notification")
+          matched = step.get match {
+            case item: Delivery.Event[_] =>
+              matches(item.value().asInstanceOf[io.github.libtmux.control.ControlEvent].notification())
+            case _: Delivery.Gap[_] => false
+          }
         }
         assertEquals(events.droppedCount(), 0L)
       }

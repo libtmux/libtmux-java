@@ -10,6 +10,7 @@ import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.Window;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.control.ControlEvent;
+import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.Notification;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -220,12 +221,15 @@ final class ControlWatchIntegrationTest {
             throws InterruptedException {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadline) {
-            var event = events.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
-            if (event.isEmpty()) {
-                return Optional.empty();
+            var step = events.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
+            if (step.isEmpty() || !(step.orElseThrow() instanceof Delivery.Event<ControlEvent> event)) {
+                if (step.isEmpty()) {
+                    return Optional.empty();
+                }
+                continue;
             }
-            if (match.test(event.orElseThrow())) {
-                return event;
+            if (match.test(event.value())) {
+                return Optional.of(event.value());
             }
         }
         return Optional.empty();

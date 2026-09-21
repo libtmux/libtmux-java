@@ -5,7 +5,7 @@ import _root_.cats.effect.unsafe.implicits.global
 import _root_.cats.syntax.all._
 import io.github.libtmux.{ServerConfig, SessionSpec}
 import io.github.libtmux.control.Notification
-import io.github.libtmux.scaladsl.cats.{Control, Server}
+import io.github.libtmux.scaladsl.cats.{Control, Observation, Server}
 import scala.concurrent.duration._
 
 /** Counts dropped notifications and reconciles current state with a snapshot.
@@ -47,6 +47,8 @@ object ObserveChanges {
                         _ <- names.traverse_ { name =>
                           for {
                             arrived <- witness.stream
+                              .map(Observation.value)
+                              .unNone
                               .filter(_.notification() match {
                                 case event: Notification.WindowRenamed =>
                                   event.window() == window.info.context

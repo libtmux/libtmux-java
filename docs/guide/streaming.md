@@ -104,7 +104,9 @@ try (ControlClient client = ControlClient.attach(server.config(), session.id());
 
     StringBuilder seen = new StringBuilder();
     while (seen.indexOf("streamed") < 0) {
-        seen.append(output.next(Duration.ofSeconds(5)).orElseThrow().data());
+        seen.append(output.next(Duration.ofSeconds(5)).orElseThrow() instanceof Delivery.Event<PaneOutput> event
+                ? event.value().data()
+                : "");
     }
     seen.indexOf("streamed") >= 0;  // → true
 }
@@ -118,8 +120,14 @@ arrive split across several: read until you have it rather than testing the
 first one. The loop above is bounded by the timeout each `next` carries.
 
 Each subscriber chooses a fixed buffer capacity. A full buffer drops its oldest
-value, and `droppedCount()` reports the exact loss. The control reader only fills
-those buffers; caller code runs on the thread that calls `next()`.
+value. The next read is a `Delivery.Gap` naming how many were lost since the
+previous read, and only then the events that remain. `droppedCount()` is the
+total. `cause()` is empty when the caller closed the subscription and set when
+the control client ended it. A subscription does not reconnect: attach again
+with `server.control(session)` and read a snapshot. Nothing already missed is
+replayed. The control reader only fills those buffers; caller code runs on the
+thread that calls `next()`. `standardError()` is the bounded text the tmux
+process wrote to its error stream.
 
 ## Pushed changes
 
@@ -134,9 +142,11 @@ try (ControlClient client = ControlClient.attach(server.config(), session.id());
 
     var unused = session.windows().get(0).rename("build logs");
 
-    Notification seen = events.next(Duration.ofSeconds(5)).orElseThrow().notification();
+    Notification seen = ((Delivery.Event<ControlEvent>) events.next(Duration.ofSeconds(5)).orElseThrow()).value()
+            .notification();
     while (!(seen instanceof Notification.WindowRenamed)) {
-        seen = events.next(Duration.ofSeconds(5)).orElseThrow().notification();
+        seen = ((Delivery.Event<ControlEvent>) events.next(Duration.ofSeconds(5)).orElseThrow()).value()
+                .notification();
     }
     ((Notification.WindowRenamed) seen).name();   // → build logs
 }

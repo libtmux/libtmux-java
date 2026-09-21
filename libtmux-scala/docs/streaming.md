@@ -15,7 +15,7 @@ constructing it alone does not.
 ```scala
 import _root_.cats.effect.IO
 import io.github.libtmux.control.Notification
-import io.github.libtmux.scaladsl.cats.{Control, Server}
+import io.github.libtmux.scaladsl.cats.{Control, Observation, Server}
 import scala.concurrent.duration._
 
 Server.resource[IO](config).use { server =>
@@ -26,6 +26,8 @@ Server.resource[IO](config).use { server =>
         for {
           renamed <- session.rename("scala-streamed")
           event <- observation.stream
+            .map(Observation.value)
+            .unNone
             .map(_.notification())
             .collect { case value: Notification.SessionRenamed => value }
             .filter(_.name() == renamed.info.name)

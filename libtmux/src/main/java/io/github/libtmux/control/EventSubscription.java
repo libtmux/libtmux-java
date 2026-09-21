@@ -6,19 +6,26 @@ import java.util.Optional;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pulls events volunteered by one control client.
  *
  * <p>Each subscription owns a fixed-capacity buffer. When that buffer is full, the next event
- * replaces its oldest event and increments {@link #droppedCount()}; another subscription has its
- * own buffer and loss count. The control protocol reader only offers values to these buffers. It
- * never runs subscriber code. Public operations are thread-safe; concurrent readers compete for
- * the same sequence, and each event is returned at most once.
+ * replaces its oldest event. The read that follows is a {@link Delivery.Gap} naming how many were
+ * discarded since the previous read, and only then the events that remain. {@link #droppedCount()}
+ * is the total across the subscription's life. Another subscription has its own buffer and its own
+ * gaps. The control protocol reader only offers values to these buffers. It never runs subscriber
+ * code. Public operations are thread-safe; concurrent readers compete for the same sequence, and
+ * each step is returned at most once.
+ *
+ * <p>A subscription does not reconnect. When it ends, {@link #next()} returns empty. {@link
+ * #cause()} is empty when the caller closed it, and set when the control client ended it. Attach
+ * again from the captured session and read a snapshot; nothing already missed is replayed.
  *
  * <p>Closing is terminal: it discards buffered events, wakes threads blocked in {@link #next()},
- * and makes every later read return empty. Events discarded by close are not overflow and do not
- * increment the loss count.
+ * and makes every later read return empty once a pending gap has been delivered. Events discarded
+ * by close are not overflow and do not increment the loss count.
  *
  * @param <T> the event type
  */
@@ -30,7 +37,9 @@ public final class EventSubscription<T> implements AutoCloseable {
     private final Condition available = lock.newCondition();
     private final Consumer<EventSubscription<T>> onClose;
     private long dropped;
+    private long pendingGap;
     private boolean closed;
+    private @Nullable Throwable cause;
 
     EventSubscription(int capacity, Consumer<EventSubscription<T>> onClose) {
         if (capacity <= 0) {
@@ -49,6 +58,7 @@ public final class EventSubscription<T> implements AutoCloseable {
             if (events.size() == capacity) {
                 events.removeFirst();
                 dropped++;
+                pendingGap++;
             }
             events.addLast(event);
             available.signal();
@@ -72,32 +82,47 @@ public final class EventSubscription<T> implements AutoCloseable {
     }
 
     /**
-     * Waits until the next event arrives or this subscription closes.
+     * Why this subscription ended, when the control client ended it.
      *
-     * @return the oldest buffered event, or empty when the subscription closed
-     * @throws InterruptedException if the waiting thread is interrupted
+     * <p>Empty when the subscription is still open, and empty when the caller closed it. A client
+     * that died sets this before the read returns empty.
      */
-    public Optional<T> next() throws InterruptedException {
-        lock.lockInterruptibly();
+    public Optional<Throwable> cause() {
+        lock.lock();
         try {
-            while (events.isEmpty() && !closed) {
-                available.await();
-            }
-            return Optional.ofNullable(events.pollFirst());
+            return Optional.ofNullable(cause);
         } finally {
             lock.unlock();
         }
     }
 
     /**
-     * Waits up to a deadline for the next event.
+     * Waits until the next step arrives or this subscription closes.
+     *
+     * @return the next gap or event, or empty when the subscription has closed and no gap is waiting
+     * @throws InterruptedException if the waiting thread is interrupted
+     */
+    public Optional<Delivery<T>> next() throws InterruptedException {
+        lock.lockInterruptibly();
+        try {
+            while (pendingGap == 0 && events.isEmpty() && !closed) {
+                available.await();
+            }
+            return poll();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Waits up to a deadline for the next step.
      *
      * @param timeout how long to wait, zero to inspect the buffer without waiting
-     * @return the oldest buffered event, or empty when none arrived before the deadline
+     * @return the next gap or event, or empty when none arrived before the deadline
      * @throws IllegalArgumentException if {@code timeout} is negative
      * @throws InterruptedException if the waiting thread is interrupted
      */
-    public Optional<T> next(Duration timeout) throws InterruptedException {
+    public Optional<Delivery<T>> next(Duration timeout) throws InterruptedException {
         if (timeout.isNegative()) {
             throw new IllegalArgumentException("timeout must not be negative");
         }
@@ -109,20 +134,30 @@ public final class EventSubscription<T> implements AutoCloseable {
         }
         lock.lockInterruptibly();
         try {
-            while (events.isEmpty() && !closed && remaining > 0) {
+            while (pendingGap == 0 && events.isEmpty() && !closed && remaining > 0) {
                 remaining = available.awaitNanos(remaining);
             }
-            return Optional.ofNullable(events.pollFirst());
+            return poll();
         } finally {
             lock.unlock();
         }
+    }
+
+    private Optional<Delivery<T>> poll() {
+        if (pendingGap > 0) {
+            long missed = pendingGap;
+            pendingGap = 0;
+            return Optional.of(new Delivery.Gap<>(missed));
+        }
+        T value = events.pollFirst();
+        return value == null ? Optional.empty() : Optional.of(new Delivery.Event<>(value));
     }
 
     /**
      * Whether this subscription has reached its terminal state.
      *
      * <p>This distinguishes a timed read that expired from one that returned empty because the
-     * subscription ended.
+     * subscription ended. A pending gap can still be read after the subscription has closed.
      */
     public boolean isClosed() {
         lock.lock();
@@ -136,11 +171,17 @@ public final class EventSubscription<T> implements AutoCloseable {
     /** Discards buffered events, removes this subscriber, and wakes every waiting reader. */
     @Override
     public void close() {
+        end(null);
+    }
+
+    /** As {@link #close()}, recording why the control client ended this subscription. */
+    void end(@Nullable Throwable failure) {
         lock.lock();
         try {
             if (closed) {
                 return;
             }
+            cause = failure;
             closed = true;
             events.clear();
             available.signalAll();

@@ -5,7 +5,7 @@ import _root_.cats.effect.unsafe.implicits.global
 import _root_.cats.syntax.all._
 import fs2.Stream
 import io.github.libtmux.{Pane_, ServerConfig, SessionSpec, SplitSpec}
-import io.github.libtmux.scaladsl.cats.{Control, Server}
+import io.github.libtmux.scaladsl.cats.{Control, Observation, Server}
 import scala.concurrent.duration._
 
 /** Captures at most two panes at once while retaining input order and context.
@@ -54,6 +54,8 @@ object CaptureConcurrently {
                       _ <- panes.traverse_ { pane =>
                         val marker = "capture-" + pane.info.id.value()
                         val observed = output.stream
+                          .map(Observation.value)
+                          .unNone
                           .filter(_.pane() == pane.info.id)
                           .map(_.data())
                           .scan("")((text, chunk) =>

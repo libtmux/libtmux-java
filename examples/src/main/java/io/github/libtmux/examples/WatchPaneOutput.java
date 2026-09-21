@@ -5,6 +5,7 @@ import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
 import java.nio.file.Path;
@@ -56,7 +57,10 @@ public final class WatchPaneOutput {
                         if (next.isEmpty()) {
                             break;
                         }
-                        PaneOutput arrived = next.orElseThrow();
+                        if (!(next.orElseThrow() instanceof Delivery.Event<PaneOutput> event)) {
+                            continue;
+                        }
+                        PaneOutput arrived = event.value();
                         seen.add(arrived);
                         onOutput.accept(arrived);
                     } catch (InterruptedException e) {
