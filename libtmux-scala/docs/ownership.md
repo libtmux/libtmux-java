@@ -76,10 +76,11 @@ keeping it from a borrowed scope does not make the Scala facade its owner.
 
 ## Control attachments
 
-[`Control.attach`][control] owns a separate process attachment. It selects an
-endpoint and session ID; it does not inherit a captured handle's incarnation
-guard or a borrowed server's custom transport. Releasing it stops its admitted
-requests before closing the attachment and preserves the daemon.
+[`Control.attach`][control] on a captured session owns a separate process
+attachment to that capture's process, started by the session's transport.
+`Control.attach` on a config and session id does not check the process.
+Releasing either stops its admitted requests before closing the attachment and
+preserves the daemon.
 
 Acquire an output or event subscription inside the attachment's resource and
 before starting its producer. Release the subscription before the attachment.

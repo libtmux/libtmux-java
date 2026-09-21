@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -146,6 +147,14 @@ public final class ProcessTransport implements TmuxTransport {
         this.maxOutputBytes = maxOutputBytes;
         this.starter = Objects.requireNonNull(starter, "starter");
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
+    }
+
+    @Override
+    public Optional<ControlCarrier> controlCarrier() {
+        return Optional.of(command -> {
+            requireOpen();
+            return starter.start(command);
+        });
     }
 
     @Override

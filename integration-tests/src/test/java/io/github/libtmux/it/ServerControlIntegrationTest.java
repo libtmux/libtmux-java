@@ -5,12 +5,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.LibTmuxException;
+import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Server;
+import io.github.libtmux.ServerConfig;
 import io.github.libtmux.Session;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -68,6 +71,52 @@ final class ServerControlIntegrationTest {
         Thread.sleep(400);
 
         assertEquals(before, session.refresh().windows().get(0).name(), "something ran that should not have");
+    }
+
+    @Test
+    void controlAttachesToTheCapturedServer(Server server) {
+        Session session = server.sessions().get(0);
+
+        try (ControlClient client = server.control(session)) {
+            assertTrue(client.isAlive());
+            assertEquals(
+                    session.id().value(),
+                    client.send("display-message", "-p", "#{session_id}")
+                            .lines()
+                            .get(0));
+        }
+    }
+
+    /** A new server on the same socket reuses {@code $0}. The old handle must not attach to it. */
+    @Test
+    void controlRefusesAServerThatHasBeenReplaced(Server server) {
+        Session session = server.sessions().get(0);
+        ServerConfig config = server.config();
+        server.killServer();
+
+        try (Server replacement = Server.open(config)) {
+            replacement.newSession("replacement");
+            assertThrows(ObjectDoesNotExistException.class, () -> server.control(session));
+            assertTrue(noClients(replacement), "a refused attach left a client behind");
+        }
+    }
+
+    /** The check runs after the process is up, so a lie about the pid has to detach again. */
+    @Test
+    void controlDetachesWhenTheIncarnationDoesNotMatch(Server server) {
+        Session session = server.sessions().get(0);
+
+        assertThrows(
+                ObjectDoesNotExistException.class,
+                () -> ControlClient.attach(server.config(), session.id(), 1, "0.0", Duration.ofSeconds(5)));
+
+        assertTrue(
+                Await.until(() -> noClients(server)),
+                "the control client stayed attached after the incarnation check failed");
+    }
+
+    private static boolean noClients(Server server) {
+        return server.cmd("list-clients", "-F", "#{client_pid}").stdout().isEmpty();
     }
 
     @Test

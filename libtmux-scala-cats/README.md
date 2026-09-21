@@ -46,7 +46,7 @@ Server.resource[IO](config).use { server =>
   server.sessions.flatMap { sessions =>
     val session = sessions.head
     val name = "scala-cats-readme"
-    Control.attach[IO](config, session.info.id).use { control =>
+    Control.attach[IO](session).use { control =>
       control.events(16).use { observation =>
         for {
           received <- observation.stream

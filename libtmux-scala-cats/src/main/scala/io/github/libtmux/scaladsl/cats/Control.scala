@@ -2,6 +2,7 @@ package io.github.libtmux.scaladsl.cats
 
 import _root_.cats.effect.{Async, Resource}
 import io.github.libtmux.{ServerConfig, SessionId}
+import io.github.libtmux.scaladsl.blocking
 import io.github.libtmux.batch.OperationOutcome
 import io.github.libtmux.control.{
   ControlClient,
@@ -84,6 +85,40 @@ object Control {
       session: SessionId,
       timeout: Duration = Duration.ofSeconds(30),
       maxConcurrentCalls: Int = 4
+  ): Resource[F, Control[F]] =
+    owned(
+      maxConcurrentCalls,
+      Async[F].interruptible(ControlClient.attach(config, session, timeout))
+    )
+
+  /** Attaches to the process the captured session named. */
+  def attach[F[_]: Async](session: Session[F]): Resource[F, Control[F]] =
+    attach(session, Duration.ofSeconds(30), 4)
+
+  /** Attaches to the process the captured session named. */
+  def attach[F[_]: Async](
+      session: Session[F],
+      timeout: Duration,
+      maxConcurrentCalls: Int
+  ): Resource[F, Control[F]] =
+    attach(session.underlying, timeout, maxConcurrentCalls)
+
+  /** Attaches to the process the captured session named. */
+  def attach[F[_]: Async](
+      session: blocking.Session,
+      timeout: Duration,
+      maxConcurrentCalls: Int
+  ): Resource[F, Control[F]] =
+    owned(
+      maxConcurrentCalls,
+      Async[F].interruptible(
+        session.asJava.server().control(session.asJava, timeout)
+      )
+    )
+
+  private def owned[F[_]: Async](
+      maxConcurrentCalls: Int,
+      open: F[ControlClient]
   ): Resource[F, Control[F]] = {
     val F = Async[F]
     for {
@@ -91,11 +126,7 @@ object Control {
         F.delay(require(maxConcurrentCalls >= 1, "capacity must be positive"))
       )
       closed <- Resource.eval(F.delay(new AtomicBoolean(false)))
-      underlying <- Resource.make(
-        F.interruptible(
-          ControlClient.attach(config, session, timeout)
-        )
-      )(client => F.blocking(client.close()))
+      underlying <- Resource.make(open)(client => F.blocking(client.close()))
       execution <- Execution.resource[F](maxConcurrentCalls)
       control <- Resource.make(
         F.pure(new Control[F](underlying, closed, execution))
