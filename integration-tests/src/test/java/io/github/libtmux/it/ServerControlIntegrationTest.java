@@ -14,6 +14,7 @@ import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -98,6 +99,35 @@ final class ServerControlIntegrationTest {
             replacement.newSession("replacement");
             assertThrows(ObjectDoesNotExistException.class, () -> server.control(session));
             assertTrue(noClients(replacement), "a refused attach left a client behind");
+        }
+    }
+
+    /**
+     * The session id comes back with the next server. A client that was already attached has to end
+     * with the old one, or its next command would be answered by the replacement.
+     */
+    @Test
+    void anAttachedClientEndsWhenItsServerIsReplaced(Server server) {
+        Session session = server.sessions().get(0);
+        String id = session.id().value();
+        ControlClient client = server.control(session);
+        ServerConfig config = server.config();
+        try {
+            server.killServer();
+            try (Server replacement = Server.open(config)) {
+                Session again = replacement.newSession("replacement");
+                assertEquals(id, again.id().value(), "the replacement did not reuse " + id);
+                assertTrue(
+                        Await.until(() -> !client.isAlive()),
+                        "the client stayed up after its server was replaced");
+                assertThrows(
+                        RuntimeException.class,
+                        () -> client.send(
+                                List.of("display-message", "-p", "#{session_name}"), Duration.ofMillis(500)));
+                assertTrue(noClients(replacement), "the ended client was still attached to the replacement");
+            }
+        } finally {
+            client.close();
         }
     }
 
