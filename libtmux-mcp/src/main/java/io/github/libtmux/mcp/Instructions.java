@@ -54,6 +54,8 @@ final class Instructions {
                 READING COSTS CONTEXT
                 Reads are capped and say when they dropped anything; raise 'max_lines' deliberately \
                 rather than by habit. Prefer list_panes over reading every pane's content.
+                One pane's metadata and content together: snapshot_pane. list_panes plus \
+                capture_pane is two calls for what that one returns.
 
                 CAPABILITY DISCLOSURE
                 tmux://capabilities reports this process's frozen effective tool surface and selected \

@@ -249,7 +249,9 @@ is malformed or unprovable; read metadata does not claim an uncertain match.
 
 Every read is capped, keeps the **newest** lines, and reports how many it dropped.
 The tail is what matters: the reason to look at a terminal is almost always what
-it just did.
+it just did. `snapshot_pane` returns that pane's metadata and bounded content
+together, so a model does not spend a turn on `list_panes` and another on
+`capture_pane` for one pane.
 
 There is a character budget as well as a line budget, because a line has no length
 limit — a pane showing minified JavaScript is one line of half a megabyte, and a
