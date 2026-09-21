@@ -26,6 +26,8 @@ kotlin {
 
 dependencies {
     api(project(":libtmux"))
+    // Flow is part of the public signature. The core stays free of this.
+    api(libs.kotlinx.coroutines.core)
 
     // For the tests that execute this module's README, against a real tmux server.
     testImplementation(project(":libtmux-junit5"))
