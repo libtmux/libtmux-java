@@ -278,6 +278,31 @@ final class ControlClientTest {
         assertEquals(DispatchOutcome.UNKNOWN, timeout.outcome());
     }
 
+    /** Close, a refused send, and a short timeout, repeated. Threads from one cycle must not remain. */
+    @Test
+    void repeatedTimeoutAndCloseDoNotLeaveClients(@TempDir Path directory) throws Exception {
+        ServerConfig config = fakeTmux(directory, """
+                printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                IFS= read -r request
+                printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                IFS= read -r request
+                sleep 2
+                """);
+        int before = controlThreads();
+        for (int cycle = 0; cycle < 12; cycle++) {
+            ControlClient client = ControlClient.attach(config, new SessionId("$0"));
+            TmuxTimeoutException timeout = assertThrows(
+                    TmuxTimeoutException.class,
+                    () -> client.send(List.of("list-windows"), Duration.ofMillis(80)));
+            assertEquals(DispatchOutcome.UNKNOWN, timeout.outcome());
+            client.close();
+            assertFalse(client.isAlive());
+            assertThrows(IllegalStateException.class, () -> client.send("list-panes"));
+            client.close();
+        }
+        assertTrue(controlThreadsSettled(before), "control threads survived close");
+    }
+
     @Test
     void stderrCannotBlockTheOpeningControlReply(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, """
@@ -360,6 +385,20 @@ final class ControlClientTest {
         Files.writeString(fakeTmux, "#!/bin/sh\n" + body);
         Files.setPosixFilePermissions(fakeTmux, PosixFilePermissions.fromString("rwx------"));
         return ServerConfig.builder().binary(fakeTmux.toString()).build();
+    }
+
+    private static int controlThreads() {
+        return (int) Thread.getAllStackTraces().keySet().stream()
+                .filter(thread -> thread.getName().startsWith("libtmux-control") && thread.isAlive())
+                .count();
+    }
+
+    private static boolean controlThreadsSettled(int before) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (controlThreads() > before && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        return controlThreads() <= before;
     }
 
     private static boolean awaitFile(Path file) throws InterruptedException {
