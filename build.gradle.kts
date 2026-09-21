@@ -8,16 +8,14 @@ plugins {
 
 // Aggregate entry points, so the gate is one command whatever the module layout becomes.
 
-// Scala publications are declared independently of Gradle; sbt verifies the same declaration
-// against its generated publications. This gate does not require sbt or staged artifacts.
+// The Java BOM covers Gradle publications. Scala artifacts release independently,
+// and their shared sbt build verifies the cross-published coordinate manifest.
 val platformCoversEveryPublishedModule =
     tasks.register("platformCoversEveryPublishedModule") {
         group = "verification"
-        description = "Fails when a published module is missing from libtmux-bom, or vice versa."
+        description = "Fails when a Java publication is missing from libtmux-bom, or vice versa."
 
         val platform = project(":libtmux-bom")
-        val scalaPublications = layout.projectDirectory.file("libtmux-scala/publications.txt").asFile
-        inputs.file(scalaPublications)
         val published = provider {
             subprojects
                 .filter { it != platform }
@@ -31,18 +29,6 @@ val platformCoversEveryPublishedModule =
                 }
                 .toSortedSet()
         }
-        val declared = provider {
-            val rows = scalaPublications.readLines()
-            val coordinate = Regex("[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+")
-            require(rows.isNotEmpty()) { "libtmux-scala/publications.txt must declare at least one publication." }
-            rows.forEachIndexed { index, row ->
-                require(coordinate.matches(row)) {
-                    "libtmux-scala/publications.txt:${index + 1} must contain one group:artifact coordinate."
-                }
-            }
-            require(rows.size == rows.toSet().size) { "libtmux-scala/publications.txt contains duplicate coordinates." }
-            rows.map { "$it:${platform.version}" }.toSortedSet()
-        }
         val managed = provider {
             platform.configurations
                 .getByName("api")
@@ -52,7 +38,7 @@ val platformCoversEveryPublishedModule =
         }
 
         doLast {
-            val shipped = published.get() + declared.get()
+            val shipped = published.get()
             val listed = managed.get()
             require(shipped == listed) {
                 buildString {
@@ -61,7 +47,7 @@ val platformCoversEveryPublishedModule =
                     (listed - shipped).forEach { appendLine("  in the platform but not published: $it") }
                 }
             }
-            logger.lifecycle("libtmux-bom manages all ${shipped.size} published modules")
+            logger.lifecycle("libtmux-bom manages all ${shipped.size} Java modules")
         }
     }
 

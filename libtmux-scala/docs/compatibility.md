@@ -78,9 +78,9 @@ See [getting started](getting-started.md) for development staging commands.
 The Scala build pins sbt 1.12.15 and `sbt-pgp` 2.3.2. `stageSigned` signs all
 four artifacts into an isolated local Maven stage. Its verifier checks the POM,
 binary, source and Scaladoc signatures, their checksums, and a single validated
-signing fingerprint. A separate local BOM stage compares the actual published
-Scala constraints with the staged Scala POM set; the Gradle gate compares the
-same manifest with all Gradle publications.
+signing fingerprint. `publicationCoordinates` checks the Scala manifest before
+publishing; the artifact stage checks the resulting POMs. The Gradle gate
+checks the Java-only BOM against Java publications.
 
 Central publication is deliberately separate from the Java tag workflow. An
 owner starts the manual Scala release workflow only after the selected Java

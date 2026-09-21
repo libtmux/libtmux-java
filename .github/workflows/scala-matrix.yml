@@ -41,7 +41,6 @@ jobs:
       TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
       LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/libtmux-scala/target/java-repository
       LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/libtmux-scala/target/staging
-      LIBTMUX_BOM_REPOSITORY: ${{ github.workspace }}/libtmux-scala/target/bom-stage
     steps:
       - uses: actions/checkout@v7
 
@@ -126,15 +125,6 @@ jobs:
             --version "$LIBTMUX_SCALA_VERSION" \
             --java-version "$LIBTMUX_JAVA_VERSION" \
             --artifacts-only
-
-      - name: Stage and verify BOM constraints
-        run: |
-          ./libtmux-scala/scripts/stage-bom.sh
-          python3 libtmux-scala/scripts/verify-bom.py \
-            --bom-pom "libtmux-scala/target/bom-stage/io/github/libtmux/libtmux-bom/$LIBTMUX_JAVA_VERSION/libtmux-bom-$LIBTMUX_JAVA_VERSION.pom" \
-            --scala-stage libtmux-scala/target/staging \
-            --version "$LIBTMUX_SCALA_VERSION" \
-            --output libtmux-scala/target/bom-scala-parity.json
 
       - name: Archive staged consumer inputs
         run: |
