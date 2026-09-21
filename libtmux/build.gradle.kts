@@ -94,8 +94,9 @@ tasks.check { dependsOn(carrierTest) }
 
 // This project's API carries no compatibility guarantee (see CONTRIBUTING.md): a release may break
 // callers without notice. What it promises instead is that every break is written down. This gate
-// compares the built jar against the last released one and fails when a binary-incompatible change
-// touches a public type that MIGRATION.md's "## Next release" section does not name.
+// compares the built jar against the last released one and fails when a source- or
+// binary-incompatible change touches a public type that MIGRATION.md's "## Next release" section
+// does not name on its own `api-break:` line. A mention of the type in prose is not an entry.
 val apiBaselineVersion = providers.gradleProperty("libtmuxApiBaseline")
 
 val japicmpTool = configurations.create("japicmpTool") { isCanBeConsumed = false }
@@ -154,7 +155,7 @@ val generateApiDiffReport =
 
 tasks.register("checkApiDiffAgainstMigrationNotes") {
     group = "verification"
-    description = "Fails when a binary-incompatible public API change is missing from MIGRATION.md."
+    description = "Fails when a source- or binary-incompatible public API change has no api-break line."
     dependsOn(generateApiDiffReport)
 
     val report = apiDiffReport
@@ -164,6 +165,26 @@ tasks.register("checkApiDiffAgainstMigrationNotes") {
     inputs.file(migrationNotes)
 
     doLast {
+        fun apiBreak(element: org.w3c.dom.Element): Boolean {
+            if (element.getAttribute("sourceCompatible") == "false" ||
+                element.getAttribute("binaryCompatible") == "false"
+            ) {
+                return true
+            }
+            for (tag in listOf("method", "constructor", "field")) {
+                val members = element.getElementsByTagName(tag)
+                for (index in 0 until members.length) {
+                    val member = members.item(index) as org.w3c.dom.Element
+                    if (member.getAttribute("sourceCompatible") == "false" ||
+                        member.getAttribute("binaryCompatible") == "false"
+                    ) {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
         if (!baselineVersion.isPresent) {
             logger.warn("API gate skipped: no libtmuxApiBaseline property is set")
             return@doLast
@@ -189,24 +210,29 @@ tasks.register("checkApiDiffAgainstMigrationNotes") {
             .parse(report.get().asFile)
         val classes = document.getElementsByTagName("class")
 
+        val declared = Regex("(?m)^api-break: ([A-Za-z_][A-Za-z0-9_]*)\\s*$")
+            .findAll(nextRelease)
+            .map { it.groupValues[1] }
+            .toSet()
+
         val undocumented = sortedSetOf<String>()
         for (i in 0 until classes.length) {
             val element = classes.item(i) as org.w3c.dom.Element
-            if (element.getAttribute("binaryCompatible") != "false") continue
+            if (!apiBreak(element)) continue
             val fqn = element.getAttribute("fullyQualifiedName")
             // A nested class folds into its enclosing top-level class: MIGRATION.md documents a
             // break at the granularity it names things, and a caller never imports a class by its
             // binary $-name.
             val simpleName = fqn.substringAfterLast('.').substringBefore('$')
-            val named = Regex("\\b${Regex.escape(simpleName)}\\b").containsMatchIn(nextRelease)
-            if (!named) undocumented += "$fqn (as $simpleName)"
+            if (simpleName !in declared) undocumented += "$fqn (as $simpleName)"
         }
 
         require(undocumented.isEmpty()) {
-            "binary-incompatible change(s) not recorded in MIGRATION.md's \"## Next release\" section:\n" +
+            "source- or binary-incompatible change(s) missing an `api-break:` line in " +
+                "MIGRATION.md's \"## Next release\" section:\n" +
                 undocumented.joinToString("\n") { "  $it" }
         }
-        logger.lifecycle("every binary-incompatible public API change is recorded in MIGRATION.md")
+        logger.lifecycle("every source- or binary-incompatible public API change has an api-break line")
     }
 }
 
