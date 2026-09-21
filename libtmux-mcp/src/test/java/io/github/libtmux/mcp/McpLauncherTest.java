@@ -156,6 +156,7 @@ final class McpLauncherTest {
 
             assertTrue(instructions.contains("WAIT, DO NOT POLL"), instructions);
             assertTrue(instructions.contains("get_server_info"), "a model has to be told how to identify the server");
+            assertTrue(instructions.contains("snapshot_pane"), "a model has to be told the combined pane read");
             assertTrue(instructions.contains("Do NOT use them for browser tabs"), "anti-triggers must be stated");
             assertTrue(instructions.contains("Tool filtering"), "the interface boundary must be stated");
         }
