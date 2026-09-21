@@ -237,23 +237,26 @@ public final class Server implements AutoCloseable {
      * stop there.
      */
     LibTmuxException failed(String command, CommandResult result) {
-        return failed(command, "exit " + result.exitCode(), result.stderr());
+        return failed(command, result.exitCode(), "exit " + result.exitCode(), result.stderr());
+    }
+
+    /** As {@link #failed(String, CommandResult)}, for an outcome no exit code describes. */
+    LibTmuxException failed(String command, String status, List<String> stderr) {
+        return failed(command, -1, status, stderr);
     }
 
     /**
-     * As {@link #failed(String, CommandResult)}, for an outcome no exit code describes.
-     *
-     * <p>Both end here so that "no daemon" is decided once. It used to be decided at each site that
-     * cared, which is why seven reads and every mutation reported a missing server as an ordinary
-     * failure while the fifteen reads that had the check reported it as {@link
+     * Both command failures end here so that "no daemon" is decided once. It used to be decided at
+     * each site that cared, which is why seven reads and every mutation reported a missing server as
+     * an ordinary failure while the fifteen reads that had the check reported it as {@link
      * ServerNotRunningException} — the one thing {@code MIGRATION.md} tells a caller it can catch
      * instead of matching on a message.
      */
-    LibTmuxException failed(String command, String status, List<String> stderr) {
+    private LibTmuxException failed(String command, int exitCode, String status, List<String> stderr) {
         String message = failure(command, config.binary(), status, stderr);
         return stderr.stream().anyMatch(Server::serverAbsent)
-                ? new ServerNotRunningException(message)
-                : new LibTmuxException(message);
+                ? new ServerNotRunningException(message, command, exitCode, stderr)
+                : new LibTmuxException(message, null, command, exitCode, stderr);
     }
 
     /**
