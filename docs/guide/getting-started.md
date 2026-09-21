@@ -215,7 +215,7 @@ A control client stays attached and pushes terminal output as it happens:
 
 ```java
 // Given: Server server, Session session
-try (ControlClient client = ControlClient.attach(server.config(), session.id());
+try (ControlClient client = server.control(session);
         EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
 
     client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");

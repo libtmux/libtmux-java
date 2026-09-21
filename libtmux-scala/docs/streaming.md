@@ -21,7 +21,7 @@ import scala.concurrent.duration._
 Server.resource[IO](config).use { server =>
   server.sessions.flatMap { sessions =>
     val session = sessions.head
-    Control.attach[IO](config, session.info.id).use { control =>
+    Control.attach[IO](session).use { control =>
       control.events(8).use { observation =>
         for {
           renamed <- session.rename("scala-streamed")

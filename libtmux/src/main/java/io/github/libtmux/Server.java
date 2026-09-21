@@ -1,12 +1,14 @@
 package io.github.libtmux;
 
 import io.github.libtmux.batch.Batch;
+import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
@@ -876,6 +878,63 @@ public final class Server implements AutoCloseable {
         if (closed.get()) {
             throw new IllegalStateException("server is closed");
         }
+    }
+
+    /**
+     * Attaches a control client to this session's server, and only to the process this capture
+     * named.
+     *
+     * <p>The client is started by this server's transport. A transport that cannot start processes
+     * fails here rather than attaching on the local machine. The process id is checked before the
+     * client starts and again on the client itself; a server that has taken over the socket is
+     * detached before this client changes it.
+     *
+     * @param session a session captured from this server
+     * @throws ObjectDoesNotExistException if that process is no longer the one on this socket
+     * @throws IllegalArgumentException if the session belongs to another server
+     * @throws IllegalStateException if this server is closed, or its transport starts no control client
+     */
+    public ControlClient control(Session session) {
+        return control(session, config.defaultTimeout());
+    }
+
+    /**
+     * As {@link #control(Session)}, with the caller's deadline for the attach and the identity read.
+     *
+     * @param timeout how long to wait for the client to become ready
+     */
+    public ControlClient control(Session session, Duration timeout) {
+        Objects.requireNonNull(session, "session");
+        Objects.requireNonNull(timeout, "timeout");
+        if (!session.server().identity().equals(identity())) {
+            throw new IllegalArgumentException("session belongs to another server");
+        }
+        requireOpen();
+        long pid = session.snapshot()
+                .serverPid()
+                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
+        CommandResult live = guarded(pid, "display-message -p '#{pid} #{version}'", "");
+        if (!live.succeeded() || live.stdout().size() != 1) {
+            throw failed("display-message", live);
+        }
+        String reported = live.stdout().get(0);
+        int space = reported.indexOf(' ');
+        if (space < 1) {
+            throw new LibTmuxException("tmux reported a malformed server identity");
+        }
+        long seen;
+        try {
+            seen = Long.parseLong(reported.substring(0, space));
+        } catch (NumberFormatException e) {
+            throw new LibTmuxException("tmux reported a malformed server pid");
+        }
+        if (seen != pid) {
+            throw new ObjectDoesNotExistException("the tmux server this handle belonged to has ended");
+        }
+        ControlCarrier carrier = transport
+                .controlCarrier()
+                .orElseThrow(() -> new IllegalStateException("this transport does not start control clients"));
+        return ControlClient.attach(carrier, config, session.id(), pid, reported.substring(space + 1), timeout);
     }
 
     /**

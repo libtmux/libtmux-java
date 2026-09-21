@@ -1,5 +1,7 @@
 package io.github.libtmux.transport;
 
+import java.util.Optional;
+
 /**
  * Runs one tmux command and blocks until it has an answer.
  *
@@ -46,6 +48,17 @@ public interface TmuxTransport extends AutoCloseable {
      */
     default String realm() {
         return "local";
+    }
+
+    /**
+     * How this transport starts a process that stays attached.
+     *
+     * <p>Empty when the transport cannot. A command-only fake is in that set, and so is any realm
+     * that has not said how its processes are born. Callers that need a control client then fail
+     * instead of starting one on the local machine.
+     */
+    default Optional<ControlCarrier> controlCarrier() {
+        return Optional.empty();
     }
 
     /** Releases every resource and destroys every child still running. Idempotent. */

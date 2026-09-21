@@ -1,12 +1,14 @@
 package io.github.libtmux.control;
 
 import io.github.libtmux.LibTmuxException;
+import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.internal.ProcessTree;
 import io.github.libtmux.internal.Utf8;
+import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTimeoutException;
 import io.github.libtmux.transport.TmuxTransportException;
@@ -55,6 +57,8 @@ public final class ControlClient implements AutoCloseable {
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
 
+    private static final ControlCarrier LOCAL = command -> new ProcessBuilder(command).start();
+
     /** The same seam as the process transport's, since this client starts its own process. */
     private static final System.Logger LOG = System.getLogger(ControlClient.class.getName());
 
@@ -101,6 +105,10 @@ public final class ControlClient implements AutoCloseable {
      * <p>Attaching is what makes tmux push {@code %output}: a control client that never attaches is
      * told about command replies and nothing else.
      *
+     * <p>This does not check which tmux process answered. A socket can be taken over by a new
+     * server that reuses the same session id. {@link io.github.libtmux.Server#control} attaches to
+     * the process a capture already named.
+     *
      * @param config which tmux and which server
      * @param session the session to attach to
      */
@@ -116,6 +124,56 @@ public final class ControlClient implements AutoCloseable {
      * @param timeout how long to wait for the client to become ready
      */
     public static ControlClient attach(ServerConfig config, SessionId session, Duration timeout) {
+        ControlClient client = connect(LOCAL, config, session, timeout);
+        client.finishAttach(session);
+        return client;
+    }
+
+    /**
+     * Attaches, then leaves unless the live server is still the process that was captured.
+     *
+     * <p>A pid can be reused, so the version tmux reports is part of the check. A mismatch detaches
+     * before this client changes the server: layout refresh runs only after the check passes.
+     *
+     * @param serverPid the tmux process a capture recorded
+     * @param serverVersion the version text that process reported, compared as text
+     */
+    public static ControlClient attach(
+            ServerConfig config, SessionId session, long serverPid, String serverVersion, Duration timeout) {
+        return attach(LOCAL, config, session, serverPid, serverVersion, timeout);
+    }
+
+    /**
+     * As {@link #attach(ServerConfig, SessionId, long, String, Duration)}, started by the carrier
+     * that also starts this realm's commands.
+     */
+    public static ControlClient attach(
+            ControlCarrier carrier,
+            ServerConfig config,
+            SessionId session,
+            long serverPid,
+            String serverVersion,
+            Duration timeout) {
+        Objects.requireNonNull(serverVersion, "serverVersion");
+        if (serverPid < 1) {
+            throw new IllegalArgumentException("serverPid is not positive: " + serverPid);
+        }
+        ControlClient client = connect(carrier, config, session, timeout);
+        try {
+            client.confirmIncarnation(serverPid, serverVersion);
+        } catch (RuntimeException failure) {
+            client.closeAfterFailure(failure);
+            throw failure;
+        }
+        client.finishAttach(session);
+        return client;
+    }
+
+    private static ControlClient connect(
+            ControlCarrier carrier, ServerConfig config, SessionId session, Duration timeout) {
+        Objects.requireNonNull(carrier, "carrier");
+        Objects.requireNonNull(config, "config");
+        Objects.requireNonNull(session, "session");
         Objects.requireNonNull(timeout, "timeout");
         if (timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException("timeout is not positive");
@@ -128,7 +186,7 @@ public final class ControlClient implements AutoCloseable {
         Utf8.requireEncodableArguments(command);
         Process process;
         try {
-            process = new ProcessBuilder(command).start();
+            process = carrier.start(command);
         } catch (IOException e) {
             throw new LibTmuxException("could not start a control client", e);
         }
@@ -154,9 +212,32 @@ public final class ControlClient implements AutoCloseable {
             throw failure;
         }
         client.writer.start();
-        client.requestJsonLayouts();
-        LOG.log(System.Logger.Level.DEBUG, "tmux control client attached to session {0}", session.value());
         return client;
+    }
+
+    /** Reads the live server and detaches, via the caller, when it is not the one that was named. */
+    private void confirmIncarnation(long expectedPid, String expectedVersion) {
+        ControlReply reply = send("display-message", "-p", "#{pid} #{version}");
+        if (!reply.succeeded() || reply.lines().size() != 1) {
+            throw new LibTmuxException("could not read the control client's server");
+        }
+        String reported = reply.lines().get(0);
+        int space = reported.indexOf(' ');
+        long pid;
+        try {
+            pid = space < 1 ? Long.parseLong(reported) : Long.parseLong(reported.substring(0, space));
+        } catch (NumberFormatException e) {
+            throw new LibTmuxException("tmux reported a malformed server pid");
+        }
+        String version = space < 1 ? "" : reported.substring(space + 1);
+        if (pid != expectedPid || !version.equals(expectedVersion)) {
+            throw new ObjectDoesNotExistException("the tmux server this handle belonged to has ended");
+        }
+    }
+
+    private void finishAttach(SessionId session) {
+        requestJsonLayouts();
+        LOG.log(System.Logger.Level.DEBUG, "tmux control client attached to session {0}", session.value());
     }
 
     /**
