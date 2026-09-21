@@ -354,9 +354,9 @@ public final class Server implements AutoCloseable {
         return new Shell(this);
     }
 
-    /** Every command this tmux knows, as it prints them. */
-    public List<String> listCommands() {
-        return withoutStartingServer("list-commands").stdout();
+    /** The commands this tmux knows. */
+    public Commands commands() {
+        return new Commands(this);
     }
 
     /** Locks every client attached to this server. */
@@ -383,10 +383,6 @@ public final class Server implements AutoCloseable {
      * {@code -N} says not to, on every supported release, and tmux then reports the absent server
      * the way every other read does.
      */
-    private CommandResult withoutStartingServer(String command) {
-        return withoutStartingServer(List.of(command));
-    }
-
     CommandResult withoutStartingServer(List<String> command) {
         List<String> argv = new ArrayList<>(config.endpointCommand());
         argv.add(1, "-N");
