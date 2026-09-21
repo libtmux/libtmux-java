@@ -10,6 +10,7 @@ import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.DispatchOutcome;
+import io.github.libtmux.transport.OperationObserver;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
 import java.nio.file.Path;
@@ -787,7 +788,9 @@ public final class Server implements AutoCloseable {
     /** A server over a transport it owns and closes. */
     public static Server open(ServerConfig config) {
         Objects.requireNonNull(config, "config");
-        return new Server(config, new ProcessTransport(), true);
+        ProcessTransport transport = new ProcessTransport();
+        transport.observe(config.observer());
+        return new Server(config, transport, true);
     }
 
     /** A server over a transport the caller owns. Closing this server never closes it. */
@@ -799,6 +802,9 @@ public final class Server implements AutoCloseable {
     static Server using(ServerConfig config, TmuxTransport transport, PaneEcho echo) {
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(transport, "transport");
+        if (!config.observer().equals(OperationObserver.NONE)) {
+            transport.observe(config.observer());
+        }
         return new Server(config, transport, false, echo);
     }
 

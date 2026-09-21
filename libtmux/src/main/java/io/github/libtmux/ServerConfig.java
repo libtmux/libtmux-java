@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.transport.OperationObserver;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,12 +30,14 @@ public final class ServerConfig {
     private final ServerEndpoint endpoint;
     private final @Nullable Path configFile;
     private final Duration defaultTimeout;
+    private final OperationObserver observer;
 
     private ServerConfig(Builder builder) {
         this.binary = builder.binary;
         this.endpoint = builder.endpoint;
         this.configFile = builder.configFile;
         this.defaultTimeout = builder.defaultTimeout;
+        this.observer = builder.observer;
     }
 
     /** A builder holding the documented defaults. */
@@ -90,6 +93,11 @@ public final class ServerConfig {
         return defaultTimeout;
     }
 
+    /** Where each command's report goes. {@link OperationObserver#NONE} until a caller sets one. */
+    public OperationObserver observer() {
+        return observer;
+    }
+
     /**
      * The argv prefix every command on this server begins with: the binary, {@code -u}, the server
      * selection, and the config file if one was pinned.
@@ -123,6 +131,7 @@ public final class ServerConfig {
         builder.endpoint = endpoint;
         builder.configFile = configFile;
         builder.defaultTimeout = defaultTimeout;
+        builder.observer = observer;
         return builder;
     }
 
@@ -133,6 +142,7 @@ public final class ServerConfig {
         private ServerEndpoint endpoint = ServerEndpoint.defaultSocket();
         private @Nullable Path configFile;
         private Duration defaultTimeout = DEFAULT_TIMEOUT;
+        private OperationObserver observer = OperationObserver.NONE;
 
         private Builder() {}
 
@@ -157,6 +167,12 @@ public final class ServerConfig {
         /** Sets the deadline a request gets when the caller does not supply one. */
         public Builder defaultTimeout(Duration defaultTimeout) {
             this.defaultTimeout = Objects.requireNonNull(defaultTimeout, "defaultTimeout");
+            return this;
+        }
+
+        /** Receives a report after each command. The report names verbs, not arguments. */
+        public Builder observer(OperationObserver observer) {
+            this.observer = Objects.requireNonNull(observer, "observer");
             return this;
         }
 
