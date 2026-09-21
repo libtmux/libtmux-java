@@ -512,7 +512,7 @@ environment; Java applications own `ControlClient` subscriptions directly.
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.13"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.14"))
     implementation("io.github.libtmux:libtmux-mcp")
 }
 ```

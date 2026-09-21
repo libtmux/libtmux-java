@@ -12,6 +12,8 @@ production.
 
 ## Unreleased
 
+## 0.0.1-alpha.14 — 2026-09-20
+
 ### Changed
 
 - **Scala facade artifacts use named top-level module roots.** Development
