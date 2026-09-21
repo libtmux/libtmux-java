@@ -17,6 +17,8 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
 
 jobs:
   publish:
@@ -94,6 +96,19 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
           VERSION: ${{ steps.version.outputs.version }}
         run: ./gradlew publishToMavenCentral -PlibtmuxVersion="$VERSION" --stacktrace
+
+      # The Portal records the files. This records which commit and workflow
+      # produced them. A tag can be moved; the attestation cannot.
+      - name: Attest the published jars
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            libtmux/build/libs/*.jar
+            libtmux-jackson/build/libs/*.jar
+            libtmux-junit5/build/libs/*.jar
+            libtmux-kotlin/build/libs/*.jar
+            libtmux-mcp/build/libs/*.jar
+            libtmux-workspace/build/libs/*.jar
 
       - name: What to do next
         run: |
