@@ -63,7 +63,7 @@ public final class Pane {
      * NULL)} where it meant {@code == NULL} - fixed by {@code 84291b02}, which {@code git tag
      * --contains} places on 3.7a and nothing earlier, matching CHANGES' "3.7 TO 3.7a": "Fix crash in
      * break-pane when no name is provided." Not probeable: break-pane's args are unchanged across the
-     * fix, so nothing in {@link Server#listCommands} distinguishes the two releases.
+     * fix, so nothing in {@link Commands#list} distinguishes the two releases.
      */
     private static final TmuxVersion BREAK_PANE_NAMING_BROKEN = new TmuxVersion(3, 7, "");
 

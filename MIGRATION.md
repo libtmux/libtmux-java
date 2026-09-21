@@ -30,7 +30,7 @@ api-break: Server
 `promptHistory` and `clearPromptHistory` are `prompt().history()` and
 `prompt().clear()`. `messages()` is `messageLog().lines()`. `runShell`,
 `runShellCapturing` and `ifShell` are `shell().run`, `shell().capturing` and
-`shell().choose`.
+`shell().choose`. `listCommands()` is `commands().list()`.
 
 ### A tmux release candidate keeps its name and counts as its release
 

@@ -75,7 +75,7 @@ final class SnapshotCapture {
      * floating panes work"), which {@code git tag --contains} places on 3.7 and nothing earlier;
      * before that the format expands to nothing, indistinguishable from a real pane answering false.
      * Not probeable: an unknown format variable and a false one both expand empty, and {@link
-     * Server#listCommands} lists commands, not the format variables a running tmux understands.
+     * Commands#list} lists commands, not the format variables a running tmux understands.
      */
     private static final TmuxVersion FLOATING_SINCE = new TmuxVersion(3, 7, "");
 

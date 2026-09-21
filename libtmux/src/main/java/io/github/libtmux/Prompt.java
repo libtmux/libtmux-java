@@ -39,7 +39,7 @@ public final class Prompt {
     }
 
     private void require() {
-        if (server.listCommands().stream().anyMatch(line -> named(line, "show-prompt-history"))) {
+        if (server.commands().list().stream().anyMatch(line -> named(line, "show-prompt-history"))) {
             return;
         }
         throw new UnsupportedTmuxVersionException("the command prompt's history", SINCE, server.version());

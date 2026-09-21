@@ -149,7 +149,7 @@ final class ServerScriptingIntegrationTest {
 
     @Test
     void theServerListsTheCommandsItKnows(Server server) {
-        List<String> commands = server.listCommands();
+        List<String> commands = server.commands().list();
 
         assertTrue(commands.size() > 50, "a tmux knows many commands, not " + commands.size());
         assertTrue(commands.stream().anyMatch(line -> line.startsWith("new-session")), "new-session is not among them");

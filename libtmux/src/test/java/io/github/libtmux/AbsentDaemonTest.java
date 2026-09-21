@@ -40,7 +40,7 @@ final class AbsentDaemonTest {
         sites.put("version", Server::version);
         sites.put("requireAlive", Server::requireAlive);
         sites.put("keys.list", server -> server.keys().list());
-        sites.put("listCommands", Server::listCommands);
+        sites.put("commands.list", server -> server.commands().list());
         sites.put("messageLog.lines", server -> server.messageLog().lines());
         sites.put("expand", server -> server.expand("#{pid}"));
         sites.put("options.get", server -> server.globalOptions().get("status"));
