@@ -12,6 +12,16 @@ production.
 
 ## Unreleased
 
+### Added
+
+- **Scala applications can use `libtmux-scala` for immutable collections and
+  blocking tmux operations.** `libtmux-scala-cats` adds resource-scoped Cats
+  Effect operations and FS2 observations. (#19)
+
+### Fixed
+
+- **`Options.effective` includes inherited built-in option values.** (#19)
+
 ## 0.0.1-alpha.12 — 2026-09-19
 
 ### Added
