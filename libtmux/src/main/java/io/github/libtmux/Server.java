@@ -4,6 +4,7 @@ import io.github.libtmux.batch.Batch;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.internal.CommandStrings;
+import io.github.libtmux.query.TmuxFilters;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.transport.CommandRequest;
@@ -1016,9 +1017,11 @@ public final class Server implements AutoCloseable {
     /**
      * The session with this name, captured now.
      *
-     * <p>One read, so the handle carries a capture the way {@link #sessions()} does. The name is
-     * matched exactly; tmux would otherwise take a prefix, so asking for {@code build} could answer
-     * with {@code build-cache}.
+     * <p>A name tmux can compare as a format is read with {@code list-sessions -f} and then only that
+     * session's windows and panes. A name containing {@code ,}, {@code #}, <code>{</code>,
+     * <code>}</code>, or {@code :} falls back to a whole-server capture. The name is matched
+     * exactly; tmux would otherwise take a prefix, so asking for {@code build} could answer with
+     * {@code build-cache}.
      *
      * <p>Empty means a successful capture did not contain that name. Capture failures throw.
      *
@@ -1027,8 +1030,12 @@ public final class Server implements AutoCloseable {
      */
     public Optional<Session> session(String name) {
         Objects.requireNonNull(name, "name");
-        ServerSnapshot captured = snapshot();
-        return captured.session(name).map(session -> new Session(this, captured, session));
+        if (!TmuxFilters.literal(name)) {
+            ServerSnapshot captured = snapshot();
+            return captured.session(name).map(session -> new Session(this, captured, session));
+        }
+        return capture.oneSession(name, "session_name")
+                .flatMap(captured -> captured.session(name).map(session -> new Session(this, captured, session)));
     }
 
     /**
@@ -1040,8 +1047,12 @@ public final class Server implements AutoCloseable {
      */
     public Optional<Session> session(SessionId id) {
         Objects.requireNonNull(id, "id");
-        ServerSnapshot captured = snapshot();
-        return captured.session(id).map(session -> new Session(this, captured, session));
+        if (!TmuxFilters.literal(id.value())) {
+            ServerSnapshot captured = snapshot();
+            return captured.session(id).map(session -> new Session(this, captured, session));
+        }
+        return capture.oneSession(id.value(), "session_id")
+                .flatMap(captured -> captured.session(id).map(session -> new Session(this, captured, session)));
     }
 
     /**
@@ -1053,11 +1064,19 @@ public final class Server implements AutoCloseable {
      */
     public Optional<Pane> pane(PaneId id) {
         Objects.requireNonNull(id, "id");
-        ServerSnapshot captured = snapshot();
-        return captured.panes().stream()
-                .filter(pane -> pane.id().equals(id))
-                .findFirst()
-                .map(pane -> new Pane(this, captured, pane));
+        if (!TmuxFilters.literal(id.value())) {
+            ServerSnapshot captured = snapshot();
+            return captured.panes().stream()
+                    .filter(pane -> pane.id().equals(id))
+                    .findFirst()
+                    .map(pane -> new Pane(this, captured, pane));
+        }
+        return capture.sessionOfPane(id)
+                .flatMap(session -> capture.oneSession(session.value(), "session_id")
+                        .flatMap(captured -> captured.panes().stream()
+                                .filter(pane -> pane.id().equals(id))
+                                .findFirst()
+                                .map(pane -> new Pane(this, captured, pane))));
     }
 
     /**
