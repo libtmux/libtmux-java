@@ -34,6 +34,11 @@ public final class Session {
         this.state = state;
     }
 
+    /** The fields this capture stored. A later rename is not visible here. */
+    public SessionState info() {
+        return state;
+    }
+
     /** The session's stable id. */
     public SessionId id() {
         return state.id();
