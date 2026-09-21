@@ -15,7 +15,6 @@ import io.github.libtmux.transport.TmuxTransportException;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -77,6 +76,10 @@ public final class ControlClient implements AutoCloseable {
     private final AtomicBoolean closed = new AtomicBoolean();
     private volatile boolean failed;
     private volatile boolean subscriptionsClosed;
+    private static final int STDERR_LIMIT = 4096;
+    private final byte[] stderrBytes = new byte[STDERR_LIMIT];
+    private int stderrLength;
+    private boolean stderrTruncated;
 
     private ControlClient(Process process) {
         this.process = process;
@@ -384,7 +387,7 @@ public final class ControlClient implements AutoCloseable {
         if (closeOwner) {
             processTree.captureDescendants();
             writer.close();
-            closeSubscriptions();
+            closeSubscriptions(null);
         }
         boolean reclaimed = processTree.terminate();
         if (!closeOwner) {
@@ -429,6 +432,7 @@ public final class ControlClient implements AutoCloseable {
     }
 
     private void read() {
+        Throwable readerFailure = null;
         try (var lines = new ControlLineReader(standardOutput, ControlProtocol.DEFAULT_MAX_REPLY_BYTES)) {
             ControlLineReader.Line line;
             while ((line = lines.readLine()) != null) {
@@ -440,17 +444,54 @@ public final class ControlClient implements AutoCloseable {
                 }
             }
         } catch (IOException | ControlProtocol.LimitExceeded e) {
-            // The client ended. Everything still waiting is resolved below.
+            readerFailure = e;
         } finally {
+            closeSubscriptions(
+                    readerFailure == null && closed.get()
+                            ? null
+                            : new ControlEndedException(standardError(), stderrTruncated, readerFailure));
             writer.readerEnded();
         }
     }
 
     private void drainErrors() {
         try (standardError) {
-            standardError.transferTo(OutputStream.nullOutputStream());
+            byte[] buffer = new byte[512];
+            int read;
+            while ((read = standardError.read(buffer)) >= 0) {
+                synchronized (stderrBytes) {
+                    int room = stderrBytes.length - stderrLength;
+                    int take = Math.min(room, read);
+                    if (take > 0) {
+                        System.arraycopy(buffer, 0, stderrBytes, stderrLength, take);
+                        stderrLength += take;
+                    }
+                    if (take < read) {
+                        stderrTruncated = true;
+                    }
+                }
+            }
         } catch (IOException e) {
             // Closing or ending the client closes this channel too.
+        }
+    }
+
+    /**
+     * The error text captured from this control process, at most 4096 bytes.
+     *
+     * <p>Empty when the process wrote none. {@link #standardErrorTruncated()} says the stream
+     * continued past that bound. The text is whatever had been read when this is called.
+     */
+    public String standardError() {
+        synchronized (stderrBytes) {
+            return new String(stderrBytes, 0, stderrLength, StandardCharsets.UTF_8);
+        }
+    }
+
+    /** Whether {@link #standardError()} stopped before the process finished writing it. */
+    public boolean standardErrorTruncated() {
+        synchronized (stderrBytes) {
+            return stderrTruncated;
         }
     }
 
@@ -470,7 +511,7 @@ public final class ControlClient implements AutoCloseable {
 
     private void terminate(TmuxTransportException failure) {
         failed = true;
-        closeSubscriptions();
+        closeSubscriptions(failure);
         if (!processTree.terminate()) {
             failure.addSuppressed(new IllegalStateException("control process tree was not reclaimed"));
         }
@@ -505,13 +546,16 @@ public final class ControlClient implements AutoCloseable {
         }
     }
 
-    private void closeSubscriptions() {
+    private synchronized void closeSubscriptions(@org.jspecify.annotations.Nullable Throwable cause) {
+        if (subscriptionsClosed) {
+            return;
+        }
         subscriptionsClosed = true;
         for (EventSubscription<PaneOutput> subscription : outputSubscriptions) {
-            subscription.close();
+            subscription.end(cause);
         }
         for (EventSubscription<ControlEvent> subscription : eventSubscriptions) {
-            subscription.close();
+            subscription.end(cause);
         }
     }
 

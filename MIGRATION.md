@@ -5,6 +5,19 @@ API changes that require updates to calling code are recorded here. See
 
 ## Next release
 
+### `EventSubscription.next` returns a gap before the events that remain
+
+`next` and `next(Duration)` return `Optional<Delivery<T>>`. A full buffer still
+drops its oldest event. The next read is `Delivery.Gap`, carrying how many were
+discarded since the previous read, and the reads after that are the events that
+remain. `droppedCount()` is still the total.
+
+`cause()` is empty when the caller closed the subscription. It is set when the
+control client ended it. `ControlClient.standardError()` is the bounded text
+that process wrote to its error stream. A subscription does not reconnect.
+Attach again with `Server.control` and read a snapshot. Events already missed
+are not replayed.
+
 ### A tmux release candidate keeps its name and counts as its release
 
 `TmuxVersion` now carries the pre-release a version named, so a server running

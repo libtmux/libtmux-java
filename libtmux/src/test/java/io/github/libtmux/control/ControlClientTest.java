@@ -163,7 +163,7 @@ final class ControlClientTest {
         ControlClient client = ControlClient.attach(config, new SessionId("$0"));
         EventSubscription<PaneOutput> output = client.subscribeOutput(1);
         CountDownLatch entered = new CountDownLatch(1);
-        FutureTask<Optional<PaneOutput>> waiting = new FutureTask<>(() -> {
+        FutureTask<Optional<Delivery<PaneOutput>>> waiting = new FutureTask<>(() -> {
             entered.countDown();
             return output.next();
         });

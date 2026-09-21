@@ -13,6 +13,7 @@ import io.github.libtmux.Window;
 import io.github.libtmux.Window_;
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
 import io.github.libtmux.transport.CommandRequest;
@@ -183,7 +184,10 @@ final class OperationBenchmark {
                 StringBuilder seen = new StringBuilder();
                 while (seen.indexOf("mark-" + round) < 0) {
                     seen.append(
-                            output.next(Duration.ofSeconds(10)).orElseThrow().data());
+                            output.next(Duration.ofSeconds(10)).orElseThrow()
+                                            instanceof Delivery.Event<PaneOutput> event
+                                    ? event.value().data()
+                                    : "");
                 }
             }
         } catch (InterruptedException e) {

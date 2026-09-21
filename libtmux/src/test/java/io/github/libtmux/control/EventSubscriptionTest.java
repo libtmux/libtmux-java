@@ -34,7 +34,8 @@ final class EventSubscriptionTest {
         try (var subscription = new EventSubscription<String>(1, ignored -> {})) {
             subscription.offer("ready");
 
-            assertEquals(Optional.of("ready"), subscription.next(Duration.ofSeconds(Long.MAX_VALUE)));
+            assertEquals(
+                    Optional.of(new Delivery.Event<>("ready")), subscription.next(Duration.ofSeconds(Long.MAX_VALUE)));
         }
     }
 
@@ -44,8 +45,8 @@ final class EventSubscriptionTest {
             subscription.offer("first");
             subscription.offer("second");
 
-            assertEquals(Optional.of("first"), subscription.next(Duration.ZERO));
-            assertEquals(Optional.of("second"), subscription.next(Duration.ZERO));
+            assertEquals(Optional.of(new Delivery.Event<>("first")), subscription.next(Duration.ZERO));
+            assertEquals(Optional.of(new Delivery.Event<>("second")), subscription.next(Duration.ZERO));
         }
     }
 
@@ -57,8 +58,9 @@ final class EventSubscriptionTest {
             subscription.offer("third");
 
             assertEquals(1, subscription.droppedCount());
-            assertEquals(Optional.of("second"), subscription.next(Duration.ZERO));
-            assertEquals(Optional.of("third"), subscription.next(Duration.ZERO));
+            assertEquals(Optional.of(new Delivery.Gap<>(1)), subscription.next(Duration.ZERO));
+            assertEquals(Optional.of(new Delivery.Event<>("second")), subscription.next(Duration.ZERO));
+            assertEquals(Optional.of(new Delivery.Event<>("third")), subscription.next(Duration.ZERO));
         }
     }
 
@@ -66,7 +68,7 @@ final class EventSubscriptionTest {
     void nextWaitsUntilAValueArrives() throws Exception {
         try (var subscription = new EventSubscription<String>(1, ignored -> {})) {
             CountDownLatch entered = new CountDownLatch(1);
-            FutureTask<Optional<String>> waiting = new FutureTask<>(() -> {
+            FutureTask<Optional<Delivery<String>>> waiting = new FutureTask<>(() -> {
                 entered.countDown();
                 return subscription.next();
             });
@@ -77,7 +79,7 @@ final class EventSubscriptionTest {
             assertFalse(waiting.isDone());
 
             subscription.offer("arrived");
-            assertEquals(Optional.of("arrived"), waiting.get(5, TimeUnit.SECONDS));
+            assertEquals(Optional.of(new Delivery.Event<>("arrived")), waiting.get(5, TimeUnit.SECONDS));
             consumer.join();
         }
     }
@@ -99,7 +101,7 @@ final class EventSubscriptionTest {
     void closeWakesAWaitingConsumer() throws Exception {
         var subscription = new EventSubscription<String>(1, ignored -> {});
         CountDownLatch entered = new CountDownLatch(1);
-        FutureTask<Optional<String>> waiting = new FutureTask<>(() -> {
+        FutureTask<Optional<Delivery<String>>> waiting = new FutureTask<>(() -> {
             entered.countDown();
             return subscription.next();
         });
@@ -127,6 +129,31 @@ final class EventSubscriptionTest {
         subscription.close();
 
         assertEquals(1, removals.get());
+    }
+
+    @Test
+    void aGapIsDeliveredBeforeTheEventsThatSurvivedClose() throws Exception {
+        var subscription = new EventSubscription<String>(1, ignored -> {});
+        subscription.offer("first");
+        subscription.offer("second");
+        subscription.close();
+
+        assertEquals(Optional.of(new Delivery.Gap<>(1)), subscription.next(Duration.ZERO));
+        assertTrue(subscription.cause().isEmpty());
+        assertEquals(Optional.empty(), subscription.next(Duration.ZERO));
+    }
+
+    @Test
+    void theClientEndingASubscriptionIsReadableAsItsCause() throws Exception {
+        var failure = new IllegalStateException("ended");
+        var subscription = new EventSubscription<String>(1, ignored -> {});
+
+        subscription.end(failure);
+
+        assertEquals(failure, subscription.cause().orElseThrow());
+        assertEquals(Optional.empty(), subscription.next(Duration.ZERO));
+        subscription.close();
+        assertEquals(failure, subscription.cause().orElseThrow());
     }
 
     @Test

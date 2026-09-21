@@ -2,7 +2,7 @@ package io.github.libtmux.scaladsl
 
 import io.github.libtmux.{PaneMode, Server, SessionSpec, WakeReason}
 import io.github.libtmux.batch.OperationOutcome
-import io.github.libtmux.control.ControlClient
+import io.github.libtmux.control.{ControlClient, ControlEndedException}
 import io.github.libtmux.scaladsl.fixture.OwnedTmux
 import java.nio.file.Files
 import java.time.Duration
@@ -186,7 +186,7 @@ final class JavaBoundarySuite extends FunSuite {
     }
   }
 
-  test("subscription reads do not distinguish owner close from server loss") {
+  test("owner close has no cause and a dead server does") {
     OwnedTmux.use { fixture =>
       val server = fixture.server
       val attached = control(fixture)
@@ -194,11 +194,13 @@ final class JavaBoundarySuite extends FunSuite {
       if (!breakProducer) deliberate.close()
       assert(deliberate.isClosed())
       assertEquals(deliberate.next(Duration.ZERO).toScala, None)
+      assertEquals(deliberate.cause().toScala, None)
 
       val unexpected = fixture.own(attached.subscribeOutput(4))
       run(server, "kill-server")
       assertEquals(unexpected.next(deadline).toScala, None)
       assert(unexpected.isClosed())
+      assert(unexpected.cause().toScala.exists(_.isInstanceOf[ControlEndedException]))
       assert(!attached.isAlive())
     }
   }

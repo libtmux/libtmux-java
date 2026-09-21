@@ -150,6 +150,8 @@ final class ControlObservationSuite extends FunSuite {
                 }
                 first <- Deferred[IO, Unit]
                 reader <- observation.stream
+                  .map(Observation.value)
+                  .unNone
                   .evalTap(output => IO(assertEquals(output.pane(), pane.id())))
                   .scan(Vector.empty[String])((parts, output) =>
                     parts :+ output.data()
@@ -219,7 +221,7 @@ final class ControlObservationSuite extends FunSuite {
                 fixture.server.panes().get(0).sendLine("after-cancel")
               )
               output <- next.joinWithNever
-              _ <- IO(assert(output.data().nonEmpty))
+              _ <- IO(assert(Observation.value(output).exists(_.data().nonEmpty)))
             } yield ()
           }
         }
@@ -269,6 +271,8 @@ final class ControlObservationSuite extends FunSuite {
                 _ <- names.traverse_ { name =>
                   for {
                     received <- witness.stream
+                      .map(Observation.value)
+                      .unNone
                       .filter(_.notification() match {
                         case event: Notification.WindowRenamed =>
                           event.name() == name

@@ -6,6 +6,7 @@ import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.control.ControlEvent;
+import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -63,7 +64,10 @@ public final class WatchWhatChanges {
                         if (next.isEmpty()) {
                             break;
                         }
-                        ControlEvent arrived = next.orElseThrow();
+                        if (!(next.orElseThrow() instanceof Delivery.Event<ControlEvent> event)) {
+                            continue;
+                        }
+                        ControlEvent arrived = event.value();
                         seen.add(arrived);
                         onChange.accept(arrived);
                     } catch (InterruptedException e) {

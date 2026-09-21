@@ -18,6 +18,7 @@ import io.github.libtmux.Window;
 import io.github.libtmux.Window_;
 import io.github.libtmux.batch.BatchResult;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -259,7 +260,8 @@ final class ExamplesTest {
             if (next.isEmpty()) {
                 return false;
             }
-            if (next.orElseThrow().data().contains(expected)) {
+            if (next.orElseThrow() instanceof Delivery.Event<PaneOutput> event
+                    && event.value().data().contains(expected)) {
                 return true;
             }
         }

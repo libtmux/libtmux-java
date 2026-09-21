@@ -10,6 +10,7 @@ import io.github.libtmux.Session;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.control.ControlReply;
+import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -329,7 +330,8 @@ final class ControlModeIntegrationTest {
             if (next.isEmpty()) {
                 return false;
             }
-            if (next.orElseThrow().data().contains(expected)) {
+            if (next.orElseThrow() instanceof Delivery.Event<PaneOutput> event
+                    && event.value().data().contains(expected)) {
                 return true;
             }
         }

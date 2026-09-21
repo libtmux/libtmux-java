@@ -13,7 +13,7 @@ import io.github.libtmux.{
   SplitSpec
 }
 import io.github.libtmux.scaladsl.blocking.{Pane, Server}
-import io.github.libtmux.scaladsl.cats.Control
+import io.github.libtmux.scaladsl.cats.{Control, Observation}
 import java.lang.management.ManagementFactory
 import java.nio.file.{Files, Path}
 import java.security.MessageDigest
@@ -224,6 +224,8 @@ object ModeBenchmarks {
             .output(32)
             .use { observation =>
               val observed = observation.stream
+                .map(Observation.value)
+                .unNone
                 .filter(_.pane() == first.info.id)
                 .map(_.data())
                 .scan("")((text, chunk) => (text + chunk).takeRight(512))
