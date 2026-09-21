@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -29,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
@@ -83,6 +85,8 @@ public final class ProcessTransport implements TmuxTransport {
     private final int maxOutputBytes;
     private final ProcessStarter starter;
     private final LongSupplier nanoTime;
+    private final AtomicLong ids = new AtomicLong();
+    private volatile OperationObserver observer = OperationObserver.NONE;
     private final Set<RunningProcess> live = ConcurrentHashMap.newKeySet();
     private final Set<RunningProcess> killedByClose = ConcurrentHashMap.newKeySet();
 
@@ -158,6 +162,11 @@ public final class ProcessTransport implements TmuxTransport {
     }
 
     @Override
+    public void observe(OperationObserver observer) {
+        this.observer = Objects.requireNonNull(observer, "observer");
+    }
+
+    @Override
     public CommandResult execute(CommandRequest request) {
         return execute(request, false);
     }
@@ -180,9 +189,10 @@ public final class ProcessTransport implements TmuxTransport {
      * and none of that belongs in a log a library opens on a caller's behalf.
      */
     private CommandResult execute(CommandRequest asked, boolean waiting) {
-        long started = System.nanoTime();
+        long started = nanoTime.getAsLong();
+        Span span = new Span();
         try {
-            CommandResult result = dispatch(asked, waiting);
+            CommandResult result = dispatch(asked, waiting, span);
             if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
                 LOG.log(
                         System.Logger.Level.DEBUG,
@@ -191,6 +201,7 @@ public final class ProcessTransport implements TmuxTransport {
                         result.exitCode(),
                         elapsedMillis(started));
             }
+            report(asked, DispatchOutcome.COMPLETE, OptionalInt.of(result.exitCode()), result, span);
             return result;
         } catch (RuntimeException failure) {
             if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
@@ -208,8 +219,43 @@ public final class ProcessTransport implements TmuxTransport {
                         outcome,
                         elapsedMillis(started));
             }
+            DispatchOutcome certainty =
+                    failure instanceof TmuxTransportException transport ? transport.outcome() : DispatchOutcome.UNKNOWN;
+            report(asked, certainty, OptionalInt.empty(), null, span);
             throw failure;
         }
+    }
+
+    private void report(
+            CommandRequest request,
+            DispatchOutcome certainty,
+            OptionalInt exitCode,
+            @Nullable CommandResult result,
+            Span span) {
+        List<String> verbs =
+                request.commands().stream().map(command -> command.get(0)).toList();
+        int stdoutLines = result == null ? 0 : result.stdout().size();
+        int stderrLines = result == null ? 0 : result.stderr().size();
+        String error = result == null ? "" : OperationReport.bound(result.stderr());
+        try {
+            observer.accept(new OperationReport(
+                    ids.incrementAndGet(),
+                    verbs,
+                    certainty,
+                    exitCode,
+                    stdoutLines,
+                    stderrLines,
+                    error,
+                    Duration.ofNanos(Math.max(0, span.queuedNanos)),
+                    Duration.ofNanos(Math.max(0, span.runNanos))));
+        } catch (RuntimeException ignored) {
+            LOG.log(System.Logger.Level.WARNING, "operation observer failed");
+        }
+    }
+
+    private static final class Span {
+        private long queuedNanos;
+        private long runNanos;
     }
 
     /** The first word of each command: what ran, without anything a caller put in it. */
@@ -223,7 +269,7 @@ public final class ProcessTransport implements TmuxTransport {
         return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
     }
 
-    private CommandResult dispatch(CommandRequest asked, boolean waiting) {
+    private CommandResult dispatch(CommandRequest asked, boolean waiting, Span span) {
         requireOpen();
         requireDispatchable(asked.commands());
         CommandRequest request = carriable(asked);
@@ -233,19 +279,24 @@ public final class ProcessTransport implements TmuxTransport {
                     "transport capacity leaves no process for ordinary work", DispatchOutcome.NOT_DISPATCHED, null);
         }
         long deadline = deadlineAfter(request.timeout());
+        long queueStart = nanoTime.getAsLong();
         if (waitingPermit != null) {
             admitWaiting(waitingPermit);
         }
         try {
             admit(admission, deadline, "admission timed out");
         } catch (RuntimeException | Error failure) {
+            span.queuedNanos = nanoTime.getAsLong() - queueStart;
             release(waitingPermit);
             throw failure;
         }
+        span.queuedNanos = nanoTime.getAsLong() - queueStart;
+        long runStart = nanoTime.getAsLong();
         RunningProcess process;
         try {
             process = launch(request, deadline);
         } catch (RuntimeException | Error failure) {
+            span.runNanos = nanoTime.getAsLong() - runStart;
             admission.release();
             release(waitingPermit);
             throw failure;
@@ -255,6 +306,7 @@ public final class ProcessTransport implements TmuxTransport {
             runningPumps = submit(process, request.input());
             return complete(process, runningPumps, deadline);
         } finally {
+            span.runNanos = nanoTime.getAsLong() - runStart;
             live.remove(process);
             killedByClose.remove(process);
             // A permit asserts that three workers are free, so it goes back only once they are. A

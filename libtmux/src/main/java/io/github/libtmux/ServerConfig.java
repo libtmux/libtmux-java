@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.transport.OperationObserver;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,6 +31,7 @@ public final class ServerConfig {
     private final @Nullable Path configFile;
     private final Duration defaultTimeout;
     private final boolean force256Colors;
+    private final OperationObserver observer;
 
     private ServerConfig(Builder builder) {
         this.binary = builder.binary;
@@ -37,6 +39,7 @@ public final class ServerConfig {
         this.configFile = builder.configFile;
         this.defaultTimeout = builder.defaultTimeout;
         this.force256Colors = builder.force256Colors;
+        this.observer = builder.observer;
     }
 
     /** A builder holding the documented defaults. */
@@ -97,6 +100,11 @@ public final class ServerConfig {
         return force256Colors;
     }
 
+    /** Where each command's report goes. {@link OperationObserver#NONE} until a caller sets one. */
+    public OperationObserver observer() {
+        return observer;
+    }
+
     /**
      * The argv prefix every command on this server begins with: the binary, {@code -u}, optional color flag, the server
      * selection, and the config file if one was pinned.
@@ -132,6 +140,7 @@ public final class ServerConfig {
         builder.configFile = configFile;
         builder.defaultTimeout = defaultTimeout;
         builder.force256Colors = force256Colors;
+        builder.observer = observer;
         return builder;
     }
 
@@ -143,6 +152,7 @@ public final class ServerConfig {
         private @Nullable Path configFile;
         private Duration defaultTimeout = DEFAULT_TIMEOUT;
         private boolean force256Colors;
+        private OperationObserver observer = OperationObserver.NONE;
 
         private Builder() {}
 
@@ -173,6 +183,12 @@ public final class ServerConfig {
         /** Forces 256-color client support with tmux's {@code -2}; false uses terminal detection. */
         public Builder force256Colors(boolean force256Colors) {
             this.force256Colors = force256Colors;
+            return this;
+        }
+
+        /** Receives a report after each command. The report names verbs, not arguments. */
+        public Builder observer(OperationObserver observer) {
+            this.observer = Objects.requireNonNull(observer, "observer");
             return this;
         }
 

@@ -56,22 +56,44 @@ final class ControlWriter {
     }
 
     ControlReply exchange(String line, Duration timeout) {
+        long started = System.nanoTime();
         Request request = new Request(line, timeout, Request.State.QUEUED);
-        if (!accepting.get()) {
-            throw notDispatched("control client is not accepting requests", null);
-        }
         try {
-            if (!waiting.offer(request, request.remainingNanos(), TimeUnit.NANOSECONDS)) {
-                request.cancel(timeout("control request admission timed out", DispatchOutcome.NOT_DISPATCHED, null));
+            if (!accepting.get()) {
+                throw notDispatched("control client is not accepting requests", null);
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            request.cancel(notDispatched("interrupted before control request dispatch", e));
+            try {
+                if (!waiting.offer(request, request.remainingNanos(), TimeUnit.NANOSECONDS)) {
+                    request.cancel(
+                            timeout("control request admission timed out", DispatchOutcome.NOT_DISPATCHED, null));
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                request.cancel(notDispatched("interrupted before control request dispatch", e));
+            }
+            if (!accepting.get() && request.cancel(notDispatched("control client closed before dispatch", null))) {
+                waiting.remove(request);
+            }
+            ControlReply reply = await(request);
+            remember(request, started);
+            return reply;
+        } catch (RuntimeException failure) {
+            remember(request, started);
+            throw failure;
         }
-        if (!accepting.get() && request.cancel(notDispatched("control client closed before dispatch", null))) {
-            waiting.remove(request);
-        }
-        return await(request);
+    }
+
+    private static final ThreadLocal<long[]> TIMING = new ThreadLocal<>();
+
+    private static void remember(Request request, long started) {
+        TIMING.set(new long[] {request.queuedNanos(), Math.max(0, System.nanoTime() - started)});
+    }
+
+    /** Queue time, then total time, for the exchange on this thread. */
+    long[] takeTiming() {
+        long[] timing = TIMING.get();
+        TIMING.remove();
+        return timing == null ? new long[] {0, 0} : timing;
     }
 
     void complete(OperationOutcome outcome, List<String> lines) {
@@ -265,6 +287,7 @@ final class ControlWriter {
 
         private final String line;
         private final long started = System.nanoTime();
+        private volatile long picked = started;
         private final long timeoutNanos;
         private final AtomicReference<State> state;
         private final CountDownLatch answered = new CountDownLatch(1);
@@ -277,7 +300,15 @@ final class ControlWriter {
         }
 
         boolean pick() {
-            return state.compareAndSet(State.QUEUED, State.PICKED);
+            if (!state.compareAndSet(State.QUEUED, State.PICKED)) {
+                return false;
+            }
+            picked = System.nanoTime();
+            return true;
+        }
+
+        long queuedNanos() {
+            return Math.max(0, picked - started);
         }
 
         boolean cancel(TmuxTransportException reason) {

@@ -61,6 +61,14 @@ public interface TmuxTransport extends AutoCloseable {
         return Optional.empty();
     }
 
+    /**
+     * Receives a report after each command this transport runs.
+     *
+     * <p>The default ignores it. A transport that cannot see its own commands leaves the observer
+     * unset rather than inventing timings.
+     */
+    default void observe(OperationObserver observer) {}
+
     /** Releases every resource and destroys every child still running. Idempotent. */
     @Override
     void close();

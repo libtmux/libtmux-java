@@ -10,6 +10,8 @@ import io.github.libtmux.internal.ProcessTree;
 import io.github.libtmux.internal.Utf8;
 import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.DispatchOutcome;
+import io.github.libtmux.transport.OperationObserver;
+import io.github.libtmux.transport.OperationReport;
 import io.github.libtmux.transport.TmuxTimeoutException;
 import io.github.libtmux.transport.TmuxTransportException;
 import java.io.BufferedWriter;
@@ -21,9 +23,11 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.OptionalInt;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * A tmux client that stays attached and answers one command at a time.
@@ -74,6 +78,8 @@ public final class ControlClient implements AutoCloseable {
     private final List<EventSubscription<PaneOutput>> outputSubscriptions = new CopyOnWriteArrayList<>();
     private final List<EventSubscription<ControlEvent>> eventSubscriptions = new CopyOnWriteArrayList<>();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final OperationObserver observer;
+    private final AtomicLong ids = new AtomicLong();
     private volatile boolean failed;
     private volatile boolean subscriptionsClosed;
     private static final int STDERR_LIMIT = 4096;
@@ -81,8 +87,9 @@ public final class ControlClient implements AutoCloseable {
     private int stderrLength;
     private boolean stderrTruncated;
 
-    private ControlClient(Process process) {
+    private ControlClient(Process process, OperationObserver observer) {
         this.process = process;
+        this.observer = observer;
         this.processTree = new ProcessTree(process);
         this.standardOutput = process.getInputStream();
         this.standardError = process.getErrorStream();
@@ -193,7 +200,7 @@ public final class ControlClient implements AutoCloseable {
         } catch (IOException e) {
             throw new LibTmuxException("could not start a control client", e);
         }
-        ControlClient client = new ControlClient(process);
+        ControlClient client = new ControlClient(process, config.observer());
         // Attaching produces a reply of its own. It is awaited like any other, which is also what
         // proves the client is up before the first command is written.
         ControlWriter.Request attached = client.writer.expectInitial(timeout);
@@ -296,18 +303,60 @@ public final class ControlClient implements AutoCloseable {
             throw new IllegalStateException("control client is not usable");
         }
         long started = System.nanoTime();
-        ControlReply reply = writer.exchange(line(argv), timeout);
-        // The verb and never its arguments, for the reason the process transport gives: an argument
-        // carries what a caller typed, and a log a library opens is no place for it.
-        if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
-            LOG.log(
-                    System.Logger.Level.DEBUG,
-                    "tmux control {0} {1} in {2} ms",
-                    argv.get(0),
-                    reply.outcome().name().toLowerCase(java.util.Locale.ROOT).replace('_', ' '),
-                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+        try {
+            ControlReply reply = writer.exchange(line(argv), timeout);
+            long[] timing = writer.takeTiming();
+            report(argv.get(0), reply, timing);
+            if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
+                LOG.log(
+                        System.Logger.Level.DEBUG,
+                        "tmux control {0} {1} in {2} ms",
+                        argv.get(0),
+                        reply.outcome()
+                                .name()
+                                .toLowerCase(java.util.Locale.ROOT)
+                                .replace('_', ' '),
+                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+            }
+            return reply;
+        } catch (RuntimeException failure) {
+            long[] timing = writer.takeTiming();
+            DispatchOutcome certainty =
+                    failure instanceof TmuxTransportException transport ? transport.outcome() : DispatchOutcome.UNKNOWN;
+            try {
+                observer.accept(new OperationReport(
+                        ids.incrementAndGet(),
+                        List.of(argv.get(0)),
+                        certainty,
+                        OptionalInt.empty(),
+                        0,
+                        0,
+                        "",
+                        Duration.ofNanos(timing[0]),
+                        Duration.ofNanos(timing[1] == 0 ? Math.max(0, System.nanoTime() - started) : timing[1])));
+            } catch (RuntimeException ignored) {
+                LOG.log(System.Logger.Level.WARNING, "operation observer failed");
+            }
+            throw failure;
         }
-        return reply;
+    }
+
+    private void report(String verb, ControlReply reply, long[] timing) {
+        int exit = reply.succeeded() ? 0 : 1;
+        try {
+            observer.accept(new OperationReport(
+                    ids.incrementAndGet(),
+                    List.of(verb),
+                    DispatchOutcome.COMPLETE,
+                    OptionalInt.of(exit),
+                    reply.lines().size(),
+                    0,
+                    "",
+                    Duration.ofNanos(timing[0]),
+                    Duration.ofNanos(timing[1])));
+        } catch (RuntimeException ignored) {
+            LOG.log(System.Logger.Level.WARNING, "operation observer failed");
+        }
     }
 
     /**
