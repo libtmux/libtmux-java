@@ -27,7 +27,7 @@ permissions:
   contents: read
 
 env:
-  LIBTMUX_JAVA_VERSION: 0.0.1-alpha.13
+  LIBTMUX_JAVA_VERSION: 0.0.1-alpha.14
   LIBTMUX_SCALA_VERSION: 0.0.1-alpha.12-scala-dev.1
 
 jobs:

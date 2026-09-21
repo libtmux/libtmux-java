@@ -67,7 +67,7 @@ checks must verify they do not leak into core. Keep the consumer's Scala binary
 family consistent across both artifacts.
 
 Development stages the released Java coordinate
-`io.github.libtmux:libtmux:0.0.1-alpha.13` in an isolated local repository. It
+`io.github.libtmux:libtmux:0.0.1-alpha.14` in an isolated local repository. It
 contains the [Java option prerequisite][java-options] used by this facade. A
 released Scala POM pins its available, non-SNAPSHOT Java prerequisite directly.
 If a consumer also imports `libtmux-bom`, it must import that same Java version:

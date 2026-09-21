@@ -11,7 +11,7 @@ The Scala facade consumes Maven coordinates, including during development.
 Stage the Java prerequisite, fixture and optional JSON adapter locally:
 
 ```console
-$ LIBTMUX_JAVA_VERSION=0.0.1-alpha.13 \
+$ LIBTMUX_JAVA_VERSION=0.0.1-alpha.14 \
     ./libtmux-scala/scripts/stage-java.sh
 ```
 
@@ -22,14 +22,14 @@ using Maven local.
 Run both producer families' pure and live checks:
 
 ```console
-$ LIBTMUX_JAVA_VERSION=0.0.1-alpha.13 \
+$ LIBTMUX_JAVA_VERSION=0.0.1-alpha.14 \
     ./libtmux-scala/sbtw crossUnit crossLive
 ```
 
 Stage the two facade modules for both Scala binary families:
 
 ```console
-$ LIBTMUX_JAVA_VERSION=0.0.1-alpha.13 \
+$ LIBTMUX_JAVA_VERSION=0.0.1-alpha.14 \
     LIBTMUX_SCALA_VERSION=0.0.1-alpha.12-scala-dev.1 \
     ./libtmux-scala/sbtw stage
 ```
