@@ -1061,18 +1061,21 @@ public final class Server implements AutoCloseable {
     public Optional<Pane> pane(PaneId id) {
         Objects.requireNonNull(id, "id");
         if (!TmuxFilters.literal(id.value())) {
-            ServerSnapshot captured = snapshot();
-            return captured.panes().stream()
-                    .filter(pane -> pane.id().equals(id))
-                    .findFirst()
-                    .map(pane -> new Pane(this, captured, pane));
+            return paneFrom(snapshot(), id);
         }
-        return capture.sessionOfPane(id)
-                .flatMap(session -> capture.oneSession(session.value(), "session_id")
-                        .flatMap(captured -> captured.panes().stream()
-                                .filter(pane -> pane.id().equals(id))
-                                .findFirst()
-                                .map(pane -> new Pane(this, captured, pane))));
+        return capture
+                .sessionOfPane(id)
+                .flatMap(session -> capture
+                        .oneSession(session.value(), "session_id")
+                        .flatMap(captured -> paneFrom(captured, id)))
+                .or(() -> paneFrom(snapshot(), id));
+    }
+
+    private Optional<Pane> paneFrom(ServerSnapshot captured, PaneId id) {
+        return captured.panes().stream()
+                .filter(pane -> pane.id().equals(id))
+                .findFirst()
+                .map(pane -> new Pane(this, captured, pane));
     }
 
     /**
