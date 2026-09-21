@@ -153,6 +153,17 @@ final class PaneCommandTest {
         assertEquals("'a\nb'", PaneCommand.quote("a\nb"));
     }
 
+    /** Every byte, including a quote, comes back as itself. */
+    @Test
+    void quotedWordsRoundTripEveryByte() {
+        for (int value = 0; value < 256; value++) {
+            String word = "a" + (char) value + "b";
+            assertEquals(word, readQuoted(PaneCommand.quote(word)), "byte " + value);
+        }
+        String mixed = "it's $HOME `date` \\\n;#{pane_id}";
+        assertEquals(mixed, readQuoted(PaneCommand.quote(mixed)));
+    }
+
     @Test
     void onlyAPosixShellIsTypedAt() {
         PaneCommand.requirePosixShell("bash");
@@ -160,6 +171,33 @@ final class PaneCommandTest {
         PaneCommand.requirePosixShell("-sh");
         assertThrows(IllegalStateException.class, () -> PaneCommand.requirePosixShell("vim"));
         assertThrows(IllegalStateException.class, () -> PaneCommand.requirePosixShell("fish"));
+    }
+
+    /** The POSIX form: quoted runs joined by {@code '\''}. */
+    private static String readQuoted(String quoted) {
+        StringBuilder text = new StringBuilder();
+        int index = 0;
+        while (index < quoted.length()) {
+            assertEquals('\'', quoted.charAt(index), quoted);
+            index++;
+            while (index < quoted.length() && quoted.charAt(index) != '\'') {
+                text.append(quoted.charAt(index));
+                index++;
+            }
+            assertTrue(index < quoted.length(), quoted);
+            index++;
+            if (index == quoted.length()) {
+                break;
+            }
+            assertTrue(
+                    index + 1 < quoted.length()
+                            && quoted.charAt(index) == '\\'
+                            && quoted.charAt(index + 1) == '\'',
+                    quoted);
+            text.append('\'');
+            index += 2;
+        }
+        return text.toString();
     }
 
     private static String start(PaneCommand run) {
