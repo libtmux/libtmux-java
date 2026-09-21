@@ -69,8 +69,10 @@ predicate. `TmuxFilters.format` does that lowering. A relation, or an operand
 containing `,`, `#`, `{`, `}`, or `:`, stays empty, and the caller filters the
 capture it already holds. `Server.session(String)` and `Server.pane(PaneId)`
 use a targeted listing when the name or id is safe to put in a format, and a
-whole-server capture otherwise. Filtering a list already in hand still issues
-no commands.
+whole-server capture otherwise. `Server.panes(FilterExpr)` sends a safe
+expression as `list-panes -f` and still applies the expression to the panes
+that come back. An expression tmux cannot apply reads the whole server.
+Filtering a list already in hand still issues no commands.
 
 ## Writing an expression down
 

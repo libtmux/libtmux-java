@@ -4,6 +4,7 @@ import io.github.libtmux.batch.Batch;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.internal.CommandStrings;
+import io.github.libtmux.query.FilterExpr;
 import io.github.libtmux.query.TmuxFilters;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
@@ -1007,6 +1008,28 @@ public final class Server implements AutoCloseable {
         ServerSnapshot captured = snapshot();
         return captured.panes().stream()
                 .map(pane -> new Pane(this, captured, pane))
+                .toList();
+    }
+
+    /**
+     * The panes this expression matches, captured now.
+     *
+     * <p>A safe expression is sent as {@code list-panes -f}. The panes that come back are still
+     * tested with the expression. An expression tmux cannot apply, or a probe that finds nothing,
+     * reads the whole server and filters that capture.
+     *
+     * @return an immutable list in tmux order
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
+     */
+    public List<Pane> panes(FilterExpr<Pane> expression) {
+        Objects.requireNonNull(expression, "expression");
+        ServerSnapshot captured = TmuxFilters.format(expression)
+                .flatMap(capture::sessionsOfPanes)
+                .orElseGet(this::snapshot);
+        return captured.panes().stream()
+                .map(pane -> new Pane(this, captured, pane))
+                .filter(expression)
                 .toList();
     }
 

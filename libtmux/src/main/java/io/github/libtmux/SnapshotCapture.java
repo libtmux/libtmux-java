@@ -14,6 +14,7 @@ import io.github.libtmux.transport.CommandResult;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -225,6 +226,46 @@ final class SnapshotCapture {
                 windowStates(rows(WINDOWS, answered.get(0), "list-windows")),
                 paneStates(rows(paneFormat, answered.get(1), "list-panes"), floatingKnown),
                 List.of()));
+    }
+
+    /**
+     * The sessions that own a pane matching {@code format}, each read in full. Empty when the probe
+     * finds no pane, which is also what a server that ignores {@code -f} reports.
+     */
+    Optional<ServerSnapshot> sessionsOfPanes(String format) {
+        ServerProcess process = process()
+                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
+        RowFormat sessionOnly = RowFormat.of("session_id");
+        Batch probe = server.batch(process.pid(), process.reported());
+        probe.add(listing(sessionOnly, "list-panes", "-a", "-f", format));
+        LinkedHashSet<String> sessionIds = new LinkedHashSet<>();
+        for (RowFormat.Row row : rows(sessionOnly, probe.run().operations().get(0), "list-panes")) {
+            String id = row.text("session_id");
+            if (!id.isEmpty()) {
+                sessionIds.add(id);
+            }
+        }
+        if (sessionIds.isEmpty()) {
+            return Optional.empty();
+        }
+        List<SessionState> sessions = new ArrayList<>();
+        List<WindowState> windows = new ArrayList<>();
+        List<PaneState> panes = new ArrayList<>();
+        for (String id : sessionIds) {
+            Optional<ServerSnapshot> one = oneSession(id, "session_id");
+            if (one.isEmpty()) {
+                continue;
+            }
+            ServerSnapshot captured = one.get();
+            sessions.addAll(captured.sessions());
+            windows.addAll(captured.windows());
+            panes.addAll(captured.panes());
+        }
+        if (sessions.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(ServerSnapshot.of(
+                Instant.now(), process.pid(), process.version(), sessions, windows, panes, List.of()));
     }
 
     /** The session that owns this pane, without listing every pane first. */
