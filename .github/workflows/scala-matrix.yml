@@ -27,7 +27,7 @@ permissions:
   contents: read
 
 env:
-  LIBTMUX_JAVA_VERSION: 0.0.1-alpha.12-scala-dev.1
+  LIBTMUX_JAVA_VERSION: 0.0.1-alpha.13
   LIBTMUX_SCALA_VERSION: 0.0.1-alpha.12-scala-dev.1
 
 jobs:
@@ -39,14 +39,13 @@ jobs:
     env:
       TMUX_LANE: 3.7c
       TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
-      LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/scala/target/java-repository
-      LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/scala/target/staging
-      LIBTMUX_BOM_REPOSITORY: ${{ github.workspace }}/scala/target/bom-stage
+      LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/libtmux-scala/target/java-repository
+      LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/libtmux-scala/target/staging
     steps:
       - uses: actions/checkout@v7
 
       - name: Manual macOS release gate stays dispatch-only
-        run: python3 scala/scripts/verify-macos-release-gate.py
+        run: python3 libtmux-scala/scripts/verify-macos-release-gate.py
 
       - uses: actions/setup-java@v6
         with:
@@ -97,13 +96,13 @@ jobs:
           "$TMUX_PREFIX/bin/tmux" -V | grep -Fx "tmux $TMUX_LANE"
 
       - name: Stage the Java prerequisite
-        run: ./scala/scripts/stage-java.sh
+        run: ./libtmux-scala/scripts/stage-java.sh
 
       - name: Run primary Scala checks
         env:
           TMUX_TEST_BINARY: ${{ env.TMUX_PREFIX }}/bin/tmux
         run: |
-          scala/sbtw \
+          libtmux-scala/sbtw \
             '++2.13.18' \
             scalafmtSbtCheck \
             scalafmtCheckAll \
@@ -119,26 +118,23 @@ jobs:
 
       - name: Stage and inspect Scala artifacts
         run: |
-          scala/sbtw stage
-          python3 scala/scripts/verify-consumers.py \
-            --scala-stage scala/target/staging \
-            --java-stage scala/target/java-repository \
+          libtmux-scala/sbtw stage
+          python3 libtmux-scala/scripts/verify-consumers.py \
+            --scala-stage libtmux-scala/target/staging \
+            --java-stage libtmux-scala/target/java-repository \
             --version "$LIBTMUX_SCALA_VERSION" \
             --java-version "$LIBTMUX_JAVA_VERSION" \
-            --artifacts-only
-
-      - name: Stage and verify BOM constraints
-        run: |
-          ./scala/scripts/stage-bom.sh
-          python3 scala/scripts/verify-bom.py \
-            --bom-pom "scala/target/bom-stage/io/github/libtmux/libtmux-bom/$LIBTMUX_JAVA_VERSION/libtmux-bom-$LIBTMUX_JAVA_VERSION.pom" \
-            --scala-stage scala/target/staging \
-            --version "$LIBTMUX_SCALA_VERSION" \
-            --output scala/target/bom-scala-parity.json
+            --prepare-only \
+            --docs-exports libtmux-scala/examples/target/scala-2.13/resource_managed/test \
+            --scala-version 2.13.18 \
+            --jdk "$JAVA_HOME" \
+            --tmux "$TMUX_PREFIX/bin/tmux" \
+            --expected-tmux "$TMUX_LANE" \
+            --output libtmux-scala/target/consumers/P01
 
       - name: Archive staged consumer inputs
         run: |
-          tar -C scala -czf "$RUNNER_TEMP/scala-consumer-stage.tar.gz" \
+          tar -C libtmux-scala -czf "$RUNNER_TEMP/scala-consumer-stage.tar.gz" \
             target/staging \
             target/java-repository \
             examples/target/scala-2.13/resource_managed/test
@@ -164,7 +160,7 @@ jobs:
         if: failure()
         with:
           name: scala-artifact-reports-${{ github.sha }}
-          path: scala/target
+          path: libtmux-scala/target
           retention-days: 7
 
   producer-runtime:
@@ -183,8 +179,8 @@ jobs:
     env:
       TMUX_LANE: 3.7c
       TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
-      LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/scala/target/java-repository
-      LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/scala/target/staging
+      LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/libtmux-scala/target/java-repository
+      LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/libtmux-scala/target/staging
     steps:
       - uses: actions/checkout@v7
 
@@ -246,13 +242,13 @@ jobs:
           "$TMUX_PREFIX/bin/tmux" -V | grep -Fx "tmux $TMUX_LANE"
 
       - name: Stage the Java prerequisite
-        run: ./scala/scripts/stage-java.sh
+        run: ./libtmux-scala/scripts/stage-java.sh
 
       - name: Run Scala checks
         env:
           TMUX_TEST_BINARY: ${{ env.TMUX_PREFIX }}/bin/tmux
         run: |
-          scala/sbtw \
+          libtmux-scala/sbtw \
             '++3.3.8' \
             scalafmtSbtCheck \
             scalafmtCheckAll \
@@ -290,7 +286,7 @@ jobs:
         if: failure()
         with:
           name: scala-runtime-${{ matrix.id }}-${{ github.sha }}
-          path: scala/target
+          path: libtmux-scala/target
           retention-days: 7
 
   manual-macos-consumers:
@@ -376,23 +372,23 @@ jobs:
           path: ${{ runner.temp }}/scala-consumer-input
 
       - name: Restore staged consumer inputs
-        run: tar -xzf "$RUNNER_TEMP/scala-consumer-input/scala-consumer-stage.tar.gz" -C scala
+        run: tar -xzf "$RUNNER_TEMP/scala-consumer-input/scala-consumer-stage.tar.gz" -C libtmux-scala
 
       - name: Warm the pinned sbt launcher
-        run: scala/sbtw sbtVersion
+        run: libtmux-scala/sbtw sbtVersion
 
       - name: Run installed sbt and Gradle consumers
         run: |
-          python3 scala/scripts/verify-consumers.py \
-            --scala-stage scala/target/staging \
-            --java-stage scala/target/java-repository \
+          python3 libtmux-scala/scripts/verify-consumers.py \
+            --scala-stage libtmux-scala/target/staging \
+            --java-stage libtmux-scala/target/java-repository \
             --version "$LIBTMUX_SCALA_VERSION" \
             --java-version "$LIBTMUX_JAVA_VERSION" \
-            --docs-exports scala/examples/target/scala-2.13/resource_managed/test \
+            --docs-exports libtmux-scala/examples/target/scala-2.13/resource_managed/test \
             --scala-version ${{ matrix.scala }} \
             --jdk "$JAVA_HOME" \
             --tmux "$TMUX_PREFIX/bin/tmux" \
-            --output scala/target/consumers/${{ matrix.id }}
+            --output libtmux-scala/target/consumers/${{ matrix.id }}
 
       - name: No tmux server outlived the cell
         if: always()
@@ -408,7 +404,7 @@ jobs:
         if: always()
         with:
           name: scala-consumer-${{ matrix.id }}-${{ github.sha }}
-          path: scala/target/consumers/${{ matrix.id }}
+          path: libtmux-scala/target/consumers/${{ matrix.id }}
           retention-days: 7
 
   installed-consumers:
@@ -470,23 +466,23 @@ jobs:
           path: ${{ runner.temp }}/scala-consumer-input
 
       - name: Restore staged consumer inputs
-        run: tar -xzf "$RUNNER_TEMP/scala-consumer-input/scala-consumer-stage.tar.gz" -C scala
+        run: tar -xzf "$RUNNER_TEMP/scala-consumer-input/scala-consumer-stage.tar.gz" -C libtmux-scala
 
       - name: Warm the pinned sbt launcher
-        run: scala/sbtw sbtVersion
+        run: libtmux-scala/sbtw sbtVersion
 
       - name: Run installed sbt and Gradle consumers
         run: |
-          python3 scala/scripts/verify-consumers.py \
-            --scala-stage scala/target/staging \
-            --java-stage scala/target/java-repository \
+          python3 libtmux-scala/scripts/verify-consumers.py \
+            --scala-stage libtmux-scala/target/staging \
+            --java-stage libtmux-scala/target/java-repository \
             --version "$LIBTMUX_SCALA_VERSION" \
             --java-version "$LIBTMUX_JAVA_VERSION" \
-            --docs-exports scala/examples/target/scala-2.13/resource_managed/test \
+            --docs-exports libtmux-scala/examples/target/scala-2.13/resource_managed/test \
             --scala-version 2.13.18 \
             --jdk "$JAVA_HOME" \
             --tmux "$TMUX_PREFIX/bin/tmux" \
-            --output scala/target/consumers/C01
+            --output libtmux-scala/target/consumers/C01
 
       - name: No tmux server outlived C01
         if: always()
@@ -502,7 +498,7 @@ jobs:
         if: always()
         with:
           name: scala-consumer-C01-${{ github.sha }}
-          path: scala/target/consumers/C01
+          path: libtmux-scala/target/consumers/C01
           retention-days: 7
 
   manual-macos-primary:
@@ -527,8 +523,8 @@ jobs:
     env:
       TMUX_LANE: 3.7c
       TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
-      LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/scala/target/java-repository
-      LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/scala/target/staging
+      LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/libtmux-scala/target/java-repository
+      LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/libtmux-scala/target/staging
     steps:
       - uses: actions/checkout@v7
 
@@ -575,13 +571,13 @@ jobs:
           "$TMUX_PREFIX/bin/tmux" -V | grep -Fx "tmux $TMUX_LANE"
 
       - name: Stage the Java prerequisite
-        run: ./scala/scripts/stage-java.sh
+        run: ./libtmux-scala/scripts/stage-java.sh
 
       - name: Run primary Scala checks
         env:
           TMUX_TEST_BINARY: ${{ env.TMUX_PREFIX }}/bin/tmux
         run: |
-          scala/sbtw \
+          libtmux-scala/sbtw \
             "++${{ matrix.scala }}" \
             scalafmtSbtCheck \
             scalafmtCheckAll \
@@ -609,5 +605,5 @@ jobs:
         if: failure()
         with:
           name: scala-runtime-${{ matrix.id }}-${{ github.sha }}
-          path: scala/target
+          path: libtmux-scala/target
           retention-days: 7

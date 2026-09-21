@@ -73,14 +73,14 @@ jobs:
           LIBTMUX_SCALA_RELEASE: central
           LIBTMUX_SCALA_VERSION: ${{ inputs.scala_version }}
           LIBTMUX_JAVA_VERSION: ${{ inputs.java_version }}
-        run: ./scala/sbtw stageSigned
+        run: ./libtmux-scala/sbtw stageSigned
 
       - name: Verify signed staging
         env:
           SCALA_VERSION: ${{ inputs.scala_version }}
         run: |
-          python3 scala/scripts/verify-signatures.py \
-            --stage scala/target/sona-staging \
+          python3 libtmux-scala/scripts/verify-signatures.py \
+            --stage libtmux-scala/target/sona-staging \
             --version "$SCALA_VERSION"
 
       - name: Upload the Scala deployment
@@ -90,7 +90,7 @@ jobs:
           LIBTMUX_JAVA_VERSION: ${{ inputs.java_version }}
           SONATYPE_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
           SONATYPE_PASSWORD: ${{ secrets.CENTRAL_PORTAL_PASSWORD }}
-        run: ./scala/sbtw sonaUpload
+        run: ./libtmux-scala/sbtw sonaUpload
 
       - name: What to do next
         run: |

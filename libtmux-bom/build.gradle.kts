@@ -1,5 +1,5 @@
-// The one place a consumer names a version. Every other libtmux coordinate then comes from here,
-// which is what stops a project mixing two releases of modules that were built against each other.
+// The one place a consumer names a BOM version. Every BOM-managed libtmux coordinate then comes
+// from here, which is what stops a project mixing two releases of artifacts built against each other.
 //
 //     dependencies {
 //         implementation(platform("io.github.libtmux:libtmux-bom:<version>"))
@@ -22,9 +22,7 @@ dependencies {
         api(project(":libtmux-junit5"))
         api(project(":libtmux-mcp"))
         api(project(":libtmux-workspace"))
-        api("io.github.libtmux:libtmux-scala_2.13:${project.version}")
-        api("io.github.libtmux:libtmux-scala_3:${project.version}")
-        api("io.github.libtmux:libtmux-scala-cats_2.13:${project.version}")
-        api("io.github.libtmux:libtmux-scala-cats_3:${project.version}")
+        // Scala artifacts release after their Java prerequisite and can use a
+        // different version. Their POMs pin that prerequisite directly.
     }
 }

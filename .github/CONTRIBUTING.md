@@ -8,9 +8,10 @@ How this project writes prose — README, changelog, release notes, commit
 messages, API documentation, and source comments — is set out separately in
 [`WRITING.md`](WRITING.md). Read that before changing any of it.
 
-A directory is a published artifact exactly when it declares a Maven
-publication, and the build fails when that set stops matching `libtmux-bom`.
-Nothing about this is a convention you have to remember:
+A Gradle directory is a published artifact exactly when it declares a Maven
+publication, and the Gradle build fails when that set stops matching
+`libtmux-bom`. The shared sbt build validates separately released Scala
+coordinates. Nothing about this is a convention you have to remember:
 
 | directory | published | holds |
 | --- | --- | --- |
@@ -138,9 +139,9 @@ Check the exit status rather than the last lines of output. Piping to `tail`
 reports the pipe's status, which hides `BUILD FAILED`.
 
 `platformCoversEveryPublishedModule` fails the build when the set of published
-directories stops matching `libtmux-bom`. Note the wording used above: *declares
-a publication*, not *applies the publishing plugin*. Those came apart once
-already — `libtmux-kotlin` applied `libtmux.publication`, which configures
+Gradle directories stops matching `libtmux-bom`. Note the wording used above:
+*declares a publication*, not *applies the publishing plugin*. Those came apart
+once already — `libtmux-kotlin` applied `libtmux.publication`, which configures
 publications rather than creating one, so it looked published to the build and
 released no jar. A `publishToMavenLocal` found it; the gate now asks the
 question that would have.

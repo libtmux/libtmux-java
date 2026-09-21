@@ -1,7 +1,12 @@
 # Build output. No leading slash, so it holds in every module too.
 build/
+target/
 .gradle/
 .kotlin/
+.bsp/
+.bloop/
+.metals/
+project/project/
 
 # Editors and desktops
 .idea/
