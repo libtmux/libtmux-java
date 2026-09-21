@@ -9,6 +9,7 @@ import io.github.libtmux.WindowId;
 import io.github.libtmux.WindowLayout;
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -152,6 +153,46 @@ final class ControlEventTest {
 
         assertEquals(Optional.of(new WindowId("@1")), event.windowId());
         assertEquals(Optional.of(new PaneId("%7")), event.paneId());
+    }
+
+    /** The value is everything after the first separator, including another one. */
+    @Test
+    void aSubscriptionValueKeepsALaterSeparator() {
+        ControlEvent event =
+                ControlEvent.parse("%subscription-changed title $0 @1 0 %2 : hello : world")
+                        .orElseThrow();
+
+        assertEquals(Optional.of("hello : world"), event.value());
+    }
+
+    /** Garbage is either not an event or a readable one. It is never a thrown parse. */
+    @Test
+    void randomLinesEitherAreNotEventsOrNameOneWord() {
+        Random random = new Random(23);
+        for (int sample = 0; sample < 200; sample++) {
+            String line = randomLine(random);
+            ControlEvent.parse(line).ifPresent(event -> {
+                assertTrue(event.kind().chars().noneMatch(Character::isWhitespace), line);
+                event.fields().forEach(field -> assertTrue(!field.isBlank(), line));
+            });
+        }
+    }
+
+    private static String randomLine(Random random) {
+        int length = random.nextInt(48);
+        StringBuilder line = new StringBuilder(length);
+        for (int index = 0; index < length; index++) {
+            line.append(
+                    switch (random.nextInt(6)) {
+                        case 0 -> "%";
+                        case 1 -> " ";
+                        case 2 -> ":";
+                        case 3 -> "@$";
+                        case 4 -> " : ";
+                        default -> String.valueOf((char) ('a' + random.nextInt(26)));
+                    });
+        }
+        return line.toString();
     }
 
     private static Notification typed(String line) {
