@@ -12,6 +12,8 @@ production.
 
 ## Unreleased
 
+## 0.0.1-alpha.13 — 2026-09-20
+
 ### Added
 
 - **Scala applications can use `libtmux-scala` for immutable collections and
