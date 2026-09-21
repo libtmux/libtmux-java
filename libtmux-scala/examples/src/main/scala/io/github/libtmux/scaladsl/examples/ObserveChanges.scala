@@ -42,39 +42,47 @@ object ObserveChanges {
                         Vector.tabulate(5)(index => "observed-" + index)
                       for {
                         _ <- names.traverse_ { name =>
-                          val arrived = witness.stream
-                            .filter(_.notification() match {
-                              case event: Notification.WindowRenamed =>
-                                event.window() == window.info.context
-                                  .window() && event.name() == name
-                              case _ => false
-                            })
-                            .take(1)
-                            .compile
-                            .lastOrError
-                          (
-                            window.rename(name),
-                            arrived.timeout(
+                          for {
+                            arrived <- witness.stream
+                              .filter(_.notification() match {
+                                case event: Notification.WindowRenamed =>
+                                  event.window() == window.info.context
+                                    .window() && event.name() == name
+                                case _ => false
+                              })
+                              .take(1)
+                              .compile
+                              .lastOrError
+                              .start
+                            _ <- window.rename(name)
+                            _ <- arrived.joinWithNever.timeout(
                               ExampleRuntime.deadline.toMillis.millis
                             )
-                          ).parTupled.void
+                          } yield ()
                         }
                         dropped <- slow.droppedCount
                         newest <- slow.stream.take(2).compile.toVector
                         stillDropped <- slow.droppedCount
                         current <- server.snapshot
                         _ <- IO {
-                          assert(dropped == 3L)
-                          assert(stillDropped == dropped)
+                          assert(dropped == 3L, "dropped=" + dropped)
+                          assert(
+                            stillDropped == dropped,
+                            "loss changed from " + dropped + " to " + stillDropped
+                          )
                           val retained = newest.map(_.notification()).collect {
                             case event: Notification.WindowRenamed =>
                               event.name()
                           }
-                          assert(retained == names.takeRight(2))
+                          assert(
+                            retained == names.takeRight(2),
+                            "retained=" + retained.mkString(",")
+                          )
                           assert(
                             current
                               .window(window.info.context)
-                              .exists(_.name == names.last)
+                              .exists(_.name == names.last),
+                            "current window did not retain " + names.last
                           )
                         }
                       } yield ()
