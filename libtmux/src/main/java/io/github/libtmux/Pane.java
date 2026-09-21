@@ -437,28 +437,31 @@ public final class Pane {
      * @throws InterruptedException if the waiting thread is interrupted
      */
     public PaneRun run(String command, Duration timeout) throws InterruptedException {
-        Objects.requireNonNull(command, "command");
-        Objects.requireNonNull(timeout, "timeout");
-        // What the pane is running and where its server listens, read together: one command, and the
-        // same moment, so the shell checked is the shell the line is typed into.
-        Map<String, String> here = variables(List.of("pane_current_command", "socket_path"));
-        String running = here.getOrDefault("pane_current_command", "");
-        PaneCommand.requirePosixShell(running.isEmpty() ? state.currentCommand() : running);
-        PaneCommand frame = PaneCommand.fresh();
-        List<String> tmux = List.of(server.config().binaryPath(), "-S", here.getOrDefault("socket_path", ""));
-        sendLine(frame.typed(tmux, command));
+        try (PaneInput.Lease input = PaneInput.hold(this)) {
+            Objects.requireNonNull(input, "input");
+            Objects.requireNonNull(command, "command");
+            Objects.requireNonNull(timeout, "timeout");
+            // What the pane is running and where its server listens, read together: one command, and the
+            // same moment, so the shell checked is the shell the line is typed into.
+            Map<String, String> here = variables(List.of("pane_current_command", "socket_path"));
+            String running = here.getOrDefault("pane_current_command", "");
+            PaneCommand.requirePosixShell(running.isEmpty() ? state.currentCommand() : running);
+            PaneCommand frame = PaneCommand.fresh();
+            List<String> tmux = List.of(server.config().binaryPath(), "-S", here.getOrDefault("socket_path", ""));
+            sendLine(frame.typed(tmux, command));
 
-        WakeReason woke = server.channel(frame.channel()).await(timeout);
-        if (woke == WakeReason.SERVER_GONE) {
-            return new PaneRun(PaneRun.Outcome.SERVER_GONE, OptionalInt.empty(), List.of(), false);
+            WakeReason woke = server.channel(frame.channel()).await(timeout);
+            if (woke == WakeReason.SERVER_GONE) {
+                return new PaneRun(PaneRun.Outcome.SERVER_GONE, OptionalInt.empty(), List.of(), false);
+            }
+            // Rows rejoined, so a line the command printed wider than the pane comes back as it printed it,
+            // and the typed line — which wraps — is one line that holds the markers without equalling one.
+            PaneCommand.Framed framed =
+                    frame.frame(capture(spec -> spec.fromStartOfHistory().joiningWrappedLines()));
+            return woke == WakeReason.SIGNALLED
+                    ? new PaneRun(PaneRun.Outcome.FINISHED, framed.status(), framed.lines(), framed.exact())
+                    : new PaneRun(PaneRun.Outcome.TIMED_OUT, OptionalInt.empty(), framed.lines(), false);
         }
-        // Rows rejoined, so a line the command printed wider than the pane comes back as it printed it,
-        // and the typed line — which wraps — is one line that holds the markers without equalling one.
-        PaneCommand.Framed framed =
-                frame.frame(capture(spec -> spec.fromStartOfHistory().joiningWrappedLines()));
-        return woke == WakeReason.SIGNALLED
-                ? new PaneRun(PaneRun.Outcome.FINISHED, framed.status(), framed.lines(), framed.exact())
-                : new PaneRun(PaneRun.Outcome.TIMED_OUT, OptionalInt.empty(), framed.lines(), false);
     }
 
     /**
@@ -636,20 +639,23 @@ public final class Pane {
      * @param beforeSend validates current input ownership
      */
     public void sendKeys(List<String> keys, Runnable beforeSend) {
-        Objects.requireNonNull(beforeSend, "beforeSend");
-        List<String> argv = sendKeysArgv(keys, false);
-        List<PaneId> recipients = keyRecipients();
-        beforeSend.run();
-        List<PaneEcho.Recorded> recorded = recipients.stream()
-                .map(id -> server.echo().recordKeys(identity(), id, keys))
-                .toList();
-        try {
-            server.run(snapshot, argv);
-        } catch (RuntimeException failure) {
-            recorded.forEach(record -> settleFailure(record, failure));
-            throw failure;
+        try (PaneInput.Lease input = PaneInput.hold(this)) {
+            Objects.requireNonNull(input, "input");
+            Objects.requireNonNull(beforeSend, "beforeSend");
+            List<String> argv = sendKeysArgv(keys, false);
+            List<PaneId> recipients = keyRecipients();
+            beforeSend.run();
+            List<PaneEcho.Recorded> recorded = recipients.stream()
+                    .map(id -> server.echo().recordKeys(identity(), id, keys))
+                    .toList();
+            try {
+                server.run(snapshot, argv);
+            } catch (RuntimeException failure) {
+                recorded.forEach(record -> settleFailure(record, failure));
+                throw failure;
+            }
+            recorded.forEach(PaneEcho.Recorded::confirm);
         }
-        recorded.forEach(PaneEcho.Recorded::confirm);
     }
 
     /**
@@ -672,21 +678,24 @@ public final class Pane {
      * @param beforeSend validates current input ownership
      */
     public void sendLiteral(List<String> keys, Runnable beforeSend) {
-        Objects.requireNonNull(beforeSend, "beforeSend");
-        List<String> argv = sendKeysArgv(keys, true);
-        String joined = String.join("", keys);
-        List<PaneId> recipients = keyRecipients();
-        beforeSend.run();
-        List<PaneEcho.Recorded> recorded = recipients.stream()
-                .map(id -> server.echo().recordLiteral(identity(), id, joined))
-                .toList();
-        try {
-            server.run(snapshot, argv);
-        } catch (RuntimeException failure) {
-            recorded.forEach(record -> settleFailure(record, failure));
-            throw failure;
+        try (PaneInput.Lease input = PaneInput.hold(this)) {
+            Objects.requireNonNull(input, "input");
+            Objects.requireNonNull(beforeSend, "beforeSend");
+            List<String> argv = sendKeysArgv(keys, true);
+            String joined = String.join("", keys);
+            List<PaneId> recipients = keyRecipients();
+            beforeSend.run();
+            List<PaneEcho.Recorded> recorded = recipients.stream()
+                    .map(id -> server.echo().recordLiteral(identity(), id, joined))
+                    .toList();
+            try {
+                server.run(snapshot, argv);
+            } catch (RuntimeException failure) {
+                recorded.forEach(record -> settleFailure(record, failure));
+                throw failure;
+            }
+            recorded.forEach(PaneEcho.Recorded::confirm);
         }
-        recorded.forEach(PaneEcho.Recorded::confirm);
     }
 
     private List<String> sendKeysArgv(List<String> keys, boolean literal) {
@@ -982,44 +991,47 @@ public final class Pane {
      *     paste can remove one this did not create
      */
     public void paste(String text) {
-        Objects.requireNonNull(text, "text");
-        if (text.indexOf('\0') >= 0) {
-            throw new IllegalArgumentException("pasted text cannot contain NUL");
-        }
-        TmuxVersion running = server.version(snapshot);
-        if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-            throw new UnsupportedTmuxVersionException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
-        }
-        String buffer = "libtmux-paste-" + UUID.randomUUID();
-        // Recorded before dispatch: a wait already watching this pane must never see the pasted
-        // content on screen before the record that discounts it exists. Rolled back below if the
-        // paste never lands.
-        PaneEcho.Recorded recorded = server.echo().recordLiteral(identity(), state.id(), text);
-        try {
-            server.runTogether(
-                    snapshot,
-                    text,
-                    List.of(
-                            List.of("load-buffer", "-b", buffer, "-"),
-                            // -d removes the buffer as it pastes, so the success path leaves nothing
-                            // even when this is the last thing the caller manages to run.
-                            List.of(
-                                    "paste-buffer",
-                                    "-d",
-                                    "-b",
-                                    buffer,
-                                    "-t",
-                                    state.id().value())));
-        } catch (RuntimeException failure) {
-            settleFailure(recorded, failure);
-            try {
-                server.buffers().delete(buffer);
-            } catch (RuntimeException ignored) {
-                // Already gone, or the server is; neither changes what the caller is told.
+        try (PaneInput.Lease input = PaneInput.hold(this)) {
+            Objects.requireNonNull(input, "input");
+            Objects.requireNonNull(text, "text");
+            if (text.indexOf('\0') >= 0) {
+                throw new IllegalArgumentException("pasted text cannot contain NUL");
             }
-            throw failure;
+            TmuxVersion running = server.version(snapshot);
+            if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
+                throw new UnsupportedTmuxVersionException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
+            }
+            String buffer = "libtmux-paste-" + UUID.randomUUID();
+            // Recorded before dispatch: a wait already watching this pane must never see the pasted
+            // content on screen before the record that discounts it exists. Rolled back below if the
+            // paste never lands.
+            PaneEcho.Recorded recorded = server.echo().recordLiteral(identity(), state.id(), text);
+            try {
+                server.runTogether(
+                        snapshot,
+                        text,
+                        List.of(
+                                List.of("load-buffer", "-b", buffer, "-"),
+                                // -d removes the buffer as it pastes, so the success path leaves nothing
+                                // even when this is the last thing the caller manages to run.
+                                List.of(
+                                        "paste-buffer",
+                                        "-d",
+                                        "-b",
+                                        buffer,
+                                        "-t",
+                                        state.id().value())));
+            } catch (RuntimeException failure) {
+                settleFailure(recorded, failure);
+                try {
+                    server.buffers().delete(buffer);
+                } catch (RuntimeException ignored) {
+                    // Already gone, or the server is; neither changes what the caller is told.
+                }
+                throw failure;
+            }
+            recorded.confirm();
         }
-        recorded.confirm();
     }
 
     /**
@@ -1030,42 +1042,45 @@ public final class Pane {
      * @param beforePaste runs after staging and immediately before the paste dispatch
      */
     public void paste(String text, Runnable beforePaste) {
-        Objects.requireNonNull(text, "text");
-        Objects.requireNonNull(beforePaste, "beforePaste");
-        if (text.indexOf('\0') >= 0) {
-            throw new IllegalArgumentException("pasted text cannot contain NUL");
-        }
-        TmuxVersion running = server.version(snapshot);
-        if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-            throw new UnsupportedTmuxVersionException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
-        }
-        String buffer = "libtmux-paste-" + UUID.randomUUID();
-        try {
-            server.runTogether(snapshot, text, List.of(List.of("load-buffer", "-b", buffer, "-")));
-            beforePaste.run();
-            PaneEcho.Recorded recorded = server.echo().recordLiteral(identity(), state.id(), text);
+        try (PaneInput.Lease input = PaneInput.hold(this)) {
+            Objects.requireNonNull(input, "input");
+            Objects.requireNonNull(text, "text");
+            Objects.requireNonNull(beforePaste, "beforePaste");
+            if (text.indexOf('\0') >= 0) {
+                throw new IllegalArgumentException("pasted text cannot contain NUL");
+            }
+            TmuxVersion running = server.version(snapshot);
+            if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
+                throw new UnsupportedTmuxVersionException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
+            }
+            String buffer = "libtmux-paste-" + UUID.randomUUID();
             try {
-                server.run(
-                        snapshot,
-                        List.of(
-                                "paste-buffer",
-                                "-d",
-                                "-b",
-                                buffer,
-                                "-t",
-                                state.id().value()));
+                server.runTogether(snapshot, text, List.of(List.of("load-buffer", "-b", buffer, "-")));
+                beforePaste.run();
+                PaneEcho.Recorded recorded = server.echo().recordLiteral(identity(), state.id(), text);
+                try {
+                    server.run(
+                            snapshot,
+                            List.of(
+                                    "paste-buffer",
+                                    "-d",
+                                    "-b",
+                                    buffer,
+                                    "-t",
+                                    state.id().value()));
+                } catch (RuntimeException failure) {
+                    settleFailure(recorded, failure);
+                    throw failure;
+                }
+                recorded.confirm();
             } catch (RuntimeException failure) {
-                settleFailure(recorded, failure);
+                try {
+                    server.buffers().delete(buffer);
+                } catch (RuntimeException ignored) {
+                    // Already gone, or the server is; neither changes what the caller is told.
+                }
                 throw failure;
             }
-            recorded.confirm();
-        } catch (RuntimeException failure) {
-            try {
-                server.buffers().delete(buffer);
-            } catch (RuntimeException ignored) {
-                // Already gone, or the server is; neither changes what the caller is told.
-            }
-            throw failure;
         }
     }
 
