@@ -77,6 +77,11 @@ public final class Pane {
         this.state = state;
     }
 
+    /** The fields this capture stored. A later title change is not visible here. */
+    public PaneState info() {
+        return state;
+    }
+
     /** The pane's stable id. */
     public PaneId id() {
         return state.id();

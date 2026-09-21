@@ -29,6 +29,11 @@ public final class Window {
         this.state = state;
     }
 
+    /** The fields this capture stored. A later rename is not visible here. */
+    public WindowState info() {
+        return state;
+    }
+
     /** The underlying window, shared by every link to it. */
     public WindowId id() {
         return state.context().window();

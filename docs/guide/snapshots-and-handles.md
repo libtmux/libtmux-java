@@ -36,6 +36,33 @@ contained no matches. This changes the earlier alpha behavior that hid failed
 reads behind empty results. Use `isAlive()` when you only need to probe
 whether a daemon answers; transport failures still throw.
 
+## What a snapshot stores
+
+`info()` is that moment. `name()`, `title()`, and `size()` read it. A method
+that sends keys, renames, or waits talks to tmux and does not update `info()`.
+
+The formats read into the snapshot are:
+
+| Object | Formats |
+| --- | --- |
+| Server | `pid`, `version` |
+| Session | `session_id`, `session_name`, `session_attached`, `session_windows` |
+| Window | `session_id`, `window_id`, `window_index`, `window_name`, `window_active`, `window_panes`, `window_linked`, `window_width`, `window_height`, `window_layout` |
+| Pane | `session_id`, `window_id`, `window_index`, `pane_id`, `pane_index`, `pane_active`, `pane_current_command`, `pane_width`, `pane_height`, `pane_left`, `pane_top`, `pane_title`, `pane_current_path`, `pane_pid`, `pane_at_top`, `pane_at_bottom`, `pane_at_left`, `pane_at_right`, and `pane_floating_flag` on tmux 3.7 and later |
+| Client | `client_name`, `session_id` |
+
+Anything else is a live read. `expand` formats one string. `variables` reads
+named formats for one target. `paneFields` reads named formats for every pane.
+Those three are the supported way out of the table above.
+
+```java
+// Given: Server server
+Session session = server.newSession("captured");
+
+session.info().name();       // → captured
+session.info().windows();    // → 1
+```
+
 ## Identity is what a user cannot change
 
 A session is its server and its id, so renaming does not produce a different
