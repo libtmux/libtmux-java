@@ -5,7 +5,12 @@ API changes that require updates to calling code are recorded here. See
 
 ## Next release
 
+A breaking type is named on its own `api-break:` line. Mentioning the type in
+the prose is not that line.
+
 ### `EventSubscription.next` returns a gap before the events that remain
+
+api-break: EventSubscription
 
 `next` and `next(Duration)` return `Optional<Delivery<T>>`. A full buffer still
 drops its oldest event. The next read is `Delivery.Gap`, carrying how many were
