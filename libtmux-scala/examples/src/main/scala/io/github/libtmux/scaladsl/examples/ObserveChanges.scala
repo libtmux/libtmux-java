@@ -37,8 +37,8 @@ object ObserveChanges {
                 .attach[IO](config, session.info.id, ExampleRuntime.deadline)
                 .use { control =>
                   val slowCapacity = 2
-                  (control.events(slowCapacity), control.events(16)).tupled.use {
-                    case (slow, witness) =>
+                  (control.events(slowCapacity), control.events(16)).tupled
+                    .use { case (slow, witness) =>
                       val names =
                         Vector.tabulate(5)(index => "observed-" + index)
                       val minimumExpectedLoss =
@@ -79,7 +79,7 @@ object ObserveChanges {
                           )
                         }
                       } yield ()
-                  }
+                    }
                 }
           }
     }
