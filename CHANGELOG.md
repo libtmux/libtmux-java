@@ -12,6 +12,21 @@ production.
 
 ## Unreleased
 
+### Changed
+
+- **Scala facade artifacts use named top-level module roots.** Development
+  builds, documentation, and consumer checks now consistently use
+  `libtmux-scala` and `libtmux-scala-cats`. (#21)
+
+- **`libtmux-bom` no longer advertises separately released Scala artifacts.**
+  Pin a Scala artifact version directly; a Java release does not imply a
+  matching Scala release. (#21)
+
+### Fixed
+
+- **`ObserveChanges` starts its notification reader before renaming a window.**
+  The runnable Scala example no longer races its event source. (#21)
+
 ## 0.0.1-alpha.13 — 2026-09-20
 
 ### Added
