@@ -21,9 +21,12 @@ import scala.jdk.OptionConverters._
 /** Immediate operations. Closing an owned client releases its transport, not
   * tmux.
   */
-final class Server private (val asJava: JavaServer, owned: Boolean)
+final class Server private (private[scaladsl] val asJava: JavaServer, owned: Boolean)
     extends AutoCloseable {
   private val closed = new AtomicBoolean(false)
+
+  /** The Java client. This facade's close does not close it. */
+  def unsafeJava: JavaServer = asJava
 
   private[blocking] def checked[A](operation: => A): A = {
     if (closed.get())

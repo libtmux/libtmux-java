@@ -68,11 +68,11 @@ identity includes its captured session and window index. Borrowing does not
 replace that identity by reacquiring the same textual ID. Refresh follows the
 Java contract and can return a pane through a different window occurrence.
 
-`asJava` returns the underlying Java object without transferring ownership. It
-is an explicit escape from the Scala scope checks and effect scheduling. Code
-using it must follow the Java client's ownership and threading contracts. In
-particular, keeping `asJava` from an owned scope does not keep that client open;
-keeping it from a borrowed scope does not make the Scala facade its owner.
+`unsafeJava` returns the underlying Java object without transferring
+ownership. It is the escape from the Scala scope checks and effect scheduling.
+Code using it must follow the Java client's ownership and threading contracts.
+Keeping `unsafeJava` from an owned scope does not keep that client open.
+Keeping it from a borrowed scope does not make the Scala facade its owner.
 
 ## Control attachments
 

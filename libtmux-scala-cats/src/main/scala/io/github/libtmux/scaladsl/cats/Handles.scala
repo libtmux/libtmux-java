@@ -33,7 +33,9 @@ final class Session[F[_]] private[cats] (
     private[cats] val underlying: blocking.Session,
     val server: Server[F]
 )(implicit F: Async[F]) {
-  val asJava: JavaSession = underlying.asJava
+  /** The Java session. It keeps none of this resource's scope. */
+  def unsafeJava: JavaSession = asJava
+  private[scaladsl] val asJava: JavaSession = underlying.asJava
   val info: SessionInfo = underlying.info
   def windows: Vector[Window[F]] = underlying.windows.map(server.window)
   def activeWindow: Option[Window[F]] =
@@ -74,7 +76,9 @@ final class Window[F[_]] private[cats] (
     private[cats] val underlying: blocking.Window,
     val server: Server[F]
 )(implicit F: Async[F]) {
-  val asJava: JavaWindow = underlying.asJava
+  /** The Java window link. It keeps none of this resource's scope. */
+  def unsafeJava: JavaWindow = asJava
+  private[scaladsl] val asJava: JavaWindow = underlying.asJava
   val info: WindowInfo = underlying.info
   def session: Session[F] = server.session(underlying.session)
   def panes: Vector[Pane[F]] = underlying.panes.map(server.pane)
@@ -128,7 +132,9 @@ final class Pane[F[_]] private[cats] (
     private[cats] val underlying: blocking.Pane,
     val server: Server[F]
 )(implicit F: Async[F]) {
-  val asJava: JavaPane = underlying.asJava
+  /** The Java pane. It keeps none of this resource's scope. */
+  def unsafeJava: JavaPane = asJava
+  private[scaladsl] val asJava: JavaPane = underlying.asJava
   val info: PaneInfo = underlying.info
   def window: Window[F] = server.window(underlying.window)
   def capture: F[Vector[String]] = server.execution(underlying.capture())
@@ -201,7 +207,9 @@ final class Client[F[_]] private[cats] (
     private[cats] val underlying: blocking.Client,
     val server: Server[F]
 )(implicit F: Async[F]) {
-  val asJava: JavaClient = underlying.asJava
+  /** The Java client. It keeps none of this resource's scope. */
+  def unsafeJava: JavaClient = asJava
+  private[scaladsl] val asJava: JavaClient = underlying.asJava
   val info: ClientInfo = underlying.info
   private def wrap(value: blocking.ClientAttachment): ClientAttachment[F] =
     ClientAttachment(

@@ -25,8 +25,9 @@ final class Server[F[_]] private[cats] (
     private[cats] val execution: Execution[F]
 )(implicit F: Async[F]) {
 
-  /** Borrows the Java client without transferring ownership. */
-  val asJava: JavaServer = underlying.asJava
+  /** The Java client. This resource's release does not close it. */
+  def unsafeJava: JavaServer = asJava
+  private[scaladsl] val asJava: JavaServer = underlying.asJava
   def config: ServerConfig = underlying.config
   def identity: ServerIdentity = underlying.identity
   private[cats] def session(value: blocking.Session): Session[F] =
