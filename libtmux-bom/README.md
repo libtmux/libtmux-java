@@ -1,6 +1,6 @@
 # libtmux-bom
 
-**Name a Java version once. Every Java libtmux coordinate follows it.**
+**Name one BOM version. Every BOM-managed libtmux coordinate follows it.**
 
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
@@ -33,9 +33,9 @@ dependencies {
 
 ## Why
 
-These Java modules are built against each other. Mixing two releases of them is
-the failure a platform exists to prevent, and it is easy to do by hand when
-three coordinates each carry their own version string.
+These BOM-managed artifacts are built against each other. Mixing two releases
+of them is the failure a platform exists to prevent, and it is easy to do by
+hand when three coordinates each carry their own version string.
 
 ## Check it took
 
@@ -64,9 +64,9 @@ doing its job.
 [`libtmux-mcp`](../libtmux-mcp/) · [`libtmux-workspace`](../libtmux-workspace/)
 
 That list is checked rather than trusted. `platformCoversEveryPublishedModule`
-fails the build when the set of Java modules declaring a publication stops
-matching this one. Scala artifacts release separately and pin their Java
-prerequisite in their own POMs.
+fails the build when the set of Gradle-published artifacts stops matching this
+one. Scala artifacts release separately and pin their Java prerequisite in
+their own POMs.
 
 ## Next
 

@@ -1,5 +1,5 @@
-// The one place a consumer names a version. Every other libtmux coordinate then comes from here,
-// which is what stops a project mixing two releases of modules that were built against each other.
+// The one place a consumer names a BOM version. Every BOM-managed libtmux coordinate then comes
+// from here, which is what stops a project mixing two releases of artifacts built against each other.
 //
 //     dependencies {
 //         implementation(platform("io.github.libtmux:libtmux-bom:<version>"))

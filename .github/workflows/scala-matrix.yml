@@ -124,7 +124,13 @@ jobs:
             --java-stage libtmux-scala/target/java-repository \
             --version "$LIBTMUX_SCALA_VERSION" \
             --java-version "$LIBTMUX_JAVA_VERSION" \
-            --artifacts-only
+            --prepare-only \
+            --docs-exports libtmux-scala/examples/target/scala-2.13/resource_managed/test \
+            --scala-version 2.13.18 \
+            --jdk "$JAVA_HOME" \
+            --tmux "$TMUX_PREFIX/bin/tmux" \
+            --expected-tmux "$TMUX_LANE" \
+            --output libtmux-scala/target/consumers/P01
 
       - name: Archive staged consumer inputs
         run: |

@@ -14,7 +14,7 @@ $ python3 libtmux-scala/scripts/verify-consumers.py \
     --scala-stage libtmux-scala/target/staging \
     --java-stage libtmux-scala/target/java-repository \
     --version 0.0.1-alpha.12-scala-dev.1 \
-    --java-version 0.0.1-alpha.12-scala-dev.1 \
+    --java-version 0.0.1-alpha.13 \
     --docs-exports libtmux-scala/examples/target/scala-2.13/resource_managed/test \
     --scala-version 2.13.18 \
     --jdk "$JAVA_HOME" \

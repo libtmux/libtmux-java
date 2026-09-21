@@ -11,25 +11,25 @@ The Scala facade consumes Maven coordinates, including during development.
 Stage the Java prerequisite, fixture and optional JSON adapter locally:
 
 ```console
-$ LIBTMUX_JAVA_VERSION=0.0.1-alpha.12-scala-dev.1 \
+$ LIBTMUX_JAVA_VERSION=0.0.1-alpha.13 \
     ./libtmux-scala/scripts/stage-java.sh
 ```
 
-The default repository is `libtmux-scala/target/java-repository`. The development
-coordinate includes the inherited-option fix required by this wrapper; it is
-not evidence that a public Java release contains that change.
+The default repository is `libtmux-scala/target/java-repository`. The local
+stage makes the released Java prerequisite and test fixtures explicit without
+using Maven local.
 
 Run both producer families' pure and live checks:
 
 ```console
-$ LIBTMUX_JAVA_VERSION=0.0.1-alpha.12-scala-dev.1 \
+$ LIBTMUX_JAVA_VERSION=0.0.1-alpha.13 \
     ./libtmux-scala/sbtw crossUnit crossLive
 ```
 
 Stage the two facade modules for both Scala binary families:
 
 ```console
-$ LIBTMUX_JAVA_VERSION=0.0.1-alpha.12-scala-dev.1 \
+$ LIBTMUX_JAVA_VERSION=0.0.1-alpha.13 \
     LIBTMUX_SCALA_VERSION=0.0.1-alpha.12-scala-dev.1 \
     ./libtmux-scala/sbtw stage
 ```
@@ -170,9 +170,9 @@ and `libtmux-scala-cats/target/scala-2.13/api/index.html`. Scala 3 uses the
 corresponding `scala-3.3.8/api/` directories. Begin with
 [blocking `Server`][blocking-server] or [Cats `Server`][cats-server].
 
-These commands need the same Java development coordinate when the staged
-version differs from `gradle.properties`; set `LIBTMUX_JAVA_VERSION` for the
-invocation. Bootstrap and compilation belong to the outer verification tier.
+These commands need the Java coordinate selected for the local stage; set
+`LIBTMUX_JAVA_VERSION` when it differs from `gradle.properties`. Bootstrap and
+compilation belong to the outer verification tier.
 Use a resident sbt shell for focused development tests.
 
 [blocking-server]:

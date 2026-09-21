@@ -66,12 +66,13 @@ Jackson dependencies serve integration tests; dependency and installed-POM
 checks must verify they do not leak into core. Keep the consumer's Scala binary
 family consistent across both artifacts.
 
-Development uses the exact Java coordinate
-`io.github.libtmux:libtmux:0.0.1-alpha.12-scala-dev.1` from an isolated local
-stage. It includes the [Java option prerequisite][java-options] used by this
-facade. This is not a public release claim. A released Scala POM must instead
-pin an available, non-SNAPSHOT Java version containing that prerequisite.
-See [getting started](getting-started.md) for development staging commands.
+Development stages the released Java coordinate
+`io.github.libtmux:libtmux:0.0.1-alpha.13` in an isolated local repository. It
+contains the [Java option prerequisite][java-options] used by this facade. A
+released Scala POM pins its available, non-SNAPSHOT Java prerequisite directly.
+If a consumer also imports `libtmux-bom`, it must import that same Java version:
+a BOM can override the POM pin and select an untested Java artifact. See
+[getting started](getting-started.md) for development staging commands.
 
 ## Coordinated publication
 
@@ -80,14 +81,13 @@ four artifacts into an isolated local Maven stage. Its verifier checks the POM,
 binary, source and Scaladoc signatures, their checksums, and a single validated
 signing fingerprint. `publicationCoordinates` checks the Scala manifest before
 publishing; the artifact stage checks the resulting POMs. The Gradle gate
-checks the Java-only BOM against Java publications.
+checks the Scala-excluding BOM against Gradle-published artifacts.
 
 Central publication is deliberately separate from the Java tag workflow. An
 owner starts the manual Scala release workflow only after the selected Java
 version is available from Central. Central mode excludes the local Java stage,
 rejects snapshot and development coordinates, and compiles against that
-published Java dependency before signing. The current development Java
-coordinate above is therefore not release-eligible.
+published Java dependency before signing.
 
 The workflow runs `sonaUpload`, which leaves a pending Central Portal
 deployment for the owner to publish or drop. It never runs `sonaRelease` and

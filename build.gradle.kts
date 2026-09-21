@@ -8,12 +8,12 @@ plugins {
 
 // Aggregate entry points, so the gate is one command whatever the module layout becomes.
 
-// The Java BOM covers Gradle publications. Scala artifacts release independently,
-// and their shared sbt build verifies the cross-published coordinate manifest.
+// The BOM covers Gradle publications. Scala artifacts release independently, and
+// their shared sbt build verifies the cross-published coordinate manifest.
 val platformCoversEveryPublishedModule =
     tasks.register("platformCoversEveryPublishedModule") {
         group = "verification"
-        description = "Fails when a Java publication is missing from libtmux-bom, or vice versa."
+        description = "Fails when a Gradle publication is missing from libtmux-bom, or vice versa."
 
         val platform = project(":libtmux-bom")
         val published = provider {
@@ -47,7 +47,7 @@ val platformCoversEveryPublishedModule =
                     (listed - shipped).forEach { appendLine("  in the platform but not published: $it") }
                 }
             }
-            logger.lifecycle("libtmux-bom manages all ${shipped.size} Java modules")
+            logger.lifecycle("libtmux-bom manages all ${shipped.size} Gradle-published artifacts")
         }
     }
 

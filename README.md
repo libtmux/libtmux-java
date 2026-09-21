@@ -278,8 +278,8 @@ the separately released Scala artifacts are staged from this source tree.
   entities, options, hooks, batching, control mode, query model.
   **No runtime dependencies**, and a real Java module, `io.github.libtmux`.
 
-- **[`libtmux-bom`](libtmux-bom/)** — name a Java version once, and every Java
-  coordinate below follows it.
+- **[`libtmux-bom`](libtmux-bom/)** — name one BOM version, and every
+  BOM-managed coordinate below follows it.
 
 - **[`libtmux-mcp`](libtmux-mcp/)** — give a model a tmux server, over the
   [Model Context Protocol](https://modelcontextprotocol.io/). Finds its way
@@ -310,14 +310,14 @@ Not published, and part of how the library is built:
 [`docs-tests/`](docs-tests/) ·
 [`scripts/`](scripts/) · `build-logic/`
 
-The Java modules and shared Scala build declare the listed artifacts.
-`platformCoversEveryPublishedModule` validates Java publications against the
+The Gradle modules and shared Scala build declare the listed artifacts.
+`platformCoversEveryPublishedModule` validates Gradle publications against the
 BOM; the shared sbt build validates the separately released Scala coordinates.
 
 ## Installation
 
-Name the Java version once, through the platform, and every Java coordinate
-follows it. That is what stops a project mixing two releases of modules that
+Name one BOM version through the platform, and every BOM-managed coordinate
+follows it. That is what stops a project mixing two releases of artifacts that
 were built against each other.
 
 <!-- snippet: skip: build configuration, not library code -->
