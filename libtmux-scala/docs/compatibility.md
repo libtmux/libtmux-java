@@ -93,6 +93,14 @@ The workflow runs `sonaUpload`, which leaves a pending Central Portal
 deployment for the owner to publish or drop. It never runs `sonaRelease` and
 does not create a tag, push, or release artifacts automatically.
 
+## The wrapped surface
+
+A public method on `Server`, `Session`, `Window`, `Pane`, or `Client` is
+either wrapped by the blocking facade or named in
+`src/test/resources/scala-java-omissions.txt`. A captured field is read from
+`info`. Anything else stays on the Java handle. `SurfaceSuite` fails when a
+new Java method is neither.
+
 ## Inherited feature boundaries
 
 The facade preserves Java's version guards. [Named buffer deletion][buffers]
