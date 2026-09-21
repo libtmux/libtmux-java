@@ -7,9 +7,11 @@ import scala.jdk.OptionConverters._
 
 /** An operational handle with immutable captured information and traversal. */
 final class Session private[blocking] (
-    val asJava: JavaSession,
+    private[scaladsl] val asJava: JavaSession,
     val server: Server
 ) {
+  /** The Java session. It keeps none of this facade's scope. */
+  def unsafeJava: JavaSession = asJava
   val info: SessionInfo = SessionInfo(
     asJava.id(),
     asJava.name(),

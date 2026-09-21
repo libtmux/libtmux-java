@@ -12,9 +12,11 @@ final case class ClientAttachment(
 
 /** A captured attached client. Mutation and refresh are explicit operations. */
 final class Client private[blocking] (
-    val asJava: JavaClient,
+    private[scaladsl] val asJava: JavaClient,
     val server: Server
 ) {
+  /** The Java client. It keeps none of this facade's scope. */
+  def unsafeJava: JavaClient = asJava
   val info: ClientInfo =
     ClientInfo(asJava.name(), asJava.session().toScala.map(_.id()))
   def session: Option[Session] =

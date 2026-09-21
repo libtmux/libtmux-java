@@ -15,7 +15,9 @@ import scala.jdk.OptionConverters._
 import io.github.libtmux.scaladsl.{PaneInfo, PaneRun}
 
 /** A captured pane occurrence; Java equality identifies its physical pane. */
-final class Pane private[blocking] (val asJava: JavaPane, val server: Server) {
+final class Pane private[blocking] (private[scaladsl] val asJava: JavaPane, val server: Server) {
+  /** The Java pane. It keeps none of this facade's scope. */
+  def unsafeJava: JavaPane = asJava
   val info: PaneInfo = PaneInfo.fromHandle(asJava)
   def window: Window = new Window(asJava.window(), server)
   def batch(): Batch = server.checked(new Batch(asJava.batch(), server))

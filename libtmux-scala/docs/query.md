@@ -78,9 +78,10 @@ Using.resource(Server.open(config)) { server =>
 }
 ```
 
-For Cats handles, use `panes.filter(p => expression.test(p.asJava))` inside the
-effect's `map`. This is still local evaluation over a captured vector; it does
-not run a Java command.
+For Cats handles, use
+`panes.filter(p => expression.test(p.unsafeJava))` inside the effect's
+`map`. This is still local evaluation over a captured vector; it does not run
+a Java command.
 
 An invalid field/operator combination must fail at compilation:
 

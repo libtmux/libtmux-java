@@ -13,9 +13,11 @@ import scala.jdk.OptionConverters._
 
 /** One captured window placement. Equality includes its session and index. */
 final class Window private[blocking] (
-    val asJava: JavaWindow,
+    private[scaladsl] val asJava: JavaWindow,
     val server: Server
 ) {
+  /** The Java window link. It keeps none of this facade's scope. */
+  def unsafeJava: JavaWindow = asJava
   val info: WindowInfo = WindowInfo(
     asJava.context(),
     asJava.name(),
