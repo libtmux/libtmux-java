@@ -12,6 +12,21 @@ package io.github.libtmux.control;
 public sealed interface Delivery<T> {
 
     /**
+     * The event a strict reader kept. A gap fails the read.
+     *
+     * @param <T> the event type
+     * @param step the subscription's next step
+     * @return the event
+     * @throws IllegalStateException if {@code step} is a gap
+     */
+    static <T> T kept(Delivery<T> step) {
+        if (step instanceof Event<T> event) {
+            return event.value();
+        }
+        throw new IllegalStateException("lost " + ((Gap<?>) step).missed());
+    }
+
+    /**
      * An event the subscription kept.
      *
      * @param value the event

@@ -17,6 +17,15 @@ import org.junit.jupiter.api.Test;
 final class EventSubscriptionTest {
 
     @Test
+    void aGapIsNotAKeptEvent() {
+        IllegalStateException failure =
+                assertThrows(IllegalStateException.class, () -> Delivery.kept(new Delivery.Gap<>(3)));
+
+        assertTrue(String.valueOf(failure.getMessage()).contains("3"), failure.getMessage());
+        assertEquals("x", Delivery.kept(new Delivery.Event<>("x")));
+    }
+
+    @Test
     void capacityMustLeaveRoomForOneValue() {
         assertThrows(IllegalArgumentException.class, () -> new EventSubscription<String>(0, ignored -> {}));
         assertThrows(IllegalArgumentException.class, () -> new EventSubscription<String>(-1, ignored -> {}));
