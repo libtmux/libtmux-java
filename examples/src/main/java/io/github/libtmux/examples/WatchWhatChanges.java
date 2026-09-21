@@ -64,6 +64,9 @@ public final class WatchWhatChanges {
                         if (next.isEmpty()) {
                             break;
                         }
+                        if (next.orElseThrow() instanceof Delivery.Gap<ControlEvent> gap) {
+                            throw new IllegalStateException("lost " + gap.missed() + " control events");
+                        }
                         if (!(next.orElseThrow() instanceof Delivery.Event<ControlEvent> event)) {
                             continue;
                         }
