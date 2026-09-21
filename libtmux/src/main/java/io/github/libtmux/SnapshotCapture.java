@@ -176,22 +176,86 @@ final class SnapshotCapture {
         listings.add(listing(CLIENTS, "list-clients"));
         List<OperationResult> answered = listings.run().operations();
 
-        List<SessionState> sessions = new ArrayList<>();
-        for (RowFormat.Row row : rows(SESSIONS, answered.get(0), "list-sessions")) {
-            sessions.add(new SessionState(
-                    new SessionId(row.text("session_id")),
-                    row.text("session_name"),
-                    row.count("session_attached") > 0,
-                    row.number("session_windows")));
-        }
+        List<SessionState> sessions = sessionStates(rows(SESSIONS, answered.get(0), "list-sessions"));
         if (sessions.isEmpty()) {
             // A server with no sessions has no current target, so tmux refuses the rest of the
             // group. An empty sessions listing is the whole hierarchy, so there is nothing to read.
             return ServerSnapshot.of(
                     Instant.now(), process.pid(), process.version(), sessions, List.of(), List.of(), List.of());
         }
+        return ServerSnapshot.of(
+                Instant.now(),
+                process.pid(),
+                process.version(),
+                sessions,
+                windowStates(rows(WINDOWS, answered.get(1), "list-windows")),
+                paneStates(rows(paneFormat, answered.get(2), "list-panes"), floatingKnown),
+                clientStates(rows(CLIENTS, answered.get(3), "list-clients")));
+    }
+
+    /**
+     * One session, its windows, and its panes. Empty when that session is absent. Other sessions are
+     * not read.
+     *
+     * @param target the session name or id passed to {@code -t}
+     * @param field {@code session_name} or {@code session_id}
+     */
+    Optional<ServerSnapshot> oneSession(String target, String field) {
+        ServerProcess process = process()
+                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
+        String filter = "#{==:#{" + field + "}," + target + "}";
+        Batch probe = server.batch(process.pid(), process.reported());
+        probe.add(listing(SESSIONS, "list-sessions", "-f", filter));
+        List<SessionState> sessions =
+                sessionStates(rows(SESSIONS, probe.run().operations().get(0), "list-sessions"));
+        if (sessions.isEmpty()) {
+            return Optional.empty();
+        }
+        boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
+        RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
+        Batch rest = server.batch(process.pid(), process.reported());
+        rest.add(listing(WINDOWS, "list-windows", "-t", target));
+        rest.add(listing(paneFormat, "list-panes", "-s", "-t", target));
+        List<OperationResult> answered = rest.run().operations();
+        return Optional.of(ServerSnapshot.of(
+                Instant.now(),
+                process.pid(),
+                process.version(),
+                sessions,
+                windowStates(rows(WINDOWS, answered.get(0), "list-windows")),
+                paneStates(rows(paneFormat, answered.get(1), "list-panes"), floatingKnown),
+                List.of()));
+    }
+
+    /** The session that owns this pane, without listing every pane first. */
+    Optional<SessionId> sessionOfPane(PaneId id) {
+        ServerProcess process = process()
+                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
+        RowFormat sessionOnly = RowFormat.of("session_id");
+        Batch probe = server.batch(process.pid(), process.reported());
+        probe.add(listing(sessionOnly, "list-panes", "-a", "-f", "#{==:#{pane_id}," + id.value() + "}"));
+        List<RowFormat.Row> found = rows(sessionOnly, probe.run().operations().get(0), "list-panes");
+        if (found.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(new SessionId(found.get(0).text("session_id")));
+    }
+
+    private static List<SessionState> sessionStates(List<RowFormat.Row> rows) {
+        List<SessionState> sessions = new ArrayList<>();
+        for (RowFormat.Row row : rows) {
+            sessions.add(new SessionState(
+                    new SessionId(row.text("session_id")),
+                    row.text("session_name"),
+                    row.count("session_attached") > 0,
+                    row.number("session_windows")));
+        }
+        return sessions;
+    }
+
+    private static List<WindowState> windowStates(List<RowFormat.Row> rows) {
         List<WindowState> windows = new ArrayList<>();
-        for (RowFormat.Row row : rows(WINDOWS, answered.get(1), "list-windows")) {
+        for (RowFormat.Row row : rows) {
             windows.add(new WindowState(
                     context(row),
                     row.text("window_name"),
@@ -201,8 +265,12 @@ final class SnapshotCapture {
                     new Dimensions(row.number("window_width"), row.number("window_height")),
                     row.text("window_layout")));
         }
+        return windows;
+    }
+
+    private static List<PaneState> paneStates(List<RowFormat.Row> rows, boolean floatingKnown) {
         List<PaneState> panes = new ArrayList<>();
-        for (RowFormat.Row row : rows(paneFormat, answered.get(2), "list-panes")) {
+        for (RowFormat.Row row : rows) {
             panes.add(new PaneState(
                     context(row),
                     new PaneId(row.text("pane_id")),
@@ -221,14 +289,18 @@ final class SnapshotCapture {
                             row.flag("pane_at_right")),
                     floatingKnown ? Optional.of(row.flag(FLOATING)) : Optional.empty()));
         }
+        return panes;
+    }
+
+    private static List<ClientState> clientStates(List<RowFormat.Row> rows) {
         List<ClientState> clients = new ArrayList<>();
-        for (RowFormat.Row row : rows(CLIENTS, answered.get(3), "list-clients")) {
+        for (RowFormat.Row row : rows) {
             String session = row.text("session_id");
             clients.add(new ClientState(
                     row.text("client_name"),
                     session.isEmpty() ? Optional.empty() : Optional.of(new SessionId(session))));
         }
-        return ServerSnapshot.of(Instant.now(), process.pid(), process.version(), sessions, windows, panes, clients);
+        return clients;
     }
 
     /**

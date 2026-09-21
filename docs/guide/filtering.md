@@ -64,9 +64,13 @@ An expression evaluates locally over a capture you already hold. Filtering issue
 no commands, so a stream pipeline costs nothing and cannot observe a
 half-changed server.
 
-Expressions retain enough structure for a future compiler to lower them to tmux's
-own `-f` predicate, but no release does that today, and no such compiler would
-change what snapshot filtering means.
+Expressions retain enough structure to lower a safe subset to tmux's own `-f`
+predicate. `TmuxFilters.format` does that lowering. A relation, or an operand
+containing `,`, `#`, `{`, `}`, or `:`, stays empty, and the caller filters the
+capture it already holds. `Server.session(String)` and `Server.pane(PaneId)`
+use a targeted listing when the name or id is safe to put in a format, and a
+whole-server capture otherwise. Filtering a list already in hand still issues
+no commands.
 
 ## Writing an expression down
 
