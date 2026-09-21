@@ -689,17 +689,17 @@ final class ServerTest {
     void promptHistoryAsksTheDaemonRatherThanTrustingAVersionString(@TempDir Path directory) throws IOException {
         try (Server server =
                 Server.using(config(directory), listingCommands("3.2a", "show-prompt-history (showphist) [-T type]"))) {
-            assertDoesNotThrow(server::promptHistory, "list-commands names it, so a low version must not refuse");
-            assertDoesNotThrow(server::clearPromptHistory);
+            assertDoesNotThrow(() -> server.prompt().history(), "list-commands names it, so a low version must not refuse");
+            assertDoesNotThrow(() -> server.prompt().clear());
         }
         try (Server server = Server.using(config(directory), listingCommands("99.0"))) {
             UnsupportedTmuxVersionException refused =
-                    assertThrows(UnsupportedTmuxVersionException.class, server::promptHistory);
+                    assertThrows(UnsupportedTmuxVersionException.class, () -> server.prompt().history());
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("3.3"),
                     "the refusal still names the release most callers will recognise: " + refused.getMessage());
-            assertThrows(UnsupportedTmuxVersionException.class, server::clearPromptHistory);
+            assertThrows(UnsupportedTmuxVersionException.class, () -> server.prompt().clear());
         }
     }
 
