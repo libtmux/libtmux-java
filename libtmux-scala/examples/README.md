@@ -3,7 +3,8 @@
 These programs require an existing isolated tmux server at the endpoint
 supplied by the caller. Each creates and removes its own sessions and closes
 its clients. The existing daemon remains running. Isolation makes the
-notification example's exact loss count reproducible.
+notification example's deliberate overflow reproducible, while the subscription
+counts every control notification it receives.
 
 | Program | Demonstrates |
 | --- | --- |

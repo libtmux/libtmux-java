@@ -24,8 +24,9 @@ production.
 
 ### Fixed
 
-- **`ObserveChanges` starts its notification reader before renaming a window.**
-  The runnable Scala example no longer races its event source. (#21)
+- **`ObserveChanges` counts loss across every notification.** The runnable
+  Scala example verifies deliberate overflow and reconciles current state
+  without assuming every notification is a window rename. (#21)
 
 ## 0.0.1-alpha.13 — 2026-09-20
 

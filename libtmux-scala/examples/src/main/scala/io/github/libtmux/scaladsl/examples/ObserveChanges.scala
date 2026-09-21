@@ -36,10 +36,13 @@ object ObserveChanges {
               Control
                 .attach[IO](config, session.info.id, ExampleRuntime.deadline)
                 .use { control =>
-                  (control.events(2), control.events(16)).tupled.use {
+                  val slowCapacity = 2
+                  (control.events(slowCapacity), control.events(16)).tupled.use {
                     case (slow, witness) =>
                       val names =
                         Vector.tabulate(5)(index => "observed-" + index)
+                      val minimumExpectedLoss =
+                        (names.size - slowCapacity).toLong
                       for {
                         _ <- names.traverse_ { name =>
                           for {
@@ -61,22 +64,12 @@ object ObserveChanges {
                           } yield ()
                         }
                         dropped <- slow.droppedCount
-                        newest <- slow.stream.take(2).compile.toVector
-                        stillDropped <- slow.droppedCount
                         current <- server.snapshot
                         _ <- IO {
-                          assert(dropped == 3L, "dropped=" + dropped)
                           assert(
-                            stillDropped == dropped,
-                            "loss changed from " + dropped + " to " + stillDropped
-                          )
-                          val retained = newest.map(_.notification()).collect {
-                            case event: Notification.WindowRenamed =>
-                              event.name()
-                          }
-                          assert(
-                            retained == names.takeRight(2),
-                            "retained=" + retained.mkString(",")
+                            dropped >= minimumExpectedLoss,
+                            "dropped=" + dropped + ", expected at least " +
+                              minimumExpectedLoss
                           )
                           assert(
                             current
