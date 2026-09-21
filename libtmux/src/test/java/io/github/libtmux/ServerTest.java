@@ -23,6 +23,8 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -786,6 +788,37 @@ final class ServerTest {
             assertTrue(
                     String.valueOf(failure.getMessage()).contains("server exited unexpectedly"),
                     "tmux's own words, not a guess: " + failure.getMessage());
+        }
+    }
+
+    /** Exit status and error lines are fields, not words to scrape out of the message. */
+    @Test
+    void aFailedCommandKeepsItsExitAndErrorLines(@TempDir Path directory) throws IOException {
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public void close() {}
+        };
+        try (Server server = Server.using(config(directory), transport)) {
+            LibTmuxException failure =
+                    server.failed("display-message", new CommandResult(7, List.of(), List.of("no current target")));
+
+            assertEquals(Optional.of("display-message"), failure.command());
+            assertEquals(OptionalInt.of(7), failure.exitCode());
+            assertEquals(List.of("no current target"), failure.errorLines());
+            assertTrue(String.valueOf(failure.getMessage()).contains("exit 7"), failure.getMessage());
+
+            LibTmuxException absent =
+                    server.failed("kill-server", new CommandResult(1, List.of(), List.of("no server running")));
+
+            assertTrue(absent instanceof ServerNotRunningException);
+            assertEquals(Optional.of("kill-server"), absent.command());
+            assertEquals(OptionalInt.of(1), absent.exitCode());
+            assertEquals(List.of("no server running"), absent.errorLines());
         }
     }
 

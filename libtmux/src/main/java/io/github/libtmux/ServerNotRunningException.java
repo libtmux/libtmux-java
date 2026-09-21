@@ -1,5 +1,7 @@
 package io.github.libtmux;
 
+import java.util.List;
+
 /**
  * No tmux daemon answered on this endpoint.
  *
@@ -13,5 +15,9 @@ public final class ServerNotRunningException extends LibTmuxException {
 
     public ServerNotRunningException(String message) {
         super(message);
+    }
+
+    ServerNotRunningException(String message, String command, int exitCode, List<String> errorLines) {
+        super(message, null, command, exitCode, errorLines);
     }
 }
