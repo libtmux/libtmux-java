@@ -16,7 +16,7 @@ val platformCoversEveryPublishedModule =
         description = "Fails when a published module is missing from libtmux-bom, or vice versa."
 
         val platform = project(":libtmux-bom")
-        val scalaPublications = layout.projectDirectory.file("scala/publications.txt").asFile
+        val scalaPublications = layout.projectDirectory.file("libtmux-scala/publications.txt").asFile
         inputs.file(scalaPublications)
         val published = provider {
             subprojects
@@ -34,13 +34,13 @@ val platformCoversEveryPublishedModule =
         val declared = provider {
             val rows = scalaPublications.readLines()
             val coordinate = Regex("[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+")
-            require(rows.isNotEmpty()) { "scala/publications.txt must declare at least one publication." }
+            require(rows.isNotEmpty()) { "libtmux-scala/publications.txt must declare at least one publication." }
             rows.forEachIndexed { index, row ->
                 require(coordinate.matches(row)) {
-                    "scala/publications.txt:${index + 1} must contain one group:artifact coordinate."
+                    "libtmux-scala/publications.txt:${index + 1} must contain one group:artifact coordinate."
                 }
             }
-            require(rows.size == rows.toSet().size) { "scala/publications.txt contains duplicate coordinates." }
+            require(rows.size == rows.toSet().size) { "libtmux-scala/publications.txt contains duplicate coordinates." }
             rows.map { "$it:${platform.version}" }.toSortedSet()
         }
         val managed = provider {

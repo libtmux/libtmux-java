@@ -270,8 +270,9 @@ rather than collapsing both into one error.
 
 ## Modules
 
-Group `io.github.libtmux`. Each directory is its own artifact, with its own
-README, and each is [on Maven Central](https://central.sonatype.com/namespace/io.github.libtmux).
+Group `io.github.libtmux`. Each listed published directory is an artifact with
+its own README. Java artifacts are [on Maven Central](https://central.sonatype.com/namespace/io.github.libtmux);
+the separately released Scala artifacts are staged from this source tree.
 
 - **[`libtmux`](libtmux/)** — the library itself. Transport, snapshots,
   entities, options, hooks, batching, control mode, query model.
@@ -291,6 +292,12 @@ README, and each is [on Maven Central](https://central.sonatype.com/namespace/io
 - **[`libtmux-kotlin`](libtmux-kotlin/)** — Kotlin ergonomics. Optional: the core
   is already null-safe from Kotlin without it.
 
+- **[`libtmux-scala`](libtmux-scala/)** — Scala collections, blocking
+  operations, and typed local queries.
+
+- **[`libtmux-scala-cats`](libtmux-scala-cats/)** — optional Cats Effect
+  resources and FS2 observations.
+
 - **[`libtmux-jackson`](libtmux-jackson/)** — a filter expression as a versioned
   JSON document, so it can be stored, sent, or written by something that is not
   a Java program.
@@ -303,8 +310,9 @@ Not published, and part of how the library is built:
 [`docs-tests/`](docs-tests/) ·
 [`scripts/`](scripts/) · `build-logic/`
 
-A directory is a published artifact exactly when it appears above, and
-`platformCoversEveryPublishedModule` fails the build if that stops being true.
+The Java modules and shared Scala build declare the listed artifacts.
+`platformCoversEveryPublishedModule` fails the build if their coordinates stop
+matching the BOM.
 
 ## Installation
 
@@ -363,7 +371,7 @@ on a filter.
 **Scala** can consume the Java artifacts directly. This source tree also has an
 in-progress Scala facade with locally staged `_2.13` and `_3` artifacts; those
 suffixes apply only to the facade, never to the Java artifact. See the
-[Scala facade guide](scala/README.md) and [direct Java guide](docs/guide/scala.md).
+[Scala facade guide](libtmux-scala/README.md) and [direct Java guide](docs/guide/scala.md).
 
 ## Requirements
 
