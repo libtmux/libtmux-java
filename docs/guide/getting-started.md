@@ -223,9 +223,7 @@ try (ControlClient client = server.control(session);
     // Output arrives in frames as tmux flushes it, so one line can span several.
     StringBuilder seen = new StringBuilder();
     while (seen.indexOf("streamed") < 0) {
-        seen.append(output.next(Duration.ofSeconds(5)).orElseThrow() instanceof Delivery.Event<PaneOutput> event
-                ? event.value().data()
-                : "");
+        seen.append(Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow()).data());
     }
     seen.indexOf("streamed") >= 0;  // → true
 }
@@ -235,7 +233,8 @@ Control-mode requests are independent: a failure discards nothing behind it, and
 every reply carries the request that produced it. Attaching is what makes tmux
 push output at all. The bounded subscription reports overflow through
 `droppedCount()` and never runs caller code on the reply reader. A full buffer's
-next read is a `Delivery.Gap` before the events that remain. A subscription does
+next read is a `Delivery.Gap` before the events that remain. `Delivery.kept`
+fails that read. Match on `Delivery.Gap` to continue. A subscription does
 not reconnect.
 
 ## Pinning tmux's configuration
