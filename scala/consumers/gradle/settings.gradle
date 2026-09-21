@@ -1,0 +1,19 @@
+rootProject.name = 'staged-scala-consumers'
+include 'core', 'cats'
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        maven {
+            url = uri(System.getenv('LIBTMUX_JAVA_REPOSITORY'))
+            content { includeGroup('io.github.libtmux') }
+        }
+        maven {
+            url = uri(System.getenv('LIBTMUX_SCALA_STAGING'))
+            content { includeGroup('io.github.libtmux') }
+        }
+        mavenCentral {
+            content { excludeGroup('io.github.libtmux') }
+        }
+    }
+}

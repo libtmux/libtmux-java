@@ -1,0 +1,613 @@
+name: Scala compatibility
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+    inputs:
+      include_macos_release:
+        description: 'Run the manual P05, P07 and P08 macOS release cells'
+        required: false
+        default: false
+        type: boolean
+      include_macos_consumers:
+        description: 'Run the manual C02 through C07 macOS consumer cells'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  LIBTMUX_JAVA_VERSION: 0.0.1-alpha.12-scala-dev.1
+  LIBTMUX_SCALA_VERSION: 0.0.1-alpha.12-scala-dev.1
+
+jobs:
+  artifact-stage:
+    if: github.event_name != 'workflow_dispatch' || !inputs.include_macos_release || inputs.include_macos_consumers
+    name: P01 artifacts (Linux, JDK 21, Scala 2.13.18, tmux 3.7c)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TMUX_LANE: 3.7c
+      TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
+      LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/scala/target/java-repository
+      LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/scala/target/staging
+      LIBTMUX_BOM_REPOSITORY: ${{ github.workspace }}/scala/target/bom-stage
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Manual macOS release gate stays dispatch-only
+        run: python3 scala/scripts/verify-macos-release-gate.py
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
+
+      - name: Install tmux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            libevent-dev \
+            libncurses-dev \
+            pkg-config
+
+      - name: Restore tmux ${{ env.TMUX_LANE }}
+        id: tmux-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.TMUX_PREFIX }}
+          key: scala-tmux-${{ env.TMUX_LANE }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build tmux ${{ env.TMUX_LANE }}
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        run: |
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          curl -fsSL -o "$work/tmux.tar.gz" "https://github.com/tmux/tmux/releases/download/$TMUX_LANE/tmux-$TMUX_LANE.tar.gz"
+          tar -xzf "$work/tmux.tar.gz" -C "$work"
+          cd "$work/tmux-$TMUX_LANE"
+          if [ "$(uname)" = Darwin ]; then
+            event_prefix="$(brew --prefix libevent)"
+            ncurses_prefix="$(brew --prefix ncurses)"
+            export PKG_CONFIG_PATH="$event_prefix/lib/pkgconfig:$ncurses_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+            export CPPFLAGS="-I$event_prefix/include -I$ncurses_prefix/include${CPPFLAGS:+ $CPPFLAGS}"
+            export LDFLAGS="-L$event_prefix/lib -L$ncurses_prefix/lib${LDFLAGS:+ $LDFLAGS}"
+          fi
+          ./configure --prefix="$TMUX_PREFIX"
+          make -j"$(nproc)"
+          make install
+
+      - name: Verify tmux ${{ env.TMUX_LANE }}
+        run: |
+          "$TMUX_PREFIX/bin/tmux" -V | grep -Fx "tmux $TMUX_LANE"
+
+      - name: Stage the Java prerequisite
+        run: ./scala/scripts/stage-java.sh
+
+      - name: Run primary Scala checks
+        env:
+          TMUX_TEST_BINARY: ${{ env.TMUX_PREFIX }}/bin/tmux
+        run: |
+          scala/sbtw \
+            '++2.13.18' \
+            scalafmtSbtCheck \
+            scalafmtCheckAll \
+            core/test \
+            cats/test \
+            integration/test \
+            examples/test \
+            core/doc \
+            cats/doc \
+            core/package \
+            cats/package \
+            benchmarks/compile
+
+      - name: Stage and inspect Scala artifacts
+        run: |
+          scala/sbtw stage
+          python3 scala/scripts/verify-consumers.py \
+            --scala-stage scala/target/staging \
+            --java-stage scala/target/java-repository \
+            --version "$LIBTMUX_SCALA_VERSION" \
+            --java-version "$LIBTMUX_JAVA_VERSION" \
+            --artifacts-only
+
+      - name: Stage and verify BOM constraints
+        run: |
+          ./scala/scripts/stage-bom.sh
+          python3 scala/scripts/verify-bom.py \
+            --bom-pom "scala/target/bom-stage/io/github/libtmux/libtmux-bom/$LIBTMUX_JAVA_VERSION/libtmux-bom-$LIBTMUX_JAVA_VERSION.pom" \
+            --scala-stage scala/target/staging \
+            --version "$LIBTMUX_SCALA_VERSION" \
+            --output scala/target/bom-scala-parity.json
+
+      - name: Archive staged consumer inputs
+        run: |
+          tar -C scala -czf "$RUNNER_TEMP/scala-consumer-stage.tar.gz" \
+            target/staging \
+            target/java-repository \
+            examples/target/scala-2.13/resource_managed/test
+
+      - name: No tmux server outlived P01
+        if: always()
+        run: |
+          left="$(pgrep -c tmux || true)"
+          if [ "${left:-0}" -ne 0 ]; then
+            echo "::error::$left tmux server(s) survived P01"
+            for process in $(pgrep tmux); do tr '\0' ' ' < "/proc/$process/cmdline"; echo; done
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: scala-consumer-stage-${{ github.sha }}
+          path: ${{ runner.temp }}/scala-consumer-stage.tar.gz
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: scala-artifact-reports-${{ github.sha }}
+          path: scala/target
+          retention-days: 7
+
+  producer-runtime:
+    if: github.event_name != 'workflow_dispatch' || (!inputs.include_macos_release && !inputs.include_macos_consumers)
+    name: ${{ matrix.id }} (${{ matrix.os }}, JDK 21, Scala 3.3.8, tmux 3.7c)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: R01
+            os: ubuntu-latest
+          - id: R02
+            os: macos-latest
+    env:
+      TMUX_LANE: 3.7c
+      TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
+      LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/scala/target/java-repository
+      LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/scala/target/staging
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
+
+      - name: Install Linux tmux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            libevent-dev \
+            libncurses-dev \
+            pkg-config
+
+      - name: Install macOS tmux build dependencies
+        if: runner.os == 'macOS'
+        run: brew install libevent ncurses pkg-config utf8proc jemalloc
+
+      - name: Restore tmux 3.7c
+        id: tmux-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.TMUX_PREFIX }}
+          key: scala-tmux-${{ env.TMUX_LANE }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build tmux 3.7c
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        run: |
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          curl -fsSL -o "$work/tmux.tar.gz" "https://github.com/tmux/tmux/releases/download/$TMUX_LANE/tmux-$TMUX_LANE.tar.gz"
+          tar -xzf "$work/tmux.tar.gz" -C "$work"
+          cd "$work/tmux-$TMUX_LANE"
+          if [ "$(uname)" = Darwin ]; then
+            event_prefix="$(brew --prefix libevent)"
+            ncurses_prefix="$(brew --prefix ncurses)"
+            utf8proc_prefix="$(brew --prefix utf8proc)"
+            jemalloc_prefix="$(brew --prefix jemalloc)"
+            export PKG_CONFIG_PATH="$event_prefix/lib/pkgconfig:$ncurses_prefix/lib/pkgconfig:$utf8proc_prefix/lib/pkgconfig:$jemalloc_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+            export CPPFLAGS="-I$event_prefix/include -I$ncurses_prefix/include -I$utf8proc_prefix/include${CPPFLAGS:+ $CPPFLAGS}"
+            export LDFLAGS="-L$event_prefix/lib -L$ncurses_prefix/lib -L$utf8proc_prefix/lib -L$jemalloc_prefix/lib${LDFLAGS:+ $LDFLAGS}"
+            ./configure --prefix="$TMUX_PREFIX" --enable-utf8proc --enable-jemalloc
+          else
+            ./configure --prefix="$TMUX_PREFIX"
+          fi
+          make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)"
+          make install
+
+      - name: Verify tmux 3.7c
+        run: |
+          "$TMUX_PREFIX/bin/tmux" -V | grep -Fx "tmux $TMUX_LANE"
+
+      - name: Stage the Java prerequisite
+        run: ./scala/scripts/stage-java.sh
+
+      - name: Run Scala checks
+        env:
+          TMUX_TEST_BINARY: ${{ env.TMUX_PREFIX }}/bin/tmux
+        run: |
+          scala/sbtw \
+            '++3.3.8' \
+            scalafmtSbtCheck \
+            scalafmtCheckAll \
+            core/test \
+            cats/test \
+            integration/test \
+            examples/test \
+            core/doc \
+            cats/doc \
+            core/package \
+            cats/package \
+            benchmarks/compile
+
+      - name: No tmux server outlived the cell
+        if: always() && runner.os == 'Linux'
+        run: |
+          left="$(pgrep -c tmux || true)"
+          if [ "${left:-0}" -ne 0 ]; then
+            echo "::error::$left tmux server(s) survived ${{ matrix.id }}"
+            for process in $(pgrep tmux); do tr '\0' ' ' < "/proc/$process/cmdline"; echo; done
+            exit 1
+          fi
+
+      - name: No tmux server outlived the cell
+        if: always() && runner.os == 'macOS'
+        run: |
+          left="$(pgrep -c tmux || true)"
+          if [ "${left:-0}" -ne 0 ]; then
+            echo "::error::$left tmux server(s) survived ${{ matrix.id }}"
+            for process in $(pgrep tmux); do ps -o command= -p "$process"; done
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: scala-runtime-${{ matrix.id }}-${{ github.sha }}
+          path: scala/target
+          retention-days: 7
+
+  manual-macos-consumers:
+    if: github.event_name == 'workflow_dispatch' && inputs.include_macos_consumers
+    name: ${{ matrix.id }} (manual macOS consumer, JDK ${{ matrix.java }}, Scala ${{ matrix.scala }}, tmux 3.7c)
+    needs: artifact-stage
+    runs-on: macos-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - id: C02
+            java: '21'
+            scala: 2.13.18
+          - id: C03
+            java: '21'
+            scala: 3.3.8
+          - id: C04
+            java: '21'
+            scala: 3.9.0
+          - id: C05
+            java: '25'
+            scala: 2.13.18
+          - id: C06
+            java: '25'
+            scala: 3.3.8
+          - id: C07
+            java: '25'
+            scala: 3.9.0
+    env:
+      TMUX_LANE: 3.7c
+      TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
+
+      - name: Install macOS tmux build dependencies
+        run: brew install libevent ncurses pkg-config utf8proc jemalloc
+
+      - name: Restore tmux 3.7c
+        id: tmux-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.TMUX_PREFIX }}
+          key: scala-tmux-${{ env.TMUX_LANE }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build tmux 3.7c
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        run: |
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          curl -fsSL -o "$work/tmux.tar.gz" "https://github.com/tmux/tmux/releases/download/$TMUX_LANE/tmux-$TMUX_LANE.tar.gz"
+          tar -xzf "$work/tmux.tar.gz" -C "$work"
+          cd "$work/tmux-$TMUX_LANE"
+          event_prefix="$(brew --prefix libevent)"
+          ncurses_prefix="$(brew --prefix ncurses)"
+          utf8proc_prefix="$(brew --prefix utf8proc)"
+          jemalloc_prefix="$(brew --prefix jemalloc)"
+          export PKG_CONFIG_PATH="$event_prefix/lib/pkgconfig:$ncurses_prefix/lib/pkgconfig:$utf8proc_prefix/lib/pkgconfig:$jemalloc_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          export CPPFLAGS="-I$event_prefix/include -I$ncurses_prefix/include -I$utf8proc_prefix/include${CPPFLAGS:+ $CPPFLAGS}"
+          export LDFLAGS="-L$event_prefix/lib -L$ncurses_prefix/lib -L$jemalloc_prefix/lib${LDFLAGS:+ $LDFLAGS}"
+          ./configure --prefix="$TMUX_PREFIX" --enable-utf8proc --enable-jemalloc
+          make -j"$(sysctl -n hw.ncpu)"
+          make install
+
+      - name: Verify tmux 3.7c
+        run: |
+          "$TMUX_PREFIX/bin/tmux" -V | grep -Fx "tmux $TMUX_LANE"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: scala-consumer-stage-${{ github.sha }}
+          path: ${{ runner.temp }}/scala-consumer-input
+
+      - name: Restore staged consumer inputs
+        run: tar -xzf "$RUNNER_TEMP/scala-consumer-input/scala-consumer-stage.tar.gz" -C scala
+
+      - name: Warm the pinned sbt launcher
+        run: scala/sbtw sbtVersion
+
+      - name: Run installed sbt and Gradle consumers
+        run: |
+          python3 scala/scripts/verify-consumers.py \
+            --scala-stage scala/target/staging \
+            --java-stage scala/target/java-repository \
+            --version "$LIBTMUX_SCALA_VERSION" \
+            --java-version "$LIBTMUX_JAVA_VERSION" \
+            --docs-exports scala/examples/target/scala-2.13/resource_managed/test \
+            --scala-version ${{ matrix.scala }} \
+            --jdk "$JAVA_HOME" \
+            --tmux "$TMUX_PREFIX/bin/tmux" \
+            --output scala/target/consumers/${{ matrix.id }}
+
+      - name: No tmux server outlived the cell
+        if: always()
+        run: |
+          left="$(pgrep -c tmux || true)"
+          if [ "${left:-0}" -ne 0 ]; then
+            echo "::error::$left tmux server(s) survived ${{ matrix.id }}"
+            for process in $(pgrep tmux); do ps -o command= -p "$process"; done
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: scala-consumer-${{ matrix.id }}-${{ github.sha }}
+          path: scala/target/consumers/${{ matrix.id }}
+          retention-days: 7
+
+  installed-consumers:
+    if: github.event_name != 'workflow_dispatch' || (!inputs.include_macos_release && !inputs.include_macos_consumers)
+    name: C01 (Linux, JDK 21, Scala 2.13.18)
+    needs: artifact-stage
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TMUX_LANE: 3.7c
+      TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
+
+      - name: Install Linux tmux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            libevent-dev \
+            libncurses-dev \
+            pkg-config
+
+      - name: Restore tmux 3.7c
+        id: tmux-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.TMUX_PREFIX }}
+          key: scala-tmux-${{ env.TMUX_LANE }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build tmux 3.7c
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        run: |
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          curl -fsSL -o "$work/tmux.tar.gz" "https://github.com/tmux/tmux/releases/download/$TMUX_LANE/tmux-$TMUX_LANE.tar.gz"
+          tar -xzf "$work/tmux.tar.gz" -C "$work"
+          cd "$work/tmux-$TMUX_LANE"
+          ./configure --prefix="$TMUX_PREFIX"
+          make -j"$(nproc)"
+          make install
+
+      - name: Verify tmux 3.7c
+        run: |
+          "$TMUX_PREFIX/bin/tmux" -V | grep -Fx "tmux $TMUX_LANE"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: scala-consumer-stage-${{ github.sha }}
+          path: ${{ runner.temp }}/scala-consumer-input
+
+      - name: Restore staged consumer inputs
+        run: tar -xzf "$RUNNER_TEMP/scala-consumer-input/scala-consumer-stage.tar.gz" -C scala
+
+      - name: Warm the pinned sbt launcher
+        run: scala/sbtw sbtVersion
+
+      - name: Run installed sbt and Gradle consumers
+        run: |
+          python3 scala/scripts/verify-consumers.py \
+            --scala-stage scala/target/staging \
+            --java-stage scala/target/java-repository \
+            --version "$LIBTMUX_SCALA_VERSION" \
+            --java-version "$LIBTMUX_JAVA_VERSION" \
+            --docs-exports scala/examples/target/scala-2.13/resource_managed/test \
+            --scala-version 2.13.18 \
+            --jdk "$JAVA_HOME" \
+            --tmux "$TMUX_PREFIX/bin/tmux" \
+            --output scala/target/consumers/C01
+
+      - name: No tmux server outlived C01
+        if: always()
+        run: |
+          left="$(pgrep -c tmux || true)"
+          if [ "${left:-0}" -ne 0 ]; then
+            echo "::error::$left tmux server(s) survived C01"
+            for process in $(pgrep tmux); do tr '\0' ' ' < "/proc/$process/cmdline"; echo; done
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: scala-consumer-C01-${{ github.sha }}
+          path: scala/target/consumers/C01
+          retention-days: 7
+
+  manual-macos-primary:
+    if: github.event_name == 'workflow_dispatch' && inputs.include_macos_release
+    name: ${{ matrix.id }} (manual macOS, JDK ${{ matrix.java }}, Scala ${{ matrix.scala }}, tmux 3.7c)
+    runs-on: macos-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - id: P05
+            java: '21'
+            scala: 2.13.18
+          - id: P07
+            java: '25'
+            scala: 2.13.18
+          - id: P08
+            java: '25'
+            scala: 3.3.8
+    env:
+      TMUX_LANE: 3.7c
+      TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
+      LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/scala/target/java-repository
+      LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/scala/target/staging
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
+
+      - name: Install macOS tmux build dependencies
+        run: brew install libevent ncurses pkg-config utf8proc jemalloc
+
+      - name: Restore tmux 3.7c
+        id: tmux-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.TMUX_PREFIX }}
+          key: scala-tmux-${{ env.TMUX_LANE }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build tmux 3.7c
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        run: |
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          curl -fsSL -o "$work/tmux.tar.gz" "https://github.com/tmux/tmux/releases/download/$TMUX_LANE/tmux-$TMUX_LANE.tar.gz"
+          tar -xzf "$work/tmux.tar.gz" -C "$work"
+          cd "$work/tmux-$TMUX_LANE"
+          event_prefix="$(brew --prefix libevent)"
+          ncurses_prefix="$(brew --prefix ncurses)"
+          utf8proc_prefix="$(brew --prefix utf8proc)"
+          jemalloc_prefix="$(brew --prefix jemalloc)"
+          export PKG_CONFIG_PATH="$event_prefix/lib/pkgconfig:$ncurses_prefix/lib/pkgconfig:$utf8proc_prefix/lib/pkgconfig:$jemalloc_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          export CPPFLAGS="-I$event_prefix/include -I$ncurses_prefix/include -I$utf8proc_prefix/include${CPPFLAGS:+ $CPPFLAGS}"
+          export LDFLAGS="-L$event_prefix/lib -L$ncurses_prefix/lib -L$utf8proc_prefix/lib -L$jemalloc_prefix/lib${LDFLAGS:+ $LDFLAGS}"
+          ./configure --prefix="$TMUX_PREFIX" --enable-utf8proc --enable-jemalloc
+          make -j"$(sysctl -n hw.ncpu)"
+          make install
+
+      - name: Verify tmux 3.7c
+        run: |
+          "$TMUX_PREFIX/bin/tmux" -V | grep -Fx "tmux $TMUX_LANE"
+
+      - name: Stage the Java prerequisite
+        run: ./scala/scripts/stage-java.sh
+
+      - name: Run primary Scala checks
+        env:
+          TMUX_TEST_BINARY: ${{ env.TMUX_PREFIX }}/bin/tmux
+        run: |
+          scala/sbtw \
+            "++${{ matrix.scala }}" \
+            scalafmtSbtCheck \
+            scalafmtCheckAll \
+            core/test \
+            cats/test \
+            integration/test \
+            examples/test \
+            core/doc \
+            cats/doc \
+            core/package \
+            cats/package \
+            benchmarks/compile
+
+      - name: No tmux server outlived the cell
+        if: always()
+        run: |
+          left="$(pgrep -c tmux || true)"
+          if [ "${left:-0}" -ne 0 ]; then
+            echo "::error::$left tmux server(s) survived ${{ matrix.id }}"
+            for process in $(pgrep tmux); do ps -o command= -p "$process"; done
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: scala-runtime-${{ matrix.id }}-${{ github.sha }}
+          path: scala/target
+          retention-days: 7

@@ -352,7 +352,8 @@ final class RunningCommandsTest {
 
     @Test
     void aPaneNotRunningAPosixShellIsRefused(Server server) {
-        server.cmd("new-window", "-d", "-n", "not-a-shell", "cat");
+        // Multiple arguments bypass a transient shell before cat starts.
+        server.cmd("new-window", "-d", "-n", "not-a-shell", "cat", "-");
         String pane = server.panes().stream()
                 .filter(candidate -> candidate.window().name().equals("not-a-shell"))
                 .findFirst()

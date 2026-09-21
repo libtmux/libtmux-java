@@ -1,54 +1,53 @@
 # Scala
 
-## There is nothing to install
+Scala callers can use the Java API directly or the
+[Scala facade](../../scala/README.md). The facade supplies native collections,
+optional values and a separate Cats/FS2 adapter. It is an independent sbt build
+with `_2.13` and `_3` artifacts; see its installation and verification status
+before selecting a dependency.
 
-`io.github.libtmux:libtmux` is a Java artifact and carries no Scala binary-version
-suffix, which is exactly what makes it usable from every Scala version at once.
-Depend on it with a single `%`, never `%%`:
+## Direct Java dependency
 
-<!-- snippet: skip: build configuration, not library code -->
-```scala
+The Java artifact has no Scala binary-version suffix. Use a single `%`:
+
+<!-- snippet: scala-build: install-direct-java -->
+```sbt
 libraryDependencies += "io.github.libtmux" % "libtmux" % "0.0.1-alpha.12"
 ```
 
-`%%` would ask for `libtmux_3`, which does not exist and should not. A Java
-artifact published under a Scala suffix is a packaging bug, not a convenience.
+Use `%%` for the separate `libtmux-scala` or `libtmux-scala-cats` artifact.
+It must not be used for `libtmux` itself. The
+[facade getting-started guide](../../scala/docs/getting-started.md) documents
+its local development prerequisites separately from released Java coordinates.
 
-## Crossing the two collection worlds
+## Java collections and optional values
 
-The API returns `java.util.List` and `java.util.Optional`, which one import
-converts:
+Here `config` is a Java `ServerConfig` selecting an explicit binary and a
+server endpoint. Conversion adapters do not establish ownership of a Java
+collection. Finish with `toVector` to retain an immutable Scala sequence.
 
-<!-- snippet: skip: no Scala module builds here; see the section below -->
+<!-- snippet: scala-sync: direct-java-captured-panes -->
 ```scala
-import scala.jdk.CollectionConverters.*
-import scala.jdk.OptionConverters.*
+import io.github.libtmux.{Pane_, Server}
+import scala.jdk.CollectionConverters._
+import scala.jdk.OptionConverters._
+import scala.util.Using
 
-val editors = server.windows.asScala.filter(_.name.startsWith("edit")).toSeq
-val active  = session.activeWindow.toScala   // Option[Window]
+Using.resource(Server.open(config)) { server =>
+  val panes = server.panes().asScala.toVector
+  val expression = Pane_.command().startsWith("cat")
+  val selected = panes.filter(expression.test)
+  val missing = server.session("scala-direct-missing").toScala
+  assert(selected.forall(_.currentCommand().startsWith("cat")))
+  assert(missing.isEmpty)
+}
 ```
 
-Filters are `java.util.function.Predicate`, so a Scala lambda works where one is
-expected, and a `FilterExpr` drops into `filter` unchanged:
+`Using.resource` closes this client without killing tmux. Filtering the
+acquired Java handles is local. A failed live read still throws; it does not
+become an empty Scala collection or `None`.
 
-<!-- snippet: skip: no Scala module builds here; see the section below -->
-```scala
-server.panes.asScala.filter(Pane_.command.startsWith("nvim").test).toSeq
-```
-
-## Why there is no libtmux-scala
-
-There could be one, and the shape it would take is already decided so that
-nobody has to rediscover it:
-
-**It would be a separate sbt build**, consuming the published Java artifact,
-cross-published as `libtmux-scala_2.13` and `libtmux-scala_3`.
-
-**It would not be a Gradle module.** Gradle's Scala plugin does not append the
-binary-version suffix to published artifacts, has no cross-build loop, and has
-no equivalent of sbt's conflicting-cross-version-suffix detection — so the
-failure mode of getting it wrong is `_2.13` and `_3` copies of the same library
-resolving quietly onto one classpath rather than a build error.
-
-Until someone wants that enough to maintain a second build tool in this
-repository, the Java API is the Scala API, and it is a complete one.
+The separate Scala build compiles and runs this example on both producer
+families. See its [query guide](../../scala/docs/query.md) for facade predicate
+adapters and strict cardinality, and its
+[ownership guide](../../scala/docs/ownership.md) before borrowing Java clients.

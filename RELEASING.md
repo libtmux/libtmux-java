@@ -221,3 +221,13 @@ Two behaviours worth knowing:
    released. The core's API-diff gate compares every later change against that
    property, not against `libtmuxVersion`, so the next round of development
    starts measured against what was actually shipped.
+
+## Scala facade
+
+The Scala facade publishes as four separately suffixed artifacts after its
+exact Java dependency is available from Central. It does not run from a Java
+tag: the owner starts the manual Scala release workflow with the Scala and
+already-published Java versions. That workflow signs and verifies a local
+bundle, then uploads a pending Central Portal deployment. It never releases
+the deployment automatically; the owner reviews, publishes, or drops it in the
+Portal.
