@@ -59,13 +59,7 @@ public final class WatchPaneOutput {
                         if (next.isEmpty()) {
                             break;
                         }
-                        if (next.orElseThrow() instanceof Delivery.Gap<PaneOutput> gap) {
-                            throw new IllegalStateException("lost " + gap.missed() + " pane outputs");
-                        }
-                        if (!(next.orElseThrow() instanceof Delivery.Event<PaneOutput> event)) {
-                            continue;
-                        }
-                        PaneOutput arrived = event.value();
+                        PaneOutput arrived = Delivery.kept(next.orElseThrow());
                         seen.add(arrived);
                         onOutput.accept(arrived);
                     } catch (InterruptedException e) {

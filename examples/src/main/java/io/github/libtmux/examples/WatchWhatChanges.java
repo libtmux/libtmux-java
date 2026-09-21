@@ -64,13 +64,7 @@ public final class WatchWhatChanges {
                         if (next.isEmpty()) {
                             break;
                         }
-                        if (next.orElseThrow() instanceof Delivery.Gap<ControlEvent> gap) {
-                            throw new IllegalStateException("lost " + gap.missed() + " control events");
-                        }
-                        if (!(next.orElseThrow() instanceof Delivery.Event<ControlEvent> event)) {
-                            continue;
-                        }
-                        ControlEvent arrived = event.value();
+                        ControlEvent arrived = Delivery.kept(next.orElseThrow());
                         seen.add(arrived);
                         onChange.accept(arrived);
                     } catch (InterruptedException e) {

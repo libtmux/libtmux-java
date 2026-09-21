@@ -104,13 +104,7 @@ try (ControlClient client = ControlClient.attach(server.config(), session.id());
 
     StringBuilder seen = new StringBuilder();
     while (seen.indexOf("streamed") < 0) {
-        Delivery<PaneOutput> step = output.next(Duration.ofSeconds(5)).orElseThrow();
-        if (step instanceof Delivery.Gap<PaneOutput> gap) {
-            throw new IllegalStateException("lost " + gap.missed());
-        }
-        if (step instanceof Delivery.Event<PaneOutput> event) {
-            seen.append(event.value().data());
-        }
+        seen.append(Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow()).data());
     }
     seen.indexOf("streamed") >= 0;  // → true
 }
