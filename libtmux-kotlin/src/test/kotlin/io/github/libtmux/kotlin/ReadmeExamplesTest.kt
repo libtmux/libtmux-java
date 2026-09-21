@@ -35,6 +35,7 @@ class ReadmeExamplesTest {
 
         assertNotNull(session.activeWindowOrNull())
         assertNotNull(session.activePaneOrNull())
+        assertNotNull(session.windows()[0].activePaneOrNull())
 
         // Null before tmux 3.7, which cannot report it, and a Boolean after.
         val floats = pane.floatingOrNull()
