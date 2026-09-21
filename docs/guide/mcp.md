@@ -185,7 +185,7 @@ try (ControlClient client = ControlClient.attach(server.config(), session.id());
     client.watch("names", "@*", "#{window_name}");
 
     Delivery<ControlEvent> step = events.next(Duration.ofSeconds(2)).orElseThrow();
-    ControlEvent event = ((Delivery.Event<ControlEvent>) step).value();
+    ControlEvent event = Delivery.kept(step);
     event.subscription();   // which watch this came from
     event.windowId();        // which window, when the watch is over windows
     event.value();           // what the format expanded to

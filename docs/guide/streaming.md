@@ -137,11 +137,9 @@ try (ControlClient client = ControlClient.attach(server.config(), session.id());
 
     var unused = session.windows().get(0).rename("build logs");
 
-    Notification seen = ((Delivery.Event<ControlEvent>) events.next(Duration.ofSeconds(5)).orElseThrow()).value()
-            .notification();
+    Notification seen = Delivery.kept(events.next(Duration.ofSeconds(5)).orElseThrow()).notification();
     while (!(seen instanceof Notification.WindowRenamed)) {
-        seen = ((Delivery.Event<ControlEvent>) events.next(Duration.ofSeconds(5)).orElseThrow()).value()
-                .notification();
+        seen = Delivery.kept(events.next(Duration.ofSeconds(5)).orElseThrow()).notification();
     }
     ((Notification.WindowRenamed) seen).name();   // → build logs
 }
