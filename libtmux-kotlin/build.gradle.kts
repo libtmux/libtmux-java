@@ -16,6 +16,9 @@ kotlin {
     // Every public declaration states its visibility and its return type. A library's ABI should not
     // be something the compiler inferred.
     explicitApi()
+    // The dump under api/ is the published binary surface. check fails when it changes.
+    @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
+    abiValidation()
     compilerOptions {
         // The whole point of this module is that the Java API's nullness is real. Strict mode turns
         // a mismatch against a @NullMarked type into an error here, so this module compiling is
