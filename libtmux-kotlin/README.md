@@ -103,7 +103,8 @@ reconnects, and neither undoes a command tmux has already accepted.
 `awaitDelivery` waits for one step and leaves the subscription open. This
 module depends on kotlinx-coroutines; the core does not. `await` and
 `awaitText` suspend on `kotlin.time.Duration`. Cancelling one interrupts
-the wait, which is not a timeout.
+the wait, which is not a timeout. The public binary surface is the dump
+in `api/`, and the build fails when that dump changes.
 
 ## Why nothing in Java may depend on this
 

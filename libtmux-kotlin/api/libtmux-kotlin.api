@@ -1,0 +1,29 @@
+public final class io/github/libtmux/kotlin/DeliveriesKt {
+	public static final fun awaitDelivery-8Mi8wO0 (Lio/github/libtmux/control/EventSubscription;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun deliveries (Lio/github/libtmux/control/EventSubscription;)Lkotlinx/coroutines/flow/Flow;
+}
+
+public final class io/github/libtmux/kotlin/FiltersKt {
+	public static final fun filter (Ljava/lang/Iterable;Lio/github/libtmux/query/FilterExpr;)Ljava/util/List;
+	public static final fun not (Lio/github/libtmux/query/FilterExpr;)Lio/github/libtmux/query/FilterExpr;
+}
+
+public final class io/github/libtmux/kotlin/OptionalsKt {
+	public static final fun activePaneOrNull (Lio/github/libtmux/Session;)Lio/github/libtmux/Pane;
+	public static final fun activeWindowOrNull (Lio/github/libtmux/Session;)Lio/github/libtmux/Window;
+	public static final fun attachmentOrNull (Lio/github/libtmux/Client;)Lio/github/libtmux/ClientAttachment;
+	public static final fun floatingOrNull (Lio/github/libtmux/Pane;)Ljava/lang/Boolean;
+	public static final fun getOrNull (Lio/github/libtmux/Options;Ljava/lang/String;)Ljava/lang/String;
+	public static final fun modeOrNull (Lio/github/libtmux/Pane;)Lio/github/libtmux/PaneMode;
+	public static final fun sessionOrNull (Lio/github/libtmux/Client;)Lio/github/libtmux/Session;
+}
+
+public final class io/github/libtmux/kotlin/WaitsKt {
+	public static final fun await-8Mi8wO0 (Lio/github/libtmux/Channel;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun await-ck1zr5g (Lio/github/libtmux/Pane;Ljava/util/function/Predicate;JJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun await-exY8QGI (Lio/github/libtmux/Pane;Ljava/util/function/Predicate;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun awaitReservingCapacity-8Mi8wO0 (Lio/github/libtmux/Channel;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun awaitText-ck1zr5g (Lio/github/libtmux/Pane;Ljava/lang/String;JJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun awaitText-exY8QGI (Lio/github/libtmux/Pane;Ljava/lang/String;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
