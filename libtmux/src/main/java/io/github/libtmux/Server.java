@@ -440,19 +440,9 @@ public final class Server implements AutoCloseable {
         run(List.of("lock-server"));
     }
 
-    /**
-     * The server's own message log, newest last.
-     *
-     * <p>Deliberately not version-gated, though tmux before 3.6 answers {@code no current client}
-     * when nothing is attached. A gate would refuse the case that works: with a client attached the
-     * log is readable on every supported release, and only a detached 3.2a through 3.5 cannot answer.
-     * The failure tmux reports is accurate and says exactly what is missing, so it is left to reach
-     * the caller.
-     *
-     * @throws LibTmuxException before 3.6 when no client is attached
-     */
-    public List<String> messages() {
-        return run(List.of("show-messages")).stdout();
+    /** The server's message log. */
+    public MessageLog messageLog() {
+        return new MessageLog(this);
     }
 
     /** The command prompt's history. */

@@ -133,9 +133,9 @@ final class ServerControlIntegrationTest {
     @Test
     void theMessageLogIsReadableDetachedFromThirtySixOnwards(Server server) {
         if (server.version().atLeast(MESSAGES_WITHOUT_CLIENT_SINCE)) {
-            assertTrue(!server.messages().isEmpty(), "a server that has been talked to has said something");
+            assertTrue(!server.messageLog().lines().isEmpty(), "a server that has been talked to has said something");
         } else {
-            LibTmuxException refused = assertThrows(LibTmuxException.class, server::messages);
+            LibTmuxException refused = assertThrows(LibTmuxException.class, () -> server.messageLog().lines());
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("no current client"),
@@ -155,7 +155,7 @@ final class ServerControlIntegrationTest {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> !server.clients().isEmpty()), "no client ever attached");
 
-            assertTrue(!server.messages().isEmpty(), "with a client attached the log is readable after all");
+            assertTrue(!server.messageLog().lines().isEmpty(), "with a client attached the log is readable after all");
         }
     }
 
