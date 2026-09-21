@@ -96,6 +96,13 @@ inside its own body while winning at an infix call site — correct either way, 
 a reason no reader should have to work out. `a.and(b)` is one character longer
 than `a and b` and always means what it appears to.
 
+**A subscription as a `Flow`.** `deliveries()` emits a `Delivery.Gap` where the
+buffer discarded events, then the events that remain. Collecting the flow
+closes the subscription. Cancelling the collection does the same. Neither
+reconnects, and neither undoes a command tmux has already accepted.
+`awaitDelivery` waits for one step and leaves the subscription open. This
+module depends on kotlinx-coroutines; the core does not.
+
 ## Why nothing in Java may depend on this
 
 The build fails if it does. Per the JSpecify specification a class carrying

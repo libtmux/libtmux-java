@@ -1,6 +1,7 @@
 [versions]
 jspecify = "1.0.1"
 kotlin = "2.4.10"
+coroutines = "1.11.0"
 junit = "5.14.4"
 jackson = "2.21.5"
 mcp = "2.0.1"
@@ -20,6 +21,7 @@ japicmp = "0.23.1"
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 junit-platform-testkit = { module = "org.junit.platform:junit-platform-testkit" }

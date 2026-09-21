@@ -72,6 +72,19 @@ There is deliberately no `and`/`or` here — see `Filters.kt` for why an extensi
 of the same name as an existing method is a resolution puzzle nobody should have
 to solve.
 
+## Reading a subscription
+
+`deliveries()` collects a control subscription as a `Flow`. A `Delivery.Gap` is
+an element, ahead of the events that survived a full buffer. Collecting the
+flow closes the subscription, and cancelling the collection does too. That
+does not reconnect, and it does not undo a command tmux has already accepted.
+
+`awaitDelivery` waits for one step. Cancelling that wait leaves the subscription
+open. Its timeout is a `kotlin.time.Duration`.
+
+This module depends on kotlinx-coroutines. The core does not, and nothing
+written in Java may depend on this module.
+
 ## Why the sugar is downstream and stays there
 
 Nothing written in Java may depend on `libtmux-kotlin`, and the build fails if it
