@@ -25,6 +25,9 @@ public fun Session.activeWindowOrNull(): Window? = activeWindow().orElse(null)
 /** The session's active pane, or null when the session has gone. */
 public fun Session.activePaneOrNull(): Pane? = activePane().orElse(null)
 
+/** The window's active pane, or null when the capture marked none. */
+public fun Window.activePaneOrNull(): Pane? = activePane().orElse(null)
+
 /** Whether the pane floats, or null on a tmux older than 3.7, which does not report it. */
 public fun Pane.floatingOrNull(): Boolean? = floating().orElse(null)
 

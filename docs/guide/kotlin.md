@@ -50,6 +50,9 @@ form:
 // A window, or null once the session has gone.
 session.activeWindowOrNull()?.id()?.value()?.startsWith("@")   // → true
 
+// The pane tmux had active in that window, or null when none was marked.
+session.windows()[0].activePaneOrNull()
+
 // A Boolean on tmux 3.7 and later, and null before it, which cannot report the
 // flag at all. Absence and false are different answers, and this keeps them so.
 pane.floatingOrNull()
