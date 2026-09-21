@@ -31,7 +31,9 @@ public final class WatchPaneOutput {
     }
 
     /**
-     * Separated from {@code main} so the suite can run exactly what a reader runs.
+     * Separated from {@code main} so the suite can run exactly what a reader runs. A
+     * {@link Delivery.Gap} fails the watch: this reader wants every output, and a gap means some
+     * was discarded.
      *
      * @return everything seen before the deadline
      */
@@ -56,6 +58,9 @@ public final class WatchPaneOutput {
                         var next = output.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
                         if (next.isEmpty()) {
                             break;
+                        }
+                        if (next.orElseThrow() instanceof Delivery.Gap<PaneOutput> gap) {
+                            throw new IllegalStateException("lost " + gap.missed() + " pane outputs");
                         }
                         if (!(next.orElseThrow() instanceof Delivery.Event<PaneOutput> event)) {
                             continue;
