@@ -29,8 +29,8 @@ measured on tmux 3.7d, a `#(...)` inside single quotes ran through both
 `run-shell` and `pipe-pane`. Every argument this library composes itself passes
 through `TmuxFormats.literal`, which doubles `#`. The commands a *caller*
 composes cannot be neutralized for them, because expansion there is sometimes
-the point: `Pane.pipeTo`, `Window.displayPopup`, `Server.runShell`,
-`Server.runShellCapturing`, `Server.ifShell` and `Options.setExpanded` take
+the point: `Pane.pipeTo`, `Window.displayPopup`, `Shell.run`,
+`Shell.capturing`, `Shell.choose` and `Options.setExpanded` take
 caller-authored text, and a value interpolated into one of those needs
 `TmuxFormats.literal` applied to it. No MCP tool reaches these positions with
 model-supplied text.

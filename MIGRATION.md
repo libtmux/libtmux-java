@@ -28,7 +28,9 @@ are not replayed.
 api-break: Server
 
 `promptHistory` and `clearPromptHistory` are `prompt().history()` and
-`prompt().clear()`. `messages()` is `messageLog().lines()`.
+`prompt().clear()`. `messages()` is `messageLog().lines()`. `runShell`,
+`runShellCapturing` and `ifShell` are `shell().run`, `shell().capturing` and
+`shell().choose`.
 
 ### A tmux release candidate keeps its name and counts as its release
 

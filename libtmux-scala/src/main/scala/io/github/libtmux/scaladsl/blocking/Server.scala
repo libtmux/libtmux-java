@@ -76,9 +76,9 @@ final class Server private (private[scaladsl] val asJava: JavaServer, owned: Boo
   def isAlive(): Boolean = checked(asJava.isAlive())
   def version(): TmuxVersion = checked(asJava.version())
   def expand(format: String): String = checked(asJava.expand(format))
-  def runShell(command: String): Unit = checked(asJava.runShell(command))
+  def runShell(command: String): Unit = checked(asJava.shell().run(command))
   def runShellCapturing(command: String): Vector[String] = checked(
-    asJava.runShellCapturing(command).asScala.toVector
+    asJava.shell().capturing(command).asScala.toVector
   )
   def sourceFile(file: Path): Unit = checked(asJava.sourceFile(file))
   def batch(): Batch = checked(new Batch(asJava.batch(), this))

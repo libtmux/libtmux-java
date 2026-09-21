@@ -105,7 +105,7 @@ new Java method is neither.
 
 The facade preserves Java's version guards. [Named buffer deletion][buffers]
 rejects tmux before 3.4 because those versions can delete the wrong buffer.
-[`runShellCapturing`][java-server] rejects tmux 3.3a and 3.4, which lose the
+[`Shell.capturing`][java-shell] rejects tmux 3.3a and 3.4, which lose the
 requested output. Java's tmux matrix asserts these unsupported results rather
 than skip the contract or substitute an empty successful result.
 
@@ -125,5 +125,5 @@ limits, and [ownership](ownership.md) for resource lifetimes.
   ../../libtmux/src/main/java/io/github/libtmux/Options.java
 [buffers]:
   ../../libtmux/src/main/java/io/github/libtmux/Buffers.java
-[java-server]:
-  ../../libtmux/src/main/java/io/github/libtmux/Server.java
+[java-shell]:
+  ../../libtmux/src/main/java/io/github/libtmux/Shell.java

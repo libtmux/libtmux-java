@@ -34,8 +34,8 @@ final class ArgumentTerminatorTest {
     void everyCallerValueReachesTmuxWithTheOptionsAlreadyEnded() {
         Map<String, Consumer<Server>> sites = new LinkedHashMap<>();
         sites.put("Server.expand", server -> server.expand(DASHED));
-        sites.put("Server.runShell", server -> server.runShell(DASHED));
-        sites.put("Server.runShellCapturing", server -> server.runShellCapturing(DASHED));
+        sites.put("Shell.run", server -> server.shell().run(DASHED));
+        sites.put("Shell.capturing", server -> server.shell().capturing(DASHED));
         sites.put("Window.displayPopup", server -> server.windows().get(0).displayPopup(DASHED));
         sites.put("Pane.pipeTo", server -> server.panes().get(0).pipeTo(DASHED));
         sites.put("Keys.bind", server -> server.keys().bind(DASHED, List.of("display-message", "hi")));

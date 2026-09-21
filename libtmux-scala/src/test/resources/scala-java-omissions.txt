@@ -23,7 +23,7 @@ Pane.title captured on info
 Pane.variables stays on the Java handle
 Server.attachedSessions stays on the Java handle
 Server.control Cats Control.attach fences the session; blocking callers use Java
-Server.ifShell stays on the Java handle
+Server.shell shell commands and if-shell stay on Java
 Server.keys stays on the Java handle
 Server.listCommands stays on the Java handle
 Server.lock stays on the Java handle
