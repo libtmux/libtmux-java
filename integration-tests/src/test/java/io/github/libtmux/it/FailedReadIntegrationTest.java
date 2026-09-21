@@ -94,7 +94,7 @@ final class FailedReadIntegrationTest {
             assertThrows(ServerNotRunningException.class, () -> server.buffers().set("b", "v"));
             assertThrows(
                     ServerNotRunningException.class, () -> server.keys().bind("F12", List.of("display-message", "x")));
-            assertThrows(ServerNotRunningException.class, server::messages);
+            assertThrows(ServerNotRunningException.class, () -> server.messageLog().lines());
             assertThrows(ServerNotRunningException.class, () -> server.hooks().all());
             assertThrows(ServerNotRunningException.class, () -> server.buffers().list());
             assertThrows(

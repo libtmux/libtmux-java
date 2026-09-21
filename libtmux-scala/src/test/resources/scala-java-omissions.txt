@@ -27,7 +27,7 @@ Server.ifShell stays on the Java handle
 Server.keys stays on the Java handle
 Server.listCommands stays on the Java handle
 Server.lock stays on the Java handle
-Server.messages stays on the Java handle
+Server.messageLog the server message log stays on Java
 Server.paneFields stays on the Java handle
 Server.prompt the prompt history scope stays on Java
 Server.requireAlive stays on the Java handle
