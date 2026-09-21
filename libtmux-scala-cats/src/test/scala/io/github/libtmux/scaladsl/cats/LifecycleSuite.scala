@@ -57,6 +57,17 @@ final class LifecycleSuite extends FunSuite {
               finished.complete(())
               throw problem
           }
+        case "unknown-block" =>
+          entered.complete(())
+          try {
+            if (!release.await(1, TimeUnit.SECONDS))
+              throw new AssertionError("blocking producer was not interrupted")
+          } catch {
+            case _: InterruptedException =>
+              interrupted.complete(())
+              Thread.currentThread().interrupt()
+              throw failure
+          }
         case "fail"    => throw failure
         case "nonzero" =>
           return new CommandResult(17, List.of("partial"), List.of("failure"))
@@ -112,6 +123,25 @@ final class LifecycleSuite extends FunSuite {
         } yield ()
       }
     program.timeout(1.second).unsafeToFuture()
+  }
+
+  test("canceling a dispatched call keeps an unknown outcome") {
+    val transport = new Transport
+    val java = JavaServer.using(config, transport)
+    val program = Server.fromJava[IO](java).use { server =>
+      for {
+        running <- server.cmd(Vector("unknown-block")).start
+        _ <- event(transport.entered)
+        _ <- running.cancel
+        _ <- event(transport.interrupted)
+        outcome <- running.join
+        embedded <- outcome
+          .embed(IO.raiseError(new RuntimeException("canceled")))
+          .attempt
+        _ <- IO(assert(embedded.left.toOption.exists(_ eq transport.failure)))
+      } yield ()
+    }
+    program.timeout(2.seconds).unsafeToFuture()
   }
 
   test(
