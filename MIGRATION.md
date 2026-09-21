@@ -23,6 +23,13 @@ that process wrote to its error stream. A subscription does not reconnect.
 Attach again with `Server.control` and read a snapshot. Events already missed
 are not replayed.
 
+### Prompt history is `server.prompt()`
+
+api-break: Server
+
+`promptHistory` and `clearPromptHistory` are `prompt().history()` and
+`prompt().clear()`.
+
 ### A tmux release candidate keeps its name and counts as its release
 
 `TmuxVersion` now carries the pre-release a version named, so a server running

@@ -22,7 +22,6 @@ Pane.stopPiping stays on the Java handle
 Pane.title captured on info
 Pane.variables stays on the Java handle
 Server.attachedSessions stays on the Java handle
-Server.clearPromptHistory stays on the Java handle
 Server.control Cats Control.attach fences the session; blocking callers use Java
 Server.ifShell stays on the Java handle
 Server.keys stays on the Java handle
@@ -30,7 +29,7 @@ Server.listCommands stays on the Java handle
 Server.lock stays on the Java handle
 Server.messages stays on the Java handle
 Server.paneFields stays on the Java handle
-Server.promptHistory stays on the Java handle
+Server.prompt the prompt history scope stays on Java
 Server.requireAlive stays on the Java handle
 Server.run stays on the Java handle
 Server.setMouseEnabled stays on the Java handle

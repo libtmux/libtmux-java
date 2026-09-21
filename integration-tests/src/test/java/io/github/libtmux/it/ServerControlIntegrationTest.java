@@ -165,17 +165,17 @@ final class ServerControlIntegrationTest {
     @Test
     void thePromptHistoryIsReadableOrRefusedDependingOnTheRelease(Server server) {
         if (server.version().atLeast(PROMPT_HISTORY_SINCE)) {
-            assertTrue(server.promptHistory() != null, "a readable history is a list, even when empty");
-            server.clearPromptHistory();
+            assertTrue(server.prompt().history() != null, "a readable history is a list, even when empty");
+            server.prompt().clear();
             assertTrue(server.isAlive(), "clearing it is not a reason to lose the server");
         } else {
             UnsupportedTmuxVersionException refused =
-                    assertThrows(UnsupportedTmuxVersionException.class, server::promptHistory);
+                    assertThrows(UnsupportedTmuxVersionException.class, () -> server.prompt().history());
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("3.3"),
                     "the refusal names the release that has it: " + refused.getMessage());
-            assertThrows(UnsupportedTmuxVersionException.class, server::clearPromptHistory);
+            assertThrows(UnsupportedTmuxVersionException.class, () -> server.prompt().clear());
         }
     }
 
