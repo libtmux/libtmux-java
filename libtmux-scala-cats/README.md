@@ -11,5 +11,68 @@ as `libtmux-scala`.
 remove exported identifiers without a deprecation period. Pin an exact version
 rather than a range. Not recommended for production.
 
+## Read from a scoped server
+
+Here `config` selects an existing tmux server. `Server.resource` owns the
+client for the duration of `use` and the capture remains an ordinary vector.
+
+<!-- snippet: scala-io: cats-list-active-panes -->
+```scala
+import _root_.cats.effect.IO
+import io.github.libtmux.scaladsl.cats.Server
+
+Server.resource[IO](config).use { server =>
+  server.panes.flatMap { panes =>
+    val active = panes.filter(_.info.active)
+    IO.println(active.map(_.info.currentCommand).mkString("\n"))
+  }
+}
+```
+
+## Observe a session rename
+
+Register the subscription and start its reader before changing tmux state.
+Match the typed notification before acting on it.
+
+<!-- snippet: scala-io: cats-observe-session-rename -->
+```scala
+import _root_.cats.effect.IO
+import _root_.cats.syntax.all._
+import io.github.libtmux.control.Notification
+import io.github.libtmux.scaladsl.cats.{Control, Server}
+import scala.concurrent.duration._
+
+Server.resource[IO](config).use { server =>
+  server.sessions.flatMap { sessions =>
+    val session = sessions.head
+    val name = "scala-cats-readme"
+    Control.attach[IO](config, session.info.id).use { control =>
+      control.events(16).use { observation =>
+        for {
+          received <- observation.stream
+            .map(_.notification())
+            .collect { case event: Notification.SessionRenamed => event }
+            .filter(event =>
+              event.session() == session.info.id && event.name() == name
+            )
+            .take(1)
+            .compile
+            .lastOrError
+            .start
+          renamed <- session.rename(name)
+          event <- received.joinWithNever.timeout(1.second)
+          _ <- IO(assert(event.session() == renamed.info.id))
+        } yield ()
+      }
+    }
+  }
+}
+```
+
+`events` has bounded buffering. Check `droppedCount` and reacquire a snapshot
+when the counter increases; an event stream cannot reconstruct dropped state.
+
+## Documentation
+
 The [Scala facade guide](../libtmux-scala/README.md) covers installation,
 resource ownership, execution, and streaming contracts.

@@ -2,8 +2,9 @@
 
 Use Scala collections and explicit effects to inspect and operate tmux through
 libtmux for Java. The blocking facade returns immutable `Vector` and `Option`
-values. The separate Cats module supplies scoped effects and FS2 observations.
-Both retain the original Java handles, targeting rules and command engine.
+values. The [separate Cats module](../libtmux-scala-cats/README.md) supplies
+scoped effects and FS2 observations. Both retain the original Java handles,
+targeting rules and command engine.
 
 **This project is alpha.** A future Scala release will carry an `-alpha`
 prerelease tag. The API is not settled, and any release may change or remove
