@@ -254,7 +254,7 @@ final class ProcessTransportTest {
             return new ProcessBuilder(command).start();
         };
         try (ProcessTransport transport =
-                new ProcessTransport(1, 1_024, starter, () -> clockReads.getAndIncrement() == 0 ? 10L : 12L)) {
+                new ProcessTransport(1, 1_024, starter, () -> clockReads.getAndIncrement() < 2 ? 10L : 12L)) {
             TmuxTimeoutException failure = assertThrows(
                     TmuxTimeoutException.class,
                     () -> transport.execute(shell("echo must-not-run", Duration.ofNanos(1))));
