@@ -4,13 +4,21 @@ import _root_.cats.effect.IO
 import _root_.cats.effect.unsafe.implicits.global
 import io.github.libtmux.ServerConfig
 import io.github.libtmux.SessionId
-import io.github.libtmux.control.ControlEndedException
+import io.github.libtmux.control.{ControlEndedException, Delivery}
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
 import munit.FunSuite
 import scala.concurrent.duration._
 
 final class ObservationSuite extends FunSuite {
+  test("kept returns an event and fails a gap") {
+    assertEquals(Observation.kept(new Delivery.Event("pane")), "pane")
+    val failure = intercept[IllegalStateException] {
+      Observation.kept(new Delivery.Gap[String](2L))
+    }
+    assert(failure.getMessage.contains("2"))
+  }
+
   test("a stream fails when the client ended the subscription") {
     val directory = Files.createTempDirectory("libtmux-observation")
     val fake = directory.resolve("tmux")

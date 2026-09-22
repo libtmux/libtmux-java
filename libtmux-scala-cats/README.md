@@ -71,7 +71,8 @@ Server.resource[IO](config).use { server =>
 }
 ```
 
-`events` has bounded buffering. A full buffer's next element is a gap. Check
+`events` has bounded buffering. A full buffer's next element is a gap.
+`Observation.value` drops it. `Observation.kept` fails the read. Check
 `droppedCount` and reacquire a snapshot when it increases; an event stream
 cannot reconstruct dropped state. A subscription does not reconnect.
 

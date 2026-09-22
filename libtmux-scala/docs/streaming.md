@@ -55,7 +55,8 @@ several values; retain the necessary suffix while matching it.
 Each subscription has a bounded queue. Overflow drops the oldest buffered
 value. The stream then emits a `Delivery.Gap` ahead of what survived.
 `Observation.value` drops that gap, so a pipeline that keeps only values
-cannot see where the loss sat. `droppedCount` is the cumulative total.
+cannot see where the loss sat. `Observation.kept` fails the read instead.
+`droppedCount` is the cumulative total.
 Closing a subscription discards queued values without counting them as
 overflow.
 

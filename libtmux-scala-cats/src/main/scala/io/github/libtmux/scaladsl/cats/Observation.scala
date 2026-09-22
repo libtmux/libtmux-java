@@ -8,9 +8,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import scala.jdk.OptionConverters._
 
 /** Pulls a bounded Java subscription with one active stream consumer. A full
-  * buffer yields [[Delivery.Gap]] in this stream before the events that
-  * remain. FS2 demand does not provide tmux backpressure. A subscription does
-  * not reconnect: attach again and read a snapshot.
+  * buffer yields [[Delivery.Gap]] in this stream before the events that remain.
+  * FS2 demand does not provide tmux backpressure. A subscription does not
+  * reconnect: attach again and read a snapshot.
   */
 final class Observation[F[_], A] private[cats] (
     private[scaladsl] val underlying: EventSubscription[A],
@@ -46,7 +46,9 @@ final class Observation[F[_], A] private[cats] (
         .unNoneTerminate
     }
 
-  /** The cumulative overflow count. A [[Delivery.Gap]] in [[#stream]] says where it sits. */
+  /** The cumulative overflow count. A [[Delivery.Gap]] in [[#stream]] says
+    * where it sits.
+    */
   def droppedCount: F[Long] = F.delay(underlying.droppedCount())
 
   /** Reports subscription closure, including after resource finalization. */
@@ -62,6 +64,13 @@ object Observation {
   def value[A](delivery: Delivery[A]): Option[A] = delivery match {
     case item: Delivery.Event[_] => Some(item.value().asInstanceOf[A])
     case _: Delivery.Gap[_]      => None
+  }
+
+  /** The event a strict reader kept. A gap fails the read. */
+  def kept[A](delivery: Delivery[A]): A = delivery match {
+    case item: Delivery.Event[_] => item.value().asInstanceOf[A]
+    case gap: Delivery.Gap[_]    =>
+      throw new IllegalStateException("lost " + gap.missed())
   }
 
   /** Java ended the subscription without exposing the reason. */
