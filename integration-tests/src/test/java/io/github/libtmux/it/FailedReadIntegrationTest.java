@@ -68,7 +68,8 @@ final class FailedReadIntegrationTest {
         try (Server server = at(scratch.resolve("nobody-home"), "tmux")) {
             assertThrows(ServerNotRunningException.class, () -> server.hasSession("build"));
             assertThrows(ServerNotRunningException.class, () -> server.keys().list());
-            assertThrows(ServerNotRunningException.class, () -> server.commands().list());
+            assertThrows(
+                    ServerNotRunningException.class, () -> server.commands().list());
             assertThrows(
                     ServerNotRunningException.class,
                     () -> server.globalOptions().get("history-limit"));
@@ -94,7 +95,8 @@ final class FailedReadIntegrationTest {
             assertThrows(ServerNotRunningException.class, () -> server.buffers().set("b", "v"));
             assertThrows(
                     ServerNotRunningException.class, () -> server.keys().bind("F12", List.of("display-message", "x")));
-            assertThrows(ServerNotRunningException.class, () -> server.messageLog().lines());
+            assertThrows(
+                    ServerNotRunningException.class, () -> server.messageLog().lines());
             assertThrows(ServerNotRunningException.class, () -> server.hooks().all());
             assertThrows(ServerNotRunningException.class, () -> server.buffers().list());
             assertThrows(

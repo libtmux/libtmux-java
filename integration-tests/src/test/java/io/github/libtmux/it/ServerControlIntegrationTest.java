@@ -117,13 +117,10 @@ final class ServerControlIntegrationTest {
             try (Server replacement = Server.open(config)) {
                 Session again = replacement.newSession("replacement");
                 assertEquals(id, again.id().value(), "the replacement did not reuse " + id);
-                assertTrue(
-                        Await.until(() -> !client.isAlive()),
-                        "the client stayed up after its server was replaced");
+                assertTrue(Await.until(() -> !client.isAlive()), "the client stayed up after its server was replaced");
                 assertThrows(
                         RuntimeException.class,
-                        () -> client.send(
-                                List.of("display-message", "-p", "#{session_name}"), Duration.ofMillis(500)));
+                        () -> client.send(List.of("display-message", "-p", "#{session_name}"), Duration.ofMillis(500)));
                 assertTrue(noClients(replacement), "the ended client was still attached to the replacement");
             }
         } finally {
@@ -165,7 +162,8 @@ final class ServerControlIntegrationTest {
         if (server.version().atLeast(MESSAGES_WITHOUT_CLIENT_SINCE)) {
             assertTrue(!server.messageLog().lines().isEmpty(), "a server that has been talked to has said something");
         } else {
-            LibTmuxException refused = assertThrows(LibTmuxException.class, () -> server.messageLog().lines());
+            LibTmuxException refused = assertThrows(
+                    LibTmuxException.class, () -> server.messageLog().lines());
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("no current client"),
@@ -199,13 +197,14 @@ final class ServerControlIntegrationTest {
             server.prompt().clear();
             assertTrue(server.isAlive(), "clearing it is not a reason to lose the server");
         } else {
-            UnsupportedTmuxVersionException refused =
-                    assertThrows(UnsupportedTmuxVersionException.class, () -> server.prompt().history());
+            UnsupportedTmuxVersionException refused = assertThrows(
+                    UnsupportedTmuxVersionException.class, () -> server.prompt().history());
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("3.3"),
                     "the refusal names the release that has it: " + refused.getMessage());
-            assertThrows(UnsupportedTmuxVersionException.class, () -> server.prompt().clear());
+            assertThrows(
+                    UnsupportedTmuxVersionException.class, () -> server.prompt().clear());
         }
     }
 

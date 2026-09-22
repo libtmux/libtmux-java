@@ -86,7 +86,8 @@ class NarrowLookupTest {
     void aWindowRelationStaysLocal() {
         List<String> sent = commands();
         try (Server server = Server.using(ServerConfig.builder().build(), answering(sent))) {
-            assertTrue(server.windows(Window_.panes().any(Pane_.command().is("nvim"))).isEmpty());
+            assertTrue(server.windows(Window_.panes().any(Pane_.command().is("nvim")))
+                    .isEmpty());
         }
         assertFalse(String.join("\n", sent).contains("-f"));
     }
