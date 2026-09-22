@@ -53,8 +53,9 @@ several values; retain the necessary suffix while matching it.
 ## Loss and state reconciliation
 
 Each subscription has a bounded queue. Overflow drops the oldest buffered
-value. `droppedCount` reads the exact cumulative overflow count separately from
-stream delivery; it cannot locate a gap between particular delivered values.
+value. The stream then emits a `Delivery.Gap` ahead of what survived.
+`Observation.value` drops that gap, so a pipeline that keeps only values
+cannot see where the loss sat. `droppedCount` is the cumulative total.
 Closing a subscription discards queued values without counting them as
 overflow.
 
@@ -72,10 +73,11 @@ One active reader uses one such worker in addition to the attachment's Java
 workers. Canceling a reader releases its consumer slot. Releasing the
 observation closes its subscription and wakes a parked read.
 
-Deliberate Scala observation or attachment closure ends the stream. If Java
-ends the subscription for another reason, the adapter raises
-`Observation.UnknownCause`: Java does not expose enough evidence to identify
-the cause. Do not label every unexpected end as a timeout or a server crash.
+Deliberate Scala observation or attachment closure ends the stream. If the
+control client ends the subscription, the stream fails with that cause.
+`Observation.UnknownCause` is only the remaining case: the subscription
+ended, this side did not close it, and Java recorded no cause. Do not label
+every unexpected end as a timeout or a server crash.
 
 Raw `Control.acknowledge` calls use bounded, supervised admission. Their
 timeout begins after Scala admission. Canceling a genuinely dispatched request
