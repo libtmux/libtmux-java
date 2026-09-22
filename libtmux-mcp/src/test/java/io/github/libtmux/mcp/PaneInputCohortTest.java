@@ -274,7 +274,7 @@ final class PaneInputCohortTest {
         var moved = PaneInputCohort.parse(
                 "%0", panes, answer(clientRow("0", "$1", "@1", "7", "%1", "0")), Caller.nowhere());
 
-        try (var lease = PaneInputReservations.run(initial, "run_shell_command")) {
+        try (var lease = PaneInputReservations.run(server.panes().getFirst(), initial, "run_shell_command")) {
             assertThrows(IllegalStateException.class, () -> lease.requireSameRun(moved));
         }
     }
@@ -366,7 +366,7 @@ final class PaneInputCohortTest {
     void retainedOwnershipNeedsAuthenticatedPaneOrGenerationAbsence(Server server) {
         var source = server.panes().getFirst();
         source.split();
-        try (var lease = PaneInputReservations.run(PaneInputCohort.resolve(source), "retained_test")) {
+        try (var lease = PaneInputReservations.run(source, PaneInputCohort.resolve(source), "retained_test")) {
             assertEquals(PaneInputCohort.Presence.PRESENT, lease.presence(source));
 
             AtomicBoolean unavailable = new AtomicBoolean();
@@ -398,7 +398,7 @@ final class PaneInputCohortTest {
         }
 
         var survivor = server.panes().getFirst();
-        try (var lease = PaneInputReservations.run(PaneInputCohort.resolve(survivor), "retained_test")) {
+        try (var lease = PaneInputReservations.run(survivor, PaneInputCohort.resolve(survivor), "retained_test")) {
             server.killServer();
 
             assertEquals(PaneInputCohort.Presence.GONE, lease.presence(survivor));
