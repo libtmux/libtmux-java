@@ -171,8 +171,8 @@ These talk to tmux. They do not update `info()`.
 `server.commands().list()` is the catalog this tmux knows. `server.prompt()`
 is prompt history, present since tmux 3.3. `server.messageLog().lines()` is
 the server log. Before 3.6 it needs a client attached. `server.keys()` binds
-keys. `server.lock()` locks every attached client. It stays on `Server`: it
-is one command, not a group.
+keys. `server.lock()` locks every attached client. It stays a method on
+`Server`: it is one command, not a group. The Scala facades call it `lock`.
 
 ```java
 // Given: Server server

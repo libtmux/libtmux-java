@@ -26,7 +26,6 @@ Server.control Cats Control.attach fences the session; blocking callers use Java
 Server.shell shell commands and if-shell stay on Java
 Server.keys stays on the Java handle
 Server.commands the command catalog stays on Java
-Server.lock stays on the Java handle
 Server.messageLog the server message log stays on Java
 Server.paneFields stays on the Java handle
 Server.prompt the prompt history scope stays on Java

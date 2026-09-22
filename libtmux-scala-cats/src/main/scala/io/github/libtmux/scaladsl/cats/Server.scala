@@ -67,6 +67,7 @@ final class Server[F[_]] private[cats] (
     underlying.killSession(name)
   )
   def killServer: F[Unit] = execution(underlying.killServer())
+  def lock: F[Unit] = execution(underlying.lock())
   def isAlive: F[Boolean] = execution(underlying.isAlive())
   def version: F[TmuxVersion] = execution(underlying.version())
   def expand(format: String): F[String] = execution(underlying.expand(format))
