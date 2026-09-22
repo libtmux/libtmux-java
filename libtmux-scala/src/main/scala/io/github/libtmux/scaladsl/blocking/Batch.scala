@@ -8,9 +8,10 @@ import scala.jdk.CollectionConverters._
   * additionally retains that pane's captured server-incarnation guard.
   */
 final class Batch private[blocking] (
-    val asJava: JavaBatch,
+    private[scaladsl] val asJava: JavaBatch,
     server: Server
 ) {
+  def unsafeJava: JavaBatch = asJava
   def add(argv: Seq[String]): Batch = server.checked {
     asJava.add(argv.toVector.asJava)
     this

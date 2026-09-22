@@ -6,9 +6,10 @@ import java.time.Duration
 /** A named signal. Shared waits reserve transport capacity for their release.
   */
 final class Channel private[blocking] (
-    val asJava: JavaChannel,
+    private[scaladsl] val asJava: JavaChannel,
     server: Server
 ) {
+  def unsafeJava: JavaChannel = asJava
   val name: String = asJava.name()
   def signal(): Unit = server.checked(asJava.signal())
   def await(timeout: Duration): WakeReason =

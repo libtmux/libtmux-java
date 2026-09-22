@@ -115,7 +115,8 @@ object ClientInfo {
 }
 
 /** A checked multi-list capture, not an atomic transaction or a live handle. */
-final class Snapshot private (val asJava: ServerSnapshot) {
+final class Snapshot private (private[scaladsl] val asJava: ServerSnapshot) {
+  def unsafeJava: ServerSnapshot = asJava
   val capturedAt: Instant = asJava.capturedAt()
   val serverPid: Option[Long] = asJava.serverPid().toScala
   val serverVersion: Option[TmuxVersion] = asJava.serverVersion().toScala

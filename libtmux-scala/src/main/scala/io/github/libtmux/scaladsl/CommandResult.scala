@@ -6,7 +6,8 @@ import scala.jdk.CollectionConverters._
 /** Completed raw invocation. Nonzero exit is data; output is not normalized
   * again.
   */
-final class CommandResult private (val asJava: JavaResult) {
+final class CommandResult private (private[scaladsl] val asJava: JavaResult) {
+  def unsafeJava: JavaResult = asJava
   val exitCode: Int = asJava.exitCode()
   val stdout: Vector[String] = asJava.stdout().asScala.toVector
   val stderr: Vector[String] = asJava.stderr().asScala.toVector
@@ -21,7 +22,10 @@ object CommandResult {
 
 /** A pane command's captured result; cancellation or timeout is not rollback.
   */
-final class PaneRun private (val asJava: io.github.libtmux.PaneRun) {
+final class PaneRun private (
+    private[scaladsl] val asJava: io.github.libtmux.PaneRun
+) {
+  def unsafeJava: io.github.libtmux.PaneRun = asJava
   import scala.jdk.OptionConverters._
 
   val outcome: io.github.libtmux.PaneRun.Outcome = asJava.outcome()

@@ -13,12 +13,14 @@ import scala.collection.immutable.VectorMap
 import scala.jdk.CollectionConverters._
 import scala.jdk.OptionConverters._
 
-/** Blocking option operations at one Java scope. `asJava` borrows that scope.
+/** Blocking option operations at one Java scope. `unsafeJava` borrows that
+  * scope.
   */
 final class Options private[blocking] (
-    val asJava: JavaOptions,
+    private[scaladsl] val asJava: JavaOptions,
     owner: Server
 ) {
+  def unsafeJava: JavaOptions = asJava
 
   /** Reads the effective value, retaining a present empty string. */
   def get(name: String): Option[String] = owner.checked {
@@ -69,9 +71,10 @@ final class Options private[blocking] (
 /** Blocking environment operations. Removed names remain distinct from absence.
   */
 final class Environment private[blocking] (
-    val asJava: JavaEnvironment,
+    private[scaladsl] val asJava: JavaEnvironment,
     owner: Server
 ) {
+  def unsafeJava: JavaEnvironment = asJava
 
   /** Reads a local value; removed and absent names both return None. */
   def get(name: String): Option[String] = owner.checked {
@@ -117,9 +120,11 @@ final class Environment private[blocking] (
   * overloads.
   */
 final class Hooks private[blocking] (
-    val asJava: JavaHooks,
+    private[scaladsl] val asJava: JavaHooks,
     owner: Server
 ) {
+  def unsafeJava: JavaHooks = asJava
+
   def set(event: String, command: String): Unit = owner.checked {
     asJava.set(event, command)
   }
@@ -156,9 +161,11 @@ final class Hooks private[blocking] (
 /** Blocking named buffers with Java's normalized text and exact-delete guards.
   */
 final class Buffers private[blocking] (
-    val asJava: JavaBuffers,
+    private[scaladsl] val asJava: JavaBuffers,
     owner: Server
 ) {
+  def unsafeJava: JavaBuffers = asJava
+
   def list(): Vector[BufferInfo] = owner.checked {
     asJava.list().asScala.toVector
   }

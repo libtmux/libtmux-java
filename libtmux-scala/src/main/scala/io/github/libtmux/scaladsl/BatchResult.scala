@@ -10,7 +10,10 @@ import scala.jdk.CollectionConverters._
 /** Java's marker-based report. A parse rejection can label the first command
   * FAILED even when a later command caused the rejection and nothing ran.
   */
-final class BatchResult private (val asJava: JavaBatchResult) {
+final class BatchResult private (
+    private[scaladsl] val asJava: JavaBatchResult
+) {
+  def unsafeJava: JavaBatchResult = asJava
   val operations: Vector[OperationResult] =
     asJava.operations().asScala.iterator.map(new OperationResult(_)).toVector
   val succeeded: Boolean = asJava.succeeded()
@@ -29,8 +32,9 @@ object BatchResult {
 
 /** Raw operation attribution with strict Scala output collections. */
 final class OperationResult private[scaladsl] (
-    val asJava: JavaOperationResult
+    private[scaladsl] val asJava: JavaOperationResult
 ) {
+  def unsafeJava: JavaOperationResult = asJava
   val argv: Vector[String] = asJava.argv().asScala.toVector
   val stdout: Vector[String] = asJava.stdout().asScala.toVector
   val stderr: Vector[String] = asJava.stderr().asScala.toVector
