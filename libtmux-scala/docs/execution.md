@@ -103,9 +103,11 @@ can close its attachment and affect queued requests and observations, so use
 separate attachments when their lifetimes must be independent.
 
 `Control.isAlive` reports whether that process is still running.
-`Control.watch` asks tmux to push a format when its value changes, and
-`unwatch` removes that name. A target that is not a pane or window id watches
-the attached session.
+`Control.standardError` is the text that process wrote to its error stream,
+at most 4096 bytes. `standardErrorTruncated` says the stream continued past
+that bound. `Control.watch` asks tmux to push a format when its value
+changes, and `unwatch` removes that name. A target that is not a pane or
+window id watches the attached session.
 
 [blocking-server]:
   ../src/main/scala/io/github/libtmux/scaladsl/blocking/Server.scala

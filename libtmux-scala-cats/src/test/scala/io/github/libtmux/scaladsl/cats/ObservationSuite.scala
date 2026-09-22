@@ -108,4 +108,43 @@ final class ObservationSuite extends FunSuite {
       lines.exists(line => line.contains("'-B'") && line.endsWith("'cmd'"))
     )
   }
+
+  test("stderr stays bounded") {
+    val directory = Files.createTempDirectory("libtmux-stderr")
+    val fake = directory.resolve("tmux")
+    Files.writeString(
+      fake,
+      """#!/bin/sh
+        |printf 'boom\n' >&2
+        |dd if=/dev/zero bs=5000 count=1 2>/dev/null | tr '\0' x >&2
+        |printf '%%begin 100 1 0\n%%end 100 1 0\n'
+        |IFS= read -r request
+        |printf '%%begin 101 1 0\n%%end 101 1 0\n'
+        |sleep 1
+        |""".stripMargin
+    )
+    Files.setPosixFilePermissions(
+      fake,
+      PosixFilePermissions.fromString("rwx------")
+    )
+    val config = ServerConfig.builder().binary(fake.toString).build()
+    val program =
+      Control.attach[IO](config, new SessionId("$0")).use { control =>
+        for {
+          _ <- IO.sleep(200.millis)
+          text <- control.standardError
+          cut <- control.standardErrorTruncated
+          _ <- IO {
+            assert(text.startsWith("boom"))
+            assert(text.length <= 4096)
+            assert(cut)
+          }
+        } yield ()
+      }
+    try program.timeout(5.seconds).unsafeRunSync()
+    finally {
+      Files.deleteIfExists(fake)
+      Files.deleteIfExists(directory)
+    }
+  }
 }

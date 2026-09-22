@@ -43,6 +43,18 @@ final class Control[F[_]] private[cats] (
     underlying.isAlive()
   }
 
+  /** Error text from this control process, at most 4096 bytes. */
+  def standardError: F[String] = execution {
+    requireOpen()
+    underlying.standardError()
+  }
+
+  /** Whether `standardError` stopped before the process finished writing. */
+  def standardErrorTruncated: F[Boolean] = execution {
+    requireOpen()
+    underlying.standardErrorTruncated()
+  }
+
   /** Asks tmux to report `format` when it changes. A target that does not name
     * a pane or window watches the attached session.
     */
