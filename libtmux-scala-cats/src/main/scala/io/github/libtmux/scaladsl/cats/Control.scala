@@ -69,7 +69,8 @@ final class Control[F[_]] private[cats] (
 object Control {
 
   /** Retains tmux's raw reply framing and line shape. */
-  final class Ack private[cats] (val asJava: ControlReply) {
+  final class Ack private[cats] (private[scaladsl] val asJava: ControlReply) {
+    def unsafeJava: ControlReply = asJava
 
     /** True for a %end reply. Deferred tmux work can still be running. */
     def accepted: Boolean = asJava.outcome() == OperationOutcome.COMPLETE

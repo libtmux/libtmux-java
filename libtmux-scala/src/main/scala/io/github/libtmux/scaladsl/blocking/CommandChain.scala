@@ -8,9 +8,10 @@ import scala.jdk.CollectionConverters._
   * effects survive later failures; result attribution remains Java's report.
   */
 final class CommandChain private[blocking] (
-    val asJava: JavaCommandChain,
+    private[scaladsl] val asJava: JavaCommandChain,
     server: Server
 ) {
+  def unsafeJava: JavaCommandChain = asJava
   private def append(operation: => JavaCommandChain): CommandChain =
     server.checked {
       operation
