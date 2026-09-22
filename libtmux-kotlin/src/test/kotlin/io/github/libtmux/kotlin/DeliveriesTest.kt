@@ -3,6 +3,7 @@ package io.github.libtmux.kotlin
 import io.github.libtmux.ServerConfig
 import io.github.libtmux.SessionId
 import io.github.libtmux.control.ControlClient
+import io.github.libtmux.control.ControlEndedException
 import io.github.libtmux.control.Delivery
 import io.github.libtmux.control.PaneOutput
 import java.nio.file.Files
@@ -82,6 +83,19 @@ class DeliveriesTest {
     }
 
     @Test
+    fun `a timed read fails when the client ended the subscription`(@TempDir directory: Path) {
+        val client = client(directory, exitAfterAttach())
+        try {
+            val subscription = client.subscribeOutput(1)
+            assertFailsWith<ControlEndedException> {
+                runBlocking { subscription.awaitDelivery(2.seconds) }
+            }
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
     fun `cancelling a collection closes the subscription`(@TempDir directory: Path) {
         val client = client(directory, waitForever())
         try {
@@ -137,6 +151,15 @@ class DeliveriesTest {
         printf '%%output %%1 five\n'
         printf '%%begin 102 1 0\n%%end 102 1 0\n'
         sleep 30
+        """
+            .trimIndent()
+
+    private fun exitAfterAttach(): String =
+        """
+        printf '%%begin 100 1 0\n%%end 100 1 0\n'
+        IFS= read -r request
+        printf '%%begin 101 1 0\n%%end 101 1 0\n'
+        sleep 0.4
         """
             .trimIndent()
 

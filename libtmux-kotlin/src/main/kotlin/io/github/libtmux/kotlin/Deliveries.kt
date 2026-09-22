@@ -51,7 +51,8 @@ public fun <T : Any> EventSubscription<T>.deliveries(): Flow<Delivery<T>> {
  * step arrives or the subscription ends.
  *
  * @param timeout how long to wait
- * @return the next gap or event, or null when none arrived before the deadline
+ * @return the next gap or event, or null when none arrived before the deadline.
+ * A client that ended the subscription fails this wait with that cause.
  * @throws IllegalArgumentException if [timeout] is negative
  */
 public suspend fun <T : Any> EventSubscription<T>.awaitDelivery(timeout: Duration): Delivery<T>? =
@@ -62,5 +63,13 @@ public suspend fun <T : Any> EventSubscription<T>.awaitDelivery(timeout: Duratio
             } else {
                 next(timeout.toJavaDuration())
             }
-        if (delivered.isPresent) delivered.get() else null
+        if (delivered.isPresent) {
+            delivered.get()
+        } else {
+            val failure = cause()
+            if (failure.isPresent) {
+                throw failure.get()
+            }
+            null
+        }
     }
