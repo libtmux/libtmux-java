@@ -61,6 +61,9 @@ pane.floatingOrNull()
 server.options().getOrNull("no-such-option")                   // → null
 ```
 
+A name or id lookup is the same shape. `sessionOrNull`, `paneOrNull`, and
+`windowOrNull` are null when a successful capture has no match.
+
 **Negation as an operator:**
 
 ```kotlin

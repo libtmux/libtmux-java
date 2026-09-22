@@ -21,7 +21,11 @@ public final class io/github/libtmux/kotlin/OptionalsKt {
 	public static final fun floatingOrNull (Lio/github/libtmux/Pane;)Ljava/lang/Boolean;
 	public static final fun getOrNull (Lio/github/libtmux/Options;Ljava/lang/String;)Ljava/lang/String;
 	public static final fun modeOrNull (Lio/github/libtmux/Pane;)Lio/github/libtmux/PaneMode;
+	public static final fun paneOrNull (Lio/github/libtmux/Server;Lio/github/libtmux/PaneId;)Lio/github/libtmux/Pane;
 	public static final fun sessionOrNull (Lio/github/libtmux/Client;)Lio/github/libtmux/Session;
+	public static final fun sessionOrNull (Lio/github/libtmux/Server;Lio/github/libtmux/SessionId;)Lio/github/libtmux/Session;
+	public static final fun sessionOrNull (Lio/github/libtmux/Server;Ljava/lang/String;)Lio/github/libtmux/Session;
+	public static final fun windowOrNull (Lio/github/libtmux/Server;Lio/github/libtmux/snapshot/WindowContext;)Lio/github/libtmux/Window;
 }
 
 public final class io/github/libtmux/kotlin/WaitsKt {
