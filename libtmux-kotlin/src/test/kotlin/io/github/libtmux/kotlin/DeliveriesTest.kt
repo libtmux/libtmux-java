@@ -30,6 +30,12 @@ import org.junit.jupiter.api.io.TempDir
 class DeliveriesTest {
 
     @Test
+    fun `kept fails a gap`() {
+        assertFailsWith<IllegalStateException> { Delivery.Gap<String>(3).kept() }
+        assertEquals("x", Delivery.Event("x").kept())
+    }
+
+    @Test
     fun `a flow emits the gap ahead of the event that survived`(@TempDir directory: Path) {
         val client = client(directory, floodThenWait())
         try {
