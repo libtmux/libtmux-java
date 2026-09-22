@@ -2,6 +2,7 @@ package io.github.libtmux.kotlin
 
 import io.github.libtmux.Client
 import io.github.libtmux.ClientAttachment
+import io.github.libtmux.Environment
 import io.github.libtmux.Options
 import io.github.libtmux.Pane
 import io.github.libtmux.PaneId
@@ -46,6 +47,9 @@ public fun Client.attachmentOrNull(): ClientAttachment? = attachment().orElse(nu
 
 /** The option's value, or null when it is not set at this level. */
 public fun Options.getOrNull(name: String): String? = get(name).orElse(null)
+
+/** The environment value, or null when it is absent or removed. */
+public fun Environment.getOrNull(name: String): String? = get(name).orElse(null)
 
 /** The session with this name, or null when the capture has none. */
 public fun Server.sessionOrNull(name: String): Session? = session(name).orElse(null)
