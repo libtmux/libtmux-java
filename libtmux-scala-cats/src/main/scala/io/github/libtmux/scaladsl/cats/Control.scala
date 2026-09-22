@@ -37,6 +37,27 @@ final class Control[F[_]] private[cats] (
     new Control.Ack(underlying.send(argv.asJava, timeout))
   }
 
+  /** Whether this attachment's process is still running. */
+  def isAlive: F[Boolean] = execution {
+    requireOpen()
+    underlying.isAlive()
+  }
+
+  /** Asks tmux to report `format` when it changes. A target that does not name
+    * a pane or window watches the attached session.
+    */
+  def watch(name: String, target: String, format: String): F[Control.Ack] =
+    execution {
+      requireOpen()
+      new Control.Ack(underlying.watch(name, target, format))
+    }
+
+  /** Removes a watch registered under `name`. */
+  def unwatch(name: String): F[Control.Ack] = execution {
+    requireOpen()
+    new Control.Ack(underlying.unwatch(name))
+  }
+
   /** Registers decoded text output before the returned resource body runs.
     * Terminal bytes and character boundaries are not preserved by Java.
     */

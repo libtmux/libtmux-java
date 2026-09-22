@@ -47,4 +47,65 @@ final class ObservationSuite extends FunSuite {
       }
     assert(ran.left.exists(_.isInstanceOf[ControlEndedException]), ran)
   }
+
+  test("a watch reports liveness and a normalized target") {
+    val directory = Files.createTempDirectory("libtmux-watch")
+    val fake = directory.resolve("tmux")
+    val seen = directory.resolve("seen")
+    Files.writeString(
+      fake,
+      """#!/bin/sh
+        |dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+        |printf '%%begin 100 1 0\n%%end 100 1 0\n'
+        |IFS= read -r request
+        |printf '%%begin 101 1 0\n%%end 101 1 0\n'
+        |i=0
+        |while IFS= read -r request; do
+        |  printf '%s\n' "$request" >> "$dir/seen"
+        |  printf '%%begin 101 1 0\n%%end 101 1 0\n'
+        |  i=$((i + 1))
+        |  if [ "$i" -ge 3 ]; then
+        |    exit 0
+        |  fi
+        |done
+        |""".stripMargin
+    )
+    Files.setPosixFilePermissions(
+      fake,
+      PosixFilePermissions.fromString("rwx------")
+    )
+    val config = ServerConfig.builder().binary(fake.toString).build()
+    val program =
+      Control.attach[IO](config, new SessionId("$0")).use { control =>
+        for {
+          alive <- control.isAlive
+          watched <- control.watch("cmd", "%1", "#{pane_current_command}")
+          session <- control.watch("sess", "not-a-pane", "#{session_name}")
+          stopped <- control.unwatch("cmd")
+          _ <- IO.sleep(300.millis)
+          ended <- control.isAlive
+          _ <- IO {
+            assert(alive)
+            assert(watched.accepted)
+            assert(session.accepted)
+            assert(stopped.accepted)
+            assert(!ended)
+          }
+        } yield ()
+      }
+    val lines =
+      try {
+        program.timeout(5.seconds).unsafeRunSync()
+        Files.readString(seen).linesIterator.toVector
+      } finally {
+        Files.deleteIfExists(fake)
+        Files.deleteIfExists(seen)
+        Files.deleteIfExists(directory)
+      }
+    assert(lines.exists(_.contains("cmd:%1:#{pane_current_command}")))
+    assert(lines.exists(_.contains("sess::#{session_name}")))
+    assert(
+      lines.exists(line => line.contains("'-B'") && line.endsWith("'cmd'"))
+    )
+  }
 }
