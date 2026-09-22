@@ -80,7 +80,7 @@ final class RunningCommands {
         PaneInputCohort.Resolution initial = PaneInputCohort.resolve(pane, call.caller());
         String currentCommand = initial.requireSingularCommandPane("run_shell_command");
         requirePosixShell(currentCommand);
-        PaneInputReservations.Lease lease = PaneInputReservations.run(initial, "run_shell_command");
+        PaneInputReservations.Lease lease = PaneInputReservations.run(pane, initial, "run_shell_command");
         boolean retained = false;
         AtomicBoolean possiblyDispatched = new AtomicBoolean();
         Pane freshPane = pane;

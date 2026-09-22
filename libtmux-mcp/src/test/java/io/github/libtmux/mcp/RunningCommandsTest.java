@@ -541,7 +541,7 @@ final class RunningCommandsTest {
     @Test
     void aDeadPaneProvesRetainedOwnershipEnded(Server server) throws Exception {
         Pane pane = server.panes().getFirst();
-        try (var lease = PaneInputReservations.run(PaneInputCohort.resolve(pane), "retained_test")) {
+        try (var lease = PaneInputReservations.run(pane, PaneInputCohort.resolve(pane), "retained_test")) {
             pane.options().set("remain-on-exit", "on");
             pane.sendLine("exit");
             assertTrue(await(() -> "1".equals(pane.expand("#{pane_dead}"))), "the pane did not become dead");
@@ -843,7 +843,7 @@ final class RunningCommandsTest {
         Pane pane = server.panes().getFirst();
         PaneInputCohort.Resolution free = PaneInputCohort.resolve(pane);
 
-        try (PaneInputReservations.Lease held = PaneInputReservations.interrupting(free, "send_keys")) {
+        try (PaneInputReservations.Lease held = PaneInputReservations.interrupting(pane, free, "send_keys")) {
             assertNotNull(held);
             assertInputOwned(server, pane.id().value());
         }
