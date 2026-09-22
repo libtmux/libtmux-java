@@ -205,26 +205,34 @@ final class SnapshotCapture {
         ServerProcess process = process()
                 .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
         String filter = "#{==:#{" + field + "}," + target + "}";
-        Batch probe = server.batch(process.pid(), process.reported());
-        probe.add(listing(SESSIONS, "list-sessions", "-f", filter));
-        List<SessionState> sessions =
-                sessionStates(rows(SESSIONS, probe.run().operations().get(0), "list-sessions"));
+        boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
+        RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
+        Batch batch = server.batch(process.pid(), process.reported());
+        batch.add(listing(SESSIONS, "list-sessions", "-f", filter));
+        batch.add(listing(WINDOWS, "list-windows", "-a", "-f", filter));
+        batch.add(listing(paneFormat, "list-panes", "-a", "-f", filter));
+        List<OperationResult> answered = batch.run().operations();
+        List<SessionState> sessions = sessionStates(rows(SESSIONS, answered.get(0), "list-sessions")).stream()
+                .filter(session -> field.equals("session_id")
+                        ? session.id().value().equals(target)
+                        : session.name().equals(target))
+                .toList();
         if (sessions.isEmpty()) {
             return Optional.empty();
         }
-        boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
-        RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
-        Batch rest = server.batch(process.pid(), process.reported());
-        rest.add(listing(WINDOWS, "list-windows", "-t", target));
-        rest.add(listing(paneFormat, "list-panes", "-s", "-t", target));
-        List<OperationResult> answered = rest.run().operations();
+        java.util.Set<SessionId> ids =
+                sessions.stream().map(SessionState::id).collect(java.util.stream.Collectors.toSet());
         return Optional.of(ServerSnapshot.of(
                 Instant.now(),
                 process.pid(),
                 process.version(),
                 sessions,
-                windowStates(rows(WINDOWS, answered.get(0), "list-windows")),
-                paneStates(rows(paneFormat, answered.get(1), "list-panes"), floatingKnown),
+                windowStates(rows(WINDOWS, answered.get(1), "list-windows")).stream()
+                        .filter(window -> ids.contains(window.context().session()))
+                        .toList(),
+                paneStates(rows(paneFormat, answered.get(2), "list-panes"), floatingKnown).stream()
+                        .filter(pane -> ids.contains(pane.context().session()))
+                        .toList(),
                 List.of()));
     }
 
@@ -281,7 +289,18 @@ final class SnapshotCapture {
         RowFormat sessionOnly = RowFormat.of("session_id");
         Batch probe = server.batch(process.pid(), process.reported());
         probe.add(listing(sessionOnly, "list-panes", "-a", "-f", "#{==:#{pane_id}," + id.value() + "}"));
-        List<RowFormat.Row> found = rows(sessionOnly, probe.run().operations().get(0), "list-panes");
+        OperationResult answered = probe.run().operations().get(0);
+        if (answered.outcome() != OperationOutcome.COMPLETE) {
+            if (String.join("\n", answered.stderr()).contains("no current target")) {
+                return Optional.empty();
+            }
+        }
+        List<RowFormat.Row> found;
+        try {
+            found = rows(sessionOnly, answered, "list-panes");
+        } catch (io.github.libtmux.format.TmuxFormatException ignored) {
+            return Optional.empty();
+        }
         if (found.isEmpty()) {
             return Optional.empty();
         }

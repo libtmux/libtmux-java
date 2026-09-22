@@ -957,12 +957,7 @@ public final class Server implements AutoCloseable {
      */
     public Optional<Session> session(String name) {
         Objects.requireNonNull(name, "name");
-        if (!TmuxFilters.literal(name)) {
-            ServerSnapshot captured = snapshot();
-            return captured.session(name).map(session -> new Session(this, captured, session));
-        }
-        return capture.oneSession(name, "session_name")
-                .flatMap(captured -> captured.session(name).map(session -> new Session(this, captured, session)));
+        return read(() -> one(name, "session_name"));
     }
 
     /**
@@ -974,12 +969,30 @@ public final class Server implements AutoCloseable {
      */
     public Optional<Session> session(SessionId id) {
         Objects.requireNonNull(id, "id");
-        if (!TmuxFilters.literal(id.value())) {
+        return read(() -> one(id.value(), "session_id"));
+    }
+
+    private Optional<Session> one(String target, String field) {
+        if (!TmuxFilters.literal(target)) {
             ServerSnapshot captured = snapshot();
-            return captured.session(id).map(session -> new Session(this, captured, session));
+            return field.equals("session_id")
+                    ? captured.session(new SessionId(target)).map(session -> new Session(this, captured, session))
+                    : captured.session(target).map(session -> new Session(this, captured, session));
         }
-        return capture.oneSession(id.value(), "session_id")
-                .flatMap(captured -> captured.session(id).map(session -> new Session(this, captured, session)));
+        ServerSnapshot captured = capture.oneSession(target, field).orElseGet(this::snapshot);
+        return field.equals("session_id")
+                ? captured.session(new SessionId(target)).map(session -> new Session(this, captured, session))
+                : captured.session(target).map(session -> new Session(this, captured, session));
+    }
+
+    private <T> T read(java.util.function.Supplier<T> read) {
+        try {
+            return read.get();
+        } catch (LibTmuxException failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw new LibTmuxException("could not hydrate tmux snapshot: " + failure.getMessage(), failure);
+        }
     }
 
     /**
@@ -991,15 +1004,15 @@ public final class Server implements AutoCloseable {
      */
     public Optional<Pane> pane(PaneId id) {
         Objects.requireNonNull(id, "id");
-        if (!TmuxFilters.literal(id.value())) {
-            return paneFrom(snapshot(), id);
-        }
-        return capture
-                .sessionOfPane(id)
-                .flatMap(session -> capture
-                        .oneSession(session.value(), "session_id")
-                        .flatMap(captured -> paneFrom(captured, id)))
-                .or(() -> paneFrom(snapshot(), id));
+        return read(() -> {
+            if (!TmuxFilters.literal(id.value())) {
+                return paneFrom(snapshot(), id);
+            }
+            return capture.sessionOfPane(id)
+                    .flatMap(session -> capture.oneSession(session.value(), "session_id")
+                            .flatMap(captured -> paneFrom(captured, id)))
+                    .or(() -> paneFrom(snapshot(), id));
+        });
     }
 
     private Optional<Pane> paneFrom(ServerSnapshot captured, PaneId id) {
