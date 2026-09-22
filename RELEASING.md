@@ -215,7 +215,8 @@ Two behaviours worth knowing:
 4. Dry-run locally, which needs no key and no token:
    `./gradlew publishToMavenLocal -PlibtmuxVersion=0.0.1-alpha.1`.
 5. Tag. The Release workflow runs `check`, uploads, and attests the
-   jars. The attestation names the commit and workflow that built them.
+   jars and the BOM pom. The attestation names the commit and workflow
+   that built them.
 6. Open [the Portal](https://central.sonatype.com/publishing/deployments) and
    publish the deployment, or drop it.
 7. Bump `libtmuxApiBaseline` in `gradle.properties` to the version just
