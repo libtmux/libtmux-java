@@ -1,15 +1,15 @@
 package io.github.libtmux.query;
 
 import java.util.Optional;
-import java.util.regex.Pattern;
 
 /**
  * Lowers a {@link FilterExpr} to a tmux {@code -f} format when every node is one tmux can apply.
  *
- * <p>Relations, and any operand containing {@code ,}, <code>#</code>, <code>{</code>, or
- * <code>}</code>, are refused. Those stay a local filter over a capture. A compiled format is a
- * hint to tmux, not a promise that the local reading would differ: callers still apply the
- * expression to the rows that come back.
+ * <p>Relations, a Java regular expression, and any operand containing {@code ,}, <code>#</code>,
+ * <code>{</code>, or <code>}</code>, are refused. Those stay a local filter over a capture. tmux
+ * compiles {@code #{m/r:}} with its own dialect, so a pattern Java would match can select nothing.
+ * A compiled format is a hint to tmux, not a promise that the local reading would differ: callers
+ * still apply the expression to the rows that come back.
  */
 public final class TmuxFilters {
 
@@ -67,7 +67,7 @@ public final class TmuxFilters {
             case CONTAINS -> "#{m:*" + glob(text(compare.operand())) + "*," + field + "}";
             case STARTS_WITH -> "#{m:" + glob(text(compare.operand())) + "*," + field + "}";
             case ENDS_WITH -> "#{m:*" + glob(text(compare.operand())) + "," + field + "}";
-            case MATCHES -> "#{m/r:" + regex((Pattern) compare.operand()) + "," + field + "}";
+            case MATCHES -> refuse();
             case LESS_THAN -> "#{<:" + field + "," + compare.operand() + "}";
             case AT_MOST -> "#{<=:" + field + "," + compare.operand() + "}";
             case GREATER_THAN -> "#{>:" + field + "," + compare.operand() + "}";
@@ -106,13 +106,6 @@ public final class TmuxFilters {
             escaped.append(character);
         }
         return escaped.toString();
-    }
-
-    private static String regex(Pattern pattern) {
-        if ((pattern.flags() & ~Pattern.CASE_INSENSITIVE) != 0 || !literal(pattern.pattern())) {
-            refuse();
-        }
-        return pattern.pattern();
     }
 
     @SuppressWarnings("unchecked")
