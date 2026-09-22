@@ -62,7 +62,9 @@ server.options().getOrNull("no-such-option")                   // → null
 ```
 
 A name or id lookup is the same shape. `sessionOrNull`, `paneOrNull`, and
-`windowOrNull` are null when a successful capture has no match.
+`windowOrNull` are null when a successful capture has no match. An
+environment name uses `getOrNull` the same way an option does: null when it
+is absent or removed.
 
 **Negation as an operator:**
 

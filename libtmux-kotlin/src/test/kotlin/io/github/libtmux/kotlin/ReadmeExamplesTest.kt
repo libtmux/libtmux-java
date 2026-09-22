@@ -46,6 +46,10 @@ class ReadmeExamplesTest {
 
         session.options().set("status-left", "[libtmux]")
         assertEquals("[libtmux]", session.options().getOrNull("status-left"))
+
+        server.environment().set("LIBTMUX_KOTLIN_ABSENT", "present")
+        assertEquals("present", server.environment().getOrNull("LIBTMUX_KOTLIN_ABSENT"))
+        assertEquals(null, server.environment().getOrNull("LIBTMUX_KOTLIN_MISSING"))
     }
 
     @Test

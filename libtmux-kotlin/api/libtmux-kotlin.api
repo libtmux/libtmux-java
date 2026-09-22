@@ -19,6 +19,7 @@ public final class io/github/libtmux/kotlin/OptionalsKt {
 	public static final fun activeWindowOrNull (Lio/github/libtmux/Session;)Lio/github/libtmux/Window;
 	public static final fun attachmentOrNull (Lio/github/libtmux/Client;)Lio/github/libtmux/ClientAttachment;
 	public static final fun floatingOrNull (Lio/github/libtmux/Pane;)Ljava/lang/Boolean;
+	public static final fun getOrNull (Lio/github/libtmux/Environment;Ljava/lang/String;)Ljava/lang/String;
 	public static final fun getOrNull (Lio/github/libtmux/Options;Ljava/lang/String;)Ljava/lang/String;
 	public static final fun modeOrNull (Lio/github/libtmux/Pane;)Lio/github/libtmux/PaneMode;
 	public static final fun paneOrNull (Lio/github/libtmux/Server;Lio/github/libtmux/PaneId;)Lio/github/libtmux/Pane;
