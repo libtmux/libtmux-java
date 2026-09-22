@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import scala.jdk.OptionConverters._
 
 /** Pulls a bounded Java subscription with one active stream consumer. A full
-  * buffer yields [[Delivery.Gap]] in this stream before the events that remain.
+  * buffer yields a `Delivery.Gap` in this stream before the events that remain.
   * FS2 demand does not provide tmux backpressure. A subscription does not
   * reconnect: attach again and read a snapshot.
   */
@@ -46,7 +46,7 @@ final class Observation[F[_], A] private[cats] (
         .unNoneTerminate
     }
 
-  /** The cumulative overflow count. A [[Delivery.Gap]] in [[#stream]] says
+  /** The cumulative overflow count. A `Delivery.Gap` in [[#stream]] says
     * where it sits.
     */
   def droppedCount: F[Long] = F.delay(underlying.droppedCount())
