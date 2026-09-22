@@ -73,6 +73,7 @@ final class Server private (private[scaladsl] val asJava: JavaServer, owned: Boo
   def hasSession(name: String): Boolean = checked(asJava.hasSession(name))
   def killSession(name: String): Unit = checked(asJava.killSession(name))
   def killServer(): Unit = checked(asJava.killServer())
+  def lock(): Unit = checked(asJava.lock())
   def isAlive(): Boolean = checked(asJava.isAlive())
   def version(): TmuxVersion = checked(asJava.version())
   def expand(format: String): String = checked(asJava.expand(format))
