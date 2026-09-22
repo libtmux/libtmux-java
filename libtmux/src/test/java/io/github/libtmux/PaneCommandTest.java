@@ -190,9 +190,7 @@ final class PaneCommandTest {
                 break;
             }
             assertTrue(
-                    index + 1 < quoted.length()
-                            && quoted.charAt(index) == '\\'
-                            && quoted.charAt(index + 1) == '\'',
+                    index + 1 < quoted.length() && quoted.charAt(index) == '\\' && quoted.charAt(index + 1) == '\'',
                     quoted);
             text.append('\'');
             index += 2;

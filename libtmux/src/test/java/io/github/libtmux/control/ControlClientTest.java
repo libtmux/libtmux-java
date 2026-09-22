@@ -292,8 +292,7 @@ final class ControlClientTest {
         for (int cycle = 0; cycle < 12; cycle++) {
             ControlClient client = ControlClient.attach(config, new SessionId("$0"));
             TmuxTimeoutException timeout = assertThrows(
-                    TmuxTimeoutException.class,
-                    () -> client.send(List.of("list-windows"), Duration.ofMillis(80)));
+                    TmuxTimeoutException.class, () -> client.send(List.of("list-windows"), Duration.ofMillis(80)));
             assertEquals(DispatchOutcome.UNKNOWN, timeout.outcome());
             client.close();
             assertFalse(client.isAlive());

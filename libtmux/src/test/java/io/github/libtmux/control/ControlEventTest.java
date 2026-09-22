@@ -158,9 +158,8 @@ final class ControlEventTest {
     /** The value is everything after the first separator, including another one. */
     @Test
     void aSubscriptionValueKeepsALaterSeparator() {
-        ControlEvent event =
-                ControlEvent.parse("%subscription-changed title $0 @1 0 %2 : hello : world")
-                        .orElseThrow();
+        ControlEvent event = ControlEvent.parse("%subscription-changed title $0 @1 0 %2 : hello : world")
+                .orElseThrow();
 
         assertEquals(Optional.of("hello : world"), event.value());
     }

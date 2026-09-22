@@ -117,13 +117,10 @@ final class ServerControlIntegrationTest {
             try (Server replacement = Server.open(config)) {
                 Session again = replacement.newSession("replacement");
                 assertEquals(id, again.id().value(), "the replacement did not reuse " + id);
-                assertTrue(
-                        Await.until(() -> !client.isAlive()),
-                        "the client stayed up after its server was replaced");
+                assertTrue(Await.until(() -> !client.isAlive()), "the client stayed up after its server was replaced");
                 assertThrows(
                         RuntimeException.class,
-                        () -> client.send(
-                                List.of("display-message", "-p", "#{session_name}"), Duration.ofMillis(500)));
+                        () -> client.send(List.of("display-message", "-p", "#{session_name}"), Duration.ofMillis(500)));
                 assertTrue(noClients(replacement), "the ended client was still attached to the replacement");
             }
         } finally {
