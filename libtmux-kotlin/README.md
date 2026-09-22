@@ -104,7 +104,8 @@ than `a and b` and always means what it appears to.
 `List` of the same elements, and it does not offer `add`.
 
 **A subscription as a `Flow`.** `deliveries()` emits a `Delivery.Gap` where the
-buffer discarded events, then the events that remain. Collecting the flow
+buffer discarded events, then the events that remain. `kept()` fails that
+read. Collecting the flow
 closes the subscription. Cancelling the collection does the same. Neither
 reconnects, and neither undoes a command tmux has already accepted.
 `awaitDelivery` waits for one step and leaves the subscription open. This

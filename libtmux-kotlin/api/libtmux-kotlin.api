@@ -1,6 +1,7 @@
 public final class io/github/libtmux/kotlin/DeliveriesKt {
 	public static final fun awaitDelivery-8Mi8wO0 (Lio/github/libtmux/control/EventSubscription;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun deliveries (Lio/github/libtmux/control/EventSubscription;)Lkotlinx/coroutines/flow/Flow;
+	public static final fun kept (Lio/github/libtmux/control/Delivery;)Ljava/lang/Object;
 }
 
 public final class io/github/libtmux/kotlin/FiltersKt {

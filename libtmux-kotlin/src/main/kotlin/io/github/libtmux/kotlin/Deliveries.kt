@@ -22,6 +22,9 @@ import kotlinx.coroutines.runInterruptible
  * it. A caller who closed it gets a normal completion. Collect once: a later
  * collection finds the subscription closed.
  */
+/** The event a strict reader kept. A gap fails the read. */
+public fun <T : Any> Delivery<T>.kept(): T = Delivery.kept(this)
+
 public fun <T : Any> EventSubscription<T>.deliveries(): Flow<Delivery<T>> {
     val subscription = this
     return flow {

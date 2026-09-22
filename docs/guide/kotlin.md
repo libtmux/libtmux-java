@@ -81,7 +81,8 @@ A Java `List` is a `MutableList` in Kotlin, including a capture that refuses
 ## Reading a subscription
 
 `deliveries()` collects a control subscription as a `Flow`. A `Delivery.Gap` is
-an element, ahead of the events that survived a full buffer. Collecting the
+an element, ahead of the events that survived a full buffer. `kept()` fails
+that read. Collecting the
 flow closes the subscription, and cancelling the collection does too. That
 does not reconnect, and it does not undo a command tmux has already accepted.
 
