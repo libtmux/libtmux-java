@@ -1,5 +1,6 @@
 package io.github.libtmux.kotlin
 
+import io.github.libtmux.PaneId
 import io.github.libtmux.Pane_
 import io.github.libtmux.Server
 import io.github.libtmux.junit5.TmuxExtension
@@ -45,6 +46,23 @@ class ReadmeExamplesTest {
 
         session.options().set("status-left", "[libtmux]")
         assertEquals("[libtmux]", session.options().getOrNull("status-left"))
+    }
+
+    @Test
+    fun `a lookup miss is null`(server: Server) {
+        val session = server.newSession("lookup-null")
+        assertEquals(session.id(), server.sessionOrNull("lookup-null")?.id())
+        assertEquals(session.id(), server.sessionOrNull(session.id())?.id())
+        assertEquals(null, server.sessionOrNull("no-such-session-name"))
+
+        val pane = session.activePaneOrNull()
+        assertNotNull(pane)
+        assertEquals(pane.id(), server.paneOrNull(pane.id())?.id())
+        assertEquals(null, server.paneOrNull(PaneId("%999999")))
+
+        val window = session.activeWindowOrNull()
+        assertNotNull(window)
+        assertEquals(window.id(), server.windowOrNull(window.context())?.id())
     }
 
     @Test

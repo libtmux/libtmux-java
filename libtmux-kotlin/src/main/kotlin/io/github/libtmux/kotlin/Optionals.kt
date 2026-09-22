@@ -4,9 +4,13 @@ import io.github.libtmux.Client
 import io.github.libtmux.ClientAttachment
 import io.github.libtmux.Options
 import io.github.libtmux.Pane
+import io.github.libtmux.PaneId
 import io.github.libtmux.PaneMode
+import io.github.libtmux.Server
 import io.github.libtmux.Session
+import io.github.libtmux.SessionId
 import io.github.libtmux.Window
+import io.github.libtmux.snapshot.WindowContext
 
 /*
  * Absence, said the way Kotlin says it.
@@ -42,3 +46,15 @@ public fun Client.attachmentOrNull(): ClientAttachment? = attachment().orElse(nu
 
 /** The option's value, or null when it is not set at this level. */
 public fun Options.getOrNull(name: String): String? = get(name).orElse(null)
+
+/** The session with this name, or null when the capture has none. */
+public fun Server.sessionOrNull(name: String): Session? = session(name).orElse(null)
+
+/** The session with this id, or null when the capture has none. */
+public fun Server.sessionOrNull(id: SessionId): Session? = session(id).orElse(null)
+
+/** The pane with this id, or null when the capture has none. */
+public fun Server.paneOrNull(id: PaneId): Pane? = pane(id).orElse(null)
+
+/** The window at this link, or null when the capture has none. */
+public fun Server.windowOrNull(context: WindowContext): Window? = window(context).orElse(null)
