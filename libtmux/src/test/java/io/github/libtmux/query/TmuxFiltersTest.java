@@ -41,10 +41,9 @@ class TmuxFiltersTest {
     }
 
     @Test
-    void aPlainRegexIsLowered() {
-        assertEquals(
-                Optional.of("#{m/r:^nv,#{pane_current_command}}"),
-                TmuxFilters.format(Pane_.command().matches(Pattern.compile("^nv"))));
+    void aJavaRegexStaysLocal() {
+        assertEquals(Optional.empty(), TmuxFilters.format(Pane_.command().matches(Pattern.compile("^nv"))));
+        assertEquals(Optional.empty(), TmuxFilters.format(Pane_.command().matches(Pattern.compile("\\d+"))));
     }
 
     @Test
