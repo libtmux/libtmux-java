@@ -347,6 +347,14 @@ final class DocumentationFactsTest {
     }
 
     /** Searched for by file name rather than loaded, since these will not be on this module's path. */
+    @Test
+    void theReleaseAttestationIncludesTheBomPom() throws IOException {
+        String workflow = Files.readString(ROOT.resolve(".github/workflows/release.yml"));
+        assertTrue(
+                workflow.contains("libtmux-bom/build/publications/maven/pom-default.xml"),
+                "the BOM pom is published and is not in the attestation");
+    }
+
     private static Optional<Path> sourceOf(String type) {
         try (Stream<Path> tree = Files.walk(ROOT)) {
             return tree.filter(path -> !path.toString().contains("/build/"))
