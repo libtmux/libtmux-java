@@ -162,3 +162,19 @@ List<String> recent = pane.capture(c -> c.from(-10));
 // The history contains at least what is on screen, whatever the shell has printed.
 recent.size() <= everything.size();                             // → true
 ```
+
+## Commands that are not a snapshot
+
+These talk to tmux. They do not update `info()`.
+
+`server.shell()` runs a shell command, or chooses one from an exit status.
+`server.commands().list()` is the catalog this tmux knows. `server.prompt()`
+is prompt history, present since tmux 3.3. `server.messageLog().lines()` is
+the server log. Before 3.6 it needs a client attached. `server.keys()` binds
+keys. `server.lock()` locks every attached client. It stays on `Server`: it
+is one command, not a group.
+
+```java
+// Given: Server server
+server.commands().list().isEmpty();                            // → false
+```
