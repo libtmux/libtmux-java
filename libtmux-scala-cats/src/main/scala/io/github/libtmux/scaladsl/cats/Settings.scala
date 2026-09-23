@@ -20,7 +20,10 @@ final class Options[F[_]] private[cats] (
     underlying: blocking.Options,
     execution: Execution[F]
 ) {
-  val asJava: JavaOptions = underlying.asJava
+
+  /** The Java scope, whose calls bypass this facade\'s admission. */
+  def unsafeJava: JavaOptions = asJava
+  private[scaladsl] val asJava: JavaOptions = underlying.asJava
   def get(name: String): F[Option[String]] = execution(underlying.get(name))
   def get[A](key: OptionKey[A]): F[Option[A]] = execution(underlying.get(key))
   def set(name: String, value: String): F[Unit] = execution(
@@ -50,7 +53,10 @@ final class Environment[F[_]] private[cats] (
     underlying: blocking.Environment,
     execution: Execution[F]
 ) {
-  val asJava: JavaEnvironment = underlying.asJava
+
+  /** The Java scope, whose calls bypass this facade\'s admission. */
+  def unsafeJava: JavaEnvironment = asJava
+  private[scaladsl] val asJava: JavaEnvironment = underlying.asJava
   def get(name: String): F[Option[String]] = execution(underlying.get(name))
   def isRemoved(name: String): F[Boolean] = execution(
     underlying.isRemoved(name)
@@ -75,7 +81,10 @@ final class Hooks[F[_]] private[cats] (
     underlying: blocking.Hooks,
     execution: Execution[F]
 ) {
-  val asJava: JavaHooks = underlying.asJava
+
+  /** The Java scope, whose calls bypass this facade\'s admission. */
+  def unsafeJava: JavaHooks = asJava
+  private[scaladsl] val asJava: JavaHooks = underlying.asJava
   def set(event: String, command: String): F[Unit] = execution(
     underlying.set(event, command)
   )
@@ -98,7 +107,10 @@ final class Buffers[F[_]] private[cats] (
     underlying: blocking.Buffers,
     execution: Execution[F]
 ) {
-  val asJava: JavaBuffers = underlying.asJava
+
+  /** The Java scope, whose calls bypass this facade\'s admission. */
+  def unsafeJava: JavaBuffers = asJava
+  private[scaladsl] val asJava: JavaBuffers = underlying.asJava
   def list: F[Vector[BufferInfo]] = execution(underlying.list())
   def set(name: String, contents: String): F[Unit] = execution(
     underlying.set(name, contents)
@@ -118,7 +130,10 @@ final class Channel[F[_]] private[cats] (
     underlying: blocking.Channel,
     execution: Execution[F]
 ) {
-  val asJava: JavaChannel = underlying.asJava
+
+  /** The Java scope, whose calls bypass this facade\'s admission. */
+  def unsafeJava: JavaChannel = asJava
+  private[scaladsl] val asJava: JavaChannel = underlying.asJava
   val name: String = underlying.name
   def signal: F[Unit] = execution(underlying.signal())
   def await(timeout: Duration): F[WakeReason] =
