@@ -8,6 +8,17 @@ API changes that require updates to calling code are recorded here. See
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### An attachment that skips the incarnation check says so
+
+api-break: ControlClient
+
+`ControlClient.attach(config, session)` and its timeout overload are
+`attachUnfenced`. They attach to whatever server now answers the endpoint, and
+a replacement server can reuse the session id. Prefer `server.control(session)`,
+which leaves unless the live server is the process the capture named. The Cats
+`Control.attach(config, session, ...)` is `Control.attachUnfenced` for the same
+reason.
+
 ### `EventSubscription.next` returns a gap before the events that remain
 
 api-break: EventSubscription

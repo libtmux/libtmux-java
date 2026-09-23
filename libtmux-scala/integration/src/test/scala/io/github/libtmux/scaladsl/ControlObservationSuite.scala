@@ -21,7 +21,7 @@ import scala.jdk.CollectionConverters._
 final class ControlObservationSuite extends FunSuite {
   private val deadline = Duration.ofMillis(800)
 
-  private def attach(fixture: OwnedTmux) = Control.attach[IO](
+  private def attach(fixture: OwnedTmux) = Control.attachUnfenced[IO](
     fixture.config,
     fixture.server.sessions().get(0).id(),
     deadline
@@ -236,14 +236,18 @@ final class ControlObservationSuite extends FunSuite {
     OwnedTmux.use { fixture =>
       val before = fixture.server.clients().size()
       val acquisition = Control
-        .attach[IO](fixture.config, new SessionId("$2147483647"), deadline)
+        .attachUnfenced[IO](
+          fixture.config,
+          new SessionId("$2147483647"),
+          deadline
+        )
       assertEquals(fixture.server.clients().size(), before)
       val failed =
         acquisition.use(_ => IO.unit).attempt.timeout(1.second).unsafeRunSync()
       assert(failed.isLeft)
       assertEquals(fixture.server.clients().size(), before)
       val invalid = Control
-        .attach[IO](
+        .attachUnfenced[IO](
           fixture.config,
           new SessionId("$2147483647"),
           deadline,

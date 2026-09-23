@@ -62,7 +62,7 @@ final class ControlModeIntegrationTest {
         java.util.logging.Level before = jul.getLevel();
         jul.setLevel(java.util.logging.Level.FINE);
         jul.addHandler(capture);
-        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient client = server.control(session)) {
             client.send("display-message", "-p", "hunter2-secret");
         } finally {
             jul.removeHandler(capture);
@@ -91,7 +91,7 @@ final class ControlModeIntegrationTest {
         Session session = server.sessions().get(0);
         List<String> nonDaemon = new ArrayList<>();
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient client = server.control(session)) {
             assertTrue(client.isAlive(), "the client has to be running for its threads to exist");
             Thread.getAllStackTraces().keySet().stream()
                     .filter(thread -> thread.getName().startsWith("libtmux-control"))
@@ -106,7 +106,7 @@ final class ControlModeIntegrationTest {
 
     private static ControlClient attach(Server server) {
         Session session = server.sessions().get(0);
-        return ControlClient.attach(server.config(), session.id());
+        return server.control(session);
     }
 
     @Test

@@ -34,7 +34,7 @@ object ObserveChanges {
             val window = session.windows.head
             window.options.set("automatic-rename", "off") *>
               Control
-                .attach[IO](config, session.info.id, ExampleRuntime.deadline)
+                .attach[IO](session, ExampleRuntime.deadline, 4)
                 .use { control =>
                   val slowCapacity = 2
                   (control.events(slowCapacity), control.events(16)).tupled

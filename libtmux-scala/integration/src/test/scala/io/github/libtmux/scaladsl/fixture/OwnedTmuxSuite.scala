@@ -14,10 +14,7 @@ final class OwnedTmuxSuite extends FunSuite {
       assert(fixture.server.isAlive())
       val daemon = fixture.serverProcess
       val control = fixture.own(
-        ControlClient.attach(
-          fixture.config,
-          fixture.server.sessions().get(0).id()
-        )
+        fixture.server.control(fixture.server.sessions().get(0))
       )
       val subscription = fixture.own(control.subscribeEvents(4))
       Files.writeString(

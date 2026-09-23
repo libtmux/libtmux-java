@@ -48,7 +48,7 @@ public final class WatchPaneOutput {
 
             // Attaching is what makes tmux push %output at all. A client that never attaches hears
             // about command replies and nothing else.
-            try (ControlClient client = ControlClient.attach(server.config(), session.id());
+            try (ControlClient client = server.control(session);
                     EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
                 client.send("send-keys", "-t", session.id().value(), "echo watched", "Enter");
 

@@ -46,7 +46,7 @@ final class ControlClientTest {
                 sleep 5
                 """);
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
             Thread blocked = Thread.ofVirtual().start(() -> {
                 try {
                     client.send(List.of("display-message", "x".repeat(1_048_576)), Duration.ofSeconds(4));
@@ -117,7 +117,7 @@ final class ControlClientTest {
                 sleep 5
                 """);
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
             client.watch("javatest", target, "#{session_name}");
             assertTrue(awaitFile(captured), "the watch request never reached the fake server");
             return Files.readString(captured).strip();
@@ -139,7 +139,7 @@ final class ControlClientTest {
         Files.setPosixFilePermissions(fakeTmux, PosixFilePermissions.fromString("rwx------"));
         ServerConfig config = ServerConfig.builder().binary(fakeTmux.toString()).build();
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"));
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
                 EventSubscription<ControlEvent> events = client.subscribeEvents(1)) {
             TmuxTimeoutException failure = assertThrows(
                     TmuxTimeoutException.class, () -> client.send(List.of("list-windows"), Duration.ofMillis(100)));
@@ -160,7 +160,7 @@ final class ControlClientTest {
                 printf '%%begin 101 1 0\n%%end 101 1 0\n'
                 IFS= read -r never
                 """);
-        ControlClient client = ControlClient.attach(config, new SessionId("$0"));
+        ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
         EventSubscription<PaneOutput> output = client.subscribeOutput(1);
         CountDownLatch entered = new CountDownLatch(1);
         FutureTask<Optional<Delivery<PaneOutput>>> waiting = new FutureTask<>(() -> {
@@ -192,7 +192,7 @@ final class ControlClientTest {
                 done
                 """);
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
             assertThrows(IllegalArgumentException.class, () -> client.send(List.of("list-windows"), Duration.ZERO));
             assertTrue(client.send("list-panes").succeeded(), "rejection wrote nothing to the stream");
         }
@@ -207,7 +207,7 @@ final class ControlClientTest {
                 done
                 """);
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
             assertThrows(
                     IllegalArgumentException.class,
                     () -> client.send(List.of("display-message", "contains\0nul"), Duration.ofMillis(200)));
@@ -232,7 +232,7 @@ final class ControlClientTest {
                 IFS= read -r never
                 """);
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
             CountDownLatch entered = new CountDownLatch(1);
             FutureTask<InterruptedFailure> waiting = new FutureTask<>(() -> {
                 entered.countDown();
@@ -264,7 +264,7 @@ final class ControlClientTest {
                 printf '%%begin 100 1 0\nattach refused\n%%error 100 1 0\n'
                 """);
 
-        assertThrows(LibTmuxException.class, () -> ControlClient.attach(config, new SessionId("$0")));
+        assertThrows(LibTmuxException.class, () -> ControlClient.attachUnfenced(config, new SessionId("$0")));
     }
 
     @Test
@@ -273,7 +273,7 @@ final class ControlClientTest {
 
         TmuxTimeoutException timeout = assertThrows(
                 TmuxTimeoutException.class,
-                () -> ControlClient.attach(config, new SessionId("$0"), Duration.ofMillis(100)));
+                () -> ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofMillis(100)));
 
         assertEquals(DispatchOutcome.UNKNOWN, timeout.outcome());
     }
@@ -290,7 +290,7 @@ final class ControlClientTest {
                 """);
         int before = controlThreads();
         for (int cycle = 0; cycle < 12; cycle++) {
-            ControlClient client = ControlClient.attach(config, new SessionId("$0"));
+            ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
             TmuxTimeoutException timeout = assertThrows(
                     TmuxTimeoutException.class, () -> client.send(List.of("list-windows"), Duration.ofMillis(80)));
             assertEquals(DispatchOutcome.UNKNOWN, timeout.outcome());
@@ -315,7 +315,7 @@ final class ControlClientTest {
                 while IFS= read -r request; do printf '%%begin 101 1 0\n%%end 101 1 0\n'; done
                 """);
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"), Duration.ofSeconds(2))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofSeconds(2))) {
             assertTrue(client.isAlive());
         }
     }
@@ -332,7 +332,7 @@ final class ControlClientTest {
                 """);
         long child = -1;
         try {
-            ControlClient client = ControlClient.attach(config, new SessionId("$0"));
+            ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
             assertTrue(awaitFile(childFile), "the fake control client never started its descendant");
             child = Long.parseLong(Files.readString(childFile).trim());
 
@@ -363,7 +363,7 @@ final class ControlClientTest {
                 """);
         long child = -1;
         try {
-            try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+            try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
                 assertTrue(awaitFile(childFile), "the fake control client never started its descendant");
                 assertTrue(awaitFile(ready), "the fake control client never closed its request pipe");
                 child = Long.parseLong(Files.readString(childFile).trim());

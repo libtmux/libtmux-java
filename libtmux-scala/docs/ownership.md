@@ -78,7 +78,7 @@ Keeping it from a borrowed scope does not make the Scala facade its owner.
 
 [`Control.attach`][control] on a captured session owns a separate process
 attachment to that capture's process, started by the session's transport.
-`Control.attach` on a config and session id does not check the process.
+`Control.attachUnfenced` on a config and session id does not check the process.
 Releasing either stops its admitted requests before closing the attachment and
 preserves the daemon.
 

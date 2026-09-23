@@ -176,8 +176,7 @@ final class OperationBenchmark {
     /** Is told: a control client attached for the whole run, reading the output tmux pushes. */
     private static String push(Server server) {
         Pane pane = waiting(server);
-        try (ControlClient client = ControlClient.attach(
-                        server.config(), server.session("wait").orElseThrow().id());
+        try (ControlClient client = server.control(server.session("wait").orElseThrow());
                 EventSubscription<PaneOutput> output = client.subscribeOutput(1024)) {
             for (int round = 0; round < WAIT_ROUNDS; round++) {
                 pane.sendLine(printsAfterDelay(round));

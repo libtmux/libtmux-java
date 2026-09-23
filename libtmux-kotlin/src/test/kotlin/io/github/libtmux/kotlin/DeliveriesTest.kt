@@ -176,7 +176,7 @@ class DeliveriesTest {
         Files.writeString(fake, "#!/bin/sh\n$body\n")
         Files.setPosixFilePermissions(fake, PosixFilePermissions.fromString("rwx------"))
         val config = ServerConfig.builder().binary(fake.toString()).build()
-        return ControlClient.attach(config, SessionId("\$0"))
+        return ControlClient.attachUnfenced(config, SessionId("\$0"))
     }
 
     /** Five outputs, then the reply, so a capacity of one has already overflowed. */

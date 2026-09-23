@@ -47,7 +47,7 @@ object CaptureConcurrently {
                 )
               }
               _ <- Control
-                .attach[IO](config, session.info.id, ExampleRuntime.deadline)
+                .attach[IO](session, ExampleRuntime.deadline, 4)
                 .use { control =>
                   control.output(32).use { output =>
                     for {

@@ -38,7 +38,7 @@ final class ClientOperationsIntegrationTest {
         // and detaching must take that one rather than whichever tmux happens to list first.
         Set<String> before = server.clients().stream().map(Client::name).collect(Collectors.toSet());
 
-        try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient attached = server.control(session)) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> appeared(server, before).isPresent()), "no client ever attached");
             Client client = appeared(server, before).orElseThrow();
@@ -58,7 +58,7 @@ final class ClientOperationsIntegrationTest {
         Session first = server.sessions().get(0);
         Session second = server.newSession(s -> s.named("elsewhere"));
 
-        try (ControlClient attached = ControlClient.attach(server.config(), first.id())) {
+        try (ControlClient attached = server.control(first)) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> !server.clients().isEmpty()));
             Client client = server.clients().get(0);
@@ -79,7 +79,7 @@ final class ClientOperationsIntegrationTest {
     void redrawingIsNotTheSameAsRecapturing(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient attached = server.control(session)) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> !server.clients().isEmpty()));
             Client client = server.clients().get(0);
@@ -94,8 +94,8 @@ final class ClientOperationsIntegrationTest {
     void detachingEveryOtherClientLeavesThisOneAttached(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient one = ControlClient.attach(server.config(), session.id());
-                ControlClient two = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient one = server.control(session);
+                ControlClient two = server.control(session)) {
             assertTrue(one.send("display-message", "-p", "ready").succeeded());
             assertTrue(two.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> server.clients().size() >= 2), "two clients never attached");
@@ -119,7 +119,7 @@ final class ClientOperationsIntegrationTest {
 
         assertEquals(List.of(), server.attachedSessions(), "nothing is attached yet");
 
-        try (ControlClient attached = ControlClient.attach(server.config(), watched.id())) {
+        try (ControlClient attached = server.control(watched)) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> !server.attachedSessions().isEmpty()), "no session ever became attached");
 
