@@ -74,7 +74,7 @@ final class ExamplesRunTest {
     void watchingAPaneSeesWhatItPrints(TmuxSocketPath socket) {
         List<PaneOutput> seen = WatchPaneOutput.run(socket.path(), Duration.ofSeconds(30), output -> {});
 
-        assertFalse(seen.isEmpty(), "attaching is what makes tmux push output, and none arrived");
+        assertTrue(WatchPaneOutput.sawTheEcho(seen), "attaching is what makes tmux push output: " + seen);
     }
 
     /**
