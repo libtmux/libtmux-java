@@ -135,16 +135,35 @@ val documentedKotlin =
                                     """${result.groupValues[1]}assertEquals("$expected", (${result.groupValues[2]}).toString())"""
                                 }
                             }
+                    // A snippet gets `server`, as the Java fences do. Anything else it reads
+                    // without building has to be named on a `// Given:` line, so a reader sees
+                    // what the snippet assumes rather than finding a name declared nowhere.
+                    val given =
+                        body
+                            .firstOrNull { it.isNotBlank() }
+                            ?.let { Regex("""^\s*//\s*Given:\s*(.*)$""").matchEntire(it) }
+                            ?.groupValues
+                            ?.get(1)
+                            ?.split(',')
+                            ?.map { it.substringBefore(':').trim() }
+                            ?.filter { it.isNotEmpty() }
+                            .orEmpty()
+                    val fixtures =
+                        linkedMapOf(
+                            "config" to "server.config()",
+                            "session" to "server.sessions()[0]",
+                            "window" to "server.sessions()[0].windows()[0]",
+                            "pane" to "server.sessions()[0].windows()[0].panes()[0]",
+                            "socket" to "socketPath.path()",
+                        )
+                    val unknown = given - fixtures.keys
+                    require(unknown.isEmpty()) { "$where line $line: Given names $unknown; a snippet may assume ${fixtures.keys}" }
+                    val declared = given.joinToString("") { "        val $it = ${fixtures.getValue(it)}\n" }
                     cases.append(
                         """
                         |    @Test
                         |    fun `$name`(server: Server, socketPath: TmuxSocketPath) {
-                        |        val config = server.config()
-                        |        val session = server.sessions()[0]
-                        |        val window = session.windows()[0]
-                        |        val pane = window.panes()[0]
-                        |        val socket = socketPath.path()
-                        |
+                        |$declared
                         |        // run is inline, so a snippet's own declarations shadow the ones
                         |        // above rather than colliding with them, and a bare return still
                         |        // leaves the test.
