@@ -1,6 +1,7 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -123,6 +124,23 @@ final class ServerControlIntegrationTest {
                         () -> client.send(List.of("display-message", "-p", "#{session_name}"), Duration.ofMillis(500)));
                 assertTrue(noClients(replacement), "the ended client was still attached to the replacement");
             }
+        } finally {
+            client.close();
+        }
+    }
+
+    /**
+     * tmux answers {@code kill-server} before its daemon exits, and the daemon keeps its socket
+     * until every client has gone, so a server started straight afterwards could reach the old one.
+     */
+    @Test
+    void killingTheServerWaitsForItsDaemonToExit(Server server) {
+        long pid = Long.parseLong(server.expand("#{pid}"));
+        ControlClient client = server.control(server.sessions().get(0));
+        try {
+            server.killServer();
+
+            assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "daemon " + pid);
         } finally {
             client.close();
         }

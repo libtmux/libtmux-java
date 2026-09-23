@@ -1057,7 +1057,7 @@ final class ServerTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
-            return request.commands().get(0).contains("kill-server")
+            return request.commands().stream().anyMatch(command -> command.contains("kill-server"))
                     ? new CommandResult(1, List.of(), List.of("permission denied"))
                     : new CommandResult(0, List.of("4242"), List.of());
         }

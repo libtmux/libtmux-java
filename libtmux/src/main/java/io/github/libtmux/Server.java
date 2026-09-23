@@ -308,11 +308,52 @@ public final class Server implements AutoCloseable {
      * @param timeout how long to allow for each of the two commands
      */
     public void killServer(Duration timeout) {
-        CommandResult result = cmd(List.of("kill-server"), timeout);
-        if (result.succeeded() || !isAlive(timeout)) {
+        CommandResult result = transport.execute(
+                request(List.of(List.of("display-message", "-p", "#{pid}"), List.of("kill-server")), timeout, ""));
+        if (result.succeeded()) {
+            awaitExit(result.stdout(), timeout);
+            return;
+        }
+        if (!isAlive(timeout)) {
             return;
         }
         throw new LibTmuxException("could not kill the server: " + String.join("; ", result.stderr()));
+    }
+
+    /**
+     * tmux answers {@code kill-server} before its daemon exits, and the daemon keeps its socket
+     * until every client has gone, so a server started straight afterwards could reach the dying
+     * one. Waits only for a daemon this JVM can see as a tmux process.
+     */
+    private static void awaitExit(List<String> reported, Duration timeout) {
+        if (reported.size() != 1) {
+            return;
+        }
+        long pid;
+        try {
+            pid = Long.parseLong(reported.get(0).strip());
+        } catch (NumberFormatException notAPid) {
+            return;
+        }
+        Optional<ProcessHandle> daemon = ProcessHandle.of(pid)
+                .filter(handle -> handle.info()
+                        .command()
+                        .map(command -> command.contains("tmux"))
+                        .orElse(false));
+        if (daemon.isEmpty()) {
+            return;
+        }
+        try {
+            daemon.get().onExit().get(timeout.toNanos(), java.util.concurrent.TimeUnit.NANOSECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new LibTmuxException("interrupted waiting for tmux server " + pid + " to exit", interrupted);
+        } catch (java.util.concurrent.TimeoutException late) {
+            throw new io.github.libtmux.transport.TmuxTimeoutException(
+                    "tmux server " + pid + " was still running " + timeout + " after kill-server", late);
+        } catch (java.util.concurrent.ExecutionException unexpected) {
+            throw new LibTmuxException("could not wait for tmux server " + pid + " to exit", unexpected.getCause());
+        }
     }
 
     /**
