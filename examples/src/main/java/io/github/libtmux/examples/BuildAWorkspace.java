@@ -23,7 +23,7 @@ public final class BuildAWorkspace {
     private BuildAWorkspace() {}
 
     public static void main(String[] args) {
-        run(Path.of(args.length > 0 ? args[0] : "/tmp/libtmux-java-dev/demo/s"));
+        System.out.println(run(Path.of(args.length > 0 ? args[0] : "/tmp/libtmux-java-dev/demo/s")));
     }
 
     /** Separated from {@code main} so the suite can run exactly what a reader runs. */

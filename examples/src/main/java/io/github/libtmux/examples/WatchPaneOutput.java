@@ -53,7 +53,7 @@ public final class WatchPaneOutput {
                 client.send("send-keys", "-t", session.name(), "echo watched", "Enter");
 
                 long deadline = System.nanoTime() + watchFor.toNanos();
-                while (System.nanoTime() < deadline && seen.isEmpty()) {
+                while (System.nanoTime() < deadline && !sawTheEcho(seen)) {
                     try {
                         var next = output.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
                         if (next.isEmpty()) {
@@ -70,5 +70,15 @@ public final class WatchPaneOutput {
             }
         }
         return List.copyOf(seen);
+    }
+
+    /**
+     * Whether the output holds the line {@code echo} printed, not only the keys typed to run it. The
+     * typed line reads {@code echo watched}, so the printed one is {@code watched} on a line of its
+     * own.
+     */
+    public static boolean sawTheEcho(List<PaneOutput> seen) {
+        String all = seen.stream().map(PaneOutput::data).reduce("", String::concat);
+        return all.matches("(?s).*(^|\\n)watched\\r?\\n.*");
     }
 }
