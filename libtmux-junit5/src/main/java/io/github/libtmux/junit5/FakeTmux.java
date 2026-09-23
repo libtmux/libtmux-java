@@ -885,6 +885,22 @@ public final class FakeTmux implements TmuxTransport {
         }
 
         private static String evaluate(String inner, Function<String, @Nullable String> variables) {
+            for (String operator : List.of("e|<=|:", "e|>=|:", "e|<|:", "e|>|:")) {
+                if (inner.startsWith(operator)) {
+                    List<String> operands = split(inner.substring(operator.length())).stream()
+                            .map(operand -> expand(operand, variables))
+                            .toList();
+                    int order = Long.compare(number(operands, 0), number(operands, 1));
+                    boolean result =
+                            switch (operator) {
+                                case "e|<=|:" -> order <= 0;
+                                case "e|>=|:" -> order >= 0;
+                                case "e|<|:" -> order < 0;
+                                default -> order > 0;
+                            };
+                    return result ? "1" : "0";
+                }
+            }
             for (String operator : List.of("==:", "!=:", "&&:", "||:")) {
                 if (inner.startsWith(operator)) {
                     List<String> operands = split(inner.substring(operator.length())).stream()
@@ -904,6 +920,17 @@ public final class FakeTmux implements TmuxTransport {
             }
             String value = variables.apply(inner);
             return value == null ? "" : value;
+        }
+
+        /** tmux reads a missing or non-numeric operand as zero. */
+        private static long number(List<String> operands, int index) {
+            try {
+                return index < operands.size()
+                        ? Long.parseLong(operands.get(index).strip())
+                        : 0;
+            } catch (NumberFormatException notANumber) {
+                return 0;
+            }
         }
 
         private static int closing(String format, int from) {

@@ -6,7 +6,7 @@ import java.util.Optional;
  * Lowers a {@link FilterExpr} to a tmux {@code -f} format when every node is one tmux can apply.
  *
  * <p>Relations, a Java regular expression, and any operand containing {@code ,}, <code>#</code>,
- * <code>{</code>, or <code>}</code>, are refused. Those stay a local filter over a capture. tmux
+ * <code>{</code>, <code>}</code>, {@code :}, or a backslash, are refused. Those stay a local filter over a capture. tmux
  * compiles {@code #{m/r:}} with its own dialect, so a pattern Java would match can select nothing.
  * A compiled format is a hint to tmux, not a promise that the local reading would differ: callers
  * still apply the expression to the rows that come back.
@@ -26,9 +26,13 @@ public final class TmuxFilters {
         }
     }
 
-    /** Whether this text can sit inside a tmux format argument without changing its shape. */
+    /**
+     * Whether this text can sit inside a tmux format argument without changing its shape. A
+     * backslash escapes the next character in a format, so a trailing one swallows the closing brace.
+     */
     public static boolean literal(String value) {
         return value.indexOf(',') < 0
+                && value.indexOf('\\') < 0
                 && value.indexOf('#') < 0
                 && value.indexOf('{') < 0
                 && value.indexOf('}') < 0
@@ -68,10 +72,11 @@ public final class TmuxFilters {
             case STARTS_WITH -> "#{m:" + glob(text(compare.operand())) + "*," + field + "}";
             case ENDS_WITH -> "#{m:*" + glob(text(compare.operand())) + "," + field + "}";
             case MATCHES -> refuse();
-            case LESS_THAN -> "#{<:" + field + "," + compare.operand() + "}";
-            case AT_MOST -> "#{<=:" + field + "," + compare.operand() + "}";
-            case GREATER_THAN -> "#{>:" + field + "," + compare.operand() + "}";
-            case AT_LEAST -> "#{>=:" + field + "," + compare.operand() + "}";
+            // #{<:} compares text, so 9 would sort after 10; #{e|<|:} compares numbers.
+            case LESS_THAN -> "#{e|<|:" + field + "," + compare.operand() + "}";
+            case AT_MOST -> "#{e|<=|:" + field + "," + compare.operand() + "}";
+            case GREATER_THAN -> "#{e|>|:" + field + "," + compare.operand() + "}";
+            case AT_LEAST -> "#{e|>=|:" + field + "," + compare.operand() + "}";
             case IN -> in(field, compare.operand());
         };
     }
