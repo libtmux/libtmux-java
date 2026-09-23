@@ -346,6 +346,23 @@ final class DocumentationFactsTest {
         return claimed;
     }
 
+    /** A tag can be moved to other code after review; a commit cannot. Dependabot keeps them current. */
+    @Test
+    void everyWorkflowActionIsPinnedToACommit() throws IOException {
+        List<String> unpinned = new java.util.ArrayList<>();
+        try (Stream<Path> workflows = Files.list(ROOT.resolve(".github/workflows"))) {
+            for (Path workflow : workflows.sorted().toList()) {
+                Pattern.compile("(?m)^\\s*-?\\s*uses:\\s*(\\S+)")
+                        .matcher(Files.readString(workflow))
+                        .results()
+                        .map(found -> found.group(1))
+                        .filter(action -> !action.startsWith("./") && !action.matches(".+@[0-9a-f]{40}"))
+                        .forEach(action -> unpinned.add(workflow.getFileName() + ": " + action));
+            }
+        }
+        assertTrue(unpinned.isEmpty(), "pin these to a commit sha: " + unpinned);
+    }
+
     /** Searched for by file name rather than loaded, since these will not be on this module's path. */
     @Test
     void theReleaseAttestationIncludesTheBomPom() throws IOException {
