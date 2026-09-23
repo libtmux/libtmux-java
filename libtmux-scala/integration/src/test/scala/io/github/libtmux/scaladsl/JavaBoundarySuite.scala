@@ -202,7 +202,9 @@ final class JavaBoundarySuite extends FunSuite {
       run(server, "kill-server")
       assertEquals(unexpected.next(deadline).toScala, None)
       assert(unexpected.isClosed())
-      assert(unexpected.cause().toScala.exists(_.isInstanceOf[ControlEndedException]))
+      assert(
+        unexpected.cause().toScala.exists(_.isInstanceOf[ControlEndedException])
+      )
       assert(!attached.isAlive())
     }
   }

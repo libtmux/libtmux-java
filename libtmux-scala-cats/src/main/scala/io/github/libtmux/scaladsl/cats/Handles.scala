@@ -33,6 +33,7 @@ final class Session[F[_]] private[cats] (
     private[cats] val underlying: blocking.Session,
     val server: Server[F]
 )(implicit F: Async[F]) {
+
   /** The Java session. It keeps none of this resource's scope. */
   def unsafeJava: JavaSession = asJava
   private[scaladsl] val asJava: JavaSession = underlying.asJava
@@ -76,6 +77,7 @@ final class Window[F[_]] private[cats] (
     private[cats] val underlying: blocking.Window,
     val server: Server[F]
 )(implicit F: Async[F]) {
+
   /** The Java window link. It keeps none of this resource's scope. */
   def unsafeJava: JavaWindow = asJava
   private[scaladsl] val asJava: JavaWindow = underlying.asJava
@@ -132,6 +134,7 @@ final class Pane[F[_]] private[cats] (
     private[cats] val underlying: blocking.Pane,
     val server: Server[F]
 )(implicit F: Async[F]) {
+
   /** The Java pane. It keeps none of this resource's scope. */
   def unsafeJava: JavaPane = asJava
   private[scaladsl] val asJava: JavaPane = underlying.asJava
@@ -207,6 +210,7 @@ final class Client[F[_]] private[cats] (
     private[cats] val underlying: blocking.Client,
     val server: Server[F]
 )(implicit F: Async[F]) {
+
   /** The Java client. It keeps none of this resource's scope. */
   def unsafeJava: JavaClient = asJava
   private[scaladsl] val asJava: JavaClient = underlying.asJava

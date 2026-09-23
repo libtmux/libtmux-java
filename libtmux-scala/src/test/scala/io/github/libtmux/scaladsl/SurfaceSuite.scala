@@ -12,11 +12,18 @@ final class SurfaceSuite extends FunSuite {
     val root = repoRoot
     val omissions = readOmissions(root)
     val problems = types.flatMap { name =>
-      val java = javaMethods(root.resolve(s"libtmux/src/main/java/io/github/libtmux/$name.java"), name)
-      val scala = scalaMembers(
-        root.resolve(s"libtmux-scala/src/main/scala/io/github/libtmux/scaladsl/blocking/$name.scala")
+      val java = javaMethods(
+        root.resolve(s"libtmux/src/main/java/io/github/libtmux/$name.java"),
+        name
       )
-      val missing = java.diff(scala).filterNot(method => omissions.contains(s"$name.$method"))
+      val scala = scalaMembers(
+        root.resolve(
+          s"libtmux-scala/src/main/scala/io/github/libtmux/scaladsl/blocking/$name.scala"
+        )
+      )
+      val missing = java
+        .diff(scala)
+        .filterNot(method => omissions.contains(s"$name.$method"))
       val stale = omissions.keySet
         .filter(_.startsWith(s"$name."))
         .map(_.stripPrefix(s"$name."))
@@ -28,38 +35,57 @@ final class SurfaceSuite extends FunSuite {
   }
 
   private def javaMethods(file: Path, typeName: String): Set[String] =
-    Files.readAllLines(file).asScala.flatMap { line =>
-      val method = """^    public (?!static)(.+) (\w+)\(""".r
-      method.findFirstMatchIn(line).map(_.group(2)).filter(_ != typeName)
-    }.toSet
+    Files
+      .readAllLines(file)
+      .asScala
+      .flatMap { line =>
+        val method = """^    public (?!static)(.+) (\w+)\(""".r
+        method.findFirstMatchIn(line).map(_.group(2)).filter(_ != typeName)
+      }
+      .toSet
 
   private def scalaMembers(file: Path): Set[String] =
-    Files.readAllLines(file).asScala.flatMap { line =>
-      if (line.trim.startsWith("private")) Nil
-      else {
-        val member = """^  (?:override )?(?:def|val) (\w+)""".r
-        val parameter = """val (\w+):""".r
-        val named = member.findFirstMatchIn(line).map(_.group(1)).toList
-        val parameters =
-          if (line.contains("=")) Nil
-          else parameter.findAllMatchIn(line).map(_.group(1)).toList
-        named ++ parameters
+    Files
+      .readAllLines(file)
+      .asScala
+      .flatMap { line =>
+        if (line.trim.startsWith("private")) Nil
+        else {
+          val member = """^  (?:override )?(?:def|val) (\w+)""".r
+          val parameter = """val (\w+):""".r
+          val named = member.findFirstMatchIn(line).map(_.group(1)).toList
+          val parameters =
+            if (line.contains("=")) Nil
+            else parameter.findAllMatchIn(line).map(_.group(1)).toList
+          named ++ parameters
+        }
       }
-    }.toSet
+      .toSet
 
   private def readOmissions(root: Path): Map[String, String] = {
-    val lines = Files.readAllLines(root.resolve("libtmux-scala/src/test/resources/scala-java-omissions.txt"))
-    lines.asScala.filter(line => line.nonEmpty && !line.startsWith("#")).map { line =>
-      val space = line.indexOf(' ')
-      assert(space > 0, s"omission has no reason: $line")
-      line.substring(0, space) -> line.substring(space + 1)
-    }.toMap
+    val lines = Files.readAllLines(
+      root.resolve("libtmux-scala/src/test/resources/scala-java-omissions.txt")
+    )
+    lines.asScala
+      .filter(line => line.nonEmpty && !line.startsWith("#"))
+      .map { line =>
+        val space = line.indexOf(' ')
+        assert(space > 0, s"omission has no reason: $line")
+        line.substring(0, space) -> line.substring(space + 1)
+      }
+      .toMap
   }
 
   private def repoRoot: Path =
     Iterator
       .iterate(Path.of("").toAbsolutePath)(_.getParent)
       .takeWhile(_ != null)
-      .find(path => Files.isRegularFile(path.resolve("libtmux/src/main/java/io/github/libtmux/Pane.java")))
-      .getOrElse(fail(s"repo root not found from ${Path.of("").toAbsolutePath}"))
+      .find(path =>
+        Files.isRegularFile(
+          path.resolve("libtmux/src/main/java/io/github/libtmux/Pane.java")
+        )
+      )
+      .getOrElse(
+        fail(s"repo root not found from ${Path.of("").toAbsolutePath}")
+      )
 }

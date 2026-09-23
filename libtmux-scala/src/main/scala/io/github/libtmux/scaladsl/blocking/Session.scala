@@ -10,6 +10,7 @@ final class Session private[blocking] (
     private[scaladsl] val asJava: JavaSession,
     val server: Server
 ) {
+
   /** The Java session. It keeps none of this facade's scope. */
   def unsafeJava: JavaSession = asJava
   val info: SessionInfo = SessionInfo(

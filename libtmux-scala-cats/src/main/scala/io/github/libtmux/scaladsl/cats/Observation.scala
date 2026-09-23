@@ -46,8 +46,8 @@ final class Observation[F[_], A] private[cats] (
         .unNoneTerminate
     }
 
-  /** The cumulative overflow count. A `Delivery.Gap` in [[#stream]] says
-    * where it sits.
+  /** The cumulative overflow count. A `Delivery.Gap` in [[#stream]] says where
+    * it sits.
     */
   def droppedCount: F[Long] = F.delay(underlying.droppedCount())
 

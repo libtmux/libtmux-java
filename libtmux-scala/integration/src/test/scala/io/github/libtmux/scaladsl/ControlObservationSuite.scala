@@ -221,7 +221,9 @@ final class ControlObservationSuite extends FunSuite {
                 fixture.server.panes().get(0).sendLine("after-cancel")
               )
               output <- next.joinWithNever
-              _ <- IO(assert(Observation.value(output).exists(_.data().nonEmpty)))
+              _ <- IO(
+                assert(Observation.value(output).exists(_.data().nonEmpty))
+              )
             } yield ()
           }
         }
