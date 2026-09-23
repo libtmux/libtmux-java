@@ -979,10 +979,10 @@ public final class Server implements AutoCloseable {
                     ? captured.session(new SessionId(target)).map(session -> new Session(this, captured, session))
                     : captured.session(target).map(session -> new Session(this, captured, session));
         }
-        ServerSnapshot captured = capture.oneSession(target, field).orElseGet(this::snapshot);
-        return field.equals("session_id")
-                ? captured.session(new SessionId(target)).map(session -> new Session(this, captured, session))
-                : captured.session(target).map(session -> new Session(this, captured, session));
+        return capture.oneSession(target, field)
+                .flatMap(captured -> field.equals("session_id")
+                        ? captured.session(new SessionId(target)).map(session -> new Session(this, captured, session))
+                        : captured.session(target).map(session -> new Session(this, captured, session)));
     }
 
     private <T> T read(java.util.function.Supplier<T> read) {

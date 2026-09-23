@@ -311,8 +311,10 @@ final class ServerTest {
                 LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
 
                 assertTrue(failure.getCause() instanceof IllegalArgumentException, failure.toString());
-                assertAll(liveReads(server).stream().map(read -> () -> {
-                    LibTmuxException rejected = assertThrows(LibTmuxException.class, read);
+                List<Executable> reads = liveReads(server);
+                assertAll(java.util.stream.IntStream.range(0, reads.size()).mapToObj(i -> () -> {
+                    LibTmuxException rejected =
+                            assertThrows(LibTmuxException.class, reads.get(i), "live read " + i + ": " + sessionRow);
                     assertTrue(rejected.getCause() instanceof IllegalArgumentException, rejected.toString());
                 }));
             }
