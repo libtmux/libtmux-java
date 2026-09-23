@@ -414,8 +414,14 @@ public final class FakeTmux implements TmuxTransport {
         if (template == null) {
             return ok();
         }
+        String filter = flags.value("-f");
         return new CommandResult(
-                0, rows.stream().map(row -> Formats.expand(template, row::get)).toList(), List.of());
+                0,
+                rows.stream()
+                        .filter(row -> filter == null || truthy(Formats.expand(filter, row::get)))
+                        .map(row -> Formats.expand(template, row::get))
+                        .toList(),
+                List.of());
     }
 
     private List<Map<String, String>> windows(Flags flags) {
@@ -737,15 +743,18 @@ public final class FakeTmux implements TmuxTransport {
          * is a value to {@code new-session} and a switch to {@code split-window}, and {@code -b} names
          * a buffer to one and puts a pane before another.
          */
-        private static final Map<String, Set<String>> VALUED = Map.of(
-                "new-session", Set.of("-t", "-s", "-n", "-c", "-x", "-y", "-F", "-e", "-f"),
-                "new-window", Set.of("-t", "-n", "-c", "-F", "-e"),
-                "split-window", Set.of("-t", "-l", "-c", "-F", "-e", "-s", "-S", "-R", "-m"),
-                "capture-pane", Set.of("-t", "-S", "-E", "-b"),
-                "select-pane", Set.of("-t", "-T"),
-                "if-shell", Set.of("-t"),
-                "set-environment", Set.of("-t"),
-                "show-environment", Set.of("-t"));
+        private static final Map<String, Set<String>> VALUED = Map.ofEntries(
+                Map.entry("new-session", Set.of("-t", "-s", "-n", "-c", "-x", "-y", "-F", "-e", "-f")),
+                Map.entry("new-window", Set.of("-t", "-n", "-c", "-F", "-e")),
+                Map.entry("split-window", Set.of("-t", "-l", "-c", "-F", "-e", "-s", "-S", "-R", "-m")),
+                Map.entry("capture-pane", Set.of("-t", "-S", "-E", "-b")),
+                Map.entry("select-pane", Set.of("-t", "-T")),
+                Map.entry("if-shell", Set.of("-t")),
+                Map.entry("set-environment", Set.of("-t")),
+                Map.entry("show-environment", Set.of("-t")),
+                Map.entry("list-sessions", Set.of("-F", "-f")),
+                Map.entry("list-windows", Set.of("-t", "-F", "-f")),
+                Map.entry("list-panes", Set.of("-t", "-F", "-f")));
 
         private static final Set<String> DEFAULT_VALUED = Set.of("-t", "-F", "-b", "-c");
 
