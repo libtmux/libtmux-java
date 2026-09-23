@@ -1,7 +1,8 @@
 # Getting started
 
-Every snippet here is executed by `ExamplesTest`. If one stops working the build
-fails, rather than the page quietly going stale.
+Every snippet here is run by `ExamplesTest`, except one marked compile-only,
+which says why. If one stops working the build fails, rather than the page
+quietly going stale.
 
 Every Java block in this guide runs against a real tmux server when the build
 runs, and every value shown after a `→` is asserted.

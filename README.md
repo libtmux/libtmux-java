@@ -46,9 +46,10 @@ window.refresh().panes().size();           // → 2
 ```
 
 **Every Java snippet in this file, in every package README, and in every guide is
-compiled and then run against a real tmux** by [`docs-tests`](docs-tests/). A
-snippet that stopped working fails the build; one that claims the compiler rejects
-it must actually be rejected.
+compiled, and run against a real tmux** by [`docs-tests`](docs-tests/), unless a
+directive above it says `compile-only` or `skip` and why. A snippet that stopped
+working fails the build; one that claims the compiler rejects it must actually be
+rejected.
 
 A fence's first line, `// Given: Server server` and the like, names what the
 snippet *reads* rather than builds — real code still needs its own imports and,
