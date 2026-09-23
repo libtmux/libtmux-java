@@ -23,6 +23,7 @@ makes the core's `FilterExpr` a `FilterExpr<T : Any>`.
 ## What already works with no module at all
 
 ```kotlin
+// Given: config: ServerConfig
 Server.open(config).use { server ->                        // AutoCloseable
     val session = server.newSession { it.named("build") }  // SAM conversion
 
@@ -47,6 +48,7 @@ do not work on it — so the accessors that can genuinely be absent get a nullab
 form:
 
 ```kotlin
+// Given: session: Session, window: Window, pane: Pane
 // A window, or null once the session has gone.
 session.activeWindowOrNull()?.id()?.value()?.startsWith("@")   // → true
 

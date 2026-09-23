@@ -147,12 +147,13 @@ documentation, the two cannot drift.
 $ ./gradlew :libtmux-kotlin:test
 ```
 
-It has the same shape of gap the `Given:` line above closes for Java, and is not
-fixed here: `generateDocumentationSnippets` still hands every generated test
-`config`, `session`, `window` and `pane` unconditionally, so a Kotlin fence can
-lean on one of those without saying so in what a reader sees. Eighteen fences
-across the docs, against Java's eighty-one - worth the same fix, just not this
-one.
+A Kotlin fence gets `server` and nothing else unless its first line asks, the
+same rule as the Java `Given:` line: `// Given: config: ServerConfig` or
+`// Given: session: Session, window: Window, pane: Pane`. The names on offer are
+`config`, `session`, `window`, `pane` and `socket`, and a name outside them fails
+the task. Only one direction is checked: a Kotlin fence that uses a name it did
+not ask for fails to compile, but one that asks for a name it never reads is not
+caught, because the generated file suppresses unused-variable warnings.
 
 ## Claims that are not code
 

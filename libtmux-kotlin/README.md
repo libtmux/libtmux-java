@@ -17,6 +17,7 @@ one test per section.
 ## What already works with no module at all
 
 ```kotlin
+// Given: config: ServerConfig
 Server.open(config).use { server ->                        // AutoCloseable
     val session = server.newSession { it.named("build") }  // SAM conversion
 
@@ -55,6 +56,7 @@ do not work on it — so the accessors that can genuinely be absent get a nullab
 form:
 
 ```kotlin
+// Given: session: Session, window: Window, pane: Pane
 import io.github.libtmux.kotlin.activeWindowOrNull
 import io.github.libtmux.kotlin.floatingOrNull
 import io.github.libtmux.kotlin.getOrNull
