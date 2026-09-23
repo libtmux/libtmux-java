@@ -212,7 +212,18 @@ final class SnapshotCapture {
         batch.add(listing(WINDOWS, "list-windows", "-a", "-f", filter));
         batch.add(listing(paneFormat, "list-panes", "-a", "-f", filter));
         List<OperationResult> answered = batch.run().operations();
-        List<SessionState> sessions = sessionStates(rows(SESSIONS, answered.get(0), "list-sessions")).stream()
+        List<SessionState> listed = sessionStates(rows(SESSIONS, answered.get(0), "list-sessions"));
+        if (listed.isEmpty()) {
+            // As in a full capture: with no session there is no current target, and tmux refuses
+            // the rest of the group.
+            return Optional.empty();
+        }
+        // Validate everything tmux answered before filtering, so a malformed or inconsistent row
+        // fails the read instead of hiding behind a miss.
+        List<WindowState> windows = windowStates(rows(WINDOWS, answered.get(1), "list-windows"));
+        List<PaneState> panes = paneStates(rows(paneFormat, answered.get(2), "list-panes"), floatingKnown);
+        ServerSnapshot.of(Instant.now(), process.pid(), process.version(), listed, windows, panes, List.of());
+        List<SessionState> sessions = listed.stream()
                 .filter(session -> field.equals("session_id")
                         ? session.id().value().equals(target)
                         : session.name().equals(target))
@@ -227,10 +238,10 @@ final class SnapshotCapture {
                 process.pid(),
                 process.version(),
                 sessions,
-                windowStates(rows(WINDOWS, answered.get(1), "list-windows")).stream()
+                windows.stream()
                         .filter(window -> ids.contains(window.context().session()))
                         .toList(),
-                paneStates(rows(paneFormat, answered.get(2), "list-panes"), floatingKnown).stream()
+                panes.stream()
                         .filter(pane -> ids.contains(pane.context().session()))
                         .toList(),
                 List.of()));

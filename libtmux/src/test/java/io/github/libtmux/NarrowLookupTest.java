@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,7 +16,7 @@ import org.junit.jupiter.api.Test;
 class NarrowLookupTest {
 
     @Test
-    void anAbsentSessionDoesNotListWindows() {
+    void anAbsentSessionCostsOneFencedRead() {
         List<String> sent = new ArrayList<>();
         RowFormat identity = RowFormat.of("pid", "version");
         String row = "4242" + identity.separator() + "3.6";
@@ -43,10 +44,8 @@ class NarrowLookupTest {
             assertTrue(server.session("missing").isEmpty());
         }
 
-        String all = String.join("\n", sent);
-        assertTrue(all.contains("list-sessions"), all);
-        assertFalse(all.contains("list-windows"), all);
-        assertFalse(all.contains("list-panes"), all);
+        assertEquals(2, sent.size(), String.join("\n", sent));
+        assertTrue(sent.get(1).contains("list-sessions"), sent.get(1));
     }
 
     @Test
