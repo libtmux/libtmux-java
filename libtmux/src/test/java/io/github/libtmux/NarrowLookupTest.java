@@ -48,6 +48,87 @@ class NarrowLookupTest {
         assertTrue(sent.get(1).contains("list-sessions"), sent.get(1));
     }
 
+    /** A filtered read costs the identity, the probe, and one hydration, however many sessions match. */
+    @Test
+    void matchingSessionsAreReadInOneFencedCall() {
+        String sep = RowFormat.of("x").separator();
+        List<CommandRequest> requests = new ArrayList<>();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                requests.add(request);
+                return GroupedTmux.execute(request, 4242L, argv -> {
+                    String template = argv.get(argv.indexOf("-F") + 1);
+                    return switch (argv.get(0)) {
+                        case "display-message" -> new CommandResult(0, List.of("4242" + sep + "3.6"), List.of());
+                        case "list-panes" ->
+                            template.contains("pane_id")
+                                    ? new CommandResult(
+                                            0, List.of(pane("$1", "@1", "%1"), pane("$2", "@2", "%2")), List.of())
+                                    : new CommandResult(0, List.of("$1", "$2"), List.of());
+                        case "list-sessions" ->
+                            new CommandResult(
+                                    0,
+                                    List.of(
+                                            String.join(sep, "$1", "one", "0", "1"),
+                                            String.join(sep, "$2", "two", "0", "1")),
+                                    List.of());
+                        case "list-windows" ->
+                            new CommandResult(0, List.of(window("$1", "@1"), window("$2", "@2")), List.of());
+                        default -> new CommandResult(0, List.of(), List.of());
+                    };
+                });
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(ServerConfig.builder().build(), transport)) {
+            assertEquals(2, server.panes(Pane_.command().is("nvim")).size());
+        }
+
+        assertEquals(3, requests.size(), requests.toString());
+    }
+
+    private static String window(String session, String window) {
+        return String.join(
+                RowFormat.of("x").separator(),
+                session,
+                window,
+                window.substring(1),
+                "w",
+                "1",
+                "1",
+                "1",
+                "80",
+                "24",
+                "layout");
+    }
+
+    private static String pane(String session, String window, String pane) {
+        return String.join(
+                RowFormat.of("x").separator(),
+                session,
+                window,
+                window.substring(1),
+                pane,
+                "0",
+                "1",
+                "nvim",
+                "80",
+                "24",
+                "0",
+                "0",
+                "t",
+                "/tmp",
+                "11",
+                "1",
+                "1",
+                "1",
+                "1");
+    }
+
     @Test
     void aSafePaneExpressionIsSentAsAFormat() {
         List<String> sent = commands();
