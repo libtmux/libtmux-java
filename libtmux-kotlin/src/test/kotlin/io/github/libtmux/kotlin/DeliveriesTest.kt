@@ -20,7 +20,10 @@ import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -67,6 +70,39 @@ class DeliveriesTest {
             val event = assertIs<Delivery.Event<PaneOutput>>(found[1])
             assertEquals("five", event.value.data)
             assertTrue(subscription.isClosed())
+        } finally {
+            client.close()
+        }
+    }
+
+    /** Events that arrive while the collector is busy stay in the subscription's own buffer. */
+    @Test
+    fun `a busy collector sees the subscription's loss, not a hidden buffer`(@TempDir directory: Path) {
+        val client = client(directory, oneThenFlood())
+        try {
+            val subscription = client.subscribeOutput(1)
+            client.send("display-message")
+
+            var busy = false
+            val found =
+                runBlocking {
+                    withTimeout(5.seconds) {
+                        subscription
+                            .deliveries()
+                            .take(3)
+                            .onEach {
+                                if (!busy) {
+                                    busy = true
+                                    client.send("display-message")
+                                }
+                            }
+                            .toList()
+                    }
+                }
+
+            assertEquals("one", assertIs<Delivery.Event<PaneOutput>>(found[0]).value.data)
+            assertEquals(2L, assertIs<Delivery.Gap<PaneOutput>>(found[1]).missed)
+            assertEquals("four", assertIs<Delivery.Event<PaneOutput>>(found[2]).value.data)
         } finally {
             client.close()
         }
@@ -156,6 +192,29 @@ class DeliveriesTest {
         printf '%%output %%1 four\n'
         printf '%%output %%1 five\n'
         printf '%%begin 102 1 0\n%%end 102 1 0\n'
+        sleep 30
+        """
+            .trimIndent()
+
+    /**
+     * One output, then three more only once the reader sends again, spaced so a reader that is
+     * not busy would have taken each one.
+     */
+    private fun oneThenFlood(): String =
+        """
+        printf '%%begin 100 1 0\n%%end 100 1 0\n'
+        IFS= read -r request
+        printf '%%begin 101 1 0\n%%end 101 1 0\n'
+        IFS= read -r request
+        printf '%%output %%1 one\n'
+        printf '%%begin 102 1 0\n%%end 102 1 0\n'
+        IFS= read -r request
+        printf '%%output %%1 two\n'
+        sleep 0.1
+        printf '%%output %%1 three\n'
+        sleep 0.1
+        printf '%%output %%1 four\n'
+        printf '%%begin 103 1 0\n%%end 103 1 0\n'
         sleep 30
         """
             .trimIndent()

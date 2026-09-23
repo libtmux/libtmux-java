@@ -7,8 +7,10 @@ import kotlin.time.toJavaDuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.runInterruptible
+
+/** The event a strict reader kept. A gap fails the read. */
+public fun <T : Any> Delivery<T>.kept(): T = Delivery.kept(this)
 
 /**
  * Reads this subscription until it ends, then closes it.
@@ -21,16 +23,17 @@ import kotlinx.coroutines.runInterruptible
  * The flow fails with the subscription's cause when the control client ends
  * it. A caller who closed it gets a normal completion. Collect once: a later
  * collection finds the subscription closed.
+ *
+ * Each read runs on [Dispatchers.IO] and the flow adds no buffer of its own, so
+ * events that arrive while the collector is busy wait in the subscription, and
+ * its capacity alone decides what becomes a gap.
  */
-/** The event a strict reader kept. A gap fails the read. */
-public fun <T : Any> Delivery<T>.kept(): T = Delivery.kept(this)
-
 public fun <T : Any> EventSubscription<T>.deliveries(): Flow<Delivery<T>> {
     val subscription = this
     return flow {
         try {
             while (true) {
-                val delivered = runInterruptible { subscription.next() }
+                val delivered = runInterruptible(Dispatchers.IO) { subscription.next() }
                 if (delivered.isEmpty) {
                     val failure = subscription.cause()
                     if (failure.isPresent) {
@@ -43,7 +46,7 @@ public fun <T : Any> EventSubscription<T>.deliveries(): Flow<Delivery<T>> {
         } finally {
             subscription.close()
         }
-    }.flowOn(Dispatchers.IO)
+    }
 }
 
 /**
