@@ -50,13 +50,11 @@ final class NameValidationIntegrationTest {
     }
 
     /**
-     * The consequence of 3.7a accepting the delimiter: a target string built from the name splits on
-     * {@code :}, so hasSession and killSession resolve the id by comparing names in this process
-     * instead of building one. The name is real and findable even though tmux's own {@code -t}
-     * parsing cannot select the session by it.
+     * 3.7a accepts the delimiter, and a {@code -t} target would split on it. The library resolves
+     * the name from a listing instead, so the name still addresses the session.
      */
     @Test
-    void aNameKeptWithItsDelimiterIsStillFoundAndKilledByName(Server server) {
+    void aNameKeptWithItsDelimiterIsStillAddressableByName(Server server) {
         if (!server.version().atLeast(ACCEPTS_AGAIN)) {
             return;
         }
@@ -65,9 +63,8 @@ final class NameValidationIntegrationTest {
         assertEquals("a:b", made.name());
         assertEquals(made.id(), made.refresh().id(), "the id still addresses it");
         assertTrue(server.hasSession("a:b"), "the name is real; only a -t built from it is unusable");
-
+        assertEquals(made.id(), server.session("a:b").orElseThrow().id());
         server.killSession("a:b");
-
         assertFalse(server.hasSession("a:b"));
     }
 

@@ -174,7 +174,14 @@ final class ArgumentTerminatorTest {
             return switch (argv.get(0)) {
                 case "display-message" ->
                     new CommandResult(0, List.of(argv.contains("#{version}") ? "3.6" : row("4242", "3.6")), List.of());
-                case "list-sessions" -> new CommandResult(0, List.of(row("$0", DASHED, "1", "1")), List.of());
+                case "list-sessions" ->
+                    new CommandResult(
+                            0,
+                            List.of(
+                                    argv.toString().contains("#{session_attached}")
+                                            ? row("$0", DASHED, "1", "1")
+                                            : row("$0", DASHED)),
+                            List.of());
                 case "list-windows" ->
                     new CommandResult(
                             0, List.of(row("$0", "@7", "0", "editor", "1", "1", "1", "80", "24", "layout")), List.of());

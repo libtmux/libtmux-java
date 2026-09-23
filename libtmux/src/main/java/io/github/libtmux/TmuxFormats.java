@@ -37,4 +37,46 @@ public final class TmuxFormats {
     public static String literal(String value) {
         return Objects.requireNonNull(value, "value").replace("#", "##");
     }
+
+    /**
+     * The names tmux may have kept for one it was given, the given name first.
+     *
+     * <p>Measured across the supported range: 3.2a through 3.6 store {@code .} and {@code :} as
+     * {@code _}; 3.7d doubles a trailing backslash; 3.2a stores a control character as a C escape
+     * or three octal digits, which 3.7 rejects instead.
+     */
+    static java.util.List<String> storedNames(String name) {
+        java.util.LinkedHashSet<String> forms = new java.util.LinkedHashSet<>();
+        forms.add(name);
+        String underscored = name.replace('.', '_').replace(':', '_');
+        forms.add(underscored);
+        forms.add(escaped(name));
+        forms.add(escaped(underscored));
+        return java.util.List.copyOf(forms);
+    }
+
+    private static String escaped(String name) {
+        StringBuilder out = new StringBuilder(name.length());
+        for (int index = 0; index < name.length(); index++) {
+            char character = name.charAt(index);
+            switch (character) {
+                case '\\' -> out.append(index == name.length() - 1 ? "\\\\" : "\\");
+                case '\n' -> out.append("\\n");
+                case '\t' -> out.append("\\t");
+                case '\r' -> out.append("\\r");
+                case '\b' -> out.append("\\b");
+                case '\f' -> out.append("\\f");
+                case 0x07 -> out.append("\\a");
+                case 0x0b -> out.append("\\v");
+                default -> {
+                    if (character < 0x20 || character == 0x7f) {
+                        out.append('\\').append(String.format(java.util.Locale.ROOT, "%03o", (int) character));
+                    } else {
+                        out.append(character);
+                    }
+                }
+            }
+        }
+        return out.toString();
+    }
 }
