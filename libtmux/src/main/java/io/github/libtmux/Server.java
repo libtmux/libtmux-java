@@ -355,11 +355,12 @@ public final class Server implements AutoCloseable {
         } catch (NumberFormatException notAPid) {
             return;
         }
+        // A daemon already exiting has no readable command, and still has to be waited for.
         Optional<ProcessHandle> daemon = ProcessHandle.of(pid)
                 .filter(handle -> handle.info()
                         .command()
                         .map(command -> command.contains("tmux"))
-                        .orElse(false));
+                        .orElse(true));
         if (daemon.isEmpty()) {
             return;
         }
