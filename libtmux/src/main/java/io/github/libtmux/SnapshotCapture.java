@@ -204,52 +204,17 @@ final class SnapshotCapture {
     Optional<ServerSnapshot> oneSession(String target, String field) {
         ServerProcess process = process()
                 .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
-        String filter = "#{==:#{" + field + "}," + target + "}";
-        boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
-        RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
-        Batch batch = server.batch(process.pid(), process.reported());
-        batch.add(listing(SESSIONS, "list-sessions", "-f", filter));
-        batch.add(listing(WINDOWS, "list-windows", "-a", "-f", filter));
-        batch.add(listing(paneFormat, "list-panes", "-a", "-f", filter));
-        List<OperationResult> answered = batch.run().operations();
-        List<SessionState> listed = sessionStates(rows(SESSIONS, answered.get(0), "list-sessions"));
-        if (listed.isEmpty()) {
-            // As in a full capture: with no session there is no current target, and tmux refuses
-            // the rest of the group.
-            return Optional.empty();
-        }
-        // Validate everything tmux answered before filtering, so a malformed or inconsistent row
-        // fails the read instead of hiding behind a miss.
-        List<WindowState> windows = windowStates(rows(WINDOWS, answered.get(1), "list-windows"));
-        List<PaneState> panes = paneStates(rows(paneFormat, answered.get(2), "list-panes"), floatingKnown);
-        ServerSnapshot.of(Instant.now(), process.pid(), process.version(), listed, windows, panes, List.of());
-        List<SessionState> sessions = listed.stream()
-                .filter(session -> field.equals("session_id")
+        return hydrate(
+                process,
+                "#{==:#{" + field + "}," + target + "}",
+                session -> field.equals("session_id")
                         ? session.id().value().equals(target)
-                        : session.name().equals(target))
-                .toList();
-        if (sessions.isEmpty()) {
-            return Optional.empty();
-        }
-        java.util.Set<SessionId> ids =
-                sessions.stream().map(SessionState::id).collect(java.util.stream.Collectors.toSet());
-        return Optional.of(ServerSnapshot.of(
-                Instant.now(),
-                process.pid(),
-                process.version(),
-                sessions,
-                windows.stream()
-                        .filter(window -> ids.contains(window.context().session()))
-                        .toList(),
-                panes.stream()
-                        .filter(pane -> ids.contains(pane.context().session()))
-                        .toList(),
-                List.of()));
+                        : session.name().equals(target));
     }
 
     /**
-     * The sessions a filtered listing names, each read in full. Empty when the probe finds nothing,
-     * which is also what a server that ignores {@code -f} reports.
+     * The sessions a filtered listing names, read in full in one more fenced call. Empty when the
+     * probe finds nothing, which is also what a server that ignores {@code -f} reports.
      *
      * @param command the listing, such as {@code list-sessions} or {@code list-panes -a}
      */
@@ -273,24 +238,54 @@ final class SnapshotCapture {
         if (sessionIds.isEmpty()) {
             return Optional.empty();
         }
-        List<SessionState> sessions = new ArrayList<>();
-        List<WindowState> windows = new ArrayList<>();
-        List<PaneState> panes = new ArrayList<>();
+        String any = "0";
         for (String id : sessionIds) {
-            Optional<ServerSnapshot> one = oneSession(id, "session_id");
-            if (one.isEmpty()) {
-                continue;
-            }
-            ServerSnapshot captured = one.get();
-            sessions.addAll(captured.sessions());
-            windows.addAll(captured.windows());
-            panes.addAll(captured.panes());
+            any = "#{||:#{==:#{session_id}," + id + "}," + any + "}";
         }
+        return hydrate(process, any, session -> sessionIds.contains(session.id().value()));
+    }
+
+    /**
+     * The sessions this filter selects, with their windows and panes, in one call fenced to {@code
+     * process}. Every row tmux returns is validated before {@code keep} narrows them, so a malformed
+     * or inconsistent row fails the read instead of hiding behind a miss.
+     */
+    private Optional<ServerSnapshot> hydrate(
+            ServerProcess process, String filter, java.util.function.Predicate<SessionState> keep) {
+        boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
+        RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
+        Batch batch = server.batch(process.pid(), process.reported());
+        batch.add(listing(SESSIONS, "list-sessions", "-f", filter));
+        batch.add(listing(WINDOWS, "list-windows", "-a", "-f", filter));
+        batch.add(listing(paneFormat, "list-panes", "-a", "-f", filter));
+        List<OperationResult> answered = batch.run().operations();
+        List<SessionState> listed = sessionStates(rows(SESSIONS, answered.get(0), "list-sessions"));
+        if (listed.isEmpty()) {
+            // As in a full capture: with no session there is no current target, and tmux refuses
+            // the rest of the group.
+            return Optional.empty();
+        }
+        List<WindowState> windows = windowStates(rows(WINDOWS, answered.get(1), "list-windows"));
+        List<PaneState> panes = paneStates(rows(paneFormat, answered.get(2), "list-panes"), floatingKnown);
+        ServerSnapshot.of(Instant.now(), process.pid(), process.version(), listed, windows, panes, List.of());
+        List<SessionState> sessions = listed.stream().filter(keep).toList();
         if (sessions.isEmpty()) {
             return Optional.empty();
         }
+        java.util.Set<SessionId> ids =
+                sessions.stream().map(SessionState::id).collect(java.util.stream.Collectors.toSet());
         return Optional.of(ServerSnapshot.of(
-                Instant.now(), process.pid(), process.version(), sessions, windows, panes, List.of()));
+                Instant.now(),
+                process.pid(),
+                process.version(),
+                sessions,
+                windows.stream()
+                        .filter(window -> ids.contains(window.context().session()))
+                        .toList(),
+                panes.stream()
+                        .filter(pane -> ids.contains(pane.context().session()))
+                        .toList(),
+                List.of()));
     }
 
     /** The session that owns this pane, without listing every pane first. */
