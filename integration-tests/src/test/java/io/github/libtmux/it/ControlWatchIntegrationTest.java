@@ -34,7 +34,7 @@ final class ControlWatchIntegrationTest {
     void aWindowAppearingIsAnnouncedWithoutAnythingAsking(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
 
             session.newWindow("appeared");
@@ -49,7 +49,7 @@ final class ControlWatchIntegrationTest {
     void aRenameIsAnnouncedWithTheNameItWasGiven(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
 
             var unused = session.windows().get(0).rename("renamed-now");
@@ -71,7 +71,7 @@ final class ControlWatchIntegrationTest {
     void aWatchedFormatIsReportedWhenItsValueChanges(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
             client.watch("windows", "", "#{session_windows}");
 
@@ -91,7 +91,7 @@ final class ControlWatchIntegrationTest {
     void aWatchOverEveryWindowNamesTheWindowEachValueIsFor(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
             client.watch("names", "@*", "#{window_name}");
             var made = session.newWindow("distinctly-named");
@@ -125,7 +125,7 @@ final class ControlWatchIntegrationTest {
             return; // classic-only releases have no JSON layout to disagree about
         }
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
             window.split();
 
@@ -157,7 +157,7 @@ final class ControlWatchIntegrationTest {
         Session session = server.sessions().get(0);
         Window window = session.windows().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
             var unused = window.rename("build  logs");
 
@@ -177,7 +177,7 @@ final class ControlWatchIntegrationTest {
     void aWatchThatIsRemovedStopsBeingReported(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
             client.watch("windows", "", "#{session_windows}");
             assertTrue(awaitEvent(

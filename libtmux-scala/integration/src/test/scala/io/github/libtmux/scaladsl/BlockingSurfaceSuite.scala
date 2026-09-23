@@ -38,11 +38,11 @@ final class BlockingSurfaceSuite extends FunSuite {
         SessionSpec.builder().named("elsewhere").running("cat").build()
       )
       val observer = fixture.own(
-        ControlClient.attach(fixture.config, first.info.id, deadline)
+        ControlClient.attachUnfenced(fixture.config, first.info.id, deadline)
       )
       val events = fixture.own(observer.subscribeEvents(32))
       val target = fixture.own(
-        ControlClient.attach(fixture.config, first.info.id, deadline)
+        ControlClient.attachUnfenced(fixture.config, first.info.id, deadline)
       )
       val ready = target.send(
         Vector("display-message", "-p", "#{client_name}").asJava,

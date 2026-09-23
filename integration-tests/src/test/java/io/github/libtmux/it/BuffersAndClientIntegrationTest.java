@@ -247,7 +247,7 @@ final class BuffersAndClientIntegrationTest {
     @Test
     void anAttachedClientReportsWhatItIsLookingAt(Server server) throws Exception {
         Session session = server.sessions().get(0);
-        try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient attached = server.control(session)) {
             assertTrue(Await.until(() -> !server.clients().isEmpty()), "the control client never appeared as a client");
 
             Client client = server.clients().get(0);
@@ -266,7 +266,7 @@ final class BuffersAndClientIntegrationTest {
     @Test
     void fetchingAnAttachmentTakesAFreshLook(Server server) throws Exception {
         Session session = server.sessions().get(0);
-        try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient attached = server.control(session)) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> !server.clients().isEmpty()));
             Client client = server.clients().get(0);
@@ -291,7 +291,7 @@ final class BuffersAndClientIntegrationTest {
         Set<String> before = server.clients().stream().map(Client::name).collect(Collectors.toSet());
 
         Client client;
-        try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient attached = server.control(session)) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> appeared(server, before).isPresent()), "no client ever attached");
             client = appeared(server, before).orElseThrow();

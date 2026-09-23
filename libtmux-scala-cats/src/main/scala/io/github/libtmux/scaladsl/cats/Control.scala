@@ -110,11 +110,12 @@ object Control {
     val lines: Vector[String] = asJava.lines().asScala.toVector
   }
 
-  /** Attaches lazily to an endpoint and session id, without an incarnation
-    * guard. Bounds simultaneous acknowledgement calls. Release stops their
-    * owned work before detaching the client and preserves the tmux daemon.
+  /** Attaches lazily to whatever server now answers this endpoint, without an
+    * incarnation guard; prefer attaching a captured session. Bounds
+    * simultaneous acknowledgement calls. Release stops their owned work before
+    * detaching the client and preserves the tmux daemon.
     */
-  def attach[F[_]: Async](
+  def attachUnfenced[F[_]: Async](
       config: ServerConfig,
       session: SessionId,
       timeout: Duration = Duration.ofSeconds(30),
@@ -122,7 +123,9 @@ object Control {
   ): Resource[F, Control[F]] =
     owned(
       maxConcurrentCalls,
-      Async[F].interruptible(ControlClient.attach(config, session, timeout))
+      Async[F].interruptible(
+        ControlClient.attachUnfenced(config, session, timeout)
+      )
     )
 
   /** Attaches to the process the captured session named. */

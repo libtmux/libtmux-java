@@ -180,7 +180,7 @@ applications directly:
 <!-- snippet: compile-only: a watch reports a format when its value changes -->
 ```java
 // Given: Server server, Session session
-try (ControlClient client = ControlClient.attach(server.config(), session.id());
+try (ControlClient client = server.control(session);
         EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
     client.watch("names", "@*", "#{window_name}");
 

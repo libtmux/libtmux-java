@@ -243,7 +243,7 @@ final class ExamplesTest {
     void streaming(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
 
             client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");

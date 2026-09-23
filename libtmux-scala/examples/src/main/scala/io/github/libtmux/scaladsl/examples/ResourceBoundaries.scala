@@ -52,7 +52,7 @@ object ResourceBoundaries {
                   _ <- IO(assert(server.asJava eq java))
                   original <- server.clients
                   failed <- Control
-                    .attach[IO](
+                    .attachUnfenced[IO](
                       config,
                       new SessionId("$2147483647"),
                       ExampleRuntime.deadline

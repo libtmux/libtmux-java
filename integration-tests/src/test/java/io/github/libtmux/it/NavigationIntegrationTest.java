@@ -86,7 +86,7 @@ final class NavigationIntegrationTest {
     @Test
     void detachingLeavesTheSessionRunning(Server server) throws Exception {
         Session session = server.sessions().get(0);
-        try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient attached = server.control(session)) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> !server.clients().isEmpty()));
 

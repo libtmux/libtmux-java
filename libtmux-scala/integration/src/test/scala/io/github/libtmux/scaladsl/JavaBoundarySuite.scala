@@ -22,11 +22,7 @@ final class JavaBoundarySuite extends FunSuite {
 
   private def control(fixture: OwnedTmux): ControlClient =
     fixture.own(
-      ControlClient.attach(
-        fixture.config,
-        fixture.server.sessions().get(0).id(),
-        deadline
-      )
+      fixture.server.control(fixture.server.sessions().get(0), deadline)
     )
 
   test("pane refresh follows physical identity across linked occurrences") {

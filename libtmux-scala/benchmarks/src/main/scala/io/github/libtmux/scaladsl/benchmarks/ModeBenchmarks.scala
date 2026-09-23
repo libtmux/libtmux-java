@@ -193,7 +193,7 @@ object ModeBenchmarks {
       }(Captured(expected, Vector.empty))
 
       val control = Control
-        .attach[IO](inputConfig(input), session, deadline)
+        .attachUnfenced[IO](inputConfig(input), session, deadline)
         .allocated
         .unsafeRunSync()
       val attachment = control._1

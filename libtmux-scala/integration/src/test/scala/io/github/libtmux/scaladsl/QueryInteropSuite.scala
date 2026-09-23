@@ -66,7 +66,7 @@ final class QueryInteropSuite extends FunSuite {
             .succeeded()
         )
       }
-      fixture.own(ControlClient.attach(fixture.config, first.id()))
+      fixture.own(ControlClient.attachUnfenced(fixture.config, first.id()))
       val sessions = server.sessions()
       val windows = sessions.flatMap(_.windows)
       val panes = windows.flatMap(_.panes)

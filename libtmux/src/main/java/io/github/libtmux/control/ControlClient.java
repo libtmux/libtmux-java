@@ -110,30 +110,31 @@ public final class ControlClient implements AutoCloseable {
     }
 
     /**
-     * Attaches a control client to an existing session.
+     * Attaches a control client to whatever server now answers this endpoint.
      *
      * <p>Attaching is what makes tmux push {@code %output}: a control client that never attaches is
      * told about command replies and nothing else.
      *
      * <p>This does not check which tmux process answered. A socket can be taken over by a new
      * server that reuses the same session id. {@link io.github.libtmux.Server#control} attaches to
-     * the process a capture already named.
+     * the process a capture already named; prefer it.
      *
      * @param config which tmux and which server
      * @param session the session to attach to
      */
-    public static ControlClient attach(ServerConfig config, SessionId session) {
-        return attach(config, session, DEFAULT_TIMEOUT);
+    public static ControlClient attachUnfenced(ServerConfig config, SessionId session) {
+        return attachUnfenced(config, session, DEFAULT_TIMEOUT);
     }
 
     /**
-     * Attaches a control client and waits up to the supplied deadline for its opening reply.
+     * As {@link #attachUnfenced(ServerConfig, SessionId)}, waiting up to the supplied deadline for
+     * the client's opening reply.
      *
      * @param config which tmux and which server
      * @param session the session to attach to
      * @param timeout how long to wait for the client to become ready
      */
-    public static ControlClient attach(ServerConfig config, SessionId session, Duration timeout) {
+    public static ControlClient attachUnfenced(ServerConfig config, SessionId session, Duration timeout) {
         ControlClient client = connect(LOCAL, config, session, timeout);
         client.finishAttach(session);
         return client;

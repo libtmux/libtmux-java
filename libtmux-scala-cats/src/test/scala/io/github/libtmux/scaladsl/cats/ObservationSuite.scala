@@ -37,7 +37,7 @@ final class ObservationSuite extends FunSuite {
     )
     val config = ServerConfig.builder().binary(fake.toString).build()
     val program = Control
-      .attach[IO](config, new SessionId("$0"))
+      .attachUnfenced[IO](config, new SessionId("$0"))
       .use(control => control.output(1).use(_.stream.compile.drain))
     val ran =
       try program.timeout(3.seconds).attempt.unsafeRunSync()
@@ -76,7 +76,7 @@ final class ObservationSuite extends FunSuite {
     )
     val config = ServerConfig.builder().binary(fake.toString).build()
     val program =
-      Control.attach[IO](config, new SessionId("$0")).use { control =>
+      Control.attachUnfenced[IO](config, new SessionId("$0")).use { control =>
         for {
           alive <- control.isAlive
           watched <- control.watch("cmd", "%1", "#{pane_current_command}")
@@ -129,7 +129,7 @@ final class ObservationSuite extends FunSuite {
     )
     val config = ServerConfig.builder().binary(fake.toString).build()
     val program =
-      Control.attach[IO](config, new SessionId("$0")).use { control =>
+      Control.attachUnfenced[IO](config, new SessionId("$0")).use { control =>
         for {
           _ <- IO.sleep(200.millis)
           text <- control.standardError

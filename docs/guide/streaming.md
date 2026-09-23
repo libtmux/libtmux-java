@@ -94,7 +94,7 @@ rather than being asked:
 
 ```java
 // Given: Server server, Session session
-try (ControlClient client = ControlClient.attach(server.config(), session.id());
+try (ControlClient client = server.control(session);
         EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
 
     client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
@@ -132,7 +132,7 @@ renamed, a session switched, a layout moved — without asking. Each arrives as 
 
 ```java
 // Given: Server server, Session session
-try (ControlClient client = ControlClient.attach(server.config(), session.id());
+try (ControlClient client = server.control(session);
         EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
 
     var unused = session.windows().get(0).rename("build logs");

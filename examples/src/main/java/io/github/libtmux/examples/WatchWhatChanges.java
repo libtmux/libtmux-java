@@ -48,7 +48,7 @@ public final class WatchWhatChanges {
         try (Server server = Server.open(config)) {
             Session session = server.sessions().get(0);
 
-            try (ControlClient client = ControlClient.attach(server.config(), session.id());
+            try (ControlClient client = server.control(session);
                     EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
 
                 // Every window's name, reported whenever one of them changes. The comparison happens
