@@ -309,7 +309,7 @@ final class ControlObservationSuite extends FunSuite {
   }
 
   test(
-    "scope close ends a parked stream but server loss reports unknown cause"
+    "scope close ends a parked stream and server loss fails it with the client's cause"
   ) {
     OwnedTmux.use { fixture =>
       val result = attach(fixture).allocated.flatMap { case (control, close) =>
@@ -351,7 +351,12 @@ final class ControlObservationSuite extends FunSuite {
               outcome <- reader.joinWithNever
               _ <- IO {
                 assert(
-                  outcome.left.exists(_.isInstanceOf[Observation.UnknownCause])
+                  outcome.left.exists(
+                    _.isInstanceOf[
+                      io.github.libtmux.control.ControlEndedException
+                    ]
+                  ),
+                  outcome.toString
                 )
                 assert(observation.underlying.isClosed())
               }
