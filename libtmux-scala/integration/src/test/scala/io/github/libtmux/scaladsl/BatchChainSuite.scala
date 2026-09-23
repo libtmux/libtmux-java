@@ -17,6 +17,7 @@ import io.github.libtmux.transport.{
   CommandRequest,
   CommandResult => JavaCommandResult,
   DispatchOutcome,
+  OperationReport,
   ProcessTransport,
   TmuxTransport,
   TmuxTransportException
@@ -370,15 +371,25 @@ final class BatchChainSuite extends FunSuite {
   }
 
   test(
-    "Cats batch cancellation is canceled while dispatched effects remain possible"
+    "Cats batch cancellation is canceled and the observer sees it as unknown"
   ) {
     OwnedTmux.use { fixture =>
       val prefix =
         fixture.config.endpointCommand().asScala.map(shell).mkString(" ")
       val script = prefix + " wait-for -S cats-batch-entered; " + prefix +
         " wait-for cats-batch-release; " + prefix + " wait-for -S cats-batch-finished"
+      val reports =
+        new java.util.concurrent.ConcurrentLinkedQueue[OperationReport]()
+      val observed = fixture.own(
+        JavaServer.open(
+          fixture.config
+            .toBuilder()
+            .observer(report => reports.add(report))
+            .build()
+        )
+      )
       cats.Server
-        .fromJava[IO](fixture.server)
+        .fromJava[IO](observed)
         .use { server =>
           val plan = server.batch
             .add("set-option", "-g", "@cats-batch-partial", "applied")
@@ -396,6 +407,13 @@ final class BatchChainSuite extends FunSuite {
             following <- server.cmd("display-message", "-p", "cats-following")
             _ <- IO {
               assert(outcome.isCanceled)
+              assert(
+                reports.asScala.exists(report =>
+                  report.verbs().contains("run-shell") &&
+                    report.certainty() == DispatchOutcome.UNKNOWN
+                ),
+                reports.asScala.map(_.toString).mkString("\n")
+              )
               assertEquals(before.stdout, Vector("applied"))
               assertEquals(following.stdout, Vector("cats-following"))
             }

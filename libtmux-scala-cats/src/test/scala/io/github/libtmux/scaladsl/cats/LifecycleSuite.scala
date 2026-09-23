@@ -125,7 +125,7 @@ final class LifecycleSuite extends FunSuite {
     program.timeout(1.second).unsafeToFuture()
   }
 
-  test("canceling a dispatched call keeps an unknown outcome") {
+  test("canceling a dispatched call is still a cancellation") {
     val transport = new Transport
     val java = JavaServer.using(config, transport)
     val program = Server.fromJava[IO](java).use { server =>
@@ -135,10 +135,7 @@ final class LifecycleSuite extends FunSuite {
         _ <- running.cancel
         _ <- event(transport.interrupted)
         outcome <- running.join
-        embedded <- outcome
-          .embed(IO.raiseError(new RuntimeException("canceled")))
-          .attempt
-        _ <- IO(assert(embedded.left.toOption.exists(_ eq transport.failure)))
+        _ <- IO(assert(outcome.isCanceled, outcome.toString))
       } yield ()
     }
     program.timeout(2.seconds).unsafeToFuture()

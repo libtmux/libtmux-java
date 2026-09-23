@@ -74,10 +74,12 @@ changed tmux. Raw `Server.cmd` returns a [command result][command-result], so a
 nonzero exit remains data with its stdout and stderr. Typed operations retain
 the Java API's failure behavior.
 
-Cats cancellation interrupts local work and waits for owned cleanup. If that
-interruption reports `UNKNOWN`, the effect fails with that Java exception
-instead of `Outcome.Canceled`. A cancel that lands before dispatch stays
-canceled. Treat a canceled mutation as possibly dispatched; the facade does not
+Cats cancellation interrupts local work, waits for owned cleanup, and ends in
+`Outcome.Canceled` whether or not the command reached tmux. Cancellation carries
+no error, so the facade does not turn it into one. To learn whether a canceled
+command was dispatched, set an `OperationObserver` on the Java `ServerConfig`:
+the process transport reports `UNKNOWN` for a command it interrupted after
+starting. Treat a canceled mutation as possibly dispatched; the facade does not
 retry it, roll it back, or switch transports. A daemon-side shell job can
 continue after its requesting client is canceled. Closing a borrowed transport
 from its owner can instead produce an ordinary Java `UNKNOWN` failure.
