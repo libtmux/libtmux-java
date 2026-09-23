@@ -1,6 +1,7 @@
 # Watching output as it happens
 
-Every snippet here is executed by `ExamplesTest`.
+Every snippet here is run by `ExamplesTest`, except one marked compile-only,
+which says why.
 
 ## Waiting for one thing, cheapest first
 
