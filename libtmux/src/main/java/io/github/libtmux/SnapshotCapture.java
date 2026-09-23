@@ -4,6 +4,7 @@ import io.github.libtmux.batch.Batch;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.batch.OperationResult;
 import io.github.libtmux.format.RowFormat;
+import io.github.libtmux.query.TmuxFilters;
 import io.github.libtmux.snapshot.ClientState;
 import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
@@ -210,6 +211,27 @@ final class SnapshotCapture {
                 session -> field.equals("session_id")
                         ? session.id().value().equals(target)
                         : session.name().equals(target));
+    }
+
+    /**
+     * The sessions stored under any name tmux may keep for this one, read in one fenced call, and
+     * an empty capture when there are none. Empty when a candidate cannot sit inside a format, and
+     * the caller reads the whole server instead.
+     */
+    Optional<ServerSnapshot> sessionsNamed(String name) {
+        ServerProcess process = process()
+                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
+        List<String> names = TmuxFormats.storedNames(name, process.version());
+        if (!names.stream().allMatch(TmuxFilters::literal)) {
+            return Optional.empty();
+        }
+        String any = "0";
+        for (String stored : names) {
+            any = "#{||:#{==:#{session_name}," + stored + "}," + any + "}";
+        }
+        return Optional.of(hydrate(process, any, session -> names.contains(session.name()))
+                .orElseGet(() -> ServerSnapshot.of(
+                        Instant.now(), process.pid(), process.version(), List.of(), List.of(), List.of(), List.of())));
     }
 
     /**
