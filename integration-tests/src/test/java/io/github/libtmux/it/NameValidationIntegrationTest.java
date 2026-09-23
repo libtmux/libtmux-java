@@ -1,6 +1,7 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -49,22 +50,21 @@ final class NameValidationIntegrationTest {
     }
 
     /**
-     * The consequence of 3.7a accepting the delimiter: a target splits on {@code :}, so the name can
-     * no longer address the session and the id is the only handle that works.
+     * 3.7a accepts the delimiter, and a {@code -t} target would split on it. The library resolves
+     * the name from a listing instead, so the name still addresses the session.
      */
     @Test
-    void aNameKeptWithItsDelimiterIsNoLongerAddressableByName(Server server) {
+    void aNameKeptWithItsDelimiterIsStillAddressableByName(Server server) {
         if (!server.version().atLeast(ACCEPTS_AGAIN)) {
             return;
         }
         Session made = server.newSession("a:b");
 
         assertEquals("a:b", made.name());
-        assertEquals(made.id(), made.refresh().id(), "the id still addresses it");
-        assertThrows(
-                LibTmuxException.class,
-                () -> server.killSession("a:b"),
-                "tmux reads the delimiter as a window, so the name cannot select the session");
+        assertTrue(server.hasSession("a:b"));
+        assertEquals(made.id(), server.session("a:b").orElseThrow().id());
+        server.killSession("a:b");
+        assertFalse(server.hasSession("a:b"));
     }
 
     /**

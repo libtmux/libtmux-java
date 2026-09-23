@@ -160,18 +160,39 @@ public final class Server implements AutoCloseable {
      * @throws ServerNotRunningException if no daemon is running
      */
     public boolean hasSession(String name) {
-        CommandResult result = cmd("has-session", "-t", "=" + name);
-        if (result.succeeded()) {
-            return true;
+        Objects.requireNonNull(name, "name");
+        return sessionNamed(name).isPresent();
+    }
+
+    /**
+     * The id of the session tmux keeps under this name, read from one listing.
+     *
+     * <p>Not a {@code -t =name} target: tmux reads {@code .} and {@code :} in a target as window and
+     * pane separators, and it may have stored the name differently from how it was given.
+     */
+    private Optional<SessionId> sessionNamed(String name) {
+        RowFormat format = RowFormat.of("session_id", "session_name");
+        CommandResult result = cmd("list-sessions", "-F", format.template());
+        if (!result.succeeded()) {
+            // A live server with no sessions has nothing to list, and says so on every supported
+            // release. Anything else - a socket this user cannot open, a binary that is not tmux -
+            // is not an answer, and reporting it as one is how a misconfigured endpoint reads as
+            // an empty server.
+            if (result.stderr().stream()
+                    .anyMatch(line -> line.contains("no current session") || line.contains("no sessions"))) {
+                return Optional.empty();
+            }
+            throw failed("list-sessions", result);
         }
-        // "no" is the answer to "is there a session called this", and tmux says so in those words
-        // on every supported release. Anything else it reports — a socket this user cannot open, a
-        // binary that is not tmux — is not an answer to the question, and reporting it as one is
-        // how a misconfigured endpoint reads as an empty server.
-        if (result.stderr().stream().anyMatch(line -> line.contains("can't find session"))) {
-            return false;
+        List<RowFormat.Row> rows = format.rows(result.stdout());
+        for (String candidate : TmuxFormats.storedNames(name)) {
+            for (RowFormat.Row row : rows) {
+                if (row.text("session_name").equals(candidate)) {
+                    return Optional.of(new SessionId(row.text("session_id")));
+                }
+            }
         }
-        throw failed("has-session", result);
+        return Optional.empty();
     }
 
     /**
@@ -184,7 +205,9 @@ public final class Server implements AutoCloseable {
      */
     public void killSession(String name) {
         Objects.requireNonNull(name, "name");
-        run(List.of("kill-session", "-t", "=" + name));
+        SessionId id =
+                sessionNamed(name).orElseThrow(() -> new ObjectDoesNotExistException("no session named " + name));
+        run(List.of("kill-session", "-t", id.value()));
     }
 
     /**
@@ -998,7 +1021,23 @@ public final class Server implements AutoCloseable {
      */
     public Optional<Session> session(String name) {
         Objects.requireNonNull(name, "name");
-        return read(() -> one(name, "session_name"));
+        List<String> names = TmuxFormats.storedNames(name);
+        return read(() -> {
+            if (!names.stream().allMatch(TmuxFilters::literal)) {
+                ServerSnapshot captured = snapshot();
+                return names.stream()
+                        .flatMap(stored -> captured.session(stored).stream())
+                        .findFirst()
+                        .map(session -> new Session(this, captured, session));
+            }
+            for (String stored : names) {
+                Optional<Session> found = one(stored, "session_name");
+                if (found.isPresent()) {
+                    return found;
+                }
+            }
+            return Optional.<Session>empty();
+        });
     }
 
     /**

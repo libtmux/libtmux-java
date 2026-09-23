@@ -41,8 +41,6 @@ final class ArgumentTerminatorTest {
         sites.put("Keys.bind", server -> server.keys().bind(DASHED, List.of("display-message", "hi")));
         sites.put("Keys.unbind", server -> server.keys().unbind(DASHED));
         sites.put("Server.sourceFile", server -> server.sourceFile(Path.of(DASHED)));
-        sites.put("Server.killSession", server -> server.killSession(DASHED));
-        sites.put("Server.hasSession", server -> server.hasSession(DASHED));
         sites.put("Channel.signal", server -> server.channel(DASHED).signal());
         sites.put("Options.set", server -> server.globalOptions().set("@x", DASHED));
         sites.put("Options.setExpanded", server -> server.globalOptions().setExpanded("@x", DASHED));

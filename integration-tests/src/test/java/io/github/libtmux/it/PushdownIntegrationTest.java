@@ -101,7 +101,13 @@ final class PushdownIntegrationTest {
                         server.panes(),
                         pane -> pane.id().value()));
 
-        assertAll(Stream.of(sessions, windows, panes).flatMap(Function.identity()));
+        // tmux doubles a backslash in the name it keeps, so a lookup by the given name must still
+        // find it.
+        Stream<Executable> lookups = accepted.stream()
+                .map(name -> () -> assertTrue(
+                        server.session(name).isPresent() && server.hasSession(name), "session(" + name + ")"));
+
+        assertAll(Stream.of(sessions, windows, panes, lookups).flatMap(Function.identity()));
     }
 
     private static <T> Executable agree(
