@@ -42,17 +42,17 @@ jobs:
       LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/libtmux-scala/target/java-repository
       LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/libtmux-scala/target/staging
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Manual macOS release gate stays dispatch-only
         run: python3 libtmux-scala/scripts/verify-macos-release-gate.py
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
           validate-wrappers: true
 
@@ -67,7 +67,7 @@ jobs:
 
       - name: Restore tmux ${{ env.TMUX_LANE }}
         id: tmux-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.TMUX_PREFIX }}
           key: scala-tmux-${{ env.TMUX_LANE }}-${{ runner.os }}-${{ runner.arch }}
@@ -149,14 +149,14 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: scala-consumer-stage-${{ github.sha }}
           path: ${{ runner.temp }}/scala-consumer-stage.tar.gz
           retention-days: 7
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: failure()
         with:
           name: scala-artifact-reports-${{ github.sha }}
@@ -182,14 +182,14 @@ jobs:
       LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/libtmux-scala/target/java-repository
       LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/libtmux-scala/target/staging
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
           validate-wrappers: true
 
@@ -209,7 +209,7 @@ jobs:
 
       - name: Restore tmux 3.7c
         id: tmux-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.TMUX_PREFIX }}
           key: scala-tmux-${{ env.TMUX_LANE }}-${{ runner.os }}-${{ runner.arch }}
@@ -282,7 +282,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: failure()
         with:
           name: scala-runtime-${{ matrix.id }}-${{ github.sha }}
@@ -322,14 +322,14 @@ jobs:
       TMUX_LANE: 3.7c
       TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
           validate-wrappers: true
 
@@ -338,7 +338,7 @@ jobs:
 
       - name: Restore tmux 3.7c
         id: tmux-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.TMUX_PREFIX }}
           key: scala-tmux-${{ env.TMUX_LANE }}-${{ runner.os }}-${{ runner.arch }}
@@ -366,7 +366,7 @@ jobs:
         run: |
           "$TMUX_PREFIX/bin/tmux" -V | grep -Fx "tmux $TMUX_LANE"
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: scala-consumer-stage-${{ github.sha }}
           path: ${{ runner.temp }}/scala-consumer-input
@@ -400,7 +400,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: scala-consumer-${{ matrix.id }}-${{ github.sha }}
@@ -417,14 +417,14 @@ jobs:
       TMUX_LANE: 3.7c
       TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
           validate-wrappers: true
 
@@ -439,7 +439,7 @@ jobs:
 
       - name: Restore tmux 3.7c
         id: tmux-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.TMUX_PREFIX }}
           key: scala-tmux-${{ env.TMUX_LANE }}-${{ runner.os }}-${{ runner.arch }}
@@ -460,7 +460,7 @@ jobs:
         run: |
           "$TMUX_PREFIX/bin/tmux" -V | grep -Fx "tmux $TMUX_LANE"
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: scala-consumer-stage-${{ github.sha }}
           path: ${{ runner.temp }}/scala-consumer-input
@@ -494,7 +494,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: scala-consumer-C01-${{ github.sha }}
@@ -526,14 +526,14 @@ jobs:
       LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/libtmux-scala/target/java-repository
       LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/libtmux-scala/target/staging
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
           validate-wrappers: true
 
@@ -542,7 +542,7 @@ jobs:
 
       - name: Restore tmux 3.7c
         id: tmux-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ env.TMUX_PREFIX }}
           key: scala-tmux-${{ env.TMUX_LANE }}-${{ runner.os }}-${{ runner.arch }}
@@ -601,7 +601,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: failure()
         with:
           name: scala-runtime-${{ matrix.id }}-${{ github.sha }}
