@@ -11,7 +11,12 @@ import io.github.libtmux.{
   TmuxVersion,
   UnsupportedTmuxVersionException
 }
-import io.github.libtmux.control.{ControlClient, ControlEndedException, Delivery, Notification}
+import io.github.libtmux.control.{
+  ControlClient,
+  ControlEndedException,
+  Delivery,
+  Notification
+}
 import io.github.libtmux.scaladsl.blocking.Server
 import io.github.libtmux.scaladsl.fixture.OwnedTmux
 import java.nio.file.Files
@@ -62,7 +67,12 @@ final class BlockingSurfaceSuite extends FunSuite {
           assert(step.isDefined, "expected a client notification")
           matched = step.get match {
             case item: Delivery.Event[_] =>
-              matches(item.value().asInstanceOf[io.github.libtmux.control.ControlEvent].notification())
+              matches(
+                item
+                  .value()
+                  .asInstanceOf[io.github.libtmux.control.ControlEvent]
+                  .notification()
+              )
             case _: Delivery.Gap[_] => false
           }
         }

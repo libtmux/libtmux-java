@@ -15,6 +15,7 @@ final class Client private[blocking] (
     private[scaladsl] val asJava: JavaClient,
     val server: Server
 ) {
+
   /** The Java client. It keeps none of this facade's scope. */
   def unsafeJava: JavaClient = asJava
   val info: ClientInfo =

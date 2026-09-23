@@ -16,6 +16,7 @@ final class Window private[blocking] (
     private[scaladsl] val asJava: JavaWindow,
     val server: Server
 ) {
+
   /** The Java window link. It keeps none of this facade's scope. */
   def unsafeJava: JavaWindow = asJava
   val info: WindowInfo = WindowInfo(
