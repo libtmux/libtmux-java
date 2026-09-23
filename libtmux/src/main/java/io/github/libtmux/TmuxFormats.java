@@ -38,29 +38,36 @@ public final class TmuxFormats {
         return Objects.requireNonNull(value, "value").replace("#", "##");
     }
 
+    /** 3.7 refuses {@code .} and {@code :} in a name, 3.7a keeps them, and earlier releases store {@code _}. */
+    private static final TmuxVersion DELIMITERS_KEPT_SINCE = new TmuxVersion(3, 7, "");
+
     /**
-     * The names tmux may have kept for one it was given, the given name first.
+     * The names to look for when a caller names a session: the one this release stores for it, then
+     * the name exactly as given, which is what {@link Session#name} already reports.
      *
-     * <p>Measured across the supported range: 3.2a through 3.6 store {@code .} and {@code :} as
-     * {@code _}; 3.7d doubles a trailing backslash; 3.2a stores a control character as a C escape
-     * or three octal digits, which 3.7 rejects instead.
+     * <p>Measured on every release in the matrix: tmux doubles each backslash, and 3.2a through 3.6
+     * store {@code .} and {@code :} as {@code _} and a control character as a C escape or three
+     * octal digits. 3.7 and later refuse control characters. The stored form is an escaping, so it
+     * names at most one session; only a name that is itself some other name's stored form is
+     * ambiguous, and the stored form wins.
      */
-    static java.util.List<String> storedNames(String name) {
+    static java.util.List<String> storedNames(String name, TmuxVersion version) {
+        String mapped = version.atLeast(DELIMITERS_KEPT_SINCE)
+                ? name
+                : name.replace('.', '_').replace(':', '_');
         java.util.LinkedHashSet<String> forms = new java.util.LinkedHashSet<>();
+        forms.add(vis(mapped));
         forms.add(name);
-        String underscored = name.replace('.', '_').replace(':', '_');
-        forms.add(underscored);
-        forms.add(escaped(name));
-        forms.add(escaped(underscored));
         return java.util.List.copyOf(forms);
     }
 
-    private static String escaped(String name) {
+    /** tmux's {@code vis(3)} with {@code VIS_CSTYLE | VIS_OCTAL | VIS_TAB | VIS_NL}. */
+    private static String vis(String name) {
         StringBuilder out = new StringBuilder(name.length());
         for (int index = 0; index < name.length(); index++) {
             char character = name.charAt(index);
             switch (character) {
-                case '\\' -> out.append(index == name.length() - 1 ? "\\\\" : "\\");
+                case '\\' -> out.append("\\\\");
                 case '\n' -> out.append("\\n");
                 case '\t' -> out.append("\\t");
                 case '\r' -> out.append("\\r");

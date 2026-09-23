@@ -180,7 +180,7 @@ final class ArgumentTerminatorTest {
                             List.of(
                                     argv.toString().contains("#{session_attached}")
                                             ? row("$0", DASHED, "1", "1")
-                                            : row("$0", DASHED)),
+                                            : row("$0", DASHED, "3.6")),
                             List.of());
                 case "list-windows" ->
                     new CommandResult(

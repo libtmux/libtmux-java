@@ -172,23 +172,22 @@ public final class Server implements AutoCloseable {
      * pane separators, and it may have stored the name differently from how it was given.
      */
     private Optional<SessionId> sessionNamed(String name) {
-        RowFormat format = RowFormat.of("session_id", "session_name");
+        RowFormat format = RowFormat.of("session_id", "session_name", "version");
         CommandResult result = cmd("list-sessions", "-F", format.template());
         if (!result.succeeded()) {
-            // A live server with no sessions has nothing to list, and says so on every supported
-            // release. Anything else - a socket this user cannot open, a binary that is not tmux -
-            // is not an answer, and reporting it as one is how a misconfigured endpoint reads as
-            // an empty server.
-            if (result.stderr().stream()
-                    .anyMatch(line -> line.contains("no current session") || line.contains("no sessions"))) {
-                return Optional.empty();
-            }
+            // A live server with no sessions lists nothing and exits 0, on 3.2a and 3.7d alike, so
+            // any failure is not an answer: no daemon, a socket this user cannot open, or a binary
+            // that is not tmux. failed() tells the first apart.
             throw failed("list-sessions", result);
         }
         List<RowFormat.Row> rows = format.rows(result.stdout());
-        for (String candidate : TmuxFormats.storedNames(name)) {
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        for (String stored :
+                TmuxFormats.storedNames(name, TmuxVersion.parse(rows.get(0).text("version")))) {
             for (RowFormat.Row row : rows) {
-                if (row.text("session_name").equals(candidate)) {
+                if (row.text("session_name").equals(stored)) {
                     return Optional.of(new SessionId(row.text("session_id")));
                 }
             }
@@ -1012,9 +1011,11 @@ public final class Server implements AutoCloseable {
      *
      * <p>A name tmux can compare as a format is read with {@code list-sessions -f} and then only that
      * session's windows and panes. A name containing {@code ,}, {@code #}, <code>{</code>,
-     * <code>}</code>, or {@code :} falls back to a whole-server capture. The name is matched
-     * exactly; tmux would otherwise take a prefix, so asking for {@code build} could answer with
-     * {@code build-cache}.
+     * <code>}</code>, {@code :}, or a backslash falls back to a whole-server capture. The name is
+     * matched exactly; tmux would otherwise take a prefix, so asking for {@code build} could answer
+     * with {@code build-cache}. It is matched as tmux stores it, which can differ from how it was
+     * given: every release doubles a backslash, and releases before 3.7 store {@code .} and
+     * {@code :} as {@code _}. The name {@link Session#name} reports is found as well.
      *
      * <p>Empty means a successful capture did not contain that name. Capture failures throw.
      *
@@ -1023,22 +1024,12 @@ public final class Server implements AutoCloseable {
      */
     public Optional<Session> session(String name) {
         Objects.requireNonNull(name, "name");
-        List<String> names = TmuxFormats.storedNames(name);
         return read(() -> {
-            if (!names.stream().allMatch(TmuxFilters::literal)) {
-                ServerSnapshot captured = snapshot();
-                return names.stream()
-                        .flatMap(stored -> captured.session(stored).stream())
-                        .findFirst()
-                        .map(session -> new Session(this, captured, session));
-            }
-            for (String stored : names) {
-                Optional<Session> found = one(stored, "session_name");
-                if (found.isPresent()) {
-                    return found;
-                }
-            }
-            return Optional.<Session>empty();
+            ServerSnapshot captured = capture.sessionsNamed(name).orElseGet(this::snapshot);
+            return TmuxFormats.storedNames(name, version(captured)).stream()
+                    .flatMap(stored -> captured.session(stored).stream())
+                    .findFirst()
+                    .map(session -> new Session(this, captured, session));
         });
     }
 

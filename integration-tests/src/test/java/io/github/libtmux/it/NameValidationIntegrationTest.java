@@ -69,6 +69,38 @@ final class NameValidationIntegrationTest {
     }
 
     /**
+     * A lookup finds the name tmux stored for the one it was given, and nothing else: from 3.7 a
+     * dot is not an underscore, so {@code x.y} must not answer with a session called {@code x_y}.
+     */
+    @Test
+    void aNameIsNotMistakenForAnotherSessionsStoredName(Server server) {
+        Session underscored = server.newSession("x_y");
+
+        if (server.version().atLeast(REJECTS)) {
+            assertFalse(server.hasSession("x.y"));
+            assertTrue(server.session("x.y").isEmpty());
+            assertThrows(LibTmuxException.class, () -> server.killSession("x.y"));
+            assertTrue(server.hasSession("x_y"), "a refused kill still ended " + underscored.name());
+        } else {
+            // Before 3.7 tmux stores x.y as x_y itself, so they name the same session.
+            assertEquals(underscored.id(), server.session("x.y").orElseThrow().id());
+        }
+    }
+
+    /** Every release doubles a backslash; the given name and the reported one both find it. */
+    @Test
+    void aBackslashNameIsFoundByWhatWasGivenAndByWhatTmuxReports(Server server) {
+        Session made = server.newSession("b\\c\\");
+
+        assertEquals("b\\\\c\\\\", made.name());
+        assertEquals(made.id(), server.session("b\\c\\").orElseThrow().id());
+        assertEquals(made.id(), server.session(made.name()).orElseThrow().id());
+        assertTrue(server.hasSession("b\\c\\"));
+        server.killSession(made.name());
+        assertFalse(server.hasSession("b\\c\\"));
+    }
+
+    /**
      * Window names take a different path from session names: kept as written on every supported
      * build except 3.7, which refuses them. Measured rather than derived from the session rule.
      */
