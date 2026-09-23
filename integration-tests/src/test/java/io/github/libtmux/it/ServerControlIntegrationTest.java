@@ -140,7 +140,9 @@ final class ServerControlIntegrationTest {
         try {
             server.killServer();
 
-            assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "daemon " + pid);
+            assertFalse(
+                    ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false),
+                    () -> "daemon " + pid + " " + ProcessHandle.of(pid).map(ProcessHandle::info) + " " + stat(pid));
         } finally {
             client.close();
         }
@@ -158,6 +160,14 @@ final class ServerControlIntegrationTest {
         assertTrue(
                 Await.until(() -> noClients(server)),
                 "the control client stayed attached after the incarnation check failed");
+    }
+
+    private static String stat(long pid) {
+        try {
+            return java.nio.file.Files.readString(java.nio.file.Path.of("/proc/" + pid + "/stat"));
+        } catch (java.io.IOException unreadable) {
+            return unreadable.toString();
+        }
     }
 
     private static boolean noClients(Server server) {
