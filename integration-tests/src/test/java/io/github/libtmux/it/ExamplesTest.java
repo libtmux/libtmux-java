@@ -168,10 +168,12 @@ final class ExamplesTest {
     void readingTheScrollback(Server server) {
         Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
 
-        List<String> everything = pane.capture(c -> c.fromStartOfHistory());
+        // Recent first: a pane's history only grows, so a whole-history capture taken after it holds
+        // at least as much, however far the shell has got with drawing its prompt.
         List<String> recent = pane.capture(c -> c.from(-10));
+        List<String> everything = pane.capture(c -> c.fromStartOfHistory());
 
-        assertTrue(everything.size() >= recent.size() || !everything.isEmpty());
+        assertTrue(everything.size() >= recent.size(), everything + " is shorter than " + recent);
     }
 
     /** Guide: a capture answers questions without asking tmux anything. */
