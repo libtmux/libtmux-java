@@ -79,6 +79,17 @@ public final class WatchPaneOutput {
      */
     public static boolean sawTheEcho(List<PaneOutput> seen) {
         String all = seen.stream().map(PaneOutput::data).reduce("", String::concat);
-        return all.matches("(?s).*(^|\\n)watched\\r?\\n.*");
+        return printedLine(all, "watched");
+    }
+
+    /**
+     * Whether the output has a line that is exactly {@code text}, once terminal control sequences
+     * are removed. A shell can put a mode switch and a carriage return in front of a printed line,
+     * so the line cannot be matched as the raw bytes after a newline.
+     */
+    public static boolean printedLine(String output, String text) {
+        return output.lines()
+                .map(line -> line.replaceAll("\u001B\\[[0-9;?]*[A-Za-z]", "").strip())
+                .anyMatch(text::equals);
     }
 }

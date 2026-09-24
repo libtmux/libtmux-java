@@ -48,7 +48,7 @@ suspend fun watchWithFlow(socket: Path, deadline: Duration): String {
                 withTimeoutOrNull(deadline) {
                     output.deliveries().map { it.kept().data() }.first { chunk ->
                         seen.append(chunk)
-                        Regex("(^|\n)flowed\r?\n").containsMatchIn(seen)
+                        WatchPaneOutput.printedLine(seen.toString(), "flowed")
                     }
                 } != null
 
