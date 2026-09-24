@@ -973,9 +973,13 @@ public final class Pane {
 
     /** Pastes a named buffer into this pane, as though it had been typed. */
     public void pasteBuffer(String name) {
-        Objects.requireNonNull(name, "name");
-        server.run(
-                snapshot, List.of("paste-buffer", "-b", name, "-t", state.id().value()));
+        try (PaneInput.Lease input = PaneInput.hold(this)) {
+            Objects.requireNonNull(input, "input");
+            Objects.requireNonNull(name, "name");
+            server.run(
+                    snapshot,
+                    List.of("paste-buffer", "-b", name, "-t", state.id().value()));
+        }
     }
 
     /**
