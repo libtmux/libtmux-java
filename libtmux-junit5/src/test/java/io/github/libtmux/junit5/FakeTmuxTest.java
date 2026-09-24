@@ -12,6 +12,12 @@ import io.github.libtmux.Pane_;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
+import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.ControlReply;
+import io.github.libtmux.control.Delivery;
+import io.github.libtmux.control.EventSubscription;
+import io.github.libtmux.control.PaneOutput;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -114,6 +120,42 @@ final class FakeTmuxTest {
         assertFalse(
                 tmux.sent().stream().anyMatch(argv -> argv.getFirst().equals("list-clients")),
                 "a whole-server read answered instead: " + tmux.sent());
+    }
+
+    /** A control client of the fake is answered by it, and hears what a test says a pane wrote. */
+    @Test
+    void aControlClientIsAnsweredAndHearsWhatAPaneWrote() throws Exception {
+        FakeTmux tmux = new FakeTmux();
+        PaneId pane = tmux.addSession("work");
+
+        try (Server server = tmux.server();
+                ControlClient client = server.control(server.sessions().getFirst());
+                EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
+            ControlReply reply = client.send("display-message", "-p", "#{session_name}");
+            tmux.output(pane, "built\r\n\\ok");
+
+            assertEquals(List.of("work"), reply.lines());
+            PaneOutput heard = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
+            assertEquals(pane, heard.pane());
+            assertEquals("built\r\n\\ok", heard.data());
+        }
+    }
+
+    /** A restart ends an attached control client, as a server that went away does. */
+    @Test
+    void aRestartEndsAnAttachedControlClient() throws Exception {
+        FakeTmux tmux = new FakeTmux();
+        tmux.addSession("work");
+
+        try (Server server = tmux.server();
+                ControlClient client = server.control(server.sessions().getFirst());
+                EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
+            tmux.restart();
+
+            assertEquals(Optional.empty(), output.next(Duration.ofSeconds(5)));
+            assertTrue(output.cause().isPresent(), "a client the server ended reports why");
+            assertFalse(client.isAlive());
+        }
     }
 
     /** What the library creates is in the fake afterwards, and the handle it returns is to it. */

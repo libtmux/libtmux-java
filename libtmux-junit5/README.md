@@ -144,8 +144,26 @@ try (Server server = tmux.server()) {
 tmux.sent().getLast().getFirst();     // → send-keys
 ```
 
-`restart()` replaces the server under every handle made so far, which is how to
-test code that has to survive one. For behaviour that depends on tmux itself —
+It is a control-mode server too. `server.control(session)` attaches a client
+the fake answers, and `output` pushes what a pane wrote, so code that reads a
+subscription can be tested without tmux:
+
+```java
+FakeTmux tmux = new FakeTmux();
+PaneId pane = tmux.addSession("work");
+
+try (Server server = tmux.server();
+        ControlClient client = server.control(server.sessions().getFirst());
+        EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
+    tmux.output(pane, "built");
+    Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow()).data();   // → built
+}
+```
+
+`notify` pushes a notification line, such as `%window-renamed @1 logs`.
+
+`restart()` replaces the server under every handle made so far, and ends every
+attached control client, which is how to test code that has to survive one. For behaviour that depends on tmux itself —
 what a release does with a flag, how a shell echoes — use the extension above.
 
 ## Keep servers off other people's sockets
