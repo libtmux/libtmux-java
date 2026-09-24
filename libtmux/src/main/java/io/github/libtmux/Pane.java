@@ -29,6 +29,9 @@ import java.util.function.Predicate;
  *
  * <p>Identity is the server and the pane id. An index is state: panes renumber as neighbours come
  * and go.
+ *
+ * <p>A method named for a captured field returns what {@link #info()} holds and does no I/O;
+ * {@link #refresh()} reads again. Every other method asks tmux now.
  */
 public final class Pane {
 

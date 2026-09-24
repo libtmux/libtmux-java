@@ -12,6 +12,9 @@ import java.util.Optional;
  *
  * <p>Identity is the server and the client name, which is how tmux addresses it. What it is
  * attached to is state: a client can switch sessions without becoming a different client.
+ *
+ * <p>{@link #name()}, {@link #session()}, and {@link #attachment()} return what the capture holds
+ * and do no I/O; {@link #refresh()} reads again. Every other method asks tmux now.
  */
 public final class Client {
 
