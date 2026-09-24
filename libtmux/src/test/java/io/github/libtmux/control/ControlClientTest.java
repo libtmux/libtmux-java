@@ -12,6 +12,7 @@ import io.github.libtmux.SessionId;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTimeoutException;
 import io.github.libtmux.transport.TmuxTransportException;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -376,6 +377,35 @@ final class ControlClientTest {
             if (child > 0) {
                 ProcessHandle.of(child).ifPresent(ProcessHandle::destroyForcibly);
             }
+        }
+    }
+
+    /**
+     * tmux cuts pane output into %output lines by byte count, so a UTF-8 character can start in one
+     * and end in the next. It escapes only control bytes and the backslash, as octal.
+     */
+    @Test
+    void aCharacterSplitAcrossOutputLinesArrivesWhole(@TempDir Path directory) throws Exception {
+        ServerConfig config = fakeTmux(directory, """
+                printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                IFS= read -r request
+                printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                IFS= read -r request
+                printf '%%output %%1 caf\\303\n%%output %%1 \\251\\\\134x!\n'
+                printf '%%begin 102 1 0\n%%end 102 1 0\n'
+                IFS= read -r never
+                """);
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
+                EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
+            client.send("display-message");
+
+            PaneOutput first = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
+            PaneOutput second = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
+
+            assertEquals("caf", first.data());
+            assertEquals("é\\x!", second.data());
+            assertEquals(ByteBuffer.wrap(new byte[] {'c', 'a', 'f', (byte) 0xc3}), first.bytes());
+            assertEquals(ByteBuffer.wrap(new byte[] {(byte) 0xa9, '\\', 'x', '!'}), second.bytes());
         }
     }
 

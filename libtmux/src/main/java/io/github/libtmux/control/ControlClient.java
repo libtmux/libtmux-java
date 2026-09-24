@@ -18,6 +18,7 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -76,6 +77,8 @@ public final class ControlClient implements AutoCloseable {
     private final Thread errorReader;
     private final ControlProtocol protocol = new ControlProtocol();
     private final List<EventSubscription<PaneOutput>> outputSubscriptions = new CopyOnWriteArrayList<>();
+    // Each pane's output decoded as one stream. Touched only by the reader thread.
+    private final java.util.Map<PaneId, Utf8.Stream> paneText = new java.util.HashMap<>();
     private final List<EventSubscription<ControlEvent>> eventSubscriptions = new CopyOnWriteArrayList<>();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final OperationObserver observer;
@@ -490,7 +493,7 @@ public final class ControlClient implements AutoCloseable {
                 if (result instanceof ControlProtocol.Reply reply) {
                     complete(reply.outcome(), reply.lines());
                 } else if (result instanceof ControlProtocol.Notification notification) {
-                    handleNotification(notification.line());
+                    handleNotification(notification.line(), line.bytes());
                 }
             }
         } catch (IOException | ControlProtocol.LimitExceeded e) {
@@ -545,9 +548,9 @@ public final class ControlClient implements AutoCloseable {
         }
     }
 
-    private void handleNotification(String line) {
+    private void handleNotification(String line, byte[] bytes) {
         if (line.startsWith("%output ")) {
-            publish(line);
+            publish(bytes);
         } else if (line.startsWith("%")) {
             // Everything else tmux volunteers about its own state. A snapshot is still how state
             // is read; this only says when reading it again would be worth the trouble.
@@ -567,14 +570,24 @@ public final class ControlClient implements AutoCloseable {
         }
     }
 
-    private void publish(String line) {
-        int paneEnd = line.indexOf(' ', "%output ".length());
-        if (paneEnd < 0) {
+    /**
+     * One piece of a pane's output. tmux cuts pieces by byte count, so each pane's text is decoded
+     * as one stream, and a character cut between two pieces arrives whole with the later one.
+     */
+    private void publish(byte[] line) {
+        int start = "%output ".length();
+        int paneEnd = start;
+        while (paneEnd < line.length && line[paneEnd] != ' ') {
+            paneEnd++;
+        }
+        if (paneEnd == line.length) {
             return;
         }
-        PaneOutput output = new PaneOutput(
-                new PaneId(line.substring("%output ".length(), paneEnd)), unescape(line.substring(paneEnd + 1)));
-        offer(outputSubscriptions, output);
+        PaneId pane = new PaneId(new String(line, start, paneEnd - start, StandardCharsets.US_ASCII));
+        byte[] piece = unescape(line, paneEnd + 1);
+        String text =
+                paneText.computeIfAbsent(pane, ignored -> new Utf8.Stream()).decode(piece);
+        offer(outputSubscriptions, new PaneOutput(pane, text, ByteBuffer.wrap(piece)));
     }
 
     private <T> EventSubscription<T> subscribe(List<EventSubscription<T>> subscriptions, int capacity) {
@@ -646,25 +659,26 @@ public final class ControlClient implements AutoCloseable {
         }
     }
 
-    /** tmux writes a byte it cannot print as a three-digit octal escape. */
-    static String unescape(String data) {
-        if (data.indexOf('\\') < 0) {
-            return data;
-        }
-        StringBuilder text = new StringBuilder(data.length());
-        for (int index = 0; index < data.length(); index++) {
-            char character = data.charAt(index);
-            if (character == '\\' && index + 3 < data.length()) {
-                try {
-                    text.append((char) Integer.parseInt(data.substring(index + 1, index + 4), 8));
-                    index += 3;
-                    continue;
-                } catch (NumberFormatException e) {
-                    // Not an escape after all; the backslash is literal.
-                }
+    /** tmux writes a control byte or a backslash as a three-digit octal escape, and the rest raw. */
+    static byte[] unescape(byte[] line, int from) {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream(line.length - from);
+        for (int index = from; index < line.length; index++) {
+            if (line[index] == '\\' && index + 3 < line.length && octal(line, index + 1)) {
+                bytes.write(((line[index + 1] - '0') << 6) | ((line[index + 2] - '0') << 3) | (line[index + 3] - '0'));
+                index += 3;
+            } else {
+                bytes.write(line[index]);
             }
-            text.append(character);
         }
-        return text.toString();
+        return bytes.toByteArray();
+    }
+
+    private static boolean octal(byte[] line, int from) {
+        for (int index = from; index < from + 3; index++) {
+            if (line[index] < '0' || line[index] > '7') {
+                return false;
+            }
+        }
+        return true;
     }
 }
