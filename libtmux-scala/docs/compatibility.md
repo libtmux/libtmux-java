@@ -89,8 +89,12 @@ version is available from Central. Central mode excludes the local Java stage,
 rejects snapshot and development coordinates, and compiles against that
 published Java dependency before signing.
 
-The workflow runs `sonaUpload`, which leaves a pending Central Portal
-deployment for the owner to publish or drop. It never runs `sonaRelease` and
+Before importing the signing key, the workflow runs the core, Cats,
+integration, and example tests on both Scala families against that published
+Java dependency and a real tmux, so what is signed is what was tested. It then
+runs `sonaUpload`, which leaves a pending Central Portal deployment for the
+owner to publish or drop, and attests every staged jar and POM with the commit
+and workflow that produced them. It never runs `sonaRelease` and
 does not create a tag, push, or release artifacts automatically.
 
 ## The wrapped surface

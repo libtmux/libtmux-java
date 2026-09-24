@@ -346,6 +346,18 @@ final class DocumentationFactsTest {
         return claimed;
     }
 
+    /** What is signed must be what was tested, and the upload must say which commit made it. */
+    @Test
+    void theScalaReleaseTestsBeforeSigningAndAttestsWhatItUploads() throws IOException {
+        String workflow = Files.readString(ROOT.resolve(".github/workflows/scala-release.yml"));
+        int tested = workflow.indexOf("integration/test");
+        int signed = workflow.indexOf("sbtw stageSigned");
+        int attested = workflow.indexOf("actions/attest@");
+        assertTrue(tested >= 0 && signed > tested, "the Scala release signs before it runs the tests");
+        assertTrue(attested > workflow.indexOf("sbtw sonaUpload"), "the Scala release attests nothing it uploads");
+        assertTrue(workflow.contains("sona-staging/**/*.jar"), "the attestation does not cover the staged jars");
+    }
+
     /** A tag can be moved to other code after review; a commit cannot. Dependabot keeps them current. */
     @Test
     void everyWorkflowActionIsPinnedToACommit() throws IOException {

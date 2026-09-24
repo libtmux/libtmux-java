@@ -17,11 +17,13 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -47,6 +49,24 @@ jobs:
               exit 1
             }
           done
+
+      - name: Install tmux
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y tmux
+
+      # What is signed is what was tested: both Scala families, against the
+      # published Java dependency, before any key is imported.
+      - name: Test against the published Java dependency
+        env:
+          LIBTMUX_SCALA_RELEASE: central
+          LIBTMUX_SCALA_VERSION: ${{ inputs.scala_version }}
+          LIBTMUX_JAVA_VERSION: ${{ inputs.java_version }}
+        run: |
+          export TMUX_TEST_BINARY="$(command -v tmux)"
+          ./libtmux-scala/sbtw \
+            '++2.13.18' core/test cats/test integration/test examples/test \
+            '++3.3.8' core/test cats/test integration/test examples/test
 
       - name: Carry the passphrase only if the key has one
         env:
@@ -91,6 +111,15 @@ jobs:
           SONATYPE_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
           SONATYPE_PASSWORD: ${{ secrets.CENTRAL_PORTAL_PASSWORD }}
         run: ./libtmux-scala/sbtw sonaUpload
+
+      # The Portal records the files. This records which commit and workflow
+      # produced them. A tag can be moved; the attestation cannot.
+      - name: Attest the staged artifacts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            libtmux-scala/target/sona-staging/**/*.jar
+            libtmux-scala/target/sona-staging/**/*.pom
 
       - name: What to do next
         run: |
