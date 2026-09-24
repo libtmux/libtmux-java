@@ -147,14 +147,35 @@ final class Pane[F[_]] private[cats] (
   def send(keys: String): F[Unit] = server.execution(underlying.send(keys))
   def sendKeys(keys: Seq[String]): F[Unit] =
     server.execution(underlying.sendKeys(keys))
+
+  /** As `sendKeys(keys)`, after `beforeSend` confirms this caller still owns
+    * the pane's input. It runs on the blocking worker, inside the pane's hold,
+    * just before the keys go; if it throws, nothing is sent.
+    */
+  def sendKeys(keys: Seq[String], beforeSend: () => Unit): F[Unit] =
+    server.execution(underlying.sendKeys(keys, beforeSend))
   def sendLiteral(text: String): F[Unit] =
     server.execution(underlying.sendLiteral(text))
   def sendLiteral(parts: Seq[String]): F[Unit] =
     server.execution(underlying.sendLiteral(parts))
+
+  /** As `sendLiteral(parts)`, after `beforeSend`, as `sendKeys` runs it. */
+  def sendLiteral(parts: Seq[String], beforeSend: () => Unit): F[Unit] =
+    server.execution(underlying.sendLiteral(parts, beforeSend))
   def sendLine(command: String): F[Unit] =
     server.execution(underlying.sendLine(command))
   def awaitText(text: String, timeout: Duration): F[TextOutcome] =
     server.execution.waiting(underlying.awaitText(text, timeout))
+
+  /** As `awaitText(text, timeout)`, looking every `every`: each look is a tmux
+    * process.
+    */
+  def awaitText(
+      text: String,
+      timeout: Duration,
+      every: Duration
+  ): F[TextOutcome] =
+    server.execution.waiting(underlying.awaitText(text, timeout, every))
   def run(command: String, timeout: Duration): F[PaneRun] =
     server.execution(underlying.run(command, timeout))
   def copyMode: F[Unit] = server.execution(underlying.copyMode())
@@ -182,6 +203,10 @@ final class Pane[F[_]] private[cats] (
   def expand(format: String): F[String] =
     server.execution(underlying.expand(format))
   def paste(text: String): F[Unit] = server.execution(underlying.paste(text))
+
+  /** As `paste(text)`, after `beforePaste`, as `sendKeys` runs its check. */
+  def paste(text: String, beforePaste: () => Unit): F[Unit] =
+    server.execution(underlying.paste(text, beforePaste))
   def pasteBuffer(name: String): F[Unit] =
     server.execution(underlying.pasteBuffer(name))
   def clearHistory: F[Unit] = server.execution(underlying.clearHistory())
