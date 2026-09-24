@@ -101,6 +101,23 @@ either wrapped by the blocking facade or named in
 `info`. Anything else stays on the Java handle. `SurfaceSuite` fails when a
 new Java method is neither.
 
+## The binary surface
+
+Every public class, constructor, method, and field of both artifacts, as the
+JVM sees them, is committed under [`libtmux-scala/api/`][api], one file per
+artifact and Scala binary family. `ApiManifestSuite` fails when the compiled
+surface differs, so every signature change is a reviewed line rather than a
+surprise to a consumer's linker. Members that Scala keeps package-private are
+public bytecode and are listed too, as MiMa would see them. Nothing Scala is
+released yet, so there is no previous jar for MiMa to compare against; after a
+deliberate change, regenerate on both families and review the diff:
+
+```console
+$ LIBTMUX_SCALA_API_WRITE=1 libtmux-scala/sbtw \
+    '++2.13.18' 'cats/testOnly *ApiManifestSuite' \
+    '++3.3.8' 'cats/testOnly *ApiManifestSuite'
+```
+
 ## Inherited feature boundaries
 
 The facade preserves Java's version guards. [Named buffer deletion][buffers]
@@ -117,6 +134,7 @@ inspection, and exit are wrapped; advanced commands use explicit raw access.
 See [execution](execution.md) for control acknowledgement and batch attribution
 limits, and [ownership](ownership.md) for resource lifetimes.
 
+[api]: ../api/
 [build]: ../../build.sbt
 [sbt-version]: ../../project/build.properties
 [tmux-matrix]:
