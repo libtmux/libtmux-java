@@ -410,6 +410,7 @@ built from the current trunk.
 - [Snapshots and handles](docs/guide/snapshots-and-handles.md)
 - [Streaming](docs/guide/streaming.md)
 - [Failures, telemetry, and pane input](docs/guide/operations.md)
+- [Threads, cancellation, and what runs at once](docs/guide/concurrency.md)
 - [Driving tmux from a model](docs/guide/mcp.md)
 - [Testing with real tmux](docs/guide/testing.md)
 - [Kotlin](docs/guide/kotlin.md) and [Scala](docs/guide/scala.md)

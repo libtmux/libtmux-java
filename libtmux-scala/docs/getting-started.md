@@ -141,6 +141,10 @@ config.endpoint() match {
 }
 ```
 
+Timeouts are `java.time.Duration`, as the Java client takes them. From a
+`FiniteDuration`, `scala.jdk.DurationConverters._` makes the one-call
+conversion: `5.seconds.toJava`.
+
 Follow with [queries](query.md), [ownership](ownership.md), then
 [execution](execution.md). For immediate access without the facade, use the
 [direct Java guide](../../docs/guide/scala.md).
