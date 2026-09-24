@@ -205,7 +205,7 @@ try {
 
 - [Getting started](../docs/guide/getting-started.md) · [Snapshots and handles](../docs/guide/snapshots-and-handles.md)
 - [Filtering](../docs/guide/filtering.md) · [Batching and chaining](../docs/guide/batching-and-chaining.md)
-- [Streaming](../docs/guide/streaming.md)
+- [Streaming](../docs/guide/streaming.md) · [Concurrency](../docs/guide/concurrency.md)
 - [Options and hooks](../docs/guide/options-and-hooks.md)
 - Runnable programs: [`examples/`](../examples/)
 - Testing your own code against real tmux: [`libtmux-junit5`](../libtmux-junit5/)

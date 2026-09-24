@@ -67,6 +67,9 @@ equality and hash codes to them. A pane's identity is physical; a window's
 identity includes its captured session and window index. Borrowing does not
 replace that identity by reacquiring the same textual ID. Refresh follows the
 Java contract and can return a pane through a different window occurrence.
+`Pane.fromJava`, and each other handle's `fromJava`, wraps the handle's Java
+server in a borrowed facade of its own: closing that facade closes nothing, and
+the Java server's owner still decides when it closes.
 
 `unsafeJava` returns the underlying Java object without transferring
 ownership. It is the escape from the Scala scope checks and effect scheduling.

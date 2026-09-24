@@ -264,6 +264,7 @@ pinned.configFile().isPresent();           // → true
 | send several commands at once     | [batching and chaining](batching-and-chaining.md) |
 | understand what a handle is       | [snapshots and handles](snapshots-and-handles.md) |
 | watch output as it happens        | [streaming](streaming.md)                     |
+| call it from several threads      | [concurrency](concurrency.md)                 |
 | test your own code against tmux   | [testing](testing.md)                         |
 
 See the [migration notes](../../MIGRATION.md) when upgrading.
