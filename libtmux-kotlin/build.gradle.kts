@@ -13,6 +13,10 @@ plugins {
 
 kotlin {
     jvmToolchain(21)
+    // A consumer's compiler reads metadata at most one minor version newer than itself. 2.2 is
+    // what kotlinx-coroutines 1.11 is compiled for, so a consumer on Kotlin 2.1 can use both;
+    // left unpinned, this module's metadata would follow the build's own compiler.
+    coreLibrariesVersion = "2.2.0"
     // Every public declaration states its visibility and its return type. A library's ABI should not
     // be something the compiler inferred.
     explicitApi()
@@ -20,6 +24,8 @@ kotlin {
     @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
     abiValidation()
     compilerOptions {
+        languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2)
+        apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2)
         // The whole point of this module is that the Java API's nullness is real. Strict mode turns
         // a mismatch against a @NullMarked type into an error here, so this module compiling is
         // itself evidence that the annotations downstairs are correct.
