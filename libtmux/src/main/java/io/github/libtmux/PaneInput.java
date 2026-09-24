@@ -8,9 +8,10 @@ import java.util.Map;
  *
  * <p>Those three share one screen. {@link #hold} throws if another thread already has the pane.
  * The same thread may hold it again; the pane is free when the outer hold closes. {@link
- * Pane#sendKeys}, {@link Pane#paste}, and {@link Pane#run} take a hold for the call and release it
- * when they return. A command still running after {@code run} returns is not held unless the
- * caller kept {@link #hold} or {@link #holdInterruptible} around that call.
+ * Pane#sendKeys}, {@link Pane#sendLiteral}, {@link Pane#paste}, {@link Pane#pasteBuffer}, and {@link
+ * Pane#run} take a hold for the call and release it when they return. A command still running after
+ * {@code run} returns is not held unless the caller kept {@link #hold} or {@link #holdInterruptible}
+ * around that call. Raw commands and {@link CommandChain} steps do not take it.
  *
  * <p>{@link #holdInterruptible} is that longer hold. Another thread may {@link #enterInterrupt} it
  * to send a stop, and that entry does not take the pane. Closing the run's lease still releases

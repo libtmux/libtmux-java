@@ -74,7 +74,8 @@ final class TypedTextTest {
         }
     }
 
-    private static Server onePaneFixture(PaneEcho echo) {
+    /** One session, one window, one pane, on tmux 3.6; every other command succeeds silently. */
+    static Server onePaneFixture(PaneEcho echo) {
         return Server.using(
                 ServerConfig.builder()
                         .endpoint(ServerEndpoint.namedSocket("fixture"))

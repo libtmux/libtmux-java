@@ -5,10 +5,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 class PaneInputTest {
 
@@ -165,6 +170,42 @@ class PaneInputTest {
                     }
                 });
             }
+        }
+    }
+
+    @Test
+    void everyPaneWriterRefusesAPaneAnotherThreadHolds() throws Exception {
+        try (Server server = TypedTextTest.onePaneFixture(new PaneEcho())) {
+            Pane pane = server.panes().getFirst();
+            Map<String, Executable> writers = new LinkedHashMap<>();
+            writers.put("sendKeys", () -> pane.sendKeys(List.of("typed")));
+            writers.put("sendLiteral", () -> pane.sendLiteral(List.of("typed")));
+            writers.put("paste", () -> pane.paste("typed"));
+            writers.put("pasteBuffer", () -> pane.pasteBuffer("typed"));
+            writers.put("run", () -> pane.run("true", Duration.ofSeconds(1)));
+            CountDownLatch held = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+            Thread owner = Thread.startVirtualThread(() -> {
+                try (PaneInput.Lease input = PaneInput.hold(pane)) {
+                    assertTrue(input != null);
+                    held.countDown();
+                    if (!release.await(5, TimeUnit.SECONDS)) {
+                        throw new AssertionError("owner was not released");
+                    }
+                } catch (Exception e) {
+                    failure.set(e);
+                }
+            });
+            try {
+                assertTrue(held.await(5, TimeUnit.SECONDS));
+                writers.forEach((name, write) ->
+                        assertThrows(IllegalStateException.class, write, name + " wrote into a held pane"));
+            } finally {
+                release.countDown();
+                owner.join(5_000);
+            }
+            assertNull(failure.get());
         }
     }
 }
