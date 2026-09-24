@@ -224,6 +224,54 @@ final class ControlModeIntegrationTest {
         }
     }
 
+    /**
+     * tmux cuts output into %output lines by byte count. A pane written to in large blocks, as
+     * {@code cat} writes a file, has some of its two-byte characters cut in half; a program that
+     * writes one character at a time never does. Joined, the text holds every character whole, and
+     * the bytes are the file's.
+     */
+    @Test
+    void outputCutMidCharacterJoinsBackExactly(Server server) throws Exception {
+        byte[] wanted = ("x" + "é".repeat(40_000) + "END").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        java.nio.file.Path file = java.nio.file.Files.createTempFile("cut", ".txt");
+        java.nio.file.Files.write(file, wanted);
+        try (ControlClient client = attach(server);
+                EventSubscription<PaneOutput> output = client.subscribeOutput(4096)) {
+            client.send("send-keys", "-t", "libtmux", "cat " + file, "Enter");
+
+            StringBuilder text = new StringBuilder();
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
+            while (text.indexOf("END") < 0 && System.nanoTime() < deadline) {
+                var next = output.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
+                if (next.isEmpty()) {
+                    break;
+                }
+                PaneOutput piece = Delivery.kept(next.orElseThrow());
+                text.append(piece.data());
+                java.nio.ByteBuffer raw = piece.bytes();
+                byte[] copy = new byte[raw.remaining()];
+                raw.get(copy);
+                bytes.write(copy);
+            }
+
+            assertTrue(text.indexOf("x" + "é".repeat(40_000) + "END") >= 0, "the text lost or split a character");
+            assertTrue(
+                    java.util.Collections.indexOfSubList(asList(bytes.toByteArray()), asList(wanted)) >= 0,
+                    "the joined bytes are not the file's");
+        } finally {
+            java.nio.file.Files.delete(file);
+        }
+    }
+
+    private static List<Byte> asList(byte[] bytes) {
+        List<Byte> list = new ArrayList<>(bytes.length);
+        for (byte value : bytes) {
+            list.add(value);
+        }
+        return list;
+    }
+
     @Test
     void anIdleSubscriberDoesNotDelayAnotherSubscriberOrReplies(Server server) throws Exception {
         try (ControlClient client = attach(server);

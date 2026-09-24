@@ -23,7 +23,9 @@ final class ControlLineReader implements Closeable {
         this.maxBytes = maxBytes;
     }
 
-    record Line(String text, int encodedBytes) {}
+    /** A line as text, its length on the wire, and its bytes without the line ending. */
+    @SuppressWarnings("ArrayRecordComponent") // Internal: read once by the thread that made it.
+    record Line(String text, int encodedBytes, byte[] bytes) {}
 
     @Nullable
     Line readLine() throws IOException {
@@ -49,7 +51,8 @@ final class ControlLineReader implements Closeable {
         if (textLength > 0 && encoded[textLength - 1] == '\r') {
             textLength--;
         }
-        return new Line(Utf8.backslashReplace(Arrays.copyOf(encoded, textLength)), encoded.length);
+        byte[] content = Arrays.copyOf(encoded, textLength);
+        return new Line(Utf8.backslashReplace(content), encoded.length, content);
     }
 
     @Override

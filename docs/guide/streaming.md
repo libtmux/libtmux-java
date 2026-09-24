@@ -115,6 +115,13 @@ tmux decides where one push ends and the next begins, so what a caller wants can
 arrive split across several: read until you have it rather than testing the
 first one. The loop above is bounded by the timeout each `next` carries.
 
+tmux cuts pushes by byte count, not by character, and a pane written to in large
+blocks has some of its characters cut in two. `data()` is decoded per pane, so a
+cut character arrives whole with the later push. `bytes()` is exactly what one
+push carried: a pane's pushes concatenate to the bytes it wrote, which is what a
+recording of the terminal needs. A byte that is not UTF-8 appears in `data()` as
+`\xHH`.
+
 `stream()` reads the same steps as a `java.util.stream.Stream`, pulled one at a
 time on the consuming thread. It ends when the subscription closes, so a timer
 that closes it bounds the whole read, and closing the stream closes the
