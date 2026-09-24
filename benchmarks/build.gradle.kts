@@ -7,9 +7,9 @@ plugins { id("libtmux.java-library") }
 
 dependencies { testImplementation(project(":libtmux")) }
 
-// Nothing here belongs to `check`: it writes a file and takes seconds. Run it when the table needs
-// regenerating.
-tasks.named<Test>("test") { enabled = false }
+// No measurement belongs to `check`: each writes a file and takes seconds. Run them when the table
+// needs regenerating. The ordinary suite keeps only the harness's own tests.
+tasks.named<Test>("test") { useJUnitPlatform { excludeTags("benchmark") } }
 
 tasks.register<Test>("operationBenchmark") {
     group = "verification"
