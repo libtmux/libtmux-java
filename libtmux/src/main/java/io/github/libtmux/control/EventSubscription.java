@@ -23,9 +23,11 @@ import org.jspecify.annotations.Nullable;
  * #cause()} is empty when the caller closed it, and set when the control client ended it. Attach
  * again from the captured session and read a snapshot; nothing already missed is replayed.
  *
- * <p>Closing is terminal: it discards buffered events, wakes threads blocked in {@link #next()},
- * and makes every later read return empty once a pending gap has been delivered. Events discarded
- * by close are not overflow and do not increment the loss count.
+ * <p>Ending is terminal and wakes threads blocked in {@link #next()}. A caller's {@link #close()}
+ * discards buffered events: the caller has chosen not to read them, so they are not overflow and do
+ * not increment the loss count. When the control client ends a subscription, what it had already
+ * delivered stays readable, a pending gap first, and only then does a read return empty with
+ * {@link #cause()} set.
  *
  * @param <T> the event type
  */
@@ -222,7 +224,10 @@ public final class EventSubscription<T> implements AutoCloseable {
         end(null);
     }
 
-    /** As {@link #close()}, recording why the control client ended this subscription. */
+    /**
+     * Ends this subscription as the control client saw it end, recording why. Unlike {@link
+     * #close()}, events already delivered stay readable.
+     */
     void end(@Nullable Throwable failure) {
         lock.lock();
         try {
@@ -231,7 +236,9 @@ public final class EventSubscription<T> implements AutoCloseable {
             }
             cause = failure;
             closed = true;
-            events.clear();
+            if (failure == null) {
+                events.clear();
+            }
             available.signalAll();
             onClose.accept(this);
         } finally {

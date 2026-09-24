@@ -211,6 +211,27 @@ final class EventSubscriptionTest {
         assertEquals(failure, subscription.cause().orElseThrow());
     }
 
+    /** The caller closing discards what it chose not to read; the client ending loses nothing. */
+    @Test
+    void whatArrivedBeforeTheClientEndedIsStillRead() throws Exception {
+        var failure = new IllegalStateException("ended");
+        var subscription = new EventSubscription<String>(2, ignored -> {});
+        subscription.offer("first");
+        subscription.offer("second");
+        subscription.offer("third");
+
+        subscription.end(failure);
+
+        assertEquals(Optional.of(new Delivery.Gap<>(1)), subscription.next(Duration.ZERO));
+        assertEquals(Optional.of(new Delivery.Event<>("second")), subscription.next(Duration.ZERO));
+        assertEquals(Optional.of(new Delivery.Event<>("third")), subscription.next());
+        assertEquals(Optional.empty(), subscription.next());
+        assertEquals(failure, subscription.cause().orElseThrow());
+        try (var steps = subscription.stream()) {
+            assertThrows(IllegalStateException.class, steps::toList);
+        }
+    }
+
     @Test
     void everyCloseWaitsForDeterministicRemoval() throws Exception {
         CountDownLatch removalStarted = new CountDownLatch(1);

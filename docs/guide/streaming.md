@@ -150,7 +150,8 @@ Each subscriber chooses a fixed buffer capacity. A full buffer drops its oldest
 value. The next read is a `Delivery.Gap` naming how many were lost since the
 previous read, and only then the events that remain. `droppedCount()` is the
 total. `cause()` is empty when the caller closed the subscription and set when
-the control client ended it. A subscription does not reconnect: attach again
+the control client ended it. Closing discards what is still buffered; a client
+that ends leaves it to be read first. A subscription does not reconnect: attach again
 with `server.control(session)` and read a snapshot. Nothing already missed is
 replayed. The control reader only fills those buffers; caller code runs on the
 thread that calls `next()`. `standardError()` is the bounded text the tmux
