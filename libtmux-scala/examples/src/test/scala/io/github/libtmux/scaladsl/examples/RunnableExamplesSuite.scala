@@ -1,11 +1,13 @@
 package io.github.libtmux.scaladsl.examples
 
 import io.github.libtmux.scaladsl.fixture.OwnedTmux
-import java.lang.reflect.InvocationTargetException
+import java.lang.reflect.{InvocationTargetException, Method}
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
 import java.security.MessageDigest
 import java.util.HexFormat
+import java.util.concurrent.{CountDownLatch, TimeUnit}
+import java.util.concurrent.atomic.AtomicReference
 import munit.FunSuite
 import scala.io.Source
 import scala.jdk.CollectionConverters._
@@ -113,10 +115,7 @@ final class RunnableExamplesSuite extends FunSuite {
           fixture.config.configFile().orElseThrow().toString
         )
         val main = Class.forName(name).getMethod("main", classOf[Array[String]])
-        try main.invoke(null, arguments.asInstanceOf[Object])
-        catch {
-          case failure: InvocationTargetException => throw failure.getCause
-        }
+        RunnableExamplesSuite.run(main, arguments, 60000)
         assertEquals(
           fixture.server.environment().get(marker).toScala,
           Some("yes"),
@@ -135,6 +134,16 @@ final class RunnableExamplesSuite extends FunSuite {
     }
   }
 
+  test("a main still running at its deadline fails rather than hangs") {
+    val hangs = Class
+      .forName(packageName + "HangingMain")
+      .getMethod("main", classOf[Array[String]])
+    val failure = intercept[AssertionError](
+      RunnableExamplesSuite.run(hangs, Array.empty[String], 200)
+    )
+    assert(failure.getMessage.contains("did not return"), failure.getMessage)
+  }
+
   private def resourceLines(name: String): Vector[String] = {
     val stream = Option(getClass.getClassLoader.getResourceAsStream(name))
       .getOrElse(
@@ -144,4 +153,43 @@ final class RunnableExamplesSuite extends FunSuite {
       _.getLines().filter(_.nonEmpty).toVector
     )
   }
+}
+
+object RunnableExamplesSuite {
+
+  /** Runs `main` on a thread of its own, failing once `deadlineMillis` passes.
+    * A daemon, so a main that never returns cannot hold the JVM either.
+    */
+  def run(
+      main: Method,
+      arguments: Array[String],
+      deadlineMillis: Long
+  ): Unit = {
+    val failure = new AtomicReference[Throwable]()
+    val finished = new CountDownLatch(1)
+    val body: Runnable = () =>
+      try {
+        main.invoke(null, arguments.asInstanceOf[Object])
+        ()
+      } catch {
+        case thrown: InvocationTargetException => failure.set(thrown.getCause)
+        case thrown: Throwable                 => failure.set(thrown)
+      } finally finished.countDown()
+    val runner =
+      new Thread(body, "example-" + main.getDeclaringClass.getSimpleName)
+    runner.setDaemon(true)
+    runner.start()
+    if (!finished.await(deadlineMillis, TimeUnit.MILLISECONDS)) {
+      runner.interrupt()
+      throw new AssertionError(
+        s"${main.getDeclaringClass.getName} did not return within $deadlineMillis ms"
+      )
+    }
+    Option(failure.get).foreach(thrown => throw thrown)
+  }
+}
+
+/** Never returns. Top level, so its main is static, as an example's is. */
+object HangingMain {
+  def main(args: Array[String]): Unit = Thread.sleep(Long.MaxValue)
 }
