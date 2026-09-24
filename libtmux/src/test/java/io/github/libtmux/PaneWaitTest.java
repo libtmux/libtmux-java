@@ -361,7 +361,7 @@ final class PaneWaitTest {
                     if (argv.size() == 3 && argv.get(2).equals("#{pid}")) {
                         liveness.incrementAndGet();
                     }
-                    yield new CommandResult(0, List.of(row("4242", "3.6")), List.of());
+                    yield new CommandResult(0, List.of(row("4242", "3.6", "1790000000")), List.of());
                 }
                 default -> new CommandResult(0, rows(argv.get(0)), List.of());
             };

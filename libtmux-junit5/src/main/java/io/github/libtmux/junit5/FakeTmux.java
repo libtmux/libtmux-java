@@ -153,6 +153,8 @@ public final class FakeTmux implements TmuxTransport {
             "wait-for");
 
     private long pid;
+    // When this server started, in seconds, as #{start_time} reports it; a restart moves it on.
+    private long started = 1_790_000_000L;
     private final List<FakeSession> sessions = new ArrayList<>();
     private final List<List<String>> sent = new ArrayList<>();
     private final Map<String, List<String>> screens = new HashMap<>();
@@ -205,6 +207,7 @@ public final class FakeTmux implements TmuxTransport {
      */
     public synchronized void restart() {
         pid++;
+        started++;
         sessions.clear();
         screens.clear();
     }
@@ -655,6 +658,7 @@ public final class FakeTmux implements TmuxTransport {
         Map<String, String> context = new HashMap<>();
         context.put("pid", Long.toString(pid));
         context.put("version", VERSION);
+        context.put("start_time", Long.toString(started));
         context.put("socket_path", "/tmp/libtmux-java-fake/" + pid);
         return context;
     }

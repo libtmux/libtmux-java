@@ -28,6 +28,7 @@ public final class ServerSnapshot {
 
     private final Instant capturedAt;
     private final OptionalLong serverPid;
+    private final OptionalLong serverStartTime;
     private final Optional<TmuxVersion> serverVersion;
     private final List<SessionState> sessions;
     private final List<WindowState> windows;
@@ -42,6 +43,7 @@ public final class ServerSnapshot {
     private ServerSnapshot(
             Instant capturedAt,
             OptionalLong serverPid,
+            OptionalLong serverStartTime,
             Optional<TmuxVersion> serverVersion,
             List<SessionState> sessions,
             List<WindowState> windows,
@@ -49,6 +51,7 @@ public final class ServerSnapshot {
             List<ClientState> clients) {
         this.capturedAt = capturedAt;
         this.serverPid = serverPid;
+        this.serverStartTime = serverStartTime;
         this.serverVersion = serverVersion;
         this.sessions = sessions;
         this.windows = windows;
@@ -85,13 +88,63 @@ public final class ServerSnapshot {
             List<WindowState> windows,
             List<PaneState> panes,
             List<ClientState> clients) {
-        return of(capturedAt, OptionalLong.empty(), Optional.empty(), sessions, windows, panes, clients);
+        return of(
+                capturedAt,
+                OptionalLong.empty(),
+                OptionalLong.empty(),
+                Optional.empty(),
+                sessions,
+                windows,
+                panes,
+                clients);
     }
 
-    /** Assembles a capture tied to the live tmux process and version that produced it. */
+    /**
+     * Assembles a capture tied to the live tmux process and version that produced it, with no start
+     * time: a handle made from it is fenced by the process id alone.
+     */
     public static ServerSnapshot of(
             Instant capturedAt,
             long serverPid,
+            TmuxVersion serverVersion,
+            List<SessionState> sessions,
+            List<WindowState> windows,
+            List<PaneState> panes,
+            List<ClientState> clients) {
+        return of(capturedAt, serverPid, OptionalLong.empty(), serverVersion, sessions, windows, panes, clients);
+    }
+
+    /**
+     * Assembles a capture tied to the live tmux process that produced it: its id, when it started,
+     * and its version. A process id can be reused; the pair with the start time names one server.
+     */
+    public static ServerSnapshot of(
+            Instant capturedAt,
+            long serverPid,
+            long serverStartTime,
+            TmuxVersion serverVersion,
+            List<SessionState> sessions,
+            List<WindowState> windows,
+            List<PaneState> panes,
+            List<ClientState> clients) {
+        if (serverStartTime < 0) {
+            throw new IllegalArgumentException("serverStartTime is negative: " + serverStartTime);
+        }
+        return of(
+                capturedAt,
+                serverPid,
+                OptionalLong.of(serverStartTime),
+                serverVersion,
+                sessions,
+                windows,
+                panes,
+                clients);
+    }
+
+    private static ServerSnapshot of(
+            Instant capturedAt,
+            long serverPid,
+            OptionalLong serverStartTime,
             TmuxVersion serverVersion,
             List<SessionState> sessions,
             List<WindowState> windows,
@@ -103,6 +156,7 @@ public final class ServerSnapshot {
         return of(
                 capturedAt,
                 OptionalLong.of(serverPid),
+                serverStartTime,
                 Optional.of(Objects.requireNonNull(serverVersion, "serverVersion")),
                 sessions,
                 windows,
@@ -113,6 +167,7 @@ public final class ServerSnapshot {
     private static ServerSnapshot of(
             Instant capturedAt,
             OptionalLong serverPid,
+            OptionalLong serverStartTime,
             Optional<TmuxVersion> serverVersion,
             List<SessionState> sessions,
             List<WindowState> windows,
@@ -122,6 +177,7 @@ public final class ServerSnapshot {
         ServerSnapshot snapshot = new ServerSnapshot(
                 capturedAt,
                 serverPid,
+                serverStartTime,
                 serverVersion,
                 List.copyOf(sessions),
                 List.copyOf(windows),
@@ -182,6 +238,14 @@ public final class ServerSnapshot {
     /** The tmux process that produced this capture, absent when assembled from detached state. */
     public OptionalLong serverPid() {
         return serverPid;
+    }
+
+    /**
+     * When the tmux process that produced this capture started, in seconds since the epoch, as
+     * {@code #{start_time}} reports it. Absent when the capture was assembled without it.
+     */
+    public OptionalLong serverStartTime() {
+        return serverStartTime;
     }
 
     /** The tmux version that produced this capture, absent when assembled from detached state. */

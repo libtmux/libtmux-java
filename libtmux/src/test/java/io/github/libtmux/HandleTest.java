@@ -231,6 +231,18 @@ final class HandleTest {
         }
     }
 
+    /** A pid can be reused, as a restarted tmux in a container often gets its old one back. */
+    @Test
+    void aHandleIsRefusedByAServerStartedLaterOnItsPid() {
+        CountingTransport transport = new CountingTransport("alpha");
+        try (Server server = Server.using(config(ServerEndpoint.namedSocket("fixture")), transport)) {
+            Window window = server.windows().get(0);
+            transport.liveStart = GroupedTmux.STARTED + 5;
+
+            assertThrows(ObjectDoesNotExistException.class, () -> window.selectLayout(Layout.MAIN_HORIZONTAL_MIRRORED));
+        }
+    }
+
     // -------------------------------------------------------------------------------- finders
 
     /**
@@ -328,6 +340,8 @@ final class HandleTest {
         private final AtomicInteger calls = new AtomicInteger();
         private final List<CommandRequest> requests = new ArrayList<>();
         private final String firstSessionName;
+        // When the server answering now started; a restart on the same pid changes it.
+        private volatile long liveStart = GroupedTmux.STARTED;
 
         CountingTransport(String firstSessionName) {
             this.firstSessionName = firstSessionName;
@@ -337,7 +351,8 @@ final class HandleTest {
         public CommandResult execute(CommandRequest request) {
             calls.incrementAndGet();
             requests.add(request);
-            return GroupedTmux.execute(request, 4242L, argv -> new CommandResult(0, rows(argv.get(0)), List.of()));
+            return GroupedTmux.execute(
+                    request, 4242L, "3.6", liveStart, argv -> new CommandResult(0, rows(argv.get(0)), List.of()));
         }
 
         private List<String> rows(String command) {
@@ -372,7 +387,7 @@ final class HandleTest {
                 case "list-clients" -> rows.add(row("/dev/pts/3", "$0"));
                 // Reported as 3.6 so the snapshot uses the format without pane_floating_flag,
                 // which is what these fixed rows describe.
-                case "display-message" -> rows.add(row("4242", "3.6"));
+                case "display-message" -> rows.add(row("4242", "3.6", "1790000000"));
                 default -> {
                     // Any other command is an operation, not a listing.
                 }

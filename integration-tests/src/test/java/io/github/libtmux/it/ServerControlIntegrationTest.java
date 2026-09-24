@@ -162,6 +162,33 @@ final class ServerControlIntegrationTest {
                 "the control client stayed attached after the incarnation check failed");
     }
 
+    /**
+     * The live pid and version, and the start time of a server that is not this one: what a tmux
+     * restarted on its old pid shows a capture from before the restart.
+     */
+    @Test
+    void controlDetachesFromAServerStartedAtAnotherTime(Server server) {
+        Session session = server.sessions().get(0);
+        var captured = server.snapshot();
+        String version =
+                server.cmd("display-message", "-p", "#{version}").stdout().get(0);
+
+        assertThrows(
+                ObjectDoesNotExistException.class,
+                () -> ControlClient.attach(
+                        command -> new ProcessBuilder(command).start(),
+                        server.config(),
+                        session.id(),
+                        captured.serverPid().orElseThrow(),
+                        java.util.OptionalLong.of(captured.serverStartTime().orElseThrow() - 1),
+                        version,
+                        Duration.ofSeconds(5)));
+
+        assertTrue(
+                Await.until(() -> noClients(server)),
+                "the control client stayed attached after the start time did not match");
+    }
+
     private static String stat(long pid) {
         try {
             return java.nio.file.Files.readString(java.nio.file.Path.of("/proc/" + pid + "/stat"));

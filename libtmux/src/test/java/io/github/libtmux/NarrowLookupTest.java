@@ -19,8 +19,8 @@ class NarrowLookupTest {
     @Test
     void anAbsentSessionCostsOneFencedRead() {
         List<String> sent = new ArrayList<>();
-        RowFormat identity = RowFormat.of("pid", "version");
-        String row = "4242" + identity.separator() + "3.6";
+        RowFormat identity = RowFormat.of("pid", "version", "start_time");
+        String row = String.join(identity.separator(), "4242", "3.6", "1790000000");
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
@@ -61,7 +61,8 @@ class NarrowLookupTest {
                 return GroupedTmux.execute(request, 4242L, argv -> {
                     String template = argv.get(argv.indexOf("-F") + 1);
                     return switch (argv.get(0)) {
-                        case "display-message" -> new CommandResult(0, List.of("4242" + sep + "3.6"), List.of());
+                        case "display-message" ->
+                            new CommandResult(0, List.of("4242" + sep + "3.6" + sep + "1790000000"), List.of());
                         case "list-panes" ->
                             template.contains("pane_id")
                                     ? new CommandResult(
@@ -125,7 +126,8 @@ class NarrowLookupTest {
                 return GroupedTmux.execute(request, 4242L, argv -> {
                     String template = argv.get(argv.indexOf("-F") + 1);
                     return switch (argv.get(0)) {
-                        case "display-message" -> new CommandResult(0, List.of("4242" + sep + "3.6"), List.of());
+                        case "display-message" ->
+                            new CommandResult(0, List.of("4242" + sep + "3.6" + sep + "1790000000"), List.of());
                         case "list-panes" ->
                             template.contains("pane_id")
                                     ? new CommandResult(
@@ -245,8 +247,8 @@ class NarrowLookupTest {
     }
 
     private static TmuxTransport answering(List<String> sent) {
-        RowFormat identity = RowFormat.of("pid", "version");
-        String row = "4242" + identity.separator() + "3.6";
+        RowFormat identity = RowFormat.of("pid", "version", "start_time");
+        String row = String.join(identity.separator(), "4242", "3.6", "1790000000");
         return new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {

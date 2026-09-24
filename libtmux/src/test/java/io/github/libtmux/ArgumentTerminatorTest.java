@@ -161,7 +161,7 @@ final class ArgumentTerminatorTest {
 
         private CommandResult answer(List<String> argv) {
             return switch (argv.get(0)) {
-                case "display-message" -> new CommandResult(0, List.of(row("4242", "3.6")), List.of());
+                case "display-message" -> new CommandResult(0, List.of(row("4242", "3.6", "1790000000")), List.of());
                 case "list-sessions" -> new CommandResult(0, List.of(row("$0", "alpha", "1", "1")), List.of());
                 case "list-windows" ->
                     new CommandResult(

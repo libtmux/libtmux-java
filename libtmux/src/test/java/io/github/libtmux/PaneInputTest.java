@@ -208,4 +208,38 @@ class PaneInputTest {
             assertNull(failure.get());
         }
     }
+
+    /** The same pane id on a tmux started since is another pane, and a hold on the old one is not it. */
+    @Test
+    void aHoldDoesNotReachTheSamePaneIdOnARestartedServer() throws Exception {
+        try (Server before = TypedTextTest.onePaneFixture(new PaneEcho());
+                Server after = TypedTextTest.onePaneFixture(new PaneEcho(), GroupedTmux.STARTED + 5)) {
+            Pane old = before.panes().getFirst();
+            Pane replacement = after.panes().getFirst();
+            CountDownLatch held = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+            Thread owner = Thread.startVirtualThread(() -> {
+                try (PaneInput.Lease input = PaneInput.hold(old)) {
+                    assertTrue(input != null);
+                    held.countDown();
+                    if (!release.await(5, TimeUnit.SECONDS)) {
+                        throw new AssertionError("owner was not released");
+                    }
+                } catch (Exception e) {
+                    failure.set(e);
+                }
+            });
+            try {
+                assertTrue(held.await(5, TimeUnit.SECONDS));
+                try (PaneInput.Lease input = PaneInput.hold(replacement)) {
+                    assertTrue(input != null);
+                }
+            } finally {
+                release.countDown();
+                owner.join(5_000);
+            }
+            assertNull(failure.get());
+        }
+    }
 }
