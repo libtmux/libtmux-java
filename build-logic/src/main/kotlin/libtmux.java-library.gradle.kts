@@ -95,6 +95,21 @@ tasks.withType<Test>().configureEach {
     // include in a task built to run exactly that tag.
     useJUnitPlatform { excludeTags("fixture") }
 
+    // The tmux a suite runs is one of its inputs. A path alone is not: a matrix lane rebuilt in
+    // place, or an upgraded tmux on PATH, would otherwise report a result it never produced, UP-TO-DATE
+    // or from the build cache. Resolved when the task is fingerprinted, after a lane has named its
+    // binary.
+    val path = providers.environmentVariable("PATH")
+    inputs.files(providers.provider {
+        val named = systemProperties["libtmux.tmux"]?.toString() ?: "tmux"
+        val binary = if (named.contains(File.separatorChar)) {
+            File(named)
+        } else {
+            path.orNull.orEmpty().split(File.pathSeparator).map { File(it, named) }.firstOrNull(File::canExecute)
+        }
+        listOfNotNull(binary?.takeIf(File::isFile))
+    }).withPropertyName("tmuxBinary").withPathSensitivity(PathSensitivity.NONE)
+
     // Quarantine every test from the developer's own tmux. A test is supposed to pass an explicit
     // -S, but nothing in the language enforces that, and a command that omits it silently addresses
     // a real server and can kill it. Two environment values decide where a bare client lands: tmux
