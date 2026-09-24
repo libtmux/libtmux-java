@@ -70,6 +70,13 @@ final class ExamplesRunTest {
         assertEquals("exit 3, 1 line(s): built", reported);
     }
 
+    /** Bash in CI switched bracketed paste off in front of the printed line. */
+    @Test
+    void aPrintedLineIsFoundBehindAModeSwitchButNotInTheTypedCommand() {
+        assertTrue(WatchPaneOutput.printedLine("$ echo watched\r\n\u001B[?2004l\rwatched\r\n", "watched"));
+        assertFalse(WatchPaneOutput.printedLine("$ echo watched\r\n", "watched"));
+    }
+
     @Test
     void watchingAPaneSeesWhatItPrints(TmuxSocketPath socket) {
         List<PaneOutput> seen = WatchPaneOutput.run(socket.path(), Duration.ofSeconds(30), output -> {});

@@ -81,7 +81,7 @@ final class MainsTest {
     void watchPaneOutput(TmuxSocketPath socket) throws Exception {
         String out = launch("WatchPaneOutput", socket.path().toString());
 
-        assertTrue(out.matches("(?s).*(^|\\n)watched\\r?\\n.*"), out);
+        assertTrue(WatchPaneOutput.printedLine(out, "watched"), out);
     }
 
     @Test
