@@ -413,7 +413,7 @@ final class OperationBenchmark {
                 scenario, sorted.get(sorted.size() / 2), sorted.getFirst(), sorted.getLast(), dispatches, output);
     }
 
-    private Sample once(Path root, String scenario, int sample, Consumer<Server> setUp, Function<Server, String> work)
+    Sample once(Path root, String scenario, int sample, Consumer<Server> setUp, Function<Server, String> work)
             throws IOException {
         Path home = root.resolve(scenario.replace("()", "").replace(' ', '-') + "-" + sample);
         Files.createDirectories(home);
@@ -428,19 +428,24 @@ final class OperationBenchmark {
 
         Counting counting = new Counting(new ProcessTransport());
         try (Server server = Server.using(built, counting)) {
-            server.newSession("bench");
-            tmux = server.version().toString();
-            setUp.accept(server);
-            // Warm: the first command pays for starting a server, which is not what is being
-            // compared. Whatever the scenario needed is already in place, so none of it is timed.
-            server.windows();
-            int before = counting.dispatches.get();
-            long started = System.nanoTime();
-            String output = work.apply(server);
-            long millis = (System.nanoTime() - started) / 1_000_000;
-            int dispatches = counting.dispatches.get() - before;
-            server.killServer();
-            return new Sample(millis, dispatches, output);
+            try {
+                server.newSession("bench");
+                tmux = server.version().toString();
+                setUp.accept(server);
+                // Warm: the first command pays for starting a server, which is not what is being
+                // compared. Whatever the scenario needed is already in place, so none of it is timed.
+                server.windows();
+                int before = counting.dispatches.get();
+                long started = System.nanoTime();
+                String output = work.apply(server);
+                long millis = (System.nanoTime() - started) / 1_000_000;
+                int dispatches = counting.dispatches.get() - before;
+                return new Sample(millis, dispatches, output);
+            } finally {
+                // Closing leaves tmux running, and the socket goes with the temporary directory,
+                // so a scenario that throws would leave a daemon nothing can reach.
+                server.killServer();
+            }
         } finally {
             counting.close();
         }
