@@ -3,15 +3,19 @@ package io.github.libtmux.scaladsl.cats
 import _root_.cats.effect.{Async, Resource}
 import _root_.cats.syntax.all._
 import io.github.libtmux.{
+  Pane => JavaPane,
   PaneId,
   Server => JavaServer,
   ServerConfig,
   ServerIdentity,
+  Session => JavaSession,
   SessionId,
   SessionSpec,
   TmuxVersion,
+  Window => JavaWindow,
   WindowId
 }
+import io.github.libtmux.query.FilterExpr
 import io.github.libtmux.scaladsl.{CommandResult, Snapshot, blocking}
 import io.github.libtmux.snapshot.WindowContext
 import java.nio.file.Path
@@ -42,11 +46,21 @@ final class Server[F[_]] private[cats] (
 
   def sessions: F[Vector[Session[F]]] =
     execution(underlying.sessions()).map(_.map(session))
+
+  /** The sessions `expression` matches, read as the blocking facade reads them:
+    * a safe expression is sent to tmux, and what comes back is tested again.
+    */
+  def sessions(expression: FilterExpr[JavaSession]): F[Vector[Session[F]]] =
+    execution(underlying.sessions(expression)).map(_.map(session))
   def windows: F[Vector[Window[F]]] =
     execution(underlying.windows()).map(_.map(window))
+  def windows(expression: FilterExpr[JavaWindow]): F[Vector[Window[F]]] =
+    execution(underlying.windows(expression)).map(_.map(window))
   def windows(id: WindowId): F[Vector[Window[F]]] =
     execution(underlying.windows(id)).map(_.map(window))
   def panes: F[Vector[Pane[F]]] = execution(underlying.panes()).map(_.map(pane))
+  def panes(expression: FilterExpr[JavaPane]): F[Vector[Pane[F]]] =
+    execution(underlying.panes(expression)).map(_.map(pane))
   def clients: F[Vector[Client[F]]] =
     execution(underlying.clients()).map(_.map(client))
   def snapshot: F[Snapshot] = execution(underlying.snapshot())
@@ -69,8 +83,14 @@ final class Server[F[_]] private[cats] (
     underlying.killSession(name)
   )
   def killServer: F[Unit] = execution(underlying.killServer())
+
+  /** As `killServer`, waiting at most `timeout` for the daemon to exit. */
+  def killServer(timeout: Duration): F[Unit] =
+    execution(underlying.killServer(timeout))
   def lock: F[Unit] = execution(underlying.lock())
   def isAlive: F[Boolean] = execution(underlying.isAlive())
+  def isAlive(timeout: Duration): F[Boolean] =
+    execution(underlying.isAlive(timeout))
   def version: F[TmuxVersion] = execution(underlying.version())
   def expand(format: String): F[String] = execution(underlying.expand(format))
   def runShell(command: String): F[Unit] = execution(

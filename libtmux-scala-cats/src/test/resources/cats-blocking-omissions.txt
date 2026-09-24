@@ -1,0 +1,3 @@
+# Blocking operations the Cats facade does not offer, as Class.method/arity, each with its reason.
+Server.checked/1   # private[blocking]: the blocking facade's own closed check, public only in bytecode
+Server.close/0     # a Cats server is released by its Resource, not closed by hand
