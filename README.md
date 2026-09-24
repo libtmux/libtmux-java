@@ -419,6 +419,7 @@ See the [migration notes](MIGRATION.md) when upgrading.
 - [Batching and chaining](docs/guide/batching-and-chaining.md)
 - [Snapshots and handles](docs/guide/snapshots-and-handles.md)
 - [Streaming](docs/guide/streaming.md)
+- [Failures, telemetry, and pane input](docs/guide/operations.md)
 - [Driving tmux from a model](docs/guide/mcp.md)
 - [Testing with real tmux](docs/guide/testing.md)
 - [Workspace commands](workspace-cli/README.md)
