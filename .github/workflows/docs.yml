@@ -60,7 +60,7 @@ jobs:
         working-directory: docs
         env:
           LIBTMUX_DOCS_CHECKOUT_JAVA: ${{ github.workspace }}/port
-        run: ./scripts/build-site.sh --ports java --skip-refs --skip-pagefind
+        run: ./scripts/build-site.sh --ports java --skip-pagefind
 
       # The directory itself, not its parent: its contents become the contents
       # of <locale>/java/latest. Uploading docs/_site/en/java would nest the
