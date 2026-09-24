@@ -950,15 +950,9 @@ public final class Server implements AutoCloseable {
      */
     public ServerSnapshot snapshot() {
         requireOpen();
-        try {
-            return capture.attempt()
-                    .or(capture::attempt)
-                    .orElseThrow(() -> new LibTmuxException("tmux server changed during snapshot capture"));
-        } catch (LibTmuxException e) {
-            throw e;
-        } catch (RuntimeException e) {
-            throw new LibTmuxException("could not hydrate tmux snapshot: " + e.getMessage(), e);
-        }
+        return capture.attempt()
+                .or(capture::attempt)
+                .orElseThrow(() -> new LibTmuxException("tmux server changed during snapshot capture"));
     }
 
     private ServerSnapshot captured(FilterExpr<?> expression, String... listing) {
@@ -971,7 +965,7 @@ public final class Server implements AutoCloseable {
      * The sessions this expression matches, captured now.
      *
      * <p>A safe expression is sent as {@code list-sessions -f}. The sessions that come back are still
-     * tested with the expression. A relation, an expression tmux cannot apply, or a probe that finds
+     * tested with the expression. A relation, an expression tmux cannot apply, or a filtered read that finds
      * nothing, reads the whole server and filters that capture.
      *
      * @return an immutable list in tmux order
@@ -1020,7 +1014,7 @@ public final class Server implements AutoCloseable {
      * The winlinks this expression matches, captured now.
      *
      * <p>A safe expression is sent as {@code list-windows -f}. The winlinks that come back are still
-     * tested with the expression. A relation, an expression tmux cannot apply, or a probe that finds
+     * tested with the expression. A relation, an expression tmux cannot apply, or a filtered read that finds
      * nothing, reads the whole server and filters that capture.
      *
      * @return an immutable list in tmux order
@@ -1054,7 +1048,7 @@ public final class Server implements AutoCloseable {
      * The panes this expression matches, captured now.
      *
      * <p>A safe expression is sent as {@code list-panes -f}. The panes that come back are still
-     * tested with the expression. An expression tmux cannot apply, or a probe that finds nothing,
+     * tested with the expression. An expression tmux cannot apply, or a filtered read that finds nothing,
      * reads the whole server and filters that capture.
      *
      * @return an immutable list in tmux order
@@ -1088,13 +1082,11 @@ public final class Server implements AutoCloseable {
      */
     public Optional<Session> session(String name) {
         Objects.requireNonNull(name, "name");
-        return read(() -> {
-            ServerSnapshot captured = capture.sessionsNamed(name).orElseGet(this::snapshot);
-            return TmuxFormats.storedNames(name, version(captured)).stream()
-                    .flatMap(stored -> captured.session(stored).stream())
-                    .findFirst()
-                    .map(session -> new Session(this, captured, session));
-        });
+        ServerSnapshot captured = capture.sessionsNamed(name).orElseGet(this::snapshot);
+        return TmuxFormats.storedNames(name, version(captured)).stream()
+                .flatMap(stored -> captured.session(stored).stream())
+                .findFirst()
+                .map(session -> new Session(this, captured, session));
     }
 
     /**
@@ -1106,7 +1098,7 @@ public final class Server implements AutoCloseable {
      */
     public Optional<Session> session(SessionId id) {
         Objects.requireNonNull(id, "id");
-        return read(() -> one(id.value(), "session_id"));
+        return one(id.value(), "session_id");
     }
 
     private Optional<Session> one(String target, String field) {
@@ -1122,16 +1114,6 @@ public final class Server implements AutoCloseable {
                         : captured.session(target).map(session -> new Session(this, captured, session)));
     }
 
-    private <T> T read(java.util.function.Supplier<T> read) {
-        try {
-            return read.get();
-        } catch (LibTmuxException failure) {
-            throw failure;
-        } catch (RuntimeException failure) {
-            throw new LibTmuxException("could not hydrate tmux snapshot: " + failure.getMessage(), failure);
-        }
-    }
-
     /**
      * The pane with this id, captured now.
      *
@@ -1141,15 +1123,10 @@ public final class Server implements AutoCloseable {
      */
     public Optional<Pane> pane(PaneId id) {
         Objects.requireNonNull(id, "id");
-        return read(() -> {
-            if (!TmuxFilters.literal(id.value())) {
-                return paneFrom(snapshot(), id);
-            }
-            return capture.sessionOfPane(id)
-                    .flatMap(session -> capture.oneSession(session.value(), "session_id")
-                            .flatMap(captured -> paneFrom(captured, id)))
-                    .or(() -> paneFrom(snapshot(), id));
-        });
+        if (!TmuxFilters.literal(id.value())) {
+            return paneFrom(snapshot(), id);
+        }
+        return capture.sessionsHolding(id).flatMap(captured -> paneFrom(captured, id));
     }
 
     private Optional<Pane> paneFrom(ServerSnapshot captured, PaneId id) {

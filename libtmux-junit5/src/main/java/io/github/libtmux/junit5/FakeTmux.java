@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
@@ -267,7 +268,7 @@ public final class FakeTmux implements TmuxTransport {
         return switch (verb) {
             case "display-message" -> display(flags);
             case "list-sessions" ->
-                listing(flags, sessions.stream().map(this::context).toList());
+                listing(flags, sessions.stream().map(FakeTmux::first).toList());
             case "list-windows" -> listing(flags, windows(flags));
             case "list-panes" -> listing(flags, panes(flags));
             case "list-clients" -> ok();
@@ -409,7 +410,7 @@ public final class FakeTmux implements TmuxTransport {
         return out.toString();
     }
 
-    private CommandResult listing(Flags flags, List<Map<String, String>> rows) {
+    private CommandResult listing(Flags flags, List<Target> rows) {
         String template = flags.value("-F");
         if (template == null) {
             return ok();
@@ -418,37 +419,68 @@ public final class FakeTmux implements TmuxTransport {
         return new CommandResult(
                 0,
                 rows.stream()
-                        .filter(row -> filter == null || truthy(Formats.expand(filter, row::get)))
-                        .map(row -> Formats.expand(template, row::get))
+                        .map(this::scope)
+                        .filter(row -> filter == null || truthy(Formats.expand(filter, row)))
+                        .map(row -> Formats.expand(template, row))
                         .toList(),
                 List.of());
     }
 
-    private List<Map<String, String>> windows(Flags flags) {
-        List<Map<String, String>> rows = new ArrayList<>();
+    /** A row's variables, and the windows and panes a {@code W:} or {@code P:} loop visits from it. */
+    private Formats.Scope scope(Target target) {
+        Map<String, String> values = context(target);
+        return new Formats.Scope() {
+            @Override
+            public @Nullable String get(String variable) {
+                return values.get(variable);
+            }
+
+            @Override
+            public List<Formats.Scope> windows() {
+                return target.session.windows.stream()
+                        .map(window -> scope(new Target(target.session, window, window.active())))
+                        .toList();
+            }
+
+            @Override
+            public List<Formats.Scope> panes() {
+                return target.window.panes.stream()
+                        .map(pane -> scope(new Target(target.session, target.window, pane)))
+                        .toList();
+            }
+        };
+    }
+
+    private static Target first(FakeSession session) {
+        return new Target(
+                session, session.windows.getFirst(), session.windows.getFirst().active());
+    }
+
+    private List<Target> windows(Flags flags) {
+        List<Target> rows = new ArrayList<>();
         for (FakeSession session : sessions) {
             if (!flags.has("-a") && !isTarget(flags, session)) {
                 continue;
             }
             for (FakeWindow window : session.windows) {
-                rows.add(context(new Target(session, window, window.active())));
+                rows.add(new Target(session, window, window.active()));
             }
         }
         return rows;
     }
 
     /** Every pane with {@code -a}, as the library's own listings ask; otherwise the target window's. */
-    private List<Map<String, String>> panes(Flags flags) {
+    private List<Target> panes(Flags flags) {
         Optional<Target> target =
                 flags.has("-a") ? Optional.empty() : resolve(flags.value("-t")).or(this::active);
-        List<Map<String, String>> rows = new ArrayList<>();
+        List<Target> rows = new ArrayList<>();
         for (FakeSession session : sessions) {
             for (FakeWindow window : session.windows) {
                 if (target.isPresent() && target.get().window != window) {
                     continue;
                 }
                 for (FakePane pane : window.panes) {
-                    rows.add(context(new Target(session, window, pane)));
+                    rows.add(new Target(session, window, pane));
                 }
             }
         }
@@ -625,11 +657,6 @@ public final class FakeTmux implements TmuxTransport {
         context.put("version", VERSION);
         context.put("socket_path", "/tmp/libtmux-java-fake/" + pid);
         return context;
-    }
-
-    private Map<String, String> context(FakeSession session) {
-        return context(new Target(
-                session, session.windows.getFirst(), session.windows.getFirst().active()));
     }
 
     /** Every format variable the library asks for, for one pane in its window in its session. */
@@ -855,10 +882,25 @@ public final class FakeTmux implements TmuxTransport {
         }
     }
 
-    /** The part of tmux's format language the library sends: variables, {@code ==} and {@code &&}. */
+    /**
+     * The part of tmux's format language the library sends: variables, comparisons, {@code &&} and
+     * {@code ||}, {@code ?} conditionals, and the {@code W:} and {@code P:} loops.
+     */
     static final class Formats {
 
         private Formats() {}
+
+        /** What a format is expanded against: a row's variables, and the rows a loop visits. */
+        interface Scope {
+            @Nullable
+            String get(String variable);
+
+            /** The windows of this row's session, each at its active pane. */
+            List<Scope> windows();
+
+            /** The panes of this row's window. */
+            List<Scope> panes();
+        }
 
         /** Undoes {@code TmuxFormats.literal}: tmux reads {@code ##} in a format as one {@code #}. */
         static String literal(String value) {
@@ -866,6 +908,25 @@ public final class FakeTmux implements TmuxTransport {
         }
 
         static String expand(String format, Function<String, @Nullable String> variables) {
+            return expand(format, new Scope() {
+                @Override
+                public @Nullable String get(String variable) {
+                    return variables.apply(variable);
+                }
+
+                @Override
+                public List<Scope> windows() {
+                    return List.of();
+                }
+
+                @Override
+                public List<Scope> panes() {
+                    return List.of();
+                }
+            });
+        }
+
+        static String expand(String format, Scope variables) {
             StringBuilder out = new StringBuilder();
             int index = 0;
             while (index < format.length()) {
@@ -884,7 +945,25 @@ public final class FakeTmux implements TmuxTransport {
             return out.toString();
         }
 
-        private static String evaluate(String inner, Function<String, @Nullable String> variables) {
+        private static String evaluate(String inner, Scope variables) {
+            if (inner.startsWith("?")) {
+                List<String> branches = split(inner.substring(1));
+                String condition = branches.get(0);
+                boolean holds = truthy(
+                        condition.startsWith("#{")
+                                ? expand(condition, variables)
+                                : Objects.requireNonNullElse(variables.get(condition), ""));
+                int chosen = holds ? 1 : 2;
+                return chosen < branches.size() ? expand(branches.get(chosen), variables) : "";
+            }
+            if (inner.startsWith("W:") || inner.startsWith("P:")) {
+                String body = inner.substring(2);
+                StringBuilder looped = new StringBuilder();
+                for (Scope each : inner.charAt(0) == 'W' ? variables.windows() : variables.panes()) {
+                    looped.append(expand(body, each));
+                }
+                return looped.toString();
+            }
             if (inner.startsWith("!:")) {
                 return truthy(expand(inner.substring(2), variables)) ? "0" : "1";
             }
@@ -921,7 +1000,7 @@ public final class FakeTmux implements TmuxTransport {
                     return result ? "1" : "0";
                 }
             }
-            String value = variables.apply(inner);
+            String value = variables.get(inner);
             return value == null ? "" : value;
         }
 
