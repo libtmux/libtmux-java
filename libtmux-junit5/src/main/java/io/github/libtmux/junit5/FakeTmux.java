@@ -7,7 +7,9 @@ import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.TmuxTransport;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -157,6 +159,7 @@ public final class FakeTmux implements TmuxTransport {
     private long started = 1_790_000_000L;
     private final List<FakeSession> sessions = new ArrayList<>();
     private final List<List<String>> sent = new ArrayList<>();
+    private final List<FakeControlClient> controls = new ArrayList<>();
     private final Map<String, List<String>> screens = new HashMap<>();
 
     /** One store per scope tmux keeps: the empty key is the server's, a target names a session's. */
@@ -208,6 +211,8 @@ public final class FakeTmux implements TmuxTransport {
     public synchronized void restart() {
         pid++;
         started++;
+        controls.forEach(FakeControlClient::end);
+        controls.clear();
         sessions.clear();
         screens.clear();
     }
@@ -235,6 +240,57 @@ public final class FakeTmux implements TmuxTransport {
     @Override
     public synchronized CommandResult execute(CommandRequest request) {
         return run(request.commands());
+    }
+
+    /**
+     * Control clients of this fake: {@code server.control(session)} attaches one, its commands are
+     * answered as this fake answers any other, and it hears what {@link #output} and {@link #notify}
+     * push. A restart ends every client attached, as a server that went away does.
+     */
+    @Override
+    public Optional<ControlCarrier> controlCarrier() {
+        return Optional.of(command -> attach());
+    }
+
+    private synchronized Process attach() {
+        FakeControlClient client = new FakeControlClient(commands -> {
+            synchronized (this) {
+                return run(commands);
+            }
+        });
+        controls.add(client);
+        return client;
+    }
+
+    /**
+     * Pushes what a pane wrote to every attached control client, as tmux's {@code %output}: a
+     * control byte or a backslash as three octal digits, and the rest as it is.
+     */
+    public synchronized void output(PaneId pane, String text) {
+        StringBuilder line = new StringBuilder()
+                .append('%')
+                .append("output ")
+                .append(pane.value())
+                .append(' ');
+        for (byte value : text.getBytes(StandardCharsets.UTF_8)) {
+            int unsigned = value & 0xff;
+            if (unsigned < ' ' || unsigned == '\\') {
+                line.append(String.format("\\%03o", unsigned));
+            } else {
+                line.append((char) unsigned);
+            }
+        }
+        push(line.toString());
+    }
+
+    /** Pushes a notification line, such as {@code %window-renamed @1 logs}, to every attached client. */
+    public synchronized void notify(String line) {
+        push(line);
+    }
+
+    private void push(String line) {
+        controls.removeIf(client -> !client.isAlive());
+        controls.forEach(client -> client.push(line));
     }
 
     @Override
