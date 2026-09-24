@@ -16,6 +16,9 @@ import java.util.function.Consumer;
  * into two sessions is one window and two handles, because tmux orders and addresses those
  * positions separately. {@link #id()} stays available for asking whether two links are the same
  * underlying window.
+ *
+ * <p>A method named for a captured field returns what {@link #info()} holds and does no I/O;
+ * {@link #refresh()} reads again. Every other method asks tmux now.
  */
 public final class Window {
 

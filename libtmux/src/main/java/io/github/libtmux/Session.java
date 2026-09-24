@@ -19,6 +19,9 @@ import java.util.function.Consumer;
  *
  * <p>{@link #windows()} reads the capture this handle came from and issues no command. To see newer
  * state, take a new capture.
+ *
+ * <p>A method named for a captured field returns what {@link #info()} holds and does no I/O;
+ * {@link #refresh()} reads again. Every other method asks tmux now.
  */
 public final class Session {
 
