@@ -777,7 +777,7 @@ public final class Server implements AutoCloseable {
 
     ServerIdentity identity(ServerSnapshot snapshot) {
         return snapshot.serverPid().isPresent()
-                ? identity.at(snapshot.serverPid().orElseThrow())
+                ? identity.at(snapshot.serverPid().orElseThrow(), snapshot.serverStartTime())
                 : identity;
     }
 
@@ -908,10 +908,10 @@ public final class Server implements AutoCloseable {
             throw new IllegalArgumentException("session belongs to another server");
         }
         requireOpen();
-        long pid = session.snapshot()
-                .serverPid()
+        ServerSnapshot captured = session.snapshot();
+        long pid = captured.serverPid()
                 .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
-        CommandResult live = guarded(pid, "display-message -p '#{pid} #{version}'", "");
+        CommandResult live = guarded(captured, "display-message -p '#{pid} #{version}'", "");
         if (!live.succeeded() || live.stdout().size() != 1) {
             throw failed("display-message", live);
         }
@@ -932,7 +932,8 @@ public final class Server implements AutoCloseable {
         ControlCarrier carrier = transport
                 .controlCarrier()
                 .orElseThrow(() -> new IllegalStateException("this transport does not start control clients"));
-        return ControlClient.attach(carrier, config, session.id(), pid, reported.substring(space + 1), timeout);
+        return ControlClient.attach(
+                carrier, config, session.id(), pid, captured.serverStartTime(), reported.substring(space + 1), timeout);
     }
 
     /**
@@ -1220,22 +1221,27 @@ public final class Server implements AutoCloseable {
 
     /** A batch whose every command is refused once this handle's server has been replaced. */
     Batch batch(ServerSnapshot snapshot) {
-        long pid = snapshot.serverPid()
-                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
-        return new Batch(commands -> guarded(pid, CommandStrings.group(commands), ""));
+        return new Batch(commands -> guarded(snapshot, CommandStrings.group(commands), ""));
     }
 
     /**
-     * As {@link #batch(ServerSnapshot)}, fenced against a whole identity read separately.
+     * As {@link #batch(ServerSnapshot)}, fenced against an identity read separately.
      *
-     * <p>Both halves, because a pid alone is reusable: a different tmux landing on the one just
-     * probed would answer as if it were the server the rows are being read from.
+     * <p>Both halves, because a pid alone is reusable: a tmux started on the pid of the one just
+     * probed, as a container's first processes often are, would answer as if it were the server the
+     * rows are being read from. Its start time is not the same.
      */
-    Batch batch(long pid, String version) {
-        // The version as tmux reported it, compared as text: any rewriting of it — a parsed version
-        // printing 3.8-rc as 3.8 — fails this fence on every read, and it did.
-        String fence = "#{&&:#{==:#{pid}," + pid + "},#{==:#{version}," + version + "}}";
+    Batch batch(long pid, long startTime) {
+        String fence = incarnation(pid, java.util.OptionalLong.of(startTime));
         return new Batch(commands -> guarded(pid, fence, CommandStrings.group(commands), ""));
+    }
+
+    /** A condition true only on the server a capture named: its pid, and its start time when known. */
+    static String incarnation(long pid, java.util.OptionalLong startTime) {
+        String samePid = "#{==:#{pid}," + pid + "}";
+        return startTime.isPresent()
+                ? "#{&&:" + samePid + ",#{==:#{start_time}," + startTime.getAsLong() + "}}"
+                : samePid;
     }
 
     CommandResult run(ServerSnapshot snapshot, List<String> argv) {
@@ -1275,11 +1281,7 @@ public final class Server implements AutoCloseable {
     private CommandResult guarded(ServerSnapshot snapshot, String command, String input) {
         long pid = snapshot.serverPid()
                 .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
-        return guarded(pid, command, input);
-    }
-
-    private CommandResult guarded(long pid, String command, String input) {
-        return guarded(pid, "#{==:#{pid}," + pid + "}", command, input);
+        return guarded(pid, incarnation(pid, snapshot.serverStartTime()), command, input);
     }
 
     private CommandResult guarded(long pid, String fence, String command, String input) {
@@ -1296,7 +1298,7 @@ public final class Server implements AutoCloseable {
                 .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
         String target = expected.session().value() + ":" + expected.index().value();
         String stale = "libtmux-stale-winlink-" + pid + "-" + expected.window().value();
-        String condition = "#{&&:#{==:#{pid}," + pid + "},#{==:#{window_id},"
+        String condition = "#{&&:" + incarnation(pid, snapshot.serverStartTime()) + ",#{==:#{window_id},"
                 + expected.window().value() + "}}";
         CommandResult result =
                 cmd(List.of("if-shell", "-F", "-t", target, condition, CommandStrings.stringify(argv), stale));

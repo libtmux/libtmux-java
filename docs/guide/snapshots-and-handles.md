@@ -25,7 +25,9 @@ in one listing and its panes from after it closed.
 A capture costs two tmux commands: one asks which server this is, and one runs the
 four listings as a group fenced against that answer. Because tmux runs a group
 inside the server, the rows cannot come from two of them, and a server replaced
-under the capture is refused rather than half-read. What that costs is measured in
+under the capture is refused rather than half-read. "Which server" is its pid and
+when it started: a pid can be reused, and a handle is refused by a tmux started
+since on the same one. What that costs is measured in
 [`docs/benchmarks/operations.md`](../benchmarks/operations.md).
 
 `refresh()` is how to look again. Every live listing, finder and snapshot
@@ -45,7 +47,7 @@ The formats read into the snapshot are:
 
 | Object | Formats |
 | --- | --- |
-| Server | `pid`, `version` |
+| Server | `pid`, `version`, `start_time` |
 | Session | `session_id`, `session_name`, `session_attached`, `session_windows` |
 | Window | `session_id`, `window_id`, `window_index`, `window_name`, `window_active`, `window_panes`, `window_linked`, `window_width`, `window_height`, `window_layout` |
 | Pane | `session_id`, `window_id`, `window_index`, `pane_id`, `pane_index`, `pane_active`, `pane_current_command`, `pane_width`, `pane_height`, `pane_left`, `pane_top`, `pane_title`, `pane_current_path`, `pane_pid`, `pane_at_top`, `pane_at_bottom`, `pane_at_left`, `pane_at_right`, and `pane_floating_flag` on tmux 3.7 and later |

@@ -354,10 +354,11 @@ final class WorkspaceBuilderTest {
                     return new CommandResult(
                             0,
                             List.of(String.join(
-                                    io.github.libtmux.format.RowFormat.of("pid", "version")
+                                    io.github.libtmux.format.RowFormat.of("field")
                                             .separator(),
                                     "4242",
-                                    "3.4")),
+                                    "3.4",
+                                    "1790000000")),
                             List.of());
                 }
                 effected.set(true);
@@ -389,10 +390,11 @@ final class WorkspaceBuilderTest {
                     return new CommandResult(
                             0,
                             List.of(String.join(
-                                    io.github.libtmux.format.RowFormat.of("pid", "version")
+                                    io.github.libtmux.format.RowFormat.of("field")
                                             .separator(),
                                     "4242",
-                                    "3.4")),
+                                    "3.4",
+                                    "1790000000")),
                             List.of());
                 }
                 effected.set(true);

@@ -200,7 +200,8 @@ final class CommandChainIntegrationTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 if (request.commands().get(0).get(0).equals("display-message")) {
-                    return new CommandResult(0, List.of(String.join(separator, "4242", version)), List.of());
+                    return new CommandResult(
+                            0, List.of(String.join(separator, "4242", version, "1790000000")), List.of());
                 }
                 return new CommandResult(0, List.of(), List.of());
             }

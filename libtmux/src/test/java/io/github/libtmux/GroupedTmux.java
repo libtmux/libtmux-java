@@ -19,7 +19,10 @@ import java.util.regex.Pattern;
 final class GroupedTmux {
 
     private static final Pattern QUOTED = Pattern.compile("'([^']*)'");
-    private static final Pattern FENCED = Pattern.compile("#\\{==:#\\{(pid|version)},([^}]+)}");
+    private static final Pattern FENCED = Pattern.compile("#\\{==:#\\{(pid|version|start_time)},([^}]+)}");
+
+    /** When every double's server started, unless a test says otherwise. */
+    static final long STARTED = 1_790_000_000L;
 
     private GroupedTmux() {}
 
@@ -42,6 +45,20 @@ final class GroupedTmux {
      */
     static CommandResult execute(
             CommandRequest request, long livePid, String liveVersion, Function<List<String>, CommandResult> command) {
+        return execute(request, livePid, liveVersion, STARTED, command);
+    }
+
+    /**
+     * Answers one request, running any group it carries.
+     *
+     * @param liveStart when that server started, which a restart on the same pid changes
+     */
+    static CommandResult execute(
+            CommandRequest request,
+            long livePid,
+            String liveVersion,
+            long liveStart,
+            Function<List<String>, CommandResult> command) {
         if (request.commands().size() > 1) {
             List<String> stdout = new ArrayList<>();
             for (List<String> one : request.commands()) {
@@ -60,7 +77,12 @@ final class GroupedTmux {
         String stale = argv.get(argv.size() - 1);
         Matcher fence = FENCED.matcher(argv.get(2));
         while (fence.find()) {
-            String live = fence.group(1).equals("pid") ? Long.toString(livePid) : liveVersion;
+            String live =
+                    switch (fence.group(1)) {
+                        case "pid" -> Long.toString(livePid);
+                        case "start_time" -> Long.toString(liveStart);
+                        default -> liveVersion;
+                    };
             if (!fence.group(2).equals(live)) {
                 return new CommandResult(1, List.of(), List.of("unknown command: " + stale));
             }

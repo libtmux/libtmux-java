@@ -23,9 +23,12 @@ public final class PaneInput {
 
     private PaneInput() {}
 
-    /** Excludes other threads from this pane until the lease closes. */
+    /**
+     * Excludes other threads from this pane until the lease closes. The pane is the one its capture
+     * named: the same id on a server started since is another pane, and is not held.
+     */
     public static Lease hold(Pane pane) {
-        return hold(pane.server().identity(), pane.id());
+        return hold(pane.identity(), pane.id());
     }
 
     static Lease hold(ServerIdentity identity, PaneId pane) {
@@ -38,7 +41,7 @@ public final class PaneInput {
      * <p>The stop uses {@link #enterInterrupt}. Any other attempt to {@link #hold} still fails.
      */
     public static Lease holdInterruptible(Pane pane) {
-        return holdInterruptible(pane.server().identity(), pane.id());
+        return holdInterruptible(pane.identity(), pane.id());
     }
 
     static Lease holdInterruptible(ServerIdentity identity, PaneId pane) {
@@ -52,7 +55,7 @@ public final class PaneInput {
      * {@link #hold}, refuses the entry.
      */
     public static Lease enterInterrupt(Pane pane) {
-        return enterInterrupt(pane.server().identity(), pane.id());
+        return enterInterrupt(pane.identity(), pane.id());
     }
 
     static Lease enterInterrupt(ServerIdentity identity, PaneId pane) {

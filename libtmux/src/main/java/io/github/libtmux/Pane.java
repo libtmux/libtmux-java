@@ -762,8 +762,8 @@ public final class Pane {
         }
     }
 
-    /** Which server incarnation this pane's echo record belongs to. */
-    private ServerIdentity identity() {
+    /** Which server incarnation this pane belongs to: its echo record and its input hold. */
+    ServerIdentity identity() {
         return server.identity(snapshot);
     }
 

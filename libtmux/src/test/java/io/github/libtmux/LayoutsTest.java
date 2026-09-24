@@ -314,17 +314,18 @@ final class LayoutsTest {
                         List.of(
                                 "display-message",
                                 "-p",
-                                io.github.libtmux.format.RowFormat.of("pid", "version")
+                                io.github.libtmux.format.RowFormat.of("pid", "version", "start_time")
                                         .template()),
                         command);
                 if (!daemon.succeeded()) return daemon;
                 return new CommandResult(
                         0,
                         List.of(String.join(
-                                io.github.libtmux.format.RowFormat.of("pid", "version")
+                                io.github.libtmux.format.RowFormat.of("pid", "version", "start_time")
                                         .separator(),
                                 "4242",
-                                String.join("\n", daemon.stdout()))),
+                                String.join("\n", daemon.stdout()),
+                                "1790000000")),
                         List.of());
             }
             assertEquals(List.of("-V"), command);

@@ -23,22 +23,26 @@ public final class ServerIdentity {
     private final String realm;
     private final String server;
     private final long processId;
+    // -1 when not known; tmux reports seconds since the epoch.
+    private final long startTime;
 
-    private ServerIdentity(String realm, String server, long processId) {
+    private ServerIdentity(String realm, String server, long processId, long startTime) {
         this.realm = realm;
         this.server = server;
         this.processId = processId;
+        this.startTime = startTime;
     }
 
     static ServerIdentity of(String realm, ServerEndpoint endpoint) {
-        return new ServerIdentity(Objects.requireNonNull(realm, "realm"), digest(endpoint), 0);
+        return new ServerIdentity(Objects.requireNonNull(realm, "realm"), digest(endpoint), 0, -1);
     }
 
-    ServerIdentity at(long pid) {
+    /** This server as one process: a pid alone can be reused, so its start time is part of it. */
+    ServerIdentity at(long pid, OptionalLong startTime) {
         if (pid < 1) {
             throw new IllegalArgumentException("pid is not positive: " + pid);
         }
-        return new ServerIdentity(realm, server, pid);
+        return new ServerIdentity(realm, server, pid, startTime.orElse(-1));
     }
 
     /** The execution realm the transport reaches tmux through. */
@@ -61,24 +65,27 @@ public final class ServerIdentity {
         return other instanceof ServerIdentity that
                 && realm.equals(that.realm)
                 && server.equals(that.server)
-                && processId == that.processId;
+                && processId == that.processId
+                && startTime == that.startTime;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(realm, server, processId);
+        return Objects.hash(realm, server, processId, startTime);
     }
 
     @Override
     public String toString() {
-        return "ServerIdentity[" + realm + ":" + server + (processId == 0 ? "" : "@" + processId) + "]";
+        return "ServerIdentity[" + realm + ":" + server + (processId == 0 ? "" : "@" + processId)
+                + (startTime < 0 ? "" : "+" + startTime) + "]";
     }
 
     private static String digest(ServerEndpoint endpoint) {
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256")
                     .digest(String.join("\0", endpoint.flags()).getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(hash, 0, 6);
+            // 128 bits: equal keys mean one server, and a shorter digest invites a collision.
+            return HexFormat.of().formatHex(hash, 0, 16);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is required of every Java platform", e);
         }

@@ -516,7 +516,9 @@ final class ServerTest {
                 return GroupedTmux.execute(request, 4242L, "3.2a", argv -> switch (argv.getFirst()) {
                     case "display-message" ->
                         new CommandResult(
-                                0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.2a")), List.of());
+                                0,
+                                List.of(String.join(RowFormat.of("field").separator(), "4242", "3.2a", "1790000000")),
+                                List.of());
                     case "list-sessions" -> new CommandResult(0, List.of(), List.of());
                     // tmux has no current target to list children against, and says so.
                     default -> new CommandResult(1, List.of(), List.of("no current target"));
@@ -557,15 +559,20 @@ final class ServerTest {
      * pid just probed would otherwise answer as the server the rows are read from.
      */
     @Test
-    void snapshotRefusesAServerThatReusedThePidUnderADifferentTmux(@TempDir Path directory) throws IOException {
+    void snapshotRefusesAServerThatReusedThePid(@TempDir Path directory) throws IOException {
         String separator = RowFormat.of("field").separator();
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                return GroupedTmux.execute(request, 4242L, "3.7", argv -> switch (argv.get(0)) {
-                    // Probed as 3.6; the server answering the listings is a 3.7 on that pid.
+                return GroupedTmux.execute(request, 4242L, "3.6", GroupedTmux.STARTED + 5, argv -> switch (argv.get(
+                        0)) {
+                    // Probed as one server; the one answering the listings started later, on that pid
+                    // and that version, as a restarted tmux in a container often is.
                     case "display-message" ->
-                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6")), List.of());
+                        new CommandResult(
+                                0,
+                                List.of(String.join(separator, "4242", "3.6", Long.toString(GroupedTmux.STARTED))),
+                                List.of());
                     default -> new CommandResult(0, List.of(), List.of());
                 });
             }
@@ -593,7 +600,8 @@ final class ServerTest {
             public CommandResult execute(CommandRequest request) {
                 return GroupedTmux.execute(request, 4242L, "3.8-rc", argv -> switch (argv.get(0)) {
                     case "display-message" ->
-                        new CommandResult(0, List.of(String.join(separator, "4242", "3.8-rc")), List.of());
+                        new CommandResult(
+                                0, List.of(String.join(separator, "4242", "3.8-rc", "1790000000")), List.of());
                     default -> new CommandResult(0, List.of(), List.of());
                 });
             }
@@ -695,7 +703,7 @@ final class ServerTest {
             public CommandResult execute(CommandRequest request) {
                 return GroupedTmux.execute(request, 4242L, "3.6", argv -> switch (argv.get(0)) {
                     case "display-message" ->
-                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6")), List.of());
+                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6", "1790000000")), List.of());
                     case "list-sessions" ->
                         new CommandResult(0, List.of(String.join(separator, "$0", "only", "1", "1")), List.of());
                     case "list-windows" ->
@@ -740,7 +748,7 @@ final class ServerTest {
                 }
                 return GroupedTmux.execute(request, 4242L, "3.6", command -> switch (command.get(0)) {
                     case "display-message" ->
-                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6")), List.of());
+                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6", "1790000000")), List.of());
                     case "list-sessions" ->
                         new CommandResult(0, List.of(String.join(separator, "$0", "only", "1", "1")), List.of());
                     case "list-windows" ->
@@ -957,7 +965,8 @@ final class ServerTest {
             public CommandResult execute(CommandRequest request) {
                 List<String> argv = request.commands().get(0);
                 if (argv.get(0).equals("display-message")) {
-                    return new CommandResult(0, List.of(String.join(separator, "4242", version)), List.of());
+                    return new CommandResult(
+                            0, List.of(String.join(separator, "4242", version, "1790000000")), List.of());
                 }
                 if (argv.get(0).equals("list-commands")) {
                     return new CommandResult(0, List.of(lines), List.of());
@@ -1130,7 +1139,9 @@ final class ServerTest {
                 case "list-sessions" -> new CommandResult(0, List.of(sessionRow), List.of());
                 case "display-message" ->
                     new CommandResult(
-                            0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.6")), List.of());
+                            0,
+                            List.of(String.join(RowFormat.of("field").separator(), "4242", "3.6", "1790000000")),
+                            List.of());
                 default -> new CommandResult(0, List.of(), List.of());
             });
         }
@@ -1181,7 +1192,7 @@ final class ServerTest {
                 return new CommandResult(1, List.of(), List.of("no server running on /tmp/s"));
             }
             return new CommandResult(
-                    0, List.of(String.join(RowFormat.of("field").separator(), pid, "3.6")), List.of());
+                    0, List.of(String.join(RowFormat.of("field").separator(), pid, "3.6", "1790000000")), List.of());
         }
 
         @Override
@@ -1244,7 +1255,7 @@ final class ServerTest {
         }
 
         private static CommandResult identity(String pid, String version) {
-            return new CommandResult(0, List.of(row(pid, version)), List.of());
+            return new CommandResult(0, List.of(row(pid, version, Long.toString(GroupedTmux.STARTED))), List.of());
         }
 
         private static String row(String... fields) {
