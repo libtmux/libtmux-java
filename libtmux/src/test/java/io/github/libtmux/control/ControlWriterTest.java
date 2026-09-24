@@ -15,9 +15,12 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 /** Admission, attribution, and shutdown at the control writer's concurrency boundary. */
@@ -151,10 +154,11 @@ final class ControlWriterTest {
         AtomicReference<ControlWriter> holder = new AtomicReference<>();
         List<String> lines = new ArrayList<>();
         GatedReplyingWriter output = new GatedReplyingWriter(line -> {
-            synchronized (lines) {
-                lines.add(line);
+            if (answer(holder.get(), line)) {
+                synchronized (lines) {
+                    lines.add(line);
+                }
             }
-            holder.get().complete(OperationOutcome.COMPLETE, List.of(line));
         });
         ControlWriter writer = writer(output, 3, ignored -> {});
         holder.set(writer);
@@ -183,8 +187,7 @@ final class ControlWriterTest {
     @Test
     void aQueuedRequestReportsItsWaitApartFromItsRun() throws Exception {
         AtomicReference<ControlWriter> holder = new AtomicReference<>();
-        GatedReplyingWriter output =
-                new GatedReplyingWriter(line -> holder.get().complete(OperationOutcome.COMPLETE, List.of(line)));
+        GatedReplyingWriter output = new GatedReplyingWriter(line -> answer(holder.get(), line));
         ControlWriter writer = writer(output, 2, ignored -> {});
         holder.set(writer);
         writer.start();
@@ -206,6 +209,30 @@ final class ControlWriterTest {
         long ran = timing.get()[1];
         assertTrue(queued >= TimeUnit.MILLISECONDS.toNanos(150), "queued only " + queued + " ns");
         assertTrue(ran < queued, "the run time " + ran + " ns includes the " + queued + " ns queued");
+    }
+
+    /** A block a hook ran carries tmux's clear flag, and answers no request however it arrives. */
+    @Test
+    void aHookBlockDoesNotAnswerAWaitingRequest() throws Exception {
+        CountDownLatch written = new CountDownLatch(1);
+        GatedReplyingWriter output = new GatedReplyingWriter(line -> {
+            if (!MARKER.matcher(line).matches()) {
+                written.countDown();
+            }
+        });
+        output.releaseFirst.countDown();
+        ControlWriter writer = writer(output, 1, ignored -> {});
+        writer.start();
+        FutureTask<ControlReply> waiting = new FutureTask<>(() -> writer.exchange("request", PATIENCE));
+        Thread.ofVirtual().start(waiting);
+        assertTrue(written.await(1, TimeUnit.SECONDS));
+
+        writer.complete(OperationOutcome.COMPLETE, List.of("hooked"), false);
+        writer.complete(OperationOutcome.COMPLETE, List.of("answer"), true);
+
+        assertEquals(List.of("answer"), waiting.get(1, TimeUnit.SECONDS).lines());
+        writer.close();
+        writer.join(1_000);
     }
 
     @Test
@@ -247,6 +274,24 @@ final class ControlWriterTest {
                 failure.set(e);
             }
         });
+    }
+
+    private static final Pattern MARKER = Pattern.compile("^'display-message' '-p' '(libtmux-reply-[^']+)'$");
+
+    /**
+     * Answers one written line as tmux does: a request with a block of its own text, and the marker
+     * line behind it with the marker, which ends that request's reply.
+     *
+     * @return whether the line was a request rather than a marker
+     */
+    private static boolean answer(ControlWriter writer, String line) {
+        Matcher marker = MARKER.matcher(line);
+        if (marker.matches()) {
+            writer.complete(OperationOutcome.COMPLETE, List.of(marker.group(1)), true);
+            return false;
+        }
+        writer.complete(OperationOutcome.COMPLETE, List.of(line), true);
+        return true;
     }
 
     private static class BlockingWriter extends Writer {
@@ -313,7 +358,11 @@ final class ControlWriterTest {
                     throw new IOException("interrupted", e);
                 }
             }
-            written.accept(new String(data, offset, length).stripTrailing());
+            // A request and its marker line can arrive in one write; tmux answers each line.
+            new String(data, offset, length)
+                    .lines()
+                    .filter(line -> !line.isEmpty())
+                    .forEach(written);
         }
 
         @Override

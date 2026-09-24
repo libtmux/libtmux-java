@@ -42,8 +42,8 @@ final class ControlClientTest {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 # the client's own on-attach refresh-client -f new-layouts
-                IFS= read -r request
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                read_request
+                answer
                 sleep 5
                 """);
 
@@ -109,12 +109,12 @@ final class ControlClientTest {
         Path captured = scratch.resolve("captured-watch-request");
         ServerConfig config = fakeTmux(scratch, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                IFS= read -r onattach
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
-                IFS= read -r request
+                read_request
+                answer
+                read_request
                 printf '%s\\n' "$request" > '""" + captured + """
                 '
-                printf '%%begin 102 1 0\n%%end 102 1 0\n'
+                answer
                 sleep 5
                 """);
 
@@ -127,18 +127,14 @@ final class ControlClientTest {
 
     @Test
     void aTimedOutReplyMakesTheStreamUnavailableForLaterRequests(@TempDir Path directory) throws Exception {
-        Path fakeTmux = directory.resolve("tmux");
-        Files.writeString(fakeTmux, """
-                #!/bin/sh
+        ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 # the client's own on-attach refresh-client -f new-layouts
-                IFS= read -r request
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                read_request
+                answer
                 IFS= read -r request
                 sleep 1
                 """);
-        Files.setPosixFilePermissions(fakeTmux, PosixFilePermissions.fromString("rwx------"));
-        ServerConfig config = ServerConfig.builder().binary(fakeTmux.toString()).build();
 
         try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
                 EventSubscription<ControlEvent> events = client.subscribeEvents(1)) {
@@ -157,8 +153,8 @@ final class ControlClientTest {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 # the client's own on-attach refresh-client -f new-layouts
-                IFS= read -r request
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                read_request
+                answer
                 IFS= read -r never
                 """);
         ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
@@ -188,8 +184,8 @@ final class ControlClientTest {
     void aNonPositiveTimeoutIsRejectedBeforeDispatch(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                while IFS= read -r request; do
-                    printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                while read_request; do
+                    answer
                 done
                 """);
 
@@ -203,8 +199,8 @@ final class ControlClientTest {
     void aRejectedNulDoesNotStealTheNextRequestsReply(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                while IFS= read -r request; do
-                    printf '%%begin 101 1 0\nstill in step\n%%end 101 1 0\n'
+                while read_request; do
+                    answer 'still in step'
                 done
                 """);
 
@@ -226,9 +222,9 @@ final class ControlClientTest {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 # the client's own on-attach refresh-client -f new-layouts
-                IFS= read -r request
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
-                IFS= read -r request
+                read_request
+                answer
+                read_request
                 : > "${0%/*}/dispatched"
                 IFS= read -r never
                 """);
@@ -284,8 +280,8 @@ final class ControlClientTest {
     void repeatedTimeoutAndCloseDoNotLeaveClients(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                IFS= read -r request
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                read_request
+                answer
                 IFS= read -r request
                 sleep 2
                 """);
@@ -313,7 +309,7 @@ final class ControlClientTest {
                 done
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 # includes the client's own on-attach refresh-client -f new-layouts
-                while IFS= read -r request; do printf '%%begin 101 1 0\n%%end 101 1 0\n'; done
+                while read_request; do answer; done
                 """);
 
         try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofSeconds(2))) {
@@ -329,7 +325,7 @@ final class ControlClientTest {
                 sleep 30 &
                 printf '%s\n' "$!" > "${0%/*}/child-pid"
                 # includes the client's own on-attach refresh-client -f new-layouts
-                while IFS= read -r request; do printf '%%begin 101 1 0\n%%end 101 1 0\n'; done
+                while read_request; do answer; done
                 """);
         long child = -1;
         try {
@@ -354,8 +350,8 @@ final class ControlClientTest {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 # the client's own on-attach refresh-client -f new-layouts
-                IFS= read -r request
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                read_request
+                answer
                 sh -c 'trap "" HUP TERM; exec sleep 30' </dev/null >/dev/null 2>&1 &
                 printf '%s\n' "$!" > "${0%/*}/child-pid"
                 exec 0<&-
@@ -388,11 +384,11 @@ final class ControlClientTest {
     void aCharacterSplitAcrossOutputLinesArrivesWhole(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                IFS= read -r request
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
-                IFS= read -r request
+                read_request
+                answer
+                read_request
                 printf '%%output %%1 caf\\303\n%%output %%1 \\251\\\\134x!\n'
-                printf '%%begin 102 1 0\n%%end 102 1 0\n'
+                answer
                 IFS= read -r never
                 """);
         try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
@@ -409,9 +405,27 @@ final class ControlClientTest {
         }
     }
 
+    /**
+     * What every fake starts with. tmux follows each request line with a marker line, a {@code
+     * display-message -p} of a token, and a reply ends with the marker's block: {@code read_request}
+     * reads a request and its marker, and {@code answer} writes a reply block, flagged as this
+     * client's command, with its arguments as lines, then the marker's block.
+     */
+    private static final String PRELUDE = """
+            #!/bin/sh
+            read_request() { IFS= read -r request && IFS= read -r marker; }
+            answer() {
+                printf '%%begin 1 1 1\\n'
+                for line in "$@"; do printf '%s\\n' "$line"; done
+                printf '%%end 1 1 1\\n'
+                token=${marker##*"' '"}
+                printf '%%begin 1 2 1\\n%s\\n%%end 1 2 1\\n' "${token%"'"}"
+            }
+            """;
+
     private static ServerConfig fakeTmux(Path directory, String body) throws Exception {
         Path fakeTmux = directory.resolve("tmux");
-        Files.writeString(fakeTmux, "#!/bin/sh\n" + body);
+        Files.writeString(fakeTmux, PRELUDE + body);
         Files.setPosixFilePermissions(fakeTmux, PosixFilePermissions.fromString("rwx------"));
         return ServerConfig.builder().binary(fakeTmux.toString()).build();
     }

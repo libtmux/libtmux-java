@@ -1,6 +1,8 @@
 package io.github.libtmux.control;
 
 import io.github.libtmux.batch.OperationOutcome;
+import io.github.libtmux.format.Tokens;
+import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTimeoutException;
 import io.github.libtmux.transport.TmuxTransportException;
@@ -9,18 +11,32 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.jspecify.annotations.Nullable;
 
-/** Owns the process-pipe write and the FIFO that attributes replies to requests. */
+/**
+ * Owns the process-pipe write and the FIFO that attributes replies to requests.
+ *
+ * <p>A request's reply is the first block tmux writes for it: an acknowledgement, which deferred
+ * work may outlive. But tmux answers every command another one queues with a block of its own, as
+ * {@code if-shell} queues its branch and {@code run-shell} reports its job, numbered like any other.
+ * So each request line is followed by a second, {@code display-message -p} of a marker unique to it:
+ * tmux runs that after everything the request queued, whether the request failed or not. Blocks
+ * between a reply and its marker belong to the request already answered, and are not handed to
+ * the next one.
+ */
 final class ControlWriter {
 
     static final int DEFAULT_CAPACITY = 64;
+
+    private static final String MARKER = "libtmux-reply-" + Tokens.perProcess() + "-";
 
     private final BufferedWriter output;
     private final ArrayBlockingQueue<Request> waiting;
@@ -28,6 +44,9 @@ final class ControlWriter {
     private final AtomicBoolean accepting = new AtomicBoolean(true);
     private final Consumer<TmuxTransportException> failed;
     private final Thread thread;
+    private final AtomicLong markers = new AtomicLong();
+    // Markers of requests answered whose tails tmux may still be writing. Reader thread only.
+    private final java.util.ArrayDeque<String> unanswered = new java.util.ArrayDeque<>();
 
     ControlWriter(BufferedWriter output, int capacity, Consumer<TmuxTransportException> failed) {
         if (capacity < 1) {
@@ -44,7 +63,8 @@ final class ControlWriter {
 
     /** Records the attach request dispatched by the process invocation. */
     Request expectInitial(Duration timeout) {
-        Request initial = new Request("", timeout, Request.State.PICKED);
+        // The attach command's reply is its only one, and tmux flags it as no command of the client's.
+        Request initial = new Request("", timeout, Request.State.PICKED, null);
         if (!accepting.get() || !active.compareAndSet(null, initial)) {
             initial.fail(unknown("control client ended before becoming ready", null));
         }
@@ -56,7 +76,7 @@ final class ControlWriter {
     }
 
     ControlReply exchange(String line, Duration timeout) {
-        Request request = new Request(line, timeout, Request.State.QUEUED);
+        Request request = new Request(line, timeout, Request.State.QUEUED, MARKER + markers.incrementAndGet());
         try {
             if (!accepting.get()) {
                 throw notDispatched("control client is not accepting requests", null);
@@ -94,9 +114,34 @@ final class ControlWriter {
         return timing == null ? new long[] {0, elapsed} : timing;
     }
 
-    void complete(OperationOutcome outcome, List<String> lines) {
-        Request request = active.getAndSet(null);
-        if (request != null) {
+    /**
+     * Called by the reader for each reply block, in the order tmux wrote them.
+     *
+     * @param requested tmux's guard flag: clear for a block a hook ran, which answers no request
+     */
+    void complete(OperationOutcome outcome, List<String> lines, boolean requested) {
+        Request request = active.get();
+        if (request != null && request.marker == null) {
+            // The attach command's reply, which tmux flags as no command of the client's.
+            if (active.compareAndSet(request, null)) {
+                request.complete(new ControlReply(outcome, lines));
+            }
+            return;
+        }
+        if (!requested) {
+            return;
+        }
+        String line = lines.size() == 1 ? lines.get(0) : "";
+        if (line.startsWith(MARKER)) {
+            unanswered.remove(line);
+            return;
+        }
+        if (!unanswered.isEmpty()) {
+            // Queued by a request already answered: its tail, not the next request's reply.
+            return;
+        }
+        if (request != null && active.compareAndSet(request, null)) {
+            unanswered.add(Objects.requireNonNull(request.marker));
             request.complete(new ControlReply(outcome, lines));
         }
     }
@@ -189,6 +234,10 @@ final class ControlWriter {
                 try {
                     output.write(request.line);
                     output.newLine();
+                    if (request.marker != null) {
+                        output.write(CommandStrings.stringify(List.of("display-message", "-p", request.marker)));
+                        output.newLine();
+                    }
                     output.flush();
                 } catch (IOException e) {
                     halt(request, unknown("could not write to the control client", e));
@@ -284,6 +333,7 @@ final class ControlWriter {
         }
 
         private final String line;
+        private final @Nullable String marker;
         private final long started = System.nanoTime();
         private volatile long picked = started;
         private volatile boolean dispatched;
@@ -292,8 +342,9 @@ final class ControlWriter {
         private final CountDownLatch answered = new CountDownLatch(1);
         private volatile @Nullable Object answer;
 
-        private Request(String line, Duration timeout, State state) {
+        private Request(String line, Duration timeout, State state, @Nullable String marker) {
             this.line = line;
+            this.marker = marker;
             this.timeoutNanos = timeoutNanos(timeout);
             this.state = new AtomicReference<>(state);
             this.dispatched = state == State.PICKED;

@@ -24,10 +24,9 @@ final class ObservationSuite extends FunSuite {
     val fake = directory.resolve("tmux")
     Files.writeString(
       fake,
-      """#!/bin/sh
-        |printf '%%begin 100 1 0\n%%end 100 1 0\n'
-        |IFS= read -r request
-        |printf '%%begin 101 1 0\n%%end 101 1 0\n'
+      "#!/bin/sh\n" + ObservationSuite.prelude + """printf '%%begin 100 1 0\n%%end 100 1 0\n'
+        |read_request
+        |answer
         |sleep 0.4
         |""".stripMargin
     )
@@ -54,15 +53,14 @@ final class ObservationSuite extends FunSuite {
     val seen = directory.resolve("seen")
     Files.writeString(
       fake,
-      """#!/bin/sh
-        |dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+      "#!/bin/sh\n" + ObservationSuite.prelude + """dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
         |printf '%%begin 100 1 0\n%%end 100 1 0\n'
-        |IFS= read -r request
-        |printf '%%begin 101 1 0\n%%end 101 1 0\n'
+        |read_request
+        |answer
         |i=0
-        |while IFS= read -r request; do
+        |while read_request; do
         |  printf '%s\n' "$request" >> "$dir/seen"
-        |  printf '%%begin 101 1 0\n%%end 101 1 0\n'
+        |  answer
         |  i=$((i + 1))
         |  if [ "$i" -ge 3 ]; then
         |    exit 0
@@ -114,12 +112,11 @@ final class ObservationSuite extends FunSuite {
     val fake = directory.resolve("tmux")
     Files.writeString(
       fake,
-      """#!/bin/sh
-        |printf 'boom\n' >&2
+      "#!/bin/sh\n" + ObservationSuite.prelude + """printf 'boom\n' >&2
         |dd if=/dev/zero bs=5000 count=1 2>/dev/null | tr '\0' x >&2
         |printf '%%begin 100 1 0\n%%end 100 1 0\n'
-        |IFS= read -r request
-        |printf '%%begin 101 1 0\n%%end 101 1 0\n'
+        |read_request
+        |answer
         |sleep 1
         |""".stripMargin
     )
@@ -147,4 +144,24 @@ final class ObservationSuite extends FunSuite {
       Files.deleteIfExists(directory)
     }
   }
+}
+
+object ObservationSuite {
+
+  /** What every fake starts with. tmux follows each request line with a marker
+    * line, a `display-message -p` of a token, and a reply ends with the
+    * marker's block: `read_request` reads a request and its marker, and
+    * `answer` writes a reply block, flagged as this client's command, then the
+    * marker's block.
+    */
+  val prelude: String =
+    """|read_request() { IFS= read -r request && IFS= read -r marker; }
+       |answer() {
+       |  printf '%%begin 1 1 1\n'
+       |  for line in "$@"; do printf '%s\n' "$line"; done
+       |  printf '%%end 1 1 1\n'
+       |  token=${marker##*"' '"}
+       |  printf '%%begin 1 2 1\n%s\n%%end 1 2 1\n' "${token%"'"}"
+       |}
+       |""".stripMargin
 }
