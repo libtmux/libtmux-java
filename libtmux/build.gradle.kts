@@ -115,6 +115,14 @@ dependencies {
 // gate below rather than by a hard failure here, which would also break every offline build.
 val apiBaselineFiles = apiBaselineJar.incoming.artifactView { isLenient = true }.files
 
+// The released jar, and only that: a version that does not resolve can come back as this build's
+// own jar, and comparing a jar with itself passes every time.
+val apiBaselineResolved =
+    provider {
+        val version = apiBaselineVersion.orNull
+        version != null && apiBaselineFiles.files.singleOrNull()?.name == "libtmux-$version.jar"
+    }
+
 val apiDiffReport = layout.buildDirectory.file("reports/japicmp/report.xml")
 
 val generateApiDiffReport =
@@ -131,7 +139,8 @@ val generateApiDiffReport =
         inputs.files(apiBaselineFiles).optional(true)
         outputs.file(report)
 
-        onlyIf { !apiBaselineFiles.isEmpty }
+        val resolved = apiBaselineResolved
+        onlyIf { resolved.get() }
 
         doFirst {
             report.get().asFile.parentFile.mkdirs()
@@ -161,7 +170,9 @@ tasks.register("checkApiDiffAgainstMigrationNotes") {
     val report = apiDiffReport
     val migrationNotes = rootProject.file("MIGRATION.md")
     val baselineVersion = apiBaselineVersion
-    val baselineResolvable = provider { !apiBaselineFiles.isEmpty }
+    val baselineResolvable = apiBaselineResolved
+    // Offline work may skip the gate; CI may not, or an unreachable baseline reads as a pass.
+    val strict = providers.environmentVariable("CI").isPresent
     inputs.file(migrationNotes)
 
     doLast {
@@ -185,14 +196,18 @@ tasks.register("checkApiDiffAgainstMigrationNotes") {
             return false
         }
 
+        fun skip(reason: String) {
+            if (strict) throw GradleException("API gate cannot run in CI: $reason")
+            logger.warn("API gate skipped: $reason")
+        }
         if (!baselineVersion.isPresent) {
-            logger.warn("API gate skipped: no libtmuxApiBaseline property is set")
+            skip("no libtmuxApiBaseline property is set")
             return@doLast
         }
         if (!baselineResolvable.get()) {
-            logger.warn(
-                "API gate skipped: io.github.libtmux:libtmux:${baselineVersion.get()} is not " +
-                    "resolvable from the configured repositories"
+            skip(
+                "io.github.libtmux:libtmux:${baselineVersion.get()} is not resolvable from the " +
+                    "configured repositories"
             )
             return@doLast
         }
