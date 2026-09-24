@@ -31,7 +31,9 @@ final class Server private (
 ) extends AutoCloseable {
   private val closed = new AtomicBoolean(false)
 
-  /** The Java client. This facade's close does not close it. */
+  /** The Java client. Closing an owned facade closes it; closing a borrowed one
+    * leaves it open.
+    */
   def unsafeJava: JavaServer = asJava
 
   private[blocking] def checked[A](operation: => A): A = {
