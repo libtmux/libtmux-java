@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.CommandChain;
 import io.github.libtmux.Pane;
+import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
@@ -123,7 +124,44 @@ final class OperationBenchmark {
                         directory,
                         "sessions(filter), two match",
                         OperationBenchmark::plantSessions,
-                        OperationBenchmark::filtered));
+                        OperationBenchmark::filtered),
+                measure(
+                        directory,
+                        "snapshot() then find pane",
+                        OperationBenchmark::plantSessions,
+                        server -> findPaneInSnapshot(server, FIFTH_PANE)),
+                measure(
+                        directory,
+                        "pane(id)",
+                        OperationBenchmark::plantSessions,
+                        server -> paneById(server, FIFTH_PANE)));
+
+        List<Measured> narrowingMany = List.of(
+                measure(
+                        directory,
+                        "snapshot() then find (50)",
+                        OperationBenchmark::plantManySessions,
+                        OperationBenchmark::findInSnapshot),
+                measure(
+                        directory,
+                        "session(name) (50)",
+                        OperationBenchmark::plantManySessions,
+                        OperationBenchmark::sessionByName),
+                measure(
+                        directory,
+                        "sessions(filter), two match (50)",
+                        OperationBenchmark::plantManySessions,
+                        OperationBenchmark::filtered),
+                measure(
+                        directory,
+                        "snapshot() then find pane (50)",
+                        OperationBenchmark::plantManySessions,
+                        server -> findPaneInSnapshot(server, FIFTH_PANE)),
+                measure(
+                        directory,
+                        "pane(id) (50)",
+                        OperationBenchmark::plantManySessions,
+                        server -> paneById(server, FIFTH_PANE)));
 
         List<Measured> guarding = List.of(
                 measure(directory, "unguarded", OperationBenchmark::plantWindows, OperationBenchmark::unguarded),
@@ -148,7 +186,7 @@ final class OperationBenchmark {
         // Test task is the module and not the root.
         Path report = Path.of(System.getProperty("libtmux.benchmark.out", "build/operations.md"));
         Files.createDirectories(report.getParent());
-        Files.writeString(report, render(grouping, reading, narrowing, guarding, waits, options));
+        Files.writeString(report, render(grouping, reading, narrowing, narrowingMany, guarding, waits, options));
 
         assertTrue(Files.exists(report), "the benchmark wrote no table");
     }
@@ -247,6 +285,41 @@ final class OperationBenchmark {
         for (int index = 0; index < 5; index++) {
             server.newSession("bench-" + index);
         }
+    }
+
+    /** Fifty sessions of three windows, so a whole-server read has something to pay for. */
+    private static void plantManySessions(Server server) {
+        for (int index = 0; index < 50; index++) {
+            Session session = server.newSession("bench-" + index);
+            session.newWindow(window -> window.detached());
+            session.newWindow(window -> window.detached());
+        }
+    }
+
+    /** A pane both plantings create, in a session other than the first. */
+    private static final PaneId FIFTH_PANE = new PaneId("%4");
+
+    /** One pane found by reading everything and looking. */
+    private static String findPaneInSnapshot(Server server, PaneId id) {
+        String seen = "";
+        for (int round = 0; round < ROUNDS; round++) {
+            seen = server.snapshot().panes().stream()
+                    .filter(pane -> pane.id().equals(id))
+                    .findFirst()
+                    .orElseThrow()
+                    .id()
+                    .value();
+        }
+        return seen;
+    }
+
+    /** The same pane asked for by id, which reads only the session holding it. */
+    private static String paneById(Server server, PaneId id) {
+        String seen = "";
+        for (int round = 0; round < ROUNDS; round++) {
+            seen = server.pane(id).orElseThrow().id().value();
+        }
+        return seen;
     }
 
     /** One session found by reading everything and looking. */
@@ -457,6 +530,7 @@ final class OperationBenchmark {
             List<Measured> grouping,
             List<Measured> reading,
             List<Measured> narrowing,
+            List<Measured> narrowingMany,
             List<Measured> guarding,
             List<Measured> waits,
             List<Measured> options) {
@@ -493,12 +567,15 @@ final class OperationBenchmark {
         table(out, "read", reading);
 
         out.append("\n## Narrow reads\n\n")
-                .append("Five sessions, one wanted. A lookup by name reads who the server is, then ")
-                .append("lists only that session, its windows, and its panes as one fenced group: two ")
-                .append("commands, the same as a snapshot, over less of the server. A filter tmux can ")
-                .append("apply adds one probe for which sessions match, then reads all of them in one ")
-                .append("more group: three commands, however many match.\n\n");
+                .append("Five sessions, one wanted. A lookup by name, by pane id, or by a filter tmux can ")
+                .append("apply reads who the server is, then lists only the sessions it wants, with their ")
+                .append("windows and panes, as one fenced group: two commands, the same as a snapshot, ")
+                .append("over less of the server. A pane or window condition is looped over each ")
+                .append("session inside tmux, so no probe comes first.\n\n");
         table(out, "read", narrowing);
+        out.append("\nThe same reads against fifty sessions of three windows each. The commands do not ")
+                .append("change; what a whole-server read pays for is the rows.\n\n");
+        table(out, "read", narrowingMany);
 
         out.append("\n## What the staleness guard costs\n\n")
                 .append("A handle fences every command it sends behind `if-shell -F`, so that a ")

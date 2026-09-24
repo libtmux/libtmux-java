@@ -15,7 +15,6 @@ import io.github.libtmux.transport.CommandResult;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -178,22 +177,37 @@ final class SnapshotCapture {
         listings.add(listing(CLIENTS, "list-clients"));
         List<OperationResult> answered = listings.run().operations();
 
-        List<SessionState> sessions =
-                sessionStates(rows(SESSIONS, answered.get(0), "list-sessions", process.version()));
-        if (sessions.isEmpty()) {
-            // A server with no sessions has no current target, so tmux refuses the rest of the
-            // group. An empty sessions listing is the whole hierarchy, so there is nothing to read.
+        return consistent(() -> {
+            List<SessionState> sessions =
+                    sessionStates(rows(SESSIONS, answered.get(0), "list-sessions", process.version()));
+            if (sessions.isEmpty()) {
+                // A server with no sessions has no current target, so tmux refuses the rest of the
+                // group. An empty sessions listing is the whole hierarchy, so there is nothing to read.
+                return ServerSnapshot.of(
+                        Instant.now(), process.pid(), process.version(), sessions, List.of(), List.of(), List.of());
+            }
             return ServerSnapshot.of(
-                    Instant.now(), process.pid(), process.version(), sessions, List.of(), List.of(), List.of());
+                    Instant.now(),
+                    process.pid(),
+                    process.version(),
+                    sessions,
+                    windowStates(rows(WINDOWS, answered.get(1), "list-windows", process.version())),
+                    paneStates(rows(paneFormat, answered.get(2), "list-panes", process.version()), floatingKnown),
+                    clientStates(rows(CLIENTS, answered.get(3), "list-clients", process.version())));
+        });
+    }
+
+    /**
+     * Rows that parse but do not form one valid snapshot are tmux's failure. Only this conversion is
+     * made: anything else thrown while reading is reported as itself.
+     */
+    private static <T> T consistent(java.util.function.Supplier<T> assembly) {
+        try {
+            return assembly.get();
+        } catch (IllegalArgumentException inconsistent) {
+            throw new LibTmuxException(
+                    "tmux returned listings that do not form one snapshot: " + inconsistent.getMessage(), inconsistent);
         }
-        return ServerSnapshot.of(
-                Instant.now(),
-                process.pid(),
-                process.version(),
-                sessions,
-                windowStates(rows(WINDOWS, answered.get(1), "list-windows", process.version())),
-                paneStates(rows(paneFormat, answered.get(2), "list-panes", process.version()), floatingKnown),
-                clientStates(rows(CLIENTS, answered.get(3), "list-clients", process.version())));
     }
 
     /**
@@ -236,36 +250,26 @@ final class SnapshotCapture {
     }
 
     /**
-     * The sessions a filtered listing names, read in full in one more fenced call. Empty when the
-     * probe finds nothing, which is also what a server that ignores {@code -f} reports.
+     * The sessions holding a row that {@code format} selects in this listing, read in full in one
+     * fenced call. Empty when none does, which is also what a tmux that cannot evaluate the format
+     * reports.
      *
-     * @param command the listing, such as {@code list-sessions} or {@code list-panes -a}
+     * <p>A window or pane format is lifted to its session by looping that session's windows and
+     * panes, so the one call that reads the sessions also decides which ones to read.
+     *
+     * @param command {@code list-sessions}, {@code list-windows -a}, or {@code list-panes -a}
      */
     Optional<ServerSnapshot> sessionsWhere(String format, String... command) {
         ServerProcess process = process()
                 .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
-        RowFormat sessionOnly = RowFormat.of("session_id");
-        List<String> argv = new ArrayList<>();
-        argv.addAll(List.of(command));
-        argv.add("-f");
-        argv.add(format);
-        Batch probe = server.batch(process.pid(), process.reported());
-        probe.add(listing(sessionOnly, argv.toArray(String[]::new)));
-        LinkedHashSet<String> sessionIds = new LinkedHashSet<>();
-        for (RowFormat.Row row : rows(sessionOnly, probe.run().operations().get(0), command[0], process.version())) {
-            String id = row.text("session_id");
-            if (!id.isEmpty()) {
-                sessionIds.add(id);
-            }
-        }
-        if (sessionIds.isEmpty()) {
-            return Optional.empty();
-        }
-        String any = "0";
-        for (String id : sessionIds) {
-            any = "#{||:#{==:#{session_id}," + id + "}," + any + "}";
-        }
-        return hydrate(process, any, session -> sessionIds.contains(session.id().value()));
+        String holding =
+                switch (command[0]) {
+                    case "list-sessions" -> format;
+                    case "list-windows" -> "#{W:#{?" + format + ",1,}}";
+                    case "list-panes" -> "#{W:#{P:#{?" + format + ",1,}}}";
+                    default -> throw new IllegalArgumentException("not a hierarchy listing: " + command[0]);
+                };
+        return hydrate(process, holding, session -> true);
     }
 
     /**
@@ -282,6 +286,15 @@ final class SnapshotCapture {
         batch.add(listing(WINDOWS, "list-windows", "-a", "-f", filter));
         batch.add(listing(paneFormat, "list-panes", "-a", "-f", filter));
         List<OperationResult> answered = batch.run().operations();
+        return consistent(() -> kept(process, answered, paneFormat, floatingKnown, keep));
+    }
+
+    private Optional<ServerSnapshot> kept(
+            ServerProcess process,
+            List<OperationResult> answered,
+            RowFormat paneFormat,
+            boolean floatingKnown,
+            java.util.function.Predicate<SessionState> keep) {
         List<SessionState> listed = sessionStates(rows(SESSIONS, answered.get(0), "list-sessions", process.version()));
         if (listed.isEmpty()) {
             // As in a full capture: with no session there is no current target, and tmux refuses
@@ -312,29 +325,18 @@ final class SnapshotCapture {
                 List.of()));
     }
 
-    /** The session that owns this pane, without listing every pane first. */
-    Optional<SessionId> sessionOfPane(PaneId id) {
+    /**
+     * The sessions holding this pane, with their windows and panes, in one fenced call. Empty when no
+     * session holds it.
+     *
+     * <p>The filter loops each listed row's own session, so every listing keeps whole sessions, and a
+     * window linked into two sessions brings both. tmux evaluates this loop inside {@code -f} the same
+     * way on every release from 3.2a; {@code docs/spikes/28-loop-filters.md} has the measurement.
+     */
+    Optional<ServerSnapshot> sessionsHolding(PaneId id) {
         ServerProcess process = process()
                 .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
-        RowFormat sessionOnly = RowFormat.of("session_id");
-        Batch probe = server.batch(process.pid(), process.reported());
-        probe.add(listing(sessionOnly, "list-panes", "-a", "-f", "#{==:#{pane_id}," + id.value() + "}"));
-        OperationResult answered = probe.run().operations().get(0);
-        if (answered.outcome() != OperationOutcome.COMPLETE) {
-            if (String.join("\n", answered.stderr()).contains("no current target")) {
-                return Optional.empty();
-            }
-        }
-        List<RowFormat.Row> found;
-        try {
-            found = rows(sessionOnly, answered, "list-panes", process.version());
-        } catch (io.github.libtmux.format.TmuxFormatException ignored) {
-            return Optional.empty();
-        }
-        if (found.isEmpty()) {
-            return Optional.empty();
-        }
-        return Optional.of(new SessionId(found.get(0).text("session_id")));
+        return hydrate(process, "#{W:#{P:#{?#{==:#{pane_id}," + id.value() + "},1,}}}", session -> true);
     }
 
     private static List<SessionState> sessionStates(List<RowFormat.Row> rows) {
