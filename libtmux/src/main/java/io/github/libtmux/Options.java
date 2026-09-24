@@ -80,8 +80,9 @@ public final class Options {
      */
     public Optional<String> get(String name) {
         TmuxVersion version = listingVersion();
-        var result = cmd(
-                argv("show-options", version == null ? List.of("-A", "-v", "--", name) : List.of("-A", "--", name)));
+        var result = version == null
+                ? server.printed(snapshot, argv("show-options", List.of("-A", "-v", "--", name)))
+                : cmd(argv("show-options", List.of("-A", "--", name)));
         if (result.succeeded()) {
             if (version == null) return Optional.of(String.join("\n", result.stdout()));
             List<String> values = new ArrayList<>();
@@ -127,8 +128,9 @@ public final class Options {
      *
      * <p>A listed value is escaped with {@code vis(3)} and wrapped in whichever quotes that release
      * chose, and which characters it reaches changed inside the supported range — {@code a$b} prints
-     * as {@code "a\$b"} on 3.2a and {@code "a\\$b"} on 3.4. Releases 3.4 and 3.5 also escape
-     * {@code -v} output ambiguously, so those daemons require the normal listing's quoted spelling.
+     * as {@code "a\$b"} on 3.2a and {@code "a\\$b"} on 3.4. {@code -v} output is ambiguous on 3.4
+     * and 3.5, which print a carriage return and a literal {@code \r} alike, so those two read the
+     * listing's quoted spelling; elsewhere {@code -v} prints the value itself, as {@link #get} reads it.
      */
     private Map<String, String> read(List<String> flags) {
         TmuxVersion version = listingVersion();
@@ -154,6 +156,7 @@ public final class Options {
             int to = from;
             // -q keeps an option unset between the two requests from ending the batch.
             Batch batch = snapshot == null ? server.batch() : server.batch(snapshot);
+            batch.add("display-message", "-p", "#{version}");
             do {
                 List<String> arguments = new ArrayList<>(flags);
                 arguments.addAll(List.of("-q", "-v", "--", names.get(to++)));
@@ -240,15 +243,20 @@ public final class Options {
         return value.toString();
     }
 
+    /** The first operation in the batch reports the version, which decodes the values after it. */
     private static void record(List<String> names, Batch batch, Map<String, String> into) {
         List<OperationResult> read = batch.run().operations();
+        TmuxVersion version = read.get(0).outcome() == OperationOutcome.COMPLETE
+                        && read.get(0).stdout().size() == 1
+                ? TmuxVersion.parse(read.get(0).stdout().get(0))
+                : new TmuxVersion(0, 0, "");
         for (int index = 0; index < names.size(); index++) {
-            OperationResult value = read.get(index);
+            OperationResult value = read.get(index + 1);
             if (value.outcome() != OperationOutcome.COMPLETE) {
                 throw new LibTmuxException(
                         "tmux could not read option " + names.get(index) + ": " + String.join("; ", value.stderr()));
             }
-            into.put(names.get(index), String.join("\n", value.stdout()));
+            into.put(names.get(index), String.join("\n", TmuxFormats.printed(value.stdout(), version)));
         }
     }
 

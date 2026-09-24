@@ -178,7 +178,8 @@ final class SnapshotCapture {
         listings.add(listing(CLIENTS, "list-clients"));
         List<OperationResult> answered = listings.run().operations();
 
-        List<SessionState> sessions = sessionStates(rows(SESSIONS, answered.get(0), "list-sessions"));
+        List<SessionState> sessions =
+                sessionStates(rows(SESSIONS, answered.get(0), "list-sessions", process.version()));
         if (sessions.isEmpty()) {
             // A server with no sessions has no current target, so tmux refuses the rest of the
             // group. An empty sessions listing is the whole hierarchy, so there is nothing to read.
@@ -190,9 +191,9 @@ final class SnapshotCapture {
                 process.pid(),
                 process.version(),
                 sessions,
-                windowStates(rows(WINDOWS, answered.get(1), "list-windows")),
-                paneStates(rows(paneFormat, answered.get(2), "list-panes"), floatingKnown),
-                clientStates(rows(CLIENTS, answered.get(3), "list-clients")));
+                windowStates(rows(WINDOWS, answered.get(1), "list-windows", process.version())),
+                paneStates(rows(paneFormat, answered.get(2), "list-panes", process.version()), floatingKnown),
+                clientStates(rows(CLIENTS, answered.get(3), "list-clients", process.version())));
     }
 
     /**
@@ -251,7 +252,7 @@ final class SnapshotCapture {
         Batch probe = server.batch(process.pid(), process.reported());
         probe.add(listing(sessionOnly, argv.toArray(String[]::new)));
         LinkedHashSet<String> sessionIds = new LinkedHashSet<>();
-        for (RowFormat.Row row : rows(sessionOnly, probe.run().operations().get(0), command[0])) {
+        for (RowFormat.Row row : rows(sessionOnly, probe.run().operations().get(0), command[0], process.version())) {
             String id = row.text("session_id");
             if (!id.isEmpty()) {
                 sessionIds.add(id);
@@ -281,14 +282,15 @@ final class SnapshotCapture {
         batch.add(listing(WINDOWS, "list-windows", "-a", "-f", filter));
         batch.add(listing(paneFormat, "list-panes", "-a", "-f", filter));
         List<OperationResult> answered = batch.run().operations();
-        List<SessionState> listed = sessionStates(rows(SESSIONS, answered.get(0), "list-sessions"));
+        List<SessionState> listed = sessionStates(rows(SESSIONS, answered.get(0), "list-sessions", process.version()));
         if (listed.isEmpty()) {
             // As in a full capture: with no session there is no current target, and tmux refuses
             // the rest of the group.
             return Optional.empty();
         }
-        List<WindowState> windows = windowStates(rows(WINDOWS, answered.get(1), "list-windows"));
-        List<PaneState> panes = paneStates(rows(paneFormat, answered.get(2), "list-panes"), floatingKnown);
+        List<WindowState> windows = windowStates(rows(WINDOWS, answered.get(1), "list-windows", process.version()));
+        List<PaneState> panes =
+                paneStates(rows(paneFormat, answered.get(2), "list-panes", process.version()), floatingKnown);
         ServerSnapshot.of(Instant.now(), process.pid(), process.version(), listed, windows, panes, List.of());
         List<SessionState> sessions = listed.stream().filter(keep).toList();
         if (sessions.isEmpty()) {
@@ -325,7 +327,7 @@ final class SnapshotCapture {
         }
         List<RowFormat.Row> found;
         try {
-            found = rows(sessionOnly, answered, "list-panes");
+            found = rows(sessionOnly, answered, "list-panes", process.version());
         } catch (io.github.libtmux.format.TmuxFormatException ignored) {
             return Optional.empty();
         }
@@ -423,12 +425,12 @@ final class SnapshotCapture {
     }
 
     /** Reads one listing's rows, insisting tmux actually ran it. */
-    private List<RowFormat.Row> rows(RowFormat format, OperationResult operation, String command) {
+    private List<RowFormat.Row> rows(RowFormat format, OperationResult operation, String command, TmuxVersion version) {
         if (operation.outcome() != OperationOutcome.COMPLETE) {
             throw server.failed(
                     command, operation.outcome().name().toLowerCase(Locale.ROOT).replace('_', ' '), operation.stderr());
         }
-        return format.rows(operation.stdout());
+        return format.rows(TmuxFormats.printed(operation.stdout(), version));
     }
 
     private static WindowContext context(RowFormat.Row row) {

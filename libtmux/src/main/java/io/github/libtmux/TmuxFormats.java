@@ -38,6 +38,30 @@ public final class TmuxFormats {
         return Objects.requireNonNull(value, "value").replace("#", "##");
     }
 
+    private static final TmuxVersion DOLLAR_ESCAPED = new TmuxVersion(3, 4, "");
+
+    private static final java.util.regex.Pattern ESCAPED_DOLLAR =
+            java.util.regex.Pattern.compile("\\\\(?=\\$[A-Za-z_{])");
+
+    /**
+     * Text as tmux held it, from a line it printed.
+     *
+     * <p>tmux 3.4 alone puts a backslash before every {@code $} that an ASCII letter, {@code _}, or
+     * <code>{</code> follows, in everything it prints: formats, listings, and {@code show-options
+     * -v}. 3.5 stopped ({@code 692ce59b}). Each escape is exactly one backslash in that position, so
+     * removing it restores the text on 3.4 and changes nothing elsewhere.
+     */
+    static String printed(String line, TmuxVersion version) {
+        return version.equals(DOLLAR_ESCAPED) ? ESCAPED_DOLLAR.matcher(line).replaceAll("") : line;
+    }
+
+    /** As {@link #printed(String, TmuxVersion)}, for every line. */
+    static java.util.List<String> printed(java.util.List<String> lines, TmuxVersion version) {
+        return version.equals(DOLLAR_ESCAPED)
+                ? lines.stream().map(line -> printed(line, version)).toList()
+                : lines;
+    }
+
     /** 3.7 refuses {@code .} and {@code :} in a name, 3.7a keeps them, and earlier releases store {@code _}. */
     private static final TmuxVersion DELIMITERS_KEPT_SINCE = new TmuxVersion(3, 7, "");
 
