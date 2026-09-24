@@ -34,13 +34,16 @@ import java.util.concurrent.atomic.AtomicLong;
  * A tmux client that stays attached and answers one command at a time.
  *
  * <p>This is what a semicolon group cannot be. tmux discards a group after its first failure, so a
- * client has to infer which command failed; here each request is independent and each reply carries
- * the request number that produced it, so a failure discards nothing behind it and attribution is
- * tmux's own.
+ * client has to infer which command failed; here each request is independent, so a failure
+ * discards nothing behind it.
  *
  * <p>Replies arrive in request order, so the writer sends one request at a time and matches its
- * reply by position. A deadline before the writer picks a request writes nothing; a deadline after
- * that point ends the client because the next reply could no longer be attributed safely.
+ * reply by position. A reply is the first block tmux writes for the request: an acknowledgement,
+ * which work the command deferred may outlive. What that command queued, as {@code if-shell}
+ * queues its branch, and what a hook ran, arrive as blocks of their own, and none of them is taken
+ * for the next request's reply. A deadline before the writer picks a request writes nothing; a
+ * deadline after that point ends the client because the next reply could no longer be attributed
+ * safely.
  *
  * <p>The reader and writer are platform threads. A library does not own the virtual-thread
  * scheduler, and either one unable to run stops the client from making progress. The reader only
@@ -499,7 +502,7 @@ public final class ControlClient implements AutoCloseable {
             while ((line = lines.readLine()) != null) {
                 ControlProtocol.Result result = protocol.accept(line.text(), line.encodedBytes());
                 if (result instanceof ControlProtocol.Reply reply) {
-                    complete(reply.outcome(), reply.lines());
+                    complete(reply.outcome(), reply.lines(), reply.requested());
                 } else if (result instanceof ControlProtocol.Notification notification) {
                     handleNotification(notification.line(), line.bytes());
                 }
@@ -566,8 +569,8 @@ public final class ControlClient implements AutoCloseable {
         }
     }
 
-    private void complete(OperationOutcome outcome, List<String> block) {
-        writer.complete(outcome, block);
+    private void complete(OperationOutcome outcome, List<String> block, boolean requested) {
+        writer.complete(outcome, block, requested);
     }
 
     private void terminate(TmuxTransportException failure) {

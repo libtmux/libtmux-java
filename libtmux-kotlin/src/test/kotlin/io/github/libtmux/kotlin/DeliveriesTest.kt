@@ -227,7 +227,7 @@ class DeliveriesTest {
 
     private fun client(directory: Path, body: String): ControlClient {
         val fake = directory.resolve("tmux")
-        Files.writeString(fake, "#!/bin/sh\n$body\n")
+        Files.writeString(fake, "#!/bin/sh\n$PRELUDE$body\n")
         Files.setPosixFilePermissions(fake, PosixFilePermissions.fromString("rwx------"))
         val config = ServerConfig.builder().binary(fake.toString()).build()
         return ControlClient.attachUnfenced(config, SessionId("\$0"))
@@ -237,15 +237,15 @@ class DeliveriesTest {
     private fun floodThenWait(): String =
         """
         printf '%%begin 100 1 0\n%%end 100 1 0\n'
-        IFS= read -r request
-        printf '%%begin 101 1 0\n%%end 101 1 0\n'
-        IFS= read -r request
+        read_request
+        answer
+        read_request
         printf '%%output %%1 one\n'
         printf '%%output %%1 two\n'
         printf '%%output %%1 three\n'
         printf '%%output %%1 four\n'
         printf '%%output %%1 five\n'
-        printf '%%begin 102 1 0\n%%end 102 1 0\n'
+        answer
         sleep 30
         """
             .trimIndent()
@@ -257,18 +257,18 @@ class DeliveriesTest {
     private fun oneThenFlood(): String =
         """
         printf '%%begin 100 1 0\n%%end 100 1 0\n'
-        IFS= read -r request
-        printf '%%begin 101 1 0\n%%end 101 1 0\n'
-        IFS= read -r request
+        read_request
+        answer
+        read_request
         printf '%%output %%1 one\n'
-        printf '%%begin 102 1 0\n%%end 102 1 0\n'
-        IFS= read -r request
+        answer
+        read_request
         printf '%%output %%1 two\n'
         sleep 0.1
         printf '%%output %%1 three\n'
         sleep 0.1
         printf '%%output %%1 four\n'
-        printf '%%begin 103 1 0\n%%end 103 1 0\n'
+        answer
         sleep 30
         """
             .trimIndent()
@@ -276,8 +276,8 @@ class DeliveriesTest {
     private fun exitAfterAttach(): String =
         """
         printf '%%begin 100 1 0\n%%end 100 1 0\n'
-        IFS= read -r request
-        printf '%%begin 101 1 0\n%%end 101 1 0\n'
+        read_request
+        answer
         sleep 0.4
         """
             .trimIndent()
@@ -285,9 +285,27 @@ class DeliveriesTest {
     private fun waitForever(): String =
         """
         printf '%%begin 100 1 0\n%%end 100 1 0\n'
-        IFS= read -r request
-        printf '%%begin 101 1 0\n%%end 101 1 0\n'
+        read_request
+        answer
         sleep 30
         """
             .trimIndent()
+
+    private companion object {
+        /**
+         * What every fake starts with. tmux follows each request line with a marker line, a
+         * `display-message -p` of a token, and a reply ends with the marker's block: `read_request`
+         * reads a request and its marker, and `answer` writes a reply block, flagged as this
+         * client's command, then the marker's block.
+         */
+        const val PRELUDE =
+            "read_request() { IFS= read -r request && IFS= read -r marker; }\n" +
+                "answer() {\n" +
+                "  printf '%%begin 1 1 1\\n'\n" +
+                "  for line in \"\$@\"; do printf '%s\\n' \"\$line\"; done\n" +
+                "  printf '%%end 1 1 1\\n'\n" +
+                "  token=\${marker##*\"' '\"}\n" +
+                "  printf '%%begin 1 2 1\\n%s\\n%%end 1 2 1\\n' \"\${token%\"'\"}\"\n" +
+                "}\n"
+    }
 }
