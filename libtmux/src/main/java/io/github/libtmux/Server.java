@@ -329,7 +329,11 @@ public final class Server implements AutoCloseable {
         CommandResult result = transport.execute(
                 request(List.of(List.of("display-message", "-p", "#{pid}"), List.of("kill-server")), timeout, ""));
         if (result.succeeded()) {
-            awaitExit(result.stdout(), timeout);
+            // Only a process transport runs tmux on this host; another transport's pid belongs to
+            // whatever it talks to.
+            if (transport instanceof ProcessTransport) {
+                awaitExit(result.stdout(), timeout);
+            }
             return;
         }
         if (!isAlive(timeout)) {
@@ -341,7 +345,7 @@ public final class Server implements AutoCloseable {
     /**
      * tmux answers {@code kill-server} before its daemon exits, and the daemon keeps its socket
      * until every client has gone, so a server started straight afterwards could reach the dying
-     * one. Waits only for a daemon this JVM can see as a tmux process.
+     * one. Waits only for a process of this user that is tmux, or is already exiting.
      */
     private static void awaitExit(List<String> reported, Duration timeout) {
         if (reported.size() != 1) {
@@ -353,8 +357,12 @@ public final class Server implements AutoCloseable {
         } catch (NumberFormatException notAPid) {
             return;
         }
-        // A daemon already exiting has no readable command, and still has to be waited for.
+        // A daemon already exiting has no readable command and still has to be waited for; its
+        // user stays readable. Another user's process never has a readable command, so the user
+        // is what keeps an unrelated pid from being waited on.
+        Optional<String> me = ProcessHandle.current().info().user();
         Optional<ProcessHandle> daemon = ProcessHandle.of(pid)
+                .filter(handle -> me.isPresent() && handle.info().user().equals(me))
                 .filter(handle -> handle.info()
                         .command()
                         .map(command -> command.contains("tmux"))

@@ -966,6 +966,32 @@ final class ServerTest {
         }
     }
 
+    /** Another transport's pid is not a process on this host, however much it looks like tmux. */
+    @Test
+    void killingThroughAnotherTransportWaitsOnNoLocalProcess(@TempDir Path directory) throws IOException {
+        Path lookalike = directory.resolve("tmux-lookalike");
+        Files.copy(Path.of("/bin/sleep"), lookalike);
+        assertTrue(lookalike.toFile().setExecutable(true));
+        Process sleeper = new ProcessBuilder(lookalike.toString(), "30").start();
+        try {
+            TmuxTransport transport = new TmuxTransport() {
+                @Override
+                public CommandResult execute(CommandRequest request) {
+                    return new CommandResult(0, List.of(Long.toString(sleeper.pid())), List.of());
+                }
+
+                @Override
+                public void close() {}
+            };
+            try (Server server = Server.using(config(directory), transport)) {
+                server.killServer(Duration.ofMillis(300));
+            }
+            assertTrue(sleeper.isAlive());
+        } finally {
+            sleeper.destroyForcibly();
+        }
+    }
+
     @Test
     void aServerThatSurvivesTheKillIsReportedRatherThanIgnored(@TempDir Path directory) throws IOException {
         try (Server server = Server.using(config(directory), new SurvivingTransport())) {
