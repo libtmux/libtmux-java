@@ -25,7 +25,9 @@ final class Server[F[_]] private[cats] (
     private[cats] val execution: Execution[F]
 )(implicit F: Async[F]) {
 
-  /** The Java client. This resource's release does not close it. */
+  /** The Java client. Releasing a `resource` closes it; releasing a `fromJava`
+    * borrow leaves it open.
+    */
   def unsafeJava: JavaServer = asJava
   private[scaladsl] val asJava: JavaServer = underlying.asJava
   def config: ServerConfig = underlying.config
