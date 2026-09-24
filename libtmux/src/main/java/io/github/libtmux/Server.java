@@ -183,8 +183,9 @@ public final class Server implements AutoCloseable {
         if (rows.isEmpty()) {
             return Optional.empty();
         }
-        for (String stored :
-                TmuxFormats.storedNames(name, TmuxVersion.parse(rows.get(0).text("version")))) {
+        TmuxVersion version = TmuxVersion.parse(rows.get(0).text("version"));
+        rows = format.rows(TmuxFormats.printed(result.stdout(), version));
+        for (String stored : TmuxFormats.storedNames(name, version)) {
             for (RowFormat.Row row : rows) {
                 if (row.text("session_name").equals(stored)) {
                     return Optional.of(new SessionId(row.text("session_id")));

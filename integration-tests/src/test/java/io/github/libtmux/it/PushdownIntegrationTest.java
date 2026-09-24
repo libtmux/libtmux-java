@@ -34,7 +34,7 @@ import org.junit.jupiter.api.function.Executable;
 final class PushdownIntegrationTest {
 
     private static final List<String> NAMES =
-            List.of("123", "ddd", "trail\\", "star*name", "a b", "café", "dot.ted", "[br]", "Upper", "q?");
+            List.of("123", "ddd", "trail\\", "star*name", "a b", "café", "dot.ted", "[br]", "Upper", "q?", "pay$day");
 
     @Test
     void aPushedFilterSelectsWhatTheLocalFilterSelects(Server server) {
