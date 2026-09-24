@@ -20,6 +20,12 @@ CONSUMER_CELLS = {
     "C06": ("25", "3.3.8"),
     "C07": ("25", "3.9.0"),
 }
+# Installed consumers on every routine run, one per binary family: the Scala
+# release requires this workflow's run on its commit.
+ROUTINE_CONSUMER_CELLS = {
+    "C01": "2.13.18",
+    "C08": "3.3.8",
+}
 TASKS = (
     "scalafmtSbtCheck",
     "scalafmtCheckAll",
@@ -164,13 +170,28 @@ def verify(path):
         require(value in consumer_text, "Missing consumer invocation argument: " + value)
     require("No tmux server outlived" in consumer_text,
             "Missing macOS consumer cleanup check")
-    consumer_cells = cell_blocks(text, "C")
+    consumer_cells = cell_blocks(consumer_text, "C")
     require(set(consumer_cells) == set(CONSUMER_CELLS),
             "Wrong consumer release cells: " + repr(sorted(consumer_cells)))
     for cell, (java, scala) in CONSUMER_CELLS.items():
         body = consumer_cells[cell]
         require("java: '" + java + "'" in body, "Wrong consumer JDK for " + cell)
         require("scala: " + scala in body, "Wrong consumer Scala for " + cell)
+    routine_start = text.index("  installed-consumers:")
+    routine_next = re.search(
+        r"^  [a-z][a-z-]+:\n", text[routine_start + 1:], re.MULTILINE
+    )
+    routine_text = (
+        text[routine_start:routine_start + 1 + routine_next.start()]
+        if routine_next
+        else text[routine_start:]
+    )
+    routine_cells = cell_blocks(routine_text, "C")
+    require(set(routine_cells) == set(ROUTINE_CONSUMER_CELLS),
+            "Wrong routine consumer cells: " + repr(sorted(routine_cells)))
+    for cell, scala in ROUTINE_CONSUMER_CELLS.items():
+        require("scala: " + scala in routine_cells[cell],
+                "Wrong routine consumer Scala for " + cell)
 
 
 def main():
