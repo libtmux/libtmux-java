@@ -10,6 +10,11 @@ every type already arrives as `Window` rather than `Window!`.
 
 > **Alpha.** The API will change without notice.
 
+Needs Kotlin 2.1 or later. The module is compiled for Kotlin 2.2 metadata and
+the 2.2 standard library, the level kotlinx-coroutines 1.11 is compiled for, and
+a Kotlin compiler reads metadata up to one minor version newer than itself.
+`ConsumerBaselineTest` fails if a build raises that level.
+
 Every Kotlin example below is executed against a real tmux server by
 [`ReadmeExamplesTest`](src/test/kotlin/io/github/libtmux/kotlin/ReadmeExamplesTest.kt),
 one test per section.
