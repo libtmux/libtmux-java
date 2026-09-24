@@ -4,6 +4,8 @@ import io.github.libtmux.Server
 import io.github.libtmux.WakeReason
 import io.github.libtmux.junit5.TmuxExtension
 import io.github.libtmux.junit5.TmuxSocketPath
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.CoroutineContext
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -11,6 +13,8 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -59,6 +63,24 @@ class WaitsTest {
     }
 
     @Test
+    fun `a wait runs on the dispatcher it is given`(server: Server) {
+        val channel = server.channel("kotlin-dispatcher")
+        channel.drain()
+        val recording = RecordingDispatcher()
+
+        val outcome =
+            runBlocking {
+                val waiting = async { channel.await(5.seconds, recording) }
+                delay(200.milliseconds)
+                channel.signal()
+                waiting.await()
+            }
+
+        assertEquals(WakeReason.SIGNALLED, outcome)
+        assertTrue(recording.dispatched.get() > 0, "the wait never ran on the given dispatcher")
+    }
+
+    @Test
     fun `a negative channel wait is rejected`(server: Server) {
         val channel = server.channel("kotlin-negative")
 
@@ -74,3 +96,13 @@ private fun waiterPresent(socket: String): Boolean =
         val argv = process.info().arguments().orElse(emptyArray())
         "wait-for" in argv && socket in argv
     }
+
+/** Dispatches to [Dispatchers.IO], counting what it was given. */
+internal class RecordingDispatcher : CoroutineDispatcher() {
+    val dispatched = AtomicInteger()
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        dispatched.incrementAndGet()
+        Dispatchers.IO.dispatch(context, block)
+    }
+}

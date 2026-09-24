@@ -1,6 +1,8 @@
 public final class io/github/libtmux/kotlin/DeliveriesKt {
-	public static final fun awaitDelivery-8Mi8wO0 (Lio/github/libtmux/control/EventSubscription;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static final fun deliveries (Lio/github/libtmux/control/EventSubscription;)Lkotlinx/coroutines/flow/Flow;
+	public static final fun awaitDelivery-dWUq8MI (Lio/github/libtmux/control/EventSubscription;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun awaitDelivery-dWUq8MI$default (Lio/github/libtmux/control/EventSubscription;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun deliveries (Lio/github/libtmux/control/EventSubscription;Lkotlinx/coroutines/CoroutineDispatcher;)Lkotlinx/coroutines/flow/Flow;
+	public static synthetic fun deliveries$default (Lio/github/libtmux/control/EventSubscription;Lkotlinx/coroutines/CoroutineDispatcher;ILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
 	public static final fun kept (Lio/github/libtmux/control/Delivery;)Ljava/lang/Object;
 }
 
@@ -32,11 +34,17 @@ public final class io/github/libtmux/kotlin/OptionalsKt {
 }
 
 public final class io/github/libtmux/kotlin/WaitsKt {
-	public static final fun await-8Mi8wO0 (Lio/github/libtmux/Channel;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static final fun await-ck1zr5g (Lio/github/libtmux/Pane;Ljava/util/function/Predicate;JJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static final fun await-exY8QGI (Lio/github/libtmux/Pane;Ljava/util/function/Predicate;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static final fun awaitReservingCapacity-8Mi8wO0 (Lio/github/libtmux/Channel;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static final fun awaitText-ck1zr5g (Lio/github/libtmux/Pane;Ljava/lang/String;JJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static final fun awaitText-exY8QGI (Lio/github/libtmux/Pane;Ljava/lang/String;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun await-1Y68eR8 (Lio/github/libtmux/Pane;Ljava/util/function/Predicate;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun await-1Y68eR8$default (Lio/github/libtmux/Pane;Ljava/util/function/Predicate;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun await-A1NDRPo (Lio/github/libtmux/Pane;Ljava/util/function/Predicate;JJLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun await-A1NDRPo$default (Lio/github/libtmux/Pane;Ljava/util/function/Predicate;JJLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun await-dWUq8MI (Lio/github/libtmux/Channel;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun await-dWUq8MI$default (Lio/github/libtmux/Channel;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun awaitReservingCapacity-dWUq8MI (Lio/github/libtmux/Channel;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun awaitReservingCapacity-dWUq8MI$default (Lio/github/libtmux/Channel;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun awaitText-1Y68eR8 (Lio/github/libtmux/Pane;Ljava/lang/String;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun awaitText-1Y68eR8$default (Lio/github/libtmux/Pane;Ljava/lang/String;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun awaitText-A1NDRPo (Lio/github/libtmux/Pane;Ljava/lang/String;JJLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun awaitText-A1NDRPo$default (Lio/github/libtmux/Pane;Ljava/lang/String;JJLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
