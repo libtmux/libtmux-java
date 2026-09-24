@@ -154,6 +154,54 @@ public final class EventSubscription<T> implements AutoCloseable {
     }
 
     /**
+     * The steps still to come, in order, each read by the thread consuming the stream.
+     *
+     * <p>Pull-only: a step is read when the stream asks for one, and events that arrive meanwhile
+     * wait in this subscription's buffer, so its capacity alone decides what becomes a {@link
+     * Delivery.Gap}. The stream ends when this subscription closes. When the control client ended
+     * it, the stream fails with {@link #cause()}. Closing the stream closes this subscription, and
+     * closing this subscription from another thread ends a stream that is waiting.
+     *
+     * <pre>{@code
+     * try (Stream<Delivery<PaneOutput>> steps = subscription.stream()) {
+     *     steps.map(Delivery::kept).forEach(output -> System.out.print(output.data()));
+     * }
+     * }</pre>
+     *
+     * @throws io.github.libtmux.LibTmuxException from the stream if the reading thread is
+     *     interrupted; its interrupt status is set again
+     */
+    public java.util.stream.Stream<Delivery<T>> stream() {
+        java.util.Spliterator<Delivery<T>> steps =
+                new java.util.Spliterators.AbstractSpliterator<>(
+                        Long.MAX_VALUE, java.util.Spliterator.ORDERED | java.util.Spliterator.NONNULL) {
+                    @Override
+                    public boolean tryAdvance(java.util.function.Consumer<? super Delivery<T>> action) {
+                        Optional<Delivery<T>> step;
+                        try {
+                            step = next();
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            throw new io.github.libtmux.LibTmuxException(
+                                    "interrupted waiting for the next event", interrupted);
+                        }
+                        if (step.isPresent()) {
+                            action.accept(step.get());
+                            return true;
+                        }
+                        Optional<Throwable> failure = cause();
+                        if (failure.isPresent()) {
+                            throw failure.get() instanceof RuntimeException unchecked
+                                    ? unchecked
+                                    : new io.github.libtmux.LibTmuxException("the control client ended", failure.get());
+                        }
+                        return false;
+                    }
+                };
+        return java.util.stream.StreamSupport.stream(steps, false).onClose(this::close);
+    }
+
+    /**
      * Whether this subscription has reached its terminal state.
      *
      * <p>This distinguishes a timed read that expired from one that returned empty because the

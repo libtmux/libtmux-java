@@ -11,8 +11,12 @@ import io.github.libtmux.control.PaneOutput;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 /**
  * Watches what a pane prints, as tmux pushes it, rather than polling for it.
@@ -52,19 +56,15 @@ public final class WatchPaneOutput {
                     EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
                 client.send("send-keys", "-t", session.name(), "echo watched", "Enter");
 
-                long deadline = System.nanoTime() + watchFor.toNanos();
-                while (System.nanoTime() < deadline && !sawTheEcho(seen)) {
-                    try {
-                        var next = output.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
-                        if (next.isEmpty()) {
-                            break;
-                        }
-                        PaneOutput arrived = Delivery.kept(next.orElseThrow());
+                // Closing the subscription at the deadline ends the stream if the echo never comes.
+                CompletableFuture.delayedExecutor(watchFor.toNanos(), TimeUnit.NANOSECONDS)
+                        .execute(output::close);
+                try (Stream<Delivery<PaneOutput>> steps = output.stream()) {
+                    Iterator<PaneOutput> outputs = steps.map(Delivery::kept).iterator();
+                    while (!sawTheEcho(seen) && outputs.hasNext()) {
+                        PaneOutput arrived = outputs.next();
                         seen.add(arrived);
                         onOutput.accept(arrived);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        break;
                     }
                 }
             }

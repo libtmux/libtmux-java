@@ -115,6 +115,30 @@ tmux decides where one push ends and the next begins, so what a caller wants can
 arrive split across several: read until you have it rather than testing the
 first one. The loop above is bounded by the timeout each `next` carries.
 
+`stream()` reads the same steps as a `java.util.stream.Stream`, pulled one at a
+time on the consuming thread. It ends when the subscription closes, so a timer
+that closes it bounds the whole read, and closing the stream closes the
+subscription:
+
+```java
+// Given: Server server, Session session
+try (ControlClient client = server.control(session);
+        EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
+
+    client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
+    CompletableFuture.delayedExecutor(5, TimeUnit.SECONDS).execute(output::close);
+
+    StringBuilder seen = new StringBuilder();
+    try (Stream<Delivery<PaneOutput>> steps = output.stream()) {
+        Iterator<PaneOutput> outputs = steps.map(Delivery::kept).iterator();
+        while (seen.indexOf("streamed") < 0 && outputs.hasNext()) {
+            seen.append(outputs.next().data());
+        }
+    }
+    seen.indexOf("streamed") >= 0;  // → true
+}
+```
+
 Each subscriber chooses a fixed buffer capacity. A full buffer drops its oldest
 value. The next read is a `Delivery.Gap` naming how many were lost since the
 previous read, and only then the events that remain. `droppedCount()` is the
