@@ -55,6 +55,24 @@ line counts, and at most 240 characters of stderr in `boundedError`, which
 `toString` leaves out. An observer that throws is logged and ignored; the
 command's own result is unaffected, and nothing is retried.
 
+A report has no request id of its own because it does not need one: the
+observer runs on the thread that made the call, so whatever that thread carries
+- a logging MDC, an OpenTelemetry context, a thread local - is there to read:
+
+```java
+// Given: ServerConfig config
+ThreadLocal<String> request = new ThreadLocal<>();
+Map<String, String> seen = new ConcurrentHashMap<>();
+ServerConfig traced =
+        config.toBuilder().observer(report -> seen.put(report.verbs().get(0), request.get())).build();
+try (Server server = Server.open(traced)) {
+    request.set("req-42");
+    server.cmd("display-message", "-p", "hi");
+}
+
+seen.get("display-message");                      // → req-42
+```
+
 This is also where a canceled call shows up. A Scala Cats caller that cancels a
 command after it reached tmux gets a plain cancellation; the report for that
 command says `UNKNOWN`.
