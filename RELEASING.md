@@ -214,9 +214,12 @@ Two behaviours worth knowing:
 3. ~~Add the secrets.~~ **Done** — all four.
 4. Dry-run locally, which needs no key and no token:
    `./gradlew publishToMavenLocal -PlibtmuxVersion=0.0.1-alpha.1`.
-5. Tag. The Release workflow runs `check`, uploads, and attests the
+5. Wait for CI and the tmux matrix to pass on the commit, then tag it. The
+   Release workflow refuses a commit without both, through
+   `scripts/require-passed.sh`, then runs `check`, uploads, and attests the
    jars and the BOM pom. The attestation names the commit and workflow
-   that built them.
+   that built them. A release refused for a run still in progress is started
+   again from the Actions tab once it has passed.
 6. Open [the Portal](https://central.sonatype.com/publishing/deployments) and
    publish the deployment, or drop it.
 7. Bump `libtmuxApiBaseline` in `gradle.properties` to the version just
@@ -229,7 +232,9 @@ Two behaviours worth knowing:
 The Scala facade publishes as four separately suffixed artifacts after its
 exact Java dependency is available from Central. It does not run from a Java
 tag: the owner starts the manual Scala release workflow with the Scala and
-already-published Java versions. That workflow signs and verifies a local
-bundle, then uploads a pending Central Portal deployment. It never releases
+already-published Java versions. It first requires the Scala compatibility
+workflow, whose staged artifacts and installed consumers are the evidence, to
+have passed on that exact commit. It then signs and verifies a local bundle and
+uploads a pending Central Portal deployment. It never releases
 the deployment automatically; the owner reviews, publishes, or drops it in the
 Portal.

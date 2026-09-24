@@ -19,6 +19,8 @@ permissions:
   contents: read
   id-token: write
   attestations: write
+  # To read whether this commit's Scala compatibility run passed.
+  actions: read
 
 jobs:
   publish:
@@ -26,6 +28,14 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Staged artifacts, installed sbt and Gradle consumers, and both Scala families ran in the Scala
+      # compatibility workflow for this commit; this job re-runs only the source tests.
+      - name: Require this commit's Scala compatibility run to have passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: ./scripts/require-passed.sh "$GITHUB_SHA" scala-matrix.yml
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
@@ -63,7 +73,8 @@ jobs:
           LIBTMUX_SCALA_VERSION: ${{ inputs.scala_version }}
           LIBTMUX_JAVA_VERSION: ${{ inputs.java_version }}
         run: |
-          export TMUX_TEST_BINARY="$(command -v tmux)"
+          TMUX_TEST_BINARY="$(command -v tmux)"
+          export TMUX_TEST_BINARY
           ./libtmux-scala/sbtw \
             '++2.13.18' core/test cats/test integration/test examples/test \
             '++3.3.8' core/test cats/test integration/test examples/test
