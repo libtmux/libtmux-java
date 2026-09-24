@@ -120,6 +120,50 @@ final class ControlModeIntegrationTest {
         }
     }
 
+    /**
+     * tmux answers a command another one queues, as if-shell queues its branch, with a reply block
+     * of its own, numbered like any other. A request waiting behind the if-shell must still get its
+     * own reply, however long the branch keeps the reader busy.
+     */
+    @Test
+    void aCommandThatQueuesOthersDoesNotTakeTheNextReply(Server server) throws Exception {
+        String branch = String.join(" ; ", java.util.Collections.nCopies(200, "display-message -p queued"));
+        try (ControlClient client = attach(server)) {
+            for (int round = 0; round < 5; round++) {
+                FutureTask<ControlReply> queuing =
+                        new FutureTask<>(() -> client.send("if-shell", "-F", "1", branch, ""));
+                FutureTask<ControlReply> behind = new FutureTask<>(() -> client.send("display-message", "-p", "after"));
+                Thread.ofVirtual().start(queuing);
+                Thread.ofVirtual().start(behind);
+
+                assertEquals(List.of("after"), behind.get(10, TimeUnit.SECONDS).lines(), "round " + round);
+                queuing.get(10, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    /** What a hook runs is answered in a block of its own too, and answers no request. */
+    @Test
+    void aHookDoesNotAnswerTheNextRequest(Server server) throws Exception {
+        // Many commands, so their blocks are still arriving when the next request is written.
+        server.cmd(
+                "set-hook",
+                "-g",
+                "after-new-window",
+                String.join(" ; ", java.util.Collections.nCopies(200, "display-message -p hooked")));
+        try (ControlClient client = attach(server)) {
+            for (int round = 0; round < 5; round++) {
+                FutureTask<ControlReply> hooking = new FutureTask<>(() -> client.send("new-window", "-d"));
+                FutureTask<ControlReply> behind = new FutureTask<>(() -> client.send("display-message", "-p", "after"));
+                Thread.ofVirtual().start(hooking);
+                Thread.ofVirtual().start(behind);
+
+                assertEquals(List.of("after"), behind.get(10, TimeUnit.SECONDS).lines(), "round " + round);
+                hooking.get(10, TimeUnit.SECONDS);
+            }
+        }
+    }
+
     /** The property a semicolon group cannot offer: a failure discards nothing behind it. */
     @Test
     void aFailureDoesNotDiscardTheRequestsBehindIt(Server server) {
