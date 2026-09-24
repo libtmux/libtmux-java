@@ -4,7 +4,6 @@ import io.github.libtmux.Server
 import io.github.libtmux.WakeReason
 import io.github.libtmux.junit5.TmuxExtension
 import io.github.libtmux.junit5.TmuxSocketPath
-import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -69,11 +68,9 @@ class WaitsTest {
     }
 }
 
+// ProcessHandle rather than /proc, which macOS does not have.
 private fun waiterPresent(socket: String): Boolean =
-    File("/proc").listFiles()?.any { pid ->
-        val command = File(pid, "cmdline")
-        command.isFile &&
-            command.readText().replace('\u0000', ' ').let { text ->
-                text.contains("wait-for") && text.contains(socket)
-            }
-    } == true
+    ProcessHandle.allProcesses().anyMatch { process ->
+        val argv = process.info().arguments().orElse(emptyArray())
+        "wait-for" in argv && socket in argv
+    }
