@@ -173,10 +173,11 @@ public final class Window {
      */
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
-        List<String> reported = server.run(
-                        snapshot, state.context(), List.of("display-message", "-p", "-t", linkTarget(), "--", format))
-                .stdout();
-        return String.join("\n", reported);
+        return Server.printed(server.run(
+                        snapshot,
+                        state.context(),
+                        List.of("display-message", "-p", "-t", linkTarget(), "--", Server.versioned(format)))
+                .stdout());
     }
 
     /**

@@ -223,11 +223,10 @@ public final class Session {
      */
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
-        List<String> reported = server.run(
+        return Server.printed(server.run(
                         snapshot,
-                        List.of("display-message", "-p", "-t", state.id().value(), "--", format))
-                .stdout();
-        return String.join("\n", reported);
+                        List.of("display-message", "-p", "-t", state.id().value(), "--", Server.versioned(format)))
+                .stdout());
     }
 
     /**

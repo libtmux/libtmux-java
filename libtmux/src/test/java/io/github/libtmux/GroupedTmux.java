@@ -42,6 +42,17 @@ final class GroupedTmux {
      */
     static CommandResult execute(
             CommandRequest request, long livePid, String liveVersion, Function<List<String>, CommandResult> command) {
+        if (request.commands().size() > 1) {
+            List<String> stdout = new ArrayList<>();
+            for (List<String> one : request.commands()) {
+                CommandResult answered = command.apply(one);
+                stdout.addAll(answered.stdout());
+                if (!answered.succeeded()) {
+                    return new CommandResult(answered.exitCode(), stdout, answered.stderr());
+                }
+            }
+            return new CommandResult(0, stdout, List.of());
+        }
         List<String> argv = request.commands().get(0);
         if (!argv.get(0).equals("if-shell")) {
             return command.apply(argv);

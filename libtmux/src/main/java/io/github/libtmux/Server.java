@@ -415,9 +415,64 @@ public final class Server implements AutoCloseable {
      */
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
-        List<String> reported =
-                run(List.of("display-message", "-p", "--", format)).stdout();
-        return String.join("\n", reported);
+        return printed(
+                run(List.of("display-message", "-p", "--", versioned(format))).stdout());
+    }
+
+    private static final String VERSION_MARK = io.github.libtmux.format.Tokens.perProcess() + "-version";
+
+    /**
+     * This format with the server's version expanded ahead of it, so the reply can be decoded
+     * without another tmux process. See {@link TmuxFormats#printed(String, TmuxVersion)}.
+     */
+    static String versioned(String format) {
+        return "#{version}" + VERSION_MARK + format;
+    }
+
+    /** The expansion of a {@link #versioned} format, as tmux held the text. */
+    static String printed(List<String> reported) {
+        String all = String.join("\n", reported);
+        int mark = all.indexOf(VERSION_MARK);
+        if (mark < 0) {
+            return all;
+        }
+        String text = all.substring(mark + VERSION_MARK.length());
+        try {
+            return TmuxFormats.printed(text, TmuxVersion.parse(all.substring(0, mark)));
+        } catch (RuntimeException notAVersion) {
+            return text;
+        }
+    }
+
+    /** As {@link #printed(List)}, for a listing whose every row began with {@link #versioned}. */
+    static List<String> printedRows(List<String> rows) {
+        List<String> text = new ArrayList<>(rows.size());
+        for (String row : rows) {
+            text.add(printed(List.of(row)));
+        }
+        return text;
+    }
+
+    /**
+     * Runs one read with the server's version printed first in the same invocation, and answers
+     * with its output as tmux held the text, and without that version line.
+     */
+    CommandResult printed(@Nullable ServerSnapshot snapshot, List<String> argv) {
+        List<List<String>> group = List.of(List.of("display-message", "-p", "#{version}"), argv);
+        CommandResult result = snapshot == null
+                ? transport.execute(request(group, config.defaultTimeout(), ""))
+                : guarded(snapshot, CommandStrings.group(group));
+        if (result.stdout().isEmpty()) {
+            return result;
+        }
+        List<String> output = result.stdout().subList(1, result.stdout().size());
+        try {
+            output = TmuxFormats.printed(
+                    output, TmuxVersion.parse(result.stdout().get(0)));
+        } catch (RuntimeException notAVersion) {
+            // Not tmux's own answer, as from a test double; keep what came back.
+        }
+        return new CommandResult(result.exitCode(), List.copyOf(output), result.stderr());
     }
 
     /** Shell commands run by tmux, and tmux commands chosen by a shell exit status. */
@@ -515,8 +570,9 @@ public final class Server implements AutoCloseable {
         fields.addAll(requireVariableNames(names));
         RowFormat format = RowFormat.of(fields.toArray(String[]::new));
         Map<PaneId, Map<String, String>> panes = new LinkedHashMap<>();
-        for (RowFormat.Row row : format.rows(
-                run(List.of("list-panes", "-a", "-F", format.template())).stdout())) {
+        for (RowFormat.Row row :
+                format.rows(printedRows(run(List.of("list-panes", "-a", "-F", versioned(format.template())))
+                        .stdout()))) {
             Map<String, String> values = new LinkedHashMap<>();
             for (String name : names) {
                 values.put(name, row.text(name));

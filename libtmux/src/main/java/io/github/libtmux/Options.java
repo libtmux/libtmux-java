@@ -75,7 +75,7 @@ public final class Options {
      *     declined to answer rather than an option it does not have
      */
     public Optional<String> get(String name) {
-        var result = cmd(argv("show-options", List.of("-A", "-v", "--", name)));
+        var result = server.printed(snapshot, argv("show-options", List.of("-A", "-v", "--", name)));
         if (result.succeeded()) {
             return Optional.of(String.join("\n", result.stdout()));
         }
@@ -116,7 +116,8 @@ public final class Options {
      * <p>A listed value is escaped with {@code vis(3)} and wrapped in whichever quotes that release
      * chose, and which characters it reaches changed inside the supported range — {@code a$b} prints
      * as {@code "a\$b"} on 3.2a and {@code "a\\$b"} on 3.4. {@code -v} prints the value itself on
-     * every release, which is also what {@link #get} reads, so the two agree.
+     * every release but 3.4, which escapes a {@code $} there too; the version read in the same batch
+     * undoes that, as {@link #get} does, so the two agree.
      */
     private Map<String, String> read(List<String> flags) {
         List<String> names = new ArrayList<>();
@@ -132,6 +133,7 @@ public final class Options {
             int to = from;
             // -q so an option unset between the two requests reads as empty rather than ending the batch.
             Batch batch = snapshot == null ? server.batch() : server.batch(snapshot);
+            batch.add("display-message", "-p", "#{version}");
             do {
                 List<String> arguments = new ArrayList<>(flags);
                 arguments.addAll(List.of("-q", "-v", "--", names.get(to++)));
@@ -143,15 +145,20 @@ public final class Options {
         return Collections.unmodifiableMap(options);
     }
 
+    /** The first operation in the batch reports the version, which decodes the values after it. */
     private static void record(List<String> names, Batch batch, Map<String, String> into) {
         List<OperationResult> read = batch.run().operations();
+        TmuxVersion version = read.get(0).outcome() == OperationOutcome.COMPLETE
+                        && read.get(0).stdout().size() == 1
+                ? TmuxVersion.parse(read.get(0).stdout().get(0))
+                : new TmuxVersion(0, 0, "");
         for (int index = 0; index < names.size(); index++) {
-            OperationResult value = read.get(index);
+            OperationResult value = read.get(index + 1);
             if (value.outcome() != OperationOutcome.COMPLETE) {
                 throw new LibTmuxException(
                         "tmux could not read option " + names.get(index) + ": " + String.join("; ", value.stderr()));
             }
-            into.put(names.get(index), String.join("\n", value.stdout()));
+            into.put(names.get(index), String.join("\n", TmuxFormats.printed(value.stdout(), version)));
         }
     }
 
