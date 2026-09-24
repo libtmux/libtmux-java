@@ -4,11 +4,18 @@
 // thing: whole programs with a `main`, short enough to read in one go and real enough to run. The
 // suite in this module runs every one of them against a real tmux, so an example cannot quietly stop
 // working — which is the failure mode that makes most projects' examples worthless.
-plugins { id("libtmux.java-library") }
+plugins {
+    id("libtmux.java-library")
+    // One program is Kotlin, to show the Flow and coroutine adapter end to end.
+    alias(libs.plugins.kotlin.jvm)
+}
+
+kotlin { jvmToolchain(21) }
 
 dependencies {
     implementation(project(":libtmux"))
     implementation(project(":libtmux-workspace"))
+    implementation(project(":libtmux-kotlin"))
 
     // Embedding libtmux-mcp means supplying the transport, which means supplying its JSON mapper.
     implementation(project(":libtmux-mcp"))
