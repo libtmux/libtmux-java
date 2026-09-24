@@ -98,8 +98,12 @@ does not create a tag, push, or release artifacts automatically.
 A public method on `Server`, `Session`, `Window`, `Pane`, or `Client` is
 either wrapped by the blocking facade or named in
 `src/test/resources/scala-java-omissions.txt`. A captured field is read from
-`info`. Anything else stays on the Java handle. `SurfaceSuite` fails when a
-new Java method is neither.
+`info`. Anything else stays on the Java handle. `SurfaceSuite` reads both from
+the compiled classes and fails when a new Java method is neither, and when a
+wrapped method gains a Java overload with no Scala form taking the same
+arguments, directly or through default arguments. An overload left out on
+purpose gets its own line, such as `Server.newSession(Function1)`, whose Java
+builder lambda the facade replaces with a built spec.
 
 ## The binary surface
 

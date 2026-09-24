@@ -1,15 +1,19 @@
 package io.github.libtmux.scaladsl.blocking
 
 import io.github.libtmux.{
+  Pane => JavaPane,
   PaneId,
   Server => JavaServer,
+  Session => JavaSession,
   ServerConfig,
   ServerIdentity,
   SessionId,
   SessionSpec,
   TmuxVersion,
+  Window => JavaWindow,
   WindowId
 }
+import io.github.libtmux.query.FilterExpr
 import io.github.libtmux.scaladsl.{CommandResult, Snapshot}
 import io.github.libtmux.snapshot.WindowContext
 import java.nio.file.Path
@@ -40,12 +44,34 @@ final class Server private (
     asJava.sessions().asScala.iterator.map(new Session(_, this)).toVector
   }
 
+  /** The sessions this expression matches; a safe one is sent to tmux as `-f`.
+    */
+  def sessions(expression: FilterExpr[JavaSession]): Vector[Session] = checked {
+    asJava
+      .sessions(expression)
+      .asScala
+      .iterator
+      .map(new Session(_, this))
+      .toVector
+  }
+
   def panes(): Vector[Pane] = checked {
     asJava.panes().asScala.iterator.map(new Pane(_, this)).toVector
+  }
+  def panes(expression: FilterExpr[JavaPane]): Vector[Pane] = checked {
+    asJava.panes(expression).asScala.iterator.map(new Pane(_, this)).toVector
   }
 
   def windows(): Vector[Window] = checked {
     asJava.windows().asScala.iterator.map(new Window(_, this)).toVector
+  }
+  def windows(expression: FilterExpr[JavaWindow]): Vector[Window] = checked {
+    asJava
+      .windows(expression)
+      .asScala
+      .iterator
+      .map(new Window(_, this))
+      .toVector
   }
   def windows(id: WindowId): Vector[Window] = checked {
     asJava.windows(id).asScala.iterator.map(new Window(_, this)).toVector
@@ -75,8 +101,10 @@ final class Server private (
   def hasSession(name: String): Boolean = checked(asJava.hasSession(name))
   def killSession(name: String): Unit = checked(asJava.killSession(name))
   def killServer(): Unit = checked(asJava.killServer())
+  def killServer(timeout: Duration): Unit = checked(asJava.killServer(timeout))
   def lock(): Unit = checked(asJava.lock())
   def isAlive(): Boolean = checked(asJava.isAlive())
+  def isAlive(timeout: Duration): Boolean = checked(asJava.isAlive(timeout))
   def version(): TmuxVersion = checked(asJava.version())
   def expand(format: String): String = checked(asJava.expand(format))
   def runShell(command: String): Unit = checked(asJava.shell().run(command))

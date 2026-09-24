@@ -1,5 +1,6 @@
 # A public Java method the blocking facade does not wrap.
 # Type.method, then why. SurfaceSuite fails when this list drifts.
+# Type.method(Types) names one overload of a method that is otherwise wrapped.
 
 Client.name captured on info
 Pane.active captured on info
@@ -49,3 +50,8 @@ Window.linked captured on info
 Window.name captured on info
 Window.respawn stays on the Java handle
 Window.size captured on info
+Pane.capture(Function1) builds a spec in a Java lambda; pass a built CaptureSpec
+Pane.split(Function1) builds a spec in a Java lambda; pass a built SplitSpec
+Server.newSession(Function1) builds a spec in a Java lambda; pass a built SessionSpec
+Session.newWindow(Function1) builds a spec in a Java lambda; pass a built WindowSpec
+Window.split(Function1) builds a spec in a Java lambda; pass a built SplitSpec

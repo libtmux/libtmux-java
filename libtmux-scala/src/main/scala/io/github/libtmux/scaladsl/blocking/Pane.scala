@@ -33,12 +33,26 @@ final class Pane private[blocking] (
   def send(keys: String): Unit = server.checked(asJava.send(keys))
   def sendKeys(keys: Seq[String]): Unit =
     server.checked(asJava.sendKeys(keys.asJava))
+
+  /** As `sendKeys(keys)`, after `beforeSend` confirms this caller still owns
+    * the pane's input. If it throws, nothing is sent.
+    */
+  def sendKeys(keys: Seq[String], beforeSend: () => Unit): Unit =
+    server.checked(asJava.sendKeys(keys.asJava, () => beforeSend()))
   def sendLiteral(text: String): Unit = sendLiteral(Vector(text))
   def sendLiteral(parts: Seq[String]): Unit =
     server.checked(asJava.sendLiteral(parts.asJava))
+  def sendLiteral(parts: Seq[String], beforeSend: () => Unit): Unit =
+    server.checked(asJava.sendLiteral(parts.asJava, () => beforeSend()))
   def sendLine(command: String): Unit = server.checked(asJava.sendLine(command))
   def awaitText(text: String, timeout: Duration): TextOutcome =
     server.checked(asJava.awaitText(text, timeout))
+
+  /** As `awaitText(text, timeout)`, looking every `every`: each look is a tmux
+    * process.
+    */
+  def awaitText(text: String, timeout: Duration, every: Duration): TextOutcome =
+    server.checked(asJava.awaitText(text, timeout, every))
   def run(command: String, timeout: Duration): PaneRun =
     server.checked(PaneRun.fromJava(asJava.run(command, timeout)))
   def copyMode(): Unit = server.checked(asJava.copyMode())
@@ -62,6 +76,8 @@ final class Pane private[blocking] (
   def swapWith(pane: Pane): Unit = server.checked(asJava.swapWith(pane.asJava))
   def expand(format: String): String = server.checked(asJava.expand(format))
   def paste(text: String): Unit = server.checked(asJava.paste(text))
+  def paste(text: String, beforePaste: () => Unit): Unit =
+    server.checked(asJava.paste(text, () => beforePaste()))
   def pasteBuffer(name: String): Unit = server.checked(asJava.pasteBuffer(name))
   def clearHistory(): Unit = server.checked(asJava.clearHistory())
   def kill(): Unit = server.checked(asJava.kill())

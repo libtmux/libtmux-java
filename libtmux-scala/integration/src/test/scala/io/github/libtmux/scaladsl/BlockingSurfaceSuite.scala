@@ -27,6 +27,52 @@ import scala.jdk.CollectionConverters._
 import scala.jdk.OptionConverters._
 
 final class BlockingSurfaceSuite extends FunSuite {
+  test("filtered reads and timed calls reach the same Java overloads") {
+    OwnedTmux.use { fixture =>
+      val server = fixture.own(Server.fromJava(fixture.server))
+      server.newSession(
+        SessionSpec.builder().named("filtered").running("cat").build()
+      )
+      val deadline = Duration.ofSeconds(5)
+
+      assertEquals(
+        server
+          .sessions(io.github.libtmux.Session_.name().is("filtered"))
+          .map(_.info.name),
+        Vector("filtered")
+      )
+      assertEquals(
+        server.windows(io.github.libtmux.Window_.index().atLeast(0)).size,
+        server.windows().size
+      )
+      assertEquals(
+        server.panes(io.github.libtmux.Pane_.index().is(99)),
+        Vector.empty
+      )
+      val pane = server
+        .sessions(io.github.libtmux.Session_.name().is("filtered"))
+        .head
+        .windows
+        .head
+        .panes
+        .head
+      var checked = 0
+      pane.sendLiteral(Vector("typed"), () => checked += 1)
+      assertEquals(checked, 1)
+      assertEquals(
+        pane.awaitText(
+          "never-shown",
+          Duration.ofMillis(200),
+          Duration.ofMillis(20)
+        ),
+        io.github.libtmux.TextOutcome.TIMED_OUT
+      )
+      assert(server.isAlive(deadline))
+      server.killServer(deadline)
+      assert(!server.isAlive(deadline))
+    }
+  }
+
   test(
     "client refresh distinguishes changed attachment, detachment and dead server"
   ) {
