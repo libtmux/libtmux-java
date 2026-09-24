@@ -409,10 +409,20 @@ jobs:
 
   installed-consumers:
     if: github.event_name != 'workflow_dispatch' || (!inputs.include_macos_release && !inputs.include_macos_consumers)
-    name: C01 (Linux, JDK 21, Scala 2.13.18)
+    name: ${{ matrix.id }} (Linux, JDK 21, Scala ${{ matrix.scala }})
     needs: artifact-stage
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both binary families, installed, on every commit: a release is gated on this run, so a
+        # Scala 3 consumer that only the manual macOS dispatch exercised was never release evidence.
+        include:
+          - id: C01
+            scala: 2.13.18
+          - id: C08
+            scala: 3.3.8
     env:
       TMUX_LANE: 3.7c
       TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
@@ -479,17 +489,17 @@ jobs:
             --version "$LIBTMUX_SCALA_VERSION" \
             --java-version "$LIBTMUX_JAVA_VERSION" \
             --docs-exports libtmux-scala/examples/target/scala-2.13/resource_managed/test \
-            --scala-version 2.13.18 \
+            --scala-version ${{ matrix.scala }} \
             --jdk "$JAVA_HOME" \
             --tmux "$TMUX_PREFIX/bin/tmux" \
-            --output libtmux-scala/target/consumers/C01
+            --output libtmux-scala/target/consumers/${{ matrix.id }}
 
-      - name: No tmux server outlived C01
+      - name: No tmux server outlived ${{ matrix.id }}
         if: always()
         run: |
           left="$(pgrep -c tmux || true)"
           if [ "${left:-0}" -ne 0 ]; then
-            echo "::error::$left tmux server(s) survived C01"
+            echo "::error::$left tmux server(s) survived ${{ matrix.id }}"
             for process in $(pgrep tmux); do tr '\0' ' ' < "/proc/$process/cmdline"; echo; done
             exit 1
           fi
@@ -497,8 +507,8 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
-          name: scala-consumer-C01-${{ github.sha }}
-          path: libtmux-scala/target/consumers/C01
+          name: scala-consumer-${{ matrix.id }}-${{ github.sha }}
+          path: libtmux-scala/target/consumers/${{ matrix.id }}
           retention-days: 7
 
   manual-macos-primary:
