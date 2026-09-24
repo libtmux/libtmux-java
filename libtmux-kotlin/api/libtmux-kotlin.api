@@ -22,6 +22,8 @@ public final class io/github/libtmux/kotlin/OptionalsKt {
 	public static final fun getOrNull (Lio/github/libtmux/Environment;Ljava/lang/String;)Ljava/lang/String;
 	public static final fun getOrNull (Lio/github/libtmux/Options;Ljava/lang/String;)Ljava/lang/String;
 	public static final fun modeOrNull (Lio/github/libtmux/Pane;)Lio/github/libtmux/PaneMode;
+	public static final fun orNull (Ljava/util/OptionalInt;)Ljava/lang/Integer;
+	public static final fun orNull (Ljava/util/OptionalLong;)Ljava/lang/Long;
 	public static final fun paneOrNull (Lio/github/libtmux/Server;Lio/github/libtmux/PaneId;)Lio/github/libtmux/Pane;
 	public static final fun sessionOrNull (Lio/github/libtmux/Client;)Lio/github/libtmux/Session;
 	public static final fun sessionOrNull (Lio/github/libtmux/Server;Lio/github/libtmux/SessionId;)Lio/github/libtmux/Session;
