@@ -41,8 +41,11 @@ runs leave that job open.
 The existing Scala workflow accepts `include_macos_release=true` only through
 manual dispatch. It skips the pull-request smoke jobs and runs the remaining
 primary cells P05, P07, and P08 one at a time on macOS with tmux `3.7c`. This
-keeps routine pull-request CI at four running jobs while retaining an
-executable release-gate path for the remaining macOS producer evidence.
+keeps routine pull-request CI at five running jobs while retaining an
+executable release-gate path for the remaining macOS producer evidence. The
+routine five include installed consumers for both binary families on Linux, C01
+on Scala 2.13 and C08 on Scala 3, because the Scala release requires this
+workflow's run on its commit.
 
 `include_macos_consumers=true` runs the Linux artifact-stage job, then C02
 through C07 one at a time on macOS. Each consumer cell uses that Linux stage
