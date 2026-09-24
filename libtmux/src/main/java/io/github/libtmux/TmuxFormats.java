@@ -69,21 +69,32 @@ public final class TmuxFormats {
      * The names to look for when a caller names a session: the one this release stores for it, then
      * the name exactly as given, which is what {@link Session#name} already reports.
      *
-     * <p>Measured on every release in the matrix: tmux doubles each backslash, and 3.2a through 3.6
-     * store {@code .} and {@code :} as {@code _} and a control character as a C escape or three
-     * octal digits. 3.7 and later refuse control characters. The stored form is an escaping, so it
-     * names at most one session; only a name that is itself some other name's stored form is
-     * ambiguous, and the stored form wins.
+     * <p>tmux doubles each backslash; 3.2a through 3.4 put a backslash before a {@code $} that a
+     * letter, {@code _}, or <code>{</code> follows; 3.2a through 3.6 store {@code .} and {@code :}
+     * as {@code _} and a control character as a C escape or three octal digits. 3.7 and later refuse
+     * control characters. The stored form is an escaping, so it names at most one session; only a
+     * name that is itself some other name's stored form is ambiguous, and the stored form wins.
      */
     static java.util.List<String> storedNames(String name, TmuxVersion version) {
         String mapped = version.atLeast(DELIMITERS_KEPT_SINCE)
                 ? name
                 : name.replace('.', '_').replace(':', '_');
         java.util.LinkedHashSet<String> forms = new java.util.LinkedHashSet<>();
-        forms.add(vis(mapped));
+        String stored = vis(mapped);
+        // Before 3.5 the same escaping also put a backslash before a $ that a letter, _, or {
+        // follows; 692ce59b limited that to double-quoted output.
+        forms.add(
+                version.atLeast(DOLLAR_KEPT_SINCE)
+                        ? stored
+                        : ESCAPABLE_DOLLAR.matcher(stored).replaceAll("\\\\\\$"));
         forms.add(name);
         return java.util.List.copyOf(forms);
     }
+
+    private static final TmuxVersion DOLLAR_KEPT_SINCE = new TmuxVersion(3, 5, "");
+
+    private static final java.util.regex.Pattern ESCAPABLE_DOLLAR =
+            java.util.regex.Pattern.compile("\\$(?=[A-Za-z_{])");
 
     /** tmux's {@code vis(3)} with {@code VIS_CSTYLE | VIS_OCTAL | VIS_TAB | VIS_NL}. */
     private static String vis(String name) {
