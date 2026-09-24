@@ -162,11 +162,15 @@ try (ControlClient client = server.control(session);
 
     var unused = session.windows().get(0).rename("build logs");
 
-    Notification seen = Delivery.kept(events.next(Duration.ofSeconds(5)).orElseThrow()).notification();
-    while (!(seen instanceof Notification.WindowRenamed)) {
-        seen = Delivery.kept(events.next(Duration.ofSeconds(5)).orElseThrow()).notification();
+    String renamed = null;
+    while (renamed == null) {
+        Notification seen = Delivery.kept(events.next(Duration.ofSeconds(5)).orElseThrow()).notification();
+        renamed = switch (seen) {
+            case Notification.WindowRenamed(var window, var name, var attached) -> name;
+            default -> null;
+        };
     }
-    ((Notification.WindowRenamed) seen).name();   // → build logs
+    renamed;                                      // → build logs
 }
 ```
 
