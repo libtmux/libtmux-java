@@ -12,6 +12,8 @@ import io.github.libtmux.Session
 import io.github.libtmux.SessionId
 import io.github.libtmux.Window
 import io.github.libtmux.snapshot.WindowContext
+import java.util.OptionalInt
+import java.util.OptionalLong
 
 /*
  * Absence, said the way Kotlin says it.
@@ -21,7 +23,9 @@ import io.github.libtmux.snapshot.WindowContext
  * every read or gives up the language's own null handling. These are the whole of that wrapping,
  * written once.
  *
- * Only the accessors that can genuinely be absent appear here. This is not a mirror of the API.
+ * Only the accessors that can genuinely be absent appear here. This is not a mirror of the API: any
+ * other Optional reads as a nullable through the standard library's `getOrNull()`, and an
+ * OptionalInt or OptionalLong through `orNull()` below.
  */
 
 /** The session's active window, or null when the session has gone. */
@@ -62,3 +66,9 @@ public fun Server.paneOrNull(id: PaneId): Pane? = pane(id).orElse(null)
 
 /** The window at this link, or null when the capture has none. */
 public fun Server.windowOrNull(context: WindowContext): Window? = window(context).orElse(null)
+
+/** The value, or null when absent: a pane's pid, an exit status, a captured server pid. */
+public fun OptionalInt.orNull(): Int? = if (isPresent) asInt else null
+
+/** The value, or null when absent: a pane's pid, an exit status, a captured server pid. */
+public fun OptionalLong.orNull(): Long? = if (isPresent) asLong else null
