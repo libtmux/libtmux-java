@@ -84,6 +84,12 @@ final class PushdownIntegrationTest {
                         Window_.index().isNot(9),
                         Window_.name().is("q?"),
                         Window_.name().contains("."),
+                        // A window or pane format is lifted into a loop over its session, one
+                        // expansion deeper, so the glob escapes are checked there too.
+                        Window_.name().endsWith("?"),
+                        Window_.name().contains("*"),
+                        Window_.name().contains("\\"),
+                        Window_.name().startsWith("[br"),
                         Window_.index().atLeast(1).and(Window_.name().startsWith("t")))
                 .map(expression -> agree(
                         expression,
@@ -94,7 +100,9 @@ final class PushdownIntegrationTest {
                         Pane_.index().is(0),
                         Pane_.active().isTrue(),
                         Pane_.width().greaterThan(9),
-                        Pane_.command().isNot("cat"))
+                        Pane_.command().isNot("cat"),
+                        Pane_.command().startsWith("ca"),
+                        Pane_.index().is(0).and(Pane_.command().contains("a")))
                 .map(expression -> agree(
                         expression,
                         server::panes,

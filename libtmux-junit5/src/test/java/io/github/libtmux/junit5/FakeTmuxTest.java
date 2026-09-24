@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
+import io.github.libtmux.Pane_;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
@@ -87,6 +88,32 @@ final class FakeTmuxTest {
                     List.of("$ make", "make: Nothing to be done."),
                     server.pane(id).orElseThrow().capture());
         }
+    }
+
+    /**
+     * A pane lookup and a pushed pane filter both loop each session's windows and panes inside tmux.
+     * The fake has to evaluate those loops, or it answers with no session and the library falls back
+     * to a whole-server read the test never meant to exercise.
+     */
+    @Test
+    void aPaneInALaterSessionIsFoundByTheReadTmuxWouldAnswer() {
+        FakeTmux tmux = new FakeTmux();
+        tmux.addSession("first");
+        PaneId second = tmux.addSession("second");
+
+        try (Server server = tmux.server()) {
+            assertEquals(second, server.pane(second).orElseThrow().id());
+            assertTrue(server.pane(new PaneId("%999")).isEmpty());
+            assertEquals(
+                    1,
+                    server.panes(Pane_.index().is(0).and(Pane_.command().isNot("x"))).stream()
+                            .filter(pane -> pane.id().equals(second))
+                            .count());
+        }
+
+        assertFalse(
+                tmux.sent().stream().anyMatch(argv -> argv.getFirst().equals("list-clients")),
+                "a whole-server read answered instead: " + tmux.sent());
     }
 
     /** What the library creates is in the fake afterwards, and the handle it returns is to it. */
