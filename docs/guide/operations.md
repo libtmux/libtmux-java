@@ -55,9 +55,10 @@ line counts, and at most 240 characters of stderr in `boundedError`, which
 `toString` leaves out. An observer that throws is logged and ignored; the
 command's own result is unaffected, and nothing is retried.
 
-A report has no request id of its own because it does not need one: the
-observer runs on the thread that made the call, so whatever that thread carries
-- a logging MDC, an OpenTelemetry context, a thread local - is there to read:
+A report's `id` counts calls on one transport, so two reports can be told
+apart; it is not a request id for tracing. None is needed: the observer runs on
+the thread that made the call, so whatever that thread carries - a logging MDC,
+an OpenTelemetry context, a thread local - is there to read:
 
 ```java
 // Given: ServerConfig config

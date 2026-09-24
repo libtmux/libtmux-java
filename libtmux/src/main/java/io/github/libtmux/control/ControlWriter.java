@@ -56,7 +56,6 @@ final class ControlWriter {
     }
 
     ControlReply exchange(String line, Duration timeout) {
-        long started = System.nanoTime();
         Request request = new Request(line, timeout, Request.State.QUEUED);
         try {
             if (!accepting.get()) {
@@ -75,25 +74,24 @@ final class ControlWriter {
                 waiting.remove(request);
             }
             ControlReply reply = await(request);
-            remember(request, started);
+            TIMING.set(request.timing(System.nanoTime()));
             return reply;
         } catch (RuntimeException failure) {
-            remember(request, started);
+            TIMING.set(request.timing(System.nanoTime()));
             throw failure;
         }
     }
 
     private static final ThreadLocal<long[]> TIMING = new ThreadLocal<>();
 
-    private static void remember(Request request, long started) {
-        TIMING.set(new long[] {request.queuedNanos(), Math.max(0, System.nanoTime() - started)});
-    }
-
-    /** Queue time, then total time, for the exchange on this thread. */
-    long[] takeTiming() {
+    /**
+     * Queue time, then run time, for the last exchange on this thread; {@code elapsed} as run time
+     * when this thread made none.
+     */
+    long[] takeTiming(long elapsed) {
         long[] timing = TIMING.get();
         TIMING.remove();
-        return timing == null ? new long[] {0, 0} : timing;
+        return timing == null ? new long[] {0, elapsed} : timing;
     }
 
     void complete(OperationOutcome outcome, List<String> lines) {
@@ -288,6 +286,7 @@ final class ControlWriter {
         private final String line;
         private final long started = System.nanoTime();
         private volatile long picked = started;
+        private volatile boolean dispatched;
         private final long timeoutNanos;
         private final AtomicReference<State> state;
         private final CountDownLatch answered = new CountDownLatch(1);
@@ -297,6 +296,7 @@ final class ControlWriter {
             this.line = line;
             this.timeoutNanos = timeoutNanos(timeout);
             this.state = new AtomicReference<>(state);
+            this.dispatched = state == State.PICKED;
         }
 
         boolean pick() {
@@ -304,11 +304,16 @@ final class ControlWriter {
                 return false;
             }
             picked = System.nanoTime();
+            dispatched = true;
             return true;
         }
 
-        long queuedNanos() {
-            return Math.max(0, picked - started);
+        /** Queue time, then run time, up to now. A request never picked spent all of it queued. */
+        long[] timing(long now) {
+            if (!dispatched) {
+                return new long[] {Math.max(0, now - started), 0};
+            }
+            return new long[] {Math.max(0, picked - started), Math.max(0, now - picked)};
         }
 
         boolean cancel(TmuxTransportException reason) {

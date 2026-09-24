@@ -306,7 +306,7 @@ public final class ControlClient implements AutoCloseable {
         long started = System.nanoTime();
         try {
             ControlReply reply = writer.exchange(line(argv), timeout);
-            long[] timing = writer.takeTiming();
+            long[] timing = writer.takeTiming(System.nanoTime() - started);
             report(argv.get(0), reply, timing);
             if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
                 LOG.log(
@@ -321,7 +321,7 @@ public final class ControlClient implements AutoCloseable {
             }
             return reply;
         } catch (RuntimeException failure) {
-            long[] timing = writer.takeTiming();
+            long[] timing = writer.takeTiming(System.nanoTime() - started);
             DispatchOutcome certainty =
                     failure instanceof TmuxTransportException transport ? transport.outcome() : DispatchOutcome.UNKNOWN;
             try {
@@ -334,7 +334,7 @@ public final class ControlClient implements AutoCloseable {
                         0,
                         "",
                         Duration.ofNanos(timing[0]),
-                        Duration.ofNanos(timing[1] == 0 ? Math.max(0, System.nanoTime() - started) : timing[1])));
+                        Duration.ofNanos(timing[1])));
             } catch (RuntimeException ignored) {
                 LOG.log(System.Logger.Level.WARNING, "operation observer failed");
             }
