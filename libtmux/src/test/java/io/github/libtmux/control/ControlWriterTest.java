@@ -181,6 +181,34 @@ final class ControlWriterTest {
     }
 
     @Test
+    void aQueuedRequestReportsItsWaitApartFromItsRun() throws Exception {
+        AtomicReference<ControlWriter> holder = new AtomicReference<>();
+        GatedReplyingWriter output =
+                new GatedReplyingWriter(line -> holder.get().complete(OperationOutcome.COMPLETE, List.of(line)));
+        ControlWriter writer = writer(output, 2, ignored -> {});
+        holder.set(writer);
+        writer.start();
+        Thread first = exchange(writer, "first", PATIENCE, new AtomicReference<>());
+        assertTrue(output.firstEntered.await(1, TimeUnit.SECONDS));
+        AtomicReference<long[]> timing = new AtomicReference<>();
+        Thread second = Thread.ofVirtual().start(() -> {
+            writer.exchange("second", PATIENCE);
+            timing.set(writer.takeTiming(-1));
+        });
+        Thread.sleep(200);
+        output.releaseFirst.countDown();
+        first.join(1_000);
+        second.join(1_000);
+        writer.close();
+        writer.join(1_000);
+
+        long queued = timing.get()[0];
+        long ran = timing.get()[1];
+        assertTrue(queued >= TimeUnit.MILLISECONDS.toNanos(150), "queued only " + queued + " ns");
+        assertTrue(ran < queued, "the run time " + ran + " ns includes the " + queued + " ns queued");
+    }
+
+    @Test
     void interruptionPreservesCertaintyAndTheInterruptFlag() throws Exception {
         BlockingWriter output = new BlockingWriter();
         ControlWriter writer = writer(output, 1, ignored -> {});
