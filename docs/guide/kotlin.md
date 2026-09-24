@@ -49,6 +49,11 @@ form:
 
 ```kotlin
 // Given: session: Session, window: Window, pane: Pane
+import io.github.libtmux.kotlin.activePaneOrNull
+import io.github.libtmux.kotlin.activeWindowOrNull
+import io.github.libtmux.kotlin.floatingOrNull
+import io.github.libtmux.kotlin.getOrNull
+
 // A window, or null once the session has gone.
 session.activeWindowOrNull()?.id()?.value()?.startsWith("@")   // → true
 
@@ -72,6 +77,8 @@ as an exit status or a pid, through `orNull()`:
 
 ```kotlin
 // Given: pane: Pane
+import io.github.libtmux.kotlin.orNull
+
 pane.pid().orNull()?.let { it > 0 }                            // → true
 ```
 

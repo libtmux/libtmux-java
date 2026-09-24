@@ -87,8 +87,12 @@ val documentedKotlin =
                 exclude("**/build/**")
             }
         val generated = layout.buildDirectory.dir("generated/documentation")
+        // How many Kotlin fences each document holds. A fence added or lost is a line changed here,
+        // not a count that still clears a floor.
+        val inventory = layout.projectDirectory.file("documentation-snippets.txt")
 
         inputs.files(documents).withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file(inventory).withPathSensitivity(PathSensitivity.RELATIVE)
         outputs.dir(generated)
 
         doLast {
@@ -97,8 +101,8 @@ val documentedKotlin =
                     """(?:<!--\s*snippet:\s*([^>]*?)\s*-->\s*\n)?^```kotlin\n(.*?)^```""",
                     setOf(RegexOption.MULTILINE, RegexOption.DOT_MATCHES_ALL),
                 )
-            val imports = sortedSetOf<String>()
-            val cases = StringBuilder()
+            val counts = sortedMapOf<String, Int>()
+            generated.get().asFile.deleteRecursively()
             var found = 0
 
             // Sorted, so the generated file does not depend on the order of a directory scan.
@@ -109,6 +113,7 @@ val documentedKotlin =
                     val directive = match.groupValues[1]
                     if (directive.startsWith("skip:")) return@forEach
                     found++
+                    counts.merge(where, 1, Int::plus)
 
                     val line = text.substring(0, match.range.first).count { it == '\n' } + 1
                     // A backticked name may hold neither a dot nor a separator. The whole path
@@ -121,7 +126,11 @@ val documentedKotlin =
                     // documentation cannot claim a value the library does not give.
                     val shown = Regex("""^(\s*)(.+?)\s*//\s*(?:\u2192|->)\s*(.*?)\s*$""")
 
-                    // Kotlin wants imports at the top of a file, so a snippet's own are hoisted.
+                    // Kotlin wants imports at the top of a file, so a snippet's own are hoisted into
+                    // its own file. Each snippet has one, in a package of its own: an import one
+                    // snippet needs is not lent to another, and nothing of io.github.libtmux.kotlin
+                    // is in scope unless the snippet imports it, as a reader's code would have to.
+                    val imports = sortedSetOf<String>()
                     val body =
                         match.groupValues[2]
                             .lines()
@@ -166,49 +175,57 @@ val documentedKotlin =
                     val unknown = given - fixtures.keys
                     require(unknown.isEmpty()) { "$where line $line: Given names $unknown; a snippet may assume ${fixtures.keys}" }
                     val declared = given.joinToString("") { "        val $it = ${fixtures.getValue(it)}\n" }
-                    cases.append(
-                        """
-                        |    @Test
-                        |    fun `$name`(server: Server, socketPath: TmuxSocketPath) {
-                        |$declared
-                        |        // run is inline, so a snippet's own declarations shadow the ones
-                        |        // above rather than colliding with them, and a bare return still
-                        |        // leaves the test.
-                        |        run {
-                        |${body.joinToString("\n") { "            $it" }}
-                        |        }
-                        |    }
-                        |
-                        """.trimMargin(),
+                    val file = generated.get().asFile.resolve("io/github/libtmux/docs/kotlin/s$found/Snippet.kt")
+                    file.parentFile.mkdirs()
+                    file.writeText(
+                        buildString {
+                            appendLine("// Generated from $where line $line. Edit the Markdown, not this file.")
+                            appendLine("@file:Suppress(\"unused\", \"UNUSED_VARIABLE\", \"NAME_SHADOWING\", \"RedundantSuppression\")")
+                            appendLine()
+                            appendLine("package io.github.libtmux.docs.kotlin.s$found")
+                            appendLine()
+                            imports.forEach { appendLine(it) }
+                            // What every Java fence may use too: the core, and the harness.
+                            appendLine("import io.github.libtmux.*")
+                            appendLine("import io.github.libtmux.junit5.TmuxExtension")
+                            appendLine("import io.github.libtmux.junit5.TmuxSocketPath")
+                            appendLine("import kotlin.test.assertEquals")
+                            appendLine("import org.junit.jupiter.api.Test")
+                            appendLine("import org.junit.jupiter.api.extension.ExtendWith")
+                            appendLine()
+                            append(
+                                """
+                                |@ExtendWith(TmuxExtension::class)
+                                |class Snippet {
+                                |    @Test
+                                |    fun `$name`(server: Server, socketPath: TmuxSocketPath) {
+                                |$declared
+                                |        // run is inline, so a snippet's own declarations shadow the ones
+                                |        // above rather than colliding with them, and a bare return still
+                                |        // leaves the test.
+                                |        run {
+                                |${body.joinToString("\n") { "            $it" }}
+                                |        }
+                                |    }
+                                |}
+                                |
+                                """.trimMargin(),
+                            )
+                        },
                     )
                 }
             }
 
-            require(found >= 5) { "only found $found Kotlin snippets; the extractor has stopped working" }
-
-            val file = generated.get().asFile.resolve("io/github/libtmux/kotlin/DocumentationSnippetsTest.kt")
-            file.parentFile.mkdirs()
-            file.writeText(
-                buildString {
-                    appendLine("// Generated from the documentation. Edit the Markdown, not this file.")
-                    appendLine("@file:Suppress(\"unused\", \"UNUSED_VARIABLE\", \"NAME_SHADOWING\", \"RedundantSuppression\")")
-                    appendLine()
-                    appendLine("package io.github.libtmux.kotlin")
-                    appendLine()
-                    imports.forEach { appendLine(it) }
-                    appendLine("import io.github.libtmux.*")
-                    appendLine("import io.github.libtmux.junit5.TmuxExtension")
-                    appendLine("import io.github.libtmux.junit5.TmuxSocketPath")
-                    appendLine("import kotlin.test.assertEquals")
-                    appendLine("import org.junit.jupiter.api.Test")
-                    appendLine("import org.junit.jupiter.api.extension.ExtendWith")
-                    appendLine()
-                    appendLine("@ExtendWith(TmuxExtension::class)")
-                    appendLine("class DocumentationSnippetsTest {")
-                    append(cases)
-                    appendLine("}")
-                },
-            )
+            val expected =
+                inventory.asFile.readLines()
+                    .map { it.substringBefore('#').trim() }
+                    .filter { it.isNotEmpty() }
+                    .associate { entry -> entry.substringAfter(' ').trim() to entry.substringBefore(' ').toInt() }
+                    .toSortedMap()
+            require(counts == expected) {
+                "Kotlin fences per document are $counts, and documentation-snippets.txt says $expected; " +
+                    "update it when a fence is added or removed on purpose"
+            }
             logger.lifecycle("generated $found Kotlin documentation snippets")
         }
     }

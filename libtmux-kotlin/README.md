@@ -62,6 +62,7 @@ form:
 
 ```kotlin
 // Given: session: Session, window: Window, pane: Pane
+import io.github.libtmux.kotlin.activePaneOrNull
 import io.github.libtmux.kotlin.activeWindowOrNull
 import io.github.libtmux.kotlin.floatingOrNull
 import io.github.libtmux.kotlin.getOrNull

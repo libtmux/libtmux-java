@@ -1,0 +1,4 @@
+# Kotlin fences each document holds, as `<count> <path>`. The build fails when a
+# document's fences no longer match: change this line when that is on purpose.
+4 docs/guide/kotlin.md
+4 libtmux-kotlin/README.md
