@@ -10,9 +10,11 @@ import java.nio.file.Path
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -34,28 +36,31 @@ fun main(args: Array<String>) {
  *
  * @return one line for each: whether the echo arrived, and whether the wait was cancelled
  */
-suspend fun watchWithFlow(socket: Path, deadline: Duration): String {
-    val config = ServerConfig.builder().endpoint(ServerEndpoint.socketPath(socket)).build()
-    return Server.open(config).use { server ->
-        val session = server.sessions()[0]
-        server.control(session).use { client ->
-            // deliveries() closes the subscription when the flow ends, including by cancellation.
-            val output = client.subscribeOutput(32)
-            client.send("send-keys", "-t", session.name(), "echo flowed", "Enter")
+suspend fun watchWithFlow(socket: Path, deadline: Duration): String =
+    // Every libtmux call blocks its thread, so they run on Dispatchers.IO rather than on whatever
+    // thread the caller's coroutine is using. The waits below suspend instead of blocking.
+    withContext(Dispatchers.IO) {
+        val config = ServerConfig.builder().endpoint(ServerEndpoint.socketPath(socket)).build()
+        Server.open(config).use { server ->
+            val session = server.sessions()[0]
+            server.control(session).use { client ->
+                // deliveries() closes the subscription when the flow ends, including by cancellation.
+                val output = client.subscribeOutput(32)
+                client.send("send-keys", "-t", session.name(), "echo flowed", "Enter")
 
-            val seen = StringBuilder()
-            val echoed =
-                withTimeoutOrNull(deadline) {
-                    output.deliveries().map { it.kept().data() }.first { chunk ->
-                        seen.append(chunk)
-                        WatchPaneOutput.printedLine(seen.toString(), "flowed")
-                    }
-                } != null
+                val seen = StringBuilder()
+                val echoed =
+                    withTimeoutOrNull(deadline) {
+                        output.deliveries().map { it.kept().data() }.first { chunk ->
+                            seen.append(chunk)
+                            WatchPaneOutput.printedLine(seen.toString(), "flowed")
+                        }
+                    } != null
 
-            val cancelled =
-                withTimeoutOrNull(200.milliseconds) { server.channel("never-signalled").await(30.seconds) } == null
+                val cancelled =
+                    withTimeoutOrNull(200.milliseconds) { server.channel("never-signalled").await(30.seconds) } == null
 
-            "echoed=$echoed\ncancelled=$cancelled"
+                "echoed=$echoed\ncancelled=$cancelled"
+            }
         }
     }
-}

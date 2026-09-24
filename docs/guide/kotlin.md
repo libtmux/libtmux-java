@@ -112,6 +112,23 @@ taken back.
 This module depends on kotlinx-coroutines. The core does not, and nothing
 written in Java may depend on this module.
 
+## Blocking calls from a coroutine
+
+Every libtmux call blocks its thread until tmux answers. From a coroutine, make
+them where blocking is expected, never on a thread `Dispatchers.Default` or a UI
+dispatcher lends you:
+
+- A run of short calls — open a server, read sessions, attach, send — goes
+  inside `withContext(Dispatchers.IO) { ... }`, as the `WatchWithFlow` example
+  does.
+- A call that can wait long uses this module's suspending form: `await`,
+  `awaitText`, `awaitDelivery`, or `deliveries()`. Each blocks a thread of the
+  `dispatcher` it is given, `Dispatchers.IO` unless you pass one, and
+  cancelling it interrupts that thread. Pass `Dispatchers.IO.limitedParallelism(n)`
+  to bound how many threads your waits may hold at once.
+- A long call this module has no form for, wrap in
+  `runInterruptible(Dispatchers.IO) { ... }`, so cancellation reaches it.
+
 ## Why the sugar is downstream and stays there
 
 Nothing written in Java may depend on `libtmux-kotlin`, and the build fails if it
