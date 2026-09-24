@@ -10,9 +10,9 @@ The same 20 windows, asked for three ways. This is the whole of the answer to pe
 
 | strategy | wall clock | commands dispatched |
 | --- | --- | --- |
-| `one-at-a-time` | 276 ms (274-339) | 64 |
-| `batch` | 64 ms (51-69) | 5 |
-| `chain` | 45 ms (45-52) | 5 |
+| `one-at-a-time` | 334 ms (329-360) | 64 |
+| `batch` | 56 ms (41-69) | 5 |
+| `chain` | 53 ms (50-55) | 5 |
 
 Every row pays the same four commands for the handle it starts from and the count it ends with, so the ratio between them understates what grouping saves: the work itself is 60 commands against one.
 
@@ -22,8 +22,18 @@ Every row pays the same four commands for the handle it starts from and the coun
 
 | read | wall clock | commands dispatched |
 | --- | --- | --- |
-| `traversal` | 102 ms (102-103) | 40 |
-| `snapshot` | 99 ms (98-102) | 40 |
+| `traversal` | 97 ms (94-102) | 40 |
+| `snapshot` | 105 ms (96-106) | 40 |
+
+## Narrow reads
+
+Five sessions, one wanted. A lookup by name reads who the server is, then lists only that session, its windows, and its panes as one fenced group: two commands, the same as a snapshot, over less of the server. A filter tmux can apply adds one probe for which sessions match, then reads all of them in one more group: three commands, however many match.
+
+| read | wall clock | commands dispatched |
+| --- | --- | --- |
+| `snapshot() then find` | 105 ms (100-125) | 40 |
+| `session(name)` | 100 ms (98-126) | 40 |
+| `sessions(filter), two match` | 149 ms (136-159) | 60 |
 
 ## What the staleness guard costs
 
@@ -31,8 +41,8 @@ A handle fences every command it sends behind `if-shell -F`, so that a handle ca
 
 | command | wall clock | commands dispatched |
 | --- | --- | --- |
-| `unguarded` | 46 ms (45-46) | 22 |
-| `guarded` | 46 ms | 22 |
+| `unguarded` | 49 ms (48-51) | 22 |
+| `guarded` | 48 ms (47-50) | 22 |
 
 The guard rides inside the one command it fences, so it costs no further process. What it adds is bytes, against the 16384 a tmux command may carry.
 
@@ -42,9 +52,9 @@ The same command, waited on three ways, 5 times: it prints a marker 200 ms after
 
 | wait | wall clock | added per wait | commands dispatched |
 | --- | --- | --- | --- |
-| `poll: awaitText` | 1100 ms (1097-1107) | 20 ms | 38 |
-| `push: control %output` | 1058 ms (1055-1064) | 11 ms | 16 |
-| `signal: Pane.run` | 1095 ms (1092-1098) | 19 ms | 33 |
+| `poll: awaitText` | 1104 ms (1099-1108) | 20 ms | 37 |
+| `push: control %output` | 1058 ms (1056-1067) | 11 ms | 15 |
+| `signal: Pane.run` | 1093 ms (1092-1099) | 18 ms | 32 |
 
 Three different costs, not one ranking. A poll spends a tmux process every 50 ms, so its count grows with how long it waits, and it notices up to one interval late. A push pays once to attach a control client — not in the count, and most of its added time over so few waits — and after that is told as output arrives, so its count is only the commands typed. `Pane.run` pays a fixed handful per command whatever the command's length: reading the pane, the wait, reading the output back, and the three tmux calls the pane's shell makes to report the end. In return it is the only one of the three that knows the command ended, and with what status.
 
@@ -54,8 +64,8 @@ A listed value is escaped for display, and how it is escaped changes between rel
 
 | read | wall clock | commands dispatched |
 | --- | --- | --- |
-| `one option` | 39 ms (38-40) | 20 |
-| `all()` | 151 ms (151-152) | 40 |
-| `effective()` | 137 ms (137-143) | 40 |
+| `one option` | 39 ms (38-39) | 20 |
+| `all()` | 145 ms (129-151) | 40 |
+| `effective()` | 129 ms (127-138) | 40 |
 
 That is the cost: one option is one command, and a listing is two whatever its size, until it outgrows what one command may carry.

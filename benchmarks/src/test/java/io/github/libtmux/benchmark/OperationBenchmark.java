@@ -9,6 +9,7 @@ import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
+import io.github.libtmux.Session_;
 import io.github.libtmux.Window;
 import io.github.libtmux.Window_;
 import io.github.libtmux.batch.Batch;
@@ -79,6 +80,12 @@ final class OperationBenchmark {
             return delegate.realm();
         }
 
+        // A control client is one long-lived process, not a dispatch, so it is not counted.
+        @Override
+        public java.util.Optional<io.github.libtmux.transport.ControlCarrier> controlCarrier() {
+            return delegate.controlCarrier();
+        }
+
         @Override
         public void close() {
             delegate.close();
@@ -100,6 +107,23 @@ final class OperationBenchmark {
         List<Measured> reading = List.of(
                 measure(directory, "traversal", OperationBenchmark::plantWindows, OperationBenchmark::traverse),
                 measure(directory, "snapshot", OperationBenchmark::plantWindows, OperationBenchmark::snapshot));
+
+        List<Measured> narrowing = List.of(
+                measure(
+                        directory,
+                        "snapshot() then find",
+                        OperationBenchmark::plantSessions,
+                        OperationBenchmark::findInSnapshot),
+                measure(
+                        directory,
+                        "session(name)",
+                        OperationBenchmark::plantSessions,
+                        OperationBenchmark::sessionByName),
+                measure(
+                        directory,
+                        "sessions(filter), two match",
+                        OperationBenchmark::plantSessions,
+                        OperationBenchmark::filtered));
 
         List<Measured> guarding = List.of(
                 measure(directory, "unguarded", OperationBenchmark::plantWindows, OperationBenchmark::unguarded),
@@ -124,7 +148,7 @@ final class OperationBenchmark {
         // Test task is the module and not the root.
         Path report = Path.of(System.getProperty("libtmux.benchmark.out", "build/operations.md"));
         Files.createDirectories(report.getParent());
-        Files.writeString(report, render(grouping, reading, guarding, waits, options));
+        Files.writeString(report, render(grouping, reading, narrowing, guarding, waits, options));
 
         assertTrue(Files.exists(report), "the benchmark wrote no table");
     }
@@ -217,6 +241,40 @@ final class OperationBenchmark {
             String name = "bench-" + index;
             session.newWindow(window -> window.named(name).detached());
         }
+    }
+
+    private static void plantSessions(Server server) {
+        for (int index = 0; index < 5; index++) {
+            server.newSession("bench-" + index);
+        }
+    }
+
+    /** One session found by reading everything and looking. */
+    private static String findInSnapshot(Server server) {
+        String seen = "";
+        for (int round = 0; round < ROUNDS; round++) {
+            seen = server.snapshot().session("bench-3").orElseThrow().name();
+        }
+        return seen;
+    }
+
+    /** The same session asked for by name, which lists only that session. */
+    private static String sessionByName(Server server) {
+        String seen = "";
+        for (int round = 0; round < ROUNDS; round++) {
+            seen = server.session("bench-3").orElseThrow().name();
+        }
+        return seen;
+    }
+
+    /** A filter tmux applies, matching two sessions. */
+    private static String filtered(Server server) {
+        int seen = 0;
+        for (int round = 0; round < ROUNDS; round++) {
+            seen = server.sessions(Session_.name().in(List.of("bench-1", "bench-3")))
+                    .size();
+        }
+        return Integer.toString(seen);
     }
 
     /** Builds a workspace one call at a time: what a program setting tmux up does naively. */
@@ -393,6 +451,7 @@ final class OperationBenchmark {
     private String render(
             List<Measured> grouping,
             List<Measured> reading,
+            List<Measured> narrowing,
             List<Measured> guarding,
             List<Measured> waits,
             List<Measured> options) {
@@ -427,6 +486,14 @@ final class OperationBenchmark {
                 .append("server is, then run the four listings as one group fenced against that ")
                 .append("answer. Two commands, whatever the hierarchy holds.\n\n");
         table(out, "read", reading);
+
+        out.append("\n## Narrow reads\n\n")
+                .append("Five sessions, one wanted. A lookup by name reads who the server is, then ")
+                .append("lists only that session, its windows, and its panes as one fenced group: two ")
+                .append("commands, the same as a snapshot, over less of the server. A filter tmux can ")
+                .append("apply adds one probe for which sessions match, then reads all of them in one ")
+                .append("more group: three commands, however many match.\n\n");
+        table(out, "read", narrowing);
 
         out.append("\n## What the staleness guard costs\n\n")
                 .append("A handle fences every command it sends behind `if-shell -F`, so that a ")
