@@ -65,6 +65,50 @@ tasks.jar {
     }
 }
 
+// ------------------------------------------------------------------------- oldest consumer
+
+// Kotlin 2.1 is the oldest compiler this module says can read it. The metadata test checks the
+// number the build wrote; this compiles a consumer with that compiler, against the jar this module
+// publishes, so the claim is what a 2.1 project actually meets.
+val oldestKotlin: Configuration by configurations.creating {
+    isCanBeConsumed = false
+}
+
+dependencies { oldestKotlin("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.1.21") }
+
+val compileOldestConsumer =
+    tasks.register<JavaExec>("compileOldestConsumer") {
+        description = "Compiles a consumer of this module with Kotlin 2.1, the oldest it claims."
+        group = "verification"
+        val consumer = layout.projectDirectory.file("src/consumer/Consumer.kt")
+        val published = files(tasks.named("jar"), configurations.named("runtimeClasspath"))
+        val output = layout.buildDirectory.dir("oldest-consumer")
+        inputs.file(consumer).withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.files(published).withNormalizer(ClasspathNormalizer::class.java)
+        outputs.dir(output)
+        classpath = oldestKotlin
+        mainClass = "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler"
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+        argumentProviders.add(
+            CommandLineArgumentProvider {
+                listOf(
+                    consumer.asFile.path,
+                    "-d",
+                    output.get().asFile.path,
+                    "-classpath",
+                    published.asPath,
+                    "-no-stdlib",
+                    "-no-reflect",
+                    "-jvm-target",
+                    "21",
+                    "-Werror",
+                )
+            },
+        )
+    }
+
+tasks.named("check") { dependsOn(compileOldestConsumer) }
+
 // ---------------------------------------------------------------------- documentation snippets
 
 // Every Kotlin fence in the documentation, turned into a test.
