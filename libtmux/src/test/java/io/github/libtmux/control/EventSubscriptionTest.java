@@ -26,6 +26,52 @@ final class EventSubscriptionTest {
     }
 
     @Test
+    void aStreamReadsTheGapThenTheEventsAndEndsWithTheSubscription() {
+        var subscription = new EventSubscription<String>(1, ignored -> {});
+        subscription.offer("lost");
+        subscription.offer("kept");
+        subscription.close();
+
+        // Closing discards buffered events, so only the gap is still owed.
+        try (var steps = subscription.stream()) {
+            assertEquals(java.util.List.of(new Delivery.Gap<String>(1)), steps.toList());
+        }
+
+        var open = new EventSubscription<String>(2, ignored -> {});
+        open.offer("first");
+        open.offer("second");
+        try (var steps = open.stream()) {
+            assertEquals(
+                    java.util.List.of("first", "second"),
+                    steps.limit(2).map(Delivery::kept).toList());
+        }
+        assertTrue(open.isClosed(), "closing the stream closes the subscription");
+    }
+
+    @Test
+    void aStreamFailsWithTheCauseWhenTheClientEndedIt() {
+        var subscription = new EventSubscription<String>(1, ignored -> {});
+        var cause = new ControlEndedException("", false, null);
+        subscription.end(cause);
+
+        try (var steps = subscription.stream()) {
+            assertEquals(cause, assertThrows(ControlEndedException.class, steps::toList));
+        }
+    }
+
+    @Test
+    void closingFromAnotherThreadEndsAWaitingStream() throws Exception {
+        var subscription = new EventSubscription<String>(1, ignored -> {});
+        FutureTask<java.util.List<Delivery<String>>> reading =
+                new FutureTask<>(() -> subscription.stream().toList());
+        Thread reader = new Thread(reading);
+        reader.start();
+        subscription.close();
+
+        assertEquals(java.util.List.of(), reading.get(5, TimeUnit.SECONDS));
+    }
+
+    @Test
     void capacityMustLeaveRoomForOneValue() {
         assertThrows(IllegalArgumentException.class, () -> new EventSubscription<String>(0, ignored -> {}));
         assertThrows(IllegalArgumentException.class, () -> new EventSubscription<String>(-1, ignored -> {}));
