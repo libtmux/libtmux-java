@@ -6,6 +6,7 @@ import java.util.Collections
 import java.util.WeakHashMap
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -28,11 +29,15 @@ public fun <T : Any> Delivery<T>.kept(): T = Delivery.kept(this)
  * another `deliveries()` call, fails with [IllegalStateException] rather than
  * sharing or silently missing its steps.
  *
- * Each read runs on [Dispatchers.IO] and the flow adds no buffer of its own, so
- * events that arrive while the collector is busy wait in the subscription, and
- * its capacity alone decides what becomes a gap.
+ * Each read blocks a thread of [dispatcher], and the flow adds no buffer of its
+ * own, so events that arrive while the collector is busy wait in the
+ * subscription, and its capacity alone decides what becomes a gap.
+ *
+ * @param dispatcher where each blocking read runs, [Dispatchers.IO] unless given
  */
-public fun <T : Any> EventSubscription<T>.deliveries(): Flow<Delivery<T>> {
+public fun <T : Any> EventSubscription<T>.deliveries(
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
+): Flow<Delivery<T>> {
     val subscription = this
     return flow {
         check(collected.add(subscription)) {
@@ -40,7 +45,7 @@ public fun <T : Any> EventSubscription<T>.deliveries(): Flow<Delivery<T>> {
         }
         try {
             while (true) {
-                val delivered = runInterruptible(Dispatchers.IO) { subscription.next() }
+                val delivered = runInterruptible(dispatcher) { subscription.next() }
                 if (delivered.isEmpty) {
                     val failure = subscription.cause()
                     if (failure.isPresent) {
@@ -64,12 +69,16 @@ public fun <T : Any> EventSubscription<T>.deliveries(): Flow<Delivery<T>> {
  * step arrives or the subscription ends.
  *
  * @param timeout how long to wait
+ * @param dispatcher where the blocking wait runs, [Dispatchers.IO] unless given
  * @return the next gap or event, or null when none arrived before the deadline.
  * A client that ended the subscription fails this wait with that cause.
  * @throws IllegalArgumentException if [timeout] is negative
  */
-public suspend fun <T : Any> EventSubscription<T>.awaitDelivery(timeout: Duration): Delivery<T>? =
-    runInterruptible(Dispatchers.IO) {
+public suspend fun <T : Any> EventSubscription<T>.awaitDelivery(
+    timeout: Duration,
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
+): Delivery<T>? =
+    runInterruptible(dispatcher) {
         val delivered =
             if (timeout == Duration.INFINITE) {
                 next()

@@ -195,6 +195,23 @@ class DeliveriesTest {
     }
 
     @Test
+    fun `a flow reads on the dispatcher it is given`(@TempDir directory: Path) {
+        val client = client(directory, floodThenWait())
+        try {
+            val subscription = client.subscribeOutput(1)
+            client.send("display-message")
+            val recording = RecordingDispatcher()
+
+            val first = runBlocking { subscription.deliveries(recording).take(1).toList() }
+
+            assertIs<Delivery.Gap<PaneOutput>>(first.single())
+            assertTrue(recording.dispatched.get() > 0, "the flow never read on the given dispatcher")
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
     fun `a negative wait is rejected`(@TempDir directory: Path) {
         val client = client(directory, waitForever())
         try {
