@@ -19,6 +19,8 @@ permissions:
   contents: read
   id-token: write
   attestations: write
+  # To read whether this commit's CI and tmux matrix passed.
+  actions: read
 
 jobs:
   publish:
@@ -26,6 +28,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # This job checks on one JDK and one tmux. The commit is released on what it proved everywhere:
+      # CI on JDK 21, 25, and macOS, and every supported tmux lane, each for exactly this commit.
+      - name: Require this commit's CI and tmux matrix to have passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: ./scripts/require-passed.sh "$GITHUB_SHA" ci.yml tmux-matrix.yml
 
       - name: Install tmux
         run: |
