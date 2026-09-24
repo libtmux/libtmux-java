@@ -1,7 +1,10 @@
 package io.github.libtmux.examples;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -10,8 +13,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -106,8 +111,29 @@ final class MainsTest {
         }
     }
 
-    /** Runs the example's {@code main} in a fresh JVM and returns what it printed. */
+    @Test
+    void aProgramStillRunningAtItsDeadlineFails() {
+        AssertionError failure = assertThrows(
+                AssertionError.class,
+                () -> assertTimeoutPreemptively(
+                        Duration.ofSeconds(5), () -> launch(Duration.ofMillis(200), "MainsTest$Hangs")));
+
+        assertTrue(String.valueOf(failure.getMessage()).contains("did not exit"), failure.getMessage());
+    }
+
+    /** Never exits, and never closes its output. */
+    static final class Hangs {
+        public static void main(String[] args) throws InterruptedException {
+            Thread.sleep(Long.MAX_VALUE);
+        }
+    }
+
     private static String launch(String program, String... args) throws Exception {
+        return launch(Duration.ofSeconds(60), program, args);
+    }
+
+    /** Runs the example's {@code main} in a fresh JVM and returns what it printed. */
+    private static String launch(Duration deadline, String program, String... args) throws Exception {
         List<String> command = new ArrayList<>(List.of(
                 Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                 "-cp",
@@ -116,9 +142,21 @@ final class MainsTest {
         command.addAll(List.of(args));
         Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
         process.getOutputStream().close();
-        String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertTrue(process.waitFor(60, TimeUnit.SECONDS), program + " did not exit");
+        // Drained apart from the wait: a program that never exits never closes its output either.
+        FutureTask<byte[]> printed =
+                new FutureTask<>(() -> process.getInputStream().readAllBytes());
+        Thread.ofVirtual().start(printed);
+        if (!process.waitFor(deadline.toMillis(), TimeUnit.MILLISECONDS)) {
+            process.descendants().forEach(ProcessHandle::destroyForcibly);
+            process.destroyForcibly().waitFor();
+            fail(program + " did not exit within " + deadline + ", and printed:\n" + text(printed));
+        }
+        String out = text(printed);
         assertEquals(0, process.exitValue(), program + " printed:\n" + out);
         return out;
+    }
+
+    private static String text(FutureTask<byte[]> printed) throws Exception {
+        return new String(printed.get(10, TimeUnit.SECONDS), StandardCharsets.UTF_8);
     }
 }
