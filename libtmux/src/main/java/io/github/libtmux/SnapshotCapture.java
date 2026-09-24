@@ -84,7 +84,7 @@ final class SnapshotCapture {
     private static final RowFormat PANES_WITH_FLOATING = RowFormat.of(withFloating());
 
     private static final RowFormat CLIENTS = RowFormat.of("client_name", "session_id");
-    private static final RowFormat PROCESS = RowFormat.of("pid", "version");
+    private static final RowFormat PROCESS = RowFormat.of("pid", "version", "start_time");
 
     private final Server server;
 
@@ -159,7 +159,11 @@ final class SnapshotCapture {
             throw new LibTmuxException("tmux reported a malformed server pid: " + pid);
         }
         String version = row.text("version");
-        return Optional.of(new ServerProcess(pid, TmuxVersion.parse(version), version));
+        long started = row.count("start_time");
+        if (started < 0) {
+            throw new LibTmuxException("tmux reported a malformed server start time: " + started);
+        }
+        return Optional.of(new ServerProcess(pid, TmuxVersion.parse(version), started));
     }
 
     private static boolean daemonGenuinelyAbsent(String message) {
@@ -170,7 +174,7 @@ final class SnapshotCapture {
     private ServerSnapshot capture(ServerProcess process) {
         boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
         RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
-        Batch listings = server.batch(process.pid(), process.reported());
+        Batch listings = server.batch(process.pid(), process.startTime());
         listings.add(listing(SESSIONS, "list-sessions"));
         listings.add(listing(WINDOWS, "list-windows", "-a"));
         listings.add(listing(paneFormat, "list-panes", "-a"));
@@ -183,13 +187,10 @@ final class SnapshotCapture {
             if (sessions.isEmpty()) {
                 // A server with no sessions has no current target, so tmux refuses the rest of the
                 // group. An empty sessions listing is the whole hierarchy, so there is nothing to read.
-                return ServerSnapshot.of(
-                        Instant.now(), process.pid(), process.version(), sessions, List.of(), List.of(), List.of());
+                return snapshotOf(process, sessions, List.of(), List.of(), List.of());
             }
-            return ServerSnapshot.of(
-                    Instant.now(),
-                    process.pid(),
-                    process.version(),
+            return snapshotOf(
+                    process,
                     sessions,
                     windowStates(rows(WINDOWS, answered.get(1), "list-windows", process.version())),
                     paneStates(rows(paneFormat, answered.get(2), "list-panes", process.version()), floatingKnown),
@@ -245,8 +246,7 @@ final class SnapshotCapture {
             any = "#{||:#{==:#{session_name}," + stored + "}," + any + "}";
         }
         return Optional.of(hydrate(process, any, session -> names.contains(session.name()))
-                .orElseGet(() -> ServerSnapshot.of(
-                        Instant.now(), process.pid(), process.version(), List.of(), List.of(), List.of(), List.of())));
+                .orElseGet(() -> snapshotOf(process, List.of(), List.of(), List.of(), List.of())));
     }
 
     /**
@@ -281,7 +281,7 @@ final class SnapshotCapture {
             ServerProcess process, String filter, java.util.function.Predicate<SessionState> keep) {
         boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
         RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
-        Batch batch = server.batch(process.pid(), process.reported());
+        Batch batch = server.batch(process.pid(), process.startTime());
         batch.add(listing(SESSIONS, "list-sessions", "-f", filter));
         batch.add(listing(WINDOWS, "list-windows", "-a", "-f", filter));
         batch.add(listing(paneFormat, "list-panes", "-a", "-f", filter));
@@ -304,17 +304,15 @@ final class SnapshotCapture {
         List<WindowState> windows = windowStates(rows(WINDOWS, answered.get(1), "list-windows", process.version()));
         List<PaneState> panes =
                 paneStates(rows(paneFormat, answered.get(2), "list-panes", process.version()), floatingKnown);
-        ServerSnapshot.of(Instant.now(), process.pid(), process.version(), listed, windows, panes, List.of());
+        snapshotOf(process, listed, windows, panes, List.of());
         List<SessionState> sessions = listed.stream().filter(keep).toList();
         if (sessions.isEmpty()) {
             return Optional.empty();
         }
         java.util.Set<SessionId> ids =
                 sessions.stream().map(SessionState::id).collect(java.util.stream.Collectors.toSet());
-        return Optional.of(ServerSnapshot.of(
-                Instant.now(),
-                process.pid(),
-                process.version(),
+        return Optional.of(snapshotOf(
+                process,
                 sessions,
                 windows.stream()
                         .filter(window -> ids.contains(window.context().session()))
@@ -448,9 +446,23 @@ final class SnapshotCapture {
         return fields;
     }
 
-    /**
-     * @param reported the version exactly as tmux wrote it, which is what the capture's fence
-     *     compares — not the parsed version's text, which need not be byte for byte the same
-     */
-    record ServerProcess(long pid, TmuxVersion version, String reported) {}
+    /** The server a capture reads, named by its process and when that process started. */
+    record ServerProcess(long pid, TmuxVersion version, long startTime) {}
+
+    private static ServerSnapshot snapshotOf(
+            ServerProcess process,
+            List<SessionState> sessions,
+            List<WindowState> windows,
+            List<PaneState> panes,
+            List<ClientState> clients) {
+        return ServerSnapshot.of(
+                Instant.now(),
+                process.pid(),
+                process.startTime(),
+                process.version(),
+                sessions,
+                windows,
+                panes,
+                clients);
+    }
 }

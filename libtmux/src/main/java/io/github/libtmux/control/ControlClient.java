@@ -154,18 +154,22 @@ public final class ControlClient implements AutoCloseable {
      */
     public static ControlClient attach(
             ServerConfig config, SessionId session, long serverPid, String serverVersion, Duration timeout) {
-        return attach(LOCAL, config, session, serverPid, serverVersion, timeout);
+        return attach(LOCAL, config, session, serverPid, java.util.OptionalLong.empty(), serverVersion, timeout);
     }
 
     /**
      * As {@link #attach(ServerConfig, SessionId, long, String, Duration)}, started by the carrier
-     * that also starts this realm's commands.
+     * that also starts this realm's commands, and checking the start time a capture recorded too.
+     *
+     * @param serverStartTime when the captured process started, as {@code #{start_time}} reported it;
+     *     compared when present, since a restarted tmux can be given the same pid and version
      */
     public static ControlClient attach(
             ControlCarrier carrier,
             ServerConfig config,
             SessionId session,
             long serverPid,
+            java.util.OptionalLong serverStartTime,
             String serverVersion,
             Duration timeout) {
         Objects.requireNonNull(serverVersion, "serverVersion");
@@ -174,7 +178,7 @@ public final class ControlClient implements AutoCloseable {
         }
         ControlClient client = connect(carrier, config, session, timeout);
         try {
-            client.confirmIncarnation(serverPid, serverVersion);
+            client.confirmIncarnation(serverPid, serverStartTime, serverVersion);
         } catch (RuntimeException failure) {
             client.closeAfterFailure(failure);
             throw failure;
@@ -230,21 +234,25 @@ public final class ControlClient implements AutoCloseable {
     }
 
     /** Reads the live server and detaches, via the caller, when it is not the one that was named. */
-    private void confirmIncarnation(long expectedPid, String expectedVersion) {
-        ControlReply reply = send("display-message", "-p", "#{pid} #{version}");
+    private void confirmIncarnation(long expectedPid, java.util.OptionalLong expectedStart, String expectedVersion) {
+        // The start time leads: it is a number, and the version, compared as text, may hold a space.
+        ControlReply reply = send("display-message", "-p", "#{start_time} #{pid} #{version}");
         if (!reply.succeeded() || reply.lines().size() != 1) {
             throw new LibTmuxException("could not read the control client's server");
         }
-        String reported = reply.lines().get(0);
-        int space = reported.indexOf(' ');
+        String[] reported = reply.lines().get(0).split(" ", 3);
+        long started;
         long pid;
         try {
-            pid = space < 1 ? Long.parseLong(reported) : Long.parseLong(reported.substring(0, space));
+            started = Long.parseLong(reported[0]);
+            pid = Long.parseLong(reported.length > 1 ? reported[1] : "");
         } catch (NumberFormatException e) {
-            throw new LibTmuxException("tmux reported a malformed server pid");
+            throw new LibTmuxException("tmux reported a malformed server identity");
         }
-        String version = space < 1 ? "" : reported.substring(space + 1);
-        if (pid != expectedPid || !version.equals(expectedVersion)) {
+        String version = reported.length > 2 ? reported[2] : "";
+        if (pid != expectedPid
+                || !version.equals(expectedVersion)
+                || (expectedStart.isPresent() && started != expectedStart.getAsLong())) {
             throw new ObjectDoesNotExistException("the tmux server this handle belonged to has ended");
         }
     }
