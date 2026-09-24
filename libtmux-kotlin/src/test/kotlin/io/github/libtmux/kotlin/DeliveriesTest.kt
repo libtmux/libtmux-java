@@ -158,6 +158,43 @@ class DeliveriesTest {
     }
 
     @Test
+    fun `a second collection fails rather than completing empty`(@TempDir directory: Path) {
+        val client = client(directory, waitForever())
+        try {
+            val subscription = client.subscribeOutput(1)
+            subscription.close()
+            val steps = subscription.deliveries()
+
+            assertEquals(emptyList(), runBlocking { steps.toList() })
+            assertFailsWith<IllegalStateException> { runBlocking { steps.toList() } }
+            assertFailsWith<IllegalStateException> { runBlocking { subscription.deliveries().toList() } }
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
+    fun `a second collector is refused while the first reads`(@TempDir directory: Path) {
+        val client = client(directory, waitForever())
+        try {
+            val subscription = client.subscribeOutput(1)
+            val started = CompletableDeferred<Unit>()
+            runBlocking {
+                val first =
+                    launch {
+                        subscription.deliveries().onStart { started.complete(Unit) }.collect {}
+                    }
+                withTimeout(5.seconds) { started.await() }
+                assertFailsWith<IllegalStateException> { subscription.deliveries().collect {} }
+                assertFalse(subscription.isClosed())
+                first.cancelAndJoin()
+            }
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
     fun `a negative wait is rejected`(@TempDir directory: Path) {
         val client = client(directory, waitForever())
         try {
