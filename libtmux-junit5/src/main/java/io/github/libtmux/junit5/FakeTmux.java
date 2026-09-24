@@ -885,6 +885,9 @@ public final class FakeTmux implements TmuxTransport {
         }
 
         private static String evaluate(String inner, Function<String, @Nullable String> variables) {
+            if (inner.startsWith("!:")) {
+                return truthy(expand(inner.substring(2), variables)) ? "0" : "1";
+            }
             for (String operator : List.of("e|<=|:", "e|>=|:", "e|<|:", "e|>|:")) {
                 if (inner.startsWith(operator)) {
                     List<String> operands = split(inner.substring(operator.length())).stream()
