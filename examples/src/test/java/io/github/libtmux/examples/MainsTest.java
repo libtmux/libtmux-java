@@ -28,14 +28,11 @@ final class MainsTest {
 
     @Test
     void everyExampleIsLaunched() throws IOException {
-        Path sources = Path.of("src/main/java/io/github/libtmux/examples");
-        List<String> programs;
-        try (Stream<Path> files = Files.list(sources)) {
-            programs = files.map(file -> file.getFileName().toString().replace(".java", ""))
-                    .filter(name -> !name.equals("package-info"))
-                    .sorted()
-                    .toList();
-        }
+        List<String> programs = Stream.concat(
+                        names(Path.of("src/main/java/io/github/libtmux/examples")).stream(),
+                        names(Path.of("src/main/kotlin/io/github/libtmux/examples")).stream())
+                .sorted()
+                .toList();
 
         assertEquals(
                 List.of(
@@ -44,7 +41,8 @@ final class MainsTest {
                         "RunACommand",
                         "ServeTmuxOverMcp",
                         "WatchPaneOutput",
-                        "WatchWhatChanges"),
+                        "WatchWhatChanges",
+                        "WatchWithFlow"),
                 programs,
                 "a new example needs a launch below");
     }
@@ -91,6 +89,21 @@ final class MainsTest {
         String out = launch("WatchWhatChanges", socket.path().toString());
 
         assertTrue(out.contains("watched-into-existence"), out);
+    }
+
+    @Test
+    void watchWithFlow(TmuxSocketPath socket) throws Exception {
+        String out = launch("WatchWithFlowKt", socket.path().toString());
+
+        assertEquals("echoed=true\ncancelled=true\n", out);
+    }
+
+    private static List<String> names(Path sources) throws IOException {
+        try (Stream<Path> files = Files.list(sources)) {
+            return files.map(file -> file.getFileName().toString().replaceFirst("\\.(java|kt)$", ""))
+                    .filter(name -> !name.equals("package-info"))
+                    .toList();
+        }
     }
 
     /** Runs the example's {@code main} in a fresh JVM and returns what it printed. */
