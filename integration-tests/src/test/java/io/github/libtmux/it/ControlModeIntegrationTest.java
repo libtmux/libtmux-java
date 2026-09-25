@@ -19,11 +19,14 @@ import io.github.libtmux.transport.TmuxTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Flow;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -265,6 +268,53 @@ final class ControlModeIntegrationTest {
             assertTrue(
                     awaitOutput(output, "control-mode-saw-this"),
                     "attaching is what makes tmux push output, and it did not arrive");
+        }
+    }
+
+    /**
+     * The {@code Flow.Publisher} view of a subscription, driven at bounded demand — one element
+     * requested at a time, the way a reactive caller such as Reactor or RxJava would drive it.
+     */
+    @Test
+    void thePublisherDeliversPaneOutputUnderBoundedDemand(Server server) throws Exception {
+        try (ControlClient client = attach(server);
+                EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
+            StringBuilder seen = new StringBuilder();
+            CountDownLatch found = new CountDownLatch(1);
+            AtomicReference<Flow.Subscription> demand = new AtomicReference<>();
+            output.publisher().subscribe(new Flow.Subscriber<Delivery<PaneOutput>>() {
+                @Override
+                public void onSubscribe(Flow.Subscription subscription) {
+                    demand.set(subscription);
+                    subscription.request(1);
+                }
+
+                @Override
+                public void onNext(Delivery<PaneOutput> item) {
+                    seen.append(Delivery.kept(item).data());
+                    if (seen.indexOf("publisher-saw-this") >= 0) {
+                        found.countDown();
+                    } else {
+                        demand.get().request(1);
+                    }
+                }
+
+                @Override
+                public void onError(Throwable throwable) {
+                    found.countDown();
+                }
+
+                @Override
+                public void onComplete() {
+                    found.countDown();
+                }
+            });
+
+            client.send("send-keys", "-t", "libtmux", "echo publisher-saw-this", "Enter");
+
+            assertTrue(found.await(10, TimeUnit.SECONDS), "the publisher never saw the echoed text");
+            assertTrue(seen.indexOf("publisher-saw-this") >= 0, seen.toString());
+            demand.get().cancel();
         }
     }
 
