@@ -2,7 +2,13 @@ package io.github.libtmux.control;
 
 import java.time.Duration;
 import java.util.ArrayDeque;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Flow;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
@@ -201,6 +207,207 @@ public final class EventSubscription<T> implements AutoCloseable {
                     }
                 };
         return java.util.stream.StreamSupport.stream(steps, false).onClose(this::close);
+    }
+
+    /**
+     * A {@link Flow.Publisher} view of this subscription's steps, delivered as demand allows.
+     *
+     * <p>Reads that wait for the next step run on a fresh virtual thread, started only while a
+     * subscriber has outstanding demand, so a subscriber that never asks never blocks anything. Use
+     * {@link #publisher(Executor)} to read somewhere else instead.
+     *
+     * @see #publisher(Executor)
+     */
+    public Flow.Publisher<Delivery<T>> publisher() {
+        return publisher(VIRTUAL_THREAD_PER_READ);
+    }
+
+    /**
+     * A {@link Flow.Publisher} view of this subscription's steps, delivered as demand allows, its
+     * reads run on {@code executor} rather than a virtual thread.
+     *
+     * <p>Single subscriber, like {@link #stream()}: {@link Flow.Publisher#subscribe subscribe} never
+     * throws for a non-null subscriber, but a second one is sent {@link Flow.Subscriber#onSubscribe
+     * onSubscribe} immediately followed by {@link IllegalStateException} to {@link
+     * Flow.Subscriber#onError onError}, rather than sharing this subscription's steps or silently
+     * missing them. {@link Flow.Subscription#request request} of zero or less is answered the same
+     * way, with {@link IllegalArgumentException}. {@link Long#MAX_VALUE} demand is unbounded. Every
+     * signal to one subscriber comes from one thread at a time, never concurrently.
+     *
+     * <p>{@link Flow.Subscription#cancel cancel} closes this subscription, the same as {@link
+     * #close()}, is idempotent, and no signal follows it, not even {@code onComplete}. Otherwise this
+     * ends the same way {@link #next()} does: {@code onComplete} when the subscription closes
+     * normally, {@code onError} with {@link #cause()} when the control client ended it. A {@link
+     * Delivery.Gap} is delivered like any other step.
+     *
+     * <p>Demand only bounds what reaches the subscriber. tmux cannot be paused through this path —
+     * that is {@code pause-after}, in the streaming guide — so this subscription's own bounded buffer
+     * keeps filling regardless of demand, and a full buffer still reports its loss as a {@link
+     * Delivery.Gap}, exactly as {@link #next()} does.
+     *
+     * @param executor where each blocking read for the subscriber runs
+     */
+    public Flow.Publisher<Delivery<T>> publisher(Executor executor) {
+        Objects.requireNonNull(executor, "executor");
+        return new EventPublisher(executor);
+    }
+
+    private static final Executor VIRTUAL_THREAD_PER_READ =
+            task -> Thread.ofVirtual().name("libtmux-control-publisher").start(task);
+
+    private static final Flow.Subscription NOOP_SUBSCRIPTION = new Flow.Subscription() {
+        @Override
+        public void request(long n) {}
+
+        @Override
+        public void cancel() {}
+    };
+
+    private final class EventPublisher implements Flow.Publisher<Delivery<T>> {
+
+        private final Executor executor;
+        private final AtomicBoolean claimed = new AtomicBoolean();
+
+        EventPublisher(Executor executor) {
+            this.executor = executor;
+        }
+
+        @Override
+        public void subscribe(Flow.Subscriber<? super Delivery<T>> subscriber) {
+            Objects.requireNonNull(subscriber, "subscriber");
+            if (!claimed.compareAndSet(false, true)) {
+                subscriber.onSubscribe(NOOP_SUBSCRIPTION);
+                subscriber.onError(new IllegalStateException(
+                        "this subscription already has a subscriber; call publisher() again for a new one"));
+                return;
+            }
+            subscriber.onSubscribe(new DemandSubscription(subscriber, executor));
+        }
+    }
+
+    /**
+     * Turns requested demand into reads. A single-flight drain loop, one virtual thread or executor
+     * task at a time, is what keeps every signal to {@code subscriber} serial: {@link #request} and
+     * {@link #cancel} only ever flip flags and reschedule it, and {@link #drain} is the one place that
+     * calls back into {@code subscriber}.
+     */
+    private final class DemandSubscription implements Flow.Subscription {
+
+        private final Flow.Subscriber<? super Delivery<T>> subscriber;
+        private final Executor executor;
+        private final AtomicLong requested = new AtomicLong();
+        private final AtomicInteger wip = new AtomicInteger();
+        private volatile boolean cancelled;
+        private volatile @Nullable Throwable protocolError;
+
+        DemandSubscription(Flow.Subscriber<? super Delivery<T>> subscriber, Executor executor) {
+            this.subscriber = subscriber;
+            this.executor = executor;
+        }
+
+        @Override
+        public void request(long n) {
+            if (cancelled) {
+                return;
+            }
+            if (n <= 0) {
+                protocolError = new IllegalArgumentException("request must be positive: " + n);
+                cancelled = true;
+                EventSubscription.this.close();
+                schedule();
+                return;
+            }
+            addCap(n);
+            schedule();
+        }
+
+        @Override
+        public void cancel() {
+            cancelled = true;
+            EventSubscription.this.close();
+        }
+
+        private void addCap(long n) {
+            for (; ; ) {
+                long current = requested.get();
+                if (current == Long.MAX_VALUE) {
+                    return;
+                }
+                long next = current + n;
+                if (next < 0) {
+                    next = Long.MAX_VALUE;
+                }
+                if (requested.compareAndSet(current, next)) {
+                    return;
+                }
+            }
+        }
+
+        private void schedule() {
+            if (wip.getAndIncrement() == 0) {
+                executor.execute(this::drain);
+            }
+        }
+
+        private void drain() {
+            int missed = 1;
+            for (; ; ) {
+                if (cancelled) {
+                    signalProtocolError();
+                    return;
+                }
+                long r = requested.get();
+                long emitted = 0;
+                while (r == Long.MAX_VALUE || emitted < r) {
+                    if (cancelled) {
+                        signalProtocolError();
+                        return;
+                    }
+                    Optional<Delivery<T>> step;
+                    try {
+                        step = EventSubscription.this.next();
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        cancelled = true;
+                        EventSubscription.this.close();
+                        subscriber.onError(new io.github.libtmux.LibTmuxException(
+                                "interrupted waiting for the next event", interrupted));
+                        return;
+                    }
+                    if (cancelled) {
+                        signalProtocolError();
+                        return;
+                    }
+                    if (step.isPresent()) {
+                        subscriber.onNext(step.get());
+                        emitted++;
+                        continue;
+                    }
+                    cancelled = true;
+                    Optional<Throwable> failure = EventSubscription.this.cause();
+                    if (failure.isPresent()) {
+                        subscriber.onError(failure.get());
+                    } else {
+                        subscriber.onComplete();
+                    }
+                    return;
+                }
+                if (emitted != 0 && r != Long.MAX_VALUE) {
+                    requested.addAndGet(-emitted);
+                }
+                missed = wip.addAndGet(-missed);
+                if (missed == 0) {
+                    return;
+                }
+            }
+        }
+
+        private void signalProtocolError() {
+            Throwable error = protocolError;
+            if (error != null) {
+                subscriber.onError(error);
+            }
+        }
     }
 
     /**
