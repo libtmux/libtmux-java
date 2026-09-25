@@ -349,8 +349,11 @@ account, socket permissions, or a container when effects must be contained.
 
 Every tool carries MCP's own effect hints — `readOnlyHint`, `destructiveHint`,
 `idempotentHint`, and `openWorldHint` — plus its full native capability row.
-Those claims remain conservative when the selected server's configuration is
-unknown.
+The hints are the same conservative set on every tool, reads included: tmux
+runs an `after-<command>` hook after `list-sessions`, `capture-pane`, and every
+other command a tool sends, and a configuration this server did not write can
+set one that changes or kills anything. The capability row says what each tool
+itself does.
 
 ## Resources, prompts, completion
 
