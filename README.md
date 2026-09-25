@@ -15,6 +15,48 @@ Typed, blocking access to [tmux](https://github.com/tmux/tmux) from the JVM.
 A sibling of the Python [libtmux](https://libtmux.git-pull.com/), targeting
 practical parity while reading as Java rather than as a translation.
 
+**JDK 21 or newer.** Add the library through
+[`libtmux-bom`](libtmux-bom/), which names one version for every BOM-managed
+coordinate:
+
+<!-- snippet: skip: build configuration, not library code -->
+```kotlin
+dependencies {
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.14"))
+
+    implementation("io.github.libtmux:libtmux")
+    testImplementation("io.github.libtmux:libtmux-junit5")
+}
+```
+
+<details>
+<summary>Maven</summary>
+
+```xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>io.github.libtmux</groupId>
+      <artifactId>libtmux-bom</artifactId>
+      <version>0.0.1-alpha.14</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+
+<dependency>
+  <groupId>io.github.libtmux</groupId>
+  <artifactId>libtmux</artifactId>
+</dependency>
+```
+
+</details>
+
+[Installation](#installation) and [Requirements](#requirements) below cover
+the rest: tmux's supported range, locale behaviour, and every module's
+coordinate.
+
 <!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
 // Given: Path socket
