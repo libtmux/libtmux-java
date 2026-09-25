@@ -9,6 +9,33 @@ configuration, then run the program with its explicit tmux binary, socket,
 configuration and JSON output paths. The optional final arguments select warmups
 and samples; the defaults are three warmups and nine samples.
 
+## Running it
+
+The sbt build resolves the Java artifacts this module depends on from a local
+stage, and sbt caches that resolution, so a version staged earlier can shadow
+one just rebuilt. Clean before staging:
+
+```console
+$ ./libtmux-scala/sbtw clean
+```
+
+Stage the Java artifacts the Scala build consumes:
+
+```console
+$ ./libtmux-scala/scripts/stage-java.sh
+```
+
+Then run the benchmark itself, from the repository root, against an explicit
+tmux and an owned socket:
+
+```console
+$ ./libtmux-scala/sbtw \
+    "benchmarks/run /path/to/tmux /tmp/libtmux-java-dev/scala-bench/s /tmp/libtmux-java-dev/scala-bench/empty.conf /tmp/libtmux-java-dev/scala-bench/results.json"
+```
+
+[`results/`](results/) holds one committed run's raw JSON, named for the date
+and the tmux it ran against. Regenerate rather than hand-edit it.
+
 The benchmark creates and removes one three-pane session. It rejects an existing
 socket and validates pane IDs, capture ordering and completion markers before
 recording data. Each result retains raw elapsed and current-thread allocation
