@@ -446,19 +446,18 @@ public final class Server implements AutoCloseable {
     /** The expansion of a {@link #versioned} format, as tmux held the text. */
     static String printed(List<String> reported) {
         String all = String.join("\n", reported);
-        if (all.endsWith(END_MARK)) {
-            all = all.substring(0, all.length() - END_MARK.length());
-        }
         int mark = all.indexOf(VERSION_MARK);
-        if (mark < 0) {
-            return all;
+        String text = mark < 0 ? all : all.substring(mark + VERSION_MARK.length());
+        if (mark >= 0) {
+            try {
+                text = TmuxFormats.printed(text, TmuxVersion.parse(all.substring(0, mark)));
+            } catch (RuntimeException notAVersion) {
+                // Not tmux's own answer, as from a test double; keep what came back.
+            }
         }
-        String text = all.substring(mark + VERSION_MARK.length());
-        try {
-            return TmuxFormats.printed(text, TmuxVersion.parse(all.substring(0, mark)));
-        } catch (RuntimeException notAVersion) {
-            return text;
-        }
+        // After the decoding, not before: 3.4 escapes a $ that a letter follows, and the mark may
+        // begin with one, so a value ending in $ is only whole once that escape is undone.
+        return text.endsWith(END_MARK) ? text.substring(0, text.length() - END_MARK.length()) : text;
     }
 
     /** As {@link #printed(List)}, for a listing whose every row began with {@link #versioned}. */

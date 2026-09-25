@@ -50,6 +50,11 @@ public final class TmuxFormats {
      * <code>{</code> follows, in everything it prints: formats, listings, and {@code show-options
      * -v}. 3.5 stopped ({@code 692ce59b}). Each escape is exactly one backslash in that position, so
      * removing it restores the text on 3.4 and changes nothing elsewhere.
+     *
+     * <p>3.4 through 3.5a also print a control character as a C escape or three octal digits,
+     * {@code \033} for ESC, and leave a backslash as it is. That is not undone: {@code \033} could as well be those
+     * four characters, which a {@code terminal-overrides} entry often holds, so the text is left as
+     * tmux printed it.
      */
     static String printed(String line, TmuxVersion version) {
         return version.equals(DOLLAR_ESCAPED) ? ESCAPED_DOLLAR.matcher(line).replaceAll("") : line;

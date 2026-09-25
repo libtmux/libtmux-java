@@ -3,6 +3,7 @@ package io.github.libtmux.it;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.github.libtmux.Server;
+import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.ArrayList;
@@ -24,18 +25,25 @@ import org.junit.jupiter.api.extension.ExtendWith;
  *
  * <p>Control characters are in the alphabet but a carriage return is not: every read decodes tmux's
  * output with universal newlines, as Python libtmux does, so a lone {@code \r} reads back as a line
- * break on every path.
+ * break on every path. On 3.4 through 3.5a they are left out too: those releases print each as an
+ * escape and a backslash as itself, so the two cannot be told apart, and {@code TmuxFormats.printed}
+ * leaves them.
  */
 @ExtendWith(TmuxExtension.class)
 final class QuotingPropertyIntegrationTest {
 
-    private static final String ALPHABET = "\t\n\u0001\u001b\u007fabcXYZ019 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~é中😀";
+    private static final String CONTROLS = "\t\n\u0001\u001b\u007f";
+    private static final String ALPHABET = "abcXYZ019 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~é中😀";
 
     @Test
     void aValueSurvivesTheArgumentVectorAndTheControlLine(Server server) {
         List<String> lost = new ArrayList<>();
         try (ControlClient client = server.control(server.sessions().get(0))) {
-            for (String value : values(new Random(20260924L), 200)) {
+            String alphabet = server.version().atLeast(new TmuxVersion(3, 4, ""))
+                            && !server.version().atLeast(new TmuxVersion(3, 6, ""))
+                    ? ALPHABET
+                    : CONTROLS + ALPHABET;
+            for (String value : values(new Random(20260924L), 200, alphabet)) {
                 server.globalOptions().set("@vector", value);
                 String viaVector = server.globalOptions().get("@vector").orElse("<unset>");
                 if (!viaVector.equals(value)) {
@@ -72,9 +80,9 @@ final class QuotingPropertyIntegrationTest {
         assertEquals(List.of(), lost);
     }
 
-    private static List<String> values(Random random, int count) {
+    private static List<String> values(Random random, int count, String alphabet) {
         List<String> values = new ArrayList<>();
-        int[] points = ALPHABET.codePoints().toArray();
+        int[] points = alphabet.codePoints().toArray();
         for (int index = 0; index < count; index++) {
             StringBuilder value = new StringBuilder();
             int length = 1 + random.nextInt(10);
