@@ -63,6 +63,47 @@ final class ControlWatchIntegrationTest {
         }
     }
 
+    /** tmux writes a name as it was given; only a subscription uses {@code " : "} as a separator. */
+    @Test
+    void aNameHoldingTheSubscriptionSeparatorIsAnnouncedWhole(Server server) throws Exception {
+        Session session = server.sessions().get(0);
+
+        try (ControlClient client = server.control(session);
+                EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
+
+            var unused = session.windows().get(0).rename("left : right");
+
+            assertTrue(
+                    awaitEvent(
+                            events,
+                            event -> event.notification() instanceof Notification.WindowRenamed renamed
+                                    && renamed.name().equals("left : right")),
+                    "tmux reported the rename, but not with the whole name");
+        }
+    }
+
+    /** A message another client aims at this one arrives as a notification, " : " and all. */
+    @Test
+    void aMessageAimedAtTheClientArrivesTyped(Server server) throws Exception {
+        if (!server.version().atLeast(new TmuxVersion(3, 4, ""))) {
+            return; // %message arrived in tmux 3.4
+        }
+        Session session = server.sessions().get(0);
+
+        try (ControlClient client = server.control(session);
+                EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
+            String name = client.send("display-message", "-p", "#{client_name}")
+                    .lines()
+                    .get(0);
+
+            var unused = server.run(java.util.List.of("display-message", "-c", name, "hello : there"));
+
+            assertTrue(
+                    awaitEvent(events, event -> event.notification().equals(new Notification.Message("hello : there"))),
+                    "the message did not arrive typed and whole");
+        }
+    }
+
     /**
      * A watch is the general form: any tmux format, reported when its value changes. The comparison
      * happens inside tmux, so nothing here polls.

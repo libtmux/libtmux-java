@@ -51,7 +51,9 @@ public record ControlEvent(
             return Optional.empty();
         }
         String body = line.substring(1);
-        int separator = body.indexOf(" : ");
+        // Only a subscription separates a value with " : ". Anywhere else it is part of what tmux
+        // wrote: a window, session, or buffer name may hold one, as may a message.
+        int separator = body.startsWith("subscription-changed ") ? body.indexOf(" : ") : -1;
         String head = separator < 0 ? body : body.substring(0, separator);
         // A subscription's value is whatever the format expanded to, so it is taken whole rather than
         // split: it may contain spaces, and often does.
