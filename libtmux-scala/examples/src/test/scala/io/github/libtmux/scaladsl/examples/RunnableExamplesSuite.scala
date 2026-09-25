@@ -1,7 +1,9 @@
 package io.github.libtmux.scaladsl.examples
 
+import _root_.cats.effect.{ExitCode, IOApp}
+import _root_.cats.effect.unsafe.implicits.global
 import io.github.libtmux.scaladsl.fixture.OwnedTmux
-import java.lang.reflect.{InvocationTargetException, Method}
+import java.lang.reflect.InvocationTargetException
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
 import java.security.MessageDigest
@@ -114,8 +116,7 @@ final class RunnableExamplesSuite extends FunSuite {
           fixture.socket.toString,
           fixture.config.configFile().orElseThrow().toString
         )
-        val main = Class.forName(name).getMethod("main", classOf[Array[String]])
-        RunnableExamplesSuite.run(main, arguments, 60000)
+        RunnableExamplesSuite.run(name, arguments, 60000)
         assertEquals(
           fixture.server.environment().get(marker).toScala,
           Some("yes"),
@@ -135,11 +136,12 @@ final class RunnableExamplesSuite extends FunSuite {
   }
 
   test("a main still running at its deadline fails rather than hangs") {
-    val hangs = Class
-      .forName(packageName + "HangingMain")
-      .getMethod("main", classOf[Array[String]])
     val failure = intercept[AssertionError](
-      RunnableExamplesSuite.run(hangs, Array.empty[String], 200)
+      RunnableExamplesSuite.run(
+        packageName + "HangingMain",
+        Array.empty[String],
+        200
+      )
     )
     assert(failure.getMessage.contains("did not return"), failure.getMessage)
   }
@@ -157,32 +159,50 @@ final class RunnableExamplesSuite extends FunSuite {
 
 object RunnableExamplesSuite {
 
-  /** Runs `main` on a thread of its own, failing once `deadlineMillis` passes.
-    * A daemon, so a main that never returns cannot hold the JVM either.
+  /** Runs the example `name`: an `IOApp`'s `run`, which is its whole program,
+    * or else its `main`. `IOApp.main` would end this JVM on a failure; its
+    * effect run here throws instead.
     */
-  def run(
-      main: Method,
-      arguments: Array[String],
-      deadlineMillis: Long
-  ): Unit = {
+  def run(name: String, arguments: Array[String], deadlineMillis: Long): Unit =
+    Class.forName(name + "$").getField("MODULE$").get(null) match {
+      case app: IOApp =>
+        run(
+          name,
+          () => {
+            val code = app.run(arguments.toList).unsafeRunSync()
+            if (code != ExitCode.Success)
+              throw new AssertionError(s"$name exited with $code")
+          },
+          deadlineMillis
+        )
+      case _ =>
+        val main = Class.forName(name).getMethod("main", classOf[Array[String]])
+        run(
+          name,
+          () => { main.invoke(null, arguments.asInstanceOf[Object]); () },
+          deadlineMillis
+        )
+    }
+
+  /** Runs `body` on a thread of its own, failing once `deadlineMillis` passes.
+    * A daemon, so a body that never returns cannot hold the JVM either.
+    */
+  def run(name: String, body: () => Unit, deadlineMillis: Long): Unit = {
     val failure = new AtomicReference[Throwable]()
     val finished = new CountDownLatch(1)
-    val body: Runnable = () =>
-      try {
-        main.invoke(null, arguments.asInstanceOf[Object])
-        ()
-      } catch {
+    val runner: Runnable = () =>
+      try body()
+      catch {
         case thrown: InvocationTargetException => failure.set(thrown.getCause)
         case thrown: Throwable                 => failure.set(thrown)
       } finally finished.countDown()
-    val runner =
-      new Thread(body, "example-" + main.getDeclaringClass.getSimpleName)
-    runner.setDaemon(true)
-    runner.start()
+    val thread = new Thread(runner, "example-" + name)
+    thread.setDaemon(true)
+    thread.start()
     if (!finished.await(deadlineMillis, TimeUnit.MILLISECONDS)) {
-      runner.interrupt()
+      thread.interrupt()
       throw new AssertionError(
-        s"${main.getDeclaringClass.getName} did not return within $deadlineMillis ms"
+        s"$name did not return within $deadlineMillis ms"
       )
     }
     Option(failure.get).foreach(thrown => throw thrown)

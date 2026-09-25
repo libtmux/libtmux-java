@@ -1,7 +1,6 @@
 package io.github.libtmux.scaladsl.examples
 
-import _root_.cats.effect.{IO, Resource}
-import _root_.cats.effect.unsafe.implicits.global
+import _root_.cats.effect.{ExitCode, IO, IOApp, Resource}
 import _root_.cats.syntax.all._
 import io.github.libtmux.{ServerConfig, SessionSpec}
 import io.github.libtmux.control.Notification
@@ -10,9 +9,9 @@ import scala.concurrent.duration._
 
 /** Counts dropped notifications and reconciles current state with a snapshot.
   */
-object ObserveChanges {
-  def main(arguments: Array[String]): Unit =
-    run(ExampleRuntime.config(arguments)).unsafeRunSync()
+object ObserveChanges extends IOApp {
+  def run(arguments: List[String]): IO[ExitCode] =
+    run(ExampleRuntime.config(arguments.toArray)).as(ExitCode.Success)
 
   def run(config: ServerConfig): IO[Unit] =
     Server.resource[IO](config).use { server =>
