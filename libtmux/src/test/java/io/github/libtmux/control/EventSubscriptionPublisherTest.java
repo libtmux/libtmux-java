@@ -143,10 +143,11 @@ final class EventSubscriptionPublisherTest {
             RecordingSubscriber<String> subscriber = new RecordingSubscriber<>();
             subscription.publisher().subscribe(subscriber);
             subscriber.awaitOnSubscribe();
-            subscriber.subscription.request(2);
-
+            // Both before any demand: a read starts only once something is requested, so none can
+            // take "lost" before "kept" pushes it out of the one-slot buffer.
             subscription.offer("lost");
             subscription.offer("kept");
+            subscriber.subscription.request(2);
 
             var gap = (Delivery.Gap<String>) subscriber.awaitSignal().requireEvent();
             assertEquals(1L, gap.missed());
