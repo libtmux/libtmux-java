@@ -23,9 +23,18 @@ import org.jspecify.annotations.Nullable;
  * replaces its oldest event. The read that follows is a {@link Delivery.Gap} naming how many were
  * discarded since the previous read, and only then the events that remain. {@link #droppedCount()}
  * is the total across the subscription's life. Another subscription has its own buffer and its own
- * gaps. The control protocol reader only offers values to these buffers. It never runs subscriber
- * code. Public operations are thread-safe; concurrent readers compete for the same sequence, and
- * each step is returned at most once.
+ * gaps. The control protocol reader only offers values to these buffers, and never runs subscriber
+ * code beyond a {@link #onReady readiness callback}.
+ *
+ * <p>One reader at a time. Public operations are thread-safe, and reads from different threads one
+ * after another are fine — a coroutine or a fiber moves between threads — but a read that overlaps
+ * another, or any read once {@link #stream()} or {@link #publisher()} has taken the subscription, is
+ * refused with {@link IllegalStateException}: two readers would split one sequence and its gaps
+ * between them. For a second reader, subscribe again; each subscription gets every event.
+ *
+ * <p>{@link #next()} blocks. {@link #poll()} never does, and {@link #onReady(Runnable)} arms a
+ * one-shot wakeup for when there is something to poll, so an event loop or a coroutine can read
+ * without holding a thread while nothing arrives.
  *
  * <p>A subscription does not reconnect. When it ends, {@link #next()} returns empty. {@link
  * #cause()} is empty when the caller closed it, and set when the control client ended it. Attach
@@ -41,6 +50,8 @@ import org.jspecify.annotations.Nullable;
  */
 public final class EventSubscription<T> implements AutoCloseable {
 
+    private static final System.Logger LOG = System.getLogger(EventSubscription.class.getName());
+
     private final int capacity;
     private final ArrayDeque<T> events = new ArrayDeque<>();
     private final ReentrantLock lock = new ReentrantLock();
@@ -50,6 +61,13 @@ public final class EventSubscription<T> implements AutoCloseable {
     private long pendingGap;
     private boolean closed;
     private @Nullable Throwable cause;
+    // A read is in progress, on a thread that may be waiting with the lock released.
+    private boolean reading;
+    // stream() or publisher() owns every read from now on.
+    private boolean claimed;
+    private @Nullable Runnable ready;
+    // The owning publisher's wakeup when this subscription ends: a terminal signal needs no demand.
+    private @Nullable Runnable ownerWake;
 
     EventSubscription(int capacity, Consumer<EventSubscription<T>> onClose) {
         if (capacity <= 0) {
@@ -60,11 +78,13 @@ public final class EventSubscription<T> implements AutoCloseable {
     }
 
     void offer(T event) {
+        @Nullable Runnable wake = null;
         lock.lock();
         try {
             if (closed) {
                 return;
             }
+            boolean wasReadable = readable();
             if (events.size() == capacity) {
                 events.removeFirst();
                 dropped++;
@@ -72,9 +92,20 @@ public final class EventSubscription<T> implements AutoCloseable {
             }
             events.addLast(event);
             available.signal();
+            if (!wasReadable) {
+                wake = ready;
+                ready = null;
+            }
         } finally {
             lock.unlock();
         }
+        if (wake != null) {
+            fire(wake);
+        }
+    }
+
+    private boolean readable() {
+        return pendingGap > 0 || !events.isEmpty();
     }
 
     /**
@@ -110,18 +141,12 @@ public final class EventSubscription<T> implements AutoCloseable {
      * Waits until the next step arrives or this subscription closes.
      *
      * @return the next gap or event, or empty when the subscription has closed and no gap is waiting
+     * @throws IllegalStateException if another read is in progress, or a stream or publisher owns
+     *     this subscription
      * @throws InterruptedException if the waiting thread is interrupted
      */
     public Optional<Delivery<T>> next() throws InterruptedException {
-        lock.lockInterruptibly();
-        try {
-            while (pendingGap == 0 && events.isEmpty() && !closed) {
-                available.await();
-            }
-            return poll();
-        } finally {
-            lock.unlock();
-        }
+        return read(false, -1);
     }
 
     /**
@@ -130,6 +155,8 @@ public final class EventSubscription<T> implements AutoCloseable {
      * @param timeout how long to wait, zero to inspect the buffer without waiting
      * @return the next gap or event, or empty when none arrived before the deadline
      * @throws IllegalArgumentException if {@code timeout} is negative
+     * @throws IllegalStateException if another read is in progress, or a stream or publisher owns
+     *     this subscription
      * @throws InterruptedException if the waiting thread is interrupted
      */
     public Optional<Delivery<T>> next(Duration timeout) throws InterruptedException {
@@ -142,18 +169,164 @@ public final class EventSubscription<T> implements AutoCloseable {
         } catch (ArithmeticException overflow) {
             remaining = Long.MAX_VALUE;
         }
-        lock.lockInterruptibly();
+        return read(false, remaining);
+    }
+
+    /**
+     * Returns the next step if one is waiting, without blocking.
+     *
+     * @return the next gap or event, or empty when none is buffered; after the subscription has
+     *     ended, empty once what it held is read
+     * @throws IllegalStateException if another read is in progress, or a stream or publisher owns
+     *     this subscription
+     */
+    public Optional<Delivery<T>> poll() {
+        lock.lock();
         try {
-            while (pendingGap == 0 && events.isEmpty() && !closed && remaining > 0) {
-                remaining = available.awaitNanos(remaining);
+            enter(false);
+            try {
+                return take();
+            } finally {
+                reading = false;
             }
-            return poll();
         } finally {
             lock.unlock();
         }
     }
 
-    private Optional<Delivery<T>> poll() {
+    /**
+     * Arms a one-shot wakeup for when this subscription has something to read, or has ended.
+     *
+     * <p>Runs {@code callback} at once, on this thread, when a step is already waiting or the
+     * subscription has ended. Otherwise it runs once, on the control client's reader thread, when the
+     * first step arrives or the subscription ends, and is then disarmed: drain with {@link #poll()}
+     * until it is empty, then arm again. Checking and arming happen under the lock that delivery
+     * takes, so a step cannot slip between them unannounced.
+     *
+     * <p>The callback runs on the thread delivering events, so it must not block: resume a waiting
+     * coroutine, complete a promise, and return. One that throws is logged and ignored, and delivery
+     * continues.
+     *
+     * @throws IllegalStateException if a callback is already armed, or a stream or publisher owns
+     *     this subscription
+     */
+    public void onReady(Runnable callback) {
+        Objects.requireNonNull(callback, "callback");
+        boolean now;
+        lock.lock();
+        try {
+            if (claimed) {
+                throw owned();
+            }
+            if (ready != null) {
+                throw new IllegalStateException("a readiness callback is already armed; clearReady() first");
+            }
+            now = readable() || closed;
+            if (!now) {
+                ready = callback;
+            }
+        } finally {
+            lock.unlock();
+        }
+        if (now) {
+            fire(callback);
+        }
+    }
+
+    /** Disarms the readiness callback, if one is armed. For a reader that stopped waiting. */
+    public void clearReady() {
+        lock.lock();
+        try {
+            ready = null;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private static void fire(Runnable callback) {
+        try {
+            callback.run();
+        } catch (RuntimeException broken) {
+            LOG.log(System.Logger.Level.WARNING, "a subscription's readiness callback failed", broken);
+        }
+    }
+
+    /** One read, waiting up to {@code timeoutNanos}, or without limit when it is negative. */
+    private Optional<Delivery<T>> read(boolean owner, long timeoutNanos) throws InterruptedException {
+        lock.lockInterruptibly();
+        try {
+            enter(owner);
+            try {
+                long remaining = timeoutNanos;
+                while (!readable() && !closed && (timeoutNanos < 0 || remaining > 0)) {
+                    if (timeoutNanos < 0) {
+                        available.await();
+                    } else {
+                        remaining = available.awaitNanos(remaining);
+                    }
+                }
+                return take();
+            } finally {
+                reading = false;
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void enter(boolean owner) {
+        if (claimed && !owner) {
+            throw owned();
+        }
+        if (reading) {
+            throw new IllegalStateException(
+                    "another thread is reading this subscription; read from one thread at a time, or"
+                            + " subscribe again for a second reader");
+        }
+        reading = true;
+    }
+
+    /** Hands every future read to a stream or publisher, which becomes the only reader. */
+    private void claim(@Nullable Runnable onEnd) {
+        lock.lock();
+        try {
+            if (claimed || reading || ready != null) {
+                throw new IllegalStateException(
+                        "this subscription already has a reader; subscribe again for a second one");
+            }
+            claimed = true;
+            ownerWake = onEnd;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Forgets the owning publisher's wakeup, so a cancelled subscriber is not kept reachable. */
+    private void releaseOwner() {
+        lock.lock();
+        try {
+            ownerWake = null;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Whether this subscription has ended and everything it held has been read. */
+    private boolean exhausted() {
+        lock.lock();
+        try {
+            return closed && !readable();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private static IllegalStateException owned() {
+        return new IllegalStateException(
+                "a stream or publisher owns this subscription's reads; subscribe again for another reader");
+    }
+
+    private Optional<Delivery<T>> take() {
         if (pendingGap > 0) {
             long missed = pendingGap;
             pendingGap = 0;
@@ -182,6 +355,7 @@ public final class EventSubscription<T> implements AutoCloseable {
      *     interrupted; its interrupt status is set again
      */
     public java.util.stream.Stream<Delivery<T>> stream() {
+        claim(null);
         java.util.Spliterator<Delivery<T>> steps =
                 new java.util.Spliterators.AbstractSpliterator<>(
                         Long.MAX_VALUE, java.util.Spliterator.ORDERED | java.util.Spliterator.NONNULL) {
@@ -189,7 +363,7 @@ public final class EventSubscription<T> implements AutoCloseable {
                     public boolean tryAdvance(java.util.function.Consumer<? super Delivery<T>> action) {
                         Optional<Delivery<T>> step;
                         try {
-                            step = next();
+                            step = read(true, -1);
                         } catch (InterruptedException interrupted) {
                             Thread.currentThread().interrupt();
                             throw cancelled(interrupted);
@@ -231,9 +405,9 @@ public final class EventSubscription<T> implements AutoCloseable {
      * Flow.Publisher#subscribe subscribe} never throws for a non-null subscriber, but a second one on
      * the same publisher is sent {@link Flow.Subscriber#onSubscribe onSubscribe} immediately followed
      * by {@link IllegalStateException} to {@link Flow.Subscriber#onError onError}, rather than sharing
-     * this subscription's steps or silently missing them. Reading through two publishers taken from
-     * this subscription splits its steps between them, the same as two concurrent {@link #stream()}
-     * calls would. {@link Flow.Subscription#request request} of zero or less is answered the same way,
+     * this subscription's steps or silently missing them. The first subscriber takes this subscription
+     * whole, so a subscriber to a second publisher from it, or one arriving after {@link #stream()},
+     * is refused the same way. {@link Flow.Subscription#request request} of zero or less is answered the same way,
      * with {@link IllegalArgumentException}. {@link Long#MAX_VALUE} demand is unbounded. Every signal
      * to one subscriber comes from one thread at a time, never concurrently.
      *
@@ -281,10 +455,21 @@ public final class EventSubscription<T> implements AutoCloseable {
             if (!claimed.compareAndSet(false, true)) {
                 subscriber.onSubscribe(NOOP_SUBSCRIPTION);
                 subscriber.onError(new IllegalStateException(
-                        "this subscription already has a subscriber; call publisher() again for a new one"));
+                        "this publisher already has a subscriber; subscribe to the control client again for another"));
                 return;
             }
-            subscriber.onSubscribe(new DemandSubscription(subscriber, executor));
+            DemandSubscription demand = new DemandSubscription(subscriber, executor);
+            try {
+                claim(demand::schedule);
+            } catch (IllegalStateException taken) {
+                subscriber.onSubscribe(NOOP_SUBSCRIPTION);
+                subscriber.onError(taken);
+                return;
+            }
+            // Rule 1.3: no signal may overlap onSubscribe, so a request made inside it waits for it.
+            demand.wip.set(1);
+            subscriber.onSubscribe(demand);
+            demand.subscribed();
         }
     }
 
@@ -300,6 +485,7 @@ public final class EventSubscription<T> implements AutoCloseable {
         private final Executor executor;
         private final AtomicLong requested = new AtomicLong();
         private final AtomicInteger wip = new AtomicInteger();
+        private final AtomicBoolean terminated = new AtomicBoolean();
         private volatile boolean cancelled;
         private volatile @Nullable Throwable protocolError;
 
@@ -328,6 +514,7 @@ public final class EventSubscription<T> implements AutoCloseable {
         public void cancel() {
             cancelled = true;
             EventSubscription.this.close();
+            EventSubscription.this.releaseOwner();
         }
 
         private void addCap(long n) {
@@ -346,9 +533,30 @@ public final class EventSubscription<T> implements AutoCloseable {
             }
         }
 
+        /** Runs what arrived during onSubscribe, or looks once for an end that needs no demand. */
+        private void subscribed() {
+            if (wip.decrementAndGet() > 0) {
+                start();
+            } else {
+                schedule();
+            }
+        }
+
         private void schedule() {
             if (wip.getAndIncrement() == 0) {
+                start();
+            }
+        }
+
+        private void start() {
+            try {
                 executor.execute(this::drain);
+            } catch (RuntimeException rejected) {
+                // Rule 3.4: request must not throw. No drain runs, so nothing else can signal.
+                cancelled = true;
+                EventSubscription.this.close();
+                Throwable earlier = protocolError;
+                signalError(earlier != null ? earlier : rejected);
             }
         }
 
@@ -368,12 +576,12 @@ public final class EventSubscription<T> implements AutoCloseable {
                     }
                     Optional<Delivery<T>> step;
                     try {
-                        step = EventSubscription.this.next();
+                        step = EventSubscription.this.read(true, -1);
                     } catch (InterruptedException interrupted) {
                         Thread.currentThread().interrupt();
                         cancelled = true;
                         EventSubscription.this.close();
-                        subscriber.onError(cancelled(interrupted));
+                        signalError(cancelled(interrupted));
                         return;
                     }
                     if (cancelled) {
@@ -398,16 +606,17 @@ public final class EventSubscription<T> implements AutoCloseable {
                         continue;
                     }
                     cancelled = true;
-                    Optional<Throwable> failure = EventSubscription.this.cause();
-                    if (failure.isPresent()) {
-                        subscriber.onError(failure.get());
-                    } else {
-                        subscriber.onComplete();
-                    }
+                    signalEnd();
                     return;
                 }
                 if (emitted != 0 && r != Long.MAX_VALUE) {
                     requested.addAndGet(-emitted);
+                }
+                // Rules 1.4 and 1.5: an end is signalled without waiting for demand.
+                if (EventSubscription.this.exhausted()) {
+                    cancelled = true;
+                    signalEnd();
+                    return;
                 }
                 missed = wip.addAndGet(-missed);
                 if (missed == 0) {
@@ -419,6 +628,24 @@ public final class EventSubscription<T> implements AutoCloseable {
         private void signalProtocolError() {
             Throwable error = protocolError;
             if (error != null) {
+                signalError(error);
+            }
+        }
+
+        private void signalEnd() {
+            Optional<Throwable> failure = EventSubscription.this.cause();
+            if (failure.isPresent()) {
+                signalError(failure.get());
+            } else if (terminated.compareAndSet(false, true)) {
+                EventSubscription.this.releaseOwner();
+                subscriber.onComplete();
+            }
+        }
+
+        /** The one terminal signal, however many paths race to send it. */
+        private void signalError(Throwable error) {
+            if (terminated.compareAndSet(false, true)) {
+                EventSubscription.this.releaseOwner();
                 subscriber.onError(error);
             }
         }
@@ -450,6 +677,17 @@ public final class EventSubscription<T> implements AutoCloseable {
      * #close()}, events already delivered stay readable.
      */
     void end(@Nullable Throwable failure) {
+        end(failure, failure == null);
+    }
+
+    /** Ends this subscription as a producer with nothing more to send: not a failure, and nothing is discarded. */
+    void finish() {
+        end(null, false);
+    }
+
+    private void end(@Nullable Throwable failure, boolean discard) {
+        @Nullable Runnable wake;
+        @Nullable Runnable owner;
         lock.lock();
         try {
             if (closed) {
@@ -457,13 +695,23 @@ public final class EventSubscription<T> implements AutoCloseable {
             }
             cause = failure;
             closed = true;
-            if (failure == null) {
+            if (discard) {
                 events.clear();
             }
             available.signalAll();
+            wake = ready;
+            ready = null;
+            owner = ownerWake;
+            ownerWake = null;
             onClose.accept(this);
         } finally {
             lock.unlock();
+        }
+        if (wake != null) {
+            fire(wake);
+        }
+        if (owner != null) {
+            fire(owner);
         }
     }
 

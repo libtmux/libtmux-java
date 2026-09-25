@@ -13,6 +13,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Flow;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.jspecify.annotations.Nullable;
@@ -23,17 +24,8 @@ import org.junit.jupiter.api.Test;
  * 1.3 (serial signals), 1.9/2.13 (subscribe never throws, a second subscriber is refused through
  * onSubscribe then onError), 3.9 (an invalid request is refused the same way), 3.13 (cancel
  * releases and silences the subscription), and 1.4/1.7 (exactly one terminal signal, matching
- * {@link EventSubscription#next()}'s own cause/completion rule).
- *
- * <p>The official reactive-streams-tck-flow suite was not used: it drives {@code
- * createFlowPublisher(n)} to expect exactly {@code n} elements whatever order a subscriber
- * requests and cancels in, but this subscription's {@link EventSubscription#close()} discards
- * whatever is still buffered and unread at the moment it runs — by design, so a caller who stops
- * reading does not count as overflow. Feeding the TCK's fixed element counts through that buffer
- * races the very close the TCK relies on to end a finite stream, so satisfying it would mean either
- * an unreliable harness or a second, non-lossy buffering layer built solely to appease the TCK.
- * Targeted tests below exercise the same rules directly against a subscription fed with {@link
- * EventSubscription#offer}.
+ * {@link EventSubscription#next()}'s own cause/completion rule). The Reactive Streams TCK runs
+ * against the same publisher in {@link EventSubscriptionTckTest}.
  */
 final class EventSubscriptionPublisherTest {
 
@@ -286,6 +278,27 @@ final class EventSubscriptionPublisherTest {
             assertNull(subscriber.pollSignal(200), "more elements arrived than were requested");
             assertFalse(subscriber.concurrentCall.get(), "two signals to the same subscriber overlapped");
         }
+    }
+
+    /** Rule 3.4: request must not throw. An executor that refuses the read ends the subscriber once. */
+    @Test
+    void aRejectingExecutorEndsTheSubscriberInsteadOfThrowing() throws Exception {
+        var subscription = new EventSubscription<String>(4, ignored -> {});
+        RecordingSubscriber<String> subscriber = new RecordingSubscriber<>();
+        subscription
+                .publisher(task -> {
+                    throw new RejectedExecutionException("pool is shut down");
+                })
+                .subscribe(subscriber);
+        subscriber.awaitOnSubscribe();
+
+        subscriber.subscription.request(1);
+
+        assertInstanceOf(
+                RejectedExecutionException.class, subscriber.awaitSignal().error());
+        assertTrue(subscription.isClosed(), "a subscriber that cannot be served releases the subscription");
+        subscriber.subscription.request(1);
+        assertNull(subscriber.pollSignal(200), "nothing follows the terminal signal");
     }
 
     /**
