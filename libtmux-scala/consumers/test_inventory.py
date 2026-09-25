@@ -70,7 +70,7 @@ class RuntimeInventoryTest(unittest.TestCase):
             source = "example/Example.scala"
             inventory = source + "\t" + hashlib.sha256(raw).hexdigest() + "\n"
 
-            def write(major=65, embedded=raw, anchor="L1"):
+            def write(major=69, embedded=raw, anchor="L1"):
                 with ZipFile(binary, "w") as jar:
                     jar.writestr("Example.class", b"\xca\xfe\xba\xbe\x00\x00" + major.to_bytes(2, "big"))
                 with ZipFile(sources, "w") as jar:
@@ -83,7 +83,7 @@ class RuntimeInventoryTest(unittest.TestCase):
 
             write()
             self.assertEqual(consumers.verify_archives(binary, sources, docs)["source_links"], 1)
-            for change, diagnostic in (({"major": 66}, "JDK 21"),
+            for change, diagnostic in (({"major": 70}, "JDK 25"),
                                        ({"embedded": b"wrong"}, "raw source differs"),
                                        ({"anchor": "L2"}, "Broken Scaladoc")):
                 with self.subTest(diagnostic=diagnostic):

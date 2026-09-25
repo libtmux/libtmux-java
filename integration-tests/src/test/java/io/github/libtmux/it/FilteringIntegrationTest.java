@@ -54,7 +54,7 @@ final class FilteringIntegrationTest {
         Window window = server.sessions().get(0).windows().get(0);
         window.resizeTo(new io.github.libtmux.Dimensions(120, 40));
         Pane right = window.refresh().panes().get(0).split(spec -> spec.toRight());
-        var unused = right.retitle("logs");
+        var _ = right.retitle("logs");
 
         List<Pane> panes = server.panes();
 

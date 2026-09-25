@@ -32,6 +32,11 @@ dependencies {
 
     add(launcherRuntime.name, libs.slf4j.nop)
 
+    // Only to let javac fully resolve the JSR-305 annotations reactor-core's own Nullable class
+    // carries; io.projectreactor:reactor-core is a transitive runtime dependency of libs.mcp.core.
+    compileOnly(libs.jsr305)
+    testCompileOnly(libs.jsr305)
+
     testImplementation(project(":libtmux-junit5"))
 }
 

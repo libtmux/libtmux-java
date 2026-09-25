@@ -163,7 +163,7 @@ final class PaneWaitTest {
         try (Server server = tmux.server()) {
             Duration bound = Duration.ofMillis(750);
 
-            var unused = server.within(bound).panes().get(0).capture();
+            var _ = server.within(bound).panes().get(0).capture();
 
             assertTrue(seen.size() >= 2, "a listing and a capture both reached tmux");
             assertTrue(seen.stream().allMatch(bound::equals), "every command carried the chosen deadline: " + seen);
