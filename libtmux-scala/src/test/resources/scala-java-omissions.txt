@@ -16,7 +16,6 @@ Pane.pid captured on info
 Pane.position captured on info
 Pane.size captured on info
 Pane.title captured on info
-Server.control Cats Control.attach fences the session; blocking callers use Java
 Server.shell runShell and runShellCapturing cover it; if-shell stays on Java
 Server.keys key bindings are configuration, set once through Java or tmux.conf
 Server.commands the command catalog stays on Java
