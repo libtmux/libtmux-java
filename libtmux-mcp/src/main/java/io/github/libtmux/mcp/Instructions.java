@@ -49,11 +49,14 @@ final class Instructions {
                 METADATA IS NOT CONTENT
                 list_panes and friends read what tmux knows about a pane — its command, its path, \
                 its size. What a pane is SHOWING comes from capture_pane, capture_since or \
-                search_panes. "Which pane mentions the error" is a search, not a listing.
+                search_panes. "Which pane mentions the error" is a search, not a listing. \
+                list_panes takes no filter; scan its 'command' field to find a pane by what it runs.
 
                 READING COSTS CONTEXT
                 Reads are capped and say when they dropped anything; raise 'max_lines' deliberately \
-                rather than by habit. Prefer list_panes over reading every pane's content.
+                rather than by habit. Prefer list_panes over reading every pane's content. Batch \
+                several reads, or several key sends, into one round trip with \
+                call_read_tools_batch or send_keys_batch.
                 One pane's metadata and content together: snapshot_pane. list_panes plus \
                 capture_pane is two calls for what that one returns.
 
