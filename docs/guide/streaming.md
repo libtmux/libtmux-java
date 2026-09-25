@@ -157,6 +157,61 @@ replayed. The control reader only fills those buffers; caller code runs on the
 thread that calls `next()`. `standardError()` is the bounded text the tmux
 process wrote to its error stream.
 
+`publisher()` reads the same steps as a `java.util.concurrent.Flow.Publisher`,
+for a reactive caller — Reactor, RxJava, Mutiny, Spring — through
+`FlowAdapters` or `JdkFlowAdapter`. Delivery is demand-driven: `request`
+bounds what reaches the subscriber, `Long.MAX_VALUE` asks for everything, and
+only one subscriber is ever accepted — a second gets `onError` rather than
+sharing the steps. `cancel()` closes the subscription, the same as `stream()`
+closing does. Each read that waits for the next step runs on a fresh virtual
+thread; `publisher(Executor)` reads somewhere else instead.
+
+Demand only bounds what reaches the subscriber, not what tmux sends: this
+subscription's own bounded buffer keeps filling regardless, and a full buffer
+still reports its loss as a `Delivery.Gap`, delivered like any other element.
+Pausing tmux's own push is `pause-after`, further down.
+
+```java
+// Given: Server server, Session session
+try (ControlClient client = server.control(session);
+        EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
+
+    client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
+
+    StringBuilder seen = new StringBuilder();
+    CountDownLatch done = new CountDownLatch(1);
+    output.publisher().subscribe(new Flow.Subscriber<Delivery<PaneOutput>>() {
+        Flow.Subscription subscription;
+
+        public void onSubscribe(Flow.Subscription subscription) {
+            this.subscription = subscription;
+            subscription.request(1);
+        }
+
+        public void onNext(Delivery<PaneOutput> step) {
+            seen.append(Delivery.kept(step).data());
+            if (seen.indexOf("streamed") >= 0) {
+                subscription.cancel();
+                done.countDown();
+            } else {
+                subscription.request(1);
+            }
+        }
+
+        public void onError(Throwable failure) {
+            done.countDown();
+        }
+
+        public void onComplete() {
+            done.countDown();
+        }
+    });
+
+    done.await(5, TimeUnit.SECONDS);
+    seen.indexOf("streamed") >= 0;  // → true
+}
+```
+
 ## Pushed changes
 
 The same client is told about changes as they happen — a window created or
