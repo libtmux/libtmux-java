@@ -330,7 +330,8 @@ the separately released Scala artifacts are staged from this source tree.
   and pushes notifications as tmux changes.
 
 - **[`libtmux-junit5`](libtmux-junit5/)** — test *your* code against real tmux.
-  One server per test, guaranteed gone afterwards even if the JVM is killed.
+  One server per test. A JVM killed outright leaves its server for the next
+  run sharing the fixture root to reap.
 
 - **[`libtmux-kotlin`](libtmux-kotlin/)** — Kotlin ergonomics. Optional: the core
   is already null-safe from Kotlin without it.

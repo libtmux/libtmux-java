@@ -80,8 +80,8 @@ Filtering a list already in hand still issues no commands.
 ## Writing an expression down
 
 The optional `libtmux-jackson` module gives an expression a versioned wire form.
-This snippet is exercised by `FilterJsonTest` rather than `ExamplesTest`, since
-the core suite does not depend on Jackson:
+This snippet is exercised by `FilterJsonTest` rather than
+`DocumentationSnippetsTest`, since the core suite does not depend on Jackson:
 
 ```java
 String json = FilterJson.writeString(
