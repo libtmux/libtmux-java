@@ -85,6 +85,14 @@ in arrival order and each caller gets its own reply. A deadline that passes
 before the request is written writes nothing; one that passes after it ends the
 client, because the next reply could no longer be matched to its request.
 
+An interrupt is one caller giving up, not tmux failing. Interrupted before its
+request is written, the caller gets `DispatchException` with outcome
+`NOT_DISPATCHED` and nothing is sent. Interrupted after, it gets outcome
+`UNKNOWN`, since tmux may have run the command, while the client carries on:
+tmux still answers that request in order, and every other caller and
+subscription is unaffected. Cancelling one coroutine or fiber on a shared
+client is therefore safe.
+
 A subscription is read by one thread at a time. Concurrent readers of `next()`
 would split its events between them, so each consuming form takes it whole:
 `stream()` closes the subscription with the stream, `publisher()` refuses a second

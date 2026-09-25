@@ -177,10 +177,13 @@ final class ControlWriter {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            expire(
-                    request,
-                    notDispatched("interrupted before control request dispatch", e),
-                    unknown("interrupted while awaiting a control reply", e));
+            if (request.cancel(notDispatched("interrupted before control request dispatch", e))) {
+                waiting.remove(request);
+            } else if (!request.isDone()) {
+                // The writer still owns the request and tmux still answers it in order, so only this
+                // caller leaves. Ending the writer here would fail every other caller on the client.
+                throw unknown("interrupted while awaiting a control reply; tmux may have run it", e);
+            }
         }
         return request.answer();
     }
@@ -398,6 +401,10 @@ final class ControlWriter {
             answer = result;
             answered.countDown();
             return true;
+        }
+
+        boolean isDone() {
+            return state.get() == State.DONE;
         }
 
         long remainingNanos() {

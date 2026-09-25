@@ -13,7 +13,9 @@ import java.io.IOException;
 import java.io.Writer;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
@@ -254,10 +256,49 @@ final class ControlWriterTest {
         request.interrupt();
         request.join(1_000);
         output.release.countDown();
+        writer.close();
         writer.join(1_000);
 
         assertEquals(DispatchOutcome.UNKNOWN, failure.get().outcome());
         assertTrue(interrupted.get());
+    }
+
+    /** An interrupt is one caller giving up, not tmux failing: the client keeps serving everyone else. */
+    @Test
+    void interruptingACallerAfterDispatchLeavesTheClientServingOthers() throws Exception {
+        AtomicReference<ControlWriter> holder = new AtomicReference<>();
+        List<String> held = Collections.synchronizedList(new ArrayList<>());
+        CountDownLatch dispatched = new CountDownLatch(2);
+        GatedReplyingWriter output = new GatedReplyingWriter(line -> {
+            if (line.contains("abandoned")
+                    || (held.size() == 1 && MARKER.matcher(line).matches())) {
+                held.add(line);
+                dispatched.countDown();
+            } else {
+                answer(holder.get(), line);
+            }
+        });
+        output.releaseFirst.countDown();
+        List<DispatchException> ended = new CopyOnWriteArrayList<>();
+        ControlWriter writer = writer(output, 2, ended::add);
+        holder.set(writer);
+        writer.start();
+        AtomicReference<DispatchException> abandonedFailure = new AtomicReference<>();
+        Thread abandoned = exchange(writer, "abandoned", PATIENCE, abandonedFailure);
+        assertTrue(dispatched.await(1, TimeUnit.SECONDS), "the first request never reached tmux");
+        FutureTask<ControlReply> survivor = new FutureTask<>(() -> writer.exchange("survivor", PATIENCE));
+        Thread.ofVirtual().start(survivor);
+
+        abandoned.interrupt();
+        abandoned.join(1_000);
+        answer(writer, held.get(0));
+        answer(writer, held.get(1));
+
+        assertEquals(List.of("survivor"), survivor.get(1, TimeUnit.SECONDS).lines());
+        assertEquals(DispatchOutcome.UNKNOWN, abandonedFailure.get().outcome(), "tmux may have run it");
+        assertTrue(ended.isEmpty(), "one caller's interrupt ended the client: " + ended);
+        writer.close();
+        writer.join(1_000);
     }
 
     private static ControlWriter writer(Writer output, int capacity, Consumer<DispatchException> failed) {
