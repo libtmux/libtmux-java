@@ -232,3 +232,8 @@ A control client has one reply stream, so `send` calls run one at a time. A
 timeout closes the client because the next reply can no longer be attributed
 safely. Use `Server` for ordinary commands; use `ControlClient` when the
 persistent event stream is the requirement.
+
+One command answers faster over an attached control client than as its own
+process, but a reply is an acknowledgement rather than a completion, and one
+client serializes every caller: [measured, with what that number does and
+does not justify](../benchmarks/operations.md#one-command-two-transports).
