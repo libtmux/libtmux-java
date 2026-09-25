@@ -1,6 +1,7 @@
 package io.github.libtmux;
 
 import java.util.List;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * The server's own message log, newest last.
@@ -22,6 +23,7 @@ public final class MessageLog {
      *
      * @throws LibTmuxException before 3.6 when no client is attached
      */
+    @ReadOnly
     public List<String> lines() {
         return server.run(List.of("show-messages")).stdout();
     }

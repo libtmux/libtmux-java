@@ -2,6 +2,7 @@ package io.github.libtmux.control;
 
 import io.github.libtmux.batch.OperationOutcome;
 import java.util.List;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * One command's reply in control mode.
@@ -10,7 +11,8 @@ import java.util.List;
  *     are independent and a failure discards nothing behind it
  * @param lines the lines tmux produced between the reply's own begin and end markers
  */
-public record ControlReply(OperationOutcome outcome, List<String> lines) {
+public record ControlReply(
+        OperationOutcome outcome, @ReadOnly List<String> lines) {
 
     public ControlReply {
         lines = List.copyOf(lines);

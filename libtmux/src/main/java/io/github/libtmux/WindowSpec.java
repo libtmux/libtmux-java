@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -67,6 +68,7 @@ public final class WindowSpec {
     }
 
     /** Variables set for the new window, in the order they were given. */
+    @ReadOnly
     public Map<String, String> environment() {
         return environment;
     }
@@ -106,6 +108,7 @@ public final class WindowSpec {
     }
 
     /** What the window's first pane runs, empty for the session's shell. */
+    @ReadOnly
     public List<String> command() {
         return command;
     }

@@ -29,6 +29,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -528,6 +529,7 @@ public final class Server implements AutoCloseable {
     }
 
     /** Reads only validated tmux variable names, never caller-authored format syntax. */
+    @ReadOnly
     public Map<String, String> variables(List<String> names) {
         return variables(names, this::expand);
     }
@@ -567,6 +569,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerNotRunningException if no daemon is running
      * @throws LibTmuxException if the listing otherwise fails
      */
+    @ReadOnly
     public Map<PaneId, Map<String, String>> paneFields(List<String> names) {
         List<String> fields = new ArrayList<>(List.of("pane_id"));
         fields.addAll(requireVariableNames(names));
@@ -974,6 +977,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerNotRunningException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
     public List<Session> sessions(FilterExpr<Session> expression) {
         Objects.requireNonNull(expression, "expression");
         ServerSnapshot captured = captured(expression, "list-sessions");
@@ -991,6 +995,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerNotRunningException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
     public List<Session> sessions() {
         ServerSnapshot captured = snapshot();
         return captured.sessions().stream()
@@ -1005,6 +1010,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerNotRunningException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
     public List<Window> windows() {
         ServerSnapshot captured = snapshot();
         return captured.windows().stream()
@@ -1023,6 +1029,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerNotRunningException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
     public List<Window> windows(FilterExpr<Window> expression) {
         Objects.requireNonNull(expression, "expression");
         ServerSnapshot captured = captured(expression, "list-windows", "-a");
@@ -1039,6 +1046,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerNotRunningException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
     public List<Pane> panes() {
         ServerSnapshot captured = snapshot();
         return captured.panes().stream()
@@ -1057,6 +1065,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerNotRunningException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
     public List<Pane> panes(FilterExpr<Pane> expression) {
         Objects.requireNonNull(expression, "expression");
         ServerSnapshot captured = captured(expression, "list-panes", "-a");
@@ -1164,6 +1173,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerNotRunningException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
     public List<Window> windows(WindowId id) {
         Objects.requireNonNull(id, "id");
         ServerSnapshot captured = snapshot();
@@ -1180,6 +1190,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerNotRunningException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
     public List<Client> clients() {
         ServerSnapshot captured = snapshot();
         return captured.clients().stream()
@@ -1194,6 +1205,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerNotRunningException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
     public List<Session> attachedSessions() {
         return sessions().stream().filter(Session::attached).toList();
     }

@@ -23,6 +23,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * One tmux pane, as one capture saw it.
@@ -315,6 +316,7 @@ public final class Pane {
     }
 
     /** This pane's visible content, one element per line. */
+    @ReadOnly
     public List<String> capture() {
         return capture(CaptureSpec.builder().build());
     }
@@ -598,6 +600,7 @@ public final class Pane {
      * @param configure receives a builder that reads the visible area and nothing else
      * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
+    @ReadOnly
     public List<String> capture(Consumer<CaptureSpec.Builder> configure) {
         CaptureSpec.Builder builder = CaptureSpec.builder();
         configure.accept(builder);
@@ -609,6 +612,7 @@ public final class Pane {
      *
      * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
+    @ReadOnly
     public List<String> capture(CaptureSpec spec) {
         return server.run(snapshot, spec.argv(state.id().value(), server.version(snapshot)))
                 .stdout();
@@ -811,6 +815,7 @@ public final class Pane {
     }
 
     /** Reads validated tmux variables in this pane's format context. */
+    @ReadOnly
     public Map<String, String> variables(List<String> names) {
         return server.variables(names, this::expand);
     }

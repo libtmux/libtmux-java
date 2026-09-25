@@ -2,7 +2,13 @@ import java.lang.module.ModuleFinder
 
 plugins { id("libtmux.published-library") }
 
-dependencies { compileOnly(libs.errorprone.annotations) }
+dependencies {
+    compileOnly(libs.errorprone.annotations)
+    // Kotlin reads a Java collection marked @ReadOnly as a read-only List, Set, or Map, with or
+    // without this jar on the caller's path; nothing reads it at runtime.
+    compileOnly(libs.kotlin.annotations.jvm)
+    testImplementation(libs.asm)
+}
 
 // The core resolves nothing at runtime. Anything that would change that belongs in another module.
 // No Automatic-Module-Name: module-info.java names this module, and the manifest attribute is
@@ -38,7 +44,17 @@ tasks.jar {
 // Every other lint stays on. -exports fires only because the annotations above are required
 // statically and not transitively, which is the point: a consumer never sees them at runtime, and
 // making them transitive to silence this made every modular consumer fail to compile.
-tasks.compileJava { options.compilerArgs.add("-Xlint:-exports") }
+tasks.compileJava {
+    options.compilerArgs.add("-Xlint:-exports")
+    // kotlin-annotations-jvm names no module, so it sits on the classpath, which a named module
+    // cannot read unless told to. It is needed only here: its annotation is kept in the class file
+    // for the Kotlin compiler and never loaded.
+    options.compilerArgs.addAll(listOf("--add-reads", "io.github.libtmux=ALL-UNNAMED"))
+}
+
+tasks.javadoc {
+    (options as StandardJavadocDocletOptions).addStringOption("-add-reads", "io.github.libtmux=ALL-UNNAMED")
+}
 
 // A consumer with a module descriptor of its own, compiled against the built jar and nothing else.
 // The descriptor check above reads what the jar declares; this reads what a consumer can do with it,

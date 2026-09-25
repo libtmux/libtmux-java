@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -98,6 +99,7 @@ public final class SplitSpec {
     }
 
     /** Variables set for the new pane, in the order they were given. */
+    @ReadOnly
     public Map<String, String> environment() {
         return environment;
     }

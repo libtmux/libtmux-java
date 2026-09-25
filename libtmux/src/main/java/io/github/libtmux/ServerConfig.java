@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -119,6 +120,7 @@ public final class ServerConfig {
      * reach the same conclusion and then be inherited by every pane the server spawns from this
      * client.
      */
+    @ReadOnly
     public List<String> endpointCommand() {
         List<String> command = new ArrayList<>(7);
         command.add(binary);

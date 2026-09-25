@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -119,6 +120,7 @@ public final class Options {
     }
 
     /** Every option set at this scope, in tmux's order. Inherited values are not listed. */
+    @ReadOnly
     public Map<String, String> all() {
         return read(List.of());
     }
@@ -271,6 +273,7 @@ public final class Options {
      * <p>Inherited user-option names are not listed by tmux. {@link #get(String)} still reads their
      * effective values by name.
      */
+    @ReadOnly
     public Map<String, String> effective() {
         return read(List.of("-A"));
     }
