@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.Pane_;
@@ -17,6 +16,7 @@ import io.github.libtmux.control.ControlReply;
 import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
+import io.github.libtmux.exception.TargetGoneException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -242,7 +242,7 @@ final class FakeTmuxTest {
             tmux.restart();
             tmux.addSession("work");
 
-            assertThrows(ObjectDoesNotExistException.class, () -> before.rename("hijacked"));
+            assertThrows(TargetGoneException.class, () -> before.rename("hijacked"));
             assertEquals("work", server.sessions().get(0).name(), "and the new session was left alone");
         }
     }

@@ -1,5 +1,7 @@
 package io.github.libtmux.transport;
 
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.ServerClosedException;
 import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.internal.ProcessTree;
 import io.github.libtmux.internal.Utf8;
@@ -205,7 +207,7 @@ public final class ProcessTransport implements TmuxTransport {
             return result;
         } catch (RuntimeException failure) {
             if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
-                String outcome = failure instanceof TmuxTransportException transport
+                String outcome = failure instanceof DispatchException transport
                         ? transport
                                 .outcome()
                                 .name()
@@ -220,7 +222,7 @@ public final class ProcessTransport implements TmuxTransport {
                         elapsedMillis(started));
             }
             DispatchOutcome certainty =
-                    failure instanceof TmuxTransportException transport ? transport.outcome() : DispatchOutcome.UNKNOWN;
+                    failure instanceof DispatchException transport ? transport.outcome() : DispatchOutcome.UNKNOWN;
             report(asked, certainty, OptionalInt.empty(), null, span);
             throw failure;
         }
@@ -275,7 +277,7 @@ public final class ProcessTransport implements TmuxTransport {
         CommandRequest request = carriable(asked);
         @Nullable Semaphore waitingPermit = waiting ? waitingAdmission : null;
         if (waiting && waitingPermit == null) {
-            throw new TmuxTransportException(
+            throw new DispatchException.Failed(
                     "transport capacity leaves no process for ordinary work", DispatchOutcome.NOT_DISPATCHED, null);
         }
         long deadline = deadlineAfter(request.timeout());
@@ -397,7 +399,7 @@ public final class ProcessTransport implements TmuxTransport {
         gate.lock();
         try {
             if (closed) {
-                throw new IllegalStateException("transport is closed");
+                throw new ServerClosedException("transport is closed", DispatchOutcome.NOT_DISPATCHED);
             }
         } finally {
             gate.unlock();
@@ -458,7 +460,7 @@ public final class ProcessTransport implements TmuxTransport {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new TmuxTransportException("interrupted before dispatch", DispatchOutcome.NOT_DISPATCHED, e);
+            throw new DispatchException.Failed("interrupted before dispatch", DispatchOutcome.NOT_DISPATCHED, e);
         }
         if (remainingNanos(deadline) == 0) {
             permits.release();
@@ -468,7 +470,7 @@ public final class ProcessTransport implements TmuxTransport {
 
     private static void admitWaiting(Semaphore permits) {
         if (!permits.tryAcquire()) {
-            throw new TmuxTransportException(
+            throw new DispatchException.Failed(
                     "waiting capacity is full; retry after another wait ends", DispatchOutcome.NOT_DISPATCHED, null);
         }
     }
@@ -484,8 +486,7 @@ public final class ProcessTransport implements TmuxTransport {
         gate.lock();
         try {
             if (closed) {
-                throw new TmuxTransportException(
-                        "transport closed before dispatch", DispatchOutcome.NOT_DISPATCHED, null);
+                throw new ServerClosedException("transport closed before dispatch", DispatchOutcome.NOT_DISPATCHED);
             }
             if (remainingNanos(deadline) == 0) {
                 throw admissionTimeout("admission timed out");
@@ -496,13 +497,13 @@ public final class ProcessTransport implements TmuxTransport {
         }
         try {
             Process process = starter.start(request.commandLine());
-            RunningProcess running = new RunningProcess(process, new ProcessTree(process));
+            RunningProcess running = new RunningProcess(process, new ProcessTree(process), request.idempotence());
             live.add(running);
             return running;
         } catch (IOException e) {
             // The JDK's own message already names the binary and the errno text; dropping it is how a
             // misconfigured binary that fails to exec at all reads as a bare, contentless refusal.
-            throw new TmuxTransportException(
+            throw new DispatchException.Failed(
                     "could not start tmux: " + e.getMessage(), DispatchOutcome.NOT_DISPATCHED, e);
         } finally {
             gate.lock();
@@ -537,7 +538,7 @@ public final class ProcessTransport implements TmuxTransport {
         awaitExitOrFailure(process, runningPumps, deadline);
         if (killedByClose.contains(process)) {
             // This exit status is ours, not tmux's; returning it would read as tmux dying on a signal.
-            throw new TmuxTransportException("transport closed while tmux was running", DispatchOutcome.UNKNOWN, null);
+            throw new ServerClosedException("transport closed while tmux was running", DispatchOutcome.UNKNOWN);
         }
         byte[] out = collect(runningPumps.stdout(), process, deadline);
         byte[] err = collect(runningPumps.stderr(), process, deadline);
@@ -595,22 +596,25 @@ public final class ProcessTransport implements TmuxTransport {
         return Math.max(0, deadline - nanoTime.getAsLong());
     }
 
-    private static TmuxTimeoutException admissionTimeout(String message) {
-        return new TmuxTimeoutException(message, DispatchOutcome.NOT_DISPATCHED, null);
+    private static DispatchException.TimedOut admissionTimeout(String message) {
+        return new DispatchException.TimedOut(message, DispatchOutcome.NOT_DISPATCHED, null);
     }
 
     // --------------------------------------------------------------------------- destruction
 
     /** Pumps are deliberately not cancelled: killing the child is what actually ends pipe I/O. */
-    private TmuxTransportException terminate(RunningProcess process, String message, @Nullable Throwable cause) {
-        return reclaim(process, new TmuxTransportException(message, DispatchOutcome.UNKNOWN, cause));
+    private DispatchException terminate(RunningProcess process, String message, @Nullable Throwable cause) {
+        return reclaim(
+                process, new DispatchException.Failed(message, DispatchOutcome.UNKNOWN, process.idempotence(), cause));
     }
 
-    private TmuxTimeoutException timeout(RunningProcess process, String message, @Nullable Throwable cause) {
-        return reclaim(process, new TmuxTimeoutException(message, cause));
+    private DispatchException.TimedOut timeout(RunningProcess process, String message, @Nullable Throwable cause) {
+        return reclaim(
+                process,
+                new DispatchException.TimedOut(message, DispatchOutcome.UNKNOWN, process.idempotence(), cause));
     }
 
-    private <T extends TmuxTransportException> T reclaim(RunningProcess process, T failure) {
+    private <T extends DispatchException> T reclaim(RunningProcess process, T failure) {
         if (!process.tree().terminate()) {
             failure.addSuppressed(new ResourceNotReclaimed("tmux process tree was not reclaimed"));
         }
@@ -661,7 +665,7 @@ public final class ProcessTransport implements TmuxTransport {
         }
     }
 
-    private static void closeQuietly(Closeable stream, @Nullable TmuxTransportException failure) {
+    private static void closeQuietly(Closeable stream, @Nullable DispatchException failure) {
         try {
             stream.close();
         } catch (IOException e) {
@@ -716,7 +720,7 @@ public final class ProcessTransport implements TmuxTransport {
         }
     }
 
-    private record RunningProcess(Process process, ProcessTree tree) {}
+    private record RunningProcess(Process process, ProcessTree tree, Idempotence idempotence) {}
 
     @FunctionalInterface
     interface ProcessStarter {

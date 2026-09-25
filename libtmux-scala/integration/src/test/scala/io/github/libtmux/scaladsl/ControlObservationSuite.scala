@@ -1,5 +1,6 @@
 package io.github.libtmux.scaladsl
 
+import io.github.libtmux.exception.DispatchException
 import _root_.cats.effect.{Deferred, IO}
 import _root_.cats.effect.unsafe.implicits.global
 import _root_.cats.syntax.all._
@@ -7,7 +8,7 @@ import io.github.libtmux.{SessionId, WakeReason}
 import io.github.libtmux.control.{EventSubscription, Notification, PaneOutput}
 import io.github.libtmux.scaladsl.cats.{Control, Observation}
 import io.github.libtmux.scaladsl.fixture.OwnedTmux
-import io.github.libtmux.transport.{DispatchOutcome, TmuxTransportException}
+import io.github.libtmux.transport.DispatchOutcome
 import java.io.BufferedWriter
 import java.nio.file.Files
 import java.time.Duration
@@ -359,7 +360,7 @@ final class ControlObservationSuite extends FunSuite {
                 assert(
                   outcome.left.exists(
                     _.isInstanceOf[
-                      io.github.libtmux.control.ControlEndedException
+                      io.github.libtmux.exception.ControlEndedException
                     ]
                   ),
                   outcome.toString
@@ -487,7 +488,7 @@ final class ControlObservationSuite extends FunSuite {
             _ <- IO {
               assert(activeOutcome.isCanceled)
               assert(peerOutcome.left.exists {
-                case failure: TmuxTransportException =>
+                case failure: DispatchException =>
                   failure.outcome() == DispatchOutcome.NOT_DISPATCHED
                 case _ => false
               })

@@ -1,5 +1,6 @@
 package io.github.libtmux.transport;
 
+import io.github.libtmux.exception.DispatchException;
 import java.util.Optional;
 
 /**
@@ -20,7 +21,7 @@ public interface TmuxTransport extends AutoCloseable {
      *
      * @param request what to run, what it reads, and how long to wait
      * @return the exit status and both channels; a nonzero exit is a result, not a failure
-     * @throws TmuxTransportException if the command could not be run to completion, carrying how
+     * @throws DispatchException if the command could not be run to completion, carrying how
      *     certain it is that tmux applied it
      * @throws IllegalStateException if this transport is closed
      */

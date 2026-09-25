@@ -3,6 +3,10 @@ package io.github.libtmux;
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.batch.OperationResult;
+import io.github.libtmux.exception.CommandRejectedException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.internal.ErrorText;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.transport.CommandResult;
 import java.util.ArrayList;
@@ -70,7 +74,7 @@ public final class Options {
      * @return empty only when tmux does not know the option, which it reports as an error; an option
      *     genuinely set to the empty string comes back as an empty value, not as absent. A value
      *     spanning several lines comes back whole
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the read otherwise fails, including a name tmux finds ambiguous —
      *     option names may be abbreviated, and a prefix matching several is a question tmux
      *     declined to answer rather than an option it does not have
@@ -157,8 +161,11 @@ public final class Options {
         for (int index = 0; index < names.size(); index++) {
             OperationResult value = read.get(index + 1);
             if (value.outcome() != OperationOutcome.COMPLETE) {
-                throw new LibTmuxException(
-                        "tmux could not read option " + names.get(index) + ": " + String.join("; ", value.stderr()));
+                throw new CommandRejectedException(
+                        "tmux could not read option " + names.get(index) + ErrorText.suffix(value.stderr()),
+                        "show-options",
+                        -1,
+                        value.stderr());
             }
             into.put(names.get(index), String.join("\n", TmuxFormats.printed(value.stdout(), version)));
         }

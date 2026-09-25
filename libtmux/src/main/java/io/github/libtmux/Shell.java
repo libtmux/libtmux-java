@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.util.List;
 import java.util.Objects;
 import kotlin.annotations.jvm.ReadOnly;
@@ -35,7 +36,7 @@ public final class Shell {
     /**
      * Runs a shell command and answers with what it printed.
      *
-     * @throws UnsupportedTmuxVersionException on tmux 3.3a and 3.4, which run the command and report
+     * @throws UnsupportedFeatureException on tmux 3.3a and 3.4, which run the command and report
      *     nothing
      */
     @ReadOnly
@@ -43,7 +44,7 @@ public final class Shell {
         Objects.requireNonNull(command, "command");
         TmuxVersion running = server.version();
         if (running.atLeast(OUTPUT_LOST) && !running.atLeast(OUTPUT_FOUND)) {
-            throw new UnsupportedTmuxVersionException(
+            throw new UnsupportedFeatureException(
                     "reading what run-shell printed is broken between tmux 3.3a and 3.4, and this server runs "
                             + running);
         }

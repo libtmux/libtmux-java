@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
@@ -77,7 +78,7 @@ final class IncarnationFence {
                 server.config().defaultTimeout(),
                 input);
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
-            throw new ObjectDoesNotExistException("the tmux server this handle belonged to has ended");
+            throw new TargetGoneException("the tmux server this handle belonged to has ended");
         }
         return result;
     }
@@ -93,7 +94,7 @@ final class IncarnationFence {
         CommandResult result =
                 server.cmd(List.of("if-shell", "-F", "-t", target, condition, CommandStrings.stringify(argv), stale));
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
-            throw new ObjectDoesNotExistException("window " + expected.window() + " no longer exists here");
+            throw new TargetGoneException("window " + expected.window() + " no longer exists here");
         }
         if (!result.succeeded()) {
             throw server.failed(argv.get(0), result);

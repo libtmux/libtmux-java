@@ -1,4 +1,4 @@
-package io.github.libtmux;
+package io.github.libtmux.exception;
 
 /**
  * Text this JVM cannot hand to tmux intact, with no route left to send it by.
@@ -23,6 +23,11 @@ public final class UnencodableTextException extends LibTmuxException {
     private static final long serialVersionUID = 1L;
 
     public UnencodableTextException(String message) {
-        super(message);
+        super(message, null);
+    }
+
+    /** Text refused because of {@code cause}, such as a path the platform cannot represent. */
+    public UnencodableTextException(String message, Throwable cause) {
+        super(message, cause);
     }
 }

@@ -6,8 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.batch.OperationOutcome;
+import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.transport.DispatchOutcome;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.Writer;
@@ -35,12 +35,12 @@ final class ControlWriterTest {
         writer.start();
         Thread active = exchange(writer, "active", PATIENCE, new AtomicReference<>());
         assertTrue(output.entered.await(1, TimeUnit.SECONDS));
-        AtomicReference<TmuxTransportException> queuedFailure = new AtomicReference<>();
+        AtomicReference<DispatchException> queuedFailure = new AtomicReference<>();
         Thread queued = exchange(writer, "queued", PATIENCE, queuedFailure);
         Thread.sleep(100);
 
-        TmuxTransportException refused =
-                assertThrows(TmuxTransportException.class, () -> writer.exchange("refused", Duration.ofMillis(100)));
+        DispatchException refused =
+                assertThrows(DispatchException.class, () -> writer.exchange("refused", Duration.ofMillis(100)));
 
         assertEquals(DispatchOutcome.NOT_DISPATCHED, refused.outcome());
         writer.close();
@@ -53,12 +53,11 @@ final class ControlWriterTest {
 
     @Test
     void aWriteFailureIsUncertainAndEndsTheActor() throws Exception {
-        AtomicReference<TmuxTransportException> actorFailure = new AtomicReference<>();
+        AtomicReference<DispatchException> actorFailure = new AtomicReference<>();
         ControlWriter writer = writer(new FailingWriter(), 1, actorFailure::set);
         writer.start();
 
-        TmuxTransportException failure =
-                assertThrows(TmuxTransportException.class, () -> writer.exchange("command", PATIENCE));
+        DispatchException failure = assertThrows(DispatchException.class, () -> writer.exchange("command", PATIENCE));
 
         assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
         writer.join(1_000);
@@ -72,8 +71,8 @@ final class ControlWriterTest {
         writer.start();
         long started = System.nanoTime();
 
-        TmuxTransportException failure =
-                assertThrows(TmuxTransportException.class, () -> writer.exchange("active", Duration.ofMillis(100)));
+        DispatchException failure =
+                assertThrows(DispatchException.class, () -> writer.exchange("active", Duration.ofMillis(100)));
         long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
 
         assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
@@ -95,7 +94,7 @@ final class ControlWriterTest {
         });
         writer.start();
 
-        assertThrows(TmuxTransportException.class, () -> writer.exchange("active", Duration.ofMillis(100)));
+        assertThrows(DispatchException.class, () -> writer.exchange("active", Duration.ofMillis(100)));
 
         writer.join(1_000);
         assertFalse(closedBeforeCleanup.get(), "the writer closed process input before failure cleanup began");
@@ -106,8 +105,8 @@ final class ControlWriterTest {
         BlockingWriter output = new BlockingWriter();
         ControlWriter writer = writer(output, 1, ignored -> {});
         writer.start();
-        AtomicReference<TmuxTransportException> activeFailure = new AtomicReference<>();
-        AtomicReference<TmuxTransportException> queuedFailure = new AtomicReference<>();
+        AtomicReference<DispatchException> activeFailure = new AtomicReference<>();
+        AtomicReference<DispatchException> queuedFailure = new AtomicReference<>();
         Thread active = exchange(writer, "active", PATIENCE, activeFailure);
         assertTrue(output.entered.await(1, TimeUnit.SECONDS));
         Thread queued = exchange(writer, "queued", PATIENCE, queuedFailure);
@@ -123,7 +122,7 @@ final class ControlWriterTest {
         assertEquals(DispatchOutcome.NOT_DISPATCHED, queuedFailure.get().outcome());
         assertEquals(
                 DispatchOutcome.NOT_DISPATCHED,
-                assertThrows(TmuxTransportException.class, () -> writer.exchange("late", PATIENCE))
+                assertThrows(DispatchException.class, () -> writer.exchange("late", PATIENCE))
                         .outcome());
     }
 
@@ -132,8 +131,8 @@ final class ControlWriterTest {
         BlockingWriter output = new BlockingWriter();
         ControlWriter writer = writer(output, 1, ignored -> {});
         writer.start();
-        AtomicReference<TmuxTransportException> activeFailure = new AtomicReference<>();
-        AtomicReference<TmuxTransportException> queuedFailure = new AtomicReference<>();
+        AtomicReference<DispatchException> activeFailure = new AtomicReference<>();
+        AtomicReference<DispatchException> queuedFailure = new AtomicReference<>();
         Thread active = exchange(writer, "active", PATIENCE, activeFailure);
         assertTrue(output.entered.await(1, TimeUnit.SECONDS));
         Thread queued = exchange(writer, "queued", PATIENCE, queuedFailure);
@@ -163,9 +162,9 @@ final class ControlWriterTest {
         ControlWriter writer = writer(output, 3, ignored -> {});
         holder.set(writer);
         writer.start();
-        AtomicReference<TmuxTransportException> firstFailure = new AtomicReference<>();
-        AtomicReference<TmuxTransportException> secondFailure = new AtomicReference<>();
-        AtomicReference<TmuxTransportException> thirdFailure = new AtomicReference<>();
+        AtomicReference<DispatchException> firstFailure = new AtomicReference<>();
+        AtomicReference<DispatchException> secondFailure = new AtomicReference<>();
+        AtomicReference<DispatchException> thirdFailure = new AtomicReference<>();
         Thread first = exchange(writer, "first", PATIENCE, firstFailure);
         assertTrue(output.firstEntered.await(1, TimeUnit.SECONDS));
         Thread second = exchange(writer, "second", PATIENCE, secondFailure);
@@ -240,12 +239,12 @@ final class ControlWriterTest {
         BlockingWriter output = new BlockingWriter();
         ControlWriter writer = writer(output, 1, ignored -> {});
         writer.start();
-        AtomicReference<TmuxTransportException> failure = new AtomicReference<>();
+        AtomicReference<DispatchException> failure = new AtomicReference<>();
         AtomicReference<Boolean> interrupted = new AtomicReference<>(false);
         Thread request = Thread.ofVirtual().start(() -> {
             try {
                 writer.exchange("active", PATIENCE);
-            } catch (TmuxTransportException e) {
+            } catch (DispatchException e) {
                 failure.set(e);
                 interrupted.set(Thread.currentThread().isInterrupted());
             }
@@ -261,16 +260,16 @@ final class ControlWriterTest {
         assertTrue(interrupted.get());
     }
 
-    private static ControlWriter writer(Writer output, int capacity, Consumer<TmuxTransportException> failed) {
+    private static ControlWriter writer(Writer output, int capacity, Consumer<DispatchException> failed) {
         return new ControlWriter(new BufferedWriter(output), capacity, failed);
     }
 
     private static Thread exchange(
-            ControlWriter writer, String line, Duration timeout, AtomicReference<TmuxTransportException> failure) {
+            ControlWriter writer, String line, Duration timeout, AtomicReference<DispatchException> failure) {
         return Thread.ofVirtual().start(() -> {
             try {
                 writer.exchange(line, timeout);
-            } catch (TmuxTransportException e) {
+            } catch (DispatchException e) {
                 failure.set(e);
             }
         });

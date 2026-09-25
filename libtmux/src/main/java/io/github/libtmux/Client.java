@@ -1,6 +1,8 @@
 package io.github.libtmux;
 
 import com.google.errorprone.annotations.CheckReturnValue;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.snapshot.ClientState;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import java.util.List;
@@ -113,8 +115,8 @@ public final class Client {
      * <p>This handle remains unchanged. Empty means this client detached while the same daemon
      * remained reachable; failed capture still throws.
      *
-     * @throws ObjectDoesNotExistException if a different daemon answers on the endpoint
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws TargetGoneException if a different daemon answers on the endpoint
+     * @throws ServerUnavailableException if no daemon is running
      */
     @CheckReturnValue
     public Optional<Client> refresh() {

@@ -32,7 +32,7 @@ since on the same one. What that costs is measured in
 
 `refresh()` is how to look again. Every live listing, finder and snapshot
 capture throws when it fails. An absent daemon throws
-`ServerNotRunningException`; any other failed capture throws
+`ServerUnavailableException`; any other failed capture throws
 `LibTmuxException`. Empty collections and optionals mean a successful capture
 contained no matches. This changes the earlier alpha behavior that hid failed
 reads behind empty results. Use `isAlive()` when you only need to probe
@@ -122,9 +122,9 @@ var unused = session.rename("effect-only");
 `Client.refresh()` returns an `Optional<Client>` because a client can detach
 while its daemon stays reachable. Empty means that client is gone; a failed
 capture still throws. The other handles' `refresh()` methods return a
-replacement or throw `ObjectDoesNotExistException` when their target is gone
+replacement or throw `TargetGoneException` when their target is gone
 from a server that still answers. An absent daemon throws
-`ServerNotRunningException` there too, like every other read. None changes the
+`ServerUnavailableException` there too, like every other read. None changes the
 previous handle.
 
 `Window.id()` compares the underlying window across links.

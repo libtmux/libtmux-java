@@ -6,10 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.TmuxVersion;
+import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -72,7 +72,7 @@ final class PaneProcessIntegrationTest {
 
         pane.kill();
 
-        assertThrows(ObjectDoesNotExistException.class, pane::dead);
+        assertThrows(TargetGoneException.class, pane::dead);
     }
 
     // -------------------------------------------------------------------------------- expanding

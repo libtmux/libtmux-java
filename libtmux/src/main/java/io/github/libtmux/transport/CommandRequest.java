@@ -62,6 +62,14 @@ public record CommandRequest(
         return new CommandRequest(endpoint, List.of(argv), timeout, input);
     }
 
+    /**
+     * Whether sending this request twice leaves tmux as sending it once does: {@link
+     * Idempotence#IDEMPOTENT} only when every command in it reads.
+     */
+    public Idempotence idempotence() {
+        return Idempotence.of(commands);
+    }
+
     /** The full argv to hand a process builder, encoded for tmux's own argv parser. */
     @ReadOnly
     public List<String> commandLine() {

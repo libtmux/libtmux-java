@@ -5,14 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.LibTmuxException;
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.Session;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.time.Duration;
 import java.util.List;
@@ -98,7 +98,7 @@ final class ServerControlIntegrationTest {
 
         try (Server replacement = Server.open(config)) {
             replacement.newSession("replacement");
-            assertThrows(ObjectDoesNotExistException.class, () -> server.control(session));
+            assertThrows(TargetGoneException.class, () -> server.control(session));
             assertTrue(noClients(replacement), "a refused attach left a client behind");
         }
     }
@@ -154,7 +154,7 @@ final class ServerControlIntegrationTest {
         Session session = server.sessions().get(0);
 
         assertThrows(
-                ObjectDoesNotExistException.class,
+                TargetGoneException.class,
                 () -> ControlClient.attach(server.config(), session.id(), 1, "0.0", Duration.ofSeconds(5)));
 
         assertTrue(
@@ -174,7 +174,7 @@ final class ServerControlIntegrationTest {
                 server.cmd("display-message", "-p", "#{version}").stdout().get(0);
 
         assertThrows(
-                ObjectDoesNotExistException.class,
+                TargetGoneException.class,
                 () -> ControlClient.attach(
                         command -> new ProcessBuilder(command).start(),
                         server.config(),
@@ -252,14 +252,14 @@ final class ServerControlIntegrationTest {
             server.prompt().clear();
             assertTrue(server.isAlive(), "clearing it is not a reason to lose the server");
         } else {
-            UnsupportedTmuxVersionException refused = assertThrows(
-                    UnsupportedTmuxVersionException.class, () -> server.prompt().history());
+            UnsupportedFeatureException refused = assertThrows(
+                    UnsupportedFeatureException.class, () -> server.prompt().history());
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("3.3"),
                     "the refusal names the release that has it: " + refused.getMessage());
             assertThrows(
-                    UnsupportedTmuxVersionException.class, () -> server.prompt().clear());
+                    UnsupportedFeatureException.class, () -> server.prompt().clear());
         }
     }
 

@@ -5,10 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
-import io.github.libtmux.transport.TmuxTimeoutException;
+import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTransport;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -121,7 +122,7 @@ final class PaneWaitTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 Thread.currentThread().interrupt();
-                throw new io.github.libtmux.transport.TmuxTransportException(
+                throw new io.github.libtmux.exception.DispatchException.Failed(
                         "interrupted before dispatch",
                         io.github.libtmux.transport.DispatchOutcome.NOT_DISPATCHED,
                         new InterruptedException());
@@ -370,7 +371,8 @@ final class PaneWaitTest {
         CommandResult capture(Duration deadline) {
             if (captureTakes.compareTo(deadline) > 0) {
                 pause(deadline);
-                throw new TmuxTimeoutException("capture-pane outlived its deadline", null);
+                throw new DispatchException.TimedOut(
+                        "capture-pane outlived its deadline", DispatchOutcome.UNKNOWN, null);
             }
             pause(captureTakes);
             int read = reads.incrementAndGet();

@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.ServerUnavailableException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -74,7 +75,7 @@ public final class Keys {
      * would otherwise do for {@code list-keys}: its tables are compiled in, so it can answer an
      * endpoint nothing serves by serving it.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      */
     @ReadOnly
     public List<String> list() {

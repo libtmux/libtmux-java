@@ -2,12 +2,18 @@ package io.github.libtmux;
 
 import com.google.errorprone.annotations.CheckReturnValue;
 import io.github.libtmux.batch.Batch;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnencodableTextException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.transport.DispatchOutcome;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -125,7 +131,7 @@ public final class Pane {
         try {
             return Path.of(reported);
         } catch (InvalidPathException unrepresentable) {
-            throw new LibTmuxException(
+            throw new UnencodableTextException(
                     "this JVM cannot represent the directory of pane " + state.id()
                             + " as a path; start the JVM in a UTF-8 locale (LC_ALL=C.UTF-8), or read"
                             + " currentPathText()",
@@ -162,19 +168,19 @@ public final class Pane {
      *
      * <p>A dead pane is not necessarily a gone one: {@code remain-on-exit} keeps it around, still
      * listed, to be read. A pane with no {@code remain-on-exit} is simply removed once its process
-     * exits — {@link #refresh()} on this handle then throws {@link ObjectDoesNotExistException}, and
+     * exits — {@link #refresh()} on this handle then throws {@link TargetGoneException}, and
      * this method throws too. Unlike every other command {@code Pane} sends, {@code display-message
      * -t} does not error on a target it cannot resolve — it exits 0 with nothing on stdout — so a
      * gone pane looks like a live one that answered nothing rather than like a failure. That empty
      * read, and not a "can't find pane" from tmux, is what this method throws on: a real pane always
      * answers {@code 0} or {@code 1} for this format, never nothing.
      *
-     * @throws ObjectDoesNotExistException if the pane is gone from a server that still answers
+     * @throws TargetGoneException if the pane is gone from a server that still answers
      */
     public boolean dead() {
         String value = expand("#{pane_dead}");
         if (value.isEmpty()) {
-            throw new ObjectDoesNotExistException("pane " + state.id() + " no longer exists");
+            throw new TargetGoneException("pane " + state.id() + " no longer exists");
         }
         return "1".equals(value);
     }
@@ -280,7 +286,8 @@ public final class Pane {
     public Window window() {
         return snapshot.window(state.context())
                 .map(window -> new Window(server, snapshot, window))
-                .orElseThrow(() -> new LibTmuxException("the capture holds a pane whose window it never saw"));
+                .orElseThrow(
+                        () -> new MalformedResponseException("the capture holds a pane whose window it never saw"));
     }
 
     /** This pane's own hooks. */
@@ -437,7 +444,7 @@ public final class Pane {
      * @param settled receives this pane as it is now
      * @param timeout how long to keep looking
      * @return why the wait ended
-     * @throws ObjectDoesNotExistException if this pane is killed while its server stays up, which is not a
+     * @throws TargetGoneException if this pane is killed while its server stays up, which is not a
      *     timeout
      * @throws InterruptedException if the waiting thread is interrupted
      */
@@ -470,7 +477,7 @@ public final class Pane {
      * }</pre>
      *
      * @param configure receives a builder that reads the visible area and nothing else
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
     @ReadOnly
     public List<String> capture(Consumer<CaptureSpec.Builder> configure) {
@@ -482,7 +489,7 @@ public final class Pane {
     /**
      * Reads part of this pane according to a spec, which may be reused across panes.
      *
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
     @ReadOnly
     public List<String> capture(CaptureSpec spec) {
@@ -630,7 +637,7 @@ public final class Pane {
     }
 
     private static void settleFailure(PaneEcho.Recorded recorded, RuntimeException failure) {
-        if (failure instanceof TmuxTransportException transportFailure
+        if (failure instanceof DispatchException transportFailure
                 && transportFailure.outcome() != DispatchOutcome.NOT_DISPATCHED) {
             recorded.confirm();
         } else {
@@ -776,7 +783,7 @@ public final class Pane {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.window(created)
                 .map(window -> new Window(server, fresh, window))
-                .orElseThrow(() -> new ObjectDoesNotExistException("the window just broken out is already gone"));
+                .orElseThrow(() -> new TargetGoneException("the window just broken out is already gone"));
     }
 
     /**
@@ -798,8 +805,8 @@ public final class Pane {
      *
      * @param configure receives a builder holding tmux's defaults
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
-     * @throws ObjectDoesNotExistException if a command with no {@link SplitSpec.Builder#keepOnExit}
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
+     * @throws TargetGoneException if a command with no {@link SplitSpec.Builder#keepOnExit}
      *     exits before the pane it ran in can be read back — see {@link SplitSpec.Builder#running}.
      *     tmux still made the pane and ran the command; only this confirming read lost the race.
      */
@@ -813,8 +820,8 @@ public final class Pane {
      * Splits this pane according to a spec, which may be reused across panes.
      *
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
-     * @throws ObjectDoesNotExistException if a command with no {@link SplitSpec.Builder#keepOnExit}
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
+     * @throws TargetGoneException if a command with no {@link SplitSpec.Builder#keepOnExit}
      *     exits before the pane it ran in can be read back — see {@link SplitSpec.Builder#running}.
      *     tmux still made the pane and ran the command; only this confirming read lost the race.
      */
@@ -832,7 +839,7 @@ public final class Pane {
     static Pane created(Server server, ServerSnapshot previous, List<String> argv) {
         List<String> reported = server.run(previous, argv).stdout();
         if (reported.isEmpty()) {
-            throw new LibTmuxException("tmux created a pane without reporting which");
+            throw new MalformedResponseException("tmux created a pane without reporting which");
         }
         PaneId id = new PaneId(CREATED.split(reported.get(0)).get(0));
         ServerSnapshot fresh = server.refresh(previous);
@@ -840,7 +847,7 @@ public final class Pane {
                 .filter(pane -> pane.id().equals(id))
                 .findFirst()
                 .map(pane -> new Pane(server, fresh, pane))
-                .orElseThrow(() -> new ObjectDoesNotExistException("the pane just created is already gone"));
+                .orElseThrow(() -> new TargetGoneException("the pane just created is already gone"));
     }
 
     /** The format a creating command reports its new pane through. */
@@ -875,7 +882,7 @@ public final class Pane {
      *
      * @throws IllegalArgumentException if the text contains NUL, which a terminal cannot receive and
      *     {@link #send} refuses too
-     * @throws UnsupportedTmuxVersionException before tmux 3.4, where deleting the buffer left by a failed
+     * @throws UnsupportedFeatureException before tmux 3.4, where deleting the buffer left by a failed
      *     paste can remove one this did not create
      */
     public void paste(String text) {
@@ -887,7 +894,7 @@ public final class Pane {
             }
             TmuxVersion running = server.version(snapshot);
             if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-                throw new UnsupportedTmuxVersionException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
+                throw new UnsupportedFeatureException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
             }
             String buffer = "libtmux-paste-" + UUID.randomUUID();
             // Recorded before dispatch: a wait already watching this pane must never see the pasted
@@ -939,7 +946,7 @@ public final class Pane {
             }
             TmuxVersion running = server.version(snapshot);
             if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-                throw new UnsupportedTmuxVersionException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
+                throw new UnsupportedFeatureException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
             }
             String buffer = "libtmux-paste-" + UUID.randomUUID();
             try {
@@ -1006,8 +1013,8 @@ public final class Pane {
      *
      * <p>This handle remains unchanged. Use the returned handle for subsequent state reads.
      *
-     * @throws ObjectDoesNotExistException if the pane is gone from a server that still answers
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws TargetGoneException if the pane is gone from a server that still answers
+     * @throws ServerUnavailableException if no daemon is running
      */
     @CheckReturnValue
     public Pane refresh() {
@@ -1016,7 +1023,7 @@ public final class Pane {
                 .filter(pane -> pane.id().equals(state.id()))
                 .findFirst()
                 .map(pane -> new Pane(server, fresh, pane))
-                .orElseThrow(() -> new ObjectDoesNotExistException("pane " + state.id() + " no longer exists"));
+                .orElseThrow(() -> new TargetGoneException("pane " + state.id() + " no longer exists"));
     }
 
     @Override

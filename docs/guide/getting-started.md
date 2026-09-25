@@ -106,13 +106,13 @@ choice too: a shell, a command, or nothing at all. tmux rejects a command on an
 empty pane, so no spec can carry both.
 
 Options that arrived in tmux 3.7 — an empty pane, keeping a pane after its
-command exits, per-pane styles — throw `UnsupportedTmuxVersionException` on an
+command exits, per-pane styles — throw `UnsupportedFeatureException` on an
 older server:
 
 ```java
 // Given: Server server, Pane pane
 if (!server.version().atLeast(new TmuxVersion(3, 7, ""))) {
-    assertThrows(UnsupportedTmuxVersionException.class, () -> pane.split(s -> s.empty()));
+    assertThrows(UnsupportedFeatureException.class, () -> pane.split(s -> s.empty()));
 }
 ```
 

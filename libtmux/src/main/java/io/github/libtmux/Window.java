@@ -1,6 +1,11 @@
 package io.github.libtmux;
 
 import com.google.errorprone.annotations.CheckReturnValue;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.snapshot.WindowState;
@@ -111,7 +116,8 @@ public final class Window {
     public Session session() {
         return snapshot.session(state.context().session())
                 .map(session -> new Session(server, snapshot, session))
-                .orElseThrow(() -> new LibTmuxException("the capture holds a window whose session it never saw"));
+                .orElseThrow(
+                        () -> new MalformedResponseException("the capture holds a window whose session it never saw"));
     }
 
     /** This window's own hooks, which every link to it shares. */
@@ -146,7 +152,7 @@ public final class Window {
      *
      * @param configure receives a builder holding tmux's defaults
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
     public Pane split(Consumer<SplitSpec.Builder> configure) {
         SplitSpec.Builder builder = SplitSpec.builder();
@@ -158,7 +164,7 @@ public final class Window {
      * Splits this window's active pane according to a spec, which may be reused across windows.
      *
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
     public Pane split(SplitSpec spec) {
         return Pane.created(server, snapshot, spec.argv(target(), Pane.createdFormat(), server.version(snapshot)));
@@ -277,7 +283,7 @@ public final class Window {
     /**
      * Rearranges this window's panes into one of tmux's built-in layouts.
      *
-     * @throws UnsupportedTmuxVersionException if the layout arrived after the release this server runs
+     * @throws UnsupportedFeatureException if the layout arrived after the release this server runs
      */
     public void selectLayout(Layout layout) {
         Objects.requireNonNull(layout, "layout");
@@ -312,7 +318,7 @@ public final class Window {
      * to match the order the layout was saved in. Confirmed by hand on 3.2a and 3.7c.
      *
      * @throws IllegalArgumentException if the string is not a layout tmux wrote
-     * @throws UnsupportedTmuxVersionException if it is JSON-shaped but this server predates JSON
+     * @throws UnsupportedFeatureException if it is JSON-shaped but this server predates JSON
      *     layouts
      */
     public void applyLayout(WindowLayout layout) {
@@ -324,7 +330,7 @@ public final class Window {
      * As {@link #applyLayout(WindowLayout)}, for a layout held as text — one saved to a file, say.
      *
      * @throws IllegalArgumentException if the string is not a layout tmux wrote
-     * @throws UnsupportedTmuxVersionException if it is JSON-shaped but this server predates JSON
+     * @throws UnsupportedFeatureException if it is JSON-shaped but this server predates JSON
      *     layouts
      */
     public void applyLayout(String layout) {
@@ -361,16 +367,16 @@ public final class Window {
     /**
      * Takes a new capture and returns this winlink as it is now.
      *
-     * @throws ObjectDoesNotExistException if this window is no longer linked here, from a server
+     * @throws TargetGoneException if this window is no longer linked here, from a server
      *     that still answers
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      */
     @CheckReturnValue
     public Window refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.window(state.context())
                 .map(window -> new Window(server, fresh, window))
-                .orElseThrow(() -> new ObjectDoesNotExistException("window " + id() + " no longer exists here"));
+                .orElseThrow(() -> new TargetGoneException("window " + id() + " no longer exists here"));
     }
 
     /** Addresses the underlying window, which every link to it shares. */

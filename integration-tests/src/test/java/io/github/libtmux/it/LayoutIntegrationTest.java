@@ -9,12 +9,12 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.libtmux.Layout;
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowLayout;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -54,8 +54,7 @@ final class LayoutIntegrationTest {
             window.selectLayout(Layout.MAIN_VERTICAL_MIRRORED);
             assertTrue(server.isAlive());
         } else {
-            assertThrows(
-                    UnsupportedTmuxVersionException.class, () -> window.selectLayout(Layout.MAIN_VERTICAL_MIRRORED));
+            assertThrows(UnsupportedFeatureException.class, () -> window.selectLayout(Layout.MAIN_VERTICAL_MIRRORED));
             assertTrue(server.isAlive(), "a refusal must not have reached tmux");
         }
     }
@@ -174,7 +173,7 @@ final class LayoutIntegrationTest {
         assumeTmuxOlderThanJsonLayouts(server);
         Window window = split(server);
 
-        assertThrows(UnsupportedTmuxVersionException.class, () -> window.applyLayout("{}"));
+        assertThrows(UnsupportedFeatureException.class, () -> window.applyLayout("{}"));
 
         assertTrue(server.isAlive(), "a refusal must not have reached tmux");
     }

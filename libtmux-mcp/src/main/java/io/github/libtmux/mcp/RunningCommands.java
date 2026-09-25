@@ -4,8 +4,8 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.PaneCommand;
 import io.github.libtmux.Server;
 import io.github.libtmux.WakeReason;
+import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.transport.DispatchOutcome;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.time.Duration;
 import java.util.List;
 import java.util.OptionalInt;
@@ -101,7 +101,7 @@ final class RunningCommands {
                     requirePosixShell(freshCommand);
                     possiblyDispatched.set(true);
                 });
-            } catch (TmuxTransportException failure) {
+            } catch (DispatchException failure) {
                 if (failure.outcome() == DispatchOutcome.NOT_DISPATCHED) {
                     possiblyDispatched.set(false);
                 }

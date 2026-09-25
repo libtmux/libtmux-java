@@ -1,5 +1,9 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.transport.CommandResult;
 import java.nio.file.Path;
@@ -71,13 +75,13 @@ public final class Buffers {
      * buffer through its file stream, which a second command in the same invocation interrupts.
      * {@link #save} writes the exact bytes.
      *
-     * @throws ObjectDoesNotExistException if the server has no buffer by that name
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws TargetGoneException if the server has no buffer by that name
+     * @throws ServerUnavailableException if no daemon is running
      */
     public String show(String name) {
         CommandResult result = server.cmd(List.of("show-buffer", "-b", name));
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.equals("no buffer " + name))) {
-            throw new ObjectDoesNotExistException("no buffer named '" + name + "'");
+            throw new TargetGoneException("no buffer named '" + name + "'");
         }
         if (!result.succeeded()) {
             throw server.failed("show-buffer", result);
@@ -88,19 +92,19 @@ public final class Buffers {
     /**
      * Removes a buffer by its exact name.
      *
-     * @throws ObjectDoesNotExistException if the server has no buffer by that name
-     * @throws ServerNotRunningException if no daemon is running
-     * @throws UnsupportedTmuxVersionException before tmux 3.4, whose named deletion silently removes the top
+     * @throws TargetGoneException if the server has no buffer by that name
+     * @throws ServerUnavailableException if no daemon is running
+     * @throws UnsupportedFeatureException before tmux 3.4, whose named deletion silently removes the top
      *     buffer when the name is absent
      */
     public void delete(String name) {
         TmuxVersion running = server.version();
         if (!running.atLeast(EXACT_NAMED_DELETE)) {
-            throw new UnsupportedTmuxVersionException("deleting a buffer by exact name", EXACT_NAMED_DELETE, running);
+            throw new UnsupportedFeatureException("deleting a buffer by exact name", EXACT_NAMED_DELETE, running);
         }
         CommandResult result = server.cmd(List.of("delete-buffer", "-b", name));
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.equals("unknown buffer: " + name))) {
-            throw new ObjectDoesNotExistException("no buffer named '" + name + "'");
+            throw new TargetGoneException("no buffer named '" + name + "'");
         }
         if (!result.succeeded()) {
             throw server.failed("delete-buffer", result);
