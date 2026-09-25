@@ -56,6 +56,9 @@ final class OperationBenchmark {
     /** How many commands each transport sends when compared one at a time. */
     private static final int TRANSPORT_ROUNDS = 200;
 
+    /** Sent first and not timed, so the JIT and tmux's own caches settle before a round counts. */
+    private static final int TRANSPORT_WARMUP = 50;
+
     /** The read both transports send: identical argv, so the only difference is how it travels. */
     private static final List<String> TRANSPORT_PROBE = List.of("display-message", "-p", "#{session_name}");
 
@@ -569,6 +572,11 @@ final class OperationBenchmark {
             try {
                 server.newSession("bench");
                 server.windows();
+                for (int round = 0; round < TRANSPORT_WARMUP; round++) {
+                    if (!server.cmd(TRANSPORT_PROBE).succeeded()) {
+                        throw new AssertionError("process warmup failed");
+                    }
+                }
                 long[] nanos = new long[TRANSPORT_ROUNDS];
                 for (int round = 0; round < TRANSPORT_ROUNDS; round++) {
                     long started = System.nanoTime();
@@ -595,6 +603,11 @@ final class OperationBenchmark {
                 Session session = server.newSession("bench");
                 server.windows();
                 try (ControlClient client = server.control(session)) {
+                    for (int round = 0; round < TRANSPORT_WARMUP; round++) {
+                        if (!client.send(TRANSPORT_PROBE).succeeded()) {
+                            throw new AssertionError("control warmup failed");
+                        }
+                    }
                     long[] nanos = new long[TRANSPORT_ROUNDS];
                     for (int round = 0; round < TRANSPORT_ROUNDS; round++) {
                         long started = System.nanoTime();
@@ -735,7 +748,9 @@ final class OperationBenchmark {
         out.append("\n## One command, two transports\n\n")
                 .append("The same read, `display-message -p \"#{session_name}\"`, sent ")
                 .append(TRANSPORT_ROUNDS)
-                .append(" times: once as a `ProcessTransport` dispatch, a fresh tmux process per ")
+                .append(" times after ")
+                .append(TRANSPORT_WARMUP)
+                .append(" untimed: once as a `ProcessTransport` dispatch, a fresh tmux process per ")
                 .append("command, and once as a request over an attached `ControlClient`, which stays ")
                 .append("connected between requests. Nanoseconds, because that is the size of the gap ")
                 .append("a persistent control-mode transport would close.\n\n");
