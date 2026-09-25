@@ -15,6 +15,7 @@ import io.github.libtmux.Window;
 import io.github.libtmux.Window_;
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.ControlReply;
 import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
@@ -27,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -50,6 +52,12 @@ import org.junit.jupiter.api.io.TempDir;
 final class OperationBenchmark {
 
     private static final int ROUNDS = 20;
+
+    /** How many commands each transport sends when compared one at a time. */
+    private static final int TRANSPORT_ROUNDS = 200;
+
+    /** The read both transports send: identical argv, so the only difference is how it travels. */
+    private static final List<String> TRANSPORT_PROBE = List.of("display-message", "-p", "#{session_name}");
 
     /** The tmux the measurements ran against, asked of the running server rather than inferred. */
     private String tmux = "";
@@ -97,6 +105,9 @@ final class OperationBenchmark {
 
     /** One run of a scenario, before the samples are taken together. */
     private record Sample(long millis, int dispatches, String output) {}
+
+    /** One transport's cost for a single command, timed individually rather than as a group. */
+    private record Timed(String label, long medianNanos, long p95Nanos, int commands) {}
 
     @Test
     void writeTheOperationTable(@TempDir Path directory) throws Exception {
@@ -177,16 +188,36 @@ final class OperationBenchmark {
                 measure(directory, "all()", server -> {}, OperationBenchmark::allOptions),
                 measure(directory, "effective()", server -> {}, OperationBenchmark::effectiveOptions));
 
+        Timed process = measureProcessPerCommand(directory);
+        Timed control = measureControlPerCommand(directory);
+
         assertEquals(
                 1,
                 grouping.stream().map(Measured::output).distinct().count(),
                 "grouping the same commands built something different: " + labelled(grouping));
 
+        // The measurement behind keeping the process transport the default: a control client
+        // answering in place has to actually beat spawning tmux, not merely differ from it.
+        assertTrue(
+                control.medianNanos() * 2 < process.medianNanos(),
+                "control did not clearly beat a process per command: control=%dns process=%dns"
+                        .formatted(control.medianNanos(), process.medianNanos()));
+
         // Told where to write rather than guessing from a working directory, which for a Gradle
         // Test task is the module and not the root.
         Path report = Path.of(System.getProperty("libtmux.benchmark.out", "build/operations.md"));
         Files.createDirectories(report.getParent());
-        Files.writeString(report, render(grouping, reading, narrowing, narrowingMany, guarding, waits, options));
+        Files.writeString(
+                report,
+                render(
+                        grouping,
+                        reading,
+                        narrowing,
+                        narrowingMany,
+                        guarding,
+                        waits,
+                        options,
+                        List.of(process, control)));
 
         assertTrue(Files.exists(report), "the benchmark wrote no table");
     }
@@ -488,17 +519,7 @@ final class OperationBenchmark {
 
     Sample once(Path root, String scenario, int sample, Consumer<Server> setUp, Function<Server, String> work)
             throws IOException {
-        Path home = root.resolve(scenario.replace("()", "").replace(' ', '-') + "-" + sample);
-        Files.createDirectories(home);
-        Path config = home.resolve("empty.conf");
-        Files.writeString(config, "");
-        ServerConfig built = ServerConfig.builder()
-                .binary(System.getProperty("libtmux.tmux", "tmux"))
-                .endpoint(ServerEndpoint.socketPath(home.resolve("s")))
-                .configFile(config)
-                .defaultTimeout(Duration.ofSeconds(30))
-                .build();
-
+        ServerConfig built = configFor(root.resolve(scenario.replace("()", "").replace(' ', '-') + "-" + sample));
         Counting counting = new Counting(new ProcessTransport());
         try (Server server = Server.using(built, counting)) {
             try {
@@ -524,6 +545,87 @@ final class OperationBenchmark {
         }
     }
 
+    /** One scenario's isolated server: its own socket and an empty configuration, under {@code home}. */
+    private static ServerConfig configFor(Path home) throws IOException {
+        Files.createDirectories(home);
+        Path config = home.resolve("empty.conf");
+        Files.writeString(config, "");
+        return ServerConfig.builder()
+                .binary(System.getProperty("libtmux.tmux", "tmux"))
+                .endpoint(ServerEndpoint.socketPath(home.resolve("s")))
+                .configFile(config)
+                .defaultTimeout(Duration.ofSeconds(30))
+                .build();
+    }
+
+    // -------------------------------------------------------------------- control vs. process
+
+    /**
+     * Sends {@link #TRANSPORT_PROBE} {@link #TRANSPORT_ROUNDS} times as a fresh tmux process each,
+     * timing each dispatch on its own so the spread is a distribution rather than a single total.
+     */
+    private Timed measureProcessPerCommand(Path root) throws IOException {
+        try (Server server = Server.using(configFor(root.resolve("transport-process")), new ProcessTransport())) {
+            try {
+                server.newSession("bench");
+                server.windows();
+                long[] nanos = new long[TRANSPORT_ROUNDS];
+                for (int round = 0; round < TRANSPORT_ROUNDS; round++) {
+                    long started = System.nanoTime();
+                    CommandResult result = server.cmd(TRANSPORT_PROBE);
+                    nanos[round] = System.nanoTime() - started;
+                    if (!result.succeeded()) {
+                        throw new AssertionError("process probe failed: " + result);
+                    }
+                }
+                return new Timed("process: one command", median(nanos), percentile95(nanos), TRANSPORT_ROUNDS);
+            } finally {
+                server.killServer();
+            }
+        }
+    }
+
+    /**
+     * Sends {@link #TRANSPORT_PROBE} {@link #TRANSPORT_ROUNDS} times over one attached
+     * {@link ControlClient}, opened before timing starts so the attach itself is not counted.
+     */
+    private Timed measureControlPerCommand(Path root) throws IOException {
+        try (Server server = Server.using(configFor(root.resolve("transport-control")), new ProcessTransport())) {
+            try {
+                Session session = server.newSession("bench");
+                server.windows();
+                try (ControlClient client = server.control(session)) {
+                    long[] nanos = new long[TRANSPORT_ROUNDS];
+                    for (int round = 0; round < TRANSPORT_ROUNDS; round++) {
+                        long started = System.nanoTime();
+                        ControlReply reply = client.send(TRANSPORT_PROBE);
+                        nanos[round] = System.nanoTime() - started;
+                        if (!reply.succeeded()) {
+                            throw new AssertionError("control probe failed: " + reply);
+                        }
+                    }
+                    return new Timed(
+                            "control: one command (attached)", median(nanos), percentile95(nanos), TRANSPORT_ROUNDS);
+                }
+            } finally {
+                server.killServer();
+            }
+        }
+    }
+
+    private static long median(long[] values) {
+        long[] sorted = values.clone();
+        Arrays.sort(sorted);
+        return sorted[sorted.length / 2];
+    }
+
+    private static long percentile95(long[] values) {
+        long[] sorted = values.clone();
+        Arrays.sort(sorted);
+        int index = Math.max(0, Math.min(sorted.length - 1, (int) Math.ceil(sorted.length * 0.95) - 1));
+        return sorted[index];
+    }
+
     // --------------------------------------------------------------------------------- the table
 
     private String render(
@@ -533,7 +635,8 @@ final class OperationBenchmark {
             List<Measured> narrowingMany,
             List<Measured> guarding,
             List<Measured> waits,
-            List<Measured> options) {
+            List<Measured> options,
+            List<Timed> transports) {
         StringBuilder out = new StringBuilder();
         out.append("# What an operation costs, measured\n\n")
                 .append("Regenerated by `./gradlew operationBenchmark`. Never edit by hand.\n\n");
@@ -628,6 +731,29 @@ final class OperationBenchmark {
         table(out, "read", options);
         out.append("\nThat is the cost: one option is one command, and a listing is two whatever ")
                 .append("its size, until it outgrows what one command may carry.\n");
+
+        out.append("\n## One command, two transports\n\n")
+                .append("The same read, `display-message -p \"#{session_name}\"`, sent ")
+                .append(TRANSPORT_ROUNDS)
+                .append(" times: once as a `ProcessTransport` dispatch, a fresh tmux process per ")
+                .append("command, and once as a request over an attached `ControlClient`, which stays ")
+                .append("connected between requests. Nanoseconds, because that is the size of the gap ")
+                .append("a persistent control-mode transport would close.\n\n");
+        out.append("| transport | median per command | p95 per command | commands |\n")
+                .append("| --- | --- | --- | --- |\n");
+        for (Timed row : transports) {
+            out.append("| `%s` | %s | %s | %d |%n"
+                    .formatted(row.label(), micros(row.medianNanos()), micros(row.p95Nanos()), row.commands()));
+        }
+        out.append("\nThis justifies keeping the process transport the default and control opt-in; it ")
+                .append("does not justify making a persistent control transport the default, and it does ")
+                .append("not offset what control mode gives up to get there. A control reply is an ")
+                .append("acknowledgement, not a completion — a queued `run-shell` finishes later, off ")
+                .append("this measurement. Standard input has no per-command channel in control mode, so ")
+                .append("`Pane.paste` still needs a process. One control client answers one request at a ")
+                .append("time, so concurrent callers serialize behind it, where the process transport ")
+                .append("runs them at once. An untargeted command sent over control resolves against the ")
+                .append("attached session, not whichever session a caller meant.\n");
         return out.toString();
     }
 
@@ -644,6 +770,10 @@ final class OperationBenchmark {
         return row.low() == row.high()
                 ? "%d ms".formatted(row.millis())
                 : "%d ms (%d-%d)".formatted(row.millis(), row.low(), row.high());
+    }
+
+    private static String micros(long nanos) {
+        return "%.1f µs".formatted(nanos / 1000.0);
     }
 
     // ----------------------------------------------------------------------------- environment
