@@ -93,12 +93,18 @@ tmux still answers that request in order, and every other caller and
 subscription is unaffected. Cancelling one coroutine or fiber on a shared
 client is therefore safe.
 
-A subscription is read by one thread at a time. Concurrent readers of `next()`
-would split its events between them, so each consuming form takes it whole:
-`stream()` closes the subscription with the stream, `publisher()` refuses a second
-subscriber and reads only as fast as its subscriber requests, Kotlin's
-`deliveries()` refuses a second collector, and Scala's `Observation.stream`
-refuses a second one at the same time. Each subscription
+A subscription has one reader. Reads from different threads one after another
+are fine, as a coroutine or fiber moves between threads, but a read that
+overlaps another is refused with `IllegalStateException`: two readers would
+split one sequence and its gaps between them. `stream()` and `publisher()` take
+the subscription whole, so any other read after them is refused too. For a
+second reader, subscribe again; each subscription gets every event.
+
+`next()` blocks a thread while nothing arrives. `poll()` never blocks, and
+`onReady(Runnable)` arms a one-shot wakeup for when something is readable or
+the subscription ends, so a coroutine or event loop reads without holding a
+thread. The callback runs on the client's reader thread and must only wake the
+reader. Each subscription
 buffers a fixed number of events; one that falls behind loses the oldest and
 reads a `Delivery.Gap` saying how many. [Streaming](streaming.md) has the rest.
 
