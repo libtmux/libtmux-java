@@ -17,9 +17,9 @@ The same 20 windows, asked for three ways. This is the whole of the answer to pe
 
 | strategy | wall clock | commands dispatched |
 | --- | --- | --- |
-| `one-at-a-time` | 686 ms (648-724) | 64 |
-| `batch` | 121 ms (95-137) | 5 |
-| `chain` | 135 ms (101-139) | 5 |
+| `one-at-a-time` | 529 ms (502-534) | 64 |
+| `batch` | 81 ms (69-100) | 5 |
+| `chain` | 77 ms (75-102) | 5 |
 
 Every row pays the same four commands for the handle it starts from and the count it ends with, so the ratio between them understates what grouping saves: the work itself is 60 commands against one.
 
@@ -29,8 +29,8 @@ Every row pays the same four commands for the handle it starts from and the coun
 
 | read | wall clock | commands dispatched |
 | --- | --- | --- |
-| `traversal` | 237 ms (226-330) | 40 |
-| `snapshot` | 233 ms (211-262) | 40 |
+| `traversal` | 150 ms (135-168) | 40 |
+| `snapshot` | 128 ms (126-129) | 40 |
 
 ## Narrow reads
 
@@ -38,21 +38,21 @@ Five sessions, one wanted. A lookup by name, by pane id, or by a filter tmux can
 
 | read | wall clock | commands dispatched |
 | --- | --- | --- |
-| `snapshot() then find` | 161 ms (160-182) | 40 |
-| `session(name)` | 112 ms (104-120) | 40 |
-| `sessions(filter), two match` | 130 ms (112-137) | 40 |
-| `snapshot() then find pane` | 135 ms (124-156) | 40 |
-| `pane(id)` | 117 ms (113-143) | 40 |
+| `snapshot() then find` | 152 ms (150-168) | 40 |
+| `session(name)` | 144 ms (116-144) | 40 |
+| `sessions(filter), two match` | 142 ms (126-173) | 40 |
+| `snapshot() then find pane` | 125 ms (116-128) | 40 |
+| `pane(id)` | 116 ms (102-120) | 40 |
 
 The same reads against fifty sessions of three windows each. The commands do not change; what a whole-server read pays for is the rows.
 
 | read | wall clock | commands dispatched |
 | --- | --- | --- |
-| `snapshot() then find (50)` | 1079 ms (943-1396) | 40 |
-| `session(name) (50)` | 777 ms (722-993) | 40 |
-| `sessions(filter), two match (50)` | 791 ms (756-907) | 40 |
-| `snapshot() then find pane (50)` | 1122 ms (860-1272) | 40 |
-| `pane(id) (50)` | 1017 ms (871-1025) | 40 |
+| `snapshot() then find (50)` | 1076 ms (921-1129) | 40 |
+| `session(name) (50)` | 649 ms (619-727) | 40 |
+| `sessions(filter), two match (50)` | 326 ms (310-845) | 40 |
+| `snapshot() then find pane (50)` | 1163 ms (568-1302) | 40 |
+| `pane(id) (50)` | 940 ms (418-962) | 40 |
 
 ## What the staleness guard costs
 
@@ -60,8 +60,8 @@ A handle fences every command it sends behind `if-shell -F`, so that a handle ca
 
 | command | wall clock | commands dispatched |
 | --- | --- | --- |
-| `unguarded` | 138 ms (130-149) | 22 |
-| `guarded` | 161 ms (151-162) | 22 |
+| `unguarded` | 150 ms (123-168) | 22 |
+| `guarded` | 159 ms (140-167) | 22 |
 
 The guard rides inside the one command it fences, so it costs no further process. What it adds is bytes, against the 16384 a tmux command may carry.
 
@@ -71,9 +71,9 @@ The same command, waited on three ways, 5 times: it prints a marker 200 ms after
 
 | wait | wall clock | added per wait | commands dispatched |
 | --- | --- | --- | --- |
-| `poll: awaitText` | 1264 ms (1260-1301) | 52 ms | 37 |
-| `push: control %output` | 1127 ms (1102-1168) | 25 ms | 15 |
-| `signal: Pane.run` | 1173 ms (1150-1212) | 34 ms | 32 |
+| `poll: awaitText` | 1249 ms (1220-1279) | 49 ms | 37 |
+| `push: control %output` | 1103 ms (1089-1104) | 20 ms | 15 |
+| `signal: Pane.run` | 1212 ms (1207-1263) | 42 ms | 32 |
 
 Three different costs, not one ranking. A poll spends a tmux process every 50 ms, so its count grows with how long it waits, and it notices up to one interval late. A push pays once to attach a control client — not in the count, and most of its added time over so few waits — and after that is told as output arrives, so its count is only the commands typed. `Pane.run` pays a fixed handful per command whatever the command's length: reading the pane, the wait, reading the output back, and the three tmux calls the pane's shell makes to report the end. In return it is the only one of the three that knows the command ended, and with what status.
 
@@ -83,9 +83,9 @@ A listed value is escaped for display, and how it is escaped changes between rel
 
 | read | wall clock | commands dispatched |
 | --- | --- | --- |
-| `one option` | 77 ms (65-79) | 20 |
-| `all()` | 246 ms (202-251) | 40 |
-| `effective()` | 246 ms (221-249) | 40 |
+| `one option` | 92 ms (80-117) | 20 |
+| `all()` | 301 ms (258-310) | 40 |
+| `effective()` | 271 ms (265-281) | 40 |
 
 That is the cost: one option is one command, and a listing is two whatever its size, until it outgrows what one command may carry.
 
@@ -95,7 +95,11 @@ The same read, `display-message -p "#{session_name}"`, sent 200 times: once as a
 
 | transport | median per command | p95 per command | commands |
 | --- | --- | --- | --- |
-| `process: one command` | 4164.9 µs | 7948.0 µs | 200 |
-| `control: one command (attached)` | 447.3 µs | 755.8 µs | 200 |
+| `process: one command` | 4064.6 µs | 6828.6 µs | 200 |
+| `control: one command (attached)` | 109.7 µs | 515.1 µs | 200 |
 
 This justifies keeping the process transport the default and control opt-in; it does not justify making a persistent control transport the default, and it does not offset what control mode gives up to get there. A control reply is an acknowledgement, not a completion — a queued `run-shell` finishes later, off this measurement. Standard input has no per-command channel in control mode, so `Pane.paste` still needs a process. One control client answers one request at a time, so concurrent callers serialize behind it, where the process transport runs them at once. An untargeted command sent over control resolves against the attached session, not whichever session a caller meant.
+
+## What this does not measure
+
+Not measured here: MCP tool call overhead, and FS2 stream throughput through the Cats Effect facade. Neither has an existing harness to extend — this file times a `Server` against real tmux, not a running MCP session or a bounded stream — and building one is its own project rather than an addition to this one.
