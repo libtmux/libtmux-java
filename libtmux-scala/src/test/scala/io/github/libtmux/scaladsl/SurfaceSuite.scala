@@ -9,9 +9,9 @@ import scala.jdk.CollectionConverters._
   *
   * Read from the compiled classes, not the sources, so an overload counts: each
   * Java form of a wrapped method needs a Scala form taking the same arguments,
-  * directly or through default arguments, or its own line in the omissions.
-  * The signatures themselves are frozen by `ApiManifestSuite`, in the Cats
-  * module's tests, which checks this module as `core` against
+  * directly or through default arguments, or its own line in the omissions. The
+  * signatures themselves are frozen by `ApiManifestSuite`, in the Cats module's
+  * tests, which checks this module as `core` against
   * `libtmux-scala/api/core-*.api`.
   */
 final class SurfaceSuite extends FunSuite {
