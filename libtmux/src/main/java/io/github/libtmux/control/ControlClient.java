@@ -561,7 +561,11 @@ public final class ControlClient implements AutoCloseable {
 
     private void handleNotification(String line, byte[] bytes) {
         if (line.startsWith("%output ")) {
-            publish(bytes);
+            publish(bytes, "%output ".length());
+        } else if (line.startsWith("%extended-output ")) {
+            // What %output becomes once this client turns on tmux's flow control, pause-after:
+            // the pane, how long the output waited, then the same escaped bytes after " : ".
+            publish(bytes, "%extended-output ".length());
         } else if (line.startsWith("%")) {
             // Everything else tmux volunteers about its own state. A snapshot is still how state
             // is read; this only says when reading it again would be worth the trouble.
@@ -585,20 +589,30 @@ public final class ControlClient implements AutoCloseable {
      * One piece of a pane's output. tmux cuts pieces by byte count, so each pane's text is decoded
      * as one stream, and a character cut between two pieces arrives whole with the later one.
      */
-    private void publish(byte[] line) {
-        int start = "%output ".length();
+    private void publish(byte[] line, int start) {
         int paneEnd = start;
         while (paneEnd < line.length && line[paneEnd] != ' ') {
             paneEnd++;
         }
-        if (paneEnd == line.length) {
+        int data = start == "%output ".length() ? paneEnd + 1 : separatorEnd(line, paneEnd);
+        if (paneEnd == line.length || data > line.length) {
             return;
         }
         PaneId pane = new PaneId(new String(line, start, paneEnd - start, StandardCharsets.US_ASCII));
-        byte[] piece = unescape(line, paneEnd + 1);
+        byte[] piece = unescape(line, data);
         String text =
                 paneText.computeIfAbsent(pane, ignored -> new Utf8.Stream()).decode(piece);
         offer(outputSubscriptions, new PaneOutput(pane, text, ByteBuffer.wrap(piece)));
+    }
+
+    /** Where the bytes after the first {@code " : "} from {@code from} begin, or past the end. */
+    private static int separatorEnd(byte[] line, int from) {
+        for (int index = from; index + 2 < line.length; index++) {
+            if (line[index] == ' ' && line[index + 1] == ':' && line[index + 2] == ' ') {
+                return index + 3;
+            }
+        }
+        return line.length + 1;
     }
 
     private <T> EventSubscription<T> subscribe(List<EventSubscription<T>> subscriptions, int capacity) {
