@@ -35,6 +35,13 @@ final class AbandonedServerTest {
         return directory.resolve("s");
     }
 
+    /** Names a directory the way a JVM with a start instant does: pid, then start instant, then a suffix. */
+    private static Path socketFor(Path root, long owner, long startMillis) throws IOException {
+        Path directory =
+                Files.createDirectory(root.resolve("libtmux-" + owner + "-" + startMillis + "-" + System.nanoTime()));
+        return directory.resolve("s");
+    }
+
     private static void startServer(Path socket) throws Exception {
         Path config = socket.resolveSibling("tmux.conf");
         Files.writeString(config, "");
@@ -154,6 +161,34 @@ final class AbandonedServerTest {
 
             assertEquals(0, reaped);
             assertTrue(alive(socket), "this JVM is still running, so this server is still owned");
+        } finally {
+            cleanup(root, socket);
+        }
+    }
+
+    /**
+     * The pid alone is not proof of ownership: this JVM is alive, but a directory that recorded a
+     * different start instant for it names a process that already exited and whose pid this one
+     * only happens to now hold.
+     */
+    @Test
+    void aServerWhoseOwnerPidWasReusedIsReaped() throws Exception {
+        Path root = testRoot();
+        long thisPid = ProcessHandle.current().pid();
+        long thisStart = ProcessHandle.current()
+                .info()
+                .startInstant()
+                .orElseThrow(() -> new AssertionError("this platform reports no start instant"))
+                .toEpochMilli();
+        Path socket = socketFor(root, thisPid, thisStart - 1);
+        try {
+            startServer(socket);
+            assertTrue(alive(socket), "the fixture for this test must actually be running");
+
+            int reaped = TmuxExtension.reapAbandoned(root);
+
+            assertEquals(1, reaped);
+            assertFalse(alive(socket), "a directory naming a stale start instant for a live pid must be reaped");
         } finally {
             cleanup(root, socket);
         }

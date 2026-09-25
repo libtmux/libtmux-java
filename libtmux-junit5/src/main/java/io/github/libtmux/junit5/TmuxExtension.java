@@ -55,9 +55,26 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
      * The directory a fixture is made in names the JVM that made it, which is the only durable record
      * of who owns the server inside. A registry cannot serve: the run that most needs reaping is the
      * one that was killed before it could write anything down.
+     *
+     * <p>The pid alone is not a stable owner: the OS recycles pids, and a fixture directory left by a
+     * killed JVM can end up named for a pid a later, unrelated process now holds. The owning JVM's
+     * start instant rules that out, so it rides along whenever the platform reports one.
      */
-    private static final String PREFIX = "libtmux-" + ProcessHandle.current().pid() + "-";
+    private static final String PREFIX = prefix();
 
+    private static String prefix() {
+        ProcessHandle current = ProcessHandle.current();
+        String startSuffix = current.info()
+                .startInstant()
+                .map(instant -> "-" + instant.toEpochMilli())
+                .orElse("");
+        return "libtmux-" + current.pid() + startSuffix + "-";
+    }
+
+    /** pid and start instant, the current naming. */
+    private static final Pattern OWNER_WITH_START = Pattern.compile("libtmux-(\\d+)-(\\d+)-.*");
+
+    /** pid alone, written by a version of this extension that predates {@link #OWNER_WITH_START}. */
     private static final Pattern OWNER = Pattern.compile("libtmux-(\\d+)-.*");
 
     /** Every fixture this JVM currently holds a server for, so the shutdown hook knows what to end. */
@@ -155,18 +172,42 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
 
     private static final String[] NO_ARGUMENTS = {};
 
-    /** A reused pid can only spare an abandoned server, never condemn a live one. */
+    /** A reused pid, or one whose live process started at a different instant, cannot spare this directory. */
     private static Optional<Path> abandonedDirectory(Path socket, Path root) {
         Path directory = socket.getParent();
         if (directory == null || !socket.startsWith(root)) {
             return Optional.empty();
         }
-        Matcher named = OWNER.matcher(directory.getFileName().toString());
+        String name = directory.getFileName().toString();
+        Matcher withStart = OWNER_WITH_START.matcher(name);
+        if (withStart.matches()) {
+            long pid = Long.parseLong(withStart.group(1));
+            long recordedStartMillis = Long.parseLong(withStart.group(2));
+            return ownerChanged(pid, recordedStartMillis) ? Optional.of(directory) : Optional.empty();
+        }
+        Matcher named = OWNER.matcher(name);
         if (!named.matches()) {
             // Something else's socket, or one from before this scheme. Not this sweep's to judge.
             return Optional.empty();
         }
         return ProcessHandle.of(Long.parseLong(named.group(1))).isEmpty() ? Optional.of(directory) : Optional.empty();
+    }
+
+    /**
+     * True when the pid is free, or a live process holds it but did not start at the instant this
+     * directory recorded. A live process that reports no start instant is trusted rather than reaped:
+     * this platform cannot tell a reused pid from the one that made the directory.
+     */
+    private static boolean ownerChanged(long pid, long recordedStartMillis) {
+        Optional<ProcessHandle> live = ProcessHandle.of(pid);
+        if (live.isEmpty()) {
+            return true;
+        }
+        return live.get()
+                .info()
+                .startInstant()
+                .map(instant -> instant.toEpochMilli() != recordedStartMillis)
+                .orElse(false);
     }
 
     private record AbandonedServer(ProcessHandle process, Path directory) {}
