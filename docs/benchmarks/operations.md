@@ -17,9 +17,9 @@ The same 20 windows, asked for three ways. This is the whole of the answer to pe
 
 | strategy | wall clock | commands dispatched |
 | --- | --- | --- |
-| `one-at-a-time` | 323 ms (302-341) | 64 |
-| `batch` | 47 ms (44-58) | 5 |
-| `chain` | 65 ms (52-72) | 5 |
+| `one-at-a-time` | 320 ms (313-352) | 64 |
+| `batch` | 59 ms (54-62) | 5 |
+| `chain` | 62 ms (47-76) | 5 |
 
 Every row pays the same four commands for the handle it starts from and the count it ends with, so the ratio between them understates what grouping saves: the work itself is 60 commands against one.
 
@@ -29,8 +29,8 @@ Every row pays the same four commands for the handle it starts from and the coun
 
 | read | wall clock | commands dispatched |
 | --- | --- | --- |
-| `traversal` | 94 ms (91-98) | 40 |
-| `snapshot` | 91 ms (89-93) | 40 |
+| `traversal` | 94 ms (93-97) | 40 |
+| `snapshot` | 95 ms (92-98) | 40 |
 
 ## Narrow reads
 
@@ -38,21 +38,21 @@ Five sessions, one wanted. A lookup by name, by pane id, or by a filter tmux can
 
 | read | wall clock | commands dispatched |
 | --- | --- | --- |
-| `snapshot() then find` | 98 ms (94-102) | 40 |
-| `session(name)` | 97 ms (94-97) | 40 |
-| `sessions(filter), two match` | 94 ms (90-102) | 40 |
-| `snapshot() then find pane` | 98 ms (97-99) | 40 |
-| `pane(id)` | 93 ms (88-97) | 40 |
+| `snapshot() then find` | 96 ms (95-97) | 40 |
+| `session(name)` | 94 ms (93-103) | 40 |
+| `sessions(filter), two match` | 96 ms (89-100) | 40 |
+| `snapshot() then find pane` | 97 ms (96-100) | 40 |
+| `pane(id)` | 93 ms (91-95) | 40 |
 
 The same reads against fifty sessions of three windows each. The commands do not change; what a whole-server read pays for is the rows.
 
 | read | wall clock | commands dispatched |
 | --- | --- | --- |
-| `snapshot() then find (50)` | 586 ms (584-599) | 40 |
-| `session(name) (50)` | 438 ms (391-460) | 40 |
-| `sessions(filter), two match (50)` | 427 ms (425-450) | 40 |
-| `snapshot() then find pane (50)` | 577 ms (550-617) | 40 |
-| `pane(id) (50)` | 483 ms (387-545) | 40 |
+| `snapshot() then find (50)` | 330 ms (259-580) | 40 |
+| `session(name) (50)` | 370 ms (152-555) | 40 |
+| `sessions(filter), two match (50)` | 428 ms (400-479) | 40 |
+| `snapshot() then find pane (50)` | 576 ms (531-602) | 40 |
+| `pane(id) (50)` | 514 ms (426-522) | 40 |
 
 ## What the staleness guard costs
 
@@ -60,8 +60,8 @@ A handle fences every command it sends behind `if-shell -F`, so that a handle ca
 
 | command | wall clock | commands dispatched |
 | --- | --- | --- |
-| `unguarded` | 49 ms (49-52) | 22 |
-| `guarded` | 48 ms (47-50) | 22 |
+| `unguarded` | 47 ms (45-49) | 22 |
+| `guarded` | 46 ms (46-47) | 22 |
 
 The guard rides inside the one command it fences, so it costs no further process. What it adds is bytes, against the 16384 a tmux command may carry.
 
@@ -71,9 +71,9 @@ The same command, waited on three ways, 5 times: it prints a marker 200 ms after
 
 | wait | wall clock | added per wait | commands dispatched |
 | --- | --- | --- | --- |
-| `poll: awaitText` | 1092 ms (1092-1094) | 18 ms | 37 |
-| `push: control %output` | 1055 ms (1054-1061) | 11 ms | 15 |
-| `signal: Pane.run` | 1087 ms (1086-1094) | 17 ms | 32 |
+| `poll: awaitText` | 1098 ms (1096-1102) | 19 ms | 37 |
+| `push: control %output` | 1060 ms (1058-1063) | 12 ms | 15 |
+| `signal: Pane.run` | 1091 ms (1086-1097) | 18 ms | 32 |
 
 Three different costs, not one ranking. A poll spends a tmux process every 50 ms, so its count grows with how long it waits, and it notices up to one interval late. A push pays once to attach a control client — not in the count, and most of its added time over so few waits — and after that is told as output arrives, so its count is only the commands typed. `Pane.run` pays a fixed handful per command whatever the command's length: reading the pane, the wait, reading the output back, and the three tmux calls the pane's shell makes to report the end. In return it is the only one of the three that knows the command ended, and with what status.
 
@@ -83,20 +83,20 @@ A listed value is escaped for display, and how it is escaped changes between rel
 
 | read | wall clock | commands dispatched |
 | --- | --- | --- |
-| `one option` | 37 ms (36-38) | 20 |
-| `all()` | 125 ms (122-128) | 40 |
-| `effective()` | 125 ms (121-125) | 40 |
+| `one option` | 37 ms (36-39) | 20 |
+| `all()` | 124 ms (121-124) | 40 |
+| `effective()` | 124 ms (120-130) | 40 |
 
 That is the cost: one option is one command, and a listing is two whatever its size, until it outgrows what one command may carry.
 
 ## One command, two transports
 
-The same read, `display-message -p "#{session_name}"`, sent 200 times: once as a `ProcessTransport` dispatch, a fresh tmux process per command, and once as a request over an attached `ControlClient`, which stays connected between requests. Nanoseconds, because that is the size of the gap a persistent control-mode transport would close.
+The same read, `display-message -p "#{session_name}"`, sent 200 times after 50 untimed: once as a `ProcessTransport` dispatch, a fresh tmux process per command, and once as a request over an attached `ControlClient`, which stays connected between requests. Nanoseconds, because that is the size of the gap a persistent control-mode transport would close.
 
 | transport | median per command | p95 per command | commands |
 | --- | --- | --- | --- |
-| `process: one command` | 1776.7 µs | 2002.2 µs | 200 |
-| `control: one command (attached)` | 192.1 µs | 294.7 µs | 200 |
+| `process: one command` | 1788.0 µs | 2039.1 µs | 200 |
+| `control: one command (attached)` | 164.7 µs | 245.7 µs | 200 |
 
 This justifies keeping the process transport the default and control opt-in; it does not justify making a persistent control transport the default, and it does not offset what control mode gives up to get there. A control reply is an acknowledgement, not a completion — a queued `run-shell` finishes later, off this measurement. Standard input has no per-command channel in control mode, so `Pane.paste` still needs a process. One control client answers one request at a time, so concurrent callers serialize behind it, where the process transport runs them at once. An untargeted command sent over control resolves against the attached session, not whichever session a caller meant.
 
