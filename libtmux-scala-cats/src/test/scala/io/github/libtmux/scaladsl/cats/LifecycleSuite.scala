@@ -176,6 +176,68 @@ final class LifecycleSuite extends FunSuite {
   }
 
   test(
+    "canceling a call queued on the permit never dispatches and does not leak it"
+  ) {
+    val transport = new Transport
+    val java = JavaServer.using(config, transport)
+    Server
+      .fromJava[IO](java, maxConcurrentCalls = 1)
+      .use { server =>
+        for {
+          holder <- server.cmd(Vector("block")).start
+          _ <- event(transport.entered)
+          queued <- server.cmd(Vector("queued")).start
+          // The sole permit is held by "holder", so "queued" has nowhere to run
+          // except blocked acquiring it. A short race against its own join,
+          // rather than a bare sleep, turns that into an assertion instead of
+          // an assumption.
+          stillQueued <- IO
+            .race(queued.join, IO.sleep(200.millis))
+            .map(_.isRight)
+          _ <- IO(
+            assert(
+              stillQueued,
+              "expected the second call to queue on the permit"
+            )
+          )
+          canceled <- (queued.cancel *> queued.join).timeout(500.millis)
+          _ <- IO {
+            assert(canceled.isCanceled, canceled.toString)
+            assertEquals(transport.calls.get(), 1)
+          }
+          _ <- IO(transport.release.countDown())
+          _ <- holder.joinWithNever
+          sibling <- server.cmd(Vector("sibling"))
+          _ <- IO(assertEquals(sibling.stdout, Vector("2")))
+        } yield ()
+      }
+      .timeout(1.second)
+      .unsafeToFuture()
+  }
+
+  test(
+    "canceling a running call interrupts it and frees its permit for a sibling"
+  ) {
+    val transport = new Transport
+    val java = JavaServer.using(config, transport)
+    Server
+      .fromJava[IO](java, maxConcurrentCalls = 1)
+      .use { server =>
+        for {
+          running <- server.cmd(Vector("block")).start
+          _ <- event(transport.entered)
+          outcome <- (running.cancel *> running.join).timeout(500.millis)
+          _ <- IO(assert(outcome.isCanceled, outcome.toString))
+          _ <- event(transport.interrupted)
+          sibling <- server.cmd(Vector("sibling"))
+          _ <- IO(assertEquals(sibling.stdout, Vector("2")))
+        } yield ()
+      }
+      .timeout(1.second)
+      .unsafeToFuture()
+  }
+
+  test(
     "resource release cancels escaped operations before closing the facade"
   ) {
     val transport = new Transport
