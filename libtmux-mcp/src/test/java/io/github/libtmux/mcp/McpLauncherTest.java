@@ -159,6 +159,12 @@ final class McpLauncherTest {
             assertTrue(instructions.contains("snapshot_pane"), "a model has to be told the combined pane read");
             assertTrue(instructions.contains("Do NOT use them for browser tabs"), "anti-triggers must be stated");
             assertTrue(instructions.contains("Tool filtering"), "the interface boundary must be stated");
+            assertTrue(
+                    instructions.contains("call_read_tools_batch") && instructions.contains("send_keys_batch"),
+                    "the batch tools must be pointed to: " + instructions);
+            assertTrue(
+                    instructions.contains("command") && instructions.contains("no filter"),
+                    "list_panes has no filter, and its command field is how to find a pane: " + instructions);
         }
     }
 

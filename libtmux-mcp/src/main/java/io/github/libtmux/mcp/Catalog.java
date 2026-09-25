@@ -194,7 +194,8 @@ final class Catalog {
         tools.add(tool(
                 "list_panes",
                 "List panes",
-                "Lists pane metadata and stable pane IDs.",
+                "Lists pane metadata and stable pane IDs. No filter; use the 'command' field to find"
+                        + " a pane by what it runs.",
                 INSPECT,
                 NONE,
                 effects(OBSERVE),
