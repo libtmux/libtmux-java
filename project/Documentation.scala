@@ -54,8 +54,12 @@ object Documentation {
             path: Path,
             attributes: BasicFileAttributes
         ): FileVisitResult =
-          if (path != root.toPath && ignored(path.getFileName.toString))
-            FileVisitResult.SKIP_SUBTREE
+          // A directory with its own .git is another checkout, such as a
+          // worktree nested here; its documents repeat this one's ids.
+          if (
+            path != root.toPath && (ignored(path.getFileName.toString) ||
+              Files.exists(path.resolve(".git")))
+          ) FileVisitResult.SKIP_SUBTREE
           else FileVisitResult.CONTINUE
 
         override def visitFile(
@@ -300,7 +304,7 @@ private[docs] object DocumentationRuntime {
     val found = Vector.newBuilder[java.nio.file.Path]
     java.nio.file.Files.walkFileTree(root, new java.nio.file.SimpleFileVisitor[java.nio.file.Path] {
       override def preVisitDirectory(path: java.nio.file.Path, attributes: java.nio.file.attribute.BasicFileAttributes): java.nio.file.FileVisitResult =
-        if (path != root && ignored(path.getFileName.toString)) java.nio.file.FileVisitResult.SKIP_SUBTREE
+        if (path != root && (ignored(path.getFileName.toString) || java.nio.file.Files.exists(path.resolve(".git")))) java.nio.file.FileVisitResult.SKIP_SUBTREE
         else java.nio.file.FileVisitResult.CONTINUE
       override def visitFile(path: java.nio.file.Path, attributes: java.nio.file.attribute.BasicFileAttributes): java.nio.file.FileVisitResult = {
         if (attributes.isRegularFile && path.getFileName.toString.endsWith(".md")) found += path
