@@ -17,14 +17,18 @@ import org.junit.jupiter.api.extension.ExtendWith;
  * <p>A process command hands tmux an argument vector; a control client writes one line that tmux
  * parses back into words. Each seeded value is written to a user option and read back by name, as
  * a format, and from the listing, so a value that loses or gains a character on the way in or out
- * fails with the value named. tmux 3.4 escapes a {@code $} in everything it prints, which is what
- * this found first. Control characters are
- * left out: tmux escapes them on the way in, which the name lookups already account for.
+ * fails with the value named, including a {@code $}, which tmux 3.4 escapes in everything it prints,
+ * and a trailing line break. Buffers go the same two ways, compared without trailing line breaks,
+ * which {@code Buffers.show} documents it cannot keep.
+ *
+ * <p>Control characters are in the alphabet but a carriage return is not: every read decodes tmux's
+ * output with universal newlines, as Python libtmux does, so a lone {@code \r} reads back as a line
+ * break on every path.
  */
 @ExtendWith(TmuxExtension.class)
 final class QuotingPropertyIntegrationTest {
 
-    private static final String ALPHABET = "abcXYZ019 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~é中😀";
+    private static final String ALPHABET = "\t\n\u0001\u001b\u007fabcXYZ019 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~é中😀";
 
     @Test
     void aValueSurvivesTheArgumentVectorAndTheControlLine(Server server) {
@@ -49,6 +53,18 @@ final class QuotingPropertyIntegrationTest {
                 String viaLine = server.globalOptions().get("@line").orElse("<unset>");
                 if (!viaLine.equals(value)) {
                     lost.add("line " + quoted(value) + " -> " + quoted(viaLine));
+                }
+
+                server.buffers().set("vector", value);
+                String viaBuffer = server.buffers().show("vector");
+                String inBuffer = value.replaceAll("\n+$", "");
+                if (!viaBuffer.equals(inBuffer)) {
+                    lost.add("buffer " + quoted(value) + " -> " + quoted(viaBuffer));
+                }
+                client.send(List.of("set-buffer", "-b", "line", "--", value));
+                String viaLineBuffer = server.buffers().show("line");
+                if (!viaLineBuffer.equals(inBuffer)) {
+                    lost.add("line buffer " + quoted(value) + " -> " + quoted(viaLineBuffer));
                 }
             }
         }

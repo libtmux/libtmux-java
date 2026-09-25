@@ -810,7 +810,7 @@ public final class Pane {
         Objects.requireNonNull(format, "format");
         return Server.printed(server.run(
                         snapshot,
-                        List.of("display-message", "-p", "-t", state.id().value(), "--", Server.versioned(format)))
+                        List.of("display-message", "-p", "-t", state.id().value(), "--", Server.expansion(format)))
                 .stdout());
     }
 
