@@ -8,6 +8,16 @@ API changes that require updates to calling code are recorded here. See
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### `Notification` has four more cases
+
+api-break: Notification
+
+`Notification.Pause`, `Continue`, `Message`, and `ConfigError` join the sealed
+set. A `switch` over `Notification` with no `default` no longer compiles until
+it handles them; one with a `default`, or that matches `Unknown` for
+everything else, is unaffected, though those four no longer arrive as
+`Unknown`.
+
 ### Kotlin reads core collections as read-only
 
 A list, set, or map the core returns is a Kotlin `List`, `Set`, or `Map`. Code
