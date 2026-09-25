@@ -462,6 +462,11 @@ every guide, benchmark, spike, and study, one line each.
 Whole runnable programs live in [`examples/`](examples/), and the suite there runs
 every one of them against a real tmux.
 
+The Scala facade's runnable programs are in
+[`libtmux-scala/examples/`](libtmux-scala/examples/): blocking workspace
+operations, bounded concurrent capture, notification loss and reconciliation,
+and Cats Effect resource ownership and cancellation.
+
 The design is recorded under `docs/spikes/`. Each note carries the measurements
 behind the decision it records, including the ones that overturned an earlier
 choice.
