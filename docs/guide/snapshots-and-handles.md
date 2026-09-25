@@ -1,6 +1,6 @@
 # Snapshots and handles
 
-Every snippet here is executed by `ExamplesTest`.
+Every snippet here is executed by `DocumentationSnippetsTest`.
 
 ## A capture is a moment
 

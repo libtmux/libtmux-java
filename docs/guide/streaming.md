@@ -1,7 +1,7 @@
 # Watching output as it happens
 
-Every snippet here is run by `ExamplesTest`, except one marked compile-only,
-which says why.
+Every snippet here is run by `DocumentationSnippetsTest`, except one marked
+compile-only, which says why.
 
 ## Waiting for one thing, cheapest first
 

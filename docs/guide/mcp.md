@@ -1,7 +1,7 @@
 # Driving tmux from a model
 
-Every Java snippet here is run by `ExamplesTest`, except one marked
-compile-only, which says why.
+Every Java snippet here is run by `DocumentationSnippetsTest`, except one
+marked compile-only, which says why.
 
 [`libtmux-mcp`](../../libtmux-mcp/) serves a tmux server to any MCP client. The
 [module README](../../libtmux-mcp/README.md) is how to run it; this page is why
