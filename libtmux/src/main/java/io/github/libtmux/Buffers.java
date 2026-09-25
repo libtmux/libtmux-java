@@ -64,7 +64,12 @@ public final class Buffers {
     }
 
     /**
-     * What a buffer holds.
+     * What a buffer holds, without any line breaks it ends with.
+     *
+     * <p>tmux prints a buffer as it is, and the transport drops trailing blank lines, so {@code "a"}
+     * and {@code "a\n"} read the same. A marker printed after it cannot keep them: tmux writes a
+     * buffer through its file stream, which a second command in the same invocation interrupts.
+     * {@link #save} writes the exact bytes.
      *
      * @throws ObjectDoesNotExistException if the server has no buffer by that name
      * @throws ServerNotRunningException if no daemon is running

@@ -418,10 +418,22 @@ public final class Server implements AutoCloseable {
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
         return printed(
-                run(List.of("display-message", "-p", "--", versioned(format))).stdout());
+                run(List.of("display-message", "-p", "--", expansion(format))).stdout());
     }
 
     private static final String VERSION_MARK = io.github.libtmux.format.Tokens.perProcess() + "-version";
+
+    /**
+     * Printed after what a command printed. tmux ends its output with a line break and the transport
+     * drops trailing blank lines, so text that itself ends in line breaks would lose them; with this
+     * after it, nothing trailing is blank.
+     */
+    static final String END_MARK = io.github.libtmux.format.Tokens.perProcess() + "-end";
+
+    /** A format for {@code display-message -p} that {@link #printed(List)} reads back exactly. */
+    static String expansion(String format) {
+        return versioned(format) + END_MARK;
+    }
 
     /**
      * This format with the server's version expanded ahead of it, so the reply can be decoded
@@ -434,6 +446,9 @@ public final class Server implements AutoCloseable {
     /** The expansion of a {@link #versioned} format, as tmux held the text. */
     static String printed(List<String> reported) {
         String all = String.join("\n", reported);
+        if (all.endsWith(END_MARK)) {
+            all = all.substring(0, all.length() - END_MARK.length());
+        }
         int mark = all.indexOf(VERSION_MARK);
         if (mark < 0) {
             return all;
@@ -457,10 +472,12 @@ public final class Server implements AutoCloseable {
 
     /**
      * Runs one read with the server's version printed first in the same invocation, and answers
-     * with its output as tmux held the text, and without that version line.
+     * with its output as tmux held the text, and without that version line. Line breaks at
+     * the end of the output are kept.
      */
     CommandResult printed(@Nullable ServerSnapshot snapshot, List<String> argv) {
-        List<List<String>> group = List.of(List.of("display-message", "-p", "#{version}"), argv);
+        List<List<String>> group = List.of(
+                List.of("display-message", "-p", "#{version}"), argv, List.of("display-message", "-p", END_MARK));
         CommandResult result = snapshot == null
                 ? transport.execute(request(group, config.defaultTimeout(), ""))
                 : guarded(snapshot, CommandStrings.group(group));
@@ -468,6 +485,9 @@ public final class Server implements AutoCloseable {
             return result;
         }
         List<String> output = result.stdout().subList(1, result.stdout().size());
+        if (!output.isEmpty() && output.getLast().equals(END_MARK)) {
+            output = output.subList(0, output.size() - 1);
+        }
         try {
             output = TmuxFormats.printed(
                     output, TmuxVersion.parse(result.stdout().get(0)));

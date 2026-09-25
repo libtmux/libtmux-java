@@ -178,7 +178,7 @@ public final class Window {
         return Server.printed(server.run(
                         snapshot,
                         state.context(),
-                        List.of("display-message", "-p", "-t", linkTarget(), "--", Server.versioned(format)))
+                        List.of("display-message", "-p", "-t", linkTarget(), "--", Server.expansion(format)))
                 .stdout());
     }
 
