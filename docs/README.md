@@ -37,6 +37,9 @@ Task-oriented. Start here.
 - [Operation costs](benchmarks/operations.md) — measured wall-clock and
   tmux-process cost for one-at-a-time, batched, and chained calls; regenerated
   by `./gradlew operationBenchmark`.
+- [Scala facade costs](../libtmux-scala/benchmarks/README.md) — the blocking
+  and Cats Effect facades against the Java core, with warmups, raw samples, and
+  allocated bytes; one committed run in `results/`.
 
 ## Spikes
 

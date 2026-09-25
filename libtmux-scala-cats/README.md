@@ -7,6 +7,9 @@ observations. `libtmux-scala` does not depend on Cats Effect or FS2; add this
 artifact only when an application uses those integrations. Use the same version
 as `libtmux-scala`.
 
+Every Scala block on this page is compiled for Scala 2.13 and 3 and run against a
+real tmux server by the examples suite.
+
 **This project is alpha.** The API is not settled, and a release may change or
 remove exported identifiers without a deprecation period. Pin an exact version
 rather than a range. Not recommended for production.
