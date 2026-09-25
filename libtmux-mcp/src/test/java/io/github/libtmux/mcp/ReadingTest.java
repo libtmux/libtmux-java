@@ -307,6 +307,7 @@ final class ReadingTest {
                 found.matches().stream().anyMatch(hit -> hit.paneId().equals(second)),
                 found.matches().toString());
         assertNotEquals(first, second);
+        assertFalse(found.truncated());
     }
 
     @Test

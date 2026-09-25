@@ -252,7 +252,9 @@ Every read is capped, keeps the **newest** lines, and reports how many it droppe
 The tail is what matters: the reason to look at a terminal is almost always what
 it just did. `snapshot_pane` returns that pane's metadata and bounded content
 together, so a model does not spend a turn on `list_panes` and another on
-`capture_pane` for one pane.
+`capture_pane` for one pane. `capture_pane`, `capture_since`, `wait_for_text`,
+`run_shell_command`, and `search_panes` all report a cut through the same field,
+`truncated`, so one check works across every read tool.
 
 There is a character budget as well as a line budget, because a line has no length
 limit — a pane showing minified JavaScript is one line of half a megabyte, and a

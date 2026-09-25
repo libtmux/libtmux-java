@@ -688,6 +688,10 @@ final class CapabilityRegistryTest {
         Map<String, Object> hit = object(matches.get("items"), "match item");
         Map<String, Object> hitProperties = object(hit.get("properties"), "match properties");
         assertEquals(Set.of("pane_id", "session", "window", "line"), hitProperties.keySet());
+        assertTrue(
+                searchProperties.containsKey("truncated"),
+                "search_panes must report a budget cut as 'truncated', like every other read tool");
+        assertFalse(searchProperties.containsKey("limited"));
 
         Map<String, Object> batchProperties =
                 object(byName("call_read_tools_batch").outputSchema().get("properties"), "batch properties");
