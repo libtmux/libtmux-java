@@ -100,9 +100,9 @@ ThisBuild / scalacOptions ++= Seq(
   "-feature",
   "-unchecked",
   "-Werror",
-  "-release:21"
+  "-release:25"
 )
-ThisBuild / javacOptions ++= Seq("--release", "21", "-Xlint:all", "-Werror")
+ThisBuild / javacOptions ++= Seq("--release", "25", "-Xlint:all", "-Werror")
 ThisBuild / Test / parallelExecution := false
 Global / concurrentRestrictions += Tags.limit(Tags.Test, 1)
 

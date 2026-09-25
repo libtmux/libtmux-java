@@ -732,7 +732,7 @@ final class Execution {
         String pane = environment.getOrDefault("TMUX_PANE", "");
         if (!pane.isEmpty())
             try {
-                PaneId unused = new PaneId(pane);
+                PaneId _ = new PaneId(pane);
             } catch (IllegalArgumentException notAnId) {
                 throw Main.usage("TMUX_PANE is not a tmux pane id such as %0: " + pane);
             }

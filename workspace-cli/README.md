@@ -2,7 +2,7 @@
 
 Load and capture tmux workspaces with native Java services. The command names
 and flags follow tmuxp 1.74.0, with JSON/NDJSON output across every command.
-The CLI requires JDK 21 or newer and targets tmux 3.2a or newer.
+The CLI requires JDK 25 or newer and targets tmux 3.2a or newer.
 
 `load -2` forces 256-color support for native tmux clients, including attachment.
 Without it, tmux detects terminal capabilities. The legacy `-8` flag fails before

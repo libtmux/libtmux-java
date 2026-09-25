@@ -315,10 +315,9 @@ public final class ServerSnapshot {
     private static <K, V> Map<K, List<V>> group(List<V> values, Function<V, K> key) {
         Map<K, List<V>> grouped = new LinkedHashMap<>();
         for (V value : values) {
-            grouped.computeIfAbsent(key.apply(value), unused -> new ArrayList<>())
-                    .add(value);
+            grouped.computeIfAbsent(key.apply(value), _ -> new ArrayList<>()).add(value);
         }
-        grouped.replaceAll((unused, group) -> Collections.unmodifiableList(group));
+        grouped.replaceAll((_, group) -> Collections.unmodifiableList(group));
         return Collections.unmodifiableMap(grouped);
     }
 

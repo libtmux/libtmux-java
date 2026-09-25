@@ -6,7 +6,7 @@ the existing `OwnedTmux` test utility and the staged Java fixture in test scope;
 neither fixture belongs to the application runtime graph.
 
 First generate the documentation inventory and stage both Scala families.
-Select JDK 21 or 25 in `JAVA_HOME` and the explicit tmux 3.7c executable in
+Select JDK 25 or 27 in `JAVA_HOME` and the explicit tmux 3.7c executable in
 `TMUX_TEST_BINARY`. Run one consumer compiler/JDK/OS cell through both tools:
 
 ```console
@@ -19,7 +19,7 @@ $ python3 libtmux-scala/scripts/verify-consumers.py \
     --scala-version 2.13.18 \
     --jdk "$JAVA_HOME" \
     --tmux "$TMUX_TEST_BINARY" \
-    --output libtmux-scala/target/consumers/linux-jdk21-scala2.13.18
+    --output libtmux-scala/target/consumers/linux-jdk25-scala2.13.18
 ```
 
 Repeat with Scala 3.3.8 and 3.9.0, each supported JDK, and both operating
@@ -30,7 +30,7 @@ runtime coordinates and staged jar hashes. Cleanup witnesses are printed only
 after the owned fixture has closed.
 
 Before building, the runner checks all four binary/source/Scaladoc/POM sets.
-It rejects extra publications, bytecode above or below JDK 21, incorrect POM
+It rejects extra publications, bytecode above or below JDK 25, incorrect POM
 metadata or dependency pins, source bytes that differ between archives, and
 broken source links or line anchors. `--artifacts-only` performs these checks
 without launching a consumer build.

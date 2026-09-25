@@ -57,13 +57,13 @@ final class ArgumentTerminatorTest {
         sites.put("Buffers.save", server -> server.buffers().save("b", Path.of(DASHED)));
         sites.put("Buffers.load", server -> server.buffers().load("b", Path.of(DASHED)));
         sites.put("Session.rename", server -> {
-            var unused = server.sessions().get(0).rename(DASHED);
+            var _ = server.sessions().get(0).rename(DASHED);
         });
         sites.put("Window.rename", server -> {
-            var unused = server.windows().get(0).rename(DASHED);
+            var _ = server.windows().get(0).rename(DASHED);
         });
         sites.put("Pane.retitle", server -> {
-            var unused = server.panes().get(0).retitle(DASHED);
+            var _ = server.panes().get(0).retitle(DASHED);
         });
         sites.put("Pane.send", server -> server.panes().get(0).send(DASHED));
         sites.put("Pane.sendKeys", server -> server.panes().get(0).sendKeys(List.of(DASHED)));

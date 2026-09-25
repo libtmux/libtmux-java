@@ -13,7 +13,7 @@ than a range. Not recommended for production.
 
 ## Requirements
 
-The build targets Scala 2.13.18 and 3.3.8 with JDK 21 bytecode. Scala 3.9.0 is
+The build targets Scala 2.13.18 and 3.3.8 with JDK 25 bytecode. Scala 3.9.0 is
 a downstream consumer target. Java supplies support for tmux 3.2a through 3.7c;
 the Scala operating-system and runtime checks are listed in
 [Compatibility](docs/compatibility.md). A target is not a completed test result.

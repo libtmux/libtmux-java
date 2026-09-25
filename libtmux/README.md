@@ -42,7 +42,7 @@ dependencies {
 ```
 </details>
 
-Needs JDK 21 and a tmux between 3.2a and 3.7c.
+Needs JDK 25 and a tmux between 3.2a and 3.7c.
 
 ## Thirty seconds
 

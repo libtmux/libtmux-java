@@ -30,15 +30,15 @@ def cell(name, jdk, scala, tmux, primary):
 def cells():
     result = {}
     for index, (jdk, scala) in enumerate(
-            ((21, "2.13.18"), (21, "3.3.8"), (25, "2.13.18"), (25, "3.3.8")), 1):
+            ((25, "2.13.18"), (25, "3.3.8"), (27, "2.13.18"), (27, "3.3.8")), 1):
         name = "P%02d" % index
         result[name] = cell(name, jdk, scala, "3.7c", True)
     for index, version in enumerate(TMUX):
         for scala_index, scala in enumerate(SCALA):
             name = "T%02d" % (index * 2 + scala_index + 1)
-            result[name] = cell(name, 21, scala, version, False)
+            result[name] = cell(name, 25, scala, version, False)
     for index, (jdk, scala) in enumerate(
-            ((21, "2.13.18"), (21, "3.3.8"), (25, "2.13.18"), (25, "3.3.8")), 5):
+            ((25, "2.13.18"), (25, "3.3.8"), (27, "2.13.18"), (27, "3.3.8")), 5):
         name = "P%02d" % index
         result[name] = {**cell(name, jdk, scala, "3.7c", True), "os": "macos"}
     return result
@@ -110,7 +110,7 @@ def verify_tool(path, expected):
 
 
 def run(selected, args):
-    java_home = args.jdk21 if selected["jdk"] == 21 else args.jdk25
+    java_home = args.jdk25 if selected["jdk"] == 25 else args.jdk27
     java = java_home / "bin/java"
     if not java.is_file():
         raise ValueError("Missing selected JDK: " + str(java_home))
@@ -164,8 +164,8 @@ def selected_cells(value, matrix):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--jdk21", type=Path, required=True)
     parser.add_argument("--jdk25", type=Path, required=True)
+    parser.add_argument("--jdk27", type=Path, required=True)
     parser.add_argument("--tmux-root", type=Path, required=True)
     parser.add_argument("--scala-stage", type=Path, required=True)
     parser.add_argument("--java-stage", type=Path, required=True)
@@ -176,7 +176,7 @@ def main():
     args = parser.parse_args()
     if platform.system() != "Linux":
         raise SystemExit("This runner records Linux cells only")
-    for name in ("jdk21", "jdk25", "tmux_root", "scala_stage", "java_stage", "output"):
+    for name in ("jdk25", "jdk27", "tmux_root", "scala_stage", "java_stage", "output"):
         setattr(args, name, getattr(args, name).resolve())
     matrix = cells()
     identity = {"source": source_identity(), "scala_stage": stage_identity(args.scala_stage)}

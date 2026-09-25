@@ -15,7 +15,7 @@ Typed, blocking access to [tmux](https://github.com/tmux/tmux) from the JVM.
 A sibling of the Python [libtmux](https://libtmux.git-pull.com/), targeting
 practical parity while reading as Java rather than as a translation.
 
-**JDK 21 or newer.** Add the library through
+**JDK 25 or newer.** Add the library through
 [`libtmux-bom`](libtmux-bom/), which names one version for every BOM-managed
 coordinate:
 
@@ -431,7 +431,7 @@ suffixes apply only to the facade, never to the Java artifact. See the
 
 ## Requirements
 
-JDK 21 or newer.
+JDK 25 or newer.
 
 **Any locale.** A JVM encodes a child process's arguments with the platform's
 encoding, which the locale decides before `main` runs, so under `LANG=C` — the

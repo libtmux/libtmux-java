@@ -19,7 +19,7 @@ val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(25)
         vendor = JvmVendorSpec.ADOPTIUM
     }
 }
@@ -41,7 +41,7 @@ dependencies {
 }
 
 tasks.withType<JavaCompile>().configureEach {
-    options.release = 21
+    options.release = 25
     options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
     options.errorprone {
         disableWarningsInGeneratedCode = true

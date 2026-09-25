@@ -9,7 +9,7 @@ installed artifacts.
 ## Compilers and runtimes
 
 The [sbt build][build] shares sources between Scala 2.13.18 and 3.3.8 and emits
-JDK 21 bytecode. The pull-request workflow uses JDK 21. The [launcher
+JDK 25 bytecode. The pull-request workflow uses JDK 25. The [launcher
 pin][sbt-version] selects sbt 1.12.15.
 
 The [Java matrix definition][tmux-matrix] supplies the supported tmux range:
@@ -21,9 +21,9 @@ actual version.
 
 | Job | Configuration |
 | --- | --- |
-| Artifact stage | Linux, JDK 21, Scala 2.13.18, tmux 3.7c |
-| Scala runtime | Linux and macOS, JDK 21, Scala 3.3.8, tmux 3.7c |
-| Installed consumer | Linux, JDK 21, Scala 2.13.18, tmux 3.7c |
+| Artifact stage | Linux, JDK 25, Scala 2.13.18, tmux 3.7c |
+| Scala runtime | Linux and macOS, JDK 25, Scala 3.3.8, tmux 3.7c |
+| Installed consumer | Linux, JDK 25, Scala 2.13.18, tmux 3.7c |
 
 The artifact and runtime jobs run formatting, unit and integration tests,
 executed documentation and examples, packaging, and cleanup. The consumer job

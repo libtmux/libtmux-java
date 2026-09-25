@@ -3,7 +3,7 @@ pluginManagement {
     repositories { gradlePluginPortal() }
 }
 
-// Resolves the JDK 21 toolchain on a host that does not already have one, so a fresh clone and CI
+// Resolves the JDK 25 toolchain on a host that does not already have one, so a fresh clone and CI
 // both build with no prior setup. A host that has it keeps using its own; nothing is downloaded.
 plugins { id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0" }
 

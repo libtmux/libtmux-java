@@ -52,7 +52,7 @@ final class ControlWatchIntegrationTest {
         try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
 
-            var unused = session.windows().get(0).rename("renamed-now");
+            var _ = session.windows().get(0).rename("renamed-now");
 
             assertTrue(
                     awaitEvent(
@@ -81,7 +81,7 @@ final class ControlWatchIntegrationTest {
                     .lines()
                     .get(0);
 
-            var unused = server.run(java.util.List.of("display-message", "-c", name, "hello : there"));
+            var _ = server.run(java.util.List.of("display-message", "-c", name, "hello : there"));
 
             assertTrue(
                     awaitEvent(events, event -> event.notification().equals(new Notification.Message("hello : there"))),
@@ -185,7 +185,7 @@ final class ControlWatchIntegrationTest {
 
         try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
-            var unused = window.rename("build  logs");
+            var _ = window.rename("build  logs");
 
             Optional<ControlEvent> renamed = awaitMatchingEvent(
                     events,
