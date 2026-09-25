@@ -226,13 +226,15 @@ public final class EventSubscription<T> implements AutoCloseable {
      * A {@link Flow.Publisher} view of this subscription's steps, delivered as demand allows, its
      * reads run on {@code executor} rather than a virtual thread.
      *
-     * <p>Single subscriber, like {@link #stream()}: {@link Flow.Publisher#subscribe subscribe} never
-     * throws for a non-null subscriber, but a second one is sent {@link Flow.Subscriber#onSubscribe
-     * onSubscribe} immediately followed by {@link IllegalStateException} to {@link
-     * Flow.Subscriber#onError onError}, rather than sharing this subscription's steps or silently
-     * missing them. {@link Flow.Subscription#request request} of zero or less is answered the same
-     * way, with {@link IllegalArgumentException}. {@link Long#MAX_VALUE} demand is unbounded. Every
-     * signal to one subscriber comes from one thread at a time, never concurrently.
+     * <p>One subscriber per publisher, the way a {@link #stream()} is read by one consumer: {@link
+     * Flow.Publisher#subscribe subscribe} never throws for a non-null subscriber, but a second one on
+     * the same publisher is sent {@link Flow.Subscriber#onSubscribe onSubscribe} immediately followed
+     * by {@link IllegalStateException} to {@link Flow.Subscriber#onError onError}, rather than sharing
+     * this subscription's steps or silently missing them. Reading through two publishers taken from
+     * this subscription splits its steps between them, the same as two concurrent {@link #stream()}
+     * calls would. {@link Flow.Subscription#request request} of zero or less is answered the same way,
+     * with {@link IllegalArgumentException}. {@link Long#MAX_VALUE} demand is unbounded. Every signal
+     * to one subscriber comes from one thread at a time, never concurrently.
      *
      * <p>{@link Flow.Subscription#cancel cancel} closes this subscription, the same as {@link
      * #close()}, is idempotent, and no signal follows it, not even {@code onComplete}. Otherwise this
