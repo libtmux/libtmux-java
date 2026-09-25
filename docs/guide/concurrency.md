@@ -87,9 +87,10 @@ client, because the next reply could no longer be matched to its request.
 
 A subscription is read by one thread at a time. Concurrent readers of `next()`
 would split its events between them, so each consuming form takes it whole:
-`stream()` closes the subscription with the stream, Kotlin's `deliveries()`
-refuses a second collector, and Scala's `Observation.stream` refuses a second one
-at the same time. Each subscription
+`stream()` closes the subscription with the stream, `publisher()` refuses a second
+subscriber and reads only as fast as its subscriber requests, Kotlin's
+`deliveries()` refuses a second collector, and Scala's `Observation.stream`
+refuses a second one at the same time. Each subscription
 buffers a fixed number of events; one that falls behind loses the oldest and
 reads a `Delivery.Gap` saying how many. [Streaming](streaming.md) has the rest.
 
