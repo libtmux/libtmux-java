@@ -63,26 +63,11 @@ final class ControlWatchIntegrationTest {
         }
     }
 
-    /** tmux writes a name as it was given; only a subscription uses {@code " : "} as a separator. */
-    @Test
-    void aNameHoldingTheSubscriptionSeparatorIsAnnouncedWhole(Server server) throws Exception {
-        Session session = server.sessions().get(0);
-
-        try (ControlClient client = server.control(session);
-                EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
-
-            var unused = session.windows().get(0).rename("left : right");
-
-            assertTrue(
-                    awaitEvent(
-                            events,
-                            event -> event.notification() instanceof Notification.WindowRenamed renamed
-                                    && renamed.name().equals("left : right")),
-                    "tmux reported the rename, but not with the whole name");
-        }
-    }
-
-    /** A message another client aims at this one arrives as a notification, " : " and all. */
+    /**
+     * A message another client aims at this one arrives as a notification, " : " and all. A name
+     * cannot carry that separator across releases: 3.2a to 3.6 store {@code :} as {@code _} and 3.7
+     * refuses it, so the message is the real-tmux proof that only a subscription is split there.
+     */
     @Test
     void aMessageAimedAtTheClientArrivesTyped(Server server) throws Exception {
         if (!server.version().atLeast(new TmuxVersion(3, 4, ""))) {
