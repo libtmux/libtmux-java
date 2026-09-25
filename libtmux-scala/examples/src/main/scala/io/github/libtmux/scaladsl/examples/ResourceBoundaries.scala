@@ -1,7 +1,6 @@
 package io.github.libtmux.scaladsl.examples
 
-import _root_.cats.effect.{IO, Resource}
-import _root_.cats.effect.unsafe.implicits.global
+import _root_.cats.effect.{ExitCode, IO, IOApp, Resource}
 import _root_.cats.syntax.all._
 import io.github.libtmux.{
   Server => JavaServer,
@@ -15,9 +14,9 @@ import scala.concurrent.duration._
 
 /** Borrows Java, cancels dispatched work, and checks failed attachment cleanup.
   */
-object ResourceBoundaries {
-  def main(arguments: Array[String]): Unit =
-    run(ExampleRuntime.config(arguments)).unsafeRunSync()
+object ResourceBoundaries extends IOApp {
+  def run(arguments: List[String]): IO[ExitCode] =
+    run(ExampleRuntime.config(arguments.toArray)).as(ExitCode.Success)
 
   def run(config: ServerConfig): IO[Unit] =
     Resource.fromAutoCloseable(IO.blocking(JavaServer.open(config))).use {
