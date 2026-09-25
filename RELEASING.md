@@ -186,6 +186,36 @@ which is the whole argument for a dedicated one.
 A Portal token is not an OSSRH token. OSSRH reached end of life on 30 June 2025,
 and anything naming `oss.sonatype.org` describes a service that no longer exists.
 
+## Gate 3 — an environment the secrets live behind
+
+`release.yml` and `scala-release.yml` each condition their publish job on
+`environment: release`, and each already refuses to run except from the ref
+it needs — a `v*` tag for the Java release, `master` for the Scala one.
+Neither check protects the four secrets themselves: a repository secret is
+readable by any workflow this repository runs, and a workflow-level `if:` is
+a text file, not a boundary GitHub enforces. Protecting the secrets is a
+setting on the environment, and creating it is a step no workflow file can
+perform for itself.
+
+1. Open **Settings → Environments → New environment**, name it `release`.
+2. Under **Deployment protection rules**, add a **required reviewer** — this
+   repository's owner is enough. A publish then pauses for that approval
+   before the job starts, however it was triggered.
+3. Under **Deployment branches and tags**, choose **Selected branches and
+   tags** and add two rules: the tag pattern `v*`, for `release.yml`, and the
+   branch `master`, for `scala-release.yml`. A run outside both is refused
+   by GitHub before the job starts, not just by the workflow's own `if:`.
+4. Move `SIGNING_KEY`, `SIGNING_PASSWORD`, `CENTRAL_PORTAL_USERNAME`, and
+   `CENTRAL_PORTAL_PASSWORD` from **Settings → Secrets and variables →
+   Actions → Repository secrets** into this environment's own secrets, then
+   delete the repository-level copies. A repository secret is in scope for
+   every workflow in this repository; an environment secret is in scope only
+   for a job that names the environment, which after this file's changes is
+   exactly the two publishing jobs.
+
+Not done. Until it is, the workflow-level `if:` conditions are the only
+gate, and they are not a substitute for this.
+
 ## The plugin, already wired
 
 `com.vanniktech.maven.publish` is applied by `libtmux.publication`. Sonatype
@@ -212,17 +242,19 @@ Two behaviours worth knowing:
    public repository and a minute. **Done.**
 2. ~~Create and publish the signing key.~~ **Done.**
 3. ~~Add the secrets.~~ **Done** — all four.
-4. Dry-run locally, which needs no key and no token:
+4. Create the `release` environment and move the four secrets into it, per
+   [Gate 3](#gate-3--an-environment-the-secrets-live-behind). **Not done.**
+5. Dry-run locally, which needs no key and no token:
    `./gradlew publishToMavenLocal -PlibtmuxVersion=0.0.1-alpha.1`.
-5. Wait for CI and the tmux matrix to pass on the commit, then tag it. The
+6. Wait for CI and the tmux matrix to pass on the commit, then tag it. The
    Release workflow refuses a commit without both, through
    `scripts/require-passed.sh`, then runs `check`, uploads, and attests the
    jars and the BOM pom. The attestation names the commit and workflow
    that built them. A release refused for a run still in progress is started
    again from the Actions tab once it has passed.
-6. Open [the Portal](https://central.sonatype.com/publishing/deployments) and
+7. Open [the Portal](https://central.sonatype.com/publishing/deployments) and
    publish the deployment, or drop it.
-7. Bump `libtmuxApiBaseline` in `gradle.properties` to the version just
+8. Bump `libtmuxApiBaseline` in `gradle.properties` to the version just
    released. The core's API-diff gate compares every later change against that
    property, not against `libtmuxVersion`, so the next round of development
    starts measured against what was actually shipped.

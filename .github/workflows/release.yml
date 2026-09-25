@@ -24,6 +24,14 @@ permissions:
 
 jobs:
   publish:
+    # A tag push is already a tag ref by construction; a dispatch is refused unless the ref it runs
+    # against is one too, so signing and Central secrets are never reachable from a branch.
+    if: github.event_name == 'push' || startsWith(github.ref, 'refs/tags/v')
+    # RELEASING.md records the one-time step this file cannot do: create this environment with a
+    # tag-only deployment policy and a required reviewer, and move the signing and Central secrets
+    # into it. A workflow condition can refuse a branch; only the environment protects the secrets
+    # themselves if that condition is ever wrong.
+    environment: release
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
