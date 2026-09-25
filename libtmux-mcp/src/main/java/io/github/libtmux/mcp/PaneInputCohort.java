@@ -427,9 +427,9 @@ final class PaneInputCohort {
 
         private void requireWritable(String operation, Member member) {
             if (caller.uncertain()) {
-                throw new IllegalStateException(operation + " refuses input while caller identity is unavailable; "
-                        + "restart this server inside the tmux pane it should speak through so TMUX and "
-                        + "TMUX_PANE can be confirmed again");
+                throw new IllegalStateException(operation + " refuses input while caller identity is unavailable: "
+                        + "this process runs inside tmux but could not match TMUX and TMUX_PANE to this server, "
+                        + "so it cannot rule out its own pane; restart it from a current tmux pane");
             }
             if (caller.isSelf(new PaneId(member.paneId()))) {
                 throw new IllegalStateException(operation + " refuses caller pane " + member.paneId()
@@ -441,7 +441,7 @@ final class PaneInputCohort {
             }
             if (member.dead()) {
                 throw new IllegalStateException(operation + " refuses dead pane " + member.paneId()
-                        + "; its process exited, so capture_pane can still read what it left");
+                        + "; its process exited: respawn_pane restarts it, and capture_pane reads what it left");
             }
             if (member.inputDisabled()) {
                 throw new IllegalStateException(operation + " refuses input-disabled pane " + member.paneId()

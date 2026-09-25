@@ -122,6 +122,7 @@ final class PaneInputCohortTest {
         IllegalStateException sourceRefused =
                 assertThrows(IllegalStateException.class, () -> deadSource.requireKeyRecipients("send_keys"));
         assertTrue(String.valueOf(sourceRefused.getMessage()).contains("capture_pane"), sourceRefused.getMessage());
+        assertTrue(String.valueOf(sourceRefused.getMessage()).contains("respawn_pane"), sourceRefused.getMessage());
         assertThrows(IllegalStateException.class, () -> deadPeer.requireKeyRecipients("send_keys"));
         assertEquals(List.of("%0"), outside.requireKeyRecipients("send_keys"));
     }
