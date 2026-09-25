@@ -381,7 +381,19 @@ public final class EventSubscription<T> implements AutoCloseable {
                         return;
                     }
                     if (step.isPresent()) {
-                        subscriber.onNext(step.get());
+                        try {
+                            subscriber.onNext(step.get());
+                        } catch (RuntimeException broken) {
+                            // Rule 2.13: a subscriber that throws has cancelled. Release what it held,
+                            // and signal nothing more to it.
+                            cancelled = true;
+                            EventSubscription.this.close();
+                            return;
+                        } catch (Error fatal) {
+                            cancelled = true;
+                            EventSubscription.this.close();
+                            throw fatal;
+                        }
                         emitted++;
                         continue;
                     }
