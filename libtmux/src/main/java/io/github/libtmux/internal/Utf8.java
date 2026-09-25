@@ -1,6 +1,6 @@
 package io.github.libtmux.internal;
 
-import io.github.libtmux.UnencodableTextException;
+import io.github.libtmux.exception.UnencodableTextException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;

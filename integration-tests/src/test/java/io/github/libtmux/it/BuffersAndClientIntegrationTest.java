@@ -7,15 +7,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.BufferInfo;
 import io.github.libtmux.Client;
 import io.github.libtmux.ClientAttachment;
-import io.github.libtmux.LibTmuxException;
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -74,14 +74,14 @@ final class BuffersAndClientIntegrationTest {
 
     @Test
     void aBufferThatIsNotThereSaysSo(Server server) {
-        assertThrows(ObjectDoesNotExistException.class, () -> server.buffers().show("never-set"));
+        assertThrows(TargetGoneException.class, () -> server.buffers().show("never-set"));
     }
 
     @Test
     void anAbsentDaemonIsNotReportedAsAMissingBuffer(Server server) {
         server.killServer();
 
-        assertThrows(ServerNotRunningException.class, () -> server.buffers().show("never-set"));
+        assertThrows(ServerUnavailableException.class, () -> server.buffers().show("never-set"));
     }
 
     @Test
@@ -90,8 +90,7 @@ final class BuffersAndClientIntegrationTest {
 
         if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
             assertThrows(
-                    UnsupportedTmuxVersionException.class,
-                    () -> server.buffers().delete("doomed;"));
+                    UnsupportedFeatureException.class, () -> server.buffers().delete("doomed;"));
             assertEquals("x", server.buffers().show("doomed;"), "refusal leaves the buffer untouched");
             return;
         }
@@ -106,12 +105,10 @@ final class BuffersAndClientIntegrationTest {
         server.buffers().set("belongs-to-the-user", "keep me");
 
         if (server.version().atLeast(EXACT_NAMED_DELETE)) {
-            assertThrows(
-                    ObjectDoesNotExistException.class, () -> server.buffers().delete("never-set;"));
+            assertThrows(TargetGoneException.class, () -> server.buffers().delete("never-set;"));
         } else {
             assertThrows(
-                    UnsupportedTmuxVersionException.class,
-                    () -> server.buffers().delete("never-set;"));
+                    UnsupportedFeatureException.class, () -> server.buffers().delete("never-set;"));
         }
 
         assertEquals("keep me", server.buffers().show("belongs-to-the-user"));
@@ -151,7 +148,7 @@ final class BuffersAndClientIntegrationTest {
         server.buffers().set("belongs-to-the-user", "keep me");
 
         if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
-            assertThrows(UnsupportedTmuxVersionException.class, () -> pane.paste("echo pasted-text\n"));
+            assertThrows(UnsupportedFeatureException.class, () -> pane.paste("echo pasted-text\n"));
             assertEquals(
                     List.of("belongs-to-the-user"),
                     server.buffers().list().stream().map(BufferInfo::name).toList(),
@@ -217,7 +214,7 @@ final class BuffersAndClientIntegrationTest {
         server.cmd("kill-pane", "-t", doomed.id().value());
 
         if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
-            assertThrows(UnsupportedTmuxVersionException.class, () -> doomed.paste("never-arrives"));
+            assertThrows(UnsupportedFeatureException.class, () -> doomed.paste("never-arrives"));
         } else {
             assertThrows(LibTmuxException.class, () -> doomed.paste("never-arrives"));
         }

@@ -64,7 +64,7 @@ public final class Channel {
      * that transport should use {@link #await}; reserving capacity for it only rejects useful
      * concurrency.
      *
-     * @throws io.github.libtmux.transport.TmuxTransportException if the wait could not be dispatched
+     * @throws io.github.libtmux.exception.DispatchException if the wait could not be dispatched
      * @throws InterruptedException if the waiting thread is interrupted, which is a cancellation
      *     rather than a timeout and so is not reported as one
      */

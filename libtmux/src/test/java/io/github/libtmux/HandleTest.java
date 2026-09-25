@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.transport.CommandRequest;
@@ -239,7 +240,7 @@ final class HandleTest {
             Window window = server.windows().get(0);
             transport.liveStart = GroupedTmux.STARTED + 5;
 
-            assertThrows(ObjectDoesNotExistException.class, () -> window.selectLayout(Layout.MAIN_HORIZONTAL_MIRRORED));
+            assertThrows(TargetGoneException.class, () -> window.selectLayout(Layout.MAIN_HORIZONTAL_MIRRORED));
         }
     }
 

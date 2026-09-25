@@ -1,9 +1,9 @@
 package io.github.libtmux.kotlin
 
+import io.github.libtmux.exception.ControlEndedException
 import io.github.libtmux.ServerConfig
 import io.github.libtmux.SessionId
 import io.github.libtmux.control.ControlClient
-import io.github.libtmux.control.ControlEndedException
 import io.github.libtmux.control.Delivery
 import io.github.libtmux.control.PaneOutput
 import java.nio.file.Files

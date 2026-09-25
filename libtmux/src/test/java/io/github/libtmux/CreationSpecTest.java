@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -107,8 +108,8 @@ final class CreationSpecTest {
     void aStartDirectoryForAWindowIsRefusedOnTheReleaseThatIgnoresIt() {
         WindowSpec spec = WindowSpec.builder().in(Path.of("/srv")).build();
 
-        UnsupportedTmuxVersionException refused =
-                assertThrows(UnsupportedTmuxVersionException.class, () -> spec.argv("$1", FORMAT, V32A));
+        UnsupportedFeatureException refused =
+                assertThrows(UnsupportedFeatureException.class, () -> spec.argv("$1", FORMAT, V32A));
 
         assertEquals(
                 "a start directory for a new window requires tmux 3.3, but this server runs 3.2a",
@@ -151,8 +152,8 @@ final class CreationSpecTest {
     void aSizeIsRefusedOnTheReleaseThatIgnoresIt() {
         SessionSpec spec = SessionSpec.builder().sized(new Dimensions(120, 40)).build();
 
-        UnsupportedTmuxVersionException refused =
-                assertThrows(UnsupportedTmuxVersionException.class, () -> spec.argv(FORMAT, () -> V32A));
+        UnsupportedFeatureException refused =
+                assertThrows(UnsupportedFeatureException.class, () -> spec.argv(FORMAT, () -> V32A));
 
         assertEquals(
                 "a size for a detached session requires tmux 3.3, but this server runs 3.2a", refused.getMessage());

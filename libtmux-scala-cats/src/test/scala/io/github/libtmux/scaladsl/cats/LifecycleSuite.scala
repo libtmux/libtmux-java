@@ -1,5 +1,6 @@
 package io.github.libtmux.scaladsl.cats
 
+import io.github.libtmux.exception.DispatchException
 import _root_.cats.effect.{Deferred, IO}
 import _root_.cats.effect.unsafe.implicits.global
 import _root_.cats.syntax.all._
@@ -8,8 +9,7 @@ import io.github.libtmux.transport.{
   CommandRequest,
   CommandResult,
   DispatchOutcome,
-  TmuxTransport,
-  TmuxTransportException
+  TmuxTransport
 }
 import java.util.List
 import java.time.Duration
@@ -33,7 +33,7 @@ final class LifecycleSuite extends FunSuite {
     val release = new CountDownLatch(1)
     val settle = new CountDownLatch(1)
     val cause = new IllegalArgumentException("preserve this cause")
-    val failure = new TmuxTransportException(
+    val failure = new DispatchException.Failed(
       "preserve this failure",
       DispatchOutcome.UNKNOWN,
       cause

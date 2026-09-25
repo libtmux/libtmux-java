@@ -6,13 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.SessionId;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.transport.DispatchOutcome;
-import io.github.libtmux.transport.TmuxTimeoutException;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -139,8 +138,9 @@ final class ControlClientTest {
 
         try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
                 EventSubscription<ControlEvent> events = client.subscribeEvents(1)) {
-            TmuxTimeoutException failure = assertThrows(
-                    TmuxTimeoutException.class, () -> client.send(List.of("list-windows"), Duration.ofMillis(100)));
+            DispatchException.TimedOut failure = assertThrows(
+                    DispatchException.TimedOut.class,
+                    () -> client.send(List.of("list-windows"), Duration.ofMillis(100)));
 
             assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
             assertFalse(client.isAlive(), "a missing reply leaves command attribution uncertain");
@@ -237,7 +237,7 @@ final class ControlClientTest {
                 try {
                     client.send(List.of("list-windows"), Duration.ofSeconds(30));
                     throw new AssertionError("the interrupted request unexpectedly completed");
-                } catch (TmuxTransportException failure) {
+                } catch (DispatchException failure) {
                     return new InterruptedFailure(
                             failure, Thread.currentThread().isInterrupted());
                 }
@@ -249,8 +249,8 @@ final class ControlClientTest {
             caller.interrupt();
 
             InterruptedFailure result = waiting.get(5, TimeUnit.SECONDS);
-            assertFalse(result.failure() instanceof TmuxTimeoutException);
-            assertInstanceOf(TmuxTransportException.class, result.failure());
+            assertFalse(result.failure() instanceof DispatchException.TimedOut);
+            assertInstanceOf(DispatchException.class, result.failure());
             assertEquals(DispatchOutcome.UNKNOWN, result.failure().outcome());
             assertTrue(result.interrupted(), "the caller's interrupt status was lost");
         }
@@ -269,8 +269,8 @@ final class ControlClientTest {
     void anAttachDeadlineKeepsItsTimeoutType(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, "sleep 5\n");
 
-        TmuxTimeoutException timeout = assertThrows(
-                TmuxTimeoutException.class,
+        DispatchException.TimedOut timeout = assertThrows(
+                DispatchException.TimedOut.class,
                 () -> ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofMillis(100)));
 
         assertEquals(DispatchOutcome.UNKNOWN, timeout.outcome());
@@ -289,8 +289,9 @@ final class ControlClientTest {
         int before = controlThreads();
         for (int cycle = 0; cycle < 12; cycle++) {
             ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
-            TmuxTimeoutException timeout = assertThrows(
-                    TmuxTimeoutException.class, () -> client.send(List.of("list-windows"), Duration.ofMillis(80)));
+            DispatchException.TimedOut timeout = assertThrows(
+                    DispatchException.TimedOut.class,
+                    () -> client.send(List.of("list-windows"), Duration.ofMillis(80)));
             assertEquals(DispatchOutcome.UNKNOWN, timeout.outcome());
             client.close();
             assertFalse(client.isAlive());
@@ -366,7 +367,7 @@ final class ControlClientTest {
                 assertTrue(awaitFile(ready), "the fake control client never closed its request pipe");
                 child = Long.parseLong(Files.readString(childFile).trim());
 
-                assertThrows(TmuxTransportException.class, () -> client.send("list-windows"));
+                assertThrows(DispatchException.class, () -> client.send("list-windows"));
 
                 assertTrue(awaitDead(child), "the failed control client orphaned its descendant");
             }
@@ -488,5 +489,5 @@ final class ControlClientTest {
         return !ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false);
     }
 
-    private record InterruptedFailure(TmuxTransportException failure, boolean interrupted) {}
+    private record InterruptedFailure(DispatchException failure, boolean interrupted) {}
 }

@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -120,13 +121,12 @@ public final class WindowSpec {
      * @param target the session, or the index, to create in
      * @param format the row format the caller will read the result back with
      * @param running the version of the server about to run this
-     * @throws UnsupportedTmuxVersionException if the spec asks for something {@code running} does not have
+     * @throws UnsupportedFeatureException if the spec asks for something {@code running} does not have
      */
     List<String> argv(String target, String format, TmuxVersion running) {
         if (directory != null && !running.atLeast(START_DIRECTORY_SINCE)) {
             // 3.2a takes -c on new-window and drops it, unlike -c on split-window, which it honours.
-            throw new UnsupportedTmuxVersionException(
-                    "a start directory for a new window", START_DIRECTORY_SINCE, running);
+            throw new UnsupportedFeatureException("a start directory for a new window", START_DIRECTORY_SINCE, running);
         }
         List<String> argv = new ArrayList<>(20);
         argv.add("new-window");

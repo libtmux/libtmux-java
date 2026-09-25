@@ -1,9 +1,11 @@
 package io.github.libtmux.control;
 
+import io.github.libtmux.exception.ControlEndedException;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -176,7 +178,7 @@ public final class EventSubscription<T> implements AutoCloseable {
      * }
      * }</pre>
      *
-     * @throws io.github.libtmux.LibTmuxException from the stream if the reading thread is
+     * @throws io.github.libtmux.exception.LibTmuxException from the stream if the reading thread is
      *     interrupted; its interrupt status is set again
      */
     public java.util.stream.Stream<Delivery<T>> stream() {
@@ -190,8 +192,7 @@ public final class EventSubscription<T> implements AutoCloseable {
                             step = next();
                         } catch (InterruptedException interrupted) {
                             Thread.currentThread().interrupt();
-                            throw new io.github.libtmux.LibTmuxException(
-                                    "interrupted waiting for the next event", interrupted);
+                            throw cancelled(interrupted);
                         }
                         if (step.isPresent()) {
                             action.accept(step.get());
@@ -201,7 +202,7 @@ public final class EventSubscription<T> implements AutoCloseable {
                         if (failure.isPresent()) {
                             throw failure.get() instanceof RuntimeException unchecked
                                     ? unchecked
-                                    : new io.github.libtmux.LibTmuxException("the control client ended", failure.get());
+                                    : new ControlEndedException("", false, failure.get());
                         }
                         return false;
                     }
@@ -372,8 +373,7 @@ public final class EventSubscription<T> implements AutoCloseable {
                         Thread.currentThread().interrupt();
                         cancelled = true;
                         EventSubscription.this.close();
-                        subscriber.onError(new io.github.libtmux.LibTmuxException(
-                                "interrupted waiting for the next event", interrupted));
+                        subscriber.onError(cancelled(interrupted));
                         return;
                     }
                     if (cancelled) {
@@ -465,5 +465,12 @@ public final class EventSubscription<T> implements AutoCloseable {
         } finally {
             lock.unlock();
         }
+    }
+
+    /** An interrupt on a read that cannot throw {@link InterruptedException}: the wait was cancelled. */
+    private static CancellationException cancelled(InterruptedException interrupted) {
+        CancellationException cancelled = new CancellationException("interrupted waiting for the next event");
+        cancelled.initCause(interrupted);
+        return cancelled;
     }
 }

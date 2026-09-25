@@ -8,7 +8,7 @@ cost, and keep two threads from typing into the same pane.
 
 ## Whether a failed command may run again
 
-A command that throws `TmuxTransportException` says how far it got.
+A command that throws `DispatchException` says how far it got.
 `NOT_DISPATCHED` means tmux never started, so nothing changed and sending it
 again is safe. `UNKNOWN` means tmux may already have applied it; read the state
 back before deciding, and never send a mutation again blindly:
@@ -17,7 +17,7 @@ back before deciding, and never send a mutation again blindly:
 // Given: Server server
 try {
     server.globalOptions().set("@deployed", "yes");
-} catch (TmuxTransportException failure) {
+} catch (DispatchException failure) {
     if (failure.outcome() == DispatchOutcome.NOT_DISPATCHED) {
         server.globalOptions().set("@deployed", "yes");
     } else {

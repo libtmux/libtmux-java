@@ -1,11 +1,7 @@
 package io.github.libtmux.scaladsl
 
-import io.github.libtmux.{
-  ObjectDoesNotExistException,
-  Server => JavaServer,
-  SessionSpec,
-  WindowSpec
-}
+import io.github.libtmux.exception.TargetGoneException
+import io.github.libtmux.{Server => JavaServer, SessionSpec, WindowSpec}
 import io.github.libtmux.junit5.NamedServerFixture
 import java.util.concurrent.TimeUnit
 import io.github.libtmux.scaladsl.blocking.Server
@@ -101,10 +97,10 @@ final class SnapshotIdentitySuite extends FunSuite {
           .running("cat")
           .build()
       )
-      intercept[ObjectDoesNotExistException](stale.select())
-      intercept[ObjectDoesNotExistException](stale.unlink())
-      intercept[ObjectDoesNotExistException](stale.moveTo(session, 6))
-      intercept[ObjectDoesNotExistException](stale.refresh())
+      intercept[TargetGoneException](stale.select())
+      intercept[TargetGoneException](stale.unlink())
+      intercept[TargetGoneException](stale.moveTo(session, 6))
+      intercept[TargetGoneException](stale.refresh())
       assertEquals(
         server.window(replacement.info.context).map(_.info.name),
         Some("replacement")
@@ -142,8 +138,8 @@ final class SnapshotIdentitySuite extends FunSuite {
       val replacement = server.panes().head
       assertEquals(before.info.id, replacement.info.id)
       assertNotEquals(before, replacement)
-      intercept[ObjectDoesNotExistException](before.refresh())
-      intercept[ObjectDoesNotExistException](
+      intercept[TargetGoneException](before.refresh())
+      intercept[TargetGoneException](
         before.sendLiteral("must not reach replacement")
       )
       assertEquals(replacement.capture(), Vector.empty[String])

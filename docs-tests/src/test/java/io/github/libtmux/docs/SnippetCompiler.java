@@ -48,6 +48,7 @@ final class SnippetCompiler {
             import io.github.libtmux.*;
             import io.github.libtmux.batch.*;
             import io.github.libtmux.control.*;
+            import io.github.libtmux.exception.*;
             import io.github.libtmux.format.*;
             import io.github.libtmux.query.*;
             import io.github.libtmux.snapshot.*;

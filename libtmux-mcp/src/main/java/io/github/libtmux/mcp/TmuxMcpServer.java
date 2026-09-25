@@ -1,9 +1,9 @@
 package io.github.libtmux.mcp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerNotRunningException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.ServerUnavailableException;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
@@ -162,7 +162,7 @@ public final class TmuxMcpServer {
             Object value = tool.answer().apply(call);
             tool.validateOutput(value);
             return Answers.ok(value);
-        } catch (ServerNotRunningException e) {
+        } catch (ServerUnavailableException e) {
             return Answers.failure(e.getMessage() + " Check that the MCP process selected the socket you intended.");
         } catch (LibTmuxException | IllegalArgumentException | IllegalStateException e) {
             return Answers.failure(String.valueOf(e.getMessage()));

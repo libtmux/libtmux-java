@@ -8,6 +8,80 @@ API changes that require updates to calling code are recorded here. See
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### Failures are one sealed tree in `io.github.libtmux.exception`
+
+api-break: LibTmuxException
+api-break: ObjectDoesNotExistException
+api-break: ServerNotRunningException
+api-break: UnsupportedTmuxVersionException
+api-break: UnencodableTextException
+api-break: ControlEndedException
+api-break: TmuxFormatException
+api-break: TmuxTransportException
+api-break: TmuxTimeoutException
+api-break: Selections
+api-break: SchemaException
+
+Every failure now lives in `io.github.libtmux.exception`, under an abstract,
+sealed `LibTmuxException`, so a `switch` in Java, a `when` in Kotlin and a
+`match` in Scala over it is checked for exhaustiveness. Change the imports and
+these names:
+
+| Before | Now |
+| --- | --- |
+| `ObjectDoesNotExistException` | `TargetGoneException` |
+| `ServerNotRunningException` | `ServerUnavailableException` |
+| `TmuxTransportException` | `DispatchException`, thrown as `DispatchException.Failed` |
+| `TmuxTimeoutException` | `DispatchException.TimedOut` |
+| `TmuxFormatException` | `MalformedResponseException` |
+| `UnsupportedTmuxVersionException` | `UnsupportedFeatureException` |
+| `Selections.NoMatchException` | `CardinalityException.NoMatch` |
+| `Selections.MultipleMatchesException` | `CardinalityException.MultipleMatches` |
+| `ControlEndedException`, `UnencodableTextException` | same names, new package |
+
+A command tmux ran and refused, which threw a bare `LibTmuxException`, throws
+`CommandRejectedException`. `LibTmuxException` is abstract; construct a leaf.
+
+A handle used after its `Server` was closed throws `ServerClosedException`, an
+`IllegalStateException` outside the tree, where it threw a plain
+`IllegalStateException` or, when the close raced a running command, a
+`TmuxTransportException`. Its `outcome()` says whether tmux may have run that
+command.
+
+`DispatchException.safeToRetry()` answers whether the same request may be sent
+again: always when it never reached tmux, and otherwise only when every command
+in it reads. Hand it to your retry library instead of deciding from
+`outcome()`.
+
+`CardinalityException.MultipleMatches.atLeast()` is how many matched, at
+least. `Selections` stops at the second match, so there it is two.
+
+`libtmux-jackson`'s `SchemaException` is an `IllegalArgumentException`: a
+document that is not a filter is bad input, not a tmux failure.
+
+An interrupt during `EventSubscription.stream()` or `publisher()`, which cannot
+throw `InterruptedException`, ends the read with
+`java.util.concurrent.CancellationException` rather than `LibTmuxException`.
+
+```java
+final class Recovery {
+    static String nextStep(LibTmuxException failure) {
+        return switch (failure) {
+            case TargetGoneException gone -> "look the handle up again";
+            case ServerUnavailableException down -> "start a server";
+            case CommandRejectedException refused -> "change the request: " + refused.errorLines();
+            case DispatchException failed -> failed.safeToRetry() ? "send it again" : "read tmux's state first";
+            case ControlEndedException ended -> "attach again and take a snapshot";
+            case UnsupportedFeatureException unsupported -> "do without it: " + unsupported.getMessage();
+            case UnencodableTextException unencodable -> "start the JVM in a UTF-8 locale";
+            case MalformedResponseException malformed -> "report it: " + malformed.getMessage();
+            case CardinalityException.NoMatch none -> "nothing matched";
+            case CardinalityException.MultipleMatches many -> many.atLeast() + " matched";
+        };
+    }
+}
+```
+
 ### `Notification` has four more cases
 
 api-break: Notification

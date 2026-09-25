@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.util.List;
 import kotlin.annotations.jvm.ReadOnly;
 
@@ -22,7 +23,7 @@ public final class Prompt {
     /**
      * What has been typed at the prompt, oldest first.
      *
-     * @throws UnsupportedTmuxVersionException if this tmux has no such command
+     * @throws UnsupportedFeatureException if this tmux has no such command
      */
     @ReadOnly
     public List<String> history() {
@@ -33,7 +34,7 @@ public final class Prompt {
     /**
      * Forgets what has been typed at the prompt.
      *
-     * @throws UnsupportedTmuxVersionException if this tmux has no such command
+     * @throws UnsupportedFeatureException if this tmux has no such command
      */
     public void clear() {
         require();
@@ -44,7 +45,7 @@ public final class Prompt {
         if (server.commands().list().stream().anyMatch(line -> named(line, "show-prompt-history"))) {
             return;
         }
-        throw new UnsupportedTmuxVersionException("the command prompt's history", SINCE, server.version());
+        throw new UnsupportedFeatureException("the command prompt's history", SINCE, server.version());
     }
 
     /** Whether a {@code list-commands} line names this command, not one of its aliases. */

@@ -1,6 +1,7 @@
 package io.github.libtmux;
 
-import io.github.libtmux.transport.TmuxTimeoutException;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -100,7 +101,7 @@ final class PaneWait {
                 if (poll.test(pane.through(pane.server().within(budget)))) {
                     return WakeReason.SIGNALLED;
                 }
-            } catch (TmuxTimeoutException expired) {
+            } catch (DispatchException.TimedOut expired) {
                 return WakeReason.TIMED_OUT;
             } catch (LibTmuxException unreadable) {
                 return afterFailedRead(pane, unreadable);
@@ -126,7 +127,7 @@ final class PaneWait {
         boolean alive;
         try {
             alive = pane.server().isAlive(SHORTEST_READ);
-        } catch (TmuxTimeoutException unanswered) {
+        } catch (DispatchException.TimedOut unanswered) {
             unreadable.addSuppressed(unanswered);
             throw unreadable;
         }

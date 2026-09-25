@@ -1,14 +1,10 @@
 package io.github.libtmux.scaladsl
 
+import io.github.libtmux.exception.{TargetGoneException, DispatchException}
 import _root_.cats.effect.IO
 import _root_.cats.effect.unsafe.implicits.global
 import _root_.cats.syntax.all._
-import io.github.libtmux.{
-  ObjectDoesNotExistException,
-  Server => JavaServer,
-  SessionSpec,
-  WakeReason
-}
+import io.github.libtmux.{Server => JavaServer, SessionSpec, WakeReason}
 import io.github.libtmux.batch.OperationOutcome
 import io.github.libtmux.junit5.NamedServerFixture
 import io.github.libtmux.scaladsl.blocking.Server
@@ -19,8 +15,7 @@ import io.github.libtmux.transport.{
   DispatchOutcome,
   OperationReport,
   ProcessTransport,
-  TmuxTransport,
-  TmuxTransportException
+  TmuxTransport
 }
 import java.nio.file.Files
 import java.time.Duration
@@ -208,7 +203,7 @@ final class BatchChainSuite extends FunSuite {
         )
       )
       assertEquals(server.panes().head.info.id, pane.info.id)
-      intercept[ObjectDoesNotExistException](batch.run())
+      intercept[TargetGoneException](batch.run())
       assertEquals(
         server.cmd("show-options", "-gqv", "@replacement").stdout,
         Vector.empty[String]
@@ -284,9 +279,9 @@ final class BatchChainSuite extends FunSuite {
         val failure = intercept[ExecutionException](
           result.get(800, TimeUnit.MILLISECONDS)
         ).getCause
-        assert(failure.isInstanceOf[TmuxTransportException])
+        assert(failure.isInstanceOf[DispatchException])
         assertEquals(
-          failure.asInstanceOf[TmuxTransportException].outcome(),
+          failure.asInstanceOf[DispatchException].outcome(),
           DispatchOutcome.UNKNOWN
         )
         assert(failure.getCause.isInstanceOf[InterruptedException])

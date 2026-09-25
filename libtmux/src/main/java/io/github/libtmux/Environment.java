@@ -1,5 +1,7 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.ServerUnavailableException;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.transport.CommandResult;
 import java.util.ArrayList;
@@ -73,7 +75,7 @@ public final class Environment {
     /**
      * The value set for this name, or empty when it is removed or absent.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the read otherwise fails
      */
     public Optional<String> get(String name) {
@@ -83,7 +85,7 @@ public final class Environment {
     /**
      * Whether new processes are told not to inherit this name.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the read otherwise fails
      */
     public boolean isRemoved(String name) {
@@ -110,7 +112,7 @@ public final class Environment {
      *
      * <p>The counterpart to {@link Options#effective()}, and named after it.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if a read otherwise fails
      */
     @ReadOnly

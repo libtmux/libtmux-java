@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -36,8 +37,8 @@ final class LayoutsTest {
      */
     @Test
     void aJsonLayoutIsRefusedBelowTheVersionThatWritesIt() {
-        UnsupportedTmuxVersionException refused =
-                assertThrows(UnsupportedTmuxVersionException.class, () -> Layouts.require(JSON_LAYOUT, V3_7C));
+        UnsupportedFeatureException refused =
+                assertThrows(UnsupportedFeatureException.class, () -> Layouts.require(JSON_LAYOUT, V3_7C));
 
         assertTrue(String.valueOf(refused.getMessage()).contains("3.8"), refused.getMessage());
     }
@@ -87,7 +88,7 @@ final class LayoutsTest {
         // main-horizontal is a prefix of main-horizontal-mirrored, but the exact name is not new.
         assertEquals("main-horizontal", Layouts.require("main-horizontal", V3_3A));
 
-        assertThrows(UnsupportedTmuxVersionException.class, () -> Layouts.require("main-horizontal-mirrored", V3_3A));
+        assertThrows(UnsupportedFeatureException.class, () -> Layouts.require("main-horizontal-mirrored", V3_3A));
     }
 
     @Test

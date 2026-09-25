@@ -63,7 +63,7 @@ read.operations().get(1).stdout().size();                             // → 1
 
 A batch taken from a handle, as `pane.batch()` is, runs only on the server that
 handle came from: a tmux started since, even on the same pid, refuses the whole
-batch with `ObjectDoesNotExistException` and runs none of it. `server.batch()`
+batch with `TargetGoneException` and runs none of it. `server.batch()`
 reaches whatever server answers.
 
 tmux takes one group as one command of at most about 16300 bytes, and refuses a

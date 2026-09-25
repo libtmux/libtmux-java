@@ -1,5 +1,9 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.internal.ErrorText;
 import io.github.libtmux.transport.CommandResult;
 import java.util.List;
 
@@ -37,7 +41,7 @@ final class SessionCreation {
      * <p>Reads {@link SnapshotCapture#processForCreation()} directly rather than going through
      * {@link Server#version()}: a daemon this client is too old to talk to fails the identity probe
      * the same way one that was never started does ("server exited unexpectedly", confirmed against
-     * the matrix), and {@link Server#version()}'s own {@link ServerNotRunningException} does not keep
+     * the matrix), and {@link Server#version()}'s own {@link ServerUnavailableException} does not keep
      * that distinction once raised. Falling back to {@code binaryVersion} for that case would report
      * the configured binary's own version as though it were the daemon's — exactly the guarantee this
      * method exists to keep.
@@ -61,12 +65,13 @@ final class SessionCreation {
     private static TmuxVersion binaryVersion(Server server) {
         CommandResult result = server.cmd(List.of("-V"));
         if (!result.succeeded() || result.stdout().isEmpty()) {
-            throw new LibTmuxException("tmux -V did not report a version: " + String.join("; ", result.stderr()));
+            throw new MalformedResponseException(
+                    "tmux -V did not report a version" + ErrorText.suffix(result.stderr()));
         }
         String reported = result.stdout().get(0);
         int space = reported.indexOf(' ');
         if (space < 0) {
-            throw new LibTmuxException("tmux -V reported an unexpected line: " + reported);
+            throw new MalformedResponseException("tmux -V reported an unexpected line: " + reported);
         }
         return TmuxVersion.parse(reported.substring(space + 1));
     }

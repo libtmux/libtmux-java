@@ -1,19 +1,22 @@
 package io.github.libtmux.control;
 
-import io.github.libtmux.LibTmuxException;
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.batch.OperationOutcome;
+import io.github.libtmux.exception.CommandRejectedException;
+import io.github.libtmux.exception.ControlEndedException;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.internal.ErrorText;
 import io.github.libtmux.internal.ProcessTree;
 import io.github.libtmux.internal.Utf8;
 import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.OperationObserver;
 import io.github.libtmux.transport.OperationReport;
-import io.github.libtmux.transport.TmuxTimeoutException;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStream;
@@ -209,7 +212,7 @@ public final class ControlClient implements AutoCloseable {
         try {
             process = carrier.start(command);
         } catch (IOException e) {
-            throw new LibTmuxException("could not start a control client", e);
+            throw new DispatchException.Failed("could not start a control client", DispatchOutcome.NOT_DISPATCHED, e);
         }
         ControlClient client = new ControlClient(process, config.observer());
         // Attaching produces a reply of its own. It is awaited like any other, which is also what
@@ -219,16 +222,16 @@ public final class ControlClient implements AutoCloseable {
         ControlReply reply;
         try {
             reply = client.writer.await(attached);
-        } catch (TmuxTimeoutException e) {
+        } catch (DispatchException e) {
             client.closeAfterFailure(e);
             throw e;
-        } catch (TmuxTransportException e) {
-            client.closeAfterFailure(e);
-            throw new LibTmuxException("could not attach the control client", e);
         }
         if (reply.outcome() != OperationOutcome.COMPLETE) {
-            LibTmuxException failure =
-                    new LibTmuxException("the control client did not become ready: " + reply.lines());
+            LibTmuxException failure = new CommandRejectedException(
+                    "the control client did not become ready" + ErrorText.suffix(reply.lines()),
+                    "attach-session",
+                    -1,
+                    reply.lines());
             client.closeAfterFailure(failure);
             throw failure;
         }
@@ -241,7 +244,11 @@ public final class ControlClient implements AutoCloseable {
         // The start time leads: it is a number, and the version, compared as text, may hold a space.
         ControlReply reply = send("display-message", "-p", "#{start_time} #{pid} #{version}");
         if (!reply.succeeded() || reply.lines().size() != 1) {
-            throw new LibTmuxException("could not read the control client's server");
+            throw new CommandRejectedException(
+                    "could not read the control client's server" + ErrorText.suffix(reply.lines()),
+                    "display-message",
+                    -1,
+                    reply.lines());
         }
         String[] reported = reply.lines().get(0).split(" ", 3);
         long started;
@@ -250,13 +257,13 @@ public final class ControlClient implements AutoCloseable {
             started = Long.parseLong(reported[0]);
             pid = Long.parseLong(reported.length > 1 ? reported[1] : "");
         } catch (NumberFormatException e) {
-            throw new LibTmuxException("tmux reported a malformed server identity");
+            throw new MalformedResponseException("tmux reported a malformed server identity");
         }
         String version = reported.length > 2 ? reported[2] : "";
         if (pid != expectedPid
                 || !version.equals(expectedVersion)
                 || (expectedStart.isPresent() && started != expectedStart.getAsLong())) {
-            throw new ObjectDoesNotExistException("the tmux server this handle belonged to has ended");
+            throw new TargetGoneException("the tmux server this handle belonged to has ended");
         }
     }
 
@@ -279,8 +286,11 @@ public final class ControlClient implements AutoCloseable {
     private void requestJsonLayouts() {
         ControlReply reply = send("refresh-client", "-f", "new-layouts");
         if (reply.outcome() != OperationOutcome.COMPLETE) {
-            LibTmuxException failure =
-                    new LibTmuxException("could not request JSON layouts on attach: " + reply.lines());
+            LibTmuxException failure = new CommandRejectedException(
+                    "could not request JSON layouts on attach" + ErrorText.suffix(reply.lines()),
+                    "refresh-client",
+                    -1,
+                    reply.lines());
             closeAfterFailure(failure);
             throw failure;
         }
@@ -302,8 +312,8 @@ public final class ControlClient implements AutoCloseable {
      * @param argv the command, its arguments already separate elements
      * @param timeout how long to wait for tmux to answer
      * @return tmux's reply
-     * @throws TmuxTransportException if the request cannot complete; its {@link
-     *     TmuxTransportException#outcome() outcome} is {@link DispatchOutcome#NOT_DISPATCHED} until
+     * @throws DispatchException if the request cannot complete; its {@link
+     *     DispatchException#outcome() outcome} is {@link DispatchOutcome#NOT_DISPATCHED} until
      *     the writer picks the request and {@link DispatchOutcome#UNKNOWN} afterwards
      */
     public ControlReply send(List<String> argv, Duration timeout) {
@@ -337,7 +347,7 @@ public final class ControlClient implements AutoCloseable {
         } catch (RuntimeException failure) {
             long[] timing = writer.takeTiming(System.nanoTime() - started);
             DispatchOutcome certainty =
-                    failure instanceof TmuxTransportException transport ? transport.outcome() : DispatchOutcome.UNKNOWN;
+                    failure instanceof DispatchException transport ? transport.outcome() : DispatchOutcome.UNKNOWN;
             try {
                 observer.accept(new OperationReport(
                         ids.incrementAndGet(),
@@ -577,7 +587,7 @@ public final class ControlClient implements AutoCloseable {
         writer.complete(outcome, block, requested);
     }
 
-    private void terminate(TmuxTransportException failure) {
+    private void terminate(DispatchException failure) {
         failed = true;
         closeSubscriptions(failure);
         if (!processTree.terminate()) {

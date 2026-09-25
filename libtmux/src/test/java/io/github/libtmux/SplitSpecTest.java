@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -166,29 +167,29 @@ final class SplitSpecTest {
     @Test
     void theThreeSevenOptionsAreRefusedBeforeTmuxIsAsked() {
         assertThrows(
-                UnsupportedTmuxVersionException.class,
+                UnsupportedFeatureException.class,
                 () -> argv(SplitSpec.builder().empty().build(), V36));
         assertThrows(
-                UnsupportedTmuxVersionException.class,
+                UnsupportedFeatureException.class,
                 () -> argv(SplitSpec.builder().keepOnExit().build(), V36));
         assertThrows(
-                UnsupportedTmuxVersionException.class,
+                UnsupportedFeatureException.class,
                 () -> argv(SplitSpec.builder().keepOnExit("done").build(), V36));
         assertThrows(
-                UnsupportedTmuxVersionException.class,
+                UnsupportedFeatureException.class,
                 () -> argv(SplitSpec.builder().style("fg=red").build(), V36));
         assertThrows(
-                UnsupportedTmuxVersionException.class,
+                UnsupportedFeatureException.class,
                 () -> argv(SplitSpec.builder().activeBorderStyle("fg=red").build(), V36));
         assertThrows(
-                UnsupportedTmuxVersionException.class,
+                UnsupportedFeatureException.class,
                 () -> argv(SplitSpec.builder().inactiveBorderStyle("fg=red").build(), V36));
     }
 
     @Test
     void theRefusalNamesTheFeatureAndBothVersions() {
-        UnsupportedTmuxVersionException refused = assertThrows(
-                UnsupportedTmuxVersionException.class,
+        UnsupportedFeatureException refused = assertThrows(
+                UnsupportedFeatureException.class,
                 () -> argv(SplitSpec.builder().empty().build(), new TmuxVersion(3, 2, "a")));
 
         assertEquals("an empty pane requires tmux 3.7, but this server runs 3.2a", refused.getMessage());

@@ -1,16 +1,12 @@
 package io.github.libtmux.scaladsl.cats
 
+import io.github.libtmux.exception.ControlEndedException
 import _root_.cats.effect.{Deferred, IO}
 import _root_.cats.effect.unsafe.implicits.global
 import _root_.cats.syntax.all._
 import io.github.libtmux.ServerConfig
 import io.github.libtmux.SessionId
-import io.github.libtmux.control.{
-  ControlClient,
-  ControlEndedException,
-  Delivery,
-  PaneOutput
-}
+import io.github.libtmux.control.{ControlClient, Delivery, PaneOutput}
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.atomic.AtomicBoolean

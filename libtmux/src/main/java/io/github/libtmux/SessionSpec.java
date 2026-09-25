@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -131,13 +132,13 @@ public final class SessionSpec {
      *
      * @param format the row format the caller will read the result back with
      * @param running what the server about to run this is, asked only if it matters
-     * @throws UnsupportedTmuxVersionException if the spec asks for something {@code running} does not have
+     * @throws UnsupportedFeatureException if the spec asks for something {@code running} does not have
      */
     List<String> argv(String format, Supplier<TmuxVersion> running) {
         if (size != null) {
             TmuxVersion version = running.get();
             if (!version.atLeast(SIZE_SINCE)) {
-                throw new UnsupportedTmuxVersionException("a size for a detached session", SIZE_SINCE, version);
+                throw new UnsupportedFeatureException("a size for a detached session", SIZE_SINCE, version);
             }
         }
         List<String> argv = new ArrayList<>(24);

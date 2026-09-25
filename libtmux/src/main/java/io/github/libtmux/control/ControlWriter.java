@@ -1,11 +1,10 @@
 package io.github.libtmux.control;
 
 import io.github.libtmux.batch.OperationOutcome;
+import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.format.Tokens;
 import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.transport.DispatchOutcome;
-import io.github.libtmux.transport.TmuxTimeoutException;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.time.Duration;
@@ -42,13 +41,13 @@ final class ControlWriter {
     private final ArrayBlockingQueue<Request> waiting;
     private final AtomicReference<@Nullable Request> active = new AtomicReference<>();
     private final AtomicBoolean accepting = new AtomicBoolean(true);
-    private final Consumer<TmuxTransportException> failed;
+    private final Consumer<DispatchException> failed;
     private final Thread thread;
     private final AtomicLong markers = new AtomicLong();
     // Markers of requests answered whose tails tmux may still be writing. Reader thread only.
     private final java.util.ArrayDeque<String> unanswered = new java.util.ArrayDeque<>();
 
-    ControlWriter(BufferedWriter output, int capacity, Consumer<TmuxTransportException> failed) {
+    ControlWriter(BufferedWriter output, int capacity, Consumer<DispatchException> failed) {
         if (capacity < 1) {
             throw new IllegalArgumentException("control writer capacity is not positive");
         }
@@ -186,7 +185,7 @@ final class ControlWriter {
         return request.answer();
     }
 
-    private void expire(Request request, TmuxTransportException beforeDispatch, TmuxTransportException afterDispatch) {
+    private void expire(Request request, DispatchException beforeDispatch, DispatchException afterDispatch) {
         if (request.cancel(beforeDispatch)) {
             waiting.remove(request);
             return;
@@ -265,7 +264,7 @@ final class ControlWriter {
         }
     }
 
-    private void halt(Request request, TmuxTransportException failure) {
+    private void halt(Request request, DispatchException failure) {
         if (request.claimFailure()) {
             try {
                 stop(failure, true);
@@ -275,7 +274,7 @@ final class ControlWriter {
         }
     }
 
-    private void stop(TmuxTransportException activeFailure, boolean notifyFailure) {
+    private void stop(DispatchException activeFailure, boolean notifyFailure) {
         if (!accepting.compareAndSet(true, false)) {
             return;
         }
@@ -311,16 +310,17 @@ final class ControlWriter {
         }
     }
 
-    private static TmuxTransportException notDispatched(String message, @Nullable Throwable cause) {
-        return new TmuxTransportException(message, DispatchOutcome.NOT_DISPATCHED, cause);
+    private static DispatchException notDispatched(String message, @Nullable Throwable cause) {
+        return new DispatchException.Failed(message, DispatchOutcome.NOT_DISPATCHED, cause);
     }
 
-    private static TmuxTransportException unknown(String message, @Nullable Throwable cause) {
-        return new TmuxTransportException(message, DispatchOutcome.UNKNOWN, cause);
+    private static DispatchException unknown(String message, @Nullable Throwable cause) {
+        return new DispatchException.Failed(message, DispatchOutcome.UNKNOWN, cause);
     }
 
-    private static TmuxTimeoutException timeout(String message, DispatchOutcome outcome, @Nullable Throwable cause) {
-        return new TmuxTimeoutException(message, outcome, cause);
+    private static DispatchException.TimedOut timeout(
+            String message, DispatchOutcome outcome, @Nullable Throwable cause) {
+        return new DispatchException.TimedOut(message, outcome, cause);
     }
 
     static final class Request {
@@ -367,7 +367,7 @@ final class ControlWriter {
             return new long[] {Math.max(0, picked - started), Math.max(0, now - picked)};
         }
 
-        boolean cancel(TmuxTransportException reason) {
+        boolean cancel(DispatchException reason) {
             return finish(State.QUEUED, reason);
         }
 
@@ -375,7 +375,7 @@ final class ControlWriter {
             finish(State.PICKED, reply);
         }
 
-        boolean fail(TmuxTransportException reason) {
+        boolean fail(DispatchException reason) {
             if (!claimFailure()) {
                 return false;
             }
@@ -387,7 +387,7 @@ final class ControlWriter {
             return state.compareAndSet(State.PICKED, State.FAILING);
         }
 
-        void publishFailure(TmuxTransportException reason) {
+        void publishFailure(DispatchException reason) {
             finish(State.FAILING, reason);
         }
 
@@ -411,7 +411,7 @@ final class ControlWriter {
 
         ControlReply answer() {
             Object result = answer;
-            if (result instanceof TmuxTransportException failure) {
+            if (result instanceof DispatchException failure) {
                 throw failure;
             }
             if (result instanceof ControlReply reply) {

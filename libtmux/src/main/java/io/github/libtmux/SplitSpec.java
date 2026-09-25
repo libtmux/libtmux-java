@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -156,7 +157,7 @@ public final class SplitSpec {
      * @param target what to split, as a tmux target
      * @param format the row format the caller will read the result back with
      * @param running the version of the server about to run this
-     * @throws UnsupportedTmuxVersionException if the spec asks for something {@code running} does not have
+     * @throws UnsupportedFeatureException if the spec asks for something {@code running} does not have
      */
     List<String> argv(String target, String format, TmuxVersion running) {
         requireVersion(running);
@@ -264,7 +265,7 @@ public final class SplitSpec {
             wanted = "pane styling on split";
         }
         if (wanted != null) {
-            throw new UnsupportedTmuxVersionException(wanted, PANE_EXTRAS_SINCE, running);
+            throw new UnsupportedFeatureException(wanted, PANE_EXTRAS_SINCE, running);
         }
     }
 
@@ -334,7 +335,7 @@ public final class SplitSpec {
          *
          * <p>A command that exits fast enough races {@link Pane#split}'s own read-back: tmux can
          * destroy the pane before the second listing that confirms it runs, and the split then
-         * throws {@code ObjectDoesNotExistException} even though tmux made the pane and ran the
+         * throws {@code TargetGoneException} even though tmux made the pane and ran the
          * command in it. {@link #keepOnExit} removes the race by keeping the pane there to be read.
          */
         public Builder running(String... argv) {

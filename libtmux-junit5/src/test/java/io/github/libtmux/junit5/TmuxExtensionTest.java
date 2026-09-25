@@ -8,11 +8,11 @@ import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass
 
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
+import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTransport;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -39,7 +39,7 @@ final class TmuxExtensionTest {
         TmuxTransport failedProbe = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                throw new TmuxTransportException("probe failed", DispatchOutcome.UNKNOWN, null);
+                throw new DispatchException.Failed("probe failed", DispatchOutcome.UNKNOWN, null);
             }
 
             @Override

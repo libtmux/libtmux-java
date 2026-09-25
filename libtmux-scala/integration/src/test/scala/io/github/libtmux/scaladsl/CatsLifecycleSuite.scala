@@ -1,5 +1,6 @@
 package io.github.libtmux.scaladsl
 
+import io.github.libtmux.exception.ServerClosedException
 import _root_.cats.effect.IO
 import _root_.cats.effect.unsafe.implicits.global
 import _root_.cats.syntax.all._
@@ -16,8 +17,7 @@ import io.github.libtmux.transport.{
   CommandResult,
   DispatchOutcome,
   ProcessTransport,
-  TmuxTransport,
-  TmuxTransportException
+  TmuxTransport
 }
 import java.time.Duration
 import java.util.List
@@ -36,7 +36,7 @@ final class CatsLifecycleSuite extends FunSuite {
       extends TmuxTransport {
     val waits = new AtomicInteger()
     val closes = new AtomicInteger()
-    val failure = new AtomicReference[Option[TmuxTransportException]](None)
+    val failure = new AtomicReference[Option[ServerClosedException]](None)
     override def execute(request: CommandRequest): CommandResult =
       delegate.execute(request)
     override def executeWaiting(request: CommandRequest): CommandResult = {
@@ -53,7 +53,7 @@ final class CatsLifecycleSuite extends FunSuite {
           )
         )
       } catch {
-        case problem: TmuxTransportException =>
+        case problem: ServerClosedException =>
           failure.set(Some(problem))
           throw problem
       }

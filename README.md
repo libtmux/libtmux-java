@@ -188,7 +188,7 @@ Session build = Selections.exactlyOne(
 build.name();                        // → build
 ```
 
-`exactlyOne` raises `NoMatchException` for none and `MultipleMatchesException`
+`exactlyOne` raises `CardinalityException.NoMatch` for none and `CardinalityException.MultipleMatches`
 for several, because those are different bugs in the calling code.
 
 ### Run a command to its end

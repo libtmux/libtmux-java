@@ -6,10 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
 import io.github.libtmux.format.RowFormat;
-import io.github.libtmux.format.TmuxFormatException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
@@ -44,7 +44,7 @@ final class PaneInputCohortTest {
     @MethodSource("malformedRows")
     void malformedAuthoritativeRowsFailClosed(String label, List<String> stdout) {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse("%0", new CommandResult(0, stdout, List.of())),
                 label);
     }
@@ -63,7 +63,7 @@ final class PaneInputCohortTest {
             })
     void noncanonicalPaneIdsFailClosed(String paneId) {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0", answer(row("%0", "1", "0", "0", "sh"), row(paneId, "1", "0", "0", "sh"))));
     }
@@ -71,7 +71,7 @@ final class PaneInputCohortTest {
     @Test
     void strayPhysicalLineCannotBecomePaneId() {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0", answer(row("%0", "1", "0", "0", "sh"), "junk", row("%1", "1", "0", "0", "sh"))));
     }
@@ -213,7 +213,7 @@ final class PaneInputCohortTest {
     @Test
     void unknownTerminalClientPaneFailsClosed() {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0",
                         answer(row("%0", "0", "0", "0", "sh")),
@@ -233,7 +233,7 @@ final class PaneInputCohortTest {
     @MethodSource("invalidTerminalClientPlacements")
     void terminalClientPlacementMustMatchThePaneSnapshot(String label, String client) {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0", answer(row("%0", "0", "0", "0", "sh")), answer(client), Caller.nowhere()),
                 label);
@@ -259,12 +259,12 @@ final class PaneInputCohortTest {
     @ValueSource(strings = {"", "-1", "+0", "01", "4294967296"})
     void windowIndexesMustBeCanonicalUnsigned32BitValues(String index) {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0",
                         answer(row("%0", "0", "0", "0", "sh", "0", "$0", "@0", index, "1", "1", "/tmp/test-tmux"))));
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0",
                         answer(row("%0", "0", "0", "0", "sh")),
@@ -275,7 +275,7 @@ final class PaneInputCohortTest {
     @Test
     void everyPaneInALinkedWindowNeedsTheSamePlacementRectangle() {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0",
                         answer(

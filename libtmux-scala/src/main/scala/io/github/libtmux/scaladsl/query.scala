@@ -1,5 +1,6 @@
 package io.github.libtmux.scaladsl
 
+import io.github.libtmux.exception.CardinalityException
 import io.github.libtmux.{
   Client => JavaClient,
   Pane => JavaPane,
@@ -23,7 +24,7 @@ object Queries {
     Selections.exactlyOne(values.asJava)
 
   /** Returns None for absence and rejects ambiguity with
-    * MultipleMatchesException.
+    * CardinalityException.MultipleMatches.
     */
   def oneOrNone[A](values: Iterable[A]): Option[A] =
     Selections.oneOrEmpty(values.asJava).toScala
