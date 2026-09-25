@@ -664,6 +664,8 @@ final class OperationBenchmark {
                 .append(os())
                 .append("` |\n| CPU | `")
                 .append(cpu())
+                .append("` |\n| commit | `")
+                .append(commit())
                 .append("` |\n\n");
 
         out.append("Measured ")
@@ -798,6 +800,37 @@ final class OperationBenchmark {
     }
 
     // ----------------------------------------------------------------------------- environment
+
+    /**
+     * The revision measured, and whether the code differed from it. The table itself is left out of
+     * that comparison: regenerating it is what changes it.
+     */
+    private static String commit() {
+        java.util.Optional<String> head = git("rev-parse", "--short=12", "HEAD");
+        if (head.isEmpty()) {
+            return "unknown";
+        }
+        java.util.Optional<String> changed =
+                git("status", "--porcelain", "--untracked-files=no", "--", ":/", ":(exclude,top)docs/benchmarks");
+        return head.get() + (changed.map(String::isBlank).orElse(false) ? "" : " with uncommitted changes");
+    }
+
+    private static java.util.Optional<String> git(String... arguments) {
+        List<String> command = new java.util.ArrayList<>(List.of("git"));
+        command.addAll(List.of(arguments));
+        try {
+            Process process =
+                    new ProcessBuilder(command).redirectErrorStream(true).start();
+            String output =
+                    new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            return process.waitFor() == 0 ? java.util.Optional.of(output.strip()) : java.util.Optional.empty();
+        } catch (IOException e) {
+            return java.util.Optional.empty();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return java.util.Optional.empty();
+        }
+    }
 
     private static String jvm() {
         return System.getProperty("java.version") + " (" + System.getProperty("java.vendor") + ")";
