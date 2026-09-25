@@ -123,7 +123,7 @@ final class SnapshotCapture {
 
     /**
      * As {@link #process}, except a live daemon this client cannot actually talk to is never folded
-     * into "no daemon" - used only by {@link Server#versionForCreation}, the one caller for which
+     * into "no daemon" - used only by {@link SessionCreation#versionForCreation}, the one caller for which
      * that distinction matters.
      *
      * <p>tmux reports both the same way from a client's side: "no server running"/"(No such file or

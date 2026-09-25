@@ -225,9 +225,9 @@ public final class Session {
      */
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
-        return Server.printed(server.run(
+        return PrintedText.printed(server.run(
                         snapshot,
-                        List.of("display-message", "-p", "-t", state.id().value(), "--", Server.expansion(format)))
+                        List.of("display-message", "-p", "-t", state.id().value(), "--", PrintedText.expansion(format)))
                 .stdout());
     }
 
