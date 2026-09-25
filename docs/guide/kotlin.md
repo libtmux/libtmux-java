@@ -108,6 +108,23 @@ collection does too. That does not reconnect, and it does not undo a command
 tmux has already accepted. A subscription has one collector: a second
 collection, at the same time or after, fails with `IllegalStateException`.
 
+Handling a step directly, rather than through `kept()`, is an exhaustive
+`when` over `Delivery`: Kotlin checks every branch of a sealed Java interface
+is covered, no `else` required.
+
+```kotlin
+import io.github.libtmux.control.Delivery
+
+fun describe(step: Delivery<String>): String =
+    when (step) {
+        is Delivery.Event -> "kept ${step.value}"
+        is Delivery.Gap -> "lost ${step.missed}"
+    }
+
+describe(Delivery.Event("five"))   // → kept five
+describe(Delivery.Gap(4L))         // → lost 4
+```
+
 `awaitDelivery` waits for one step. Cancelling that wait leaves the subscription
 open. Its timeout is a `kotlin.time.Duration`.
 
