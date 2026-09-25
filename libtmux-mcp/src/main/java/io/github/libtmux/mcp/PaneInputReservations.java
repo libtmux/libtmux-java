@@ -77,8 +77,8 @@ final class PaneInputReservations {
             for (PaneKey key : panes) {
                 String holder = HELD.get(key);
                 if (holder != null && !(interrupting && holder.equals(RUN))) {
-                    throw new IllegalStateException(
-                            operation + " refuses pane input already owned by another operation");
+                    throw new IllegalStateException(operation + " refuses pane " + key.paneId() + "; already owned"
+                            + " by " + holder + ", which is writing to it — retry once it finishes");
                 }
                 if (holder == null) {
                     owned.add(key);
