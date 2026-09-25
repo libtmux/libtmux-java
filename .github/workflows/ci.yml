@@ -38,6 +38,15 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: git diff --check "$BASE_SHA...$HEAD_SHA"
 
+  scripts:
+    name: scripts/require-passed.sh
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - run: ./scripts/require-passed.test.sh
+
   check:
     name: check (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest

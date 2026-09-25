@@ -43,7 +43,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: ./scripts/require-passed.sh "$GITHUB_SHA" scala-matrix.yml
+        run: ./scripts/require-passed.sh "$GITHUB_SHA" 'scala-matrix.yml:Required checks'
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
