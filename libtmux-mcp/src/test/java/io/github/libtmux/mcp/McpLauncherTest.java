@@ -168,6 +168,11 @@ final class McpLauncherTest {
             assertTrue(
                     instructions.contains("human-owned") && instructions.contains("synchronized"),
                     "pane input refusing a modal or synchronized pane must be stated: " + instructions);
+            assertTrue(
+                    instructions.contains("attended panes")
+                            && instructions.contains("a terminal client is currently displaying"),
+                    "'attended' must be defined where a model reads it before meeting it "
+                            + "in a tool description or refusal: " + instructions);
         }
     }
 

@@ -30,10 +30,10 @@ final class Instructions {
                 START HERE
                 get_server_info identifies the pinned server. list_panes returns stable pane IDs and \
                 marks this process's pane when it runs inside the selected server. Direct teardown \
-                tools guard that pane. Pane input also refuses it, panes a terminal client is \
-                currently displaying, panes in a human-owned tmux mode, and, for a synchronized \
-                window, the whole cohort when one member cannot take input. This process cannot \
-                address objects outside its selected socket.
+                tools guard that pane. Pane input also refuses it, attended panes (ones a terminal \
+                client is currently displaying), panes in a human-owned tmux mode, and, for a \
+                synchronized window, the whole cohort when one member cannot take input. This \
+                process cannot address objects outside its selected socket.
 
                 WAIT, DO NOT POLL
                 A command you wrote: run_shell_command. It sends, waits, and returns output with an exit status \
