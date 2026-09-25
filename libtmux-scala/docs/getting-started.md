@@ -1,6 +1,6 @@
 # Getting started
 
-Use JDK 21 or 25 and an explicit tmux executable. Run the build commands from
+Use JDK 25 or 27 and an explicit tmux executable. Run the build commands from
 the repository root. `JAVA_HOME` selects the JDK; `TMUX_TEST_BINARY` must be the
 absolute path of the tmux binary used by live tests. The checked `libtmux-scala/sbtw`
 launcher pins sbt and clears inherited `TMUX` and `TMUX_PANE` before testing.

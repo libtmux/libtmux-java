@@ -8,6 +8,7 @@ mcp = "2.0.1"
 re2j = "1.8"
 slf4j = "2.0.17"
 tomlj = "1.1.1"
+jsr305 = "3.0.2"
 errorprone = "2.50.0"
 nullaway = "0.13.8"
 errorprone-plugin = "5.1.0"
@@ -34,6 +35,7 @@ mcp-json-jackson2 = { module = "io.modelcontextprotocol.sdk:mcp-json-jackson2", 
 re2j = { module = "com.google.re2j:re2j", version.ref = "re2j" }
 slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }
 tomlj = { module = "org.tomlj:tomlj", version.ref = "tomlj" }
+jsr305 = { module = "com.google.code.findbugs:jsr305", version.ref = "jsr305" }
 errorprone-annotations = { module = "com.google.errorprone:error_prone_annotations", version.ref = "errorprone" }
 kotlin-annotations-jvm = { module = "org.jetbrains.kotlin:kotlin-annotations-jvm", version.ref = "kotlin" }
 asm = { module = "org.ow2.asm:asm", version = "9.9.1" }

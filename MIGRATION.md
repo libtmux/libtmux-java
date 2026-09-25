@@ -8,6 +8,16 @@ API changes that require updates to calling code are recorded here. See
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### JDK 25 is the floor
+
+Building or running on JDK 21 through 24 no longer works. The toolchain and
+`options.release` in every module, the Kotlin and Scala compilation targets,
+and the CI matrix move from JDK 21 to JDK 25. Kotlin's oldest supported
+consumer compiler stays 2.1; it cannot itself emit JDK 25 bytecode, so the
+module's own oldest-consumer check now compiles at that compiler's ceiling,
+`-jvm-target 23`, while still linking against this module's JDK 25 bytecode.
+Scala 2.13.18 and 3.3.8 both accept `-release:25`.
+
 ### `Client.refresh()` returns the client or throws
 
 api-break: Client

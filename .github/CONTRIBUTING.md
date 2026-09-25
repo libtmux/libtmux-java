@@ -29,7 +29,7 @@ answerable for how the whole library is tested.
 
 ## Building
 
-You need JDK 21 or newer and tmux on `PATH`. Nothing else — Gradle provisions
+You need JDK 25 or newer and tmux on `PATH`. Nothing else — Gradle provisions
 the toolchain, and the library has no runtime dependencies.
 
 `./gradlew` is the only supported entry point. A locally installed `gradle` is
@@ -196,10 +196,10 @@ to do things in — is in [`RELEASING.md`](../RELEASING.md).
 
 ## Compatibility
 
-**JDK 21 is the floor.** Three places state it and all three have to agree: the
+**JDK 25 is the floor.** Three places state it and all three have to agree: the
 toolchain and `options.release` in
 `build-logic/src/main/kotlin/libtmux.java-library.gradle.kts`, the version
-matrix in the CI workflow, which builds on 21 and 25, and the claim `README.md`
+matrix in the CI workflow, which builds on 25 and 27, and the claim `README.md`
 makes under `Requirements`.
 
 **tmux 3.2a through 3.7c is the supported range**, and it is not a claim: the

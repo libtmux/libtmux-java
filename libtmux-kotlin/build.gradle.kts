@@ -13,7 +13,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
     // A consumer's compiler reads metadata at most one minor version newer than itself. 2.2 is
     // what kotlinx-coroutines 1.11 is compiled for, so a consumer on Kotlin 2.1 can use both;
     // left unpinned, this module's metadata would follow the build's own compiler.
@@ -89,7 +89,7 @@ val compileOldestConsumer =
         outputs.dir(output)
         classpath = oldestKotlin
         mainClass = "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler"
-        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
         argumentProviders.add(
             CommandLineArgumentProvider {
                 listOf(
@@ -100,8 +100,10 @@ val compileOldestConsumer =
                     published.asPath,
                     "-no-stdlib",
                     "-no-reflect",
+                    // Kotlin 2.1's compiler rejects -jvm-target above 23; the flag governs bytecode
+                    // this compile emits, not its ability to read this module's higher-targeted jar.
                     "-jvm-target",
-                    "21",
+                    "23",
                     "-Werror",
                 )
             },

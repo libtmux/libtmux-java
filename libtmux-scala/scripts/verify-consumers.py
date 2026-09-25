@@ -115,8 +115,8 @@ def verify_archives(binary, source, documentation):
             raise ValueError("Binary jar contains no classes: " + binary.name)
         for name in classes:
             header = jar.read(name)[:8]
-            if header[:4] != b"\xca\xfe\xba\xbe" or int.from_bytes(header[6:8], "big") != 65:
-                raise ValueError("Classfile must target JDK 21: " + name)
+            if header[:4] != b"\xca\xfe\xba\xbe" or int.from_bytes(header[6:8], "big") != 69:
+                raise ValueError("Classfile must target JDK 25: " + name)
     with ZipFile(source) as sources, ZipFile(documentation) as docs:
         names = set(docs.namelist())
         if "index.html" not in names:
@@ -420,9 +420,9 @@ def verify(args, staged):
         raise ValueError("Consumer output must be a separate build directory")
     java = subprocess.check_output([str(args.jdk / "bin/java"), "-version"],
                                    stderr=subprocess.STDOUT, text=True)
-    matched = re.search(r'version "(21|25)[.\"]', java)
+    matched = re.search(r'version "(25|27)[.\"]', java)
     if not matched:
-        raise ValueError("Consumer JDK must be 21 or 25: " + java.strip())
+        raise ValueError("Consumer JDK must be 25 or 27: " + java.strip())
     jdk = matched.group(1)
     tmux = subprocess.check_output([str(args.tmux), "-V"], text=True).strip()
     if tmux != "tmux " + args.expected_tmux:
@@ -453,7 +453,7 @@ def verify(args, staged):
                 "build_fences": {name: "UNVERIFIED" for name in exports},
                 "matrix": {
                     f"{system}/jdk{level}/scala{scala}/{tool}": "UNVERIFIED"
-                    for system in ("linux", "macos") for level in (21, 25)
+                    for system in ("linux", "macos") for level in (25, 27)
                     for scala in SCALAS for tool in ("sbt", "gradle")
                 }, "runs": {}}
     report = args.output / "consumer-evidence.json"

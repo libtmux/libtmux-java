@@ -3,7 +3,7 @@ lazy val writeRuntime = taskKey[File]("Export resolved application artifacts.")
 ThisBuild / scalaVersion := sys.env("CONSUMER_SCALA_VERSION")
 ThisBuild / organization := "consumer.fixture"
 ThisBuild / version := "0"
-ThisBuild / scalacOptions ++= Seq("-release:21", "-deprecation", "-feature", "-Werror")
+ThisBuild / scalacOptions ++= Seq("-release:25", "-deprecation", "-feature", "-Werror")
 
 lazy val consumerSettings = Seq(
   publish / skip := true,

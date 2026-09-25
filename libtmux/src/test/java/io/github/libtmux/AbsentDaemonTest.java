@@ -63,7 +63,7 @@ final class AbsentDaemonTest {
         sites.put("sourceFile", server -> server.sourceFile(Path.of("/tmp/nothing.conf")));
         sites.put("shell.run", server -> server.shell().run("true"));
         sites.put("newSession", server -> {
-            var unused = server.newSession("s");
+            var _ = server.newSession("s");
         });
 
         List<String> wrong = new ArrayList<>();

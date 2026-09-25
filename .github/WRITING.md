@@ -28,7 +28,7 @@ Four things near the top are compatibility claims, and they move together:
   exported identifiers without a deprecation period, pin an exact version, not
   recommended for production. `CHANGELOG.md` and the `Status` section say the
   same thing in the same words.
-- **The requirements are JDK 21 or newer, and tmux 3.2a through 3.7c.** The tmux
+- **The requirements are JDK 25 or newer, and tmux 3.2a through 3.7c.** The tmux
   range is not a claim — the matrix runs every lane of it — so it may not drift
   from `workflows/tmux-matrix.yml`.
 - **Coordinates are group `io.github.libtmux`, imported through
@@ -119,7 +119,7 @@ editorial where the changelog is exhaustive, and it may leave things out.
 Order it capability, then consequence, then compatibility:
 
 > 0.0.1-alpha.7 adds streaming capture, and rejects `windowId` at pane scope
-> rather than ignoring it. Pass `scope: window` to read at window scope. JDK 21
+> rather than ignoring it. Pass `scope: window` to read at window scope. JDK 25
 > and tmux 3.2a through 3.7c are unchanged.
 
 The title is plain — the version, optionally preceded by `libtmux for Java`.
@@ -366,8 +366,8 @@ users paste error text into a search box, and an agent reasoning across files
 has nothing but the string:
 
 - **tmux** is lowercase, always, including at the start of a sentence.
-- **Javadoc** is capitalized; **JDK** and **JVM** are upper case. "Java 21" and
-  "JDK 21" both appear upstream — this project writes **JDK 21**.
+- **Javadoc** is capitalized; **JDK** and **JVM** are upper case. "Java 25" and
+  "JDK 25" both appear upstream — this project writes **JDK 25**.
 - A **pane**, **window**, **session**, and **server** are what tmux calls them.
   Do not introduce a synonym for one.
 - Write the identifier, not a description of it: `LIBTMUX_TOOLSETS=inspect`,
