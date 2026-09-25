@@ -455,7 +455,9 @@ $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds
 
 See the [migration notes](MIGRATION.md) when upgrading. Every public type and
 member is in the [API reference](https://libtmux.org/en/java/latest/reference/),
-built from the current trunk. The [documentation index](docs/README.md) groups
+built from the current trunk; each released version's Javadoc is on
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux). The
+[documentation index](docs/README.md) groups
 every guide, benchmark, spike, and study, one line each.
 
 - [Getting started](docs/guide/getting-started.md)
