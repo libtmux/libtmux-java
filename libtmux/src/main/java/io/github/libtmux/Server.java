@@ -63,7 +63,7 @@ public final class Server implements AutoCloseable {
     private final boolean owned;
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    private final ServerIdentity identity;
+    private final IncarnationFence fence;
     private final SnapshotCapture capture;
 
     /**
@@ -81,7 +81,7 @@ public final class Server implements AutoCloseable {
         this.config = config;
         this.transport = transport;
         this.owned = owned;
-        this.identity = ServerIdentity.of(transport.realm(), config.endpoint());
+        this.fence = new IncarnationFence(this, ServerIdentity.of(transport.realm(), config.endpoint()));
         this.capture = new SnapshotCapture(this);
         this.echo = echo;
     }
@@ -89,6 +89,11 @@ public final class Server implements AutoCloseable {
     /** What this library last typed into each of this server's panes. */
     PaneEcho echo() {
         return echo;
+    }
+
+    /** How this server's own hierarchy is read back, for helpers that need one listing directly. */
+    SnapshotCapture capture() {
+        return capture;
     }
 
     /**
@@ -129,10 +134,10 @@ public final class Server implements AutoCloseable {
      * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
      */
     public Session newSession(SessionSpec spec) {
-        CommandResult result = run(spec.argv("#{session_id}", this::versionForCreation));
+        CommandResult result = run(spec.argv("#{session_id}", () -> SessionCreation.versionForCreation(this)));
         List<String> reported = result.stdout();
         if (reported.isEmpty()) {
-            throw new LibTmuxException(sessionCreationFailureMessage(result));
+            throw new LibTmuxException(SessionCreation.failureMessage(config, result));
         }
         SessionId created = new SessionId(reported.get(0));
         ServerSnapshot fresh = snapshot();
@@ -142,59 +147,13 @@ public final class Server implements AutoCloseable {
     }
 
     /**
-     * tmux exits 0 even when nothing was created: an explicit {@code -S} under a directory that does
-     * not exist prints its own {@code error creating ...} and still returns success, and a binary
-     * that is not tmux at all can exit 0 with nothing on stdout the same way {@code run} cannot tell
-     * apart from a real session id. Reads tmux's own words when it spoke and names the configured
-     * binary when it did not, rather than letting an empty list reach {@code SessionId} and throw
-     * an unchecked collection exception with neither in it.
-     */
-    private String sessionCreationFailureMessage(CommandResult result) {
-        if (!result.stderr().isEmpty()) {
-            return "tmux new-session failed: " + String.join("; ", result.stderr());
-        }
-        return config.binary() + " exited 0 and reported no session id; is it tmux?";
-    }
-
-    /**
      * Whether a session with this name exists.
      *
      * @throws ServerNotRunningException if no daemon is running
      */
     public boolean hasSession(String name) {
         Objects.requireNonNull(name, "name");
-        return sessionNamed(name).isPresent();
-    }
-
-    /**
-     * The id of the session tmux keeps under this name, read from one listing.
-     *
-     * <p>Not a {@code -t =name} target: tmux reads {@code .} and {@code :} in a target as window and
-     * pane separators, and it may have stored the name differently from how it was given.
-     */
-    private Optional<SessionId> sessionNamed(String name) {
-        RowFormat format = RowFormat.of("session_id", "session_name", "version");
-        CommandResult result = cmd("list-sessions", "-F", format.template());
-        if (!result.succeeded()) {
-            // A live server with no sessions lists nothing and exits 0, on 3.2a and 3.7d alike, so
-            // any failure is not an answer: no daemon, a socket this user cannot open, or a binary
-            // that is not tmux. failed() tells the first apart.
-            throw failed("list-sessions", result);
-        }
-        List<RowFormat.Row> rows = format.rows(result.stdout());
-        if (rows.isEmpty()) {
-            return Optional.empty();
-        }
-        TmuxVersion version = TmuxVersion.parse(rows.get(0).text("version"));
-        rows = format.rows(TmuxFormats.printed(result.stdout(), version));
-        for (String stored : TmuxFormats.storedNames(name, version)) {
-            for (RowFormat.Row row : rows) {
-                if (row.text("session_name").equals(stored)) {
-                    return Optional.of(new SessionId(row.text("session_id")));
-                }
-            }
-        }
-        return Optional.empty();
+        return SessionLookup.named(this, name).isPresent();
     }
 
     /**
@@ -207,8 +166,8 @@ public final class Server implements AutoCloseable {
      */
     public void killSession(String name) {
         Objects.requireNonNull(name, "name");
-        SessionId id =
-                sessionNamed(name).orElseThrow(() -> new ObjectDoesNotExistException("no session named " + name));
+        SessionId id = SessionLookup.named(this, name)
+                .orElseThrow(() -> new ObjectDoesNotExistException("no session named " + name));
         run(List.of("kill-session", "-t", id.value()));
     }
 
@@ -403,7 +362,7 @@ public final class Server implements AutoCloseable {
      * the id of a window or pane it just created.
      */
     public CommandChain chain() {
-        return new CommandChain(batch(), this::versionForCreation);
+        return new CommandChain(batch(), () -> SessionCreation.versionForCreation(this));
     }
 
     /**
@@ -418,56 +377,8 @@ public final class Server implements AutoCloseable {
      */
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
-        return printed(
-                run(List.of("display-message", "-p", "--", expansion(format))).stdout());
-    }
-
-    private static final String VERSION_MARK = io.github.libtmux.format.Tokens.perProcess() + "-version";
-
-    /**
-     * Printed after what a command printed. tmux ends its output with a line break and the transport
-     * drops trailing blank lines, so text that itself ends in line breaks would lose them; with this
-     * after it, nothing trailing is blank.
-     */
-    static final String END_MARK = io.github.libtmux.format.Tokens.perProcess() + "-end";
-
-    /** A format for {@code display-message -p} that {@link #printed(List)} reads back exactly. */
-    static String expansion(String format) {
-        return versioned(format) + END_MARK;
-    }
-
-    /**
-     * This format with the server's version expanded ahead of it, so the reply can be decoded
-     * without another tmux process. See {@link TmuxFormats#printed(String, TmuxVersion)}.
-     */
-    static String versioned(String format) {
-        return "#{version}" + VERSION_MARK + format;
-    }
-
-    /** The expansion of a {@link #versioned} format, as tmux held the text. */
-    static String printed(List<String> reported) {
-        String all = String.join("\n", reported);
-        int mark = all.indexOf(VERSION_MARK);
-        String text = mark < 0 ? all : all.substring(mark + VERSION_MARK.length());
-        if (mark >= 0) {
-            try {
-                text = TmuxFormats.printed(text, TmuxVersion.parse(all.substring(0, mark)));
-            } catch (RuntimeException notAVersion) {
-                // Not tmux's own answer, as from a test double; keep what came back.
-            }
-        }
-        // After the decoding, not before: 3.4 escapes a $ that a letter follows, and the mark may
-        // begin with one, so a value ending in $ is only whole once that escape is undone.
-        return text.endsWith(END_MARK) ? text.substring(0, text.length() - END_MARK.length()) : text;
-    }
-
-    /** As {@link #printed(List)}, for a listing whose every row began with {@link #versioned}. */
-    static List<String> printedRows(List<String> rows) {
-        List<String> text = new ArrayList<>(rows.size());
-        for (String row : rows) {
-            text.add(printed(List.of(row)));
-        }
-        return text;
+        return PrintedText.printed(run(List.of("display-message", "-p", "--", PrintedText.expansion(format)))
+                .stdout());
     }
 
     /**
@@ -476,25 +387,11 @@ public final class Server implements AutoCloseable {
      * the end of the output are kept.
      */
     CommandResult printed(@Nullable ServerSnapshot snapshot, List<String> argv) {
-        List<List<String>> group = List.of(
-                List.of("display-message", "-p", "#{version}"), argv, List.of("display-message", "-p", END_MARK));
+        List<List<String>> group = PrintedText.framed(argv);
         CommandResult result = snapshot == null
                 ? transport.execute(request(group, config.defaultTimeout(), ""))
-                : guarded(snapshot, CommandStrings.group(group));
-        if (result.stdout().isEmpty()) {
-            return result;
-        }
-        List<String> output = result.stdout().subList(1, result.stdout().size());
-        if (!output.isEmpty() && output.getLast().equals(END_MARK)) {
-            output = output.subList(0, output.size() - 1);
-        }
-        try {
-            output = TmuxFormats.printed(
-                    output, TmuxVersion.parse(result.stdout().get(0)));
-        } catch (RuntimeException notAVersion) {
-            // Not tmux's own answer, as from a test double; keep what came back.
-        }
-        return new CommandResult(result.exitCode(), List.copyOf(output), result.stderr());
+                : fence.guarded(snapshot, CommandStrings.group(group));
+        return PrintedText.unwrap(result);
     }
 
     /** Shell commands run by tmux, and tmux commands chosen by a shell exit status. */
@@ -594,8 +491,8 @@ public final class Server implements AutoCloseable {
         fields.addAll(requireVariableNames(names));
         RowFormat format = RowFormat.of(fields.toArray(String[]::new));
         Map<PaneId, Map<String, String>> panes = new LinkedHashMap<>();
-        for (RowFormat.Row row :
-                format.rows(printedRows(run(List.of("list-panes", "-a", "-F", versioned(format.template())))
+        for (RowFormat.Row row : format.rows(
+                PrintedText.printedRows(run(List.of("list-panes", "-a", "-F", PrintedText.versioned(format.template())))
                         .stdout()))) {
             Map<String, String> values = new LinkedHashMap<>();
             for (String name : names) {
@@ -731,76 +628,21 @@ public final class Server implements AutoCloseable {
         return snapshot.serverVersion().orElseGet(this::version);
     }
 
-    /**
-     * The version to gate a session-creation spec against.
-     *
-     * <p>{@code new-session} is the one command that may be the first thing said to a fresh socket,
-     * so asking {@link #version()} — which needs an already-answering daemon — fails exactly when a
-     * spec depends on the answer and nothing has started the daemon yet. Preferring the running
-     * daemon when there is one keeps {@link #version()}'s own reasoning: a server already up may
-     * have been started by a different build than this client is invoking. Only when nothing answers
-     * at all does this fall back to {@link #binaryVersion}, which asks the executable directly and
-     * needs no server.
-     *
-     * <p>Reads {@link SnapshotCapture#processForCreation()} directly rather than going through
-     * {@link #version()}: a daemon this client is too old to talk to fails the identity probe the
-     * same way one that was never started does ("server exited unexpectedly", confirmed against the
-     * matrix), and {@link #version()}'s own {@link ServerNotRunningException} does not keep that
-     * distinction once raised. Falling back to {@code binaryVersion} for that case would report the
-     * configured binary's own version as though it were the daemon's — exactly the guarantee this
-     * method exists to keep.
-     */
-    TmuxVersion versionForCreation() {
-        return capture.processForCreation()
-                .map(SnapshotCapture.ServerProcess::version)
-                .orElseGet(this::binaryVersion);
-    }
-
-    /**
-     * Which tmux the configured binary is, without asking any server.
-     *
-     * <p>{@code -V} is handled before tmux touches a socket at all, so it answers even against an
-     * endpoint nothing is listening on yet — confirmed against every matrix release, with or without
-     * a {@code -f} pointed at a config file that does not exist.
-     *
-     * @throws LibTmuxException if the binary could not be run or did not report a version
-     */
-    private TmuxVersion binaryVersion() {
-        CommandResult result = cmd(List.of("-V"));
-        if (!result.succeeded() || result.stdout().isEmpty()) {
-            throw new LibTmuxException("tmux -V did not report a version: " + String.join("; ", result.stderr()));
-        }
-        String reported = result.stdout().get(0);
-        int space = reported.indexOf(' ');
-        if (space < 0) {
-            throw new LibTmuxException("tmux -V reported an unexpected line: " + reported);
-        }
-        return TmuxVersion.parse(reported.substring(space + 1));
-    }
-
     /** Which server this is. Every handle taken from it is scoped by this. */
     public ServerIdentity identity() {
-        return identity;
+        return fence.identity();
     }
 
     void requireSameServer(Server other) {
-        Objects.requireNonNull(other, "other");
-        if (!identity.equals(other.identity)) {
-            throw new IllegalArgumentException("handles belong to different tmux servers");
-        }
+        fence.requireSameServer(other);
     }
 
     void requireSameIncarnation(ServerSnapshot snapshot, Server other, ServerSnapshot otherSnapshot) {
-        requireSameServer(other);
-        if (!identity(snapshot).equals(other.identity(otherSnapshot))) {
-            throw new IllegalArgumentException("handles belong to different tmux server incarnations");
-        }
+        fence.requireSameIncarnation(snapshot, other, otherSnapshot);
     }
 
     ServerIdentity identity(ServerSnapshot snapshot) {
-        return snapshot.serverPid().isPresent()
-                ? identity.at(snapshot.serverPid().orElseThrow(), snapshot.serverStartTime())
-                : identity;
+        return fence.identity(snapshot);
     }
 
     /** A server over a transport it owns and closes. */
@@ -881,7 +723,8 @@ public final class Server implements AutoCloseable {
         return cmd(argv, timeout, "");
     }
 
-    private CommandResult cmd(List<String> argv, Duration timeout, String input) {
+    /** Package-private so {@link IncarnationFence} can send its guard with the caller's input. */
+    CommandResult cmd(List<String> argv, Duration timeout, String input) {
         return transport.execute(request(List.of(argv), timeout, input));
     }
 
@@ -933,7 +776,7 @@ public final class Server implements AutoCloseable {
         ServerSnapshot captured = session.snapshot();
         long pid = captured.serverPid()
                 .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
-        CommandResult live = guarded(captured, "display-message -p '#{pid} #{version}'", "");
+        CommandResult live = fence.guarded(captured, "display-message -p '#{pid} #{version}'", "");
         if (!live.succeeded() || live.stdout().size() != 1) {
             throw failed("display-message", live);
         }
@@ -1247,12 +1090,12 @@ public final class Server implements AutoCloseable {
     }
 
     CommandResult cmd(ServerSnapshot snapshot, List<String> argv) {
-        return guarded(snapshot, CommandStrings.stringify(argv));
+        return fence.guarded(snapshot, CommandStrings.stringify(argv));
     }
 
     /** A batch whose every command is refused once this handle's server has been replaced. */
     Batch batch(ServerSnapshot snapshot) {
-        return new Batch(commands -> guarded(snapshot, CommandStrings.group(commands), ""));
+        return new Batch(commands -> fence.guarded(snapshot, CommandStrings.group(commands), ""));
     }
 
     /**
@@ -1263,16 +1106,8 @@ public final class Server implements AutoCloseable {
      * rows are being read from. Its start time is not the same.
      */
     Batch batch(long pid, long startTime) {
-        String fence = incarnation(pid, java.util.OptionalLong.of(startTime));
-        return new Batch(commands -> guarded(pid, fence, CommandStrings.group(commands), ""));
-    }
-
-    /** A condition true only on the server a capture named: its pid, and its start time when known. */
-    static String incarnation(long pid, java.util.OptionalLong startTime) {
-        String samePid = "#{==:#{pid}," + pid + "}";
-        return startTime.isPresent()
-                ? "#{&&:" + samePid + ",#{==:#{start_time}," + startTime.getAsLong() + "}}"
-                : samePid;
+        String condition = IncarnationFence.incarnation(pid, java.util.OptionalLong.of(startTime));
+        return new Batch(commands -> fence.guarded(pid, condition, CommandStrings.group(commands), ""));
     }
 
     CommandResult run(ServerSnapshot snapshot, List<String> argv) {
@@ -1296,7 +1131,7 @@ public final class Server implements AutoCloseable {
 
     /** As {@link #runTogether}, with {@code input} on tmux's standard input for the group to read. */
     CommandResult runTogether(ServerSnapshot snapshot, String input, List<List<String>> commands) {
-        CommandResult result = guarded(snapshot, CommandStrings.group(commands), input);
+        CommandResult result = fence.guarded(snapshot, CommandStrings.group(commands), input);
         if (!result.succeeded()) {
             String verbs = commands.stream().map(argv -> argv.get(0)).collect(Collectors.joining(" then "));
             throw failed(verbs, result);
@@ -1304,42 +1139,9 @@ public final class Server implements AutoCloseable {
         return result;
     }
 
-    /** Refuses to reach a tmux server that is not the one this handle was made against. */
-    private CommandResult guarded(ServerSnapshot snapshot, String command) {
-        return guarded(snapshot, command, "");
-    }
-
-    private CommandResult guarded(ServerSnapshot snapshot, String command, String input) {
-        long pid = snapshot.serverPid()
-                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
-        return guarded(pid, incarnation(pid, snapshot.serverStartTime()), command, input);
-    }
-
-    private CommandResult guarded(long pid, String fence, String command, String input) {
-        String stale = "libtmux-stale-handle-" + pid;
-        CommandResult result = cmd(List.of("if-shell", "-F", fence, command, stale), config.defaultTimeout(), input);
-        if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
-            throw new ObjectDoesNotExistException("the tmux server this handle belonged to has ended");
-        }
-        return result;
-    }
-
+    /** As {@link #run(ServerSnapshot, List)}, refused as well once the window has been replaced. */
     CommandResult run(ServerSnapshot snapshot, WindowContext expected, List<String> argv) {
-        long pid = snapshot.serverPid()
-                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
-        String target = expected.session().value() + ":" + expected.index().value();
-        String stale = "libtmux-stale-winlink-" + pid + "-" + expected.window().value();
-        String condition = "#{&&:" + incarnation(pid, snapshot.serverStartTime()) + ",#{==:#{window_id},"
-                + expected.window().value() + "}}";
-        CommandResult result =
-                cmd(List.of("if-shell", "-F", "-t", target, condition, CommandStrings.stringify(argv), stale));
-        if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
-            throw new ObjectDoesNotExistException("window " + expected.window() + " no longer exists here");
-        }
-        if (!result.succeeded()) {
-            throw failed(argv.get(0), result);
-        }
-        return result;
+        return fence.run(snapshot, expected, argv);
     }
 
     ServerSnapshot refresh(ServerSnapshot previous) {

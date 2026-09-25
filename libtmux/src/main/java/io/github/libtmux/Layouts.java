@@ -187,7 +187,7 @@ public final class Layouts {
 
     private static TmuxVersion version(Server server) {
         try {
-            return server.versionForCreation();
+            return SessionCreation.versionForCreation(server);
         } catch (IllegalArgumentException invalid) {
             throw new LibTmuxException("could not read tmux version", invalid);
         }
