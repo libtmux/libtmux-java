@@ -13,6 +13,7 @@ import io.github.libtmux.{
   Window => JavaWindow,
   WindowId
 }
+import io.github.libtmux.control.ControlClient
 import io.github.libtmux.query.FilterExpr
 import io.github.libtmux.scaladsl.{CommandResult, Snapshot}
 import io.github.libtmux.snapshot.WindowContext
@@ -175,6 +176,17 @@ final class Server private (
   )
   def setMouseEnabled(enabled: Boolean): Unit = checked(
     asJava.setMouseEnabled(enabled)
+  )
+
+  /** A control-mode client on `session`, refused by a tmux other than the one
+    * that captured it. Close it, as `Using.resource` does; a subscription's
+    * `stream()` reads as a Scala `Iterator` through `.iterator.asScala`.
+    */
+  def control(session: Session): ControlClient = checked(
+    asJava.control(session.asJava)
+  )
+  def control(session: Session, timeout: Duration): ControlClient = checked(
+    asJava.control(session.asJava, timeout)
   )
 
   def options: Options = new Options(asJava.options(), this)

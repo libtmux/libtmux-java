@@ -413,6 +413,8 @@ final class io.github.libtmux.scaladsl.blocking.Server : java.lang.AutoCloseable
   io.github.libtmux.ServerConfig config()
   io.github.libtmux.ServerIdentity identity()
   io.github.libtmux.TmuxVersion version()
+  io.github.libtmux.control.ControlClient control(io.github.libtmux.scaladsl.blocking.Session)
+  io.github.libtmux.control.ControlClient control(io.github.libtmux.scaladsl.blocking.Session, java.time.Duration)
   io.github.libtmux.scaladsl.CommandResult cmd(java.lang.String, scala.collection.immutable.Seq)
   io.github.libtmux.scaladsl.CommandResult cmd(scala.collection.immutable.Seq)
   io.github.libtmux.scaladsl.CommandResult cmd(scala.collection.immutable.Seq, java.time.Duration)

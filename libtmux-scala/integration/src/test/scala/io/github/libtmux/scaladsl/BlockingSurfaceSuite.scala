@@ -29,6 +29,7 @@ import munit.FunSuite
 import scala.collection.immutable.VectorMap
 import scala.jdk.CollectionConverters._
 import scala.jdk.OptionConverters._
+import scala.util.Using
 
 final class BlockingSurfaceSuite extends FunSuite {
   test("filtered reads and timed calls reach the same Java overloads") {
@@ -124,6 +125,27 @@ final class BlockingSurfaceSuite extends FunSuite {
       server.close()
       intercept[IllegalStateException](derived.sessions())
       assert(fixture.server.isAlive())
+    }
+  }
+
+  test("control attaches to the captured session and reports its changes") {
+    OwnedTmux.use { fixture =>
+      val server = fixture.own(Server.fromJava(fixture.server))
+      val session = server.newSession(
+        SessionSpec.builder().named("watched").running("cat").build()
+      )
+      Using.resource(server.control(session, Duration.ofSeconds(5))) { client =>
+        Using.resource(client.subscribeEvents(32)) { events =>
+          session.windows.head.rename("seen")
+          val renamed = Iterator
+            .continually(events.next(Duration.ofSeconds(5)).toScala)
+            .takeWhile(_.isDefined)
+            .flatten
+            .map(Delivery.kept(_).notification())
+            .collectFirst { case r: Notification.WindowRenamed => r.name() }
+          assertEquals(renamed, Some("seen"))
+        }
+      }
     }
   }
 
