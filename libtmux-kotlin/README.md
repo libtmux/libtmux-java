@@ -119,9 +119,10 @@ closes the subscription. Cancelling the collection does the same. Neither
 reconnects, and neither undoes a command tmux has already accepted.
 `awaitDelivery` waits for one step and leaves the subscription open. This
 module depends on kotlinx-coroutines; the core does not. `await`,
-`awaitText`, and `run` suspend on `kotlin.time.Duration`. Cancelling one
-interrupts the wait, which is not a timeout. The public binary surface is the
-dump in `api/`, and the build fails when that dump changes.
+`awaitText`, `run`, and `control` suspend on `kotlin.time.Duration`.
+Cancelling one interrupts the wait, which is not a timeout; cancelling
+`control` also ends the tmux client process it started. The public binary
+surface is the dump in `api/`, and the build fails when that dump changes.
 
 ## Why nothing in Java may depend on this
 

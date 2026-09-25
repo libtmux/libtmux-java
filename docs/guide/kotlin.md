@@ -142,14 +142,15 @@ Every libtmux call blocks its thread until tmux answers. From a coroutine, make
 them where blocking is expected, never on a thread `Dispatchers.Default` or a UI
 dispatcher lends you:
 
-- A run of short calls — open a server, read sessions, attach, send — goes
-  inside `withContext(Dispatchers.IO) { ... }`, as the `WatchWithFlow` example
-  does.
+- A run of short calls — open a server, read sessions, send — goes inside
+  `withContext(Dispatchers.IO) { ... }`, as the `WatchWithFlow` example does.
 - A call that can wait long uses this module's suspending form: `await`,
-  `awaitText`, `awaitDelivery`, `deliveries()`, or `run`. Each blocks a thread
-  of the `dispatcher` it is given, `Dispatchers.IO` unless you pass one, and
-  cancelling it interrupts that thread. Pass `Dispatchers.IO.limitedParallelism(n)`
-  to bound how many threads your waits may hold at once.
+  `awaitText`, `awaitDelivery`, `deliveries()`, `run`, or `control`. Each
+  blocks a thread of the `dispatcher` it is given, `Dispatchers.IO` unless you
+  pass one, and cancelling it interrupts that thread — for `control`, that
+  also ends the tmux client process it started. Pass
+  `Dispatchers.IO.limitedParallelism(n)` to bound how many threads your waits
+  may hold at once.
 - A long call this module has no form for, wrap in
   `runInterruptible(Dispatchers.IO) { ... }`, so cancellation reaches it.
 

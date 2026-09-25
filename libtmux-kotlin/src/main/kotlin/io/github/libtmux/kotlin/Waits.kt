@@ -1,10 +1,14 @@
 package io.github.libtmux.kotlin
 
 import io.github.libtmux.Channel
+import io.github.libtmux.LibTmuxException
 import io.github.libtmux.Pane
 import io.github.libtmux.PaneRun
+import io.github.libtmux.Server
+import io.github.libtmux.Session
 import io.github.libtmux.TextOutcome
 import io.github.libtmux.WakeReason
+import io.github.libtmux.control.ControlClient
 import java.util.function.Predicate
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
@@ -118,3 +122,34 @@ public suspend fun Channel.awaitReservingCapacity(
     timeout: Duration,
     dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ): WakeReason = runInterruptible(dispatcher) { awaitReservingCapacity(timeout.toJavaDuration()) }
+
+/**
+ * Attaches a control client to this session's server, and only to the process this
+ * capture named — suspending rather than blocking while it becomes ready.
+ *
+ * Cancelling the coroutine interrupts that wait and ends the tmux client process
+ * started for it. [Server.control] reports an interrupted wait as a plain
+ * [LibTmuxException] rather than `InterruptedException`, which [runInterruptible]
+ * would otherwise need to turn cancellation into `CancellationException`; this
+ * re-throws that failure as `InterruptedException` itself when the thread is still
+ * marked interrupted, so a cancelled attach completes the same way every other wait
+ * in this module does.
+ *
+ * @param timeout how long to wait for the client to become ready
+ * @param dispatcher where the blocking attach runs
+ */
+public suspend fun Server.control(
+    session: Session,
+    timeout: Duration,
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
+): ControlClient =
+    runInterruptible(dispatcher) {
+        try {
+            control(session, timeout.toJavaDuration())
+        } catch (failure: LibTmuxException) {
+            if (Thread.interrupted()) {
+                throw InterruptedException("interrupted while attaching a control client").apply { initCause(failure) }
+            }
+            throw failure
+        }
+    }

@@ -14,6 +14,7 @@ import io.github.libtmux.kotlin.activeWindowOrNull
 import io.github.libtmux.kotlin.await
 import io.github.libtmux.kotlin.awaitDelivery
 import io.github.libtmux.kotlin.awaitText
+import io.github.libtmux.kotlin.control
 import io.github.libtmux.kotlin.deliveries
 import io.github.libtmux.kotlin.filter
 import io.github.libtmux.kotlin.getOrNull
@@ -39,6 +40,7 @@ suspend fun reachEverything(server: Server, pane: Pane, channel: Channel, output
     pane.await({ true }, 1.seconds)
     pane.run("true", 1.seconds)
     channel.await(1.seconds)
+    server.control(session, 1.seconds)
     output.awaitDelivery(1.seconds)?.kept()
     output.deliveries(Dispatchers.IO).map { it.kept().data() }
 }
