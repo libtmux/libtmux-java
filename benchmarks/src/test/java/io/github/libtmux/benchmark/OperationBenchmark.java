@@ -754,6 +754,12 @@ final class OperationBenchmark {
                 .append("time, so concurrent callers serialize behind it, where the process transport ")
                 .append("runs them at once. An untargeted command sent over control resolves against the ")
                 .append("attached session, not whichever session a caller meant.\n");
+
+        out.append("\n## What this does not measure\n\n")
+                .append("Not measured here: MCP tool call overhead, and FS2 stream throughput through the ")
+                .append("Cats Effect facade. Neither has an existing harness to extend — this file times a ")
+                .append("`Server` against real tmux, not a running MCP session or a bounded stream — and ")
+                .append("building one is its own project rather than an addition to this one.\n");
         return out.toString();
     }
 
