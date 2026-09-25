@@ -617,3 +617,29 @@ jobs:
           name: scala-runtime-${{ matrix.id }}-${{ github.sha }}
           path: libtmux-scala/target
           retention-days: 7
+
+  # scala-release.yml trusts a check run named "Required checks", not this run's own conclusion: a
+  # workflow_dispatch that only exercises the manual macOS cells skips every job below and still
+  # concludes success, which named check run is the one thing that cannot happen without them.
+  required:
+    name: Required checks
+    if: always()
+    needs: [artifact-stage, producer-runtime, installed-consumers]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every routine job succeeded
+        env:
+          ARTIFACT_STAGE: ${{ needs['artifact-stage'].result }}
+          PRODUCER_RUNTIME: ${{ needs['producer-runtime'].result }}
+          INSTALLED_CONSUMERS: ${{ needs['installed-consumers'].result }}
+        run: |
+          echo "artifact-stage: $ARTIFACT_STAGE"
+          echo "producer-runtime: $PRODUCER_RUNTIME"
+          echo "installed-consumers: $INSTALLED_CONSUMERS"
+          for result in "$ARTIFACT_STAGE" "$PRODUCER_RUNTIME" "$INSTALLED_CONSUMERS"; do
+            if [ "$result" != success ]; then
+              echo "::error::a routine job did not succeed; this run does not cover the commit"
+              exit 1
+            fi
+          done
