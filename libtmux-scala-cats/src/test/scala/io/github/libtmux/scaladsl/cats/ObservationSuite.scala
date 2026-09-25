@@ -1,12 +1,19 @@
 package io.github.libtmux.scaladsl.cats
 
-import _root_.cats.effect.IO
+import _root_.cats.effect.{Deferred, IO}
 import _root_.cats.effect.unsafe.implicits.global
+import _root_.cats.syntax.all._
 import io.github.libtmux.ServerConfig
 import io.github.libtmux.SessionId
-import io.github.libtmux.control.{ControlEndedException, Delivery}
+import io.github.libtmux.control.{
+  ControlClient,
+  ControlEndedException,
+  Delivery,
+  PaneOutput
+}
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.concurrent.atomic.AtomicBoolean
 import munit.FunSuite
 import scala.concurrent.duration._
 
@@ -45,6 +52,72 @@ final class ObservationSuite extends FunSuite {
         Files.deleteIfExists(directory)
       }
     assert(ran.left.exists(_.isInstanceOf[ControlEndedException]), ran)
+  }
+
+  test(
+    "canceling a stream blocked on the next event returns promptly and closes the subscription"
+  ) {
+    val directory = Files.createTempDirectory("libtmux-observation-cancel")
+    val fake = directory.resolve("tmux")
+    Files.writeString(
+      fake,
+      "#!/bin/sh\n" + ObservationSuite.prelude +
+        // One event answers the "is the pipeline alive" question, then the fake
+        // goes silent for far longer than this test runs: the next read has
+        // nothing to consume until this test cancels it.
+        """printf '%%begin 100 1 0\n%%end 100 1 0\n'
+          |read_request
+          |answer
+          |read_request
+          |printf '%%output %%1 hi\n'
+          |answer
+          |sleep 30
+          |""".stripMargin
+    )
+    Files.setPosixFilePermissions(
+      fake,
+      PosixFilePermissions.fromString("rwx------")
+    )
+    val config = ServerConfig.builder().binary(fake.toString).build()
+    val client = ControlClient.attachUnfenced(config, new SessionId("$0"))
+    val subscription = client.subscribeOutput(1)
+    val program = Observation
+      .resource[IO, PaneOutput](subscription, new AtomicBoolean(false))
+      .use { observation =>
+        for {
+          // A ping that only the fake answers after writing the one event proves
+          // the subscription existed before that event was offered, so nothing
+          // was lost to the registration race.
+          firstSeen <- Deferred[IO, Unit]
+          fiber <- observation.stream
+            .evalTap(_ => firstSeen.complete(()).void)
+            .compile
+            .drain
+            .start
+          _ <- IO.blocking(client.send("ping")).timeout(1.second)
+          _ <- firstSeen.get.timeout(1.second)
+          // The one event is read; the fake sends no more. A second `next()`
+          // call has nowhere to return from except this test's cancellation.
+          stillBlocked <- IO
+            .race(fiber.join, IO.sleep(300.millis))
+            .map(_.isRight)
+          _ <- IO(assert(stillBlocked, "expected the read to still be blocked"))
+          outcome <- (fiber.cancel *> fiber.join).timeout(500.millis)
+          _ <- IO(assert(outcome.isCanceled, outcome.toString))
+        } yield ()
+      }
+    val ran =
+      try program.timeout(3.seconds).attempt.unsafeRunSync()
+      finally {
+        client.close()
+        Files.deleteIfExists(fake)
+        Files.deleteIfExists(directory)
+      }
+    assert(ran.isRight, ran)
+    assert(
+      subscription.isClosed(),
+      "expected resource release to close the subscription"
+    )
   }
 
   test("a watch reports liveness and a normalized target") {
