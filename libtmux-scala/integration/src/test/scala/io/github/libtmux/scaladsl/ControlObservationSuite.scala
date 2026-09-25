@@ -1,6 +1,5 @@
 package io.github.libtmux.scaladsl
 
-import io.github.libtmux.exception.DispatchException
 import _root_.cats.effect.{Deferred, IO}
 import _root_.cats.effect.unsafe.implicits.global
 import _root_.cats.syntax.all._
@@ -8,7 +7,6 @@ import io.github.libtmux.{SessionId, WakeReason}
 import io.github.libtmux.control.{EventSubscription, Notification, PaneOutput}
 import io.github.libtmux.scaladsl.cats.{Control, Observation}
 import io.github.libtmux.scaladsl.fixture.OwnedTmux
-import io.github.libtmux.transport.DispatchOutcome
 import java.io.BufferedWriter
 import java.nio.file.Files
 import java.time.Duration
@@ -424,7 +422,7 @@ final class ControlObservationSuite extends FunSuite {
   }
 
   test(
-    "queued cancellation preserves control but active cancellation ends its peers"
+    "cancelling a queued or a dispatched call ends only that call"
   ) {
     OwnedTmux.use { fixture =>
       attach(fixture)
@@ -478,27 +476,16 @@ final class ControlObservationSuite extends FunSuite {
             _ <- admittedAgain
             _ <- canceledActive.cancel
             activeOutcome <- canceledActive.join
-            peerOutcome <- peer.joinWithNever
-            unavailable <- control
-              .acknowledge(Vector("display-message", "-p", "after"), deadline)
-              .attempt
-            processReply <- IO.interruptible(
-              fixture.server.cmd("display-message", "-p", "separate-client")
+            _ <- IO.interruptible(
+              fixture.server.channel("active-gate").signal()
             )
+            peerOutcome <- peer.joinWithNever
+            after <- control
+              .acknowledge(Vector("display-message", "-p", "after"), deadline)
             _ <- IO {
               assert(activeOutcome.isCanceled)
-              assert(peerOutcome.left.exists {
-                case failure: DispatchException =>
-                  failure.outcome() == DispatchOutcome.NOT_DISPATCHED
-                case _ => false
-              })
-              assert(
-                unavailable.left.exists(_.isInstanceOf[IllegalStateException])
-              )
-              assertEquals(
-                processReply.stdout().asScala.toVector,
-                Vector("separate-client")
-              )
+              assertEquals(peerOutcome.map(_.lines), Right(Vector("peer")))
+              assertEquals(after.lines, Vector("after"))
             }
           } yield ()
         }
