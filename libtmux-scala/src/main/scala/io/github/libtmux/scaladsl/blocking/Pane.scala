@@ -7,9 +7,12 @@ import io.github.libtmux.{
   Pane => JavaPane,
   PaneMode,
   SplitSpec,
-  TextOutcome
+  TextOutcome,
+  WakeReason
 }
+import java.nio.file.Path
 import java.time.Duration
+import scala.collection.immutable.VectorMap
 import scala.jdk.CollectionConverters._
 import scala.jdk.OptionConverters._
 import io.github.libtmux.scaladsl.{PaneInfo, PaneRun}
@@ -53,6 +56,23 @@ final class Pane private[blocking] (
     */
   def awaitText(text: String, timeout: Duration, every: Duration): TextOutcome =
     server.checked(asJava.awaitText(text, timeout, every))
+
+  /** Waits until `settled` holds for this pane as it is now, looking every 50
+    * ms; `settled` receives a fresh capture each look.
+    */
+  def await(settled: Pane => Boolean, timeout: Duration): WakeReason =
+    server.checked(
+      asJava.await(fresh => settled(new Pane(fresh, server)), timeout)
+    )
+
+  /** As `await(settled, timeout)`, looking every `every`. */
+  def await(
+      settled: Pane => Boolean,
+      timeout: Duration,
+      every: Duration
+  ): WakeReason = server.checked(
+    asJava.await(fresh => settled(new Pane(fresh, server)), timeout, every)
+  )
   def run(command: String, timeout: Duration): PaneRun =
     server.checked(PaneRun.fromJava(asJava.run(command, timeout)))
   def copyMode(): Unit = server.checked(asJava.copyMode())
@@ -75,6 +95,26 @@ final class Pane private[blocking] (
     server.checked(asJava.joinTo(window.asJava))
   def swapWith(pane: Pane): Unit = server.checked(asJava.swapWith(pane.asJava))
   def expand(format: String): String = server.checked(asJava.expand(format))
+
+  /** tmux variables in this pane's context, in the order asked for. */
+  def variables(names: Seq[String]): VectorMap[String, String] =
+    server.checked(VectorMap.from(asJava.variables(names.asJava).asScala))
+
+  /** Kills what runs here and starts the pane's default command again. */
+  def respawn(): Unit = server.checked(asJava.respawn())
+
+  /** Kills what runs here and starts `command` instead. */
+  def respawn(command: Seq[String]): Unit =
+    server.checked(asJava.respawn(command: _*))
+  def respawnIn(directory: Path): Unit =
+    server.checked(asJava.respawnIn(directory))
+
+  /** Sends what this pane prints to a shell command until `stopPiping`; tmux
+    * expands `#(...)` in it first.
+    */
+  def pipeTo(shellCommand: String): Unit =
+    server.checked(asJava.pipeTo(shellCommand))
+  def stopPiping(): Unit = server.checked(asJava.stopPiping())
   def paste(text: String): Unit = server.checked(asJava.paste(text))
   def paste(text: String, beforePaste: () => Unit): Unit =
     server.checked(asJava.paste(text, () => beforePaste()))

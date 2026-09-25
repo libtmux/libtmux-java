@@ -19,6 +19,7 @@ import io.github.libtmux.snapshot.WindowContext
 import java.nio.file.Path
 import java.time.Duration
 import java.util.concurrent.atomic.AtomicBoolean
+import scala.collection.immutable.VectorMap
 import scala.jdk.CollectionConverters._
 import scala.jdk.OptionConverters._
 
@@ -27,7 +28,8 @@ import scala.jdk.OptionConverters._
   */
 final class Server private (
     private[scaladsl] val asJava: JavaServer,
-    owned: Boolean
+    owned: Boolean,
+    parent: Option[Server]
 ) extends AutoCloseable {
   private val closed = new AtomicBoolean(false)
 
@@ -37,10 +39,19 @@ final class Server private (
   def unsafeJava: JavaServer = asJava
 
   private[blocking] def checked[A](operation: => A): A = {
-    if (closed.get())
+    if (isClosed)
       throw new IllegalStateException("Scala server client is closed")
     operation
   }
+  private def isClosed: Boolean = closed.get() || parent.exists(_.isClosed)
+
+  /** This server with every command given `timeout` rather than the default,
+    * through it and every handle taken from it. Closing it releases nothing;
+    * closing this server closes it too.
+    */
+  def within(timeout: Duration): Server = checked(
+    new Server(asJava.within(timeout), owned = false, Some(this))
+  )
 
   def sessions(): Vector[Session] = checked {
     asJava.sessions().asScala.iterator.map(new Session(_, this)).toVector
@@ -78,6 +89,14 @@ final class Server private (
   def windows(id: WindowId): Vector[Window] = checked {
     asJava.windows(id).asScala.iterator.map(new Window(_, this)).toVector
   }
+  def attachedSessions(): Vector[Session] = checked {
+    asJava
+      .attachedSessions()
+      .asScala
+      .iterator
+      .map(new Session(_, this))
+      .toVector
+  }
   def clients(): Vector[Client] = checked {
     asJava.clients().asScala.iterator.map(new Client(_, this)).toVector
   }
@@ -107,6 +126,11 @@ final class Server private (
   def lock(): Unit = checked(asJava.lock())
   def isAlive(): Boolean = checked(asJava.isAlive())
   def isAlive(timeout: Duration): Boolean = checked(asJava.isAlive(timeout))
+
+  /** Returns when a daemon answers; throws `ServerNotRunningException` when
+    * none does.
+    */
+  def requireAlive(): Unit = checked(asJava.requireAlive())
   def version(): TmuxVersion = checked(asJava.version())
   def expand(format: String): String = checked(asJava.expand(format))
   def runShell(command: String): Unit = checked(asJava.shell().run(command))
@@ -124,6 +148,33 @@ final class Server private (
   )
   def cmd(command: String, arguments: String*): CommandResult = cmd(
     command +: arguments
+  )
+
+  /** As `cmd`, throwing `LibTmuxException` when tmux exits nonzero: for a
+    * command that is expected to work.
+    */
+  def run(argv: Seq[String]): CommandResult = checked(
+    CommandResult.fromJava(asJava.run(argv.asJava))
+  )
+  def run(command: String, arguments: String*): CommandResult = run(
+    command +: arguments
+  )
+
+  /** tmux variables by name, read in one expansion, in the order asked for. */
+  def variables(names: Seq[String]): VectorMap[String, String] = checked(
+    VectorMap.from(asJava.variables(names.asJava).asScala)
+  )
+
+  /** Fields for every pane, from one listing, in tmux's pane order. */
+  def paneFields(
+      names: Seq[String]
+  ): VectorMap[PaneId, VectorMap[String, String]] = checked(
+    VectorMap.from(asJava.paneFields(names.asJava).asScala.iterator.map {
+      case (pane, fields) => pane -> VectorMap.from(fields.asScala)
+    })
+  )
+  def setMouseEnabled(enabled: Boolean): Unit = checked(
+    asJava.setMouseEnabled(enabled)
   )
 
   def options: Options = new Options(asJava.options(), this)
@@ -145,9 +196,10 @@ final class Server private (
 
 object Server {
   def open(config: ServerConfig): Server =
-    new Server(JavaServer.open(config), owned = true)
+    new Server(JavaServer.open(config), owned = true, None)
 
   /** Borrows the Java client; closing this facade does not close that client.
     */
-  def fromJava(server: JavaServer): Server = new Server(server, owned = false)
+  def fromJava(server: JavaServer): Server =
+    new Server(server, owned = false, None)
 }
