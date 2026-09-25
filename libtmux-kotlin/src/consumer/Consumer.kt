@@ -21,6 +21,7 @@ import io.github.libtmux.kotlin.kept
 import io.github.libtmux.kotlin.not
 import io.github.libtmux.kotlin.orNull
 import io.github.libtmux.kotlin.paneOrNull
+import io.github.libtmux.kotlin.run
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
@@ -36,6 +37,7 @@ suspend fun reachEverything(server: Server, pane: Pane, channel: Channel, output
     server.panes().filter(!Pane_.command().`is`("vim"))
     pane.awaitText("ready", 1.seconds, Dispatchers.IO)
     pane.await({ true }, 1.seconds)
+    pane.run("true", 1.seconds)
     channel.await(1.seconds)
     output.awaitDelivery(1.seconds)?.kept()
     output.deliveries(Dispatchers.IO).map { it.kept().data() }
