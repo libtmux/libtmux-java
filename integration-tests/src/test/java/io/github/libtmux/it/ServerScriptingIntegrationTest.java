@@ -5,12 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
 import io.github.libtmux.TmuxFormats;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -120,8 +120,8 @@ final class ServerScriptingIntegrationTest {
     @Test
     void readingWhatTheCommandPrintedWorksOrRefuses(Server server) {
         if (losesShellOutput(server)) {
-            UnsupportedTmuxVersionException refused = assertThrows(
-                    UnsupportedTmuxVersionException.class, () -> server.shell().capturing("echo captured-me"));
+            UnsupportedFeatureException refused = assertThrows(
+                    UnsupportedFeatureException.class, () -> server.shell().capturing("echo captured-me"));
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("run-shell"),

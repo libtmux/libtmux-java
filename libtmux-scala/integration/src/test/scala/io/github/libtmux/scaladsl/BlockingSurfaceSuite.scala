@@ -1,25 +1,22 @@
 package io.github.libtmux.scaladsl
 
+import io.github.libtmux.exception.{
+  LibTmuxException,
+  ServerUnavailableException,
+  UnsupportedFeatureException
+}
 import io.github.libtmux.{
   CaptureSpec,
   Layout,
-  LibTmuxException,
   OptionKey,
-  ServerNotRunningException,
   SessionSpec,
   SplitSpec,
   TextOutcome,
   TmuxFormats,
   TmuxVersion,
-  UnsupportedTmuxVersionException,
   WakeReason
 }
-import io.github.libtmux.control.{
-  ControlClient,
-  ControlEndedException,
-  Delivery,
-  Notification
-}
+import io.github.libtmux.control.{ControlClient, Delivery, Notification}
 import io.github.libtmux.scaladsl.blocking.Server
 import io.github.libtmux.scaladsl.fixture.OwnedTmux
 import java.nio.file.Files
@@ -231,8 +228,8 @@ final class BlockingSurfaceSuite extends FunSuite {
       assert(server.isAlive())
       server.killServer()
       fixture.serverProcess.onExit().get(800, TimeUnit.MILLISECONDS)
-      intercept[ServerNotRunningException](client.refresh())
-      intercept[ServerNotRunningException](client.fetchAttachment())
+      intercept[ServerUnavailableException](client.refresh())
+      intercept[ServerUnavailableException](client.fetchAttachment())
     }
   }
 
@@ -374,7 +371,7 @@ final class BlockingSurfaceSuite extends FunSuite {
           server.buffers.delete("scala-buffer")
           assertEquals(server.buffers.list(), Vector.empty)
         } else {
-          intercept[UnsupportedTmuxVersionException](
+          intercept[UnsupportedFeatureException](
             server.buffers.delete("loaded")
           )
           assertEquals(

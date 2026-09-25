@@ -10,14 +10,14 @@ import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
-import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTransport;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -374,7 +374,7 @@ final class WorkspaceBuilderTest {
                         "one", Optional.of("main-horizontal-mirrored"), List.of(new PaneSpec(List.of())))));
 
         try (Server old = Server.using(testConfig(), transport)) {
-            assertThrows(UnsupportedTmuxVersionException.class, () -> WorkspaceBuilder.build(old, workspace));
+            assertThrows(UnsupportedFeatureException.class, () -> WorkspaceBuilder.build(old, workspace));
         }
         assertFalse(effected.get(), "version preflight must happen before new-session");
     }
@@ -412,7 +412,7 @@ final class WorkspaceBuilderTest {
                         List.of(new PaneSpec(List.of())))));
 
         try (Server old = Server.using(testConfig(), transport)) {
-            assertThrows(UnsupportedTmuxVersionException.class, () -> WorkspaceBuilder.build(old, workspace));
+            assertThrows(UnsupportedFeatureException.class, () -> WorkspaceBuilder.build(old, workspace));
         }
         assertFalse(effected.get(), "version preflight must happen before new-session");
     }
@@ -449,7 +449,7 @@ final class WorkspaceBuilderTest {
                     staged.set(request.commands()
                             .get(0)
                             .get(request.commands().get(0).indexOf("-s") + 1));
-                    throw new TmuxTransportException("reply lost", DispatchOutcome.UNKNOWN, null);
+                    throw new DispatchException.Failed("reply lost", DispatchOutcome.UNKNOWN, null);
                 }
                 if (request.commands().get(0).get(0).equals("kill-session")) {
                     cleaned.set(request.commands()
@@ -467,7 +467,7 @@ final class WorkspaceBuilderTest {
                 "wanted", List.of(new WindowSpec("one", Optional.empty(), List.of(new PaneSpec(List.of())))));
 
         try (Server uncertain = Server.using(testConfig(), transport)) {
-            assertThrows(TmuxTransportException.class, () -> WorkspaceBuilder.build(uncertain, workspace));
+            assertThrows(DispatchException.class, () -> WorkspaceBuilder.build(uncertain, workspace));
         }
 
         assertTrue(staged.get().startsWith("libtmux-ws-"));

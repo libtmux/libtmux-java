@@ -1,5 +1,6 @@
 package io.github.libtmux.scaladsl
 
+import io.github.libtmux.exception.CardinalityException
 import io.github.libtmux.{Pane => JavaPane, Pane_}
 import io.github.libtmux.query.{FilterExpr, Operator, Selections}
 import munit.FunSuite
@@ -12,13 +13,13 @@ final class QuerySuite extends FunSuite {
     assert(Queries.exactlyOne(Vector(value)) eq value)
     assertEquals(Queries.oneOrNone(Vector(value)), Some(value))
     assertEquals(Queries.oneOrNone(Vector.empty[Int]), None)
-    intercept[Selections.NoMatchException](
+    intercept[CardinalityException.NoMatch](
       Queries.exactlyOne(Vector.empty[Int])
     )
-    intercept[Selections.MultipleMatchesException](
+    intercept[CardinalityException.MultipleMatches](
       Queries.exactlyOne(Vector(1, 2))
     )
-    intercept[Selections.MultipleMatchesException](
+    intercept[CardinalityException.MultipleMatches](
       Queries.oneOrNone(Vector(1, 2))
     )
     def bounded = LazyList.cons(
@@ -28,8 +29,8 @@ final class QuerySuite extends FunSuite {
         throw new AssertionError("cardinality drained beyond two matches")
       )
     )
-    intercept[Selections.MultipleMatchesException](Queries.exactlyOne(bounded))
-    intercept[Selections.MultipleMatchesException](Queries.oneOrNone(bounded))
+    intercept[CardinalityException.MultipleMatches](Queries.exactlyOne(bounded))
+    intercept[CardinalityException.MultipleMatches](Queries.oneOrNone(bounded))
   }
 
   test(

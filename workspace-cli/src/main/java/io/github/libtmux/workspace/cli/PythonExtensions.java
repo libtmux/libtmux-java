@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
-import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
+import io.github.libtmux.exception.ServerUnavailableException;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -108,7 +108,7 @@ final class PythonExtensions {
             daemon = server.expand("#{pid}:#{start_time}");
             if (!daemon.startsWith(before.serverPid().orElseThrow() + ":"))
                 throw Main.usage("selected tmux daemon changed before Python extension execution");
-        } catch (ServerNotRunningException absent) {
+        } catch (ServerUnavailableException absent) {
             if (borrowed.isPresent()) throw absent;
         }
         if (borrowed.isPresent()) {
@@ -229,7 +229,7 @@ final class PythonExtensions {
                 if (pane.context().session().equals(session.id())
                         && !beforePanes.contains(pane.id().value()))
                     effects.withArray("pane_ids").add(pane.id().value());
-        } catch (ServerNotRunningException absent) {
+        } catch (ServerUnavailableException absent) {
             effects.put("target_present", false);
         } catch (RuntimeException unavailable) {
             effects.put("observation_error", String.valueOf(unavailable.getMessage()));

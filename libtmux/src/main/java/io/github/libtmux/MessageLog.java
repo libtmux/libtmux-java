@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.LibTmuxException;
 import java.util.List;
 import kotlin.annotations.jvm.ReadOnly;
 

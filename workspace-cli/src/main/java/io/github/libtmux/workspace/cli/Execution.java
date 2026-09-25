@@ -11,13 +11,13 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
-import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.SessionSpec;
 import io.github.libtmux.SplitSpec;
-import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowSpec;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -562,7 +562,7 @@ final class Execution {
     private static String requireLayout(String layout, Server server, int panes) {
         try {
             return Layouts.require(layout, server, panes);
-        } catch (UnsupportedTmuxVersionException | IllegalArgumentException refused) {
+        } catch (UnsupportedFeatureException | IllegalArgumentException refused) {
             if (SERIALIZED.matcher(layout).find()
                     || (layout.stripLeading().startsWith("{") && refused instanceof IllegalArgumentException))
                 throw refused;
@@ -604,7 +604,7 @@ final class Execution {
         if (size.isEmpty()) return server.newSession(spec.build());
         try {
             return server.newSession(spec.sized(size.orElseThrow()).build());
-        } catch (UnsupportedTmuxVersionException tooOld) {
+        } catch (UnsupportedFeatureException tooOld) {
             return server.newSession(SessionSpec.builder()
                     .named(plan.name())
                     .in(plan.directory())
@@ -754,7 +754,7 @@ final class Execution {
             String identity;
             try {
                 identity = original.expand("#{pid}:#{start_time}");
-            } catch (io.github.libtmux.LibTmuxException unreachable) {
+            } catch (io.github.libtmux.exception.LibTmuxException unreachable) {
                 throw Main.usage(
                         "the tmux server TMUX names is not running: " + inherited.socket() + "; load detached with -d");
             }
@@ -836,7 +836,7 @@ final class Execution {
                 // TMUX_PANE): switch with no -c and let tmux pick its own most recent client.
                 try {
                     server.run(List.of("switch-client", "-t", session.id().value()));
-                } catch (io.github.libtmux.LibTmuxException unswitchable) {
+                } catch (io.github.libtmux.exception.LibTmuxException unswitchable) {
                     throw new Main.Failure(
                             Machine.Code.TMUX_FAILED,
                             1,
@@ -872,7 +872,7 @@ final class Execution {
     static List<Session> existingSessions(Server server) {
         try {
             return server.sessions();
-        } catch (ServerNotRunningException absent) {
+        } catch (ServerUnavailableException absent) {
             return List.of();
         }
     }

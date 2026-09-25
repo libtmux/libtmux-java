@@ -13,9 +13,9 @@ import io.github.libtmux.control.ControlReply;
 import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
+import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.DispatchOutcome;
-import io.github.libtmux.transport.TmuxTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -455,8 +455,8 @@ final class ControlModeIntegrationTest {
         try (ControlClient client = attach(server)) {
             signal("-STOP", pid);
             try {
-                TmuxTimeoutException failure = assertThrows(
-                        TmuxTimeoutException.class,
+                DispatchException.TimedOut failure = assertThrows(
+                        DispatchException.TimedOut.class,
                         () -> client.send(List.of("display-message", "-p", "unanswerable"), Duration.ofMillis(500)));
 
                 assertEquals(

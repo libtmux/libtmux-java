@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -119,11 +120,11 @@ public final class WindowSpec {
      * @param target the session, or the index, to create in
      * @param format the row format the caller will read the result back with
      * @param running the version of the server about to run this
-     * @throws UnsupportedTmuxVersionException if the spec asks for something {@code running} does not have
+     * @throws UnsupportedFeatureException if the spec asks for something {@code running} does not have
      */
     List<String> argv(String target, String format, TmuxVersion running) {
         if (directory != null && !directory.isAbsolute() && !running.atLeast(RELATIVE_DIRECTORY_SINCE)) {
-            throw new UnsupportedTmuxVersionException("a relative start directory", RELATIVE_DIRECTORY_SINCE, running);
+            throw new UnsupportedFeatureException("a relative start directory", RELATIVE_DIRECTORY_SINCE, running);
         }
         List<String> argv = new ArrayList<>(20);
         argv.add("new-window");

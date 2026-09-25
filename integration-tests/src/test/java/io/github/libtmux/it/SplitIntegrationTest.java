@@ -5,14 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.PanePosition;
 import io.github.libtmux.Server;
 import io.github.libtmux.SplitSpec;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -193,8 +193,8 @@ final class SplitIntegrationTest {
             assertEquals(2, created.window().panes().size(), "the pane exists");
             assertTrue(created.pid().isEmpty(), "and nothing is running in it");
         } else {
-            UnsupportedTmuxVersionException refused =
-                    assertThrows(UnsupportedTmuxVersionException.class, () -> original.split(s -> s.empty()));
+            UnsupportedFeatureException refused =
+                    assertThrows(UnsupportedFeatureException.class, () -> original.split(s -> s.empty()));
 
             assertTrue(String.valueOf(refused.getMessage()).contains("an empty pane"));
             assertEquals(1, original.window().panes().size(), "and nothing was created");
@@ -212,7 +212,7 @@ final class SplitIntegrationTest {
                     Await.until(() -> created.window().panes().size() == 2),
                     "the pane closed even though it was asked to stay");
         } else {
-            assertThrows(UnsupportedTmuxVersionException.class, () -> original.split(s -> s.keepOnExit()));
+            assertThrows(UnsupportedFeatureException.class, () -> original.split(s -> s.keepOnExit()));
         }
     }
 
@@ -227,9 +227,8 @@ final class SplitIntegrationTest {
     void aFastExitingCommandWithNoRemainOnExitCanLoseTheReadBackRace(Server server) {
         Pane original = onlyPane(server);
 
-        ObjectDoesNotExistException raced = assertThrows(
-                ObjectDoesNotExistException.class,
-                () -> original.split(s -> s.running("sh", "-c", "echo dying; exit 3")));
+        TargetGoneException raced = assertThrows(
+                TargetGoneException.class, () -> original.split(s -> s.running("sh", "-c", "echo dying; exit 3")));
 
         assertEquals("the pane just created is already gone", raced.getMessage());
     }
@@ -246,7 +245,7 @@ final class SplitIntegrationTest {
                     .get(0)
                     .contains("fg=red"));
         } else {
-            assertThrows(UnsupportedTmuxVersionException.class, () -> original.split(s -> s.style("fg=red")));
+            assertThrows(UnsupportedFeatureException.class, () -> original.split(s -> s.style("fg=red")));
         }
     }
 
@@ -266,7 +265,7 @@ final class SplitIntegrationTest {
             return;
         }
 
-        assertThrows(UnsupportedTmuxVersionException.class, () -> original.split(s -> s.empty()));
+        assertThrows(UnsupportedFeatureException.class, () -> original.split(s -> s.empty()));
 
         assertTrue(server.isAlive(), "a refusal is not a reason to lose the server");
         assertEquals(before, original.window().panes().size(), "no pane was created");

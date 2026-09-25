@@ -1,8 +1,9 @@
 package io.github.libtmux.scaladsl
 
+import io.github.libtmux.exception.ControlEndedException
 import io.github.libtmux.{PaneMode, Server, SessionSpec, WakeReason}
 import io.github.libtmux.batch.OperationOutcome
-import io.github.libtmux.control.{ControlClient, ControlEndedException}
+import io.github.libtmux.control.ControlClient
 import io.github.libtmux.scaladsl.fixture.OwnedTmux
 import java.nio.file.Files
 import java.time.Duration

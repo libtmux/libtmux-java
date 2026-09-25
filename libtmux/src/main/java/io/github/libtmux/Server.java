@@ -2,8 +2,17 @@ package io.github.libtmux;
 
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.exception.CommandRejectedException;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerClosedException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.internal.CommandStrings;
+import io.github.libtmux.internal.ErrorText;
 import io.github.libtmux.query.FilterExpr;
 import io.github.libtmux.query.TmuxFilters;
 import io.github.libtmux.snapshot.ServerSnapshot;
@@ -120,7 +129,7 @@ public final class Server implements AutoCloseable {
      * }</pre>
      *
      * @param configure receives a builder holding tmux's defaults
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
     public Session newSession(Consumer<SessionSpec.Builder> configure) {
         SessionSpec.Builder builder = SessionSpec.builder();
@@ -131,25 +140,25 @@ public final class Server implements AutoCloseable {
     /**
      * Creates a session according to a spec, which may be reused across servers.
      *
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
     public Session newSession(SessionSpec spec) {
         CommandResult result = run(spec.argv("#{session_id}", () -> SessionCreation.versionForCreation(this)));
         List<String> reported = result.stdout();
         if (reported.isEmpty()) {
-            throw new LibTmuxException(SessionCreation.failureMessage(config, result));
+            throw new MalformedResponseException(SessionCreation.failureMessage(config, result));
         }
         SessionId created = new SessionId(reported.get(0));
         ServerSnapshot fresh = snapshot();
         return fresh.session(created)
                 .map(session -> new Session(this, fresh, session))
-                .orElseThrow(() -> new ObjectDoesNotExistException("the session just created is already gone"));
+                .orElseThrow(() -> new TargetGoneException("the session just created is already gone"));
     }
 
     /**
      * Whether a session with this name exists.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      */
     public boolean hasSession(String name) {
         Objects.requireNonNull(name, "name");
@@ -166,8 +175,8 @@ public final class Server implements AutoCloseable {
      */
     public void killSession(String name) {
         Objects.requireNonNull(name, "name");
-        SessionId id = SessionLookup.named(this, name)
-                .orElseThrow(() -> new ObjectDoesNotExistException("no session named " + name));
+        SessionId id =
+                SessionLookup.named(this, name).orElseThrow(() -> new TargetGoneException("no session named " + name));
         run(List.of("kill-session", "-t", id.value()));
     }
 
@@ -196,7 +205,7 @@ public final class Server implements AutoCloseable {
     /**
      * Requires a running tmux daemon that answers the liveness probe.
      *
-     * @throws ServerNotRunningException if no daemon is there to answer
+     * @throws ServerUnavailableException if no daemon is there to answer
      * @throws LibTmuxException if one is, and could not be reached — a socket this user cannot
      *     open, or a binary that is not tmux, which starting a server would not fix
      */
@@ -230,17 +239,15 @@ public final class Server implements AutoCloseable {
     }
 
     /**
-     * Both command failures end here so that "no daemon" is decided once. It used to be decided at
-     * each site that cared, which is why seven reads and every mutation reported a missing server as
-     * an ordinary failure while the fifteen reads that had the check reported it as {@link
-     * ServerNotRunningException} — the one thing {@code MIGRATION.md} tells a caller it can catch
+     * Both command failures end here, so "no daemon" is decided once and reported as {@link
+     * ServerUnavailableException} — the one thing {@code MIGRATION.md} tells a caller it can catch
      * instead of matching on a message.
      */
     private LibTmuxException failed(String command, int exitCode, String status, List<String> stderr) {
         String message = failure(command, config.binary(), status, stderr);
         return stderr.stream().anyMatch(Server::serverAbsent)
-                ? new ServerNotRunningException(message, command, exitCode, stderr)
-                : new LibTmuxException(message, null, command, exitCode, stderr);
+                ? new ServerUnavailableException(message, command, exitCode, stderr)
+                : new CommandRejectedException(message, command, exitCode, stderr);
     }
 
     /**
@@ -248,11 +255,9 @@ public final class Server implements AutoCloseable {
      *     for it — a batch reports which of its commands never ran, which no single exit code says
      */
     static String failure(String command, String binary, String status, List<String> stderr) {
-        String reported = stderr.stream().filter(line -> !line.isBlank()).collect(Collectors.joining("; "));
+        String reported = ErrorText.suffix(stderr);
         return "tmux " + command + " failed (" + status + ")"
-                + (reported.isEmpty()
-                        ? "; it printed no error, so check that " + binary + " is tmux"
-                        : ": " + reported);
+                + (reported.isEmpty() ? "; it printed no error, so check that " + binary + " is tmux" : reported);
     }
 
     /** Whether a failed command's stderr says the daemon itself is gone, rather than refusing the request. */
@@ -301,7 +306,11 @@ public final class Server implements AutoCloseable {
         if (!isAlive(timeout)) {
             return;
         }
-        throw new LibTmuxException("could not kill the server: " + String.join("; ", result.stderr()));
+        throw new CommandRejectedException(
+                "could not kill the server" + ErrorText.suffix(result.stderr()),
+                "kill-server",
+                result.exitCode(),
+                result.stderr());
     }
 
     /**
@@ -336,12 +345,18 @@ public final class Server implements AutoCloseable {
             daemon.get().onExit().get(timeout.toNanos(), java.util.concurrent.TimeUnit.NANOSECONDS);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-            throw new LibTmuxException("interrupted waiting for tmux server " + pid + " to exit", interrupted);
+            throw new DispatchException.Failed(
+                    "interrupted waiting for tmux server " + pid + " to exit", DispatchOutcome.COMPLETE, interrupted);
         } catch (java.util.concurrent.TimeoutException late) {
-            throw new io.github.libtmux.transport.TmuxTimeoutException(
-                    "tmux server " + pid + " was still running " + timeout + " after kill-server", late);
+            throw new DispatchException.TimedOut(
+                    "tmux server " + pid + " was still running " + timeout + " after kill-server",
+                    DispatchOutcome.COMPLETE,
+                    late);
         } catch (java.util.concurrent.ExecutionException unexpected) {
-            throw new LibTmuxException("could not wait for tmux server " + pid + " to exit", unexpected.getCause());
+            throw new DispatchException.Failed(
+                    "could not wait for tmux server " + pid + " to exit",
+                    DispatchOutcome.COMPLETE,
+                    unexpected.getCause());
         }
     }
 
@@ -458,7 +473,7 @@ public final class Server implements AutoCloseable {
         List<RowFormat.Row> rows =
                 format.rows(List.of(expand.apply(format.template()).split("\n", -1)));
         if (rows.size() != 1) {
-            throw new LibTmuxException("tmux answered " + rows.size() + " rows for one set of variables");
+            throw new MalformedResponseException("tmux answered " + rows.size() + " rows for one set of variables");
         }
         Map<String, String> values = new LinkedHashMap<>();
         for (String name : names) {
@@ -482,7 +497,7 @@ public final class Server implements AutoCloseable {
      * @param names tmux format variable names, at most 32
      * @return each pane's values keyed by the names asked for, in tmux's pane order
      * @throws IllegalArgumentException if a name is not a tmux variable name
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the listing otherwise fails
      */
     @ReadOnly
@@ -534,7 +549,7 @@ public final class Server implements AutoCloseable {
             } else {
                 transport.execute(request);
             }
-        } catch (io.github.libtmux.transport.TmuxTimeoutException e) {
+        } catch (DispatchException.TimedOut e) {
             if (Thread.interrupted()) {
                 throw cancelled(channel, e);
             }
@@ -543,7 +558,7 @@ public final class Server implements AutoCloseable {
             }
             // The transport killed the waiting client at the deadline; nothing signalled it.
             return isAlive() ? WakeReason.TIMED_OUT : WakeReason.SERVER_GONE;
-        } catch (io.github.libtmux.transport.TmuxTransportException e) {
+        } catch (DispatchException e) {
             if (Thread.interrupted()) {
                 throw cancelled(channel, e);
             }
@@ -616,12 +631,12 @@ public final class Server implements AutoCloseable {
      * <p>Asked of the running server rather than of the binary, because the server may have been
      * started by a different build than the one this client is invoking.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      */
     public TmuxVersion version() {
         return capture.process()
                 .map(SnapshotCapture.ServerProcess::version)
-                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
+                .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
     }
 
     TmuxVersion version(ServerSnapshot snapshot) {
@@ -739,7 +754,7 @@ public final class Server implements AutoCloseable {
 
     private void requireOpen() {
         if (closed.get()) {
-            throw new IllegalStateException("server is closed");
+            throw new ServerClosedException("server is closed", DispatchOutcome.NOT_DISPATCHED);
         }
     }
 
@@ -753,7 +768,7 @@ public final class Server implements AutoCloseable {
      * detached before this client changes it.
      *
      * @param session a session captured from this server
-     * @throws ObjectDoesNotExistException if that process is no longer the one on this socket
+     * @throws TargetGoneException if that process is no longer the one on this socket
      * @throws IllegalArgumentException if the session belongs to another server
      * @throws IllegalStateException if this server is closed, or its transport starts no control client
      */
@@ -783,16 +798,16 @@ public final class Server implements AutoCloseable {
         String reported = live.stdout().get(0);
         int space = reported.indexOf(' ');
         if (space < 1) {
-            throw new LibTmuxException("tmux reported a malformed server identity");
+            throw new MalformedResponseException("tmux reported a malformed server identity");
         }
         long seen;
         try {
             seen = Long.parseLong(reported.substring(0, space));
         } catch (NumberFormatException e) {
-            throw new LibTmuxException("tmux reported a malformed server pid");
+            throw new MalformedResponseException("tmux reported a malformed server pid");
         }
         if (seen != pid) {
-            throw new ObjectDoesNotExistException("the tmux server this handle belonged to has ended");
+            throw new TargetGoneException("the tmux server this handle belonged to has ended");
         }
         ControlCarrier carrier = transport
                 .controlCarrier()
@@ -811,7 +826,7 @@ public final class Server implements AutoCloseable {
      * <p>A failed read throws, including when no daemon is running. An empty graph means a live
      * server successfully reported no sessions.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if a listing otherwise fails or the listings cannot form one valid
      *     snapshot
      */
@@ -819,7 +834,8 @@ public final class Server implements AutoCloseable {
         requireOpen();
         return capture.attempt()
                 .or(capture::attempt)
-                .orElseThrow(() -> new LibTmuxException("tmux server changed during snapshot capture"));
+                .orElseThrow(() ->
+                        new TargetGoneException("the tmux server was replaced twice while one snapshot was captured"));
     }
 
     private ServerSnapshot captured(FilterExpr<?> expression, String... listing) {
@@ -836,7 +852,7 @@ public final class Server implements AutoCloseable {
      * nothing, reads the whole server and filters that capture.
      *
      * @return an immutable list in tmux order
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
@@ -854,7 +870,7 @@ public final class Server implements AutoCloseable {
      *
      * <p>Returns an immutable list in tmux order. Empty means a live server reported no sessions.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
@@ -869,7 +885,7 @@ public final class Server implements AutoCloseable {
      * Captures every winlink, preserving each session and index placement.
      *
      * @return an immutable list in tmux order
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
@@ -888,7 +904,7 @@ public final class Server implements AutoCloseable {
      * nothing, reads the whole server and filters that capture.
      *
      * @return an immutable list in tmux order
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
@@ -905,7 +921,7 @@ public final class Server implements AutoCloseable {
      * Captures every pane on the server.
      *
      * @return an immutable list in tmux order
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
@@ -924,7 +940,7 @@ public final class Server implements AutoCloseable {
      * reads the whole server and filters that capture.
      *
      * @return an immutable list in tmux order
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
@@ -950,7 +966,7 @@ public final class Server implements AutoCloseable {
      *
      * <p>Empty means a successful capture did not contain that name. Capture failures throw.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     public Optional<Session> session(String name) {
@@ -966,7 +982,7 @@ public final class Server implements AutoCloseable {
      * The session with this id, captured now.
      *
      * @return empty only when a successful capture contains no match
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     public Optional<Session> session(SessionId id) {
@@ -991,7 +1007,7 @@ public final class Server implements AutoCloseable {
      * The pane with this id, captured now.
      *
      * @return empty only when a successful capture contains no match
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     public Optional<Pane> pane(PaneId id) {
@@ -1013,7 +1029,7 @@ public final class Server implements AutoCloseable {
      * The winlink at this exact position, captured now.
      *
      * @return empty only when a successful capture contains no match
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     public Optional<Window> window(WindowContext context) {
@@ -1032,7 +1048,7 @@ public final class Server implements AutoCloseable {
      * {@link #window(WindowContext)} to name one exactly.
      *
      * @return an immutable list in tmux order, empty if the window was not found
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
@@ -1049,7 +1065,7 @@ public final class Server implements AutoCloseable {
      * Captures every attached client.
      *
      * @return an immutable list in tmux order
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
@@ -1064,7 +1080,7 @@ public final class Server implements AutoCloseable {
      * Captures every session a client is attached to.
      *
      * @return an immutable list in tmux order
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
@@ -1147,7 +1163,7 @@ public final class Server implements AutoCloseable {
     ServerSnapshot refresh(ServerSnapshot previous) {
         ServerSnapshot fresh = snapshot();
         if (!identity(previous).equals(identity(fresh))) {
-            throw new ObjectDoesNotExistException("the tmux server this handle belonged to has ended");
+            throw new TargetGoneException("the tmux server this handle belonged to has ended");
         }
         return fresh;
     }

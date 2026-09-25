@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.TmuxTransport;
@@ -37,8 +39,8 @@ final class LayoutsTest {
      */
     @Test
     void aJsonLayoutIsRefusedBelowTheVersionThatWritesIt() {
-        UnsupportedTmuxVersionException refused =
-                assertThrows(UnsupportedTmuxVersionException.class, () -> Layouts.require(JSON_LAYOUT, V3_7C));
+        UnsupportedFeatureException refused =
+                assertThrows(UnsupportedFeatureException.class, () -> Layouts.require(JSON_LAYOUT, V3_7C));
 
         assertTrue(String.valueOf(refused.getMessage()).contains("3.8"), refused.getMessage());
     }
@@ -88,7 +90,7 @@ final class LayoutsTest {
         // main-horizontal is a prefix of main-horizontal-mirrored, but the exact name is not new.
         assertEquals("main-horizontal", Layouts.require("main-horizontal", V3_3A));
 
-        assertThrows(UnsupportedTmuxVersionException.class, () -> Layouts.require("main-horizontal-mirrored", V3_3A));
+        assertThrows(UnsupportedFeatureException.class, () -> Layouts.require("main-horizontal-mirrored", V3_3A));
     }
 
     @Test
@@ -147,8 +149,7 @@ final class LayoutsTest {
                 Server server = server(transport)) {
             assertEquals("main-horizontal", Layouts.require("main-h", server, 1));
             assertThrows(
-                    UnsupportedTmuxVersionException.class,
-                    () -> Layouts.require("main-horizontal-mirrored", server, 1));
+                    UnsupportedFeatureException.class, () -> Layouts.require("main-horizontal-mirrored", server, 1));
             assertEquals(List.of("display-message", "display-message"), transport.commands);
         }
         try (VersionTransport transport = new VersionTransport(new CommandResult(0, List.of("3.7c"), List.of()));
@@ -253,7 +254,7 @@ final class LayoutsTest {
         }
         try (VersionTransport transport = new VersionTransport(new CommandResult(0, List.of("3.7c"), List.of()));
                 Server server = server(transport)) {
-            assertThrows(UnsupportedTmuxVersionException.class, () -> Layouts.require(layout, server, 1));
+            assertThrows(UnsupportedFeatureException.class, () -> Layouts.require(layout, server, 1));
         }
     }
 

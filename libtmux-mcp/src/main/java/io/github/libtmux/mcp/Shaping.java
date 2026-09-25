@@ -5,9 +5,9 @@ import io.github.libtmux.Layouts;
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
+import io.github.libtmux.exception.ServerUnavailableException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -55,7 +55,7 @@ final class Shaping {
     private static boolean taken(Server server, String name) {
         try {
             return server.hasSession(name);
-        } catch (ServerNotRunningException absent) {
+        } catch (ServerUnavailableException absent) {
             return false;
         }
     }

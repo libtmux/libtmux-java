@@ -45,12 +45,12 @@ not convert traversal failures into absence.
 <!-- snippet: scala-sync: query-cardinality -->
 ```scala
 import io.github.libtmux.scaladsl.Queries
-import io.github.libtmux.query.Selections
+import io.github.libtmux.exception.CardinalityException
 
 assert(Queries.oneOrNone(Vector.empty[Int]).isEmpty)
 assert(Queries.exactlyOne(List("selected")) == "selected")
 val ambiguous = scala.util.Try(Queries.oneOrNone(Vector(1, 2)))
-assert(ambiguous.failed.get.isInstanceOf[Selections.MultipleMatchesException])
+assert(ambiguous.failed.get.isInstanceOf[CardinalityException.MultipleMatches])
 ```
 
 ## Java expressions

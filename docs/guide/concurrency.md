@@ -60,8 +60,8 @@ interrupt status. What tmux did depends on when:
 
 | interrupted | the exception | has tmux run it? |
 | --- | --- | --- |
-| waiting for admission | `TmuxTransportException`, `NOT_DISPATCHED` | no |
-| after the process started | `TmuxTransportException`, `UNKNOWN` | maybe |
+| waiting for admission | `DispatchException`, `NOT_DISPATCHED` | no |
+| after the process started | `DispatchException`, `UNKNOWN` | maybe |
 | in a wait such as `awaitText` or `Channel.await` | `InterruptedException` | a wait changes nothing |
 
 `UNKNOWN` means read the state back before deciding; never send a mutation again

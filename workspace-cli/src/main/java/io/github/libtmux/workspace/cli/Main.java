@@ -131,7 +131,7 @@ public final class Main {
         if (failure instanceof InterruptedException || failure instanceof InterruptedIOException)
             return Machine.Code.INTERRUPTED;
         if (failure instanceof Failure known) return known.code;
-        if (failure instanceof io.github.libtmux.LibTmuxException) return Machine.Code.TMUX_FAILED;
+        if (failure instanceof io.github.libtmux.exception.LibTmuxException) return Machine.Code.TMUX_FAILED;
         if (failure instanceof IOException
                 || failure instanceof UncheckedIOException
                 || failure instanceof IllegalArgumentException) return Machine.Code.INVALID_WORKSPACE;
@@ -262,7 +262,7 @@ public final class Main {
             return 2;
         } catch (Failure
                 | InterruptedException
-                | io.github.libtmux.LibTmuxException
+                | io.github.libtmux.exception.LibTmuxException
                 | IOException
                 | UncheckedIOException
                 | IllegalArgumentException failure) {

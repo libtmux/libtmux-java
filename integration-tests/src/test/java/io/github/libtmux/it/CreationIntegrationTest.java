@@ -7,15 +7,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Dimensions;
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.SessionSpec;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowSpec;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -138,7 +138,7 @@ final class CreationIntegrationTest {
         other.select();
 
         assertAll(
-                () -> assertThrows(ObjectDoesNotExistException.class, stale::select),
+                () -> assertThrows(TargetGoneException.class, stale::select),
                 () -> assertEquals(
                         other.id(),
                         session.refresh().activeWindow().orElseThrow().id(),
@@ -182,7 +182,7 @@ final class CreationIntegrationTest {
             assertEquals(real, Path.of(Files.readString(written).strip()).toRealPath());
         } else {
             assertThrows(
-                    UnsupportedTmuxVersionException.class,
+                    UnsupportedFeatureException.class,
                     () -> session.newWindow(w -> w.named("relative").in(relative)));
             assertTrue(
                     session.refresh().windows().stream().noneMatch(window -> "relative".equals(window.name())),
@@ -227,7 +227,7 @@ final class CreationIntegrationTest {
             assertEquals(wanted, sized.windows().get(0).size());
         } else {
             assertThrows(
-                    UnsupportedTmuxVersionException.class,
+                    UnsupportedFeatureException.class,
                     () -> server.newSession(s -> s.named("sized").sized(wanted)));
             assertTrue(
                     server.sessions().stream().noneMatch(session -> "sized".equals(session.name())),
@@ -278,7 +278,7 @@ final class CreationIntegrationTest {
                 fresh.killServer();
             } else {
                 assertThrows(
-                        UnsupportedTmuxVersionException.class,
+                        UnsupportedFeatureException.class,
                         () -> fresh.newSession(s -> s.named("sized").sized(wanted)));
                 assertTrue(Files.notExists(socket), "a refused spec must not have started the daemon");
             }

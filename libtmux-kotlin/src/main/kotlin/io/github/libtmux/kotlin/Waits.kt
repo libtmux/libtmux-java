@@ -1,7 +1,7 @@
 package io.github.libtmux.kotlin
 
+import io.github.libtmux.exception.LibTmuxException
 import io.github.libtmux.Channel
-import io.github.libtmux.LibTmuxException
 import io.github.libtmux.Pane
 import io.github.libtmux.PaneRun
 import io.github.libtmux.Server

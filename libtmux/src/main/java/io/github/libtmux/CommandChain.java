@@ -2,6 +2,7 @@ package io.github.libtmux;
 
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.batch.BatchResult;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -62,7 +63,7 @@ public final class CommandChain {
      *
      * @throws IllegalArgumentException if tmux would not recognise the layout, which on some
      *     versions ends the whole server rather than the command
-     * @throws UnsupportedTmuxVersionException if the layout name arrived after this release, which
+     * @throws UnsupportedFeatureException if the layout name arrived after this release, which
      *     tmux cannot tell from any other name it does not know
      */
     public CommandChain arrange(String layout) {

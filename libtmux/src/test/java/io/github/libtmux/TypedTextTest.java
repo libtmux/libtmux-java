@@ -3,12 +3,12 @@ package io.github.libtmux;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTransport;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -50,14 +50,14 @@ final class TypedTextTest {
                         if (request.commands().stream()
                                 .flatMap(List::stream)
                                 .anyMatch(arg -> arg.contains("send-keys"))) {
-                            throw new TmuxTransportException("reply lost", DispatchOutcome.UNKNOWN, null);
+                            throw new DispatchException.Failed("reply lost", DispatchOutcome.UNKNOWN, null);
                         }
                         return super.execute(request);
                     }
                 },
                 echo)) {
             Pane pane = server.panes().getFirst();
-            assertThrows(TmuxTransportException.class, () -> pane.sendLiteral(List.of("possibly-delivered")));
+            assertThrows(DispatchException.class, () -> pane.sendLiteral(List.of("possibly-delivered")));
             assertEquals(List.of(""), TypedText.in(pane).withoutEcho(List.of("possibly-delivered")));
         }
     }

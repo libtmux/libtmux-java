@@ -11,6 +11,7 @@ import io.github.libtmux.Session;
 import io.github.libtmux.Session_;
 import io.github.libtmux.Window;
 import io.github.libtmux.Window_;
+import io.github.libtmux.exception.CardinalityException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.query.Fields;
 import io.github.libtmux.query.FilterExpr;
@@ -123,13 +124,13 @@ final class FilteringIntegrationTest {
 
         assertEquals("only", Selections.exactlyOne(matches).name());
         assertThrows(
-                Selections.NoMatchException.class,
+                CardinalityException.NoMatch.class,
                 () -> Selections.exactlyOne(server.windows().stream()
                         .filter(Window_.name().is("absent"))
                         .toList()),
                 "zero matches and several matches are different bugs in a caller");
         assertThrows(
-                Selections.MultipleMatchesException.class,
+                CardinalityException.MultipleMatches.class,
                 () -> Selections.exactlyOne(server.windows().stream().toList()),
                 "two windows is not one window");
     }

@@ -6,8 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Server;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.junit5.TmuxExtension;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,7 +47,7 @@ final class ControlSoakIntegrationTest {
                         try {
                             client.send(List.of("display-message", "-p", "soak"), Duration.ofSeconds(5));
                             replied.countDown();
-                        } catch (IllegalStateException | TmuxTransportException refused) {
+                        } catch (IllegalStateException | DispatchException refused) {
                             return null;
                         }
                     }

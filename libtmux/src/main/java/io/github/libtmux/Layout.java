@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
@@ -69,7 +70,7 @@ public enum Layout {
     /** Refuses this layout when the running tmux predates it. */
     public void requireSupported(TmuxVersion running) {
         if (!running.atLeast(since())) {
-            throw new UnsupportedTmuxVersionException("the " + this + " layout", since(), running);
+            throw new UnsupportedFeatureException("the " + this + " layout", since(), running);
         }
     }
 

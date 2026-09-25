@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.CardinalityException;
 import io.github.libtmux.query.Model.Pane;
 import io.github.libtmux.query.Model.Pane_;
 import io.github.libtmux.query.Model.Window;
@@ -210,10 +211,10 @@ final class FilterExprTest {
         assertEquals(SHELL, Selections.exactlyOne(matchingPanes(Pane_.command().is("zsh"))));
 
         assertThrows(
-                Selections.NoMatchException.class,
+                CardinalityException.NoMatch.class,
                 () -> Selections.exactlyOne(matchingPanes(Pane_.command().is("emacs"))));
         assertThrows(
-                Selections.MultipleMatchesException.class,
+                CardinalityException.MultipleMatches.class,
                 () -> Selections.exactlyOne(matchingPanes(Pane_.command().startsWith("nv"))));
 
         assertEquals(
@@ -223,7 +224,7 @@ final class FilterExprTest {
                 Optional.of(SHELL),
                 Selections.oneOrEmpty(matchingPanes(Pane_.command().is("zsh"))));
         assertThrows(
-                Selections.MultipleMatchesException.class,
+                CardinalityException.MultipleMatches.class,
                 () -> Selections.oneOrEmpty(matchingPanes(Pane_.command().startsWith("nv"))),
                 "at most one must still reject several rather than pick one");
     }

@@ -138,7 +138,7 @@ Session build = Selections.exactlyOne(
 build.name();                        // → build
 ```
 
-`NoMatchException` for none, `MultipleMatchesException` for several — never a
+`CardinalityException.NoMatch` for none, `CardinalityException.MultipleMatches` for several — never a
 silent `first()`.
 
 Full guide: **[Filtering](../docs/guide/filtering.md)**.
@@ -180,7 +180,7 @@ the transport reports which happened rather than collapsing both:
 // Given: Server server
 try {
     server.cmd(List.of("kill-session", "-t", "=gone"));
-} catch (TmuxTransportException e) {
+} catch (DispatchException e) {
     if (e.outcome() == DispatchOutcome.NOT_DISPATCHED) {
         retry();      // tmux never saw it, so sending it again is safe
     } else {

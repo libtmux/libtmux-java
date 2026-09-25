@@ -1,4 +1,4 @@
-package io.github.libtmux;
+package io.github.libtmux.exception;
 
 import java.util.List;
 import java.util.Optional;
@@ -10,14 +10,23 @@ import org.jspecify.annotations.Nullable;
  * The root of every operational failure this library raises.
  *
  * <p>Unchecked, because a tmux failure can arise from any call and forcing every caller to declare
- * it would say nothing. This covers transport, tmux, hydration and query failures. It does not cover
- * programmer error: a null argument is a {@link NullPointerException}, an invalid value an
- * {@link IllegalArgumentException}, and use after close an {@link IllegalStateException}.
+ * it would say nothing. Sealed, with every branch abstract, so matching on the permitted subtypes is
+ * exhaustive in Java, Kotlin and Scala alike.
  *
  * <p>A failure that came from a tmux command carries that command, its exit status when it has one,
- * and the error lines tmux printed. The message is the same sentence as before.
+ * and the error lines tmux printed. Those lines, and the message that quotes them, name what tmux
+ * named — sessions, windows, panes and buffers included.
  */
-public class LibTmuxException extends RuntimeException {
+public abstract sealed class LibTmuxException extends RuntimeException
+        permits CardinalityException,
+                CommandRejectedException,
+                ControlEndedException,
+                DispatchException,
+                MalformedResponseException,
+                ServerUnavailableException,
+                TargetGoneException,
+                UnencodableTextException,
+                UnsupportedFeatureException {
 
     private static final long serialVersionUID = 1L;
 
@@ -25,11 +34,7 @@ public class LibTmuxException extends RuntimeException {
     private final int exitCode;
     private final String[] errorLines;
 
-    public LibTmuxException(String message) {
-        this(message, null);
-    }
-
-    public LibTmuxException(String message, @Nullable Throwable cause) {
+    LibTmuxException(String message, @Nullable Throwable cause) {
         this(message, cause, null, -1, List.of());
     }
 
@@ -55,7 +60,7 @@ public class LibTmuxException extends RuntimeException {
         return exitCode < 0 ? OptionalInt.empty() : OptionalInt.of(exitCode);
     }
 
-    /** The error lines tmux printed. Empty when this failure has none. */
+    /** The error lines tmux printed, in full. Empty when this failure has none. */
     @ReadOnly
     public List<String> errorLines() {
         return List.of(errorLines);

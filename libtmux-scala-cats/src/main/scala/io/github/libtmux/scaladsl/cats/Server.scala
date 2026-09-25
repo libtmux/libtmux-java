@@ -1,5 +1,9 @@
 package io.github.libtmux.scaladsl.cats
 
+import io.github.libtmux.exception.{
+  LibTmuxException,
+  ServerUnavailableException
+}
 import _root_.cats.effect.{Async, Resource}
 import _root_.cats.syntax.all._
 import io.github.libtmux.{
@@ -95,7 +99,7 @@ final class Server[F[_]] private[cats] (
   def isAlive(timeout: Duration): F[Boolean] =
     execution(underlying.isAlive(timeout))
 
-  /** Fails with `ServerNotRunningException` when no daemon answers. */
+  /** Fails with `ServerUnavailableException` when no daemon answers. */
   def requireAlive: F[Unit] = execution(underlying.requireAlive())
   def version: F[TmuxVersion] = execution(underlying.version())
   def expand(format: String): F[String] = execution(underlying.expand(format))

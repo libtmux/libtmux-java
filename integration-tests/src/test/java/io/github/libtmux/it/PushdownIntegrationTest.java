@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane_;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
@@ -12,6 +11,7 @@ import io.github.libtmux.Session_;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowSpec;
 import io.github.libtmux.Window_;
+import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.query.FilterExpr;
 import io.github.libtmux.query.TmuxFilters;

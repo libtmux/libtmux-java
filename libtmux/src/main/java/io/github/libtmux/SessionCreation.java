@@ -1,5 +1,9 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.internal.ErrorText;
 import io.github.libtmux.transport.CommandResult;
 import java.util.List;
 
@@ -26,21 +30,16 @@ final class SessionCreation {
     /**
      * The version to gate a session-creation spec against.
      *
-     * <p>{@code new-session} is the one command that may be the first thing said to a fresh socket,
-     * so asking {@link Server#version()} — which needs an already-answering daemon — fails exactly
-     * when a spec depends on the answer and nothing has started the daemon yet. Preferring the
-     * running daemon when there is one keeps {@link Server#version()}'s own reasoning: a server
-     * already up may have been started by a different build than this client is invoking. Only when
-     * nothing answers at all does this fall back to {@link #binaryVersion}, which asks the executable
-     * directly and needs no server.
+     * <p>{@code new-session} may be the first command said to a fresh socket, where {@link
+     * Server#version()} fails for want of a daemon. So this asks a running daemon when one answers,
+     * since it may be a different build than the configured binary, and otherwise asks the binary
+     * through {@link #binaryVersion}.
      *
-     * <p>Reads {@link SnapshotCapture#processForCreation()} directly rather than going through
-     * {@link Server#version()}: a daemon this client is too old to talk to fails the identity probe
-     * the same way one that was never started does ("server exited unexpectedly", confirmed against
-     * the matrix), and {@link Server#version()}'s own {@link ServerNotRunningException} does not keep
-     * that distinction once raised. Falling back to {@code binaryVersion} for that case would report
-     * the configured binary's own version as though it were the daemon's — exactly the guarantee this
-     * method exists to keep.
+     * <p>Reads {@link SnapshotCapture#processForCreation()} rather than {@link Server#version()}: a
+     * daemon too old to talk to fails the identity probe as one never started does ("server exited
+     * unexpectedly"), and {@link ServerUnavailableException} does not keep that distinction.
+     * Falling back to {@code binaryVersion} for such a daemon would report the binary's version as
+     * the daemon's.
      */
     static TmuxVersion versionForCreation(Server server) {
         return server.capture()
@@ -61,12 +60,13 @@ final class SessionCreation {
     private static TmuxVersion binaryVersion(Server server) {
         CommandResult result = server.cmd(List.of("-V"));
         if (!result.succeeded() || result.stdout().isEmpty()) {
-            throw new LibTmuxException("tmux -V did not report a version: " + String.join("; ", result.stderr()));
+            throw new MalformedResponseException(
+                    "tmux -V did not report a version" + ErrorText.suffix(result.stderr()));
         }
         String reported = result.stdout().get(0);
         int space = reported.indexOf(' ');
         if (space < 0) {
-            throw new LibTmuxException("tmux -V reported an unexpected line: " + reported);
+            throw new MalformedResponseException("tmux -V reported an unexpected line: " + reported);
         }
         return TmuxVersion.parse(reported.substring(space + 1));
     }

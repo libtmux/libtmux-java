@@ -3,6 +3,11 @@ package io.github.libtmux;
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.batch.OperationResult;
+import io.github.libtmux.exception.CommandRejectedException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.internal.ErrorText;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.transport.CommandResult;
 import java.util.ArrayList;
@@ -74,7 +79,7 @@ public final class Options {
      * @return empty only when tmux does not know the option, which it reports as an error; an option
      *     genuinely set to the empty string comes back as an empty value, not as absent. A value
      *     spanning several lines comes back whole
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the read otherwise fails, including a name tmux finds ambiguous —
      *     option names may be abbreviated, and a prefix matching several is a question tmux
      *     declined to answer rather than an option it does not have
@@ -181,7 +186,7 @@ public final class Options {
             try {
                 version = TmuxVersion.parse(String.join("\n", result.stdout()));
             } catch (IllegalArgumentException invalid) {
-                throw new LibTmuxException("could not establish tmux option output encoding", invalid);
+                throw new MalformedResponseException("could not establish tmux option output encoding", invalid);
             }
         }
         return version.major() == 3 && (version.minor() == 4 || version.minor() == 5) ? version : null;
@@ -200,7 +205,7 @@ public final class Options {
         int end = text.length();
         if (end > 0 && (text.charAt(0) == '\'' || text.charAt(0) == '"')) {
             if (end < 2 || text.charAt(end - 1) != text.charAt(0)) {
-                throw new LibTmuxException("tmux returned an unterminated quoted option value");
+                throw new MalformedResponseException("tmux returned an unterminated quoted option value");
             }
             start++;
             end--;
@@ -212,7 +217,7 @@ public final class Options {
                 value.append(ch);
                 continue;
             }
-            if (++index == end) throw new LibTmuxException("tmux returned an incomplete option escape");
+            if (++index == end) throw new MalformedResponseException("tmux returned an incomplete option escape");
             char escaped = text.charAt(index);
             if (escaped >= '0' && escaped <= '7') {
                 int octal = escaped - '0';
@@ -222,7 +227,7 @@ public final class Options {
                     octal = octal * 8 + next - '0';
                     index++;
                 }
-                if (octal > 255) throw new LibTmuxException("tmux returned an invalid octal option escape");
+                if (octal > 255) throw new MalformedResponseException("tmux returned an invalid octal option escape");
                 if (octal >= 128)
                     value.append("\\x").append(java.util.HexFormat.of().toHexDigits((byte) octal));
                 else value.append((char) octal);
@@ -238,7 +243,7 @@ public final class Options {
                             case 't' -> '\t';
                             case 'v' -> '\u000b';
                             case '\\', '\'', '"', '$', '~', '#', ';', '{', '}', '%' -> escaped;
-                            default -> throw new LibTmuxException("tmux returned an unknown option escape");
+                            default -> throw new MalformedResponseException("tmux returned an unknown option escape");
                         });
             }
         }
@@ -255,8 +260,11 @@ public final class Options {
         for (int index = 0; index < names.size(); index++) {
             OperationResult value = read.get(index + 1);
             if (value.outcome() != OperationOutcome.COMPLETE) {
-                throw new LibTmuxException(
-                        "tmux could not read option " + names.get(index) + ": " + String.join("; ", value.stderr()));
+                throw new CommandRejectedException(
+                        "tmux could not read option " + names.get(index) + ErrorText.suffix(value.stderr()),
+                        "show-options",
+                        -1,
+                        value.stderr());
             }
             into.put(names.get(index), String.join("\n", TmuxFormats.printed(value.stdout(), version)));
         }

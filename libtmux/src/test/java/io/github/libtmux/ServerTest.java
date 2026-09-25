@@ -10,13 +10,18 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.CommandRejectedException;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.ServerClosedException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
-import io.github.libtmux.transport.TmuxTimeoutException;
 import io.github.libtmux.transport.TmuxTransport;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -79,7 +84,7 @@ final class ServerTest {
             version.set(new CommandResult(1, List.of(), List.of("server exited unexpectedly")));
             value.set(new CommandResult(1, List.of(), List.of("server exited unexpectedly")));
             assertThrows(
-                    ServerNotRunningException.class,
+                    ServerUnavailableException.class,
                     () -> server.globalOptions().get("@value"));
             assertEquals(
                     List.of("show-options", "-g", "-A", "-v", "--", "@value"),
@@ -286,7 +291,7 @@ final class ServerTest {
 
     @Test
     void aWaitPropagatesTransportFailuresThatAreNotItsDeadline(@TempDir Path directory) throws IOException {
-        TmuxTransportException failure = new TmuxTransportException("pipe failed", DispatchOutcome.UNKNOWN, null);
+        DispatchException failure = new DispatchException.Failed("pipe failed", DispatchOutcome.UNKNOWN, null);
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
@@ -304,7 +309,7 @@ final class ServerTest {
             assertSame(
                     failure,
                     assertThrows(
-                            TmuxTransportException.class,
+                            DispatchException.class,
                             () -> server.channel("channel").await(java.time.Duration.ofSeconds(1))));
         }
     }
@@ -312,8 +317,8 @@ final class ServerTest {
     @Test
     void aWaitWithSignalCapacityPreservesAPredispatchTimeout(@TempDir Path directory)
             throws IOException, InterruptedException {
-        TmuxTimeoutException failure =
-                new TmuxTimeoutException("waiting admission timed out", DispatchOutcome.NOT_DISPATCHED, null);
+        DispatchException.TimedOut failure =
+                new DispatchException.TimedOut("waiting admission timed out", DispatchOutcome.NOT_DISPATCHED, null);
         java.util.concurrent.atomic.AtomicBoolean waiting = new java.util.concurrent.atomic.AtomicBoolean();
         TmuxTransport transport = new TmuxTransport() {
             @Override
@@ -341,7 +346,7 @@ final class ServerTest {
             assertSame(
                     failure,
                     assertThrows(
-                            TmuxTimeoutException.class,
+                            DispatchException.TimedOut.class,
                             () -> server.channel("channel").awaitReservingCapacity(java.time.Duration.ofSeconds(1))));
             assertTrue(waiting.get(), "wait-for used ordinary transport admission");
         }
@@ -383,7 +388,7 @@ final class ServerTest {
         try (Server server = Server.using(config(directory), new RefusingTransport("permission denied"))) {
             assertAll(liveReads(server).stream().map(read -> () -> {
                 LibTmuxException failure = assertThrows(LibTmuxException.class, read);
-                assertFalse(failure instanceof ServerNotRunningException, "not a missing daemon: " + failure);
+                assertFalse(failure instanceof ServerUnavailableException, "not a missing daemon: " + failure);
             }));
         }
         for (String absent : List.of(
@@ -394,7 +399,7 @@ final class ServerTest {
                 assertAll(
                         absent,
                         liveReads(server).stream()
-                                .map(read -> () -> assertThrows(ServerNotRunningException.class, read)));
+                                .map(read -> () -> assertThrows(ServerUnavailableException.class, read)));
             }
         }
     }
@@ -402,9 +407,9 @@ final class ServerTest {
     @Test
     void liveReadsKeepTransportAndTimeoutDiagnostics(@TempDir Path directory) throws IOException {
         IOException cause = new IOException("reader failed");
-        for (TmuxTransportException failure : List.of(
-                new TmuxTransportException("capture pipe failed", DispatchOutcome.UNKNOWN, cause),
-                new TmuxTimeoutException("admission timed out", DispatchOutcome.NOT_DISPATCHED, cause))) {
+        for (DispatchException failure : List.of(
+                new DispatchException.Failed("capture pipe failed", DispatchOutcome.UNKNOWN, cause),
+                new DispatchException.TimedOut("admission timed out", DispatchOutcome.NOT_DISPATCHED, cause))) {
             TmuxTransport transport = new TmuxTransport() {
                 @Override
                 public CommandResult execute(CommandRequest request) {
@@ -416,7 +421,7 @@ final class ServerTest {
             };
             try (Server server = Server.using(config(directory), transport)) {
                 assertAll(liveReads(server).stream()
-                        .map(read -> () -> assertSame(failure, assertThrows(TmuxTransportException.class, read))));
+                        .map(read -> () -> assertSame(failure, assertThrows(DispatchException.class, read))));
             }
         }
     }
@@ -429,7 +434,7 @@ final class ServerTest {
             try (Server server = Server.open(
                     config(directory).toBuilder().binary(unavailable.toString()).build())) {
                 assertAll(liveReads(server).stream().map(read -> () -> {
-                    TmuxTransportException failure = assertThrows(TmuxTransportException.class, read);
+                    DispatchException failure = assertThrows(DispatchException.class, read);
                     assertEquals(DispatchOutcome.NOT_DISPATCHED, failure.outcome());
                     assertTrue(failure.getCause() instanceof IOException);
                 }));
@@ -441,7 +446,7 @@ final class ServerTest {
     void liveReadsRejectAnAbsentDaemon(@TempDir Path directory) throws IOException {
         try (Server server = Server.open(config(directory))) {
             assertAll(
-                    liveReads(server).stream().map(read -> () -> assertThrows(ServerNotRunningException.class, read)));
+                    liveReads(server).stream().map(read -> () -> assertThrows(ServerUnavailableException.class, read)));
         }
     }
 
@@ -482,11 +487,11 @@ final class ServerTest {
     @Test
     void showingABufferDistinguishesAnAbsentDaemonFromAMissingName(@TempDir Path directory) throws IOException {
         try (Server server = Server.using(config(directory), new RefusingTransport("no buffer never-set"))) {
-            assertThrows(
-                    ObjectDoesNotExistException.class, () -> server.buffers().show("never-set"));
+            assertThrows(TargetGoneException.class, () -> server.buffers().show("never-set"));
         }
         try (Server server = Server.using(config(directory), new RefusingTransport("no server running"))) {
-            assertThrows(ServerNotRunningException.class, () -> server.buffers().show("never-set"));
+            assertThrows(
+                    ServerUnavailableException.class, () -> server.buffers().show("never-set"));
         }
     }
 
@@ -666,9 +671,9 @@ final class ServerTest {
                         List.of(
                                 String.join(separator, "$0", "old", "0", "0"),
                                 String.join(separator, "$1", "new", "0", "0"))))) {
-            LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
+            TargetGoneException failure = assertThrows(TargetGoneException.class, server::snapshot);
 
-            assertTrue(String.valueOf(failure.getMessage()).contains("changed during snapshot"));
+            assertTrue(String.valueOf(failure.getMessage()).contains("replaced twice"));
         }
     }
 
@@ -682,9 +687,9 @@ final class ServerTest {
                         List.of(
                                 String.join(separator, "$0", "old", "0", "0"),
                                 String.join(separator, "$1", "new", "0", "0"))))) {
-            LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
+            TargetGoneException failure = assertThrows(TargetGoneException.class, server::snapshot);
 
-            assertTrue(String.valueOf(failure.getMessage()).contains("changed during snapshot"));
+            assertTrue(String.valueOf(failure.getMessage()).contains("replaced twice"));
         }
     }
 
@@ -799,14 +804,14 @@ final class ServerTest {
             assertDoesNotThrow(() -> server.prompt().clear());
         }
         try (Server server = Server.using(config(directory), listingCommands("99.0"))) {
-            UnsupportedTmuxVersionException refused = assertThrows(
-                    UnsupportedTmuxVersionException.class, () -> server.prompt().history());
+            UnsupportedFeatureException refused = assertThrows(
+                    UnsupportedFeatureException.class, () -> server.prompt().history());
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("3.3"),
                     "the refusal still names the release most callers will recognise: " + refused.getMessage());
             assertThrows(
-                    UnsupportedTmuxVersionException.class, () -> server.prompt().clear());
+                    UnsupportedFeatureException.class, () -> server.prompt().clear());
         }
     }
 
@@ -841,7 +846,7 @@ final class ServerTest {
                     LibTmuxException.class, () -> server.newSession(s -> s.sized(new Dimensions(120, 40))));
 
             assertFalse(
-                    failure instanceof UnsupportedTmuxVersionException,
+                    failure instanceof UnsupportedFeatureException,
                     "must not claim a version for a daemon it never actually asked: " + failure);
             assertTrue(
                     String.valueOf(failure.getMessage()).contains("server exited unexpectedly"),
@@ -865,6 +870,7 @@ final class ServerTest {
             LibTmuxException failure =
                     server.failed("display-message", new CommandResult(7, List.of(), List.of("no current target")));
 
+            assertTrue(failure instanceof CommandRejectedException, "tmux refused rather than failed to run");
             assertEquals(Optional.of("display-message"), failure.command());
             assertEquals(OptionalInt.of(7), failure.exitCode());
             assertEquals(List.of("no current target"), failure.errorLines());
@@ -873,11 +879,39 @@ final class ServerTest {
             LibTmuxException absent =
                     server.failed("kill-server", new CommandResult(1, List.of(), List.of("no server running")));
 
-            assertTrue(absent instanceof ServerNotRunningException);
+            assertTrue(absent instanceof ServerUnavailableException);
             assertEquals(Optional.of("kill-server"), absent.command());
             assertEquals(OptionalInt.of(1), absent.exitCode());
             assertEquals(List.of("no server running"), absent.errorLines());
+
+            String long_ = "x".repeat(1_000);
+            LibTmuxException verbose = server.failed("set-buffer", new CommandResult(1, List.of(), List.of(long_)));
+
+            assertTrue(
+                    String.valueOf(verbose.getMessage()).length() < 400,
+                    "a message lands in every log line: " + verbose.getMessage());
+            assertTrue(String.valueOf(verbose.getMessage()).contains("xxx"), "tmux's words stay in the message");
+            assertEquals(List.of(long_), verbose.errorLines(), "the error lines keep the text whole");
         }
+    }
+
+    @Test
+    void aClosedServerRefusesWorkAsProgrammerError(@TempDir Path directory) throws IOException {
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                throw new AssertionError("a closed server reached its transport");
+            }
+
+            @Override
+            public void close() {}
+        };
+        Server server = Server.using(config(directory), transport);
+        server.close();
+
+        ServerClosedException closed = assertThrows(ServerClosedException.class, server::snapshot);
+
+        assertEquals(DispatchOutcome.NOT_DISPATCHED, closed.outcome());
     }
 
     // ------------------------------------------------------------------------- session creation

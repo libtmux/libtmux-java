@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.MalformedResponseException;
 import java.util.List;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
@@ -62,8 +63,9 @@ final class RowFormatTest {
     void aRowWithTheWrongFieldCountIsRejected() {
         String separator = WINDOWS.separator();
 
-        assertThrows(TmuxFormatException.class, () -> WINDOWS.split(String.join(separator, "$0", "@1")));
-        assertThrows(TmuxFormatException.class, () -> WINDOWS.split(String.join(separator, "$0", "@1", "a", "b")));
+        assertThrows(MalformedResponseException.class, () -> WINDOWS.split(String.join(separator, "$0", "@1")));
+        assertThrows(
+                MalformedResponseException.class, () -> WINDOWS.split(String.join(separator, "$0", "@1", "a", "b")));
     }
 
     @Test

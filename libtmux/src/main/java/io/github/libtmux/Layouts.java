@@ -1,5 +1,8 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -86,13 +89,13 @@ public final class Layouts {
      * version would refuse a prefix the running tmux itself accepts.
      *
      * @throws IllegalArgumentException if tmux would not recognise the layout
-     * @throws UnsupportedTmuxVersionException if the name or the JSON format arrived after this
+     * @throws UnsupportedFeatureException if the name or the JSON format arrived after this
      *     release
      */
     public static String require(String layout, TmuxVersion running) {
         if (isJsonShaped(layout)) {
             if (!running.atLeast(JSON_LAYOUT_SINCE)) {
-                throw new UnsupportedTmuxVersionException("a JSON layout", JSON_LAYOUT_SINCE, running);
+                throw new UnsupportedFeatureException("a JSON layout", JSON_LAYOUT_SINCE, running);
             }
             return layout;
         }
@@ -134,7 +137,7 @@ public final class Layouts {
      * @param paneCount the number of panes which the layout must accommodate
      * @return a full built-in name or the unchanged serialized layout
      * @throws IllegalArgumentException if the layout is invalid or has too few pane cells
-     * @throws UnsupportedTmuxVersionException if an exact built-in name requires a newer daemon
+     * @throws UnsupportedFeatureException if an exact built-in name requires a newer daemon
      * @throws LibTmuxException if the daemon or client version cannot be read
      */
     public static String require(String layout, Server server, int paneCount) {
@@ -189,7 +192,7 @@ public final class Layouts {
         try {
             return SessionCreation.versionForCreation(server);
         } catch (IllegalArgumentException invalid) {
-            throw new LibTmuxException("could not read tmux version", invalid);
+            throw new MalformedResponseException("could not read tmux version", invalid);
         }
     }
 
@@ -240,7 +243,7 @@ public final class Layouts {
      * (confirmed against next-3.9: malformed JSON answers an ordinary parse error, never a crash).
      *
      * @throws IllegalArgumentException if the string is not a layout tmux wrote
-     * @throws UnsupportedTmuxVersionException if it is JSON-shaped but {@code running} predates the
+     * @throws UnsupportedFeatureException if it is JSON-shaped but {@code running} predates the
      *     format, so it cannot be one this server wrote
      */
     static String requireSerialized(String layout, TmuxVersion running) {
@@ -249,7 +252,7 @@ public final class Layouts {
         }
         if (isJsonShaped(layout)) {
             if (!running.atLeast(JSON_LAYOUT_SINCE)) {
-                throw new UnsupportedTmuxVersionException("a JSON layout", JSON_LAYOUT_SINCE, running);
+                throw new UnsupportedFeatureException("a JSON layout", JSON_LAYOUT_SINCE, running);
             }
             return layout;
         }

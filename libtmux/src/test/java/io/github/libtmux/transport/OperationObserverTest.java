@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.DispatchException;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -46,7 +47,7 @@ class OperationObserverTest {
             try {
                 transport.execute(CommandRequest.of(
                         List.of("tmux"), List.of("new-session", "secret-token"), Duration.ofSeconds(5)));
-            } catch (TmuxTransportException failure) {
+            } catch (DispatchException failure) {
                 assertEquals(DispatchOutcome.NOT_DISPATCHED, failure.outcome());
             }
 

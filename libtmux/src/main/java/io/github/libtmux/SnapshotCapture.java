@@ -3,6 +3,9 @@ package io.github.libtmux;
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.batch.OperationResult;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.query.TmuxFilters;
 import io.github.libtmux.snapshot.ClientState;
@@ -95,10 +98,10 @@ final class SnapshotCapture {
     /** One attempt, empty when the server was replaced under it. */
     Optional<ServerSnapshot> attempt() {
         ServerProcess process = process()
-                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
+                .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
         try {
             return Optional.of(capture(process));
-        } catch (ObjectDoesNotExistException replaced) {
+        } catch (TargetGoneException replaced) {
             // The fence answered: this is no longer the server the identity came from.
             return Optional.empty();
         } catch (RuntimeException failure) {
@@ -147,21 +150,21 @@ final class SnapshotCapture {
         }
         List<RowFormat.Row> reported = PROCESS.rows(result.stdout());
         if (reported.isEmpty()) {
-            throw new LibTmuxException(
+            throw new MalformedResponseException(
                     server.config().binary() + " exited 0 and reported nothing for tmux's own identity; is it tmux?");
         }
         if (reported.size() != 1) {
-            throw new LibTmuxException("tmux did not report exactly one server identity row: " + reported);
+            throw new MalformedResponseException("tmux did not report exactly one server identity row: " + reported);
         }
         RowFormat.Row row = reported.get(0);
         long pid = row.count("pid");
         if (pid <= 0) {
-            throw new LibTmuxException("tmux reported a malformed server pid: " + pid);
+            throw new MalformedResponseException("tmux reported a malformed server pid: " + pid);
         }
         String version = row.text("version");
         long started = row.count("start_time");
         if (started < 0) {
-            throw new LibTmuxException("tmux reported a malformed server start time: " + started);
+            throw new MalformedResponseException("tmux reported a malformed server start time: " + started);
         }
         return Optional.of(new ServerProcess(pid, TmuxVersion.parse(version), started));
     }
@@ -206,7 +209,7 @@ final class SnapshotCapture {
         try {
             return assembly.get();
         } catch (IllegalArgumentException inconsistent) {
-            throw new LibTmuxException(
+            throw new MalformedResponseException(
                     "tmux returned listings that do not form one snapshot: " + inconsistent.getMessage(), inconsistent);
         }
     }
@@ -220,7 +223,7 @@ final class SnapshotCapture {
      */
     Optional<ServerSnapshot> oneSession(String target, String field) {
         ServerProcess process = process()
-                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
+                .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
         return hydrate(
                 process,
                 "#{==:#{" + field + "}," + target + "}",
@@ -236,7 +239,7 @@ final class SnapshotCapture {
      */
     Optional<ServerSnapshot> sessionsNamed(String name) {
         ServerProcess process = process()
-                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
+                .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
         List<String> names = TmuxFormats.storedNames(name, process.version());
         if (!names.stream().allMatch(TmuxFilters::literal)) {
             return Optional.empty();
@@ -261,7 +264,7 @@ final class SnapshotCapture {
      */
     Optional<ServerSnapshot> sessionsWhere(String format, String... command) {
         ServerProcess process = process()
-                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
+                .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
         String holding =
                 switch (command[0]) {
                     case "list-sessions" -> format;
@@ -333,7 +336,7 @@ final class SnapshotCapture {
      */
     Optional<ServerSnapshot> sessionsHolding(PaneId id) {
         ServerProcess process = process()
-                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
+                .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
         return hydrate(process, "#{W:#{P:#{?#{==:#{pane_id}," + id.value() + "},1,}}}", session -> true);
     }
 

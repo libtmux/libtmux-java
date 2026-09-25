@@ -6,8 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
+import io.github.libtmux.exception.MalformedResponseException;
 import io.github.libtmux.format.RowFormat;
-import io.github.libtmux.format.TmuxFormatException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -80,6 +80,6 @@ final class RowFramingIntegrationTest {
                 .stdout()
                 .get(0);
 
-        assertThrows(TmuxFormatException.class, () -> narrower.split(row));
+        assertThrows(MalformedResponseException.class, () -> narrower.split(row));
     }
 }

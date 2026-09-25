@@ -1,5 +1,9 @@
 package io.github.libtmux.scaladsl.blocking
 
+import io.github.libtmux.exception.{
+  LibTmuxException,
+  ServerUnavailableException
+}
 import io.github.libtmux.{
   Pane => JavaPane,
   PaneId,
@@ -128,7 +132,7 @@ final class Server private (
   def isAlive(): Boolean = checked(asJava.isAlive())
   def isAlive(timeout: Duration): Boolean = checked(asJava.isAlive(timeout))
 
-  /** Returns when a daemon answers; throws `ServerNotRunningException` when
+  /** Returns when a daemon answers; throws `ServerUnavailableException` when
     * none does.
     */
   def requireAlive(): Unit = checked(asJava.requireAlive())

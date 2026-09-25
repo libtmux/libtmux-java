@@ -1,6 +1,5 @@
 package io.github.libtmux.mcp;
 
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
@@ -9,6 +8,7 @@ import io.github.libtmux.SessionId;
 import io.github.libtmux.Session_;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowId;
+import io.github.libtmux.exception.TargetGoneException;
 import java.util.List;
 
 /**
@@ -36,7 +36,7 @@ final class Targets {
         return panes.stream()
                 .filter(pane -> pane.id().equals(wanted))
                 .findFirst()
-                .orElseThrow(() -> new ObjectDoesNotExistException(
+                .orElseThrow(() -> new TargetGoneException(
                         "no pane " + id + " on this server; call list_panes for the " + panes.size() + " that exist"));
     }
 
@@ -53,7 +53,7 @@ final class Targets {
         return windows.stream()
                 .filter(window -> window.id().equals(wanted))
                 .findFirst()
-                .orElseThrow(() -> new ObjectDoesNotExistException("no window " + id
+                .orElseThrow(() -> new TargetGoneException("no window " + id
                         + " on this server; call list_windows for the " + windows.size() + " that exist"));
     }
 
@@ -62,7 +62,7 @@ final class Targets {
         return sessions.stream()
                 .filter(Session_.name().is(name))
                 .findFirst()
-                .orElseThrow(() -> new ObjectDoesNotExistException("no session named '" + name + "'; this server has "
+                .orElseThrow(() -> new TargetGoneException("no session named '" + name + "'; this server has "
                         + sessions.stream().map(Session::name).toList()));
     }
 
@@ -72,7 +72,7 @@ final class Targets {
         return sessions.stream()
                 .filter(session -> session.id().equals(wanted))
                 .findFirst()
-                .orElseThrow(() -> new ObjectDoesNotExistException("no session " + id
+                .orElseThrow(() -> new TargetGoneException("no session " + id
                         + " on this server; call list_sessions for the " + sessions.size() + " that exist"));
     }
 

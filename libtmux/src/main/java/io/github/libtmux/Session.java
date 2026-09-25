@@ -1,6 +1,10 @@
 package io.github.libtmux;
 
 import com.google.errorprone.annotations.CheckReturnValue;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.SessionState;
@@ -174,7 +178,7 @@ public final class Session {
      *
      * @param configure receives a builder holding tmux's defaults
      * @return a handle on the created window, from a fresh capture
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
     public Window newWindow(Consumer<WindowSpec.Builder> configure) {
         WindowSpec.Builder builder = WindowSpec.builder();
@@ -186,7 +190,7 @@ public final class Session {
      * Creates a window in this session according to a spec, which may be reused across sessions.
      *
      * @return a handle on the created window, from a fresh capture
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
     public Window newWindow(WindowSpec spec) {
         List<String> reported = server.run(
@@ -201,8 +205,7 @@ public final class Session {
                             .windows().stream()
                                     .filter(window -> wanted.equals(window.name()))
                                     .findFirst())
-                    .orElseThrow(() ->
-                            new ObjectDoesNotExistException("tmux reported no window and none carries that name"));
+                    .orElseThrow(() -> new TargetGoneException("tmux reported no window and none carries that name"));
         }
         List<String> fields = CREATED.split(reported.get(0));
         WindowContext created = new WindowContext(
@@ -211,7 +214,7 @@ public final class Session {
                 new WindowId(fields.get(1)));
         return fresh.window(created)
                 .map(window -> new Window(server, fresh, window))
-                .orElseThrow(() -> new ObjectDoesNotExistException("the window just created is already gone"));
+                .orElseThrow(() -> new TargetGoneException("the window just created is already gone"));
     }
 
     /**
@@ -252,15 +255,15 @@ public final class Session {
      *
      * <p>This handle remains unchanged. Use the returned handle for subsequent state reads.
      *
-     * @throws ObjectDoesNotExistException if the session is gone from a server that still answers
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws TargetGoneException if the session is gone from a server that still answers
+     * @throws ServerUnavailableException if no daemon is running
      */
     @CheckReturnValue
     public Session refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.session(state.id())
                 .map(session -> new Session(server, fresh, session))
-                .orElseThrow(() -> new ObjectDoesNotExistException("session " + state.id() + " no longer exists"));
+                .orElseThrow(() -> new TargetGoneException("session " + state.id() + " no longer exists"));
     }
 
     @Override
