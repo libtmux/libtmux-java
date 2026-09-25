@@ -49,6 +49,11 @@ api-break: Server
 `prompt().clear()`. `messages()` is `messageLog().lines()`. `runShell`,
 `runShellCapturing` and `ifShell` are `shell().run`, `shell().capturing` and
 `shell().choose`. `listCommands()` is `commands().list()`.
+### `search_panes` reports `truncated`, not `limited`
+
+The MCP tool's output field naming a budget cut is now `truncated`, matching
+`capture_pane`, `capture_since`, `wait_for_text`, and `run_shell_command`.
+Read `truncated` instead of `limited` from a `search_panes` result.
 
 ### A tmux release candidate keeps its name and counts as its release
 
