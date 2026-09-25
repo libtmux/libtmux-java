@@ -268,6 +268,9 @@ final class McpLauncherTest {
             assertTrue(
                     instructions.contains("command") && instructions.contains("no filter"),
                     "list_panes has no filter, and its command field is how to find a pane: " + instructions);
+            assertTrue(
+                    instructions.contains("human-owned") && instructions.contains("synchronized"),
+                    "pane input refusing a modal or synchronized pane must be stated: " + instructions);
         }
     }
 
