@@ -129,8 +129,8 @@ dispatcher lends you:
   inside `withContext(Dispatchers.IO) { ... }`, as the `WatchWithFlow` example
   does.
 - A call that can wait long uses this module's suspending form: `await`,
-  `awaitText`, `awaitDelivery`, or `deliveries()`. Each blocks a thread of the
-  `dispatcher` it is given, `Dispatchers.IO` unless you pass one, and
+  `awaitText`, `awaitDelivery`, `deliveries()`, or `run`. Each blocks a thread
+  of the `dispatcher` it is given, `Dispatchers.IO` unless you pass one, and
   cancelling it interrupts that thread. Pass `Dispatchers.IO.limitedParallelism(n)`
   to bound how many threads your waits may hold at once.
 - A long call this module has no form for, wrap in
