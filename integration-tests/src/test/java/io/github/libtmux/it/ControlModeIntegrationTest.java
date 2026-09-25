@@ -308,6 +308,28 @@ final class ControlModeIntegrationTest {
         }
     }
 
+    /** With tmux's own flow control on, output arrives as {@code %extended-output}; it is still output. */
+    @Test
+    void outputStillArrivesWithTmuxFlowControlOn(Server server) throws Exception {
+        try (ControlClient client = attach(server);
+                EventSubscription<PaneOutput> output = client.subscribeOutput(256)) {
+            assertTrue(client.send("refresh-client", "-f", "pause-after=30").succeeded());
+            client.send("send-keys", "-t", "libtmux", "echo flow-$((6*7))", "Enter");
+
+            StringBuilder text = new StringBuilder();
+            long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+            while (text.indexOf("flow-42") < 0 && System.nanoTime() < deadline) {
+                var next = output.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
+                if (next.isEmpty()) {
+                    break;
+                }
+                text.append(Delivery.kept(next.orElseThrow()).data());
+            }
+
+            assertTrue(text.indexOf("flow-42") >= 0, "no output arrived once tmux flow control was on");
+        }
+    }
+
     private static List<Byte> asList(byte[] bytes) {
         List<Byte> list = new ArrayList<>(bytes.length);
         for (byte value : bytes) {
