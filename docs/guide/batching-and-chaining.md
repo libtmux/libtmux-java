@@ -1,6 +1,6 @@
 # Batching and chaining
 
-Every snippet here is executed by `ExamplesTest`.
+Every snippet here is executed by `DocumentationSnippetsTest`.
 
 Each call starts one tmux process, and that process is most of what a call costs.
 A batch and a chain both put several commands into one invocation.

@@ -1,6 +1,6 @@
 # Options and hooks
 
-Every snippet here is executed by `ExamplesTest`.
+Every snippet here is executed by `DocumentationSnippetsTest`.
 
 tmux keeps options and hooks at four scopes, and the same name can exist at more
 than one. A scope is chosen when the view is taken, so a caller cannot read one

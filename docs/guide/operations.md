@@ -1,6 +1,6 @@
 # Failures, telemetry, and pane input
 
-Every snippet here is run by `ExamplesTest`.
+Every snippet here is run by `DocumentationSnippetsTest`.
 
 This guide is for a service that drives tmux on behalf of something else: it has
 to decide whether a failed command may be sent again, see what every command
