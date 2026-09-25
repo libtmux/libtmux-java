@@ -93,7 +93,8 @@ final class Caller {
                 || socketRelation != FileRelation.SAME
                 || sessions == null
                 || !sessions.contains(selected.sessionId())) {
-            throw new IllegalStateException("pane input refuses inconsistent caller identity");
+            throw new IllegalStateException("pane input refuses inconsistent caller identity: this server's "
+                    + "inherited pane no longer matches live tmux state; restart it from a current tmux pane");
         }
     }
 

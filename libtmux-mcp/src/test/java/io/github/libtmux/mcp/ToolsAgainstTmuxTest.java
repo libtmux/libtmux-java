@@ -280,8 +280,11 @@ final class ToolsAgainstTmuxTest {
                 .value();
         server.cmd("move-pane", "-s", pane, "-t", destination);
 
-        assertThrows(IllegalStateException.class, () -> Shaping.kill(confirmed));
+        IllegalStateException refused = assertThrows(IllegalStateException.class, () -> Shaping.kill(confirmed));
 
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("retry"), message);
+        assertTrue(message.contains("restart"), message);
         assertTrue(server.panes().stream()
                 .anyMatch(candidate -> candidate.id().value().equals(pane)));
     }

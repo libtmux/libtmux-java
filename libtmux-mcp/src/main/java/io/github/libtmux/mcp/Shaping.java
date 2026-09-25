@@ -232,7 +232,8 @@ final class Shaping {
         }
         if (confirmed) {
             if (!caller.freshlyAuthenticated(call.server())) {
-                throw new IllegalStateException("Refused. confirm_self requires a freshly authenticated caller pane.");
+                throw new IllegalStateException("Refused. confirm_self requires a freshly authenticated caller "
+                        + "pane; retry, and if it keeps failing, restart this server from a current tmux pane.");
             }
             return;
         }
