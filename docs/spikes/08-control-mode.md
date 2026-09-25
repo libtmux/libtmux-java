@@ -63,3 +63,8 @@ the test would pass just as well against a client that never worked.
   forms have not been exercised.
 - Notifications other than `%output` are read and discarded. State is read by
   taking a snapshot, not by tracking notifications.
+
+  **Superseded.** `Notification`
+  (`libtmux/src/main/java/io/github/libtmux/control/Notification.java`) now
+  types every documented notification, and `ControlClient.subscribeEvents`
+  hands them to a caller instead of discarding them.
