@@ -122,9 +122,10 @@ final class SurfaceSuite extends FunSuite {
     case "java.util.List" | "java.util.Collection" | "java.lang.Iterable" |
         "[Ljava.lang.String;" =>
       "Seq"
-    case "java.util.Optional"          => "Option"
-    case "java.lang.Runnable"          => "Function0"
-    case "java.util.function.Consumer" => "Function1"
+    case "java.util.Optional" => "Option"
+    case "java.lang.Runnable" => "Function0"
+    case "java.util.function.Consumer" | "java.util.function.Predicate" =>
+      "Function1"
     case other => simple(facades.getOrElse(other, other))
   }
 

@@ -3,13 +3,16 @@ package io.github.libtmux.scaladsl
 import io.github.libtmux.{
   CaptureSpec,
   Layout,
+  LibTmuxException,
   OptionKey,
   ServerNotRunningException,
   SessionSpec,
   SplitSpec,
+  TextOutcome,
   TmuxFormats,
   TmuxVersion,
-  UnsupportedTmuxVersionException
+  UnsupportedTmuxVersionException,
+  WakeReason
 }
 import io.github.libtmux.control.{
   ControlClient,
@@ -23,6 +26,7 @@ import java.nio.file.Files
 import java.time.Duration
 import java.util.concurrent.TimeUnit
 import munit.FunSuite
+import scala.collection.immutable.VectorMap
 import scala.jdk.CollectionConverters._
 import scala.jdk.OptionConverters._
 
@@ -70,6 +74,56 @@ final class BlockingSurfaceSuite extends FunSuite {
       assert(server.isAlive(deadline))
       server.killServer(deadline)
       assert(!server.isAlive(deadline))
+    }
+  }
+
+  test("Java operations the facade wraps act on tmux in the facade's scope") {
+    OwnedTmux.use { fixture =>
+      val server = fixture.own(Server.fromJava(fixture.server))
+      val session = server.newSession(
+        SessionSpec.builder().named("wrapped").running("cat").build()
+      )
+      val pane = session.windows.head.panes.head
+      val deadline = Duration.ofSeconds(5)
+
+      server.requireAlive()
+      assertEquals(server.attachedSessions(), Vector.empty)
+      assertEquals(
+        server.variables(Vector("session_name", "pid")).keys.toVector,
+        Vector("session_name", "pid")
+      )
+      assertEquals(
+        server.paneFields(Vector("pane_dead")),
+        VectorMap.from(
+          server.panes().map(_.info.id -> VectorMap("pane_dead" -> "0"))
+        )
+      )
+      assert(!server.cmd("kill-window", "-t", "@999").succeeded)
+      intercept[LibTmuxException](server.run("kill-window", "-t", "@999"))
+
+      session.setHistoryLimit(1234)
+      assertEquals(
+        pane.split().variables(Vector("history_limit")),
+        VectorMap("history_limit" -> "1234")
+      )
+      pane.respawn(Vector("sh", "-c", "echo respawned; exec cat"))
+      assertNotEquals(
+        pane.awaitText("respawned", deadline),
+        TextOutcome.TIMED_OUT
+      )
+      assertEquals(
+        pane.await(_.info.currentCommand == "cat", deadline),
+        WakeReason.SIGNALLED
+      )
+
+      val bounded = server.within(deadline)
+      assertEquals(bounded.sessions(), server.sessions())
+      bounded.close()
+      assert(server.sessions().contains(session))
+      val derived = server.within(deadline)
+      server.close()
+      intercept[IllegalStateException](derived.sessions())
+      assert(fixture.server.isAlive())
     }
   }
 

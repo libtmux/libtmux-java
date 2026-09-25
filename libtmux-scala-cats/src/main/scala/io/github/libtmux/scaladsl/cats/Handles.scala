@@ -13,6 +13,7 @@ import io.github.libtmux.{
   Session => JavaSession,
   SplitSpec,
   TextOutcome,
+  WakeReason,
   Window => JavaWindow,
   WindowLayout,
   WindowSpec
@@ -25,7 +26,9 @@ import io.github.libtmux.scaladsl.{
   WindowInfo,
   blocking
 }
+import java.nio.file.Path
 import java.time.Duration
+import scala.collection.immutable.VectorMap
 
 /** A captured session. Traversal is pure; operations run in the server scope.
   */
@@ -56,6 +59,8 @@ final class Session[F[_]] private[cats] (
   def detachClients: F[Unit] = server.execution(underlying.detachClients())
   def expand(format: String): F[String] =
     server.execution(underlying.expand(format))
+  def setHistoryLimit(lines: Int): F[Unit] =
+    server.execution(underlying.setHistoryLimit(lines))
   def kill: F[Unit] = server.execution(underlying.kill())
   def refresh: F[Session[F]] =
     server.execution(underlying.refresh()).map(server.session)
@@ -111,6 +116,11 @@ final class Window[F[_]] private[cats] (
   def stopSynchronizingPanes: F[Unit] =
     server.execution(underlying.stopSynchronizingPanes())
   def rotate: F[Unit] = server.execution(underlying.rotate())
+  def respawn: F[Unit] = server.execution(underlying.respawn())
+
+  /** Draws a popup for an attached client; tmux expands `#(...)` first. */
+  def displayPopup(shellCommand: String): F[Unit] =
+    server.execution(underlying.displayPopup(shellCommand))
   def expand(format: String): F[String] =
     server.execution(underlying.expand(format))
   def kill: F[Unit] = server.execution(underlying.kill())
@@ -176,6 +186,23 @@ final class Pane[F[_]] private[cats] (
       every: Duration
   ): F[TextOutcome] =
     server.execution.waiting(underlying.awaitText(text, timeout, every))
+
+  /** Waits until `settled` holds for this pane as it is now. `settled` runs on
+    * the blocking worker with each fresh capture, so read its `info`.
+    */
+  def await(settled: Pane[F] => Boolean, timeout: Duration): F[WakeReason] =
+    server.execution.waiting(
+      underlying.await(fresh => settled(server.pane(fresh)), timeout)
+    )
+
+  /** As `await(settled, timeout)`, looking every `every`. */
+  def await(
+      settled: Pane[F] => Boolean,
+      timeout: Duration,
+      every: Duration
+  ): F[WakeReason] = server.execution.waiting(
+    underlying.await(fresh => settled(server.pane(fresh)), timeout, every)
+  )
   def run(command: String, timeout: Duration): F[PaneRun] =
     server.execution(underlying.run(command, timeout))
   def copyMode: F[Unit] = server.execution(underlying.copyMode())
@@ -202,6 +229,18 @@ final class Pane[F[_]] private[cats] (
     server.execution(underlying.swapWith(pane.underlying))
   def expand(format: String): F[String] =
     server.execution(underlying.expand(format))
+  def variables(names: Seq[String]): F[VectorMap[String, String]] =
+    server.execution(underlying.variables(names))
+  def respawn: F[Unit] = server.execution(underlying.respawn())
+  def respawn(command: Seq[String]): F[Unit] =
+    server.execution(underlying.respawn(command))
+  def respawnIn(directory: Path): F[Unit] =
+    server.execution(underlying.respawnIn(directory))
+
+  /** Sends what this pane prints to a shell command until `stopPiping`. */
+  def pipeTo(shellCommand: String): F[Unit] =
+    server.execution(underlying.pipeTo(shellCommand))
+  def stopPiping: F[Unit] = server.execution(underlying.stopPiping())
   def paste(text: String): F[Unit] = server.execution(underlying.paste(text))
 
   /** As `paste(text)`, after `beforePaste`, as `sendKeys` runs its check. */

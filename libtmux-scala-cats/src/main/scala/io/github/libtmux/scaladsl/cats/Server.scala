@@ -20,6 +20,7 @@ import io.github.libtmux.scaladsl.{CommandResult, Snapshot, blocking}
 import io.github.libtmux.snapshot.WindowContext
 import java.nio.file.Path
 import java.time.Duration
+import scala.collection.immutable.VectorMap
 
 /** Lazy operations scoped by a Resource. Cancellation interrupts local Java
   * work; it does not prove that tmux rolled back a dispatched command.
@@ -61,6 +62,8 @@ final class Server[F[_]] private[cats] (
   def panes: F[Vector[Pane[F]]] = execution(underlying.panes()).map(_.map(pane))
   def panes(expression: FilterExpr[JavaPane]): F[Vector[Pane[F]]] =
     execution(underlying.panes(expression)).map(_.map(pane))
+  def attachedSessions: F[Vector[Session[F]]] =
+    execution(underlying.attachedSessions()).map(_.map(session))
   def clients: F[Vector[Client[F]]] =
     execution(underlying.clients()).map(_.map(client))
   def snapshot: F[Snapshot] = execution(underlying.snapshot())
@@ -91,6 +94,9 @@ final class Server[F[_]] private[cats] (
   def isAlive: F[Boolean] = execution(underlying.isAlive())
   def isAlive(timeout: Duration): F[Boolean] =
     execution(underlying.isAlive(timeout))
+
+  /** Fails with `ServerNotRunningException` when no daemon answers. */
+  def requireAlive: F[Unit] = execution(underlying.requireAlive())
   def version: F[TmuxVersion] = execution(underlying.version())
   def expand(format: String): F[String] = execution(underlying.expand(format))
   def runShell(command: String): F[Unit] = execution(
@@ -110,6 +116,26 @@ final class Server[F[_]] private[cats] (
   def cmd(command: String, arguments: String*): F[CommandResult] = cmd(
     command +: arguments
   )
+
+  /** As `cmd`, failing with `LibTmuxException` when tmux exits nonzero. */
+  def run(argv: Seq[String]): F[CommandResult] = execution(underlying.run(argv))
+  def run(command: String, arguments: String*): F[CommandResult] = run(
+    command +: arguments
+  )
+  def variables(names: Seq[String]): F[VectorMap[String, String]] =
+    execution(underlying.variables(names))
+  def paneFields(
+      names: Seq[String]
+  ): F[VectorMap[PaneId, VectorMap[String, String]]] =
+    execution(underlying.paneFields(names))
+  def setMouseEnabled(enabled: Boolean): F[Unit] =
+    execution(underlying.setMouseEnabled(enabled))
+
+  /** This server with every command given `timeout`, sharing this one's calls
+    * and scope.
+    */
+  def within(timeout: Duration): Server[F] =
+    new Server(underlying.within(timeout), execution)
   def options: Options[F] = new Options(underlying.options, execution)
   def globalOptions: Options[F] =
     new Options(underlying.globalOptions, execution)
