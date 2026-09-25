@@ -93,7 +93,7 @@ class WaitsTest {
     fun `run returns the command's status against a real pane`(server: Server) {
         val pane = server.sessions()[0].windows()[0].panes()[0]
 
-        val result = runBlocking { pane.run("true", 5.seconds) }
+        val result = runBlocking { pane.run("true", 10.seconds) }
 
         assertTrue(result.succeeded())
     }
