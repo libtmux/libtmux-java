@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.LibTmuxException;
+import io.github.libtmux.PaneId;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.transport.DispatchOutcome;
@@ -402,6 +403,33 @@ final class ControlClientTest {
             assertEquals("é\\x!", second.data());
             assertEquals(ByteBuffer.wrap(new byte[] {'c', 'a', 'f', (byte) 0xc3}), first.bytes());
             assertEquals(ByteBuffer.wrap(new byte[] {(byte) 0xa9, '\\', 'x', '!'}), second.bytes());
+        }
+    }
+
+    /**
+     * Once a client turns on flow control, tmux sends {@code %extended-output}: the pane, how long the
+     * output waited, then the escaped bytes after {@code " : "}. A line with no separator carries no
+     * output and is skipped.
+     */
+    @Test
+    void extendedOutputIsOutput(@TempDir Path directory) throws Exception {
+        ServerConfig config = fakeTmux(directory, """
+                printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                read_request
+                answer
+                read_request
+                printf '%%extended-output %%2 17\n%%extended-output %%2 17 : a : b\\\\012\n'
+                answer
+                IFS= read -r never
+                """);
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
+                EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
+            client.send("display-message");
+
+            PaneOutput piece = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
+
+            assertEquals(new PaneId("%2"), piece.pane());
+            assertEquals("a : b\n", piece.data());
         }
     }
 
