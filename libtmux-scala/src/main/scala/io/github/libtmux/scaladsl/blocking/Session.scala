@@ -39,6 +39,10 @@ final class Session private[blocking] (
   def lastWindow(): Unit = server.checked(asJava.lastWindow())
   def detachClients(): Unit = server.checked(asJava.detachClients())
   def expand(format: String): String = server.checked(asJava.expand(format))
+
+  /** Sets the scrollback kept by panes created in this session from now on. */
+  def setHistoryLimit(lines: Int): Unit =
+    server.checked(asJava.setHistoryLimit(lines))
   def kill(): Unit = server.checked(asJava.kill())
   def options: Options = new Options(asJava.options(), server)
   def environment: Environment = new Environment(asJava.environment(), server)

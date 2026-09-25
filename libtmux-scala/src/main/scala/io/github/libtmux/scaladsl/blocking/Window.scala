@@ -58,6 +58,15 @@ final class Window private[blocking] (
   def stopSynchronizingPanes(): Unit =
     server.checked(asJava.stopSynchronizingPanes())
   def rotate(): Unit = server.checked(asJava.rotate())
+
+  /** Kills what runs in this window and starts it again. */
+  def respawn(): Unit = server.checked(asJava.respawn())
+
+  /** Draws a popup running `shellCommand` for an attached client; tmux expands
+    * `#(...)` in it first.
+    */
+  def displayPopup(shellCommand: String): Unit =
+    server.checked(asJava.displayPopup(shellCommand))
   def expand(format: String): String = server.checked(asJava.expand(format))
   def kill(): Unit = server.checked(asJava.kill())
   def options: Options = new Options(asJava.options(), server)
