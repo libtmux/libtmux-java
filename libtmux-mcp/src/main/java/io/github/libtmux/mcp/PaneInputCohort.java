@@ -419,8 +419,10 @@ final class PaneInputCohort {
         String requireSingularCommandPane(String operation) {
             keyRecipients.forEach(member -> requireWritable(operation, member));
             if (keyRecipients.size() != 1) {
-                throw new IllegalStateException(
-                        operation + " requires exactly one effective pane; observed " + configuredKeyRecipientIds());
+                throw new IllegalStateException(operation + " requires exactly one effective pane; observed "
+                        + configuredKeyRecipientIds()
+                        + "; turn off synchronization for this window with set_synchronize_panes, or target a "
+                        + "pane outside it");
             }
             return source.currentCommand();
         }
