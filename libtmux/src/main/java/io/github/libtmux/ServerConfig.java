@@ -26,6 +26,7 @@ import org.jspecify.annotations.Nullable;
 public final class ServerConfig {
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
+    private static final int DEFAULT_CONCURRENT_COMMANDS = 4;
 
     private final String binary;
     private final ServerEndpoint endpoint;
@@ -33,6 +34,7 @@ public final class ServerConfig {
     private final Duration defaultTimeout;
     private final boolean force256Colors;
     private final OperationObserver observer;
+    private final int maxConcurrentCommands;
 
     private ServerConfig(Builder builder) {
         this.binary = builder.binary;
@@ -41,6 +43,7 @@ public final class ServerConfig {
         this.defaultTimeout = builder.defaultTimeout;
         this.force256Colors = builder.force256Colors;
         this.observer = builder.observer;
+        this.maxConcurrentCommands = builder.maxConcurrentCommands;
     }
 
     /** A builder holding the documented defaults. */
@@ -134,6 +137,16 @@ public final class ServerConfig {
         return Collections.unmodifiableList(command);
     }
 
+    /**
+     * How many tmux commands {@link Server#open} lets run at once; more wait their turn.
+     *
+     * <p>A coroutine dispatcher or effect pool that runs blocking calls for this server gains nothing
+     * from more threads than this: the rest would only wait for admission.
+     */
+    public int maxConcurrentCommands() {
+        return maxConcurrentCommands;
+    }
+
     /** A builder holding every choice this config made. */
     public Builder toBuilder() {
         Builder builder = new Builder();
@@ -143,6 +156,7 @@ public final class ServerConfig {
         builder.defaultTimeout = defaultTimeout;
         builder.force256Colors = force256Colors;
         builder.observer = observer;
+        builder.maxConcurrentCommands = maxConcurrentCommands;
         return builder;
     }
 
@@ -155,6 +169,7 @@ public final class ServerConfig {
         private Duration defaultTimeout = DEFAULT_TIMEOUT;
         private boolean force256Colors;
         private OperationObserver observer = OperationObserver.NONE;
+        private int maxConcurrentCommands = DEFAULT_CONCURRENT_COMMANDS;
 
         private Builder() {}
 
@@ -191,6 +206,19 @@ public final class ServerConfig {
         /** Receives a report after each command. The report names verbs, not arguments. */
         public Builder observer(OperationObserver observer) {
             this.observer = Objects.requireNonNull(observer, "observer");
+            return this;
+        }
+
+        /**
+         * Sets how many tmux commands {@link Server#open} lets run at once, four unless set.
+         *
+         * @throws IllegalArgumentException if {@code maxConcurrentCommands} is not positive
+         */
+        public Builder maxConcurrentCommands(int maxConcurrentCommands) {
+            if (maxConcurrentCommands < 1) {
+                throw new IllegalArgumentException("maxConcurrentCommands is not positive: " + maxConcurrentCommands);
+            }
+            this.maxConcurrentCommands = maxConcurrentCommands;
             return this;
         }
 

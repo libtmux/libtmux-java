@@ -8,6 +8,26 @@ API changes that require updates to calling code are recorded here. See
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### `Client.refresh()` returns the client or throws
+
+api-break: Client
+
+`Client.refresh()` returns `Client`, and throws `TargetGoneException` once the
+client has detached, as every other handle's `refresh()` does; it returned
+`Optional<Client>`. `fetchAttachment()` throws the same way. Catch
+`TargetGoneException` where you tested for empty.
+
+### `Server.setMouseEnabled` is gone
+
+api-break: Server
+
+Write the option instead:
+
+```java
+// Given: Server server
+server.globalOptions().set("mouse", "on");
+```
+
 ### An `EventSubscription` has one reader
 
 api-break: EventSubscription

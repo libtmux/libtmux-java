@@ -30,10 +30,10 @@ final class Client private[blocking] (
         new Pane(value.activePane(), server)
       )
     }
-  def refresh(): Option[Client] =
-    server.checked(asJava.refresh().toScala.map(new Client(_, server)))
+  def refresh(): Client =
+    server.checked(new Client(asJava.refresh(), server))
   def fetchAttachment(): Option[ClientAttachment] =
-    server.checked(refresh().flatMap(_.attachment))
+    server.checked(refresh().attachment)
   def detach(): Unit = server.checked(asJava.detach())
   def detachOthers(): Unit = server.checked(asJava.detachOthers())
   def switchTo(session: Session): Unit =
