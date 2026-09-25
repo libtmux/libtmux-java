@@ -39,15 +39,25 @@ group as one message, so nothing of this caller's lands between its commands.
 ## How many run at once
 
 Each call starts one tmux process, and the transport admits a bounded number at
-a time: four for `Server.open`, or whatever `new ProcessTransport(n)` given to
-`Server.using` says. A call beyond the bound waits for a place within its own
-deadline. One that never gets one fails with `DispatchOutcome.NOT_DISPATCHED`:
-tmux never saw it, so sending it again is safe.
+a time: `ServerConfig.Builder.maxConcurrentCommands` for `Server.open`, four
+unless set, or whatever `new ProcessTransport(n)` given to `Server.using` says.
+`Server.admissionBound()` reports it, so a coroutine dispatcher or effect pool
+can be sized to it rather than guessing. A call beyond the bound waits for a
+place within its own deadline. One that never gets one fails with
+`DispatchOutcome.NOT_DISPATCHED`: tmux never saw it, so sending it again is safe.
 
 The caller may be a virtual thread. The threads that drain tmux's output are not:
 a library does not own the virtual-thread scheduler, and unrelated code holding a
 carrier inside a `synchronized` block would otherwise stop a drain, fill the
 pipe, and hang tmux.
+
+What the library itself holds, counted:
+
+| holder | platform threads | for how long |
+| --- | --- | --- |
+| `ProcessTransport` with bound `n` | up to `3n`: standard output, standard error and standard input of each running tmux | released after ten idle seconds |
+| each attached `ControlClient` | 3: its reader, its error stream, its writer | until it closes |
+| each `EventSubscription` | none: `next()` blocks the caller's thread, `poll()` with `onReady` blocks none | — |
 
 ## Deadlines and interruption
 

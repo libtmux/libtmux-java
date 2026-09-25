@@ -27,7 +27,9 @@ four listings as a group fenced against that answer. Because tmux runs a group
 inside the server, the rows cannot come from two of them, and a server replaced
 under the capture is refused rather than half-read. "Which server" is its pid and
 when it started: a pid can be reused, and a handle is refused by a tmux started
-since on the same one. What that costs is measured in
+since on the same one. tmux reports that start in whole seconds, so a server
+replaced on the same pid within the same second would pass; nothing short of a
+token planted in the server closes that gap. What that costs is measured in
 [`docs/benchmarks/operations.md`](../benchmarks/operations.md).
 
 `refresh()` is how to look again. Every live listing, finder and snapshot
