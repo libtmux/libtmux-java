@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.Pane;
 import io.github.libtmux.Pane_;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
@@ -16,6 +17,7 @@ import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.query.FilterExpr;
 import io.github.libtmux.query.TmuxFilters;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -116,6 +118,25 @@ final class PushdownIntegrationTest {
                         server.session(name).isPresent() && server.hasSession(name), "session(" + name + ")"));
 
         assertAll(Stream.of(sessions, windows, panes, lookups).flatMap(Function.identity()));
+    }
+
+    /**
+     * Every operator a filter lowers to exists from the oldest supported tmux, so a filtered read
+     * that finds nothing is an answer, not a reason to read the whole server again.
+     */
+    @Test
+    void aFilterThatMatchesNothingCostsOneFilteredRead(Server server) {
+        AtomicInteger dispatches = new AtomicInteger();
+        try (Server counted = Server.open(server.config().toBuilder()
+                .observer(report -> dispatches.incrementAndGet())
+                .build())) {
+            List<Session> none = counted.sessions(Session_.name().is("no-such-session"));
+            List<Pane> nothing = counted.panes(Pane_.command().is("no-such-command"));
+
+            assertEquals(List.of(), none);
+            assertEquals(List.of(), nothing);
+            assertEquals(4, dispatches.get(), "two reads of two processes each, and no full capture after either");
+        }
     }
 
     private static <T> Executable agree(

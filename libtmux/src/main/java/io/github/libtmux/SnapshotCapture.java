@@ -254,15 +254,16 @@ final class SnapshotCapture {
 
     /**
      * The sessions holding a row that {@code format} selects in this listing, read in full in one
-     * fenced call. Empty when none does, which is also what a tmux that cannot evaluate the format
-     * reports.
+     * fenced call, and a capture holding nothing when none does.
      *
-     * <p>A window or pane format is lifted to its session by looping that session's windows and
-     * panes, so the one call that reads the sessions also decides which ones to read.
+     * <p>Nothing is a real answer: every operator {@link io.github.libtmux.query.TmuxFilters} writes
+     * exists from the oldest supported tmux, so a format it lowers is never one tmux cannot evaluate.
+     * A window or pane format is lifted to its session by looping that session's windows and panes,
+     * so the one call that reads the sessions also decides which ones to read.
      *
      * @param command {@code list-sessions}, {@code list-windows -a}, or {@code list-panes -a}
      */
-    Optional<ServerSnapshot> sessionsWhere(String format, String... command) {
+    ServerSnapshot sessionsWhere(String format, String... command) {
         ServerProcess process = process()
                 .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
         String holding =
@@ -272,7 +273,8 @@ final class SnapshotCapture {
                     case "list-panes" -> "#{W:#{P:#{?" + format + ",1,}}}";
                     default -> throw new IllegalArgumentException("not a hierarchy listing: " + command[0]);
                 };
-        return hydrate(process, holding, session -> true);
+        return hydrate(process, holding, session -> true)
+                .orElseGet(() -> snapshotOf(process, List.of(), List.of(), List.of(), List.of()));
     }
 
     /**

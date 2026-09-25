@@ -839,7 +839,7 @@ public final class Server implements AutoCloseable {
 
     private ServerSnapshot captured(FilterExpr<?> expression, String... listing) {
         return TmuxFilters.format(expression)
-                .flatMap(format -> capture.sessionsWhere(format, listing))
+                .map(format -> capture.sessionsWhere(format, listing))
                 .orElseGet(this::snapshot);
     }
 
@@ -847,8 +847,8 @@ public final class Server implements AutoCloseable {
      * The sessions this expression matches, captured now.
      *
      * <p>A safe expression is sent as {@code list-sessions -f}. The sessions that come back are still
-     * tested with the expression. A relation, an expression tmux cannot apply, or a filtered read that finds
-     * nothing, reads the whole server and filters that capture.
+     * tested with the expression. A relation, or an expression tmux cannot apply, reads the whole server and
+     * filters that capture; a filtered read that finds nothing is the answer.
      *
      * @return an immutable list in tmux order
      * @throws ServerUnavailableException if no daemon is running
@@ -899,8 +899,8 @@ public final class Server implements AutoCloseable {
      * The winlinks this expression matches, captured now.
      *
      * <p>A safe expression is sent as {@code list-windows -f}. The winlinks that come back are still
-     * tested with the expression. A relation, an expression tmux cannot apply, or a filtered read that finds
-     * nothing, reads the whole server and filters that capture.
+     * tested with the expression. A relation, or an expression tmux cannot apply, reads the whole server and
+     * filters that capture; a filtered read that finds nothing is the answer.
      *
      * @return an immutable list in tmux order
      * @throws ServerUnavailableException if no daemon is running
@@ -935,8 +935,8 @@ public final class Server implements AutoCloseable {
      * The panes this expression matches, captured now.
      *
      * <p>A safe expression is sent as {@code list-panes -f}. The panes that come back are still
-     * tested with the expression. An expression tmux cannot apply, or a filtered read that finds nothing,
-     * reads the whole server and filters that capture.
+     * tested with the expression. An expression tmux cannot apply reads the whole server and filters that
+     * capture; a filtered read that finds nothing is the answer.
      *
      * @return an immutable list in tmux order
      * @throws ServerUnavailableException if no daemon is running
