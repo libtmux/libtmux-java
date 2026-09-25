@@ -418,9 +418,11 @@ every pane capture.
 ```
 
 One call examines at most 200 panes, 20,000 lines, 1,000,000 UTF-8 bytes, and
-five seconds of matching work. The answer says when a pane, line, byte, time, or
-result limit stopped it. Pattern count and UTF-8 size are rejected before tmux
-opens; regular expressions use the bounded RE2 dialect.
+five seconds of matching work. The answer's `truncated` field says when a pane,
+line, byte, time, or result limit stopped it — the same field `capture_pane`,
+`capture_since`, `wait_for_text`, and `run_shell_command` report a cut through.
+Pattern count and UTF-8 size are rejected before tmux opens; regular
+expressions use the bounded RE2 dialect.
 
 For several different observations, batch exact inspect calls instead of asking
 for one broad untyped projection:
