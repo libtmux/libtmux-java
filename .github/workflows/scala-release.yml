@@ -24,6 +24,14 @@ permissions:
 
 jobs:
   publish:
+    # Not tag-triggered: the Scala facade releases off master once the compatibility workflow has
+    # passed on a commit there, never off a branch a dispatch could otherwise be pointed at.
+    if: github.ref == 'refs/heads/master'
+    # RELEASING.md records the one-time step this file cannot do: create this environment with a
+    # master-only deployment policy and a required reviewer, and move the signing and Central
+    # secrets into it. A workflow condition can refuse a branch; only the environment protects the
+    # secrets themselves if that condition is ever wrong.
+    environment: release
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
