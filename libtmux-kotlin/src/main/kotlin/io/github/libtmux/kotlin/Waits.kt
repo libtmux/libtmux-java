@@ -2,6 +2,7 @@ package io.github.libtmux.kotlin
 
 import io.github.libtmux.Channel
 import io.github.libtmux.Pane
+import io.github.libtmux.PaneRun
 import io.github.libtmux.TextOutcome
 import io.github.libtmux.WakeReason
 import java.util.function.Predicate
@@ -45,6 +46,23 @@ public suspend fun Pane.awaitText(
     every: Duration,
     dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ): TextOutcome = runInterruptible(dispatcher) { awaitText(text, timeout.toJavaDuration(), every.toJavaDuration()) }
+
+/**
+ * Runs a shell command in this pane to its end, and answers with its exit status and output.
+ *
+ * Cancelling the coroutine interrupts the wait. The command keeps running in
+ * the pane; only the wait for its end is what cancellation reaches.
+ *
+ * @param command a line of shell, run as `eval` would run it
+ * @param timeout how long to wait for it to end
+ * @param dispatcher where the blocking wait runs
+ * @return the command's exit status and what it printed
+ */
+public suspend fun Pane.run(
+    command: String,
+    timeout: Duration,
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
+): PaneRun = runInterruptible(dispatcher) { run(command, timeout.toJavaDuration()) }
 
 /**
  * Waits until [settled] accepts this pane.

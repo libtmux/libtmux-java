@@ -88,6 +88,33 @@ class WaitsTest {
             runBlocking { channel.await((-1).milliseconds) }
         }
     }
+
+    @Test
+    fun `run returns the command's status against a real pane`(server: Server) {
+        val pane = server.sessions()[0].windows()[0].panes()[0]
+
+        val result = runBlocking { pane.run("true", 5.seconds) }
+
+        assertTrue(result.succeeded())
+    }
+
+    @Test
+    fun `cancelling run ends the wait promptly`(server: Server, socket: TmuxSocketPath) {
+        val pane = server.sessions()[0].windows()[0].panes()[0]
+        val needle = socket.path().toString()
+
+        runBlocking {
+            val running = async { pane.run("sleep 30", 30.seconds) }
+            val deadline = System.nanoTime() + 5.seconds.inWholeNanoseconds
+            while (!waiterPresent(needle) && System.nanoTime() < deadline) {
+                delay(20.milliseconds)
+            }
+            assertTrue(waiterPresent(needle), "run's wait never reached tmux")
+            running.cancel()
+            val failure = runCatching { withTimeout(1.seconds) { running.await() } }.exceptionOrNull()
+            assertTrue(failure is CancellationException && failure !is TimeoutCancellationException)
+        }
+    }
 }
 
 // ProcessHandle rather than /proc, which macOS does not have.

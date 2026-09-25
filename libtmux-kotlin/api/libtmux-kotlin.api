@@ -42,5 +42,7 @@ public final class io/github/libtmux/kotlin/WaitsKt {
 	public static synthetic fun awaitText-1Y68eR8$default (Lio/github/libtmux/Pane;Ljava/lang/String;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static final fun awaitText-A1NDRPo (Lio/github/libtmux/Pane;Ljava/lang/String;JJLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun awaitText-A1NDRPo$default (Lio/github/libtmux/Pane;Ljava/lang/String;JJLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun run-1Y68eR8 (Lio/github/libtmux/Pane;Ljava/lang/String;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun run-1Y68eR8$default (Lio/github/libtmux/Pane;Ljava/lang/String;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
