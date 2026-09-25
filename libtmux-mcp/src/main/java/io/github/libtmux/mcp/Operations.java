@@ -287,7 +287,7 @@ final class Operations {
 
     static Object setMouseEnabled(Call call) {
         boolean enabled = call.flag("enabled", false);
-        call.server().setMouseEnabled(enabled);
+        call.server().globalOptions().set("mouse", enabled ? "on" : "off");
         return values("enabled", enabled);
     }
 

@@ -79,6 +79,15 @@ final class Server[F[_]] private[cats] (
     execution(underlying.pane(id)).map(_.map(pane))
   def window(context: WindowContext): F[Option[Window[F]]] =
     execution(underlying.window(context)).map(_.map(window))
+  def session(expression: FilterExpr[JavaSession]): F[Option[Session[F]]] =
+    execution(underlying.session(expression)).map(_.map(session))
+  def window(expression: FilterExpr[JavaWindow]): F[Option[Window[F]]] =
+    execution(underlying.window(expression)).map(_.map(window))
+  def pane(expression: FilterExpr[JavaPane]): F[Option[Pane[F]]] =
+    execution(underlying.pane(expression)).map(_.map(pane))
+
+  /** How many tmux commands run at once through this server's transport. */
+  def admissionBound: Int = underlying.admissionBound
   def newSession(name: String): F[Session[F]] =
     execution(underlying.newSession(name)).map(session)
   def newSession(spec: SessionSpec): F[Session[F]] =
@@ -132,8 +141,6 @@ final class Server[F[_]] private[cats] (
       names: Seq[String]
   ): F[VectorMap[PaneId, VectorMap[String, String]]] =
     execution(underlying.paneFields(names))
-  def setMouseEnabled(enabled: Boolean): F[Unit] =
-    execution(underlying.setMouseEnabled(enabled))
 
   /** This server with every command given `timeout`, sharing this one's calls
     * and scope.

@@ -281,7 +281,7 @@ final class BuffersAndClientIntegrationTest {
     }
 
     @Test
-    void aClientThatHasGoneRefreshesToNothing(Server server) throws Exception {
+    void aClientThatHasGoneIsGoneToEveryRead(Server server) throws Exception {
         Session session = server.sessions().get(0);
         // Whichever clients are already here belong to somebody else — a control carrier attaches
         // one of its own to carry commands at all. The client under test is the one that appears.
@@ -294,8 +294,16 @@ final class BuffersAndClientIntegrationTest {
             client = appeared(server, before).orElseThrow();
         }
 
-        assertTrue(Await.until(() -> client.refresh().isEmpty()), "the client outlived the connection that made it");
-        assertEquals(Optional.empty(), client.fetchAttachment());
+        assertTrue(Await.until(() -> gone(client)), "the client outlived the connection that made it");
+        assertThrows(TargetGoneException.class, client::fetchAttachment);
+    }
+
+    private static boolean gone(Client client) {
+        try {
+            return !client.refresh().name().equals(client.name());
+        } catch (TargetGoneException detached) {
+            return true;
+        }
     }
 
     /** The client that attached after the named ones were already there. */

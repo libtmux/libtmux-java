@@ -86,7 +86,7 @@ final class ClientOperationsIntegrationTest {
 
             client.redraw();
 
-            assertTrue(client.refresh().isPresent(), "the client is still there afterwards");
+            assertEquals(client.name(), client.refresh().name(), "the client is still there afterwards");
         }
     }
 

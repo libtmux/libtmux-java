@@ -20,6 +20,27 @@ final class ServerConfigTest {
         assertEquals(ServerEndpoint.defaultSocket(), config.endpoint());
         assertEquals(Optional.empty(), config.configFile());
         assertTrue(config.defaultTimeout().toSeconds() > 0, "a request must have a deadline it can reach");
+        assertEquals(4, config.maxConcurrentCommands());
+    }
+
+    /** Opening a server builds its transport, and nothing else: no tmux runs here. */
+    @Test
+    void anOpenedServerAdmitsAsManyCommandsAsItsConfigSays() {
+        try (Server server =
+                Server.open(ServerConfig.builder().maxConcurrentCommands(2).build())) {
+            assertEquals(2, server.admissionBound());
+        }
+    }
+
+    @Test
+    void concurrentCommandsAreAtLeastOne() {
+        assertThrows(
+                IllegalArgumentException.class, () -> ServerConfig.builder().maxConcurrentCommands(0));
+        assertEquals(
+                7,
+                ServerConfig.builder().maxConcurrentCommands(7).build().toBuilder()
+                        .build()
+                        .maxConcurrentCommands());
     }
 
     @Test

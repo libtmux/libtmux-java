@@ -104,27 +104,30 @@ public final class Client {
      * Takes a new capture and returns what this client is looking at now.
      *
      * <p>Named to say it dispatches, unlike {@link #attachment()}. Every call is one live capture.
+     *
+     * @throws TargetGoneException if this client has detached
      */
     public Optional<ClientAttachment> fetchAttachment() {
-        return refresh().flatMap(Client::attachment);
+        return refresh().attachment();
     }
 
     /**
-     * Takes a new capture and returns this client as it is now, or empty if it has gone.
+     * Takes a new capture and returns this client as it is now.
      *
-     * <p>This handle remains unchanged. Empty means this client detached while the same daemon
-     * remained reachable; failed capture still throws.
+     * <p>This handle remains unchanged, as every handle's does.
      *
-     * @throws TargetGoneException if a different daemon answers on the endpoint
+     * @throws TargetGoneException if this client has detached, or a different daemon answers on the
+     *     endpoint
      * @throws ServerUnavailableException if no daemon is running
      */
     @CheckReturnValue
-    public Optional<Client> refresh() {
+    public Client refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.clients().stream()
                 .filter(client -> client.name().equals(state.name()))
                 .findFirst()
-                .map(client -> new Client(server, fresh, client));
+                .map(client -> new Client(server, fresh, client))
+                .orElseThrow(() -> new TargetGoneException("client " + state.name() + " has detached"));
     }
 
     @Override

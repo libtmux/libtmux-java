@@ -8,7 +8,8 @@ import java.util.Optional;
  *
  * <p>Implementations are thread-safe and {@link #close()} is idempotent. A call begun before close
  * either completes under the documented contract or fails with its dispatch certainty intact; a
- * call begun after close fails with {@link IllegalStateException}.
+ * call begun after close fails with {@link io.github.libtmux.exception.ServerClosedException}, an
+ * {@link IllegalStateException}.
  */
 public interface TmuxTransport extends AutoCloseable {
 
@@ -69,6 +70,15 @@ public interface TmuxTransport extends AutoCloseable {
      * unset rather than inventing timings.
      */
     default void observe(OperationObserver observer) {}
+
+    /**
+     * How many requests this transport runs at once; the rest wait for a turn.
+     *
+     * @return the bound, or {@link Integer#MAX_VALUE} for a transport that sets none
+     */
+    default int admissionBound() {
+        return Integer.MAX_VALUE;
+    }
 
     /** Releases every resource and destroys every child still running. Idempotent. */
     @Override
