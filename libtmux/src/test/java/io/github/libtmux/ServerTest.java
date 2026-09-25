@@ -83,7 +83,7 @@ final class ServerTest {
                     () -> server.globalOptions().get("@value"));
             assertEquals(
                     List.of("show-options", "-g", "-A", "-v", "--", "@value"),
-                    requests.getLast().commands().getFirst());
+                    requests.getLast().commands().get(1));
         }
     }
 
