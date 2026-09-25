@@ -5,6 +5,7 @@ import io.github.libtmux.transport.CommandResult;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * The tmux server's paste buffers.
@@ -40,6 +41,7 @@ public final class Buffers {
      * @return an immutable list, empty if the live server holds no buffers
      * @throws LibTmuxException if the listing fails, including when no daemon is running
      */
+    @ReadOnly
     public List<BufferInfo> list() {
         List<BufferInfo> buffers = new ArrayList<>();
         var result = server.run(List.of("list-buffers", "-F", LISTING.template()));

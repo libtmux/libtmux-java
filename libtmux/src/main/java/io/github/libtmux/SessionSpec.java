@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -72,6 +73,7 @@ public final class SessionSpec {
     }
 
     /** Variables set for the new session, in the order they were given. */
+    @ReadOnly
     public Map<String, String> environment() {
         return environment;
     }
@@ -109,11 +111,13 @@ public final class SessionSpec {
     }
 
     /** Client flags, which tmux takes as one comma-separated list. */
+    @ReadOnly
     public List<String> clientFlags() {
         return clientFlags;
     }
 
     /** What the session's first pane runs, empty for the default shell. */
+    @ReadOnly
     public List<String> command() {
         return command;
     }

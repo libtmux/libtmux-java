@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.LongSupplier;
 import java.util.regex.Pattern;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /** Tracks pending and recently submitted input under each server incarnation and pane id. */
@@ -28,10 +29,10 @@ final class PaneEcho {
     private record Entry(String text, long recordedAtNanos) {}
 
     private record PaneEchoState(
-            List<String> pendingLines,
+            @ReadOnly List<String> pendingLines,
             boolean pendingCaptured,
             boolean trackable,
-            List<Entry> recent,
+            @ReadOnly List<Entry> recent,
             long lastTouchedNanos,
             ReentrantLock dispatch) {
         static PaneEchoState fresh(long now) {
@@ -44,7 +45,7 @@ final class PaneEcho {
         return lines.isEmpty() ? "" : lines.get(lines.size() - 1);
     }
 
-    record Live(List<String> pending, List<String> recent) {
+    record Live(@ReadOnly List<String> pending, @ReadOnly List<String> recent) {
         static final Live NONE = new Live(List.of(), List.of());
     }
 

@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -90,6 +91,7 @@ public final class Environment {
     }
 
     /** Every name set at this scope, in tmux's order. Removed names are not values, so not here. */
+    @ReadOnly
     public Map<String, String> all() {
         Map<String, String> values = new LinkedHashMap<>();
         for (Map.Entry<String, Entry> entry : listing().entrySet()) {
@@ -111,6 +113,7 @@ public final class Environment {
      * @throws ServerNotRunningException if no daemon is running
      * @throws LibTmuxException if a read otherwise fails
      */
+    @ReadOnly
     public Map<String, String> effective() {
         if (snapshot == null) {
             return all();
@@ -122,6 +125,7 @@ public final class Environment {
     }
 
     /** Every name this scope tells a new process not to inherit. */
+    @ReadOnly
     public Set<String> removed() {
         Set<String> names = new LinkedHashSet<>();
         listing().forEach((name, entry) -> {

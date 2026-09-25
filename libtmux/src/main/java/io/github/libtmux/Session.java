@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * One tmux session, as one capture saw it.
@@ -144,6 +145,7 @@ public final class Session {
     }
 
     /** This session's windows, in tmux's order. A pure read of the capture. */
+    @ReadOnly
     public List<Window> windows() {
         return snapshot.windowsOf(state.id()).stream()
                 .map(window -> new Window(server, snapshot, window))

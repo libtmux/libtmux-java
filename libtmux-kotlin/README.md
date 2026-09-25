@@ -107,9 +107,10 @@ inside its own body while winning at an infix call site — correct either way, 
 a reason no reader should have to work out. `a.and(b)` is one character longer
 than `a and b` and always means what it appears to.
 
-**Lists stay read-only.** A Java `List` is a `MutableList` in Kotlin, so
-`add` is on the type even when the capture throws. `readOnly()` is a Kotlin
-`List` of the same elements, and it does not offer `add`.
+**Collections are read-only.** Every list, set, and map the core returns
+reaches Kotlin as `List`, `Set`, or `Map`, so `add` is not on the type. Kotlin
+reads the core's `@ReadOnly` marks from its class files; nothing is needed at
+runtime.
 
 **A subscription as a `Flow`.** `deliveries()` emits a `Delivery.Gap` where the
 buffer discarded events, then the events that remain. `kept()` fails that

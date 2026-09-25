@@ -2,13 +2,14 @@ package io.github.libtmux.batch;
 
 import java.util.List;
 import java.util.Optional;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * What became of every operation in one batch.
  *
  * @param operations one result per submitted operation, in submission order
  */
-public record BatchResult(List<OperationResult> operations) {
+public record BatchResult(@ReadOnly List<OperationResult> operations) {
 
     public BatchResult {
         operations = List.copyOf(operations);

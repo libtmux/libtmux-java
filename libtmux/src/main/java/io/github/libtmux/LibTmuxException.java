@@ -3,6 +3,7 @@ package io.github.libtmux;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -55,6 +56,7 @@ public class LibTmuxException extends RuntimeException {
     }
 
     /** The error lines tmux printed. Empty when this failure has none. */
+    @ReadOnly
     public List<String> errorLines() {
         return List.of(errorLines);
     }

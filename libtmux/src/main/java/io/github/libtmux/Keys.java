@@ -3,6 +3,7 @@ package io.github.libtmux;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -75,6 +76,7 @@ public final class Keys {
      *
      * @throws ServerNotRunningException if no daemon is running
      */
+    @ReadOnly
     public List<String> list() {
         List<String> argv = new ArrayList<>(List.of("list-keys"));
         argv.addAll(scope());

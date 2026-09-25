@@ -21,13 +21,13 @@ import io.github.libtmux.kotlin.kept
 import io.github.libtmux.kotlin.not
 import io.github.libtmux.kotlin.orNull
 import io.github.libtmux.kotlin.paneOrNull
-import io.github.libtmux.kotlin.readOnly
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 
 suspend fun reachEverything(server: Server, pane: Pane, channel: Channel, output: EventSubscription<PaneOutput>) {
-    val session = server.sessions().readOnly().first()
+    val session = readOnly(server.sessions()).first()
+    readOnly(server.paneFields(listOf("pane_tty")))
     session.activeWindowOrNull()?.activePaneOrNull()
     server.paneOrNull(pane.id())
     server.options().getOrNull("status")
@@ -40,3 +40,16 @@ suspend fun reachEverything(server: Server, pane: Pane, channel: Channel, output
     output.awaitDelivery(1.seconds)?.kept()
     output.deliveries(Dispatchers.IO).map { it.kept().data() }
 }
+
+// A collection Kotlin reads as mutable resolves to the overload that fails the build.
+private fun <T> readOnly(list: List<T>): List<T> = list
+
+@Deprecated("a core list reached Kotlin as mutable", level = DeprecationLevel.ERROR)
+@JvmName("refuseMutableList")
+private fun <T> readOnly(list: MutableList<T>): List<T> = list
+
+private fun <K, V> readOnly(map: Map<K, V>): Map<K, V> = map
+
+@Deprecated("a core map reached Kotlin as mutable", level = DeprecationLevel.ERROR)
+@JvmName("refuseMutableMap")
+private fun <K, V> readOnly(map: MutableMap<K, V>): Map<K, V> = map

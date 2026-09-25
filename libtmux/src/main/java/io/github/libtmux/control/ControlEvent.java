@@ -4,6 +4,7 @@ import io.github.libtmux.PaneId;
 import io.github.libtmux.WindowId;
 import java.util.List;
 import java.util.Optional;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * Something tmux volunteered, rather than an answer to a request.
@@ -22,7 +23,8 @@ import java.util.Optional;
  * @param value what followed a {@code :} separator, which only a subscription carries
  * @param notification the same notification, typed
  */
-public record ControlEvent(String kind, List<String> fields, Optional<String> value, Notification notification) {
+public record ControlEvent(
+        String kind, @ReadOnly List<String> fields, Optional<String> value, Notification notification) {
 
     public ControlEvent {
         fields = List.copyOf(fields);
