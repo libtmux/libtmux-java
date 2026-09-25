@@ -6,6 +6,11 @@ optional values and a separate Cats/FS2 adapter. It is an independent sbt build
 with `_2.13` and `_3` artifacts; see its installation and verification status
 before selecting a dependency.
 
+Runnable programs for both facades live in
+[`libtmux-scala/examples/`](../../libtmux-scala/examples/): blocking workspace
+operations, bounded concurrent capture, notification loss and reconciliation,
+and Cats Effect resource ownership and cancellation.
+
 ## Direct Java dependency
 
 The Java artifact has no Scala binary-version suffix. Use a single `%`:
