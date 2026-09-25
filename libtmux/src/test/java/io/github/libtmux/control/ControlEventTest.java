@@ -102,6 +102,12 @@ final class ControlEventTest {
         assertEquals(new Notification.PasteBufferChanged("buffer0"), typed("%paste-buffer-changed buffer0"));
         assertEquals(new Notification.Exit(Optional.empty()), typed("%exit"));
         assertEquals(new Notification.Exit(Optional.of("server exited")), typed("%exit server exited"));
+        assertEquals(new Notification.Pause(new PaneId("%3")), typed("%pause %3"));
+        assertEquals(new Notification.Continue(new PaneId("%3")), typed("%continue %3"));
+        assertEquals(new Notification.Message("build  done"), typed("%message build  done"));
+        assertEquals(
+                new Notification.ConfigError("/etc/tmux.conf:3: unknown command: sett"),
+                typed("%config-error /etc/tmux.conf:3: unknown command: sett"));
     }
 
     /** A name is everything after the id, spaces and all, as tmux wrote it. */
@@ -116,6 +122,22 @@ final class ControlEventTest {
         assertEquals(
                 new Notification.ClientSessionChanged("/dev/pts/1", new SessionId("$0"), "a b"),
                 typed("%client-session-changed /dev/pts/1 $0 a b"));
+    }
+
+    /** Only a subscription separates a value with {@code " : "}; a name may hold one. */
+    @Test
+    void aNameHoldingTheSubscriptionSeparatorIsReadWhole() {
+        assertEquals(
+                new Notification.WindowRenamed(new WindowId("@1"), "left : right", true),
+                typed("%window-renamed @1 left : right"));
+        assertEquals(
+                new Notification.SessionRenamed(new SessionId("$2"), "a : b : c"),
+                typed("%session-renamed $2 a : b : c"));
+        assertEquals(
+                Optional.empty(),
+                ControlEvent.parse("%window-renamed @1 left : right")
+                        .orElseThrow()
+                        .value());
     }
 
     @Test
