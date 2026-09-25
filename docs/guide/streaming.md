@@ -244,6 +244,35 @@ The set is sealed with an `Unknown` case: tmux adds notifications between
 releases, and one this library does not model yet still arrives, as `Unknown`,
 with `kind()` and `fields()` carrying what tmux wrote.
 
+## A live copy of the server
+
+A notification says that something changed, not what everything now is.
+`ServerMirror` turns them into whole snapshots. Each announcement starts a
+fresh capture, and each capture that differs from the last is published as a
+numbered view:
+
+```java
+// Given: Session session
+try (ServerMirror mirror = ServerMirror.open(session)) {
+    session.newWindow("mirrored");
+
+    ServerMirror.View view = mirror.current();
+    while (view.snapshot().windows().stream().noneMatch(w -> w.name().equals("mirrored"))) {
+        view = mirror.awaitNewer(view.epoch(), Duration.ofSeconds(5)).orElseThrow();
+    }
+    view.epoch() > 0;                             // → true
+}
+```
+
+`onNewer(epoch, callback)` is the same wait without a thread: a one-shot
+callback for a coroutine or fiber to resume from. tmux replays nothing to a
+client that attaches late. When the mirror's control client ends, it attaches
+again through the same session and starts from a fresh capture. Once that
+session has gone, the mirror ends, and `cause()` says why. tmux does not
+announce every change to every client: a pane retitled in another session is
+seen at the next rebuild, or within `refreshEvery` when the mirror is opened
+with one.
+
 ## Pausing and muting a pane
 
 There is no typed `pause()`/`resume()` here — `refresh-client -A pane:state` is
