@@ -3,6 +3,10 @@
 **An index of this directory: task-oriented guides first, then the dated record
 of how the library got here.**
 
+API reference: [current trunk](https://libtmux.org/en/java/latest/reference/),
+or [a released version](https://javadoc.io/doc/io.github.libtmux/libtmux) on
+javadoc.io.
+
 ## Guides
 
 Task-oriented. Start here.
