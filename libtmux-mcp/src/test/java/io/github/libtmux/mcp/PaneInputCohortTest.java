@@ -2,6 +2,7 @@ package io.github.libtmux.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -105,7 +106,9 @@ final class PaneInputCohortTest {
 
         IllegalStateException refused =
                 assertThrows(IllegalStateException.class, () -> resolved.requireKeyRecipients("send_keys"));
-        assertTrue(String.valueOf(refused.getMessage()).contains("%0"));
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("%0"), message);
+        assertTrue(message.contains("capture_pane"), message);
     }
 
     @Test
@@ -116,9 +119,22 @@ final class PaneInputCohortTest {
         var outside =
                 PaneInputCohort.parse("%0", answer(row("%0", "0", "0", "0", "sh"), row("%1", "1", "0", "1", "sh")));
 
-        assertThrows(IllegalStateException.class, () -> deadSource.requireKeyRecipients("send_keys"));
+        IllegalStateException sourceRefused =
+                assertThrows(IllegalStateException.class, () -> deadSource.requireKeyRecipients("send_keys"));
+        assertTrue(String.valueOf(sourceRefused.getMessage()).contains("capture_pane"), sourceRefused.getMessage());
         assertThrows(IllegalStateException.class, () -> deadPeer.requireKeyRecipients("send_keys"));
         assertEquals(List.of("%0"), outside.requireKeyRecipients("send_keys"));
+    }
+
+    @Test
+    void inputDisabledMemberNamesTheRecovery() {
+        var resolved = PaneInputCohort.parse("%0", answer(row("%0", "0", "0", "0", "sh", "1")));
+
+        IllegalStateException refused =
+                assertThrows(IllegalStateException.class, () -> resolved.requireKeyRecipients("send_keys"));
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("%0"), message);
+        assertTrue(message.contains("capture_pane"), message);
     }
 
     @Test
@@ -150,7 +166,9 @@ final class PaneInputCohortTest {
         IllegalStateException refused =
                 assertThrows(IllegalStateException.class, () -> resolved.requireKeyRecipients("send_keys"));
 
-        assertTrue(String.valueOf(refused.getMessage()).contains(peer.id().value()), refused.getMessage());
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains(peer.id().value()), message);
+        assertTrue(message.contains("this MCP server runs in"), message);
     }
 
     @Test
@@ -164,7 +182,9 @@ final class PaneInputCohortTest {
         IllegalStateException refused =
                 assertThrows(IllegalStateException.class, () -> resolved.requireKeyRecipients("send_keys"));
 
-        assertTrue(String.valueOf(refused.getMessage()).contains("%1"), refused.getMessage());
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("%1"), message);
+        assertTrue(message.contains("capture_pane"), message);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -301,7 +321,28 @@ final class PaneInputCohortTest {
         IllegalStateException refused =
                 assertThrows(IllegalStateException.class, () -> resolved.requirePasteTarget("paste_text"));
 
-        assertTrue(String.valueOf(refused.getMessage()).contains("caller"), refused.getMessage());
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("caller"), message);
+        assertTrue(message.contains("TMUX_PANE"), message);
+    }
+
+    @Test
+    void reservationConflictNamesThePaneAndTheHolder(Server server) {
+        var pane = server.panes().getFirst();
+        var initial = PaneInputCohort.resolve(pane);
+
+        try (var lease = PaneInputReservations.keys(pane, initial, "send_keys")) {
+            assertNotNull(lease);
+            IllegalStateException refused = assertThrows(
+                    IllegalStateException.class,
+                    () -> PaneInputReservations.keys(pane, PaneInputCohort.resolve(pane), "paste_text"));
+
+            String message = String.valueOf(refused.getMessage());
+            assertTrue(message.contains(pane.id().value()), message);
+            assertTrue(message.contains("send_keys"), message);
+            assertTrue(message.contains("owned"), message);
+            assertTrue(message.contains("retry"), message);
+        }
     }
 
     @Test
