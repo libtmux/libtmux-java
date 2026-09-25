@@ -172,6 +172,19 @@ final class PaneInputCohortTest {
         assertTrue(message.contains("this MCP server runs in"), message);
     }
 
+    /** A caller's inherited claim not matching what tmux reports now names the fix: restart. */
+    @Test
+    void inconsistentCallerIdentityNamesARestart(Server server) {
+        String pane = server.panes().getFirst().id().value();
+        Caller caller = TestCalls.asCaller(server, pane).caller();
+
+        IllegalStateException refused = assertThrows(
+                IllegalStateException.class,
+                () -> PaneInputCohort.parse(pane, answer(row(pane, "0", "0", "0", "sh")), answer(), caller));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains("restart"), refused.getMessage());
+    }
+
     @Test
     void attendedProtectionCoversEveryConfiguredMember() {
         var resolved = PaneInputCohort.parse(

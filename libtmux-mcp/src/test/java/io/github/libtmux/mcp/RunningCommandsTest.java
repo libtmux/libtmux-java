@@ -254,6 +254,7 @@ final class RunningCommandsTest {
         String message = String.valueOf(refused.getMessage());
         assertTrue(message.contains("run_shell_command"), message);
         assertTrue(message.contains("one"), message);
+        assertTrue(message.contains("set_synchronize_panes"), message);
         assertFalse(capture(server, source.id().value()).contains(marker));
         assertFalse(capture(server, peer.id().value()).contains(marker));
     }
