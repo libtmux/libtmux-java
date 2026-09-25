@@ -91,7 +91,10 @@ final class Answers {
         try {
             return JSON.writeValueAsString(value);
         } catch (JacksonException e) {
-            throw new IllegalStateException("could not render a tool result", e);
+            throw new IllegalStateException(
+                    "could not render a tool result as JSON; retry the call with different arguments, "
+                            + "since this output could not be serialized",
+                    e);
         }
     }
 }

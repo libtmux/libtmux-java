@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -939,6 +940,67 @@ final class CapabilityRegistryTest {
                     rows.get(1).get("result"));
             assertEquals(true, rows.get(1).get("resultTruncated"));
         }
+    }
+
+    /** No fields Jackson can see, so writing it trips {@code FAIL_ON_EMPTY_BEANS}. */
+    private static final class Unserializable {}
+
+    @Test
+    void unrenderableAnswerNamesARetryWithDifferentArguments() {
+        IllegalStateException failure =
+                assertThrows(IllegalStateException.class, () -> Answers.ok(Map.of("bad", new Unserializable())));
+
+        String message = String.valueOf(failure.getMessage());
+        assertTrue(message.contains("retry the call"), message);
+        assertTrue(message.contains("different arguments"), message);
+    }
+
+    @Test
+    void unmeasurableResponseNamesARetryWithDifferentArguments() {
+        McpSchema.CallToolResult result = McpSchema.CallToolResult.builder()
+                .content(List.of())
+                .structuredContent(Map.of("bad", new Unserializable()))
+                .isError(false)
+                .build();
+        McpSchema.JSONRPCResponse response = McpSchema.JSONRPCResponse.result("id", result);
+
+        IllegalStateException failure =
+                assertThrows(IllegalStateException.class, () -> ReadBatchResponses.limit(response));
+
+        String message = String.valueOf(failure.getMessage());
+        assertTrue(message.contains("retry the call"), message);
+        assertTrue(message.contains("different arguments"), message);
+    }
+
+    @Test
+    void oversizedBatchMetadataNamesFewerOperations() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("index", 0);
+        row.put("tool", "get_server_info");
+        row.put("success", true);
+        row.put("error", com.fasterxml.jackson.databind.node.NullNode.getInstance());
+        row.put("result", Map.of("ok", true));
+        row.put("resultTruncated", false);
+
+        Map<String, Object> output = new LinkedHashMap<>();
+        output.put("results", List.of(row));
+        output.put("succeeded", 1);
+        output.put("failed", 0);
+        output.put("stoppedAt", com.fasterxml.jackson.databind.node.NullNode.getInstance());
+        output.put("truncated", false);
+        output.put("truncatedBytes", 0);
+        output.put("onError", "stop");
+
+        // The rows truncate away; only an oversized id survives to keep this over the wire limit.
+        McpSchema.JSONRPCResponse response =
+                McpSchema.JSONRPCResponse.result("x".repeat(2_000_000), Answers.ok(output));
+
+        IllegalStateException failure =
+                assertThrows(IllegalStateException.class, () -> ReadBatchResponses.limit(response));
+
+        String message = String.valueOf(failure.getMessage());
+        assertTrue(message.contains("call_read_tools_batch"), message);
+        assertTrue(message.contains("fewer operations"), message);
     }
 
     @SuppressWarnings("unchecked")
