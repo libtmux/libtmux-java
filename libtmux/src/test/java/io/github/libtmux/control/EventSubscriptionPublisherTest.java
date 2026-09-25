@@ -174,6 +174,36 @@ final class EventSubscriptionPublisherTest {
         }
     }
 
+    /** Rule 2.13: a subscriber that throws from onNext has cancelled, so the subscription is released. */
+    @Test
+    void aSubscriberThatThrowsIsTreatedAsHavingCancelled() throws Exception {
+        java.util.concurrent.CountDownLatch closed = new java.util.concurrent.CountDownLatch(1);
+        try (var subscription = new EventSubscription<String>(4, ignored -> closed.countDown())) {
+            subscription.publisher().subscribe(new Flow.Subscriber<Delivery<String>>() {
+                @Override
+                public void onSubscribe(Flow.Subscription granted) {
+                    granted.request(Long.MAX_VALUE);
+                }
+
+                @Override
+                public void onNext(Delivery<String> item) {
+                    throw new IllegalStateException("a broken subscriber");
+                }
+
+                @Override
+                public void onError(Throwable throwable) {}
+
+                @Override
+                public void onComplete() {}
+            });
+            subscription.offer("first");
+
+            assertTrue(
+                    closed.await(5, java.util.concurrent.TimeUnit.SECONDS),
+                    "the subscription stayed open behind a subscriber that threw");
+        }
+    }
+
     @Test
     void cancelStopsAWaitingDrainPromptlyWithNoTerminalSignal() throws Exception {
         try (var subscription = new EventSubscription<String>(4, ignored -> {})) {
