@@ -6,6 +6,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * A filter that is both runnable and readable.
@@ -58,7 +59,7 @@ public sealed interface FilterExpr<T> extends Predicate<T> {
     // ---------------------------------------------------------------------------------------
 
     /** Conjunction. An empty conjunction is true, which is what makes it a safe identity. */
-    record And<T>(List<FilterExpr<T>> operands) implements FilterExpr<T> {
+    record And<T>(@ReadOnly List<FilterExpr<T>> operands) implements FilterExpr<T> {
 
         public And {
             operands = List.copyOf(operands);
@@ -86,7 +87,7 @@ public sealed interface FilterExpr<T> extends Predicate<T> {
     }
 
     /** Disjunction. An empty disjunction is false. */
-    record Or<T>(List<FilterExpr<T>> operands) implements FilterExpr<T> {
+    record Or<T>(@ReadOnly List<FilterExpr<T>> operands) implements FilterExpr<T> {
 
         public Or {
             operands = List.copyOf(operands);

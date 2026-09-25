@@ -1,6 +1,7 @@
 package io.github.libtmux;
 
 import java.util.List;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * The server's command-prompt history.
@@ -23,6 +24,7 @@ public final class Prompt {
      *
      * @throws UnsupportedTmuxVersionException if this tmux has no such command
      */
+    @ReadOnly
     public List<String> history() {
         require();
         return server.run(List.of("show-prompt-history")).stdout();

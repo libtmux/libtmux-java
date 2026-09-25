@@ -3,6 +3,7 @@ package io.github.libtmux.transport;
 import java.time.Duration;
 import java.util.List;
 import java.util.OptionalInt;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * One command a transport finished or failed to finish.
@@ -23,7 +24,7 @@ import java.util.OptionalInt;
  */
 public record OperationReport(
         long id,
-        List<String> verbs,
+        @ReadOnly List<String> verbs,
         DispatchOutcome certainty,
         OptionalInt exitCode,
         int stdoutLines,

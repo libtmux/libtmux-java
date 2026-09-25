@@ -1,6 +1,7 @@
 package io.github.libtmux;
 
 import java.util.List;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * What runs in a new pane.
@@ -19,7 +20,7 @@ public sealed interface PaneStart {
      *
      * @param argv the command and its arguments
      */
-    record Command(List<String> argv) implements PaneStart {
+    record Command(@ReadOnly List<String> argv) implements PaneStart {
         public Command {
             argv = List.copyOf(argv);
             if (argv.isEmpty()) {

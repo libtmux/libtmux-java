@@ -2,6 +2,7 @@ package io.github.libtmux;
 
 import java.util.List;
 import java.util.Objects;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * A shell command run by tmux, and a tmux command chosen by a shell command's exit status.
@@ -37,6 +38,7 @@ public final class Shell {
      * @throws UnsupportedTmuxVersionException on tmux 3.3a and 3.4, which run the command and report
      *     nothing
      */
+    @ReadOnly
     public List<String> capturing(String command) {
         Objects.requireNonNull(command, "command");
         TmuxVersion running = server.version();

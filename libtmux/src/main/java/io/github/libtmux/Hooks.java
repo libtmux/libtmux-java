@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -112,6 +113,7 @@ public final class Hooks {
      * a position in the list rather than part of the name, so it becomes the ordering here and the
      * key stays the event a caller would look up.
      */
+    @ReadOnly
     public Map<String, List<String>> all() {
         Map<String, List<String>> hooks = new LinkedHashMap<>();
         for (String line : run(argv("show-hooks", List.of())).stdout()) {

@@ -15,6 +15,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.function.Function;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * One tmux hierarchy, as it was at one moment.
@@ -254,21 +255,25 @@ public final class ServerSnapshot {
     }
 
     /** Every session, in tmux's order. */
+    @ReadOnly
     public List<SessionState> sessions() {
         return sessions;
     }
 
     /** Every winlink, in tmux's order, including a window linked into more than one session twice. */
+    @ReadOnly
     public List<WindowState> windows() {
         return windows;
     }
 
     /** Every pane, in tmux's order. */
+    @ReadOnly
     public List<PaneState> panes() {
         return panes;
     }
 
     /** Every attached client. */
+    @ReadOnly
     public List<ClientState> clients() {
         return clients;
     }
@@ -289,11 +294,13 @@ public final class ServerSnapshot {
     }
 
     /** The winlinks in one session, in order. Empty when the capture never saw that session. */
+    @ReadOnly
     public List<WindowState> windowsOf(SessionId session) {
         return windowsBySession.getOrDefault(session, List.of());
     }
 
     /** The panes under one winlink, in order. Empty when the capture never saw that winlink. */
+    @ReadOnly
     public List<PaneState> panesOf(WindowContext context) {
         return panesByContext.getOrDefault(context, List.of());
     }

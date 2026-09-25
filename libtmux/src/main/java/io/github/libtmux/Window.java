@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * One tmux window at one of its positions, as one capture saw it.
@@ -124,6 +125,7 @@ public final class Window {
     }
 
     /** This link's panes, in tmux's order. A pure read of the capture. */
+    @ReadOnly
     public List<Pane> panes() {
         return snapshot.panesOf(state.context()).stream()
                 .map(pane -> new Pane(server, snapshot, pane))

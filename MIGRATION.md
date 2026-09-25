@@ -8,6 +8,13 @@ API changes that require updates to calling code are recorded here. See
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### Kotlin reads core collections as read-only
+
+A list, set, or map the core returns is a Kotlin `List`, `Set`, or `Map`. Code
+that declared one as `MutableList` or called `add` on it no longer compiles;
+the call threw before. Copy with `toMutableList()` to change one. No Java
+signature changed, so no type is named here.
+
 ### An attachment that skips the incarnation check says so
 
 api-break: ControlClient
