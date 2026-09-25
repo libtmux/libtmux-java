@@ -427,23 +427,30 @@ final class PaneInputCohort {
 
         private void requireWritable(String operation, Member member) {
             if (caller.uncertain()) {
-                throw new IllegalStateException(operation + " refuses input while caller identity is unavailable");
+                throw new IllegalStateException(operation + " refuses input while caller identity is unavailable; "
+                        + "restart this server inside the tmux pane it should speak through so TMUX and "
+                        + "TMUX_PANE can be confirmed again");
             }
             if (caller.isSelf(new PaneId(member.paneId()))) {
-                throw new IllegalStateException(operation + " refuses caller pane " + member.paneId());
+                throw new IllegalStateException(operation + " refuses caller pane " + member.paneId()
+                        + ", the pane this MCP server runs in; target a different pane");
             }
             if (attendedPaneIds.contains(member.paneId())) {
-                throw new IllegalStateException(operation + " refuses attended pane " + member.paneId());
+                throw new IllegalStateException(operation + " refuses attended pane " + member.paneId()
+                        + "; a human is using it, and capture_pane or snapshot_pane can still read it");
             }
             if (member.dead()) {
-                throw new IllegalStateException(operation + " refuses dead pane " + member.paneId());
+                throw new IllegalStateException(operation + " refuses dead pane " + member.paneId()
+                        + "; its process exited, so capture_pane can still read what it left");
             }
             if (member.inputDisabled()) {
-                throw new IllegalStateException(operation + " refuses input-disabled pane " + member.paneId());
+                throw new IllegalStateException(operation + " refuses input-disabled pane " + member.paneId()
+                        + "; capture_pane or snapshot_pane can still read it");
             }
             if (!member.writable()) {
-                throw new IllegalStateException(
-                        operation + " refuses pane " + member.paneId() + " while it is in a human-owned mode");
+                throw new IllegalStateException(operation + " refuses pane " + member.paneId()
+                        + " while it is in a human-owned mode; wait for it to exit, reading the pane meanwhile "
+                        + "with capture_pane or snapshot_pane — never enter or cancel the mode yourself");
             }
         }
     }
