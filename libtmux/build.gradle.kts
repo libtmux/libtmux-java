@@ -8,6 +8,8 @@ dependencies {
     // without this jar on the caller's path; nothing reads it at runtime.
     compileOnly(libs.kotlin.annotations.jvm)
     testImplementation(libs.asm)
+    testImplementation(libs.reactive.streams.tck.flow)
+    testRuntimeOnly(libs.testng.engine)
 }
 
 // The core resolves nothing at runtime. Anything that would change that belongs in another module.

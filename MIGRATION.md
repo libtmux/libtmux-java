@@ -8,6 +8,17 @@ API changes that require updates to calling code are recorded here. See
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### An `EventSubscription` has one reader
+
+api-break: EventSubscription
+
+A read that overlaps another — two threads in `next()` at once — or any read
+after `stream()` or `publisher()` took the subscription throws
+`IllegalStateException`. Readers used to split the events between them, and
+each other's gaps with them. Subscribe again for a second reader: each
+subscription gets every event. Reading from one thread after another stays
+legal.
+
 ### Failures are one sealed tree in `io.github.libtmux.exception`
 
 api-break: LibTmuxException
