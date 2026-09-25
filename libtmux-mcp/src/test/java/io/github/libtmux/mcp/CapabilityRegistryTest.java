@@ -322,6 +322,8 @@ final class CapabilityRegistryTest {
         assertTrue(byName("run_shell_command").description().contains("two preflights"));
         assertTrue(byName("run_shell_command").description().contains("trusted pane shell"));
         assertTrue(byName("run_shell_command").description().contains("command aliases and hooks"));
+        assertTrue(byName("list_panes").description().contains("No filter"));
+        assertTrue(byName("list_panes").description().contains("command"));
         for (String removed : List.of(
                 "tmux_whoami",
                 "tmux_list_servers",
