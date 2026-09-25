@@ -287,8 +287,8 @@ final class Client[F[_]] private[cats] (
     )
   def session: Option[Session[F]] = underlying.session.map(server.session)
   def attachment: Option[ClientAttachment[F]] = underlying.attachment.map(wrap)
-  def refresh: F[Option[Client[F]]] =
-    server.execution(underlying.refresh()).map(_.map(server.client))
+  def refresh: F[Client[F]] =
+    server.execution(underlying.refresh()).map(server.client)
   def fetchAttachment: F[Option[ClientAttachment[F]]] =
     server.execution(underlying.fetchAttachment()).map(_.map(wrap))
   def detach: F[Unit] = server.execution(underlying.detach())

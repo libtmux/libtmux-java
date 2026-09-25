@@ -2,6 +2,7 @@ package io.github.libtmux;
 
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.exception.CardinalityException;
 import io.github.libtmux.exception.CommandRejectedException;
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.LibTmuxException;
@@ -534,11 +535,6 @@ public final class Server implements AutoCloseable {
         return names;
     }
 
-    /** Enables or disables mouse handling for sessions on this server. */
-    public void setMouseEnabled(boolean enabled) {
-        globalOptions().set("mouse", enabled ? "on" : "off");
-    }
-
     WakeReason awaitChannel(String channel, Duration timeout, boolean reserveSignalCapacity)
             throws InterruptedException {
         try {
@@ -662,7 +658,7 @@ public final class Server implements AutoCloseable {
     /** A server over a transport it owns and closes. */
     public static Server open(ServerConfig config) {
         Objects.requireNonNull(config, "config");
-        ProcessTransport transport = new ProcessTransport();
+        ProcessTransport transport = new ProcessTransport(config.maxConcurrentCommands());
         transport.observe(config.observer());
         return new Server(config, transport, true);
     }
@@ -950,6 +946,66 @@ public final class Server implements AutoCloseable {
                 .map(pane -> new Pane(this, captured, pane))
                 .filter(expression)
                 .toList();
+    }
+
+    /**
+     * The one session this expression matches, captured now, or empty when none does.
+     *
+     * <p>Reads as {@link #sessions(FilterExpr)} does.
+     *
+     * @throws CardinalityException.MultipleMatches if more than one session matches; its count is
+     *     exact, since the whole capture is in hand
+     * @throws ServerUnavailableException if no daemon is running
+     */
+    public Optional<Session> session(FilterExpr<Session> expression) {
+        return atMostOne("session", sessions(expression));
+    }
+
+    /**
+     * The one window link this expression matches, captured now, or empty when none does.
+     *
+     * <p>Reads as {@link #windows(FilterExpr)} does. A window linked into two sessions is two links,
+     * so an expression naming it matches twice.
+     *
+     * @throws CardinalityException.MultipleMatches if more than one link matches
+     * @throws ServerUnavailableException if no daemon is running
+     */
+    public Optional<Window> window(FilterExpr<Window> expression) {
+        return atMostOne("window", windows(expression));
+    }
+
+    /**
+     * The one pane this expression matches, captured now, or empty when none does.
+     *
+     * <p>Reads as {@link #panes(FilterExpr)} does.
+     *
+     * @throws CardinalityException.MultipleMatches if more than one pane matches
+     * @throws ServerUnavailableException if no daemon is running
+     */
+    public Optional<Pane> pane(FilterExpr<Pane> expression) {
+        return atMostOne("pane", panes(expression));
+    }
+
+    private static <T> Optional<T> atMostOne(String what, List<T> matches) {
+        return switch (matches.size()) {
+            case 0 -> Optional.empty();
+            case 1 -> Optional.of(matches.get(0));
+            default ->
+                throw new CardinalityException.MultipleMatches(
+                        "expected at most one " + what + ", found " + matches.size() + ", starting with "
+                                + matches.get(0) + " and " + matches.get(1),
+                        matches.size());
+        };
+    }
+
+    /**
+     * How many tmux commands this server's transport runs at once, from {@link
+     * ServerConfig#maxConcurrentCommands()} for a server {@link #open}ed here.
+     *
+     * @return the bound, or {@link Integer#MAX_VALUE} for a transport that sets none
+     */
+    public int admissionBound() {
+        return transport.admissionBound();
     }
 
     /**

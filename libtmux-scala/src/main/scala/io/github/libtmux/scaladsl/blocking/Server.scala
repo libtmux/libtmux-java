@@ -118,6 +118,18 @@ final class Server private (
   def window(context: WindowContext): Option[Window] = checked(
     asJava.window(context).toScala.map(new Window(_, this))
   )
+  def session(expression: FilterExpr[JavaSession]): Option[Session] = checked(
+    asJava.session(expression).toScala.map(new Session(_, this))
+  )
+  def window(expression: FilterExpr[JavaWindow]): Option[Window] = checked(
+    asJava.window(expression).toScala.map(new Window(_, this))
+  )
+  def pane(expression: FilterExpr[JavaPane]): Option[Pane] = checked(
+    asJava.pane(expression).toScala.map(new Pane(_, this))
+  )
+
+  /** How many tmux commands run at once through this server's transport. */
+  def admissionBound: Int = asJava.admissionBound()
   def newSession(name: String): Session = checked(
     new Session(asJava.newSession(name), this)
   )
@@ -177,9 +189,6 @@ final class Server private (
     VectorMap.from(asJava.paneFields(names.asJava).asScala.iterator.map {
       case (pane, fields) => pane -> VectorMap.from(fields.asScala)
     })
-  )
-  def setMouseEnabled(enabled: Boolean): Unit = checked(
-    asJava.setMouseEnabled(enabled)
   )
 
   /** A control-mode client on `session`, refused by a tmux other than the one

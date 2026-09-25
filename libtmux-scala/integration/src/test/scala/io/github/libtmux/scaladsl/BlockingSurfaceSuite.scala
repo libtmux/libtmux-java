@@ -3,6 +3,7 @@ package io.github.libtmux.scaladsl
 import io.github.libtmux.exception.{
   LibTmuxException,
   ServerUnavailableException,
+  TargetGoneException,
   UnsupportedFeatureException
 }
 import io.github.libtmux.{
@@ -210,7 +211,7 @@ final class BlockingSurfaceSuite extends FunSuite {
         Some(first.info.id)
       )
       assertEquals(
-        client.refresh().flatMap(_.attachment).map(_.session.info.id),
+        client.refresh().attachment.map(_.session.info.id),
         Some(second.info.id)
       )
       assertEquals(
@@ -223,8 +224,8 @@ final class BlockingSurfaceSuite extends FunSuite {
         case _                                     => false
       }
       target.close()
-      assertEquals(client.refresh(), None)
-      assertEquals(client.fetchAttachment(), None)
+      intercept[TargetGoneException](client.refresh())
+      intercept[TargetGoneException](client.fetchAttachment())
       assert(server.isAlive())
       server.killServer()
       fixture.serverProcess.onExit().get(800, TimeUnit.MILLISECONDS)

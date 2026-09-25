@@ -119,13 +119,11 @@ If the effect alone is needed, make that choice explicit:
 var unused = session.rename("effect-only");
 ```
 
-`Client.refresh()` returns an `Optional<Client>` because a client can detach
-while its daemon stays reachable. Empty means that client is gone; a failed
-capture still throws. The other handles' `refresh()` methods return a
-replacement or throw `TargetGoneException` when their target is gone
-from a server that still answers. An absent daemon throws
-`ServerUnavailableException` there too, like every other read. None changes the
-previous handle.
+Every handle's `refresh()` returns a replacement, or throws
+`TargetGoneException` when its target is gone from a server that still
+answers: a session killed, a pane closed, a client detached. An absent daemon
+throws `ServerUnavailableException` there too, like every other read. None
+changes the previous handle.
 
 `Window.id()` compares the underlying window across links.
 

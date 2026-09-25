@@ -82,6 +82,7 @@ public final class ProcessTransport implements TmuxTransport {
     private static final System.Logger LOG = System.getLogger(ProcessTransport.class.getName());
 
     private final Semaphore admission;
+    private final int bound;
     private final @Nullable Semaphore waitingAdmission;
     private final ThreadPoolExecutor pumps;
     private final int maxOutputBytes;
@@ -138,6 +139,7 @@ public final class ProcessTransport implements TmuxTransport {
         if (maxOutputBytes < 1) {
             throw new IllegalArgumentException("maxOutputBytes is not positive");
         }
+        this.bound = maxConcurrentProcesses;
         this.admission = new Semaphore(maxConcurrentProcesses);
         this.waitingAdmission = maxConcurrentProcesses == 1 ? null : new Semaphore(maxConcurrentProcesses - 1);
         this.pumps = (ThreadPoolExecutor) Executors.newFixedThreadPool(3 * maxConcurrentProcesses, factory());
@@ -161,6 +163,11 @@ public final class ProcessTransport implements TmuxTransport {
             requireOpen();
             return starter.start(command);
         });
+    }
+
+    @Override
+    public int admissionBound() {
+        return bound;
     }
 
     @Override
