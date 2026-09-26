@@ -279,6 +279,7 @@ final class McpLauncherTest {
             assertTrue(
                     instructions.contains("ABSENT ON PURPOSE")
                             && instructions.contains("No hook writing")
+                            && instructions.contains("No environment writes")
                             && instructions.contains("No buffer reading by default"),
                     "a deliberately absent tool family must read as a choice, not a gap a model "
                             + "should keep searching for: " + instructions);
