@@ -39,6 +39,13 @@ fun registerLane(lane: String) =
         systemProperty("libtmux.tmux.expected", lane)
         val configured = matrix.isPresent
         val configuredBinary = binary.getOrElse("tmux-matrix-not-configured")
+        // A bare `tmux` is this lane's build too. Code that names only a socket, as a reader's
+        // does, takes the binary from PATH, and a client of another release talking to this lane's
+        // server makes the server exit.
+        val path = providers.environmentVariable("PATH")
+        doFirst {
+            environment("PATH", File(binary.get()).parent + File.pathSeparator + path.getOrElse(""))
+        }
         onlyIf {
             require(configured) {
                 "no tmux matrix configured; set -PlibtmuxMatrix=<dir> to a tree of tmux builds"
