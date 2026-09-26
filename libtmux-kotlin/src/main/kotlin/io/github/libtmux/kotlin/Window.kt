@@ -1,6 +1,9 @@
 package io.github.libtmux.kotlin
 
 import io.github.libtmux.Dimensions
+import io.github.libtmux.Hooks
+import io.github.libtmux.Options
+import io.github.libtmux.WindowId
 import io.github.libtmux.WindowIndex
 import io.github.libtmux.WindowLayout
 import io.github.libtmux.snapshot.WindowContext
@@ -15,7 +18,7 @@ import io.github.libtmux.Window as JavaWindow
 public class Window internal constructor(internal val java: JavaWindow, public val server: Server) {
 
     /** The underlying window, shared by every link to it. */
-    public val id: io.github.libtmux.WindowId get() = java.id()
+    public val id: WindowId get() = java.id()
 
     /** Where this link sits in its session. */
     public val index: WindowIndex get() = java.index()
@@ -46,6 +49,12 @@ public class Window internal constructor(internal val java: JavaWindow, public v
 
     /** This link's panes, in tmux's order. A pure read of the capture. */
     public val panes: List<Pane> get() = java.panes().map { Pane(it, server) }
+
+    /** This window's own hooks, which every link to it shares. */
+    public fun hooks(): Hooks = java.hooks()
+
+    /** This window's own options, which every link to it shares. */
+    public fun options(): Options = java.options()
 
     override fun equals(other: Any?): Boolean = other is Window && java == other.java
 
