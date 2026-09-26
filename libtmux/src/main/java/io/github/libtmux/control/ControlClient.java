@@ -368,8 +368,8 @@ public final class ControlClient implements AutoCloseable {
                         "",
                         Duration.ofNanos(timing[0]),
                         Duration.ofNanos(timing[1])));
-            } catch (RuntimeException ignored) {
-                LOG.log(System.Logger.Level.WARNING, "operation observer failed");
+            } catch (RuntimeException observerFailure) {
+                LOG.log(System.Logger.Level.WARNING, "operation observer failed", observerFailure);
             }
             throw failure;
         }
@@ -388,8 +388,8 @@ public final class ControlClient implements AutoCloseable {
                     "",
                     Duration.ofNanos(timing[0]),
                     Duration.ofNanos(timing[1])));
-        } catch (RuntimeException ignored) {
-            LOG.log(System.Logger.Level.WARNING, "operation observer failed");
+        } catch (RuntimeException failure) {
+            LOG.log(System.Logger.Level.WARNING, "operation observer failed", failure);
         }
     }
 
