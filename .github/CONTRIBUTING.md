@@ -152,7 +152,8 @@ it. Run the matrix before a release.
 Nor is the published coordinate. `consumers/java` is a build of its own that
 resolves `io.github.libtmux:libtmux` only from what the root build staged,
 requires it as a named module, checks the module version, and runs a command
-through tmux. CI runs it after `check`; locally, stage and run it:
+through tmux. `consumers/kotlin` does the same for `libtmux-kotlin`, through
+the staged BOM. CI runs both after `check`; locally, stage and run one:
 
 ```console
 $ ./gradlew publishAllPublicationsToStagingRepository
