@@ -16,59 +16,38 @@ final class Instructions {
 
     static String forServer(Connection connection) {
         return """
-                Drives tmux: a terminal multiplexer holding Server > Session > Window > Pane.
-                Target everything by id — %1 a pane, @1 a window, $1 a session. Ids survive; \
-                positions move as neighbours come and go.
+                Drives tmux: Server > Session > Window > Pane. Target by id — %1 pane, @1 window, \
+                $1 session; ids survive, positions do not.
 
-                WHEN TO USE ME
-                Use these tools for tmux panes, windows and sessions, and for a bare "the terminal", \
-                "this shell", "split", "send keys", "scrollback". A %, @ or $ id is unambiguous.
-                Do NOT use them for browser tabs, editor splits (VS Code, Neovim), desktop windows, \
-                Jupyter cells, or login sessions. On a bare "window" or "session" with no terminal in \
-                sight, ask which is meant before acting.
+                Panes, windows, sessions, and a bare "the terminal", "this shell", "split", "send \
+                keys", "scrollback". Do NOT use them for browser tabs, editor splits (VS Code, \
+                Neovim), desktop windows, Jupyter cells, or login sessions; ask first on an \
+                ambiguous bare "window" or "session".
 
-                START HERE
-                get_server_info identifies the pinned server. list_panes returns stable pane IDs and \
-                marks this process's pane when it runs inside the selected server. Direct teardown \
-                tools guard that pane. Pane input also refuses it, attended panes (ones a terminal \
-                client is currently displaying), panes in a human-owned tmux mode, and, for a \
-                synchronized window, the whole cohort when one member cannot take input. This \
-                process cannot address objects outside its selected socket.
+                get_server_info identifies the server. list_panes gives stable ids and marks this \
+                process's pane. Teardown guards that pane; pane input also refuses attended panes \
+                (a terminal client is currently displaying them), a human-owned mode, and any \
+                non-taking member of a synchronized window.
 
                 WAIT, DO NOT POLL
-                A command you wrote: run_shell_command. It sends, waits, and returns output with an exit status \
-                in one call. Never send a command and then call capture_pane repeatedly to guess \
-                whether it finished.
-                Output you did not start: wait_for_text, always with 'stop' set to the failure \
-                text — without it a run that fails is waited on until the deadline.
-                Something you can compose a signal into: wait_for_channel. It blocks inside tmux \
-                and infers nothing from the screen.
-                Watching over several turns: capture_since with the cursor it returns, so you pay \
-                for new lines rather than the whole screen again.
-                Every wait is bounded and says the ceiling it enforced. A wait that ends without what \
-                you wanted is a cheap retry, not a failure.
+                Wrote it: run_shell_command sends, waits, returns output and exit status in one \
+                call — never poll capture_pane to guess. Did not write it: wait_for_text, always \
+                with 'stop' set to the failure text. Can compose a signal: wait_for_channel blocks \
+                in tmux. Watching over turns: capture_since's cursor charges only for new lines.
 
-                METADATA IS NOT CONTENT
-                list_panes and friends read what tmux knows about a pane — its command, its path, \
-                its size. What a pane is SHOWING comes from capture_pane, capture_since or \
-                search_panes. "Which pane mentions the error" is a search, not a listing. \
-                list_panes takes no filter; scan its 'command' field to find a pane by what it runs.
+                list_panes reads what tmux knows — command, path, size — not what a pane shows; \
+                that is capture_pane, capture_since or search_panes. list_panes has no filter; \
+                scan 'command'.
 
-                READING COSTS CONTEXT
-                Reads are capped and say when they dropped anything; raise 'max_lines' deliberately \
-                rather than by habit. Prefer list_panes over reading every pane's content. Batch \
-                several reads, or several key sends, into one round trip with \
-                call_read_tools_batch or send_keys_batch.
-                One pane's metadata and content together: snapshot_pane. list_panes plus \
-                capture_pane is two calls for what that one returns.
+                Reads are capped and say what they dropped. Batch reads or key sends with \
+                call_read_tools_batch or send_keys_batch. snapshot_pane returns metadata and \
+                content together.
 
                 ABSENT ON PURPOSE
-                No hook writing: a hook outlives this conversation — put it in your tmux config. No \
-                buffer reading by default: buffers hold what a user copied.
+                No hook writing: a hook outlives this conversation; use your tmux config. No \
+                buffer reading by default: buffers may hold what a user copied.
 
-                CAPABILITY DISCLOSURE
-                tmux://capabilities reports this process's frozen effective tool surface and selected \
-                socket. It is the only MCP resource exposed by this server.
+                tmux://capabilities: this process's frozen tool surface and socket.
                 """ + ending(connection);
     }
 
