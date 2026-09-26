@@ -118,7 +118,7 @@ kotlin.sourceSets.named("main") { kotlin.srcDir(generateOperationWrappers.map { 
 // publishes, so the claim is what a 2.1 project actually meets.
 val oldestKotlin = configurations.create("oldestKotlin") { isCanBeConsumed = false }
 
-dependencies { oldestKotlin("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.1.21") }
+dependencies { oldestKotlin("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.4.20") }
 
 val compileOldestConsumer =
     tasks.register<JavaExec>("compileOldestConsumer") {
