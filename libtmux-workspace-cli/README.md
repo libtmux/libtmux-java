@@ -22,7 +22,7 @@ $ ./gradlew :libtmux-workspace-cli:installDist
 That writes `libtmux-workspace-cli/build/install/tmux-workspace/bin/tmux-workspace`.
 Put its directory on `PATH`.
 
-## Workspace commands
+## Use it
 
 Save a workspace as `workspace.yaml`:
 
@@ -64,11 +64,17 @@ Writing the capture to a file requires `--save-to`. `freeze` derives no
 destination from the session, because a session name is tmux's to choose and
 carries neither a directory nor an extension.
 
+### What freeze captures
+
 Capture recovers topology, directories, focus and configured options, preserving
 carriage returns and embedded or trailing line feeds in option values. Capture
-currently omits session-local environment variables and cannot recover original
+omits session-local environment variables and cannot recover original
 command history, bootstrap scripts or plugin intent. Normal loading expands
 defined environment variables in captured strings.
+
+## Loading
+
+### Variables
 
 Loading resolves `~` and defined `$VAR` references against the environment the
 CLI runs in, and it does so in every value tmuxp does: names, directories,
@@ -76,11 +82,19 @@ scripts, option and environment values, and pane commands. An undefined
 variable is left as written, so the pane's own shell still sees it. Mapping keys
 are never expanded.
 
+### Creating, reusing and appending
+
 Ordinary loading creates or reuses a session. Append authenticates the inherited tmux
 daemon before resolving the current pane, then keeps that session across input
 files even if a script moves the pane. Socket aliases are accepted when
 they reach that same daemon. Failures report retained changes rather than
 claiming rollback.
+
+`load -2` forces 256-color support for tmux clients, attachment included.
+Without it, tmux detects the terminal's capabilities. `-8` fails before
+workspace lookup: supported tmux releases removed 88-color mode.
+
+### Layouts and focus
 
 All input layouts are checked before scripts run or sessions change. Named
 layouts accept unique abbreviations; version-sensitive names use the running
@@ -97,12 +111,16 @@ no `focus` leaves the last pane of its window active, which is what tmuxp
 leaves: panes are created detached here and selected afterwards, rather than
 each split taking the cursor with it.
 
+### Window indexes
+
 Explicit window indexes are reserved before implicit windows receive free
 indexes from `base-index`. Append reserves indexes from later input files and
 rejects collisions across all remaining inputs before running scripts or
 changing options. Temporary-window removal preserves
 requested indexes when `renumber-windows` is enabled, then restores its local
 or inherited setting. Restoration failures appear in the partial result.
+
+### Pane readiness and shells
 
 `workspace_builder_options.pane_readiness` accepts `auto` (the default),
 `always`, `never`, or boolean aliases. `auto` and `always` both wait, whatever
@@ -116,10 +134,14 @@ never wait. An unrecognised key under `workspace_builder_options` is a warning,
 not a refusal. A pane's `shell` overrides `window_shell`; `pane_shell` is an
 alias. Setting both pane keys is an error.
 
+### Command timing
+
 Pane-level `enter`, `sleep_before` and `sleep_after` set command defaults.
 Command mappings can override them; each override carries to later commands in
 the same pane. A null sleep resets that delay to zero. `enter: false` types the
 command without executing it.
+
+## Discovery, conversion and saving
 
 Use `--help` on any command for its arguments. Discovery checks local project
 files and the first existing global directory from `TMUXP_CONFIGDIR`, XDG and
@@ -129,7 +151,7 @@ is supplied. `convert` asks for confirmation before writing unless `--yes` is
 given; `freeze --save-to` names its own destination and needs neither `--yes`
 nor a terminal to write it.
 
-### Documents
+## Document rules
 
 Native loading rejects a key it does not implement before contacting tmux. A
 key starting with `x-`, at any level, is the exception: a vendor extension,
@@ -138,10 +160,6 @@ expand into ordinary values, and date-like scalars stay text. A document holds
 one mapping; duplicate keys, cyclic aliases, nonfinite numbers and nonstring
 mapping keys are rejected. A file ending in `.json` must be JSON. YAML expansion
 stops at 100 levels and 100,000 values.
-
-`load -2` forces 256-color support for tmux clients, attachment included.
-Without it, tmux detects the terminal's capabilities. `-8` fails before
-workspace lookup: supported tmux releases removed 88-color mode.
 
 ## Imports
 
@@ -202,7 +220,7 @@ in seconds. A pending text wait allows other inspection calls on the same
 connection. The `tmux://capabilities` resource reports the selected endpoint
 and available tools.
 
-## Output and Python
+## Output
 
 `--json` returns one document; `--ndjson` takes precedence when both are present.
 Load and child-process output stream as escaped, flushed events. Machine output
@@ -298,6 +316,8 @@ verdict:
 - **`2`** — a `usage` failure: the invocation cannot be carried out.
 - **`130`** — the process was interrupted.
 
+### Terminal output
+
 Human output uses semantic colors. `NO_COLOR` disables styling, followed by the
 explicit `--color` policy. Automatic color also recognizes `FORCE_COLOR`,
 `CLICOLOR_FORCE` and `CLICOLOR`.
@@ -324,6 +344,8 @@ the display does not track resizing, and Unicode clipping is conservative.
 `--no-progress`, `TMUXP_PROGRESS=0`, `TERM=dumb`, redirected stderr and machine
 output disable the display. Completion and interruption clear its frame.
 
+### Logging
+
 `--log-level` filters diagnostics from debug through critical, defaulting to
 warning. Load accepts `--log-file` for appended JSON log records. New files use
 private permissions on POSIX filesystems; existing permissions are preserved.
@@ -332,11 +354,15 @@ and preserve machine stdout. Invalid log destinations fail before tmux changes.
 Runtime append or close failures produce a separate logging diagnostic and
 preserve the workspace result and exit status; a failed logger stops recording.
 
+### Interruption
+
 Interrupting a command returns exit 130. Writes retain their order within each
 stream. Final output has a bounded delivery allowance after interruption;
 an undrained pipe can leave that output incomplete. Caller-supplied output
 streams remain open. If a stream ignores interruption, its pending write can
 finish later when the caller drains it; cancellation does not reap that write.
+
+## Python
 
 Python shell commands and extension workspaces use `TMUX_WORKSPACE_PYTHON`
 (default `python3`) with tmuxp 1.74.0 installed. The version is checked before
@@ -371,6 +397,8 @@ with their own mutation and cleanup behavior.
 On tmux 3.2a, the Python classic builder can fail after tmux rewrites a session
 name containing `$`. Use a name without `$` for extension workspaces on that
 version; the bridge does not alter tmux's naming behavior.
+
+## Subprocesses
 
 Captured subprocesses retain bounded output and report truncation. Linux uses
 an owned `setsid` session to terminate descendants retaining captured output;
