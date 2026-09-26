@@ -35,19 +35,18 @@ final class Instructions {
                 with 'stop' set to the failure text. Can compose a signal: wait_for_channel blocks \
                 in tmux. Watching over turns: capture_since's cursor charges only for new lines.
 
-                list_panes reads what tmux knows — command, path, size — not what a pane shows; \
-                that is capture_pane, capture_since or search_panes. list_panes has no filter; \
-                scan 'command'.
+                list_panes knows command, path, size, not what a pane shows: use capture_pane, \
+                capture_since or search_panes. It has no filter; scan 'command'.
 
                 Reads are capped and say what they dropped. Batch reads or key sends with \
-                call_read_tools_batch or send_keys_batch. snapshot_pane returns metadata and \
-                content together.
+                call_read_tools_batch or send_keys_batch. snapshot_pane: metadata and content.
 
                 ABSENT ON PURPOSE
                 No hook writing: a hook outlives this conversation; use your tmux config. No \
-                buffer reading by default: buffers may hold what a user copied.
+                environment writes: later shells, a user's too, inherit them; use env NAME=value. \
+                No buffer reading by default: buffers may hold what a user copied.
 
-                tmux://capabilities: this process's frozen tool surface and socket.
+                tmux://capabilities: the frozen tool surface and socket.
                 """ + ending(connection);
     }
 
