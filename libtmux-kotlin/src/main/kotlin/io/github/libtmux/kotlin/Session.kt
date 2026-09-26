@@ -1,5 +1,8 @@
 package io.github.libtmux.kotlin
 
+import io.github.libtmux.Environment
+import io.github.libtmux.Hooks
+import io.github.libtmux.Options
 import io.github.libtmux.SessionId
 import io.github.libtmux.Session as JavaSession
 
@@ -29,6 +32,15 @@ public class Session internal constructor(internal val java: JavaSession, public
 
     /** This session's windows, in tmux's order. A pure read of the capture. */
     public val windows: List<Window> get() = java.windows().map { Window(it, server) }
+
+    /** This session's own options. */
+    public fun options(): Options = java.options()
+
+    /** This session's own environment, which a process started in it is given on top of the server's. */
+    public fun environment(): Environment = java.environment()
+
+    /** This session's own hooks. */
+    public fun hooks(): Hooks = java.hooks()
 
     override fun equals(other: Any?): Boolean = other is Session && java == other.java
 
