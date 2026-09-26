@@ -103,15 +103,18 @@ jobs:
       - name: Publish to a local repository
         run: ./gradlew publishToMavenLocal --stacktrace
 
-      # Builds of their own that see only the published coordinates. The Java one requires
-      # io.github.libtmux as a named module and checks the module version is the one staged; the
-      # Kotlin one resolves libtmux-kotlin through the staged BOM. Both run a command through tmux.
+      # Builds of their own that see only the published coordinates (module-tests/README.md). The
+      # Java one requires io.github.libtmux as a named module at the staged version; the Kotlin and
+      # Scala ones resolve through the staged BOM and run commands through tmux; the sbt one
+      # resolves each artifact with the install line the documentation shows.
       - name: Consumers resolve the staged coordinates
         run: |
           version="$(sed -n 's/^libtmuxVersion=//p' gradle.properties)"
           ./gradlew publishAllPublicationsToStagingRepository --stacktrace
-          ./gradlew -p consumers/java run --stacktrace -PlibtmuxVersion="$version"
-          ./gradlew -p consumers/kotlin run --stacktrace -PlibtmuxVersion="$version"
+          ./gradlew -p module-tests/java run --stacktrace -PlibtmuxVersion="$version"
+          ./gradlew -p module-tests/kotlin run --stacktrace -PlibtmuxVersion="$version"
+          ./gradlew -p module-tests/scala run --stacktrace -PlibtmuxVersion="$version"
+          module-tests/sbt/sbtw -Dlibtmux.version="$version" core/run cats/run ox/run direct/run
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: failure()

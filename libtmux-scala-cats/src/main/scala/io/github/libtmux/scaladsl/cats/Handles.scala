@@ -24,6 +24,9 @@ final class Session[F[_]] private[cats] (
   }
   override def hashCode(): Int = underlying.hashCode()
   override def toString: String = underlying.toString
+
+  /** The Java handle this wraps: the one escape hatch, as on every handle. */
+  def asJava: io.github.libtmux.Session = underlying.asJava
 }
 
 final class Window[F[_]] private[cats] (
@@ -38,6 +41,9 @@ final class Window[F[_]] private[cats] (
   }
   override def hashCode(): Int = underlying.hashCode()
   override def toString: String = underlying.toString
+
+  /** The Java handle this wraps: the one escape hatch, as on every handle. */
+  def asJava: io.github.libtmux.Window = underlying.asJava
 }
 
 final class Pane[F[_]] private[cats] (
@@ -52,6 +58,9 @@ final class Pane[F[_]] private[cats] (
   }
   override def hashCode(): Int = underlying.hashCode()
   override def toString: String = underlying.toString
+
+  /** The Java handle this wraps: the one escape hatch, as on every handle. */
+  def asJava: io.github.libtmux.Pane = underlying.asJava
 }
 
 /** `WAIT`-kind operations: handwritten, since the catalog's own facade mapping
@@ -164,4 +173,7 @@ final class Client[F[_]] private[cats] (
   }
   override def hashCode(): Int = underlying.hashCode()
   override def toString: String = underlying.toString
+
+  /** The Java handle this wraps: the one escape hatch, as on every handle. */
+  def asJava: io.github.libtmux.Client = underlying.asJava
 }

@@ -2,7 +2,7 @@
 set -eu
 
 wrapper_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-build_dir=$(CDPATH= cd -- "$wrapper_dir/.." && pwd)
+build_dir=$wrapper_dir
 sbt_version=$(sed -n 's/^sbt.version=//p' "$build_dir/project/build.properties")
 expected=$(cat "$build_dir/project/sbt-launch.sha256")
 cache_dir=${LIBTMUX_SBT_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/libtmux-sbt}
