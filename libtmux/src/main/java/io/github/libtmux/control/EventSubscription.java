@@ -525,6 +525,10 @@ public final class EventSubscription<T> implements AutoCloseable {
         @Override
         public void cancel() {
             cancelled = true;
+            // Rules 1.8 and 3.5: a cancelled subscriber is owed no end either. Taking the one
+            // terminal signal here stops a drain that is mid-delivery, and finds the subscription
+            // this cancel closed, from reporting that end as onComplete.
+            terminated.set(true);
             EventSubscription.this.close();
             EventSubscription.this.releaseOwner();
         }
