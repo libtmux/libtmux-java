@@ -423,9 +423,9 @@ the `Consumer<Builder>` overloads take trailing lambdas. `libtmux-kotlin` adds
 what Java cannot express: absence as `null` rather than `Optional`, and `!expr`
 on a filter.
 
-**Scala** can consume the Java artifacts directly. This source tree also has an
-in-progress Scala facade with locally staged `_2.13` and `_3` artifacts; those
-suffixes apply only to the facade, never to the Java artifact. See the
+**Scala** can consume the Java artifacts directly. This source tree also has a
+Scala 3 facade with locally staged `_3` artifacts; that suffix applies only to
+the facade, never to the Java artifact. See the
 [Scala facade guide](libtmux-scala/README.md) and [direct Java guide](docs/guide/scala.md).
 
 ## Requirements

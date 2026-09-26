@@ -3,8 +3,8 @@
 Scala callers can use the Java API directly or the
 [Scala facade](../../libtmux-scala/README.md). The facade supplies native collections,
 optional values and a separate Cats/FS2 adapter. It is an independent sbt build
-with `_2.13` and `_3` artifacts; see its installation and verification status
-before selecting a dependency.
+targeting Scala 3.9 only, with `_3` artifacts; see its installation and
+verification status before selecting a dependency.
 
 Runnable programs for both facades live in
 [`libtmux-scala/examples/`](../../libtmux-scala/examples/): blocking workspace
