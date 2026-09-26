@@ -35,9 +35,10 @@ object CoreConsumer {
         assert(found.exists(_ == session))
         assert(server.snapshot().panes.size >= 2)
 
+        // The facade is opaque over the Java client: fromJava is that same
+        // client, not a wrapper, so closing it would close this one too.
         val borrowed = Server.fromJava(server.asJava)
         assert(borrowed.asJava eq server.asJava)
-        borrowed.close()
         assert(server.isAlive())
 
         session.kill()
