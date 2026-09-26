@@ -1,7 +1,7 @@
 package io.github.libtmux.scaladsl
 
-import io.github.libtmux.{Client => JavaClient, Client_, Session => JavaSession}
-import io.github.libtmux.scaladsl.query.{Expr, Fields}
+import io.github.libtmux.{Client => JavaClient}
+import io.github.libtmux.scaladsl.query.Expr
 
 /** A captured attached client, opaque over the Java handle. Every operation
   * beyond equality is an extension, generated from the operation catalog or
@@ -15,9 +15,9 @@ object Client {
 
   given CanEqual[Client, Client] = CanEqual.derived
 
-  def name: Fields.TextField[JavaClient] = new Fields.TextField(Client_.name())
-  def session: Fields.ToOneRef[JavaClient, JavaSession] =
-    new Fields.ToOneRef(Client_.session())
+  // Generated from field-catalog.tsv: see Pane.scala's own export for why this is a re-export of
+  // a separate generated object rather than a same-file companion.
+  export io.github.libtmux.scaladsl.generated.ClientFields.*
 
   // Nested, not top-level: see Pane.scala's own asJava for why.
   extension (self: Client) {
