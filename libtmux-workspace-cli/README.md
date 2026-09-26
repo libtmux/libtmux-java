@@ -290,7 +290,13 @@ the point the load reached, one of `resolve`, `windows_preflight`,
 operations it performed.
 
 The envelope's `status` is `ok`, `partial` or `error`. `partial` means effects
-were retained; `error` means none were.
+were retained; `error` means none were. The exit status carries the same
+verdict:
+
+- **`0`** — the command finished, and `status` is `ok`.
+- **`1`** — it failed, and `status` is `error` or `partial`.
+- **`2`** — a `usage` failure: the invocation cannot be carried out.
+- **`130`** — the process was interrupted.
 
 Human output uses semantic colors. `NO_COLOR` disables styling, followed by the
 explicit `--color` policy. Automatic color also recognizes `FORCE_COLOR`,
@@ -385,8 +391,9 @@ Generate Bash completion:
 $ tmux-workspace --generate bash
 ```
 
-Generated Bash completion suggests commands, option names and accepted choice
-values. It does not query running sessions or discover saved workspace names.
+`--generate zsh` and `--generate fish` write the same completion for those
+shells. It suggests commands, option names and accepted choice values; it does
+not query running sessions or discover saved workspace names.
 
 Add `--json` to receive a `schema_version: 1` artifact with `command: generate`,
 `format: bash`, the exact completion text in `script`, and `status: ok`.
