@@ -474,12 +474,9 @@ and decision record, one line each.
 - [Releasing](RELEASING.md)
 
 Whole runnable programs live in [`examples/`](examples/), and the suite there runs
-every one of them against a real tmux.
-
-The Scala facade's runnable programs are in
-[`libtmux-scala/examples/`](libtmux-scala/examples/): blocking workspace
+every one of them against a real tmux. The Scala ones cover blocking workspace
 operations, bounded concurrent capture, notification loss and reconciliation,
-and Cats Effect resource ownership and cancellation.
+Cats Effect resource ownership and cancellation, and an Ox flow.
 
 Decisions still in force are recorded as short ADRs under
 [`docs/decisions/`](docs/decisions/), each citing the tmux behaviour that
