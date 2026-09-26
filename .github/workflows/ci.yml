@@ -93,25 +93,62 @@ jobs:
       - name: Publish to a local repository
         run: ./gradlew publishToMavenLocal --stacktrace
 
-      # Builds of their own that see only the published coordinates (module-tests/README.md). The
-      # Java one requires io.github.libtmux as a named module at the staged version; the Kotlin and
-      # Scala ones resolve through the staged BOM and run commands through tmux; the sbt one
-      # resolves each artifact with the install line the documentation shows.
-      - name: Consumers resolve the staged coordinates
-        run: |
-          version="$(sed -n 's/^libtmuxVersion=//p' gradle.properties)"
-          ./gradlew publishAllPublicationsToStagingRepository --stacktrace
-          ./gradlew -p module-tests/java run --stacktrace -PlibtmuxVersion="$version"
-          ./gradlew -p module-tests/kotlin run --stacktrace -PlibtmuxVersion="$version"
-          ./gradlew -p module-tests/scala run --stacktrace -PlibtmuxVersion="$version"
-          module-tests/sbt/sbtw -Dlibtmux.version="$version" core/run cats/run ox/run direct/run
-
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: failure()
         with:
           name: reports-jdk${{ matrix.java }}
           path: '**/build/reports/**'
           retention-days: 7
+
+  # A release without the upload: the version a tag would publish, signed by a key made for this run,
+  # checked against what the Central Portal refuses, then resolved by builds of their own that see
+  # only those coordinates (module-tests/README.md). Nothing leaves the runner and no secret is read.
+  rehearse-release:
+    name: release rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install tmux
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y tmux
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          validate-wrappers: true
+
+      - name: Work out the version a release would publish
+        run: |
+          version="$(sed -n 's/^libtmuxVersion=//p' gradle.properties)"
+          echo "VERSION=${version%-SNAPSHOT}" >> "$GITHUB_ENV"
+
+      - name: Make a signing key for this run
+        run: |
+          gpg --batch --pinentry-mode loopback --passphrase '' \
+            --quick-gen-key 'libtmux release rehearsal <rehearsal@invalid>' rsa3072 sign 1d
+
+      # The key reaches Gradle for this step only, so no log header prints it.
+      - name: Stage the release
+        run: |
+          ORG_GRADLE_PROJECT_signingInMemoryKey="$(gpg --armor --export-secret-keys)" \
+            ./gradlew publishAllPublicationsToStagingRepository -PlibtmuxVersion="$VERSION" --stacktrace
+
+      - name: The staged release is what Central accepts
+        run: tools/verify-staged-release.sh "$VERSION"
+
+      - name: Builds of their own resolve the staged release
+        run: |
+          ./gradlew -p module-tests/java run --stacktrace -PlibtmuxVersion="$VERSION"
+          ./gradlew -p module-tests/kotlin run --stacktrace -PlibtmuxVersion="$VERSION"
+          ./gradlew -p module-tests/scala run --stacktrace -PlibtmuxVersion="$VERSION"
+          module-tests/sbt/sbtw -Dlibtmux.version="$VERSION" core/run cats/run ox/run direct/run
 
   check-macos:
     name: check (macOS)
