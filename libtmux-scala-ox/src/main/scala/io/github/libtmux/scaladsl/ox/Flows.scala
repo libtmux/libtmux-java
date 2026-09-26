@@ -2,11 +2,8 @@ package io.github.libtmux.scaladsl.ox
 
 import io.github.libtmux.control.{Delivery, EventSubscription}
 import io.github.libtmux.scaladsl.live.LiveView
-import io.github.libtmux.scaladsl.streaming.Observation
 import io.github.libtmux.snapshot.ServerMirror
 import ox.flow.Flow
-
-import java.time.Duration
 
 /** An Ox `Flow` over a subscription or a live view, for a supervised scope. Ox
   * adds no new handle type (`io.github.libtmux.scaladsl`'s opaque handles work
@@ -18,22 +15,17 @@ import java.time.Duration
 object Flows {
 
   /** One `Flow` element per step: an event this subscription kept, or a gap
-    * naming what was lost. Claims the subscription exclusively for the `Flow`'s
-    * lifetime, through [[Observation]]'s own guard, so a second concurrent
-    * collection is rejected rather than splitting one gap-bearing sequence
-    * between two readers.
+    * naming what was lost. Collecting the flow takes the subscription for good,
+    * through the Java subscription's own single-reader claim, and closes it
+    * when the collection ends. A second collection is refused as it starts,
+    * before it can disturb the first. The flow fails with the control client's
+    * cause if the client ended the subscription.
     */
-  def subscription[T](
-      sub: EventSubscription[T],
-      pollTimeout: Duration = Duration.ofSeconds(30)
-  ): Flow[Delivery[T]] =
+  def subscription[T](sub: EventSubscription[T]): Flow[Delivery[T]] =
     Flow.usingEmit { emit =>
-      val observation = Observation(sub)
-      try
-        observation.read(pollTimeout) { steps =>
-          steps.foreach(emit.apply)
-        }
-      finally observation.close()
+      val steps = sub.stream()
+      try steps.forEach(step => emit(step))
+      finally steps.close()
     }
 
   /** The current view when the flow starts, then every newer one, one per

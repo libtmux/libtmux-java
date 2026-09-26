@@ -24,9 +24,10 @@ for production.
 ## Flows
 
 `Flows.subscription(sub)` emits one element per step of an `EventSubscription`:
-an event it kept, or a gap naming how many were lost. It claims the
-subscription for the flow's lifetime, so a second concurrent collection is
-refused rather than splitting one gap-bearing sequence between two readers.
+an event it kept, or a gap naming how many were lost. Collecting it takes the
+subscription for good and closes it when the collection ends, so a second
+collection is refused as it starts rather than splitting one gap-bearing
+sequence between two readers, or closing the subscription under the first.
 
 `Flows.liveView(view)` emits the current view of a server when the flow starts,
 then every newer one, so a change published between reading a view and
