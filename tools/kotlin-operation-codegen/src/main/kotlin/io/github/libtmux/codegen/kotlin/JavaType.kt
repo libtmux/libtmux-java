@@ -17,6 +17,14 @@ public sealed interface JavaType {
     public data object OptionalLong : JavaType
     public data class FilterExprOf(val elementFqcn: String) : JavaType
     public data class ArrayOf(val element: JavaType) : JavaType
+
+    /**
+     * A `java.util.function.Consumer<X.Builder>` parameter, from a builder-configuring overload
+     * such as `Pane.capture(Consumer<CaptureSpec.Builder>)`. Never generated (see [isGeneratable]):
+     * its sibling overload taking the built spec directly generates instead, and is what the
+     * `@DslMarker` builders and Kotlin's own `SessionSpec.builder().apply { }` already cover.
+     */
+    public data class ConsumerOf(val elementFqcn: String) : JavaType
 }
 
 /** Parses a canonical Java type string, as `operation-catalog-schema.md` requires it spelled. */
@@ -37,6 +45,7 @@ public fun parseJavaType(raw: String): JavaType {
             JavaType.MapOf(parseJavaType(key), parseJavaType(value))
         }
         s.startsWith("io.github.libtmux.query.FilterExpr<") -> JavaType.FilterExprOf(genericArgument(s))
+        s.startsWith("java.util.function.Consumer<") -> JavaType.ConsumerOf(genericArgument(s))
         else -> JavaType.Opaque(s)
     }
 }
