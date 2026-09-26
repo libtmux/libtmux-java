@@ -3,6 +3,8 @@ package io.github.libtmux.snapshot;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.SessionId;
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.control.ControlEvent;
 import io.github.libtmux.control.Delivery;
@@ -91,6 +93,7 @@ public final class ServerMirror implements AutoCloseable {
      *
      * @throws TargetGoneException if the anchor session or its server has gone
      */
+    @Operation(Kind.LIFECYCLE)
     public static ServerMirror open(Session anchor) {
         return open(anchor, Duration.ZERO);
     }
@@ -102,6 +105,7 @@ public final class ServerMirror implements AutoCloseable {
      * @param refreshEvery how long a quiet mirror waits before rebuilding anyway; zero never does
      * @throws IllegalArgumentException if {@code refreshEvery} is negative
      */
+    @Operation(Kind.LIFECYCLE)
     public static ServerMirror open(Session anchor, Duration refreshEvery) {
         Objects.requireNonNull(anchor, "anchor");
         Objects.requireNonNull(refreshEvery, "refreshEvery");
@@ -114,6 +118,7 @@ public final class ServerMirror implements AutoCloseable {
     }
 
     /** The latest published view. */
+    @Operation(Kind.CAPTURED)
     public View current() {
         lock.lock();
         try {
@@ -130,6 +135,7 @@ public final class ServerMirror implements AutoCloseable {
      *     #isEnded()} and {@link #cause()} tell those apart
      * @throws InterruptedException if the waiting thread is interrupted
      */
+    @Operation(Kind.WAIT)
     public Optional<View> awaitNewer(long epoch, Duration timeout) throws InterruptedException {
         long remaining = timeout.isNegative() ? 0 : nanos(timeout);
         lock.lockInterruptibly();
@@ -151,6 +157,7 @@ public final class ServerMirror implements AutoCloseable {
      *
      * @throws IllegalStateException if a callback is already armed
      */
+    @Operation(Kind.CAPTURED)
     public void onNewer(long epoch, Runnable callback) {
         Objects.requireNonNull(callback, "callback");
         boolean now;
@@ -173,6 +180,7 @@ public final class ServerMirror implements AutoCloseable {
     }
 
     /** Disarms the callback {@link #onNewer} armed, if one is armed. */
+    @Operation(Kind.CAPTURED)
     public void clearNewer() {
         lock.lock();
         try {
@@ -183,6 +191,7 @@ public final class ServerMirror implements AutoCloseable {
     }
 
     /** Whether this mirror has stopped publishing, because it was closed or its anchor has gone. */
+    @Operation(Kind.CAPTURED)
     public boolean isEnded() {
         lock.lock();
         try {
@@ -193,6 +202,7 @@ public final class ServerMirror implements AutoCloseable {
     }
 
     /** Why this mirror ended, when something other than {@link #close()} ended it. */
+    @Operation(Kind.CAPTURED)
     public Optional<Throwable> cause() {
         lock.lock();
         try {
@@ -204,6 +214,7 @@ public final class ServerMirror implements AutoCloseable {
 
     /** Stops listening and detaches the control client. The last view stays readable. Idempotent. */
     @Override
+    @Operation(Kind.LIFECYCLE)
     public void close() {
         closing = true;
         listener.interrupt();
