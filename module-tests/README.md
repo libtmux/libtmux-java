@@ -39,4 +39,5 @@ $ module-tests/sbt/sbtw -Dlibtmux.version=0.0.1-alpha.14-SNAPSHOT core/run cats/
 ```
 
 `sbtw` downloads the pinned sbt launcher once and checks its checksum before
-running it. CI runs all four on every pull request.
+running it. CI runs all four on every pull request, in its release rehearsal:
+against a staging signed at the version a tag would publish.

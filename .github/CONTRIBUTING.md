@@ -162,8 +162,10 @@ Nor is the published coordinate. The builds in
 what the root build staged: `java/` requires `io.github.libtmux` as a named
 module at the staged version, `kotlin/` and `scala/` resolve through the staged
 BOM, and all three run commands through tmux; `sbt/` resolves each artifact with
-the install line the documentation shows. CI runs them after `check`; locally,
-stage and run one:
+the install line the documentation shows. CI runs them in its release
+rehearsal, against a staging signed at the version a tag would publish and
+checked by [`tools/verify-staged-release.sh`](../tools/verify-staged-release.sh);
+locally, stage and run one:
 
 ```console
 $ ./gradlew publishAllPublicationsToStagingRepository
