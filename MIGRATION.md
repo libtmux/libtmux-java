@@ -86,6 +86,58 @@ withServer(config) { server ->
 }
 ```
 
+### `libtmux-kotlin`'s subsystem accessors answer wrapper classes too
+
+api-break: Server
+api-break: Session
+api-break: Window
+api-break: Pane
+
+`Pane.options()`, `Server.hooks()`/`Session.hooks()`/`Window.hooks()`,
+`Server.options()`/`Server.globalOptions()`/`Session.options()`/
+`Window.options()`, `Server.shell()`, `Server.commands()`, `Server.buffers()`,
+`Server.environment()`/`Session.environment()`, `Server.messageLog()`,
+`Server.prompt()`, `Server.keys()`, `Server.batch()`/`Pane.batch()`, and
+`Server.chain()` answer new `io.github.libtmux.kotlin` wrapper classes
+(`Options`, `Hooks`, `Shell`, `Commands`, `Buffers`, `Environment`,
+`MessageLog`, `Prompt`, `Keys`, `Batch`, `CommandChain`), not the Java types of
+the same simple name. Every operation on them that reaches tmux is `suspend`,
+the same contract every other Kotlin wrapper already carries. Code that needs
+the Java handle reads it as `asJava`:
+
+```kotlin
+// Given: config: ServerConfig
+withServer(config) { server ->
+    server.hooks().set("after-new-window", "display-message hello")
+    server.hooks().asJava
+}
+```
+
+`Keys.in(table)` answers the Kotlin `Keys`, not the Java one. `Options.get`/
+`set` keep both overloads — by name and by `OptionKey<T>` — as `suspend`
+members on the Kotlin `Options`.
+
+### `libtmux-scala-cats`'s subsystem accessors answer `F[_]` wrapper classes too
+
+api-break: Server
+api-break: Session
+api-break: Window
+api-break: Pane
+
+On the Cats facade, `Server.hooks`, `Pane.options`, `Server.shell`,
+`Server.commands`, `Server.buffers`, `Session.environment`,
+`Server.messageLog`, `Server.prompt`, and `Server.keys` answer new
+`io.github.libtmux.scaladsl.cats` classes (`Hooks[F]`, `Options[F]`,
+`Shell[F]`, `Commands[F]`, `Buffers[F]`, `Environment[F]`, `MessageLog[F]`,
+`Prompt[F]`, `Keys[F]`), not the raw Java handle the accessor used to answer.
+Their own reads and mutations run through `F`, admission-bounded and
+cancellable like every other Cats operation; read the Java handle as
+`asJava`. The direct-style `libtmux-scala` facade is unchanged: these
+accessors still answer the raw Java handle there, since direct style is
+blocking by design. `Keys[F].in(table)` answers the Cats `Keys[F]`.
+`Options[F].get`/`set` keep both overloads — by name and by `OptionKey<T>` —
+each returning `F[_]`.
+
 ### An `EventSubscription` has one reader
 
 api-break: EventSubscription

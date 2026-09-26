@@ -33,15 +33,22 @@ ScalaServer.resource[IO](config).use { server =>
 
 Captured `info`, session windows, window panes, and client attachments are pure
 reads: generated as plain values in both layers, never wrapped in `F` on the
-Cats side, since the catalog marks them `CAPTURED`. Filtering their immutable
-collections does not refresh them. Listing, refresh, format expansion, pane
-mode inspection, and mutation perform I/O. `Pane.awaitText` polls captured
-text.
+Cats side, since the catalog marks them `CAPTURED`. A captured accessor that
+answers a tmux subsystem instead — `Server.hooks`, `Pane.options`,
+`Server.shell`, and the rest — is CAPTURED for the same reason, its own
+construction touches no tmux state, but on the Cats side it answers that
+subsystem's own wrapper class rather than the raw Java handle direct style
+still returns; the subsystem's own reads and mutations then run through `F`
+exactly as every other operation does. Filtering their immutable collections
+does not refresh them. Listing, refresh, format expansion, pane mode
+inspection, and mutation perform I/O. `Pane.awaitText` polls captured text.
 
 ## Admission and blocking work
 
 Cats operations run through an [interruptible blocking boundary][execution],
-including a server or control client's own acquisition step. An owned server
+including a server or control client's own acquisition step and every
+subsystem operation reached through `Server.hooks`, `Pane.options`, and the
+rest. An owned server
 accepts `maxConcurrentCalls` from one through four. A borrowed server accepts
 a positive bound, but that bound covers only calls through that facade. Its
 owner must account for other users and the underlying transport's capacity.

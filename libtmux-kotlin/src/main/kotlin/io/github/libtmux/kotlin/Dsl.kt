@@ -60,6 +60,7 @@ private suspend fun applySplits(window: Window, builder: WindowBuilder) {
 public class SessionBuilder internal constructor() {
     internal val windows: MutableList<WindowBuilder.() -> Unit> = mutableListOf()
     private var command: List<String>? = null
+    private val environment: MutableMap<String, String> = mutableMapOf()
 
     public var name: String? = null
 
@@ -69,6 +70,11 @@ public class SessionBuilder internal constructor() {
     /** Runs [argv] in the first window instead of the default shell. */
     public fun running(vararg argv: String) {
         command = argv.toList()
+    }
+
+    /** Adds a variable to the new session's environment, keeping any already set. */
+    public fun env(name: String, value: String) {
+        environment[name] = value
     }
 
     public fun window(configure: WindowBuilder.() -> Unit) {
@@ -87,6 +93,7 @@ public class SessionBuilder internal constructor() {
             "the session and its first window block both set a command; that window runs one"
         }
         (first?.command ?: command)?.let { spec.running(*it.toTypedArray()) }
+        environment.forEach { (envName, value) -> spec.env(envName, value) }
         return spec.build()
     }
 }
@@ -96,6 +103,7 @@ public class WindowBuilder internal constructor() {
     internal val splits: MutableList<SplitBuilder.() -> Unit> = mutableListOf()
     internal var command: List<String>? = null
         private set
+    private val environment: MutableMap<String, String> = mutableMapOf()
 
     public var name: String? = null
 
@@ -104,6 +112,11 @@ public class WindowBuilder internal constructor() {
     /** Runs [argv] in this window instead of the default shell. */
     public fun running(vararg argv: String) {
         command = argv.toList()
+    }
+
+    /** Adds a variable to the new window's environment, keeping any already set. */
+    public fun env(name: String, value: String) {
+        environment[name] = value
     }
 
     public fun split(configure: SplitBuilder.() -> Unit = {}) {
@@ -115,6 +128,7 @@ public class WindowBuilder internal constructor() {
         name?.let { spec.named(it) }
         directory?.let { spec.`in`(it) }
         command?.let { spec.running(*it.toTypedArray()) }
+        environment.forEach { (envName, value) -> spec.env(envName, value) }
         return spec.build()
     }
 }
@@ -157,6 +171,11 @@ public class SplitBuilder internal constructor() {
     /** Sizes the new pane as a percentage of the space being split. */
     public fun percent(share: Int) {
         java.percent(share)
+    }
+
+    /** Adds a variable to the new pane's environment, keeping any already set. */
+    public fun env(name: String, value: String) {
+        java.env(name, value)
     }
 
     internal fun build(): SplitSpec = java.build()

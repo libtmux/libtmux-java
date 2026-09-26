@@ -1,19 +1,8 @@
 package io.github.libtmux.kotlin
 
-import io.github.libtmux.Buffers
 import io.github.libtmux.Channel
-import io.github.libtmux.CommandChain
-import io.github.libtmux.Commands
-import io.github.libtmux.Environment
-import io.github.libtmux.Hooks
-import io.github.libtmux.Keys
-import io.github.libtmux.MessageLog
-import io.github.libtmux.Options
-import io.github.libtmux.Prompt
 import io.github.libtmux.ServerConfig
 import io.github.libtmux.ServerIdentity
-import io.github.libtmux.Shell
-import io.github.libtmux.batch.Batch
 import io.github.libtmux.exception.CardinalityException
 import io.github.libtmux.exception.DispatchException
 import io.github.libtmux.query.FilterExpr
@@ -57,43 +46,43 @@ public class Server private constructor(
     public val admissionBound: Int get() = java.admissionBound()
 
     /** Collects several commands to run in one tmux invocation. */
-    public fun batch(): Batch = java.batch()
+    public fun batch(): Batch = Batch(java.batch(), this)
 
     /** Starts a chain of commands where each one acts on what the last one made. */
-    public fun chain(): CommandChain = java.chain()
+    public fun chain(): CommandChain = CommandChain(java.chain(), this)
 
     /** Shell commands run by tmux, and tmux commands chosen by a shell exit status. */
-    public fun shell(): Shell = java.shell()
+    public fun shell(): Shell = Shell(java.shell(), this)
 
     /** The commands this tmux knows. */
-    public fun commands(): Commands = java.commands()
+    public fun commands(): Commands = Commands(java.commands(), this)
 
     /** The server's message log. */
-    public fun messageLog(): MessageLog = java.messageLog()
+    public fun messageLog(): MessageLog = MessageLog(java.messageLog(), this)
 
     /** The command prompt's history. */
-    public fun prompt(): Prompt = java.prompt()
+    public fun prompt(): Prompt = Prompt(java.prompt(), this)
 
     /** One of this server's wait-for channels, which is where a signal is sent and waited for. */
     public fun channel(name: String): Channel = java.channel(name)
 
     /** The server's key bindings: `prefix` when binding, every table when listing. */
-    public fun keys(): Keys = java.keys()
+    public fun keys(): Keys = Keys(java.keys(), this)
 
     /** The server's paste buffers, which every session shares. */
-    public fun buffers(): Buffers = java.buffers()
+    public fun buffers(): Buffers = Buffers(java.buffers(), this)
 
     /** The server-wide options, the ones tmux keeps once per server. */
-    public fun options(): Options = java.options()
+    public fun options(): Options = Options(java.options(), this)
 
     /** The global session options every session inherits unless it sets its own. */
-    public fun globalOptions(): Options = java.globalOptions()
+    public fun globalOptions(): Options = Options(java.globalOptions(), this)
 
     /** The server's environment, which every session inherits and every new process is given. */
-    public fun environment(): Environment = java.environment()
+    public fun environment(): Environment = Environment(java.environment(), this)
 
     /** The global hooks every session inherits. */
-    public fun hooks(): Hooks = java.hooks()
+    public fun hooks(): Hooks = Hooks(java.hooks(), this)
 
     /**
      * The one session this expression matches, captured now.

@@ -46,6 +46,11 @@ production.
 - **`Layout.byTmuxName` resolves a built-in layout by its exact tmux name.**
   (#16)
 
+- **`SessionBuilder`, `WindowBuilder` and `SplitBuilder` gain `env(name,
+  value)`.** The Kotlin DSL now matches every environment variable the Java
+  `SessionSpec.Builder`/`WindowSpec.Builder`/`SplitSpec.Builder` can set on the
+  new session, window, or pane's process. (#23)
+
 ### Changed
 
 - **MCP `list_windows` and `show_environment` take `session_id` or
@@ -58,6 +63,26 @@ production.
   so `Buffers.show`, pane captures and option reads return `\r` and `\r\n` as
   tmux sent them. Strip `\r` yourself where a line ending must be bare.
   `stderr()` still turns CRLF and CR into LF. (#16)
+
+- **`libtmux-kotlin`'s subsystem accessors answer wrapper classes, not the raw
+  Java handle.** `Pane.options()`, `Server.hooks()`, `Server.shell()`,
+  `Server.commands()`, `Server.buffers()`, `Session.environment()`,
+  `Server.messageLog()`, `Server.prompt()`, `Server.keys()`,
+  `Server.batch()`/`Pane.batch()`, and `Server.chain()` used to answer the raw
+  Java type, so calling `.get()`/`.set()` on it ran blocking tmux I/O on the
+  caller's coroutine thread outside `ExecutionPolicy`. Every operation on the
+  new wrapper classes that reaches tmux is `suspend`, dispatched through
+  `ExecutionPolicy.commands` like every other Kotlin operation. (#23)
+
+- **`libtmux-scala-cats`'s subsystem accessors answer `F[_]` wrapper classes,
+  not the raw Java handle.** `Server.hooks`, `Pane.options`, `Server.shell`,
+  `Server.commands`, `Server.buffers`, `Session.environment`,
+  `Server.messageLog`, `Server.prompt`, and `Server.keys` used to answer the
+  raw Java type, so their operations ran outside `Execution`'s admission bound
+  and cancellation. Their reads and mutations now run through `F`, the same as
+  every other Cats operation. The direct-style `libtmux-scala` facade is
+  unchanged: these accessors still answer the raw Java handle there, since
+  direct style is blocking by design. (#23)
 
 ### Fixed
 
