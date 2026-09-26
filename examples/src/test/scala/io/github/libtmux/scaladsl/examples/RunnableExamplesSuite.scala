@@ -20,7 +20,8 @@ final class RunnableExamplesSuite extends FunSuite {
     "BlockingWorkspace" -> "BlockingWorkspace.scala",
     "CaptureConcurrently" -> "CaptureConcurrently.scala",
     "ObserveChanges" -> "ObserveChanges.scala",
-    "ResourceBoundaries" -> "ResourceBoundaries.scala"
+    "ResourceBoundaries" -> "ResourceBoundaries.scala",
+    "WatchWithOx" -> "WatchWithOx.scala"
   )
   private val expectedMains = mainSources.keySet.map(packageName + _)
   // Tests run from this module's directory, as MainsTest's do.
