@@ -22,6 +22,7 @@ they are the part of a project nobody compiles and everybody reads first.
 | [`CaptureConcurrently`](src/main/scala/io/github/libtmux/scaladsl/examples/CaptureConcurrently.scala) | Scala, Cats: three panes captured at once, each keeping its pane's identity |
 | [`ObserveChanges`](src/main/scala/io/github/libtmux/scaladsl/examples/ObserveChanges.scala) | Scala, Cats: live state as a `Signal`, reconciled against a window rename |
 | [`ResourceBoundaries`](src/main/scala/io/github/libtmux/scaladsl/examples/ResourceBoundaries.scala) | Scala, Cats: borrowing a Java client, and cancelling one dispatched wait |
+| [`WatchWithOx`](src/main/scala/io/github/libtmux/scaladsl/examples/WatchWithOx.scala) | Scala, Ox: a live view as a `Flow` in a supervised fork, watching a window appear |
 
 ## Run one
 
