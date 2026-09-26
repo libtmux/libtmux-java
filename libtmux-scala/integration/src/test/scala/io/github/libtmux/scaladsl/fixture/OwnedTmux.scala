@@ -188,7 +188,7 @@ private[scaladsl] object OwnedTmux {
     val expected = Path.of(selected).toRealPath()
     val actual = Path.of(System.getProperty("java.home")).toRealPath()
     assert(
-      actual == expected,
+      actual.equals(expected),
       "forked JVM differs from selected JDK: " + actual + " != " + expected
     )
   }

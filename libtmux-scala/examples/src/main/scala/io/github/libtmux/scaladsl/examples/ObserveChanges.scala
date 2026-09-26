@@ -3,11 +3,15 @@ package io.github.libtmux.scaladsl.examples
 import _root_.cats.effect.{ExitCode, IO, IOApp, Resource}
 import _root_.cats.syntax.all._
 import io.github.libtmux.{ServerConfig, SessionSpec}
-import io.github.libtmux.control.Notification
-import io.github.libtmux.scaladsl.cats.{Control, Observation, Server}
+import scala.jdk.OptionConverters._
+// Wildcard, not a named import: examples lives beside io.github.libtmux.scaladsl.cats, not inside
+// it, so its generated extension methods need an explicit import.
+import io.github.libtmux.scaladsl.cats.*
 import scala.concurrent.duration._
 
-/** Counts dropped notifications and reconciles current state with a snapshot.
+/** Watches a session's live state as a `Signal`, reconciling it against a
+  * window rename — the Cats module's live view is a thin `Signal` over Java's
+  * own `ServerMirror`, never a hand-rolled resnapshot loop.
   */
 object ObserveChanges extends IOApp {
   def run(arguments: List[String]): IO[ExitCode] =
@@ -15,9 +19,11 @@ object ObserveChanges extends IOApp {
 
   def run(config: ServerConfig): IO[Unit] =
     Server.resource[IO](config).use { server =>
-      server.isAlive.flatMap(alive =>
-        IO(require(alive, "example requires an existing tmux server"))
-      ) *>
+      server
+        .isAlive()
+        .flatMap(alive =>
+          IO(require(alive, "example requires an existing tmux server"))
+        ) *>
         Resource
           .make(
             server.newSession(
@@ -28,60 +34,39 @@ object ObserveChanges extends IOApp {
                 .running("cat")
                 .build()
             )
-          )(_.kill)
+          )(_.kill())
           .use { session =>
             val window = session.windows.head
-            window.options.set("automatic-rename", "off") *>
-              Control
-                .attach[IO](session, ExampleRuntime.deadline, 4)
-                .use { control =>
-                  val slowCapacity = 2
-                  (control.events(slowCapacity), control.events(16)).tupled
-                    .use { case (slow, witness) =>
-                      val names =
-                        Vector.tabulate(5)(index => "observed-" + index)
-                      val minimumExpectedLoss =
-                        (names.size - slowCapacity).toLong
-                      for {
-                        _ <- names.traverse_ { name =>
-                          for {
-                            arrived <- witness.stream
-                              .map(Observation.value)
-                              .unNone
-                              .filter(_.notification() match {
-                                case event: Notification.WindowRenamed =>
-                                  event.window() == window.info.context
-                                    .window() && event.name() == name
-                                case _ => false
-                              })
-                              .take(1)
-                              .compile
-                              .lastOrError
-                              .start
-                            _ <- window.rename(name)
-                            _ <- arrived.joinWithNever.timeout(
-                              ExampleRuntime.deadline.toMillis.millis
-                            )
-                          } yield ()
-                        }
-                        dropped <- slow.droppedCount
-                        current <- server.snapshot
-                        _ <- IO {
-                          assert(
-                            dropped >= minimumExpectedLoss,
-                            "dropped=" + dropped + ", expected at least " +
-                              minimumExpectedLoss
-                          )
-                          assert(
-                            current
-                              .window(window.info.context)
-                              .exists(_.name == names.last),
-                            "current window did not retain " + names.last
-                          )
-                        }
-                      } yield ()
-                    }
+            LiveServer.attach[IO](session).use { live =>
+              for {
+                initial <- live.signal.get
+                _ <- window.rename("renamed")
+                observed <- live.signal.discrete
+                  .filter(_.epoch() > initial.epoch())
+                  .take(1)
+                  .compile
+                  .lastOrError
+                  .timeoutTo(
+                    ExampleRuntime.deadline.toMillis.millis,
+                    IO.raiseError(new AssertionError("no newer view"))
+                  )
+                failure <- live.failure
+                _ <- IO {
+                  assert(
+                    observed
+                      .snapshot()
+                      .window(window.info.context())
+                      .toScala
+                      .exists(_.name() == "renamed"),
+                    "the live view did not observe the rename"
+                  )
+                  assert(
+                    failure.isEmpty,
+                    "the background poller must not have failed while still in use"
+                  )
                 }
+              } yield ()
+            }
           }
     }
 }

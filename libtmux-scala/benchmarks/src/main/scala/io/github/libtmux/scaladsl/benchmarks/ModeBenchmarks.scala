@@ -12,8 +12,10 @@ import io.github.libtmux.{
   SessionSpec,
   SplitSpec
 }
-import io.github.libtmux.scaladsl.blocking.{Pane, Server}
+import io.github.libtmux.scaladsl.{Pane, Server}
+import io.github.libtmux.scaladsl.{config => _, *}
 import io.github.libtmux.scaladsl.cats.{Control, Observation}
+import io.github.libtmux.scaladsl.cats.{config => _, *}
 import java.lang.management.ManagementFactory
 import java.nio.file.{Files, Path}
 import java.security.MessageDigest
@@ -90,7 +92,7 @@ object ModeBenchmarks {
           )
           .orElseThrow()
       )
-      try run(input, java, blocking, session.info.id)
+      try run(input, java, blocking, session.info.id())
       finally session.kill()
     } finally {
       try java.killServer()
@@ -118,12 +120,17 @@ object ModeBenchmarks {
     val first = blocking.panes().head
     first.split(SplitSpec.builder().running("/bin/sh").build())
     first.split(SplitSpec.builder().running("/bin/sh").build())
-    val expected = blocking.panes().map(_.info.id.value())
+    val expected = blocking.panes().map(_.info.id().value())
     require(expected.size == 3, "benchmark topology must contain three panes")
     val markers = expected.map(id => "scala-benchmark-ready-" + id)
     blocking.panes().zip(markers).foreach { case (pane, marker) =>
       require(
-        pane.run("printf '%s\\n' " + marker, deadline).succeeded,
+        pane
+          .run(
+            "printf '%s\\n' " + marker,
+            scala.jdk.DurationConverters.JavaDurationOps(deadline).toScala
+          )
+          .succeeded,
         "benchmark setup command failed"
       )
     }
@@ -157,10 +164,11 @@ object ModeBenchmarks {
     val releaseCats = cats._2
     try {
       results += measure("cats_serial_capture", input, blocking) { () =>
-        catsServer.panes
+        catsServer
+          .panes()
           .flatMap { panes =>
             panes.toList.traverse(pane =>
-              pane.capture.map(lines => pane.info.id.value() -> lines)
+              pane.capture().map(lines => pane.info.id().value() -> lines)
             )
           }
           .map(values =>
@@ -169,13 +177,14 @@ object ModeBenchmarks {
           .unsafeRunSync()
       }(ready)
       results += measure("cats_bounded_capture", input, blocking) { () =>
-        catsServer.panes
+        catsServer
+          .panes()
           .flatMap { panes =>
             Stream
               .emits(panes)
               .covary[IO]
               .parEvalMap(2)(pane =>
-                pane.capture.map(lines => pane.info.id.value() -> lines)
+                pane.capture().map(lines => pane.info.id().value() -> lines)
               )
               .compile
               .toVector
@@ -183,14 +192,6 @@ object ModeBenchmarks {
           .map(values => Captured(values.map(_._1), values.map(_._2)))
           .unsafeRunSync()
       }(ready)
-      results += measure("cats_batch", input, blocking) { () =>
-        val result = catsServer.batch.add(listCommand).run.unsafeRunSync()
-        Captured(result.operations.head.stdout, Vector.empty)
-      }(Captured(expected, Vector.empty))
-      results += measure("cats_chain", input, blocking) { () =>
-        val result = catsServer.chain.andThen(listCommand).run.unsafeRunSync()
-        Captured(result.operations.head.stdout, Vector.empty)
-      }(Captured(expected, Vector.empty))
 
       val control = Control
         .attachUnfenced[IO](inputConfig(input), session, deadline)
@@ -226,7 +227,7 @@ object ModeBenchmarks {
               val observed = observation.stream
                 .map(Observation.value)
                 .unNone
-                .filter(_.pane() == first.info.id)
+                .filter(_.pane().value() == first.info.id().value())
                 .map(_.data())
                 .scan("")((text, chunk) => (text + chunk).takeRight(512))
                 .filter(_.contains(marker))
@@ -265,10 +266,10 @@ object ModeBenchmarks {
       ids: Vector[String],
       lines: Vector[Vector[String]],
       droppedEvents: Long = 0L
-  )
+  ) derives CanEqual
 
   private def capture(panes: Vector[Pane]): Captured =
-    Captured(panes.map(_.info.id.value()), panes.map(_.capture()))
+    Captured(panes.map(_.info.id().value()), panes.map(_.capture()))
 
   private def poll(pane: Pane, marker: String): Unit = {
     val stop = System.nanoTime() + deadline.toNanos
@@ -480,7 +481,7 @@ object ModeBenchmarks {
       .of()
       .formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
 
-  private def codeSourceSha256(value: Class[_]): String =
+  private def codeSourceSha256(value: Class[?]): String =
     try {
       val source = value.getProtectionDomain.getCodeSource.getLocation
       sha256(Files.readAllBytes(Path.of(source.toURI)))

@@ -13,20 +13,20 @@ counts every control notification it receives.
 | [ObserveChanges][observe] | Notification loss and reconciliation |
 | [ResourceBoundaries][resources] | Resource ownership and cancellation |
 
-`BlockingWorkspace` uses layouts, literal text, key names, line input and a
-completion signal. It filters captured handles, checks missing values and
-distinguishes linked contexts from physical pane identity.
+`BlockingWorkspace` uses the direct-style opaque handles, a layout change and
+the typed field query DSL (`Pane.active`, `Pane.id`, `.matching`,
+`exactlyOne`). It filters captured panes and checks a missing session lookup.
 
-`CaptureConcurrently` runs at most two captures concurrently. It retains input
-order, pane identity, window context and original output rows.
+`CaptureConcurrently` splits a window into three panes and captures them
+concurrently, retaining each capture's own pane identity in the result.
 
-`ObserveChanges` consumes typed notifications with bounded drop-oldest
-buffering. It checks cumulative loss and reconciles current state with a
-snapshot.
+`ObserveChanges` watches a session's live state as a Cats `Signal`
+(`LiveServer`, over Java's own `ServerMirror`) and reconciles it against a
+window rename, checking the background poller's observed outcome.
 
-`ResourceBoundaries` borrows a Java client, checks failed attachment cleanup
-and cancels dispatched work. It verifies that earlier effects survive
-cancellation and that the Java owner remains usable after the borrow ends.
+`ResourceBoundaries` borrows a Java client without owning it, cancels a
+dispatched wait, and checks that cancellation reaches only that call: the
+session, and the Java owner's daemon, both outlive it.
 
 Each `main` takes three arguments: the tmux executable, socket path and tmux
 configuration file. It builds a `ServerConfig` and calls the same `run` method
