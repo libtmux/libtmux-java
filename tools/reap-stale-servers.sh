@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 # End tmux servers this port abandoned, and report what belongs to somebody else.
 #
-#   ./scripts/reap-stale-servers.sh          # say what would be reaped
-#   ./scripts/reap-stale-servers.sh --reap   # actually reap it
+#   ./tools/reap-stale-servers.sh          # say what would be reaped
+#   ./tools/reap-stale-servers.sh --reap   # actually reap it
 #
 # The suite does this for itself — see docs/spikes/22 — but a server whose test JVM was killed and
 # whose socket the temporary-file cleaner has since removed is reachable by nothing except its own

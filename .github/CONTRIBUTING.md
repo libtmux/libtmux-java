@@ -14,13 +14,15 @@ publication, and the Gradle build fails when that set stops matching
 
 | directory | published | holds |
 | --- | --- | --- |
-| `libtmux*/` | yes | one artifact each, named for its directory |
-| `integration-tests/` | no | the real-tmux suite, which spans artifacts |
+| `libtmux*/` | yes | one artifact each, named for its directory; the Scala ones are suffixed `_3` |
+| `integration-tests/` | no | the real-tmux suites, Java and Scala, which span artifacts |
 | `examples/` | no | whole runnable programs, run by its own suite |
-| [`docs-tests/`](../docs-tests/) | no | compiles and runs every snippet in the docs |
-| `scripts/` | no | what the build does not do |
-| `build-logic/` | no | convention plugins, as an included build |
-| `docs/`, `gradle/`, `.github/` | no | everything else |
+| `benchmarks/` | no | what an operation costs, measured on demand |
+| [`module-tests/`](../module-tests/) | no | builds of their own that consume the staged artifacts |
+| [`docs/`](../docs/) | no | the guides, and the suite that runs every snippet in them |
+| `build-logic/` | no | convention plugins, code generators and the catalog Doclet, as an included build |
+| [`tools/`](../tools/) | no | developer tooling the build does not run |
+| `gradle/`, `.github/` | no | the wrapper, versions and checksums; CI |
 
 The real-tmux suite lives outside every published module on purpose. A suite
 inside one artifact's tests makes that artifact's dependencies and lifecycle
@@ -80,7 +82,7 @@ Kill only sockets under this port's roots. Another port's servers are not yours
 to reap, however much they cost us:
 
 ```console
-$ ./scripts/reap-stale-servers.sh
+$ ./tools/reap-stale-servers.sh
 ```
 
 A unix socket path cannot exceed about 104 bytes, and tmux reports a longer one
@@ -97,7 +99,7 @@ The matrix is a local tree of built tmuxes, one directory per lane, each with
 `bin/tmux`. Build one:
 
 ```console
-$ ./scripts/tmux-matrix.sh ~/tmux-builds
+$ ./tools/tmux-matrix.sh ~/tmux-builds
 ```
 
 It reads the lane list out of the build, so it cannot drift from what the matrix
