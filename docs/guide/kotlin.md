@@ -1,82 +1,118 @@
 # Kotlin
 
-## The core is already null-safe from Kotlin
+## Wrapper classes over the Java handles
 
-Not because anything was written for Kotlin, but because the Java is annotated
-with [JSpecify](https://jspecify.dev/) and Kotlin has read those annotations
-since 1.5.20. Every type in `io.github.libtmux` arrives as `Window`, not
-`Window!`, so the compiler knows what can be absent and what cannot.
+`Server`, `Session`, `Window`, `Pane`, `Client`, and `ControlClient` in
+`io.github.libtmux.kotlin` are hand-written Kotlin classes, not the Java types
+directly and not extensions on them. A same-named extension is silently
+shadowed by a Java member with only a compiler warning, so a member on a real
+wrapper class is what makes a generated suspend mirror safe to add later
+without an accidental collision.
 
-Turn a mismatch into an error rather than a warning:
+Every operation that may contact tmux is `suspend`. Captured state — an id, a
+name, a size — is a plain, non-suspending property. Query fields live on the
+handle type's companion (`Pane.command`), never as an instance member, so
+`Pane.command` (the field) and `pane.currentCommand` (the captured value)
+never collide.
 
-<!-- snippet: skip: build configuration, not library code -->
 ```kotlin
-kotlin {
-    compilerOptions { freeCompilerArgs.addAll("-Xjspecify-annotations=strict") }
+// Given: config: ServerConfig
+withServer(config) { server ->
+    val session = server.newSession("guide-demo")
+
+    session.name                          // → guide-demo
 }
 ```
 
-`libtmux-kotlin` is built that way, which is how the claim is kept honest: its
-`!` operator would not compile with an unbounded `T`, because `@NullMarked`
-makes the core's `FilterExpr` a `FilterExpr<T : Any>`.
+Each wrapper answers the Java handle it holds as `asJava`, the same object
+rather than a copy, for a Java API that takes one. `Server.fromJava` goes the
+other way, over a server opened in Java, such as a test fixture's; closing the
+wrapper closes that server. The two sets of classes share simple names, so a
+file that needs both imports one under an alias:
+`import io.github.libtmux.Server as JavaServer`.
 
-## What already works with no module at all
+## `ExecutionPolicy`: two independently sized pools
+
+`ExecutionPolicy.commands` backs every `suspend` operation this module
+generates or hand-writes, sized from `ServerConfig.maxConcurrentCommands()` —
+the transport's real admission bound, not a guessed constant.
+`ExecutionPolicy.streamReads` backs only what still genuinely blocks a
+thread: `Server.liveState`'s background pump. `ControlClient.output`/`events`
+hold no thread from either pool; they are built on the non-blocking
+`EventSubscription.poll`/`onReady` path, not a parked `next()`.
+
+`ExecutionPolicy.default(config)` sizes both pools; pass a differently-sized
+one to `Server.open` or `withServer` when a program opens more than the
+default 16 concurrent `liveState` watches.
+
+## The cold `Flow` bridge, and why it is not `callbackFlow`
+
+`ControlClient.output`/`events` return a plain `flow {}` that calls
+`EventSubscription.poll()` from the collector itself, suspending on the
+subscription's one-shot `onReady` callback via `suspendCancellableCoroutine`
+when nothing is buffered, and `clearReady()` on cancellation. A fresh Java
+subscription opens per `collect()`, so two concurrent collections never share
+one subscription's buffer or gap accounting.
+
+A `callbackFlow` over the same subscription would have its readiness callback
+drain `poll()` straight into the flow's channel, where a full channel's
+`trySend` failing discards the polled item with no `Gap` recorded. `flow {}`
+calls `poll()` only from the collector itself, so an overflow can only happen
+inside the subscription's own buffer, which is exactly what turns into a
+`Gap`.
+
+## Blocking calls from a coroutine
+
+Every libtmux call blocks its thread until tmux answers. This module already
+wraps each one in `runInterruptible`, dispatched on `ExecutionPolicy.commands`
+or `.streamReads`, so cancelling the coroutine interrupts the wait rather than
+leaving it running past the point nothing is listening for its result.
+
+- An ordinary suspend call — `newSession`, `capture`, `sendLine` — already
+  runs on `policy.commands`, sized from the server's own admission bound.
+- `Server.liveState`'s background pump runs on `policy.streamReads`.
+- `ControlClient.output`/`events` hold no thread at all; only collecting the
+  returned `Flow` reads.
+
+## The DSL, and the compile error the first draft had
+
+`@DslMarker` marks `SessionBuilder`, `WindowBuilder`, and `SplitBuilder` so an
+inner block cannot reach an outer block's receiver by accident. Directory is
+settable at all three levels for exactly this reason: writing `directory = x`
+inside a nested `split { }` resolves to the innermost builder, and reaching
+the outer one on purpose needs `this@newSession.directory = x` written out.
 
 ```kotlin
-Server.open(config).use { server ->                        // AutoCloseable
-    val session = server.newSession { it.named("build") }  // SAM conversion
+// Given: config: ServerConfig
+withServer(config) { server ->
+    val session = server.newSession {
+        name = "layout-demo"
+        window { name = "editor" }
+        window {
+            name = "shell"
+            split { toRight(); percent(30) }
+        }
+    }
 
-    session.name()                       // → build
+    session.windows.size                  // → 2
 }
 ```
 
-One thing does *not* carry over: Kotlin's own `filter` takes a function rather
-than a `Predicate`, so passing a `FilterExpr` to it does not compile. That is what
-`libtmux-kotlin`'s `filter` overload is for.
+tmux's `SplitSpec.Builder` spells direction and size as method calls —
+`below()`/`above()`/`toRight()`/`toLeft()`, `cells(n)`/`percent(n)` — not an
+enum. The DSL forwards to that real vocabulary directly rather than inventing
+a parallel `SplitDirection`/`PaneSize` type.
 
-## What libtmux-kotlin adds
+## Why nothing in Java may depend on this
 
-<!-- snippet: skip: build configuration, not library code -->
-```kotlin
-implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.14"))
-implementation("io.github.libtmux:libtmux-kotlin")
-```
+Nothing written in Java may depend on `libtmux-kotlin`, and the build fails if
+it does. Per the JSpecify specification a class carrying `@kotlin.Metadata` is
+*not* null-marked, because the Kotlin compiler does not yet emit full
+nullness into binaries
+([KT-47417](https://youtrack.jetbrains.com/projects/KT/issues/KT-47417/Emit-jspecify-annotations-for-types-in-Kotlin-binaries)).
+A Kotlin-authored API would therefore be worse for a Java caller and invisible
+to NullAway. The dependency runs one way only.
 
-**Absence as `null`.** `Optional` is inert in Kotlin — `?.`, `?:` and smart casts
-do not work on it — so the accessors that can genuinely be absent get a nullable
-form:
-
-```kotlin
-// A window, or null once the session has gone.
-session.activeWindowOrNull()?.id()?.value()?.startsWith("@")   // → true
-
-// A Boolean on tmux 3.7 and later, and null before it, which cannot report the
-// flag at all. Absence and false are different answers, and this keeps them so.
-pane.floatingOrNull()
-
-// Absent rather than Optional.empty, so ?. and ?: work on it.
-server.options().getOrNull("no-such-option")                   // → null
-```
-
-**Negation as an operator:**
-
-```kotlin
-import io.github.libtmux.kotlin.filter
-import io.github.libtmux.kotlin.not
-
-server.panes().filter(!Pane_.active().isTrue()).size           // → 0
-server.panes().filter(Pane_.active().isTrue()).size            // → 1
-```
-
-There is deliberately no `and`/`or` here — see `Filters.kt` for why an extension
-of the same name as an existing method is a resolution puzzle nobody should have
-to solve.
-
-## Why the sugar is downstream and stays there
-
-Nothing written in Java may depend on `libtmux-kotlin`, and the build fails if it
-does. Per the JSpecify specification a class carrying `@kotlin.Metadata` is *not*
-null-marked, because the Kotlin compiler does not yet emit full nullness into
-binaries ([KT-47417](https://youtrack.jetbrains.com/projects/KT/issues/KT-47417/Emit-jspecify-annotations-for-types-in-Kotlin-binaries)).
-A Kotlin-authored API would therefore be worse for a Java caller and invisible to
-NullAway. The dependency runs one way only.
+See the [module README](../../libtmux-kotlin/README.md) for the full call-site
+tour, including the query DSL, the exhaustive `when` over sealed failures, and
+`StateFlow`.

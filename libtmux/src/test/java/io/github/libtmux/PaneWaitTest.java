@@ -5,10 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
-import io.github.libtmux.transport.TmuxTimeoutException;
+import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTransport;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -121,7 +122,7 @@ final class PaneWaitTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 Thread.currentThread().interrupt();
-                throw new io.github.libtmux.transport.TmuxTransportException(
+                throw new io.github.libtmux.exception.DispatchException.Failed(
                         "interrupted before dispatch",
                         io.github.libtmux.transport.DispatchOutcome.NOT_DISPATCHED,
                         new InterruptedException());
@@ -162,7 +163,7 @@ final class PaneWaitTest {
         try (Server server = tmux.server()) {
             Duration bound = Duration.ofMillis(750);
 
-            var unused = server.within(bound).panes().get(0).capture();
+            var _ = server.within(bound).panes().get(0).capture();
 
             assertTrue(seen.size() >= 2, "a listing and a capture both reached tmux");
             assertTrue(seen.stream().allMatch(bound::equals), "every command carried the chosen deadline: " + seen);
@@ -361,7 +362,7 @@ final class PaneWaitTest {
                     if (argv.size() == 3 && argv.get(2).equals("#{pid}")) {
                         liveness.incrementAndGet();
                     }
-                    yield new CommandResult(0, List.of(row("4242", "3.6")), List.of());
+                    yield new CommandResult(0, List.of(row("4242", "3.6", "1790000000")), List.of());
                 }
                 default -> new CommandResult(0, rows(argv.get(0)), List.of());
             };
@@ -370,7 +371,8 @@ final class PaneWaitTest {
         CommandResult capture(Duration deadline) {
             if (captureTakes.compareTo(deadline) > 0) {
                 pause(deadline);
-                throw new TmuxTimeoutException("capture-pane outlived its deadline", null);
+                throw new DispatchException.TimedOut(
+                        "capture-pane outlived its deadline", DispatchOutcome.UNKNOWN, null);
             }
             pause(captureTakes);
             int read = reads.incrementAndGet();

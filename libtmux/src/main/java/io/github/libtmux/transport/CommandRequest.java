@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * One tmux invocation: how to reach the server, then the commands to run there.
@@ -27,7 +28,8 @@ import java.util.Objects;
  *     read none. A tmux argument is bounded by MAX_IMSGSIZE, so text too large to be one
  *     travels here instead.
  */
-public record CommandRequest(List<String> endpoint, List<List<String>> commands, Duration timeout, String input) {
+public record CommandRequest(
+        @ReadOnly List<String> endpoint, @ReadOnly List<List<String>> commands, Duration timeout, String input) {
 
     public CommandRequest {
         endpoint = List.copyOf(endpoint);
@@ -60,7 +62,16 @@ public record CommandRequest(List<String> endpoint, List<List<String>> commands,
         return new CommandRequest(endpoint, List.of(argv), timeout, input);
     }
 
+    /**
+     * Whether sending this request twice leaves tmux as sending it once does: {@link
+     * Idempotence#IDEMPOTENT} only when every command in it reads.
+     */
+    public Idempotence idempotence() {
+        return Idempotence.of(commands);
+    }
+
     /** The full argv to hand a process builder, encoded for tmux's own argv parser. */
+    @ReadOnly
     public List<String> commandLine() {
         List<String> encoded = CommandStrings.arguments(commands);
         List<String> line = new ArrayList<>(endpoint.size() + encoded.size());

@@ -6,11 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Client;
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
 import java.util.Optional;
@@ -38,7 +38,7 @@ final class ClientOperationsIntegrationTest {
         // and detaching must take that one rather than whichever tmux happens to list first.
         Set<String> before = server.clients().stream().map(Client::name).collect(Collectors.toSet());
 
-        try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient attached = server.control(session)) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> appeared(server, before).isPresent()), "no client ever attached");
             Client client = appeared(server, before).orElseThrow();
@@ -58,7 +58,7 @@ final class ClientOperationsIntegrationTest {
         Session first = server.sessions().get(0);
         Session second = server.newSession(s -> s.named("elsewhere"));
 
-        try (ControlClient attached = ControlClient.attach(server.config(), first.id())) {
+        try (ControlClient attached = server.control(first)) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> !server.clients().isEmpty()));
             Client client = server.clients().get(0);
@@ -79,14 +79,14 @@ final class ClientOperationsIntegrationTest {
     void redrawingIsNotTheSameAsRecapturing(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient attached = server.control(session)) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> !server.clients().isEmpty()));
             Client client = server.clients().get(0);
 
             client.redraw();
 
-            assertTrue(client.refresh().isPresent(), "the client is still there afterwards");
+            assertEquals(client.name(), client.refresh().name(), "the client is still there afterwards");
         }
     }
 
@@ -94,8 +94,8 @@ final class ClientOperationsIntegrationTest {
     void detachingEveryOtherClientLeavesThisOneAttached(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient one = ControlClient.attach(server.config(), session.id());
-                ControlClient two = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient one = server.control(session);
+                ControlClient two = server.control(session)) {
             assertTrue(one.send("display-message", "-p", "ready").succeeded());
             assertTrue(two.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> server.clients().size() >= 2), "two clients never attached");
@@ -119,7 +119,7 @@ final class ClientOperationsIntegrationTest {
 
         assertEquals(List.of(), server.attachedSessions(), "nothing is attached yet");
 
-        try (ControlClient attached = ControlClient.attach(server.config(), watched.id())) {
+        try (ControlClient attached = server.control(watched)) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> !server.attachedSessions().isEmpty()), "no session ever became attached");
 

@@ -9,11 +9,11 @@ import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.batch.BatchResult;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.batch.OperationResult;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
@@ -153,7 +153,7 @@ final class CommandChainIntegrationTest {
             assertTrue(result.succeeded(), result.toString());
         } else {
             assertThrows(
-                    UnsupportedTmuxVersionException.class,
+                    UnsupportedFeatureException.class,
                     () -> server.chain().newWindow("safe").arrange("main-vertical-mirrored"));
         }
         assertTrue(server.isAlive(), "the server survives either way");
@@ -184,8 +184,7 @@ final class CommandChainIntegrationTest {
         String json = "{\"V\":2,\"L\":{\"t\":\"v\",\"w\":80,\"h\":24,\"i\":\"0\"}}";
 
         try (Server tooOld = fakeServer("3.7c")) {
-            assertThrows(
-                    UnsupportedTmuxVersionException.class, () -> tooOld.chain().arrange(json));
+            assertThrows(UnsupportedFeatureException.class, () -> tooOld.chain().arrange(json));
         }
         try (Server current = fakeServer("3.8")) {
             // Does not throw: the chain accepts it exactly as Window#applyLayout already did.
@@ -200,7 +199,8 @@ final class CommandChainIntegrationTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 if (request.commands().get(0).get(0).equals("display-message")) {
-                    return new CommandResult(0, List.of(String.join(separator, "4242", version)), List.of());
+                    return new CommandResult(
+                            0, List.of(String.join(separator, "4242", version, "1790000000")), List.of());
                 }
                 return new CommandResult(0, List.of(), List.of());
             }

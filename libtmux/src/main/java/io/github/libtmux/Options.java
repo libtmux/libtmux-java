@@ -3,6 +3,13 @@ package io.github.libtmux;
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.batch.OperationResult;
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
+import io.github.libtmux.exception.CommandRejectedException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.internal.ErrorText;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.transport.CommandResult;
 import java.util.ArrayList;
@@ -12,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -24,9 +32,9 @@ import org.jspecify.annotations.Nullable;
  * <p>Array options keep the subscript tmux prints — {@code command-alias[0]} — because that is what
  * addresses the individual entry when setting it back.
  *
- * <p>Reads use the captured daemon version when available; otherwise they query the selected
- * daemon before reading values. tmux 3.4 and 3.5 require decoding their escaped listing because
- * their value-only output loses the distinction between control characters and literal escapes.
+ * <p>Every read asks the daemon its version in the same tmux invocation as the values, since how a
+ * value is printed depends on that version: tmux 3.4 and 3.5 print a carriage return and a literal
+ * {@code \r} alike under {@code -v}, so on those two the escaped listing is decoded instead.
  */
 public final class Options {
 
@@ -73,31 +81,37 @@ public final class Options {
      * @return empty only when tmux does not know the option, which it reports as an error; an option
      *     genuinely set to the empty string comes back as an empty value, not as absent. A value
      *     spanning several lines comes back whole
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the read otherwise fails, including a name tmux finds ambiguous —
      *     option names may be abbreviated, and a prefix matching several is a question tmux
      *     declined to answer rather than an option it does not have
      */
+    @Operation(Kind.READ)
     public Optional<String> get(String name) {
-        TmuxVersion version = listingVersion();
-        var result = cmd(
-                argv("show-options", version == null ? List.of("-A", "-v", "--", name) : List.of("-A", "--", name)));
-        if (result.succeeded()) {
-            if (version == null) return Optional.of(String.join("\n", result.stdout()));
-            List<String> values = new ArrayList<>();
-            for (String line : result.stdout()) {
-                int split = line.indexOf(' ');
-                values.add(split < 0 ? "" : listedValue(line.substring(split + 1), version));
+        // Both spellings of the value, since which one reads back exactly depends on the version.
+        List<OperationResult> read = withVersion(List.of(
+                argv("show-options", List.of("-A", "-v", "--", name)),
+                argv("show-options", List.of("-A", "--", name))));
+        TmuxVersion version = version(read.get(0));
+        OperationResult printed = read.get(1);
+        if (printed.outcome() != OperationOutcome.COMPLETE) {
+            // The documented meaning of empty, in tmux's own words on every supported release. Any
+            // other failure is a failed read, and answering it with "tmux does not know that option"
+            // makes this method say something it did not find out.
+            if (printed.stderr().stream().anyMatch(line -> line.contains("invalid option"))) {
+                return Optional.empty();
             }
-            return Optional.of(String.join("\n", values));
+            throw failed(printed);
         }
-        // The documented meaning of empty, in tmux's own words on every supported release. Any
-        // other failure is a failed read, and answering it with "tmux does not know that option"
-        // makes this method say something it did not find out.
-        if (result.stderr().stream().anyMatch(line -> line.contains("invalid option"))) {
-            return Optional.empty();
+        if (!escapedListing(version)) {
+            return Optional.of(String.join("\n", TmuxFormats.printed(printed.stdout(), version)));
         }
-        throw server.failed("show-options", result);
+        List<String> values = new ArrayList<>();
+        for (String line : completed(read.get(2)).stdout()) {
+            int split = line.indexOf(' ');
+            values.add(split < 0 ? "" : listedValue(line.substring(split + 1), version));
+        }
+        return Optional.of(String.join("\n", values));
     }
 
     /**
@@ -106,18 +120,22 @@ public final class Options {
      * @throws LibTmuxException if tmux reports a value the key's type cannot hold, which means the
      *     key was declared with the wrong type
      */
+    @Operation(Kind.READ)
     public <T> Optional<T> get(OptionKey<T> key) {
         Objects.requireNonNull(key, "key");
         return get(key.name()).map(key::read);
     }
 
     /** As {@link #set(String, String)}, written the way tmux reads the key's type. */
+    @Operation(Kind.MUTATION)
     public <T> void set(OptionKey<T> key, T value) {
         Objects.requireNonNull(key, "key");
         set(key.name(), key.write(value));
     }
 
     /** Every option set at this scope, in tmux's order. Inherited values are not listed. */
+    @ReadOnly
+    @Operation(Kind.READ)
     public Map<String, String> all() {
         return read(List.of());
     }
@@ -127,14 +145,17 @@ public final class Options {
      *
      * <p>A listed value is escaped with {@code vis(3)} and wrapped in whichever quotes that release
      * chose, and which characters it reaches changed inside the supported range — {@code a$b} prints
-     * as {@code "a\$b"} on 3.2a and {@code "a\\$b"} on 3.4. Releases 3.4 and 3.5 also escape
-     * {@code -v} output ambiguously, so those daemons require the normal listing's quoted spelling.
+     * as {@code "a\$b"} on 3.2a and {@code "a\\$b"} on 3.4. {@code -v} output is ambiguous on 3.4
+     * and 3.5, which print a carriage return and a literal {@code \r} alike, so those two read the
+     * listing's quoted spelling; elsewhere {@code -v} prints the value itself, as {@link #get} reads it.
      */
     private Map<String, String> read(List<String> flags) {
-        TmuxVersion version = listingVersion();
-        if (version != null) {
+        List<OperationResult> listing = withVersion(List.of(argv("show-options", flags)));
+        TmuxVersion version = version(listing.get(0));
+        List<String> listed = completed(listing.get(1)).stdout();
+        if (escapedListing(version)) {
             Map<String, String> values = new LinkedHashMap<>();
-            for (String line : run(argv("show-options", flags)).stdout()) {
+            for (String line : listed) {
                 int split = line.indexOf(' ');
                 String name = inherited(split < 0 ? line : line.substring(0, split));
                 values.put(name, split < 0 ? "" : listedValue(line.substring(split + 1), version));
@@ -142,7 +163,7 @@ public final class Options {
             return Collections.unmodifiableMap(values);
         }
         List<String> names = new ArrayList<>();
-        for (String line : run(argv("show-options", flags)).stdout()) {
+        for (String line : listed) {
             int split = line.indexOf(' ');
             names.add(inherited(split < 0 ? line : line.substring(0, split)));
         }
@@ -154,6 +175,7 @@ public final class Options {
             int to = from;
             // -q keeps an option unset between the two requests from ending the batch.
             Batch batch = snapshot == null ? server.batch() : server.batch(snapshot);
+            batch.add("display-message", "-p", "#{version}");
             do {
                 List<String> arguments = new ArrayList<>(flags);
                 arguments.addAll(List.of("-q", "-v", "--", names.get(to++)));
@@ -165,21 +187,41 @@ public final class Options {
         return Collections.unmodifiableMap(options);
     }
 
-    /** The selected daemon decides output encoding; a client binary may be a different release. */
-    private @Nullable TmuxVersion listingVersion() {
-        TmuxVersion version = snapshot == null ? null : snapshot.serverVersion().orElse(null);
-        if (version == null) {
-            var result = cmd(List.of("display-message", "-p", "#{version}"));
-            // A daemon that cannot answer cannot serve the read either, and that read reports the
-            // failure the way the scope always has.
-            if (!result.succeeded()) return null;
-            try {
-                version = TmuxVersion.parse(String.join("\n", result.stdout()));
-            } catch (IllegalArgumentException invalid) {
-                throw new LibTmuxException("could not establish tmux option output encoding", invalid);
-            }
+    /**
+     * The daemon's version, then these reads, in one tmux invocation: the version is the one that
+     * printed them, whatever the client binary is, and a read costs no second process.
+     */
+    private List<OperationResult> withVersion(List<List<String>> reads) {
+        Batch batch = snapshot == null ? server.batch() : server.batch(snapshot);
+        batch.add("display-message", "-p", "#{version}");
+        reads.forEach(batch::add);
+        return batch.run().operations();
+    }
+
+    private TmuxVersion version(OperationResult reported) {
+        List<String> stdout = completed(reported).stdout();
+        try {
+            return TmuxVersion.parse(String.join("\n", stdout));
+        } catch (IllegalArgumentException invalid) {
+            throw new MalformedResponseException("could not establish tmux option output encoding", invalid);
         }
-        return version.major() == 3 && (version.minor() == 4 || version.minor() == 5) ? version : null;
+    }
+
+    /** The releases whose {@code -v} output loses raw-value boundaries, so their listing is decoded. */
+    private static boolean escapedListing(TmuxVersion version) {
+        return version.major() == 3 && (version.minor() == 4 || version.minor() == 5);
+    }
+
+    private OperationResult completed(OperationResult read) {
+        if (read.outcome() != OperationOutcome.COMPLETE) {
+            throw failed(read);
+        }
+        return read;
+    }
+
+    /** A read that did not complete, reported the way a lone {@code show-options} would be. */
+    private LibTmuxException failed(OperationResult read) {
+        return server.failed("show-options", read.outcome().toString(), read.stderr());
     }
 
     /** Inverts args_escape for the releases whose outer print pass loses raw-value boundaries. */
@@ -195,7 +237,7 @@ public final class Options {
         int end = text.length();
         if (end > 0 && (text.charAt(0) == '\'' || text.charAt(0) == '"')) {
             if (end < 2 || text.charAt(end - 1) != text.charAt(0)) {
-                throw new LibTmuxException("tmux returned an unterminated quoted option value");
+                throw new MalformedResponseException("tmux returned an unterminated quoted option value");
             }
             start++;
             end--;
@@ -207,7 +249,7 @@ public final class Options {
                 value.append(ch);
                 continue;
             }
-            if (++index == end) throw new LibTmuxException("tmux returned an incomplete option escape");
+            if (++index == end) throw new MalformedResponseException("tmux returned an incomplete option escape");
             char escaped = text.charAt(index);
             if (escaped >= '0' && escaped <= '7') {
                 int octal = escaped - '0';
@@ -217,7 +259,7 @@ public final class Options {
                     octal = octal * 8 + next - '0';
                     index++;
                 }
-                if (octal > 255) throw new LibTmuxException("tmux returned an invalid octal option escape");
+                if (octal > 255) throw new MalformedResponseException("tmux returned an invalid octal option escape");
                 if (octal >= 128)
                     value.append("\\x").append(java.util.HexFormat.of().toHexDigits((byte) octal));
                 else value.append((char) octal);
@@ -233,22 +275,30 @@ public final class Options {
                             case 't' -> '\t';
                             case 'v' -> '\u000b';
                             case '\\', '\'', '"', '$', '~', '#', ';', '{', '}', '%' -> escaped;
-                            default -> throw new LibTmuxException("tmux returned an unknown option escape");
+                            default -> throw new MalformedResponseException("tmux returned an unknown option escape");
                         });
             }
         }
         return value.toString();
     }
 
+    /** The first operation in the batch reports the version, which decodes the values after it. */
     private static void record(List<String> names, Batch batch, Map<String, String> into) {
         List<OperationResult> read = batch.run().operations();
+        TmuxVersion version = read.get(0).outcome() == OperationOutcome.COMPLETE
+                        && read.get(0).stdout().size() == 1
+                ? TmuxVersion.parse(read.get(0).stdout().get(0))
+                : new TmuxVersion(0, 0, "");
         for (int index = 0; index < names.size(); index++) {
-            OperationResult value = read.get(index);
+            OperationResult value = read.get(index + 1);
             if (value.outcome() != OperationOutcome.COMPLETE) {
-                throw new LibTmuxException(
-                        "tmux could not read option " + names.get(index) + ": " + String.join("; ", value.stderr()));
+                throw new CommandRejectedException(
+                        "tmux could not read option " + names.get(index) + ErrorText.suffix(value.stderr()),
+                        "show-options",
+                        -1,
+                        value.stderr());
             }
-            into.put(names.get(index), String.join("\n", value.stdout()));
+            into.put(names.get(index), String.join("\n", TmuxFormats.printed(value.stdout(), version)));
         }
     }
 
@@ -263,11 +313,14 @@ public final class Options {
      * <p>Inherited user-option names are not listed by tmux. {@link #get(String)} still reads their
      * effective values by name.
      */
+    @ReadOnly
+    @Operation(Kind.READ)
     public Map<String, String> effective() {
         return read(List.of("-A"));
     }
 
     /** Sets one option at this scope. */
+    @Operation(Kind.MUTATION)
     public void set(String name, String value) {
         run(argv("set-option", List.of("--", name, value)));
     }
@@ -280,6 +333,7 @@ public final class Options {
      *
      * @return whether the value was taken, false when this scope already set the option
      */
+    @Operation(Kind.MUTATION)
     public boolean setIfAbsent(String name, String value) {
         return cmd(argv("set-option", List.of("-o", "--", name, value))).succeeded();
     }
@@ -290,6 +344,7 @@ public final class Options {
      * <p>Appending to an option this scope has not set simply sets it, which is what tmux does and
      * what a caller building a value up piece by piece wants.
      */
+    @Operation(Kind.MUTATION)
     public void append(String name, String suffix) {
         run(argv("set-option", List.of("-a", "--", name, suffix)));
     }
@@ -304,11 +359,13 @@ public final class Options {
      * at that moment. Pass any interpolated value through {@link TmuxFormats#literal} unless you mean
      * it to be expanded.
      */
+    @Operation(Kind.MUTATION)
     public void setExpanded(String name, String format) {
         run(argv("set-option", List.of("-F", "--", name, format)));
     }
 
     /** Removes one option at this scope, so it falls back to whatever it inherits. */
+    @Operation(Kind.MUTATION)
     public void unset(String name) {
         run(argv("set-option", List.of("-u", "--", name)));
     }

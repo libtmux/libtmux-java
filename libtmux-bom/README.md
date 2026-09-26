@@ -5,7 +5,7 @@
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.14"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.15"))
 
     implementation("io.github.libtmux:libtmux")            // no version
     implementation("io.github.libtmux:libtmux-jackson")    // no version
@@ -22,7 +22,7 @@ dependencies {
     <dependency>
       <groupId>io.github.libtmux</groupId>
       <artifactId>libtmux-bom</artifactId>
-      <version>0.0.1-alpha.14</version>
+      <version>0.0.1-alpha.15</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -49,24 +49,27 @@ $ ./gradlew dependencies --configuration runtimeClasspath
 
 ```text
 runtimeClasspath
-+--- io.github.libtmux:libtmux-bom:0.0.1-alpha.14
-|    \--- io.github.libtmux:libtmux:0.0.1-alpha.14 (c)
-\--- io.github.libtmux:libtmux -> 0.0.1-alpha.14
++--- io.github.libtmux:libtmux-bom:0.0.1-alpha.15
+|    \--- io.github.libtmux:libtmux:0.0.1-alpha.15 (c)
+\--- io.github.libtmux:libtmux -> 0.0.1-alpha.15
 ```
 
-The `-> 0.0.1-alpha.14` on a coordinate you wrote without a version is the platform
+The `-> 0.0.1-alpha.15` on a coordinate you wrote without a version is the platform
 doing its job.
 
 ## What it manages
 
 [`libtmux`](../libtmux/) · [`libtmux-jackson`](../libtmux-jackson/) ·
 [`libtmux-junit5`](../libtmux-junit5/) · [`libtmux-kotlin`](../libtmux-kotlin/) ·
-[`libtmux-mcp`](../libtmux-mcp/) · [`libtmux-workspace`](../libtmux-workspace/)
+[`libtmux-mcp`](../libtmux-mcp/) · [`libtmux-workspace`](../libtmux-workspace/) ·
+[`libtmux-workspace-cli`](../libtmux-workspace-cli/) ·
+[`libtmux-scala`](../libtmux-scala/) · [`libtmux-scala-cats`](../libtmux-scala-cats/) ·
+[`libtmux-scala-ox`](../libtmux-scala-ox/)
 
 That list is checked rather than trusted. `platformCoversEveryPublishedModule`
-fails the build when the set of Gradle-published artifacts stops matching this
-one. Scala artifacts release separately and pin their Java prerequisite in
-their own POMs.
+fails the build when the set of published artifacts stops matching this one.
+The Scala artifacts carry the `_3` suffix in their coordinates, as every Scala 3
+artifact does.
 
 ## Next
 

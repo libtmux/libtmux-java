@@ -6,12 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.LibTmuxException;
+import io.github.libtmux.PaneId;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.SessionId;
+import io.github.libtmux.exception.ControlEndedException;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.transport.DispatchOutcome;
-import io.github.libtmux.transport.TmuxTimeoutException;
-import io.github.libtmux.transport.TmuxTransportException;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -30,7 +32,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Where one tmux command ends and the next begins, and what a control-mode line makes of that.
  *
  * <p>Every expectation here was measured against tmux rather than derived from this code. The
- * measurements are in {@code docs/spikes/21-command-group-boundaries.md}.
+ * measurements are in {@code docs/decisions/0009-command-groups-are-transport-agnostic.md}.
  */
 final class ControlClientTest {
 
@@ -41,12 +43,12 @@ final class ControlClientTest {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 # the client's own on-attach refresh-client -f new-layouts
-                IFS= read -r request
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                read_request
+                answer
                 sleep 5
                 """);
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
             Thread blocked = Thread.ofVirtual().start(() -> {
                 try {
                     client.send(List.of("display-message", "x".repeat(1_048_576)), Duration.ofSeconds(4));
@@ -108,16 +110,16 @@ final class ControlClientTest {
         Path captured = scratch.resolve("captured-watch-request");
         ServerConfig config = fakeTmux(scratch, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                IFS= read -r onattach
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
-                IFS= read -r request
+                read_request
+                answer
+                read_request
                 printf '%s\\n' "$request" > '""" + captured + """
                 '
-                printf '%%begin 102 1 0\n%%end 102 1 0\n'
+                answer
                 sleep 5
                 """);
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
             client.watch("javatest", target, "#{session_name}");
             assertTrue(awaitFile(captured), "the watch request never reached the fake server");
             return Files.readString(captured).strip();
@@ -126,23 +128,20 @@ final class ControlClientTest {
 
     @Test
     void aTimedOutReplyMakesTheStreamUnavailableForLaterRequests(@TempDir Path directory) throws Exception {
-        Path fakeTmux = directory.resolve("tmux");
-        Files.writeString(fakeTmux, """
-                #!/bin/sh
+        ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 # the client's own on-attach refresh-client -f new-layouts
-                IFS= read -r request
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                read_request
+                answer
                 IFS= read -r request
                 sleep 1
                 """);
-        Files.setPosixFilePermissions(fakeTmux, PosixFilePermissions.fromString("rwx------"));
-        ServerConfig config = ServerConfig.builder().binary(fakeTmux.toString()).build();
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"));
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
                 EventSubscription<ControlEvent> events = client.subscribeEvents(1)) {
-            TmuxTimeoutException failure = assertThrows(
-                    TmuxTimeoutException.class, () -> client.send(List.of("list-windows"), Duration.ofMillis(100)));
+            DispatchException.TimedOut failure = assertThrows(
+                    DispatchException.TimedOut.class,
+                    () -> client.send(List.of("list-windows"), Duration.ofMillis(100)));
 
             assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
             assertFalse(client.isAlive(), "a missing reply leaves command attribution uncertain");
@@ -156,14 +155,14 @@ final class ControlClientTest {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 # the client's own on-attach refresh-client -f new-layouts
-                IFS= read -r request
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                read_request
+                answer
                 IFS= read -r never
                 """);
-        ControlClient client = ControlClient.attach(config, new SessionId("$0"));
+        ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
         EventSubscription<PaneOutput> output = client.subscribeOutput(1);
         CountDownLatch entered = new CountDownLatch(1);
-        FutureTask<Optional<PaneOutput>> waiting = new FutureTask<>(() -> {
+        FutureTask<Optional<Delivery<PaneOutput>>> waiting = new FutureTask<>(() -> {
             entered.countDown();
             return output.next();
         });
@@ -187,12 +186,12 @@ final class ControlClientTest {
     void aNonPositiveTimeoutIsRejectedBeforeDispatch(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                while IFS= read -r request; do
-                    printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                while read_request; do
+                    answer
                 done
                 """);
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
             assertThrows(IllegalArgumentException.class, () -> client.send(List.of("list-windows"), Duration.ZERO));
             assertTrue(client.send("list-panes").succeeded(), "rejection wrote nothing to the stream");
         }
@@ -202,12 +201,12 @@ final class ControlClientTest {
     void aRejectedNulDoesNotStealTheNextRequestsReply(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
-                while IFS= read -r request; do
-                    printf '%%begin 101 1 0\nstill in step\n%%end 101 1 0\n'
+                while read_request; do
+                    answer 'still in step'
                 done
                 """);
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
             assertThrows(
                     IllegalArgumentException.class,
                     () -> client.send(List.of("display-message", "contains\0nul"), Duration.ofMillis(200)));
@@ -225,21 +224,21 @@ final class ControlClientTest {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 # the client's own on-attach refresh-client -f new-layouts
-                IFS= read -r request
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
-                IFS= read -r request
+                read_request
+                answer
+                read_request
                 : > "${0%/*}/dispatched"
                 IFS= read -r never
                 """);
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
             CountDownLatch entered = new CountDownLatch(1);
             FutureTask<InterruptedFailure> waiting = new FutureTask<>(() -> {
                 entered.countDown();
                 try {
                     client.send(List.of("list-windows"), Duration.ofSeconds(30));
                     throw new AssertionError("the interrupted request unexpectedly completed");
-                } catch (TmuxTransportException failure) {
+                } catch (DispatchException failure) {
                     return new InterruptedFailure(
                             failure, Thread.currentThread().isInterrupted());
                 }
@@ -251,8 +250,8 @@ final class ControlClientTest {
             caller.interrupt();
 
             InterruptedFailure result = waiting.get(5, TimeUnit.SECONDS);
-            assertFalse(result.failure() instanceof TmuxTimeoutException);
-            assertInstanceOf(TmuxTransportException.class, result.failure());
+            assertFalse(result.failure() instanceof DispatchException.TimedOut);
+            assertInstanceOf(DispatchException.class, result.failure());
             assertEquals(DispatchOutcome.UNKNOWN, result.failure().outcome());
             assertTrue(result.interrupted(), "the caller's interrupt status was lost");
         }
@@ -264,18 +263,72 @@ final class ControlClientTest {
                 printf '%%begin 100 1 0\nattach refused\n%%error 100 1 0\n'
                 """);
 
-        assertThrows(LibTmuxException.class, () -> ControlClient.attach(config, new SessionId("$0")));
+        assertThrows(LibTmuxException.class, () -> ControlClient.attachUnfenced(config, new SessionId("$0")));
     }
 
     @Test
     void anAttachDeadlineKeepsItsTimeoutType(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, "sleep 5\n");
 
-        TmuxTimeoutException timeout = assertThrows(
-                TmuxTimeoutException.class,
-                () -> ControlClient.attach(config, new SessionId("$0"), Duration.ofMillis(100)));
+        DispatchException.TimedOut timeout = assertThrows(
+                DispatchException.TimedOut.class,
+                () -> ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofMillis(100)));
 
         assertEquals(DispatchOutcome.UNKNOWN, timeout.outcome());
+    }
+
+    /** Close, a refused send, and a short timeout, repeated. Threads from one cycle must not remain. */
+    @Test
+    void repeatedTimeoutAndCloseDoNotLeaveClients(@TempDir Path directory) throws Exception {
+        ServerConfig config = fakeTmux(directory, """
+                printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                read_request
+                answer
+                IFS= read -r request
+                sleep 2
+                """);
+        int before = controlThreads();
+        for (int cycle = 0; cycle < 12; cycle++) {
+            ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
+            DispatchException.TimedOut timeout = assertThrows(
+                    DispatchException.TimedOut.class,
+                    () -> client.send(List.of("list-windows"), Duration.ofMillis(80)));
+            assertEquals(DispatchOutcome.UNKNOWN, timeout.outcome());
+            client.close();
+            assertFalse(client.isAlive());
+            assertThrows(IllegalStateException.class, () -> client.send("list-panes"));
+            client.close();
+        }
+        assertTrue(controlThreadsSettled(before), "control threads survived close");
+    }
+
+    /**
+     * A subscriber told the client ended must find it dead: the tmux client process can outlive the
+     * end of its output, and a carrier reading {@link ControlClient#isAlive} after the end would
+     * otherwise send to a client with nothing left to answer.
+     */
+    @Test
+    void aClientWhoseOutputEndedIsNotAliveWhileItsProcessLingers(@TempDir Path directory) throws Exception {
+        Path subscribed = directory.resolve("subscribed");
+        ServerConfig config = fakeTmux(directory, """
+                printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                read_request
+                answer
+                while [ ! -e 'SUBSCRIBED' ]; do sleep 0.01; done
+                exec 1>&-
+                sleep 5
+                """.replace("SUBSCRIBED", subscribed.toString()));
+
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofSeconds(2))) {
+            EventSubscription<PaneOutput> output = client.subscribeOutput(4);
+            // Runs on the thread that delivers the end, at the moment it is delivered.
+            var aliveAtTheEnd = new java.util.concurrent.CompletableFuture<Boolean>();
+            output.onReady(() -> aliveAtTheEnd.complete(client.isAlive()));
+            Files.createFile(subscribed);
+
+            assertFalse(aliveAtTheEnd.get(5, TimeUnit.SECONDS), "the subscription ended before the client did");
+            assertInstanceOf(ControlEndedException.class, output.cause().orElseThrow());
+        }
     }
 
     @Test
@@ -288,10 +341,10 @@ final class ControlClientTest {
                 done
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 # includes the client's own on-attach refresh-client -f new-layouts
-                while IFS= read -r request; do printf '%%begin 101 1 0\n%%end 101 1 0\n'; done
+                while read_request; do answer; done
                 """);
 
-        try (ControlClient client = ControlClient.attach(config, new SessionId("$0"), Duration.ofSeconds(2))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofSeconds(2))) {
             assertTrue(client.isAlive());
         }
     }
@@ -304,11 +357,11 @@ final class ControlClientTest {
                 sleep 30 &
                 printf '%s\n' "$!" > "${0%/*}/child-pid"
                 # includes the client's own on-attach refresh-client -f new-layouts
-                while IFS= read -r request; do printf '%%begin 101 1 0\n%%end 101 1 0\n'; done
+                while read_request; do answer; done
                 """);
         long child = -1;
         try {
-            ControlClient client = ControlClient.attach(config, new SessionId("$0"));
+            ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
             assertTrue(awaitFile(childFile), "the fake control client never started its descendant");
             child = Long.parseLong(Files.readString(childFile).trim());
 
@@ -329,8 +382,8 @@ final class ControlClientTest {
         ServerConfig config = fakeTmux(directory, """
                 printf '%%begin 100 1 0\n%%end 100 1 0\n'
                 # the client's own on-attach refresh-client -f new-layouts
-                IFS= read -r request
-                printf '%%begin 101 1 0\n%%end 101 1 0\n'
+                read_request
+                answer
                 sh -c 'trap "" HUP TERM; exec sleep 30' </dev/null >/dev/null 2>&1 &
                 printf '%s\n' "$!" > "${0%/*}/child-pid"
                 exec 0<&-
@@ -339,12 +392,12 @@ final class ControlClientTest {
                 """);
         long child = -1;
         try {
-            try (ControlClient client = ControlClient.attach(config, new SessionId("$0"))) {
+            try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
                 assertTrue(awaitFile(childFile), "the fake control client never started its descendant");
                 assertTrue(awaitFile(ready), "the fake control client never closed its request pipe");
                 child = Long.parseLong(Files.readString(childFile).trim());
 
-                assertThrows(TmuxTransportException.class, () -> client.send("list-windows"));
+                assertThrows(DispatchException.class, () -> client.send("list-windows"));
 
                 assertTrue(awaitDead(child), "the failed control client orphaned its descendant");
             }
@@ -355,11 +408,99 @@ final class ControlClientTest {
         }
     }
 
+    /**
+     * tmux cuts pane output into %output lines by byte count, so a UTF-8 character can start in one
+     * and end in the next. It escapes only control bytes and the backslash, as octal.
+     */
+    @Test
+    void aCharacterSplitAcrossOutputLinesArrivesWhole(@TempDir Path directory) throws Exception {
+        ServerConfig config = fakeTmux(directory, """
+                printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                read_request
+                answer
+                read_request
+                printf '%%output %%1 caf\\303\n%%output %%1 \\251\\\\134x!\n'
+                answer
+                IFS= read -r never
+                """);
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
+                EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
+            client.send("display-message");
+
+            PaneOutput first = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
+            PaneOutput second = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
+
+            assertEquals("caf", first.data());
+            assertEquals("é\\x!", second.data());
+            assertEquals(ByteBuffer.wrap(new byte[] {'c', 'a', 'f', (byte) 0xc3}), first.bytes());
+            assertEquals(ByteBuffer.wrap(new byte[] {(byte) 0xa9, '\\', 'x', '!'}), second.bytes());
+        }
+    }
+
+    /**
+     * Once a client turns on flow control, tmux sends {@code %extended-output}: the pane, how long the
+     * output waited, then the escaped bytes after {@code " : "}. A line with no separator carries no
+     * output and is skipped.
+     */
+    @Test
+    void extendedOutputIsOutput(@TempDir Path directory) throws Exception {
+        ServerConfig config = fakeTmux(directory, """
+                printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                read_request
+                answer
+                read_request
+                printf '%%extended-output %%2 17\n%%extended-output %%2 17 : a : b\\\\012\n'
+                answer
+                IFS= read -r never
+                """);
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
+                EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
+            client.send("display-message");
+
+            PaneOutput piece = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
+
+            assertEquals(new PaneId("%2"), piece.pane());
+            assertEquals("a : b\n", piece.data());
+        }
+    }
+
+    /**
+     * What every fake starts with. tmux follows each request line with a marker line, a {@code
+     * display-message -p} of a token, and a reply ends with the marker's block: {@code read_request}
+     * reads a request and its marker, and {@code answer} writes a reply block, flagged as this
+     * client's command, with its arguments as lines, then the marker's block.
+     */
+    private static final String PRELUDE = """
+            #!/bin/sh
+            read_request() { IFS= read -r request && IFS= read -r marker; }
+            answer() {
+                printf '%%begin 1 1 1\\n'
+                for line in "$@"; do printf '%s\\n' "$line"; done
+                printf '%%end 1 1 1\\n'
+                token=${marker##*"' '"}
+                printf '%%begin 1 2 1\\n%s\\n%%end 1 2 1\\n' "${token%"'"}"
+            }
+            """;
+
     private static ServerConfig fakeTmux(Path directory, String body) throws Exception {
         Path fakeTmux = directory.resolve("tmux");
-        Files.writeString(fakeTmux, "#!/bin/sh\n" + body);
+        Files.writeString(fakeTmux, PRELUDE + body);
         Files.setPosixFilePermissions(fakeTmux, PosixFilePermissions.fromString("rwx------"));
         return ServerConfig.builder().binary(fakeTmux.toString()).build();
+    }
+
+    private static int controlThreads() {
+        return (int) Thread.getAllStackTraces().keySet().stream()
+                .filter(thread -> thread.getName().startsWith("libtmux-control") && thread.isAlive())
+                .count();
+    }
+
+    private static boolean controlThreadsSettled(int before) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (controlThreads() > before && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        return controlThreads() <= before;
     }
 
     private static boolean awaitFile(Path file) throws InterruptedException {
@@ -378,5 +519,5 @@ final class ControlClientTest {
         return !ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false);
     }
 
-    private record InterruptedFailure(TmuxTransportException failure, boolean interrupted) {}
+    private record InterruptedFailure(DispatchException failure, boolean interrupted) {}
 }

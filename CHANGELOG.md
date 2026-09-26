@@ -14,79 +14,398 @@ production.
 
 ### Added
 
-- **`tmux-workspace` discovers, loads, freezes, converts, imports, and searches
-  tmuxp workspaces.** The application provides JSON and NDJSON output, terminal
-  progress, diagnostics, and Bash, Zsh, and Fish completion. (#16)
+- **`tmux-workspace` is on Maven Central as
+  `io.github.libtmux:libtmux-workspace-cli`.** It releases with the other
+  artifacts, at the same version, and `libtmux-bom` manages it. Its main class
+  is `io.github.libtmux.workspace.cli.Main`. (#23)
 
-- **Workspace loading validates every input before building.** It supports
-  pane commands, directories, environment, options, window indexes, focus,
-  scripts, attaching, and appending. Failed loads remove sessions they created;
-  interrupted loads and failed appends report retained objects. Workspace paths
-  under a symlinked home directory show `~/` in output. (#16)
+- **`tmux-workspace` discovers, loads, freezes, converts, imports and searches
+  workspaces.** Command names and flags follow tmuxp 1.74.0. Every command
+  answers in JSON or NDJSON on request, and the CLI adds terminal progress,
+  diagnostics, and Bash, Zsh and Fish completion. (#16)
 
-- **The CLI can run tmuxp Python extensions and interactive shells.** The
-  optional bridge requires tmuxp 1.74.0 and uses the selected tmux binary. Native
-  workspace commands do not require Python. (#16)
+- **`tmux-workspace load` checks every input before it builds anything.** It
+  supports pane commands, directories, environment, options, window indexes,
+  focus, scripts, attaching and appending. A failed load removes the sessions
+  it created, and an interrupted load or a failed append reports what it left
+  behind. (#16)
 
-- **`ServerConfig.force256Colors` and `Server.Builder.force256Colors` advertise
-  256-color support to tmux clients.** `tmux-workspace` exposes it as `load -2`;
-  the default still relies on terminal detection. (#16)
+- **`tmux-workspace` checks a workspace's layouts against the target tmux
+  before creating anything.** Presets resolve by that tmux's version, and pane
+  counts must fit. On tmux 3.8 and later, a JSON layout's cell structure is
+  checked too. (#16)
 
-- **`Layout.byTmuxName` resolves a built-in layout by its exact tmux name**,
-  for a caller that already has the canonical spelling. (#16)
+- **`tmux-workspace` runs tmuxp Python extensions and shells.** That bridge
+  needs tmuxp 1.74.0 and uses the selected tmux binary; native commands never
+  start Python. (#16)
 
-- **`tmux-workspace`'s workspace-file preflight checks pane counts and resolves
-  layout presets against the target tmux version before creating anything.**
-  JSON layout preflight checks cell structure and pane counts on tmux 3.8 and
-  later; classic layouts retain the core library's geometry checks, including
-  inputs tmux could repair. (#16)
+- **`ServerConfig.force256Colors` and `Server.Builder.force256Colors` start
+  tmux clients with 256-color support.** `tmux-workspace load -2` sets it.
+  Left unset, tmux detects the terminal. (#16)
+
+- **`Layout.byTmuxName` resolves a built-in layout by its exact tmux name.**
+  (#16)
+
+### Changed
+
+- **`CommandResult.stdout()` keeps carriage returns.** It splits at LF alone,
+  so `Buffers.show`, pane captures and option reads return `\r` and `\r\n` as
+  tmux sent them. Strip `\r` yourself where a line ending must be bare.
+  `stderr()` still turns CRLF and CR into LF. (#16)
 
 ### Fixed
 
-- **`Server.hasSession` and `Server.killSession` handle names containing `.` or
-  `:`.** tmux's own `-t` target splits on both, so a session tmux 3.7a and later
-  kept with either character answered false to `hasSession` and could not be
-  found to kill; both now resolve the session by comparing names and address it
-  by id. `killSession` throws `ObjectDoesNotExistException` when no session
-  carries the name. (#16)
+- **Scala's `LiveView.snapshots`, `LiveView.snapshotsAfter` and Ox's
+  `Flows.liveView` fail with the mirror's cause once its anchor session or
+  server has gone.** They ended as if the view had been closed, so a caller
+  could not tell a dead session from a quiet one, and they also stopped after a
+  day with no change. (#23)
 
-- **`WorkspaceBuilder` rebalances between pane splits.** Windows with more than
-  four panes can be built at the default terminal size. (#16)
+- **A relative start directory resolves against this process on every
+  release.** `WindowSpec.Builder.in`, `SplitSpec.Builder.in`,
+  `SessionSpec.Builder.in` and `Pane.respawnIn` send it absolute. tmux 3.2a
+  resolved a relative `-c` against the server's working directory, falling
+  back to home, so a pane could start somewhere the caller never named.
+  `WindowSpec.Builder.in` also works on 3.2a now, where it threw
+  `UnsupportedFeatureException`. (#16, #23)
 
-- **`WorkspaceBuilder` refuses a layout with fewer cells than a window's
-  panes**, checked against the target tmux version before any window is
-  created. (#16)
+- **Option values read from tmux 3.4 and 3.5 keep a carriage return apart from
+  a literal `\r`.** Both releases print the two alike under `-v`, so
+  `Options.get`, `Options.all` and `Options.effective` read tmux's quoted
+  listing on them instead. (#16)
+
+- **`Options.all` and `Options.effective` keep a user option's trailing `*`.**
+  Only the `*` tmux appends to an inherited built-in is removed. (#16)
+
+- **MCP `select_layout` accepts a unique abbreviation or a checksummed saved
+  layout**, not only an exact built-in name. Mirrored main layouts still need
+  tmux 3.5, and malformed layout syntax is refused before the window is looked
+  up. (#16)
+
+- **`WorkspaceBuilder` rebalances the window after each pane split**, so a
+  window with more than four panes builds at the default terminal size. (#16)
+
+- **`WorkspaceBuilder` refuses a layout with fewer cells than the window has
+  panes**, checked against the target tmux before any window is created. (#16)
 
 - **`WorkspaceBuilder` accepts a layout captured from a JSON-layout session**,
-  refusing it only when the target tmux predates 3.8 instead of rejecting every
-  JSON layout as an unrecognized name regardless of version. (#16)
+  refusing it only when the target tmux predates 3.8, rather than rejecting
+  every JSON layout as an unknown name. (#16)
 
-- **MCP `select_layout` accepts a unique layout abbreviation or a checksummed
-  saved layout, not only an exact built-in name.** A mirrored main layout still
-  requires tmux 3.5; malformed layout syntax is refused before window lookup.
-  (#16)
-
-- **Absolute window start directories work on tmux 3.2a.** Relative directories
-  still require tmux 3.3a. (#16)
-
-- **Option reads preserve custom names ending in `*` and inherited values.** On
-  tmux 3.4 and 3.5 they decode the escaped listing to distinguish control
-  characters from literal escapes; a daemon unreachable during that check still
-  reads as empty rather than raising. (#16)
-
-- **`CommandResult.stdout()` now preserves literal carriage returns**, splitting
-  only at LF instead of also breaking on CR. `Buffers.show`, pane captures, and
-  option reads built on it return `\r` and `\r\n` exactly as tmux sent them;
-  diagnostic stderr still normalizes CRLF and CR to LF. (#16)
-
-- **Classic layout validation accepts trees longer than 8191 characters** while
-  retaining checksum, geometry, depth, and pane-count checks. (#16)
+- **Classic layout validation accepts a layout longer than 8191 characters**,
+  still checking its checksum, geometry, depth and pane count. (#16)
 
 ### Development
 
 - **The preview lane runs tmux 3.8-rc2.** tmux replaced its `3.8-rc` tag with
   `3.8-rc2`, so the lane asked for a tag that no longer exists and reported
   nothing about the next release. (#26)
+
+## 0.0.1-alpha.15 — 2026-09-26
+
+### Added
+
+- **`ServerMirror` keeps a live copy of a server.** It listens through a
+  control client attached to one session and takes a fresh snapshot whenever
+  tmux announces a change, publishing each changed capture as a numbered
+  `View`. `awaitNewer` blocks for the next one and `onNewer` arms a one-shot
+  callback. A lost control client is reattached through the same session;
+  once that session has gone, the mirror ends with `TargetGoneException`.
+  `open(anchor, refreshEvery)` also rebuilds on a timer, for changes tmux
+  does not announce to this client. (#23)
+
+- **`Server.session`, `window` and `pane` take a filter expression.** Each
+  returns the one match or empty, and throws
+  `CardinalityException.MultipleMatches` with the exact count when several
+  match. (#23)
+
+- **`ServerConfig.Builder.maxConcurrentCommands(int)` and
+  `Server.admissionBound()`.** How many tmux commands `Server.open` lets run
+  at once is now a choice, and readable, so a coroutine dispatcher or effect
+  pool can be sized to it. (#23)
+
+- **`EventSubscription.poll()` and `onReady(Runnable)` read without blocking
+  a thread.** `poll()` answers at once; `onReady` arms a one-shot wakeup for
+  when a step arrives or the subscription ends. (#23)
+
+- **`EventSubscription.stream()` and `publisher()`.** `stream()` reads a
+  subscription as a `Stream` on the consuming thread. `publisher()` and
+  `publisher(Executor)` expose a `java.util.concurrent.Flow.Publisher` for
+  Reactor, RxJava or Mutiny through `FlowAdapters`, with demand-driven
+  delivery; it passes the Reactive Streams TCK, and an executor that refuses
+  work ends the subscriber with `onError`. (#23)
+
+- **`DispatchException.safeToRetry()` says whether resending is safe.** A
+  failure is safe to resend when the request never reached tmux, or when
+  every command in it only reads. `CommandRequest.idempotence()` and
+  `DispatchOutcome.canRetryVerbatim` answer the same question for a caller
+  holding its own outcome. Nothing retries on its own. (#23)
+
+- **`ServerConfig.observer` reports each command after it ends.** A report
+  names the verbs, the dispatch outcome, the exit status, how many lines came
+  back, and how long the call waited and ran. It omits the arguments and
+  standard output, and keeps at most 240 characters of standard error. An
+  observer that throws is logged with its stack trace and does not change the
+  command's result. (#23)
+
+- **`PaneInput.hold` keeps one writer on a pane.** `sendKeys`,
+  `sendLiteral`, `paste`, `pasteBuffer` and `run` take that hold for the
+  call, and another thread is refused until it closes.
+  `holdInterruptible` lets a second thread `enterInterrupt` to stop a long
+  run. `held()` and `heldSince` list what is held, and since when. (#23)
+
+- **A `TmuxTransport` says how it starts a control client.**
+  `controlCarrier()` returns the transport's `ControlCarrier`, or empty; with
+  empty, a control client is refused rather than started on the local
+  machine. `observe` hands the transport the configured observer, and
+  `admissionBound()` reports how many requests it runs at once. (#23)
+
+- **Every public tmux operation is classified.** `@Operation` in
+  `io.github.libtmux.catalog` marks each method `CAPTURED`, `READ`,
+  `MUTATION`, `WAIT`, `STREAM` or `LIFECYCLE`, and `@Advanced` marks the
+  orchestration methods a language facade does not mirror. The jar carries
+  the catalog with each operation's Javadoc at
+  `META-INF/io.github.libtmux/operation-catalog.json`.
+  [`docs/reference/operations.md`](docs/reference/operations.md) is generated
+  from it. (#23)
+
+- **More pane, window and session fields are queryable.** `Pane_.atTop()`,
+  `atBottom()`, `atLeft()` and `atRight()`, `Window_.width()`, `height()` and
+  `paneCount()`, and `Session_.windowCount()`. The field list ships in the
+  jar at `META-INF/io.github.libtmux/field-catalog.tsv`. (#23)
+
+- **`Delivery.kept` fails a read on a gap.** A reader that needs every event
+  gets the value, or `lost N` when the buffer discarded some. (#23)
+
+- **`info()` is the captured moment.** `Session`, `Window` and `Pane`
+  return the snapshot record their accessors read. (#23)
+
+- **`FakeTmux` answers control clients.** A test can attach a control client
+  to it and push output and notifications to that client, without tmux.
+  (#23)
+
+- **Kotlin: `newSession { window { split { } } }` declares a session's
+  shape.** The first `window { }` block names, places and starts tmux's own
+  first window; each later one adds a window; `running(...)` starts a
+  command. (#23)
+
+- **Kotlin: `ControlClient.output` and `events` are cold `Flow`s.** They
+  hold no thread while waiting, and the trailing `onSubscribed` block runs
+  once the subscription is open, so a command whose output is wanted cannot
+  race it: `control.output(32) { control.send("send-keys", ...) }`. (#23)
+
+- **Kotlin: `Server.liveState` is a `StateFlow` over `ServerMirror`.**
+  `withLiveState(session) { live -> ... }` ends it with the block. (#23)
+
+- **Kotlin: query fields live on the handle's companion.** `Pane.command`,
+  `Window.panes`. `server.session(expr)` throws unless exactly one matches;
+  `sessionOrNull(expr)` is null on none, and `OptionalInt.orNull()` and
+  `OptionalLong.orNull()` read the core's optional numbers.
+  `retryIfSafe(times) { }` retries only what `safeToRetry()` allows. (#23)
+
+- **Kotlin: `ExecutionPolicy` says where suspend calls run.** `commands` is
+  sized from the server's `maxConcurrentCommands`, `streamReads` backs
+  `liveState`, and `defaultDeadline` bounds every call. `withServer { }` and
+  `withControl { }` close what they open when the block ends, cancelled or
+  not. (#23)
+
+- **Scala 3.9 facades release with the Java artifacts.**
+  `libtmux-scala_3`, `libtmux-scala-cats_3` and `libtmux-scala-ox_3` publish
+  from the same tag and version as `libtmux`, and `libtmux-bom` manages
+  them. `io.github.libtmux.scaladsl.Server`, `Session`, `Window`, `Pane` and
+  `Client` are the Java handles under opaque types, and every handle of both
+  facades reaches its Java handle through `.asJava`. See [Getting
+  started](docs/guide/scala/getting-started.md). (#23)
+
+- **Scala Cats calls cancel.** Every Cats call, `Batch`, `CommandChain` and
+  `Channel` included, can be interrupted; a canceled call ends in
+  `Outcome.Canceled`, and fs2 streams wait without a blocking pool. Handles
+  have `Eq`, `Hash` and `Show` instances, and `TmuxVersion` an `Order`.
+  (#23)
+
+- **Scala: a typed query DSL, live state, and an Ox module.** Fields hang on
+  each handle's companion (`Pane.command`), `&&`, `||` and `!` compose them,
+  and `exactlyOne` and `atMostOne` answer a `CardinalityError`. `LiveView`
+  and the Cats `LiveServer` signal wrap `ServerMirror`, starting from the
+  current view. `libtmux-scala-ox` adds an Ox `Flow` over a subscription or a
+  live view. (#23)
+
+- **An MCP tool error carries `error_code` and `retryable`.** `error_code`
+  names the failure's branch of `LibTmuxException`, `REFUSED` for an argument
+  or state the tool rejects, or `INTERNAL_ERROR`; `retryable` is the
+  failure's `safeToRetry()`. Both are in `_meta`, so a client validating
+  `structuredContent` against a tool's output schema still accepts an error.
+  (#23)
+
+- **Published modules record their version in `module-info`.** A stack trace
+  names `io.github.libtmux@<version>`. (#23)
+
+- **`libtmux-kotlin` and the Scala artifacts publish a CycloneDX SBOM,** as
+  the Java artifacts do, under the same `cyclonedx` classifier. (#23)
+
+### Changed
+
+- **JDK 25 is the floor, not JDK 21.** Every module, the Kotlin and Scala
+  targets, and CI moved together. See [migration
+  guidance](MIGRATION.md#jdk-25-is-the-floor). (#23)
+
+- **Every failure is one sealed tree in `io.github.libtmux.exception`.**
+  `switch`, `when` and `match` over `LibTmuxException` are checked for
+  exhaustiveness, several types are renamed, and tmux refusing a command is
+  `CommandRejectedException`. A failure carries the command, its exit status
+  and what tmux printed; its message quotes at most 240 characters of that.
+  `libtmux-jackson`'s `SchemaException` is an `IllegalArgumentException`
+  now, outside the tree. See [migration
+  guidance](MIGRATION.md#failures-are-one-sealed-tree-in-iogithublibtmuxexception).
+  (#23)
+
+- **A handle used after its `Server` closed throws `ServerClosedException`.**
+  It sits outside the sealed tree, and `outcome()` says whether a command the
+  close interrupted may have reached tmux. (#23)
+
+- **`Notification` has four more cases.** `%pause`, `%continue`, `%message`
+  and `%config-error` arrive as `Notification.Pause`, `Continue`, `Message`
+  and `ConfigError` instead of `Unknown`, so an exhaustive `switch` needs
+  them. See [migration
+  guidance](MIGRATION.md#notification-has-four-more-cases). (#23)
+
+- **An `EventSubscription` has one reader.** A read that overlaps another, or
+  any read after `stream()` or `publisher()` took it, throws
+  `IllegalStateException`. Subscribe again for a second reader. See
+  [migration guidance](MIGRATION.md#an-eventsubscription-has-one-reader).
+  (#23)
+
+- **`EventSubscription.next` returns a `Delivery`.** A full buffer's next
+  read is a `Delivery.Gap` naming how many events were discarded; `cause()`
+  says why the client ended the subscription. See [migration
+  guidance](MIGRATION.md#eventsubscriptionnext-returns-a-gap-before-the-events-that-remain).
+  (#23)
+
+- **Filtered reads are applied by tmux.** `sessions`, `windows` and `panes`
+  with a `FilterExpr`, and the name, id and expression lookups, send what tmux
+  can evaluate as a `-f` format and read only the matching sessions, in two
+  tmux commands whether or not anything matches. Relations and `matches`,
+  whose regular expressions tmux reads in another dialect, stay local; what
+  comes back is still tested against the expression. (#23)
+
+- **`Client.refresh()` returns the client, and throws `TargetGoneException`
+  once it has detached,** as every other handle does. See [migration
+  guidance](MIGRATION.md#clientrefresh-returns-the-client-or-throws). (#23)
+
+- **A handle is refused by a tmux restarted on its pid.** A capture records
+  when its server started, and every handle command, capture fence and
+  control attach compares it with the pid. `ServerSnapshot.serverStartTime()`
+  reports it. (#23)
+
+- **`Server.control` attaches to the tmux a capture named.** A socket reused
+  by a new server is refused. `ControlClient.attach(config, session)` is now
+  `attachUnfenced`. See [migration
+  guidance](MIGRATION.md#an-attachment-that-skips-the-incarnation-check-says-so).
+  (#23)
+
+- **Server-wide scopes moved off `Server`.** The command catalog is
+  `server.commands().list()`, shell commands are `server.shell()`, the
+  message log is `server.messageLog().lines()`, and prompt history is
+  `server.prompt()`. See [migration
+  guidance](MIGRATION.md#prompt-history-is-serverprompt). (#23)
+
+- **`killServer` returns after the daemon exits,** so a server started
+  straight afterwards cannot reach the dying one. (#23)
+
+- **Kotlin reads the core's collections as read-only.** A list, set or map
+  the core returns is a Kotlin `List`, `Set` or `Map`, so code that called
+  `add` on one no longer compiles; the call threw before. See [migration
+  guidance](MIGRATION.md#kotlin-reads-core-collections-as-read-only). (#23)
+
+- **`libtmux-kotlin` is wrapper classes, not extensions on the Java types.**
+  `Server`, `Session`, `Window`, `Pane`, `Client` and `ControlClient` in
+  `io.github.libtmux.kotlin` make every tmux operation `suspend` and every
+  captured value a property; each answers its Java handle as `asJava`, and
+  `Server.fromJava` wraps one opened in Java. It is readable from Kotlin 2.1.
+  See [migration
+  guidance](MIGRATION.md#libtmux-kotlin-is-wrapper-classes-now-not-extensions-on-the-java-types).
+  (#23)
+
+- **`search_panes` reports a budget cut as `truncated`, not `limited`,**
+  matching every other MCP read tool. See [migration
+  guidance](MIGRATION.md#search_panes-reports-truncated-not-limited). (#23)
+
+- **The MCP server's instructions define "attended" and say what is absent
+  on purpose.** Hook writes, environment writes and buffer reads are named as
+  choices, with what to do instead. (#23)
+
+### Fixed
+
+- **On tmux 3.2a, a session under a missing socket directory names it.**
+  tmux 3.2a exits 0 and prints nothing when it cannot create its socket, so
+  `newSession` said the binary might not be tmux. (#23)
+
+- **Values read from tmux 3.4 keep their `$`.** tmux 3.4 printed `$HOME` as
+  `\$HOME` in names, titles, options and formats. (#23)
+
+- **A name lookup finds the name tmux stored.** `session(name)`,
+  `hasSession` and `killSession` find a name holding `.`, `:` or a
+  backslash, which tmux stores differently. (#23)
+
+- **Interrupting one `ControlClient.send` no longer ends the client for
+  every other caller.** The interrupted caller fails alone, with outcome
+  `UNKNOWN`. (#23)
+
+- **A control reply is no longer another command's.** A request waiting
+  behind an `if-shell` could receive the branch's output as its reply. (#23)
+
+- **Pushed pane output keeps a character tmux cut in two,** and
+  `PaneOutput.bytes()` is exactly what a push carried. (#23)
+
+- **Output arrives with tmux's flow control on.** After `refresh-client -f
+  pause-after=N`, none of the `%extended-output` tmux sends reached
+  `subscribeOutput`. (#23)
+
+- **A subscription the control client ended keeps what it had delivered.**
+  Buffered events are read before `next()` returns empty. (#23)
+
+- **A notification keeps a name that contains `" : "`.** A window renamed
+  `left : right` was announced as `left`. (#23)
+
+- **A value that ends in a line break keeps it.** `expand` and
+  `Options.get` read `"a\n"` as `"a"`. (#23)
+
+- **The MCP server's instructions reach the model whole.** They exceeded
+  the 2048 bytes Claude Code reads, which dropped the rest without saying
+  so. (#23)
+
+- **An MCP tool that fails unexpectedly still answers as a tool error,** not
+  a JSON-RPC internal error a client may never show the model. (#23)
+
+- **MCP refusals and failures name the recovery.** A pane-input refusal, a
+  kill tool's failed self-check, and a result too large to send each say
+  what to do next. (#23)
+
+- **`TmuxExtension` reaps a fixture whose pid was reused.** A killed run's
+  fixture is named by its JVM's start as well as its pid, so a live process
+  that later holds the pid no longer keeps it. (#23)
+
+### Removed
+
+- **`Server.setMouseEnabled`.** Write `globalOptions().set("mouse", "on")`.
+  See [migration guidance](MIGRATION.md#serversetmouseenabled-is-gone). (#23)
+
+- **The Kotlin extensions on the Java types,** such as
+  `Session.activeWindowOrNull` and `Options.getOrNull`. The wrapper classes'
+  members replace them. (#23)
+
+### Documented
+
+- **Two guides for code that drives tmux from a service.** [Threads,
+  cancellation, and what runs at once](docs/guide/concurrency.md) says which
+  calls may run together and how a deadline or an interrupt ends one;
+  [Failures, telemetry, and pane input](docs/guide/operating-a-service.md)
+  covers resending a failed command, per-command reports and pane holds.
+  (#23)
+
+- **A guide set for the Scala facades** under
+  [`docs/guide/scala/`](docs/guide/scala/getting-started.md): installing,
+  ownership, execution, queries, streaming and compatibility. (#23)
 
 ## 0.0.1-alpha.14 — 2026-09-20
 
@@ -795,7 +1114,7 @@ key `D6B3443B2E8F467A7CEC14BF3FACCB0FE2F4C97B`.
   and sweeps servers whose owner is gone before making its first one. A live
   owner is never touched, so Gradle's per-module workers and the matrix's eight
   lanes can share one root. Measurements, and the two rejected designs, in
-  [`docs/spikes/22`](docs/spikes/22-abandoned-servers.md).
+  [`docs/decisions/0006`](docs/decisions/0006-real-tmux-junit5-fixture-lifecycle.md).
 - **A model can narrow `tmux_list_panes` with a filter.** The MCP server accepts
   the same versioned filter document every port of libtmux reads, so
   `pane_current_command starts_with nvim` selects panes without the model
@@ -837,7 +1156,7 @@ key `D6B3443B2E8F467A7CEC14BF3FACCB0FE2F4C97B`.
   "grouped;", "list-windows"))` created a window under `DIRECT` and none under
   `CONTROL`. `ControlClient.isCommandGroup` is now the single reading of that
   rule and both carriers consult it. Measurements in
-  [`docs/spikes/21`](docs/spikes/21-command-group-boundaries.md).
+  [`docs/decisions/0009`](docs/decisions/0009-command-groups-are-transport-agnostic.md).
 - **`ControlClient.send` accepted a request it could not answer.** Control mode
   frames a reply per command, so a group produced several replies for one
   awaited request and the extras were matched to whatever asked next. It now

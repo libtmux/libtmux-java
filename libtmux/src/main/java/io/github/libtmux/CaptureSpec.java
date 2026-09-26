@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.util.ArrayList;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
@@ -72,7 +73,7 @@ public final class CaptureSpec {
     /**
      * The command that reads the pane.
      *
-     * @throws UnsupportedTmuxVersionException if the spec asks for something {@code running} does not have
+     * @throws UnsupportedFeatureException if the spec asks for something {@code running} does not have
      */
     List<String> argv(String target, TmuxVersion running) {
         require(trimTrailing, TRIM_SINCE, running, "trimming trailing space");
@@ -114,7 +115,7 @@ public final class CaptureSpec {
 
     private static void require(boolean wanted, TmuxVersion since, TmuxVersion running, String feature) {
         if (wanted && !running.atLeast(since)) {
-            throw new UnsupportedTmuxVersionException(feature, since, running);
+            throw new UnsupportedFeatureException(feature, since, running);
         }
     }
 

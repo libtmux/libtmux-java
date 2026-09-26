@@ -7,15 +7,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.BufferInfo;
 import io.github.libtmux.Client;
 import io.github.libtmux.ClientAttachment;
-import io.github.libtmux.LibTmuxException;
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -74,14 +74,14 @@ final class BuffersAndClientIntegrationTest {
 
     @Test
     void aBufferThatIsNotThereSaysSo(Server server) {
-        assertThrows(ObjectDoesNotExistException.class, () -> server.buffers().show("never-set"));
+        assertThrows(TargetGoneException.class, () -> server.buffers().show("never-set"));
     }
 
     @Test
     void anAbsentDaemonIsNotReportedAsAMissingBuffer(Server server) {
         server.killServer();
 
-        assertThrows(ServerNotRunningException.class, () -> server.buffers().show("never-set"));
+        assertThrows(ServerUnavailableException.class, () -> server.buffers().show("never-set"));
     }
 
     @Test
@@ -90,8 +90,7 @@ final class BuffersAndClientIntegrationTest {
 
         if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
             assertThrows(
-                    UnsupportedTmuxVersionException.class,
-                    () -> server.buffers().delete("doomed;"));
+                    UnsupportedFeatureException.class, () -> server.buffers().delete("doomed;"));
             assertEquals("x", server.buffers().show("doomed;"), "refusal leaves the buffer untouched");
             return;
         }
@@ -106,12 +105,10 @@ final class BuffersAndClientIntegrationTest {
         server.buffers().set("belongs-to-the-user", "keep me");
 
         if (server.version().atLeast(EXACT_NAMED_DELETE)) {
-            assertThrows(
-                    ObjectDoesNotExistException.class, () -> server.buffers().delete("never-set;"));
+            assertThrows(TargetGoneException.class, () -> server.buffers().delete("never-set;"));
         } else {
             assertThrows(
-                    UnsupportedTmuxVersionException.class,
-                    () -> server.buffers().delete("never-set;"));
+                    UnsupportedFeatureException.class, () -> server.buffers().delete("never-set;"));
         }
 
         assertEquals("keep me", server.buffers().show("belongs-to-the-user"));
@@ -151,7 +148,7 @@ final class BuffersAndClientIntegrationTest {
         server.buffers().set("belongs-to-the-user", "keep me");
 
         if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
-            assertThrows(UnsupportedTmuxVersionException.class, () -> pane.paste("echo pasted-text\n"));
+            assertThrows(UnsupportedFeatureException.class, () -> pane.paste("echo pasted-text\n"));
             assertEquals(
                     List.of("belongs-to-the-user"),
                     server.buffers().list().stream().map(BufferInfo::name).toList(),
@@ -217,7 +214,7 @@ final class BuffersAndClientIntegrationTest {
         server.cmd("kill-pane", "-t", doomed.id().value());
 
         if (!server.version().atLeast(EXACT_NAMED_DELETE)) {
-            assertThrows(UnsupportedTmuxVersionException.class, () -> doomed.paste("never-arrives"));
+            assertThrows(UnsupportedFeatureException.class, () -> doomed.paste("never-arrives"));
         } else {
             assertThrows(LibTmuxException.class, () -> doomed.paste("never-arrives"));
         }
@@ -247,7 +244,7 @@ final class BuffersAndClientIntegrationTest {
     @Test
     void anAttachedClientReportsWhatItIsLookingAt(Server server) throws Exception {
         Session session = server.sessions().get(0);
-        try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient attached = server.control(session)) {
             assertTrue(Await.until(() -> !server.clients().isEmpty()), "the control client never appeared as a client");
 
             Client client = server.clients().get(0);
@@ -266,7 +263,7 @@ final class BuffersAndClientIntegrationTest {
     @Test
     void fetchingAnAttachmentTakesAFreshLook(Server server) throws Exception {
         Session session = server.sessions().get(0);
-        try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient attached = server.control(session)) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> !server.clients().isEmpty()));
             Client client = server.clients().get(0);
@@ -284,21 +281,29 @@ final class BuffersAndClientIntegrationTest {
     }
 
     @Test
-    void aClientThatHasGoneRefreshesToNothing(Server server) throws Exception {
+    void aClientThatHasGoneIsGoneToEveryRead(Server server) throws Exception {
         Session session = server.sessions().get(0);
         // Whichever clients are already here belong to somebody else — a control carrier attaches
         // one of its own to carry commands at all. The client under test is the one that appears.
         Set<String> before = server.clients().stream().map(Client::name).collect(Collectors.toSet());
 
         Client client;
-        try (ControlClient attached = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient attached = server.control(session)) {
             assertTrue(attached.send("display-message", "-p", "ready").succeeded());
             assertTrue(Await.until(() -> appeared(server, before).isPresent()), "no client ever attached");
             client = appeared(server, before).orElseThrow();
         }
 
-        assertTrue(Await.until(() -> client.refresh().isEmpty()), "the client outlived the connection that made it");
-        assertEquals(Optional.empty(), client.fetchAttachment());
+        assertTrue(Await.until(() -> gone(client)), "the client outlived the connection that made it");
+        assertThrows(TargetGoneException.class, client::fetchAttachment);
+    }
+
+    private static boolean gone(Client client) {
+        try {
+            return !client.refresh().name().equals(client.name());
+        } catch (TargetGoneException detached) {
+            return true;
+        }
     }
 
     /** The client that attached after the named ones were already there. */

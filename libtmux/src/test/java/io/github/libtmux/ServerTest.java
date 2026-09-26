@@ -10,19 +10,26 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.CommandRejectedException;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.ServerClosedException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
-import io.github.libtmux.transport.TmuxTimeoutException;
 import io.github.libtmux.transport.TmuxTransport;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -49,11 +56,14 @@ final class ServerTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 requests.add(request);
-                return switch (request.commands().getFirst().getFirst()) {
-                    case "display-message" -> version.get();
+                return GroupedTmux.execute(request, 4242L, argv -> switch (argv.getFirst()) {
+                    case "display-message" ->
+                        argv.getLast().equals("#{version}")
+                                ? version.get()
+                                : new CommandResult(0, List.of(argv.getLast()), List.of());
                     case "show-options" -> value.get();
                     default -> throw new AssertionError("option read selected another transport command");
-                };
+                });
             }
 
             @Override
@@ -61,9 +71,8 @@ final class ServerTest {
         };
         try (Server server = Server.using(config(directory), transport)) {
             assertEquals(java.util.Optional.of("a\rb"), server.globalOptions().get("@value"));
-            assertEquals(
-                    List.of("show-options", "-g", "-A", "--", "@value"),
-                    requests.getLast().commands().getFirst());
+            assertEquals(1, requests.size(), "the version and the value come from one invocation");
+            assertTrue(requests.getLast().commands().contains(List.of("show-options", "-g", "-A", "--", "@value")));
             value.set(new CommandResult(0, List.of("@value a\\377\\376é"), List.of()));
             assertEquals(
                     java.util.Optional.of("a\\xff\\xfeé"),
@@ -77,10 +86,10 @@ final class ServerTest {
             version.set(new CommandResult(1, List.of(), List.of("server exited unexpectedly")));
             value.set(new CommandResult(1, List.of(), List.of("server exited unexpectedly")));
             assertThrows(
-                    ServerNotRunningException.class,
+                    ServerUnavailableException.class,
                     () -> server.globalOptions().get("@value"));
             assertEquals(
-                    List.of("show-options", "-g", "-A", "-v", "--", "@value"),
+                    List.of("display-message", "-p", "#{version}"),
                     requests.getLast().commands().getFirst());
         }
     }
@@ -284,7 +293,7 @@ final class ServerTest {
 
     @Test
     void aWaitPropagatesTransportFailuresThatAreNotItsDeadline(@TempDir Path directory) throws IOException {
-        TmuxTransportException failure = new TmuxTransportException("pipe failed", DispatchOutcome.UNKNOWN, null);
+        DispatchException failure = new DispatchException.Failed("pipe failed", DispatchOutcome.UNKNOWN, null);
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
@@ -302,7 +311,7 @@ final class ServerTest {
             assertSame(
                     failure,
                     assertThrows(
-                            TmuxTransportException.class,
+                            DispatchException.class,
                             () -> server.channel("channel").await(java.time.Duration.ofSeconds(1))));
         }
     }
@@ -310,8 +319,8 @@ final class ServerTest {
     @Test
     void aWaitWithSignalCapacityPreservesAPredispatchTimeout(@TempDir Path directory)
             throws IOException, InterruptedException {
-        TmuxTimeoutException failure =
-                new TmuxTimeoutException("waiting admission timed out", DispatchOutcome.NOT_DISPATCHED, null);
+        DispatchException.TimedOut failure =
+                new DispatchException.TimedOut("waiting admission timed out", DispatchOutcome.NOT_DISPATCHED, null);
         java.util.concurrent.atomic.AtomicBoolean waiting = new java.util.concurrent.atomic.AtomicBoolean();
         TmuxTransport transport = new TmuxTransport() {
             @Override
@@ -339,7 +348,7 @@ final class ServerTest {
             assertSame(
                     failure,
                     assertThrows(
-                            TmuxTimeoutException.class,
+                            DispatchException.TimedOut.class,
                             () -> server.channel("channel").awaitReservingCapacity(java.time.Duration.ofSeconds(1))));
             assertTrue(waiting.get(), "wait-for used ordinary transport admission");
         }
@@ -356,8 +365,10 @@ final class ServerTest {
                 LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
 
                 assertTrue(failure.getCause() instanceof IllegalArgumentException, failure.toString());
-                assertAll(liveReads(server).stream().map(read -> () -> {
-                    LibTmuxException rejected = assertThrows(LibTmuxException.class, read);
+                List<Executable> reads = liveReads(server);
+                assertAll(java.util.stream.IntStream.range(0, reads.size()).mapToObj(i -> () -> {
+                    LibTmuxException rejected =
+                            assertThrows(LibTmuxException.class, reads.get(i), "live read " + i + ": " + sessionRow);
                     assertTrue(rejected.getCause() instanceof IllegalArgumentException, rejected.toString());
                 }));
             }
@@ -379,7 +390,7 @@ final class ServerTest {
         try (Server server = Server.using(config(directory), new RefusingTransport("permission denied"))) {
             assertAll(liveReads(server).stream().map(read -> () -> {
                 LibTmuxException failure = assertThrows(LibTmuxException.class, read);
-                assertFalse(failure instanceof ServerNotRunningException, "not a missing daemon: " + failure);
+                assertFalse(failure instanceof ServerUnavailableException, "not a missing daemon: " + failure);
             }));
         }
         for (String absent : List.of(
@@ -390,7 +401,7 @@ final class ServerTest {
                 assertAll(
                         absent,
                         liveReads(server).stream()
-                                .map(read -> () -> assertThrows(ServerNotRunningException.class, read)));
+                                .map(read -> () -> assertThrows(ServerUnavailableException.class, read)));
             }
         }
     }
@@ -398,9 +409,9 @@ final class ServerTest {
     @Test
     void liveReadsKeepTransportAndTimeoutDiagnostics(@TempDir Path directory) throws IOException {
         IOException cause = new IOException("reader failed");
-        for (TmuxTransportException failure : List.of(
-                new TmuxTransportException("capture pipe failed", DispatchOutcome.UNKNOWN, cause),
-                new TmuxTimeoutException("admission timed out", DispatchOutcome.NOT_DISPATCHED, cause))) {
+        for (DispatchException failure : List.of(
+                new DispatchException.Failed("capture pipe failed", DispatchOutcome.UNKNOWN, cause),
+                new DispatchException.TimedOut("admission timed out", DispatchOutcome.NOT_DISPATCHED, cause))) {
             TmuxTransport transport = new TmuxTransport() {
                 @Override
                 public CommandResult execute(CommandRequest request) {
@@ -412,7 +423,7 @@ final class ServerTest {
             };
             try (Server server = Server.using(config(directory), transport)) {
                 assertAll(liveReads(server).stream()
-                        .map(read -> () -> assertSame(failure, assertThrows(TmuxTransportException.class, read))));
+                        .map(read -> () -> assertSame(failure, assertThrows(DispatchException.class, read))));
             }
         }
     }
@@ -425,7 +436,7 @@ final class ServerTest {
             try (Server server = Server.open(
                     config(directory).toBuilder().binary(unavailable.toString()).build())) {
                 assertAll(liveReads(server).stream().map(read -> () -> {
-                    TmuxTransportException failure = assertThrows(TmuxTransportException.class, read);
+                    DispatchException failure = assertThrows(DispatchException.class, read);
                     assertEquals(DispatchOutcome.NOT_DISPATCHED, failure.outcome());
                     assertTrue(failure.getCause() instanceof IOException);
                 }));
@@ -437,7 +448,7 @@ final class ServerTest {
     void liveReadsRejectAnAbsentDaemon(@TempDir Path directory) throws IOException {
         try (Server server = Server.open(config(directory))) {
             assertAll(
-                    liveReads(server).stream().map(read -> () -> assertThrows(ServerNotRunningException.class, read)));
+                    liveReads(server).stream().map(read -> () -> assertThrows(ServerUnavailableException.class, read)));
         }
     }
 
@@ -478,11 +489,11 @@ final class ServerTest {
     @Test
     void showingABufferDistinguishesAnAbsentDaemonFromAMissingName(@TempDir Path directory) throws IOException {
         try (Server server = Server.using(config(directory), new RefusingTransport("no buffer never-set"))) {
-            assertThrows(
-                    ObjectDoesNotExistException.class, () -> server.buffers().show("never-set"));
+            assertThrows(TargetGoneException.class, () -> server.buffers().show("never-set"));
         }
         try (Server server = Server.using(config(directory), new RefusingTransport("no server running"))) {
-            assertThrows(ServerNotRunningException.class, () -> server.buffers().show("never-set"));
+            assertThrows(
+                    ServerUnavailableException.class, () -> server.buffers().show("never-set"));
         }
     }
 
@@ -512,7 +523,9 @@ final class ServerTest {
                 return GroupedTmux.execute(request, 4242L, "3.2a", argv -> switch (argv.getFirst()) {
                     case "display-message" ->
                         new CommandResult(
-                                0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.2a")), List.of());
+                                0,
+                                List.of(String.join(RowFormat.of("field").separator(), "4242", "3.2a", "1790000000")),
+                                List.of());
                     case "list-sessions" -> new CommandResult(0, List.of(), List.of());
                     // tmux has no current target to list children against, and says so.
                     default -> new CommandResult(1, List.of(), List.of("no current target"));
@@ -553,15 +566,20 @@ final class ServerTest {
      * pid just probed would otherwise answer as the server the rows are read from.
      */
     @Test
-    void snapshotRefusesAServerThatReusedThePidUnderADifferentTmux(@TempDir Path directory) throws IOException {
+    void snapshotRefusesAServerThatReusedThePid(@TempDir Path directory) throws IOException {
         String separator = RowFormat.of("field").separator();
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                return GroupedTmux.execute(request, 4242L, "3.7", argv -> switch (argv.get(0)) {
-                    // Probed as 3.6; the server answering the listings is a 3.7 on that pid.
+                return GroupedTmux.execute(request, 4242L, "3.6", GroupedTmux.STARTED + 5, argv -> switch (argv.get(
+                        0)) {
+                    // Probed as one server; the one answering the listings started later, on that pid
+                    // and that version, as a restarted tmux in a container often is.
                     case "display-message" ->
-                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6")), List.of());
+                        new CommandResult(
+                                0,
+                                List.of(String.join(separator, "4242", "3.6", Long.toString(GroupedTmux.STARTED))),
+                                List.of());
                     default -> new CommandResult(0, List.of(), List.of());
                 });
             }
@@ -589,7 +607,8 @@ final class ServerTest {
             public CommandResult execute(CommandRequest request) {
                 return GroupedTmux.execute(request, 4242L, "3.8-rc", argv -> switch (argv.get(0)) {
                     case "display-message" ->
-                        new CommandResult(0, List.of(String.join(separator, "4242", "3.8-rc")), List.of());
+                        new CommandResult(
+                                0, List.of(String.join(separator, "4242", "3.8-rc", "1790000000")), List.of());
                     default -> new CommandResult(0, List.of(), List.of());
                 });
             }
@@ -654,9 +673,9 @@ final class ServerTest {
                         List.of(
                                 String.join(separator, "$0", "old", "0", "0"),
                                 String.join(separator, "$1", "new", "0", "0"))))) {
-            LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
+            TargetGoneException failure = assertThrows(TargetGoneException.class, server::snapshot);
 
-            assertTrue(String.valueOf(failure.getMessage()).contains("changed during snapshot"));
+            assertTrue(String.valueOf(failure.getMessage()).contains("replaced twice"));
         }
     }
 
@@ -670,9 +689,9 @@ final class ServerTest {
                         List.of(
                                 String.join(separator, "$0", "old", "0", "0"),
                                 String.join(separator, "$1", "new", "0", "0"))))) {
-            LibTmuxException failure = assertThrows(LibTmuxException.class, server::snapshot);
+            TargetGoneException failure = assertThrows(TargetGoneException.class, server::snapshot);
 
-            assertTrue(String.valueOf(failure.getMessage()).contains("changed during snapshot"));
+            assertTrue(String.valueOf(failure.getMessage()).contains("replaced twice"));
         }
     }
 
@@ -691,7 +710,7 @@ final class ServerTest {
             public CommandResult execute(CommandRequest request) {
                 return GroupedTmux.execute(request, 4242L, "3.6", argv -> switch (argv.get(0)) {
                     case "display-message" ->
-                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6")), List.of());
+                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6", "1790000000")), List.of());
                     case "list-sessions" ->
                         new CommandResult(0, List.of(String.join(separator, "$0", "only", "1", "1")), List.of());
                     case "list-windows" ->
@@ -723,6 +742,52 @@ final class ServerTest {
         }
     }
 
+    /** A command fake has no control carrier. Attach must not start the local tmux instead. */
+    @Test
+    void controlRefusesATransportThatStartsNoClient(@TempDir Path directory) throws IOException {
+        String separator = RowFormat.of("field").separator();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                List<String> argv = request.commands().get(0);
+                if (argv.stream().anyMatch(word -> word.contains("#{pid} #{version}"))) {
+                    return new CommandResult(0, List.of("4242 3.6"), List.of());
+                }
+                return GroupedTmux.execute(request, 4242L, "3.6", command -> switch (command.get(0)) {
+                    case "display-message" ->
+                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6", "1790000000")), List.of());
+                    case "list-sessions" ->
+                        new CommandResult(0, List.of(String.join(separator, "$0", "only", "1", "1")), List.of());
+                    case "list-windows" ->
+                        new CommandResult(
+                                0,
+                                List.of(String.join(separator, "$0", "@0", "0", "only", "1", "1", "0", "80", "24", "")),
+                                List.of());
+                    case "list-panes" ->
+                        new CommandResult(
+                                0,
+                                List.of(String.join(
+                                        separator, "$0", "@0", "0", "%0", "0", "1", "zsh", "80", "24", "0", "0", "",
+                                        "/tmp", "", "0", "0", "0", "0")),
+                                List.of());
+                    default -> new CommandResult(0, List.of(), List.of());
+                });
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (Server server = Server.using(config(directory), transport)) {
+            Session session = server.sessions().get(0);
+            IllegalStateException refused = assertThrows(IllegalStateException.class, () -> server.control(session));
+
+            assertTrue(
+                    String.valueOf(refused.getMessage()).contains("does not start control clients"),
+                    refused.getMessage());
+        }
+    }
+
     // --------------------------------------------------------------------------- version gates
 
     /**
@@ -736,17 +801,19 @@ final class ServerTest {
     void promptHistoryAsksTheDaemonRatherThanTrustingAVersionString(@TempDir Path directory) throws IOException {
         try (Server server =
                 Server.using(config(directory), listingCommands("3.2a", "show-prompt-history (showphist) [-T type]"))) {
-            assertDoesNotThrow(server::promptHistory, "list-commands names it, so a low version must not refuse");
-            assertDoesNotThrow(server::clearPromptHistory);
+            assertDoesNotThrow(
+                    () -> server.prompt().history(), "list-commands names it, so a low version must not refuse");
+            assertDoesNotThrow(() -> server.prompt().clear());
         }
         try (Server server = Server.using(config(directory), listingCommands("99.0"))) {
-            UnsupportedTmuxVersionException refused =
-                    assertThrows(UnsupportedTmuxVersionException.class, server::promptHistory);
+            UnsupportedFeatureException refused = assertThrows(
+                    UnsupportedFeatureException.class, () -> server.prompt().history());
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("3.3"),
                     "the refusal still names the release most callers will recognise: " + refused.getMessage());
-            assertThrows(UnsupportedTmuxVersionException.class, server::clearPromptHistory);
+            assertThrows(
+                    UnsupportedFeatureException.class, () -> server.prompt().clear());
         }
     }
 
@@ -781,12 +848,72 @@ final class ServerTest {
                     LibTmuxException.class, () -> server.newSession(s -> s.sized(new Dimensions(120, 40))));
 
             assertFalse(
-                    failure instanceof UnsupportedTmuxVersionException,
+                    failure instanceof UnsupportedFeatureException,
                     "must not claim a version for a daemon it never actually asked: " + failure);
             assertTrue(
                     String.valueOf(failure.getMessage()).contains("server exited unexpectedly"),
                     "tmux's own words, not a guess: " + failure.getMessage());
         }
+    }
+
+    /** Exit status and error lines are fields, not words to scrape out of the message. */
+    @Test
+    void aFailedCommandKeepsItsExitAndErrorLines(@TempDir Path directory) throws IOException {
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public void close() {}
+        };
+        try (Server server = Server.using(config(directory), transport)) {
+            LibTmuxException failure =
+                    server.failed("display-message", new CommandResult(7, List.of(), List.of("no current target")));
+
+            assertTrue(failure instanceof CommandRejectedException, "tmux refused rather than failed to run");
+            assertEquals(Optional.of("display-message"), failure.command());
+            assertEquals(OptionalInt.of(7), failure.exitCode());
+            assertEquals(List.of("no current target"), failure.errorLines());
+            assertTrue(String.valueOf(failure.getMessage()).contains("exit 7"), failure.getMessage());
+
+            LibTmuxException absent =
+                    server.failed("kill-server", new CommandResult(1, List.of(), List.of("no server running")));
+
+            assertTrue(absent instanceof ServerUnavailableException);
+            assertEquals(Optional.of("kill-server"), absent.command());
+            assertEquals(OptionalInt.of(1), absent.exitCode());
+            assertEquals(List.of("no server running"), absent.errorLines());
+
+            String long_ = "x".repeat(1_000);
+            LibTmuxException verbose = server.failed("set-buffer", new CommandResult(1, List.of(), List.of(long_)));
+
+            assertTrue(
+                    String.valueOf(verbose.getMessage()).length() < 400,
+                    "a message lands in every log line: " + verbose.getMessage());
+            assertTrue(String.valueOf(verbose.getMessage()).contains("xxx"), "tmux's words stay in the message");
+            assertEquals(List.of(long_), verbose.errorLines(), "the error lines keep the text whole");
+        }
+    }
+
+    @Test
+    void aClosedServerRefusesWorkAsProgrammerError(@TempDir Path directory) throws IOException {
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                throw new AssertionError("a closed server reached its transport");
+            }
+
+            @Override
+            public void close() {}
+        };
+        Server server = Server.using(config(directory), transport);
+        server.close();
+
+        ServerClosedException closed = assertThrows(ServerClosedException.class, server::snapshot);
+
+        assertEquals(DispatchOutcome.NOT_DISPATCHED, closed.outcome());
     }
 
     // ------------------------------------------------------------------------- session creation
@@ -864,6 +991,25 @@ final class ServerTest {
     }
 
     /**
+     * tmux 3.2a exits 0 and prints nothing when it cannot create its socket: the server queues the
+     * error and tells the client to exit in the same breath, and the client leaves first. 3.3 and
+     * later print {@code error creating ...}. So when tmux says nothing, the directory is checked here.
+     */
+    @Test
+    void aSilentExitUnderAMissingSocketDirectoryNamesTheDirectory(@TempDir Path directory) {
+        Path socket = directory.resolve("missing").resolve("s");
+        ServerConfig config = ServerConfig.builder()
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .build();
+
+        String message = SessionCreation.failureMessage(config, new CommandResult(0, List.of(), List.of()));
+
+        assertTrue(
+                message.contains(String.valueOf(socket.getParent())) && message.contains("does not exist"),
+                "names the missing directory rather than doubting the binary: " + message);
+    }
+
+    /**
      * A transport that answers the identity probe with {@code version} and {@code list-commands}
      * with {@code lines}, whatever the real relationship between the two would be.
      */
@@ -874,7 +1020,8 @@ final class ServerTest {
             public CommandResult execute(CommandRequest request) {
                 List<String> argv = request.commands().get(0);
                 if (argv.get(0).equals("display-message")) {
-                    return new CommandResult(0, List.of(String.join(separator, "4242", version)), List.of());
+                    return new CommandResult(
+                            0, List.of(String.join(separator, "4242", version, "1790000000")), List.of());
                 }
                 if (argv.get(0).equals("list-commands")) {
                     return new CommandResult(0, List.of(lines), List.of());
@@ -930,6 +1077,32 @@ final class ServerTest {
         }
     }
 
+    /** Another transport's pid is not a process on this host, however much it looks like tmux. */
+    @Test
+    void killingThroughAnotherTransportWaitsOnNoLocalProcess(@TempDir Path directory) throws IOException {
+        Path lookalike = directory.resolve("tmux-lookalike");
+        Files.copy(Path.of("/bin/sleep"), lookalike);
+        assertTrue(lookalike.toFile().setExecutable(true));
+        Process sleeper = new ProcessBuilder(lookalike.toString(), "30").start();
+        try {
+            TmuxTransport transport = new TmuxTransport() {
+                @Override
+                public CommandResult execute(CommandRequest request) {
+                    return new CommandResult(0, List.of(Long.toString(sleeper.pid())), List.of());
+                }
+
+                @Override
+                public void close() {}
+            };
+            try (Server server = Server.using(config(directory), transport)) {
+                server.killServer(Duration.ofMillis(300));
+            }
+            assertTrue(sleeper.isAlive());
+        } finally {
+            sleeper.destroyForcibly();
+        }
+    }
+
     @Test
     void aServerThatSurvivesTheKillIsReportedRatherThanIgnored(@TempDir Path directory) throws IOException {
         try (Server server = Server.using(config(directory), new SurvivingTransport())) {
@@ -974,7 +1147,7 @@ final class ServerTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
-            return request.commands().get(0).contains("kill-server")
+            return request.commands().stream().anyMatch(command -> command.contains("kill-server"))
                     ? new CommandResult(1, List.of(), List.of("permission denied"))
                     : new CommandResult(0, List.of("4242"), List.of());
         }
@@ -1021,7 +1194,9 @@ final class ServerTest {
                 case "list-sessions" -> new CommandResult(0, List.of(sessionRow), List.of());
                 case "display-message" ->
                     new CommandResult(
-                            0, List.of(String.join(RowFormat.of("field").separator(), "4242", "3.6")), List.of());
+                            0,
+                            List.of(String.join(RowFormat.of("field").separator(), "4242", "3.6", "1790000000")),
+                            List.of());
                 default -> new CommandResult(0, List.of(), List.of());
             });
         }
@@ -1072,7 +1247,7 @@ final class ServerTest {
                 return new CommandResult(1, List.of(), List.of("no server running on /tmp/s"));
             }
             return new CommandResult(
-                    0, List.of(String.join(RowFormat.of("field").separator(), pid, "3.6")), List.of());
+                    0, List.of(String.join(RowFormat.of("field").separator(), pid, "3.6", "1790000000")), List.of());
         }
 
         @Override
@@ -1135,7 +1310,7 @@ final class ServerTest {
         }
 
         private static CommandResult identity(String pid, String version) {
-            return new CommandResult(0, List.of(row(pid, version)), List.of());
+            return new CommandResult(0, List.of(row(pid, version, Long.toString(GroupedTmux.STARTED))), List.of());
         }
 
         private static String row(String... fields) {

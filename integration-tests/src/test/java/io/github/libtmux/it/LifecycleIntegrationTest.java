@@ -5,12 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.ServerUnavailableException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -49,7 +49,7 @@ final class LifecycleIntegrationTest {
     void anAbsentDaemonIsNotReportedAsAnAbsentSession(Server server) {
         server.killServer();
 
-        assertThrows(ServerNotRunningException.class, () -> server.hasSession("never-made"));
+        assertThrows(ServerUnavailableException.class, () -> server.hasSession("never-made"));
     }
 
     @Test
@@ -60,8 +60,8 @@ final class LifecycleIntegrationTest {
         server.killServer();
 
         assertFalse(server.isAlive(), "the server is gone");
-        assertThrows(ServerNotRunningException.class, server::requireAlive);
-        assertThrows(ServerNotRunningException.class, server::sessions);
+        assertThrows(ServerUnavailableException.class, server::requireAlive);
+        assertThrows(ServerUnavailableException.class, server::sessions);
     }
 
     /** The other half of the distinction above: a live server with nothing on it still answers. */

@@ -1,0 +1,133 @@
+{
+  "schema": 1,
+  "operations": [
+    {
+      "owner": "io.github.libtmux.Server",
+      "name": "isAlive",
+      "kind": "READ",
+      "static": false,
+      "varargs": false,
+      "parameters": [],
+      "returns": { "type": "boolean", "nullable": false },
+      "javadoc": { "summary": "Whether the server is running and answering." }
+    },
+    {
+      "owner": "io.github.libtmux.Server",
+      "name": "killSession",
+      "kind": "MUTATION",
+      "static": false,
+      "varargs": false,
+      "parameters": [
+        { "name": "name", "type": "java.lang.String", "nullable": false }
+      ],
+      "returns": { "type": "void", "nullable": false },
+      "javadoc": { "summary": "Ends the session with this name, and everything in it." }
+    },
+    {
+      "owner": "io.github.libtmux.Server",
+      "name": "newSession",
+      "kind": "MUTATION",
+      "static": false,
+      "varargs": false,
+      "parameters": [
+        { "name": "name", "type": "java.lang.String", "nullable": false }
+      ],
+      "returns": { "type": "io.github.libtmux.Session", "nullable": false },
+      "javadoc": { "summary": "Creates a detached session and returns that exact session." }
+    },
+    {
+      "owner": "io.github.libtmux.Server",
+      "name": "session",
+      "kind": "READ",
+      "static": false,
+      "varargs": false,
+      "parameters": [
+        { "name": "name", "type": "java.lang.String", "nullable": false }
+      ],
+      "returns": { "type": "java.util.Optional<io.github.libtmux.Session>", "nullable": false },
+      "javadoc": { "summary": "The session with this name, captured now." }
+    },
+    {
+      "owner": "io.github.libtmux.Server",
+      "name": "sessions",
+      "kind": "READ",
+      "static": false,
+      "varargs": false,
+      "parameters": [
+        { "name": "expression", "type": "io.github.libtmux.query.FilterExpr<io.github.libtmux.Session>", "nullable": false }
+      ],
+      "returns": { "type": "java.util.List<io.github.libtmux.Session>", "nullable": false },
+      "javadoc": { "summary": "The sessions this expression matches, captured now." }
+    },
+    {
+      "owner": "io.github.libtmux.Server",
+      "name": "cmd",
+      "kind": "MUTATION",
+      "static": false,
+      "varargs": true,
+      "parameters": [
+        { "name": "argv", "type": "java.lang.String[]", "nullable": false }
+      ],
+      "returns": { "type": "io.github.libtmux.transport.CommandResult", "nullable": false },
+      "javadoc": { "summary": "Runs one tmux command against this server." }
+    },
+    {
+      "owner": "io.github.libtmux.Pane",
+      "name": "pid",
+      "kind": "CAPTURED",
+      "static": false,
+      "varargs": false,
+      "parameters": [],
+      "returns": { "type": "java.util.OptionalLong", "nullable": false },
+      "javadoc": { "summary": "The process id of the program running in the pane." }
+    },
+    {
+      "owner": "io.github.libtmux.Server",
+      "name": "control",
+      "kind": "LIFECYCLE",
+      "static": false,
+      "varargs": false,
+      "parameters": [
+        { "name": "session", "type": "io.github.libtmux.Session", "nullable": false }
+      ],
+      "returns": { "type": "io.github.libtmux.control.ControlClient", "nullable": false },
+      "javadoc": { "summary": "Attaches a control client to this session's server." }
+    },
+    {
+      "owner": "io.github.libtmux.Options",
+      "name": "get",
+      "kind": "READ",
+      "static": false,
+      "varargs": false,
+      "parameters": [
+        { "name": "name", "type": "java.lang.String", "nullable": false }
+      ],
+      "returns": { "type": "java.util.Optional<java.lang.String>", "nullable": false },
+      "javadoc": { "summary": "" }
+    },
+    {
+      "owner": "io.github.libtmux.Pane",
+      "name": "clearHistory",
+      "kind": "MUTATION",
+      "static": false,
+      "varargs": false,
+      "parameters": [
+        { "name": "olderThan", "type": "java.time.Duration", "nullable": false }
+      ],
+      "returns": { "type": "void", "nullable": false },
+      "javadoc": { "summary": "Discards this pane's scrollback older than a duration (fixture-only overload, for type-mapping coverage)." }
+    },
+    {
+      "owner": "io.github.libtmux.Session",
+      "name": "selectWindow",
+      "kind": "MUTATION",
+      "static": false,
+      "varargs": false,
+      "parameters": [
+        { "name": "window", "type": "io.github.libtmux.Window", "nullable": false }
+      ],
+      "returns": { "type": "void", "nullable": false },
+      "javadoc": { "summary": "Makes a window of this session the active one. See {@code Window#select} and {@link Window#select}." }
+    }
+  ]
+}

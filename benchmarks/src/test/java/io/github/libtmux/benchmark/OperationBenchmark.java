@@ -5,16 +5,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.CommandChain;
 import io.github.libtmux.Pane;
+import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
+import io.github.libtmux.Session_;
 import io.github.libtmux.Window;
 import io.github.libtmux.Window_;
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.ControlReply;
+import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
+import io.github.libtmux.snapshot.ServerMirror;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
@@ -24,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -39,14 +45,23 @@ import org.junit.jupiter.api.io.TempDir;
  * seconds rather than milliseconds and it writes a file. Run it with
  * {@code ./gradlew operationBenchmark}.
  *
- * <p>Numbers are never written by hand. This regenerates {@code docs/benchmarks/operations.md} from
- * a run on the tmux it is given, and stamps which tmux that was, because a table without its
+ * <p>Numbers are never written by hand. This regenerates {@code docs/benchmarks/operation-costs.md}
+ * from a run on the tmux it is given, and stamps which tmux that was, because a table without its
  * conditions is a claim rather than a measurement.
  */
 @Tag("benchmark")
 final class OperationBenchmark {
 
     private static final int ROUNDS = 20;
+
+    /** How many commands each transport sends when compared one at a time. */
+    private static final int TRANSPORT_ROUNDS = 200;
+
+    /** Sent first and not timed, so the JIT and tmux's own caches settle before a round counts. */
+    private static final int TRANSPORT_WARMUP = 50;
+
+    /** The read both transports send: identical argv, so the only difference is how it travels. */
+    private static final List<String> TRANSPORT_PROBE = List.of("display-message", "-p", "#{session_name}");
 
     /** The tmux the measurements ran against, asked of the running server rather than inferred. */
     private String tmux = "";
@@ -78,6 +93,12 @@ final class OperationBenchmark {
             return delegate.realm();
         }
 
+        // A control client is one long-lived process, not a dispatch, so it is not counted.
+        @Override
+        public java.util.Optional<io.github.libtmux.transport.ControlCarrier> controlCarrier() {
+            return delegate.controlCarrier();
+        }
+
         @Override
         public void close() {
             delegate.close();
@@ -89,8 +110,15 @@ final class OperationBenchmark {
     /** One run of a scenario, before the samples are taken together. */
     private record Sample(long millis, int dispatches, String output) {}
 
+    /** One transport's cost for a single command, timed individually rather than as a group. */
+    private record Timed(String label, long medianNanos, long p95Nanos, int commands) {}
+
     @Test
     void writeTheOperationTable(@TempDir Path directory) throws Exception {
+        // First: every other scenario leaves drain threads that idle out only after ten seconds, and
+        // a count taken after them would count those too.
+        Threads threads = measureThreads(directory);
+
         List<Measured> grouping = List.of(
                 measure(directory, "one-at-a-time", server -> {}, OperationBenchmark::create),
                 measure(directory, "batch", server -> {}, OperationBenchmark::createBatched),
@@ -99,6 +127,60 @@ final class OperationBenchmark {
         List<Measured> reading = List.of(
                 measure(directory, "traversal", OperationBenchmark::plantWindows, OperationBenchmark::traverse),
                 measure(directory, "snapshot", OperationBenchmark::plantWindows, OperationBenchmark::snapshot));
+
+        List<Measured> narrowing = List.of(
+                measure(
+                        directory,
+                        "snapshot() then find",
+                        OperationBenchmark::plantSessions,
+                        OperationBenchmark::findInSnapshot),
+                measure(
+                        directory,
+                        "session(name)",
+                        OperationBenchmark::plantSessions,
+                        OperationBenchmark::sessionByName),
+                measure(
+                        directory,
+                        "sessions(filter), two match",
+                        OperationBenchmark::plantSessions,
+                        OperationBenchmark::filtered),
+                measure(
+                        directory,
+                        "snapshot() then find pane",
+                        OperationBenchmark::plantSessions,
+                        server -> findPaneInSnapshot(server, FIFTH_PANE)),
+                measure(
+                        directory,
+                        "pane(id)",
+                        OperationBenchmark::plantSessions,
+                        server -> paneById(server, FIFTH_PANE)));
+
+        List<Measured> narrowingMany = List.of(
+                measure(
+                        directory,
+                        "snapshot() then find (50)",
+                        OperationBenchmark::plantManySessions,
+                        OperationBenchmark::findInSnapshot),
+                measure(
+                        directory,
+                        "session(name) (50)",
+                        OperationBenchmark::plantManySessions,
+                        OperationBenchmark::sessionByName),
+                measure(
+                        directory,
+                        "sessions(filter), two match (50)",
+                        OperationBenchmark::plantManySessions,
+                        OperationBenchmark::filtered),
+                measure(
+                        directory,
+                        "snapshot() then find pane (50)",
+                        OperationBenchmark::plantManySessions,
+                        server -> findPaneInSnapshot(server, FIFTH_PANE)),
+                measure(
+                        directory,
+                        "pane(id) (50)",
+                        OperationBenchmark::plantManySessions,
+                        server -> paneById(server, FIFTH_PANE)));
 
         List<Measured> guarding = List.of(
                 measure(directory, "unguarded", OperationBenchmark::plantWindows, OperationBenchmark::unguarded),
@@ -114,16 +196,49 @@ final class OperationBenchmark {
                 measure(directory, "all()", server -> {}, OperationBenchmark::allOptions),
                 measure(directory, "effective()", server -> {}, OperationBenchmark::effectiveOptions));
 
+        Timed process = measureProcessPerCommand(directory);
+        Timed control = measureControlPerCommand(directory);
+        Following following = measureMirrorFollowing(directory);
+        Flood flood = measureFlood(directory);
+
+        assertEquals(0, flood.gapped(), "the flood overflowed a buffer sized to hold it");
+        assertTrue(
+                threads.idle() <= 3 * 4
+                        && threads.afterConcurrentReads() <= 3 * 4
+                        && threads.controlAttached() - threads.afterConcurrentReads() == 3
+                        && threads.subscribed() == threads.controlAttached(),
+                "the thread budget moved: " + threads);
+
         assertEquals(
                 1,
                 grouping.stream().map(Measured::output).distinct().count(),
                 "grouping the same commands built something different: " + labelled(grouping));
 
+        // The measurement behind keeping the process transport the default: a control client
+        // answering in place has to actually beat spawning tmux, not merely differ from it.
+        assertTrue(
+                control.medianNanos() * 2 < process.medianNanos(),
+                "control did not clearly beat a process per command: control=%dns process=%dns"
+                        .formatted(control.medianNanos(), process.medianNanos()));
+
         // Told where to write rather than guessing from a working directory, which for a Gradle
         // Test task is the module and not the root.
-        Path report = Path.of(System.getProperty("libtmux.benchmark.out", "build/operations.md"));
+        Path report = Path.of(System.getProperty("libtmux.benchmark.out", "build/operation-costs.md"));
         Files.createDirectories(report.getParent());
-        Files.writeString(report, render(grouping, reading, guarding, waits, options));
+        Files.writeString(
+                report,
+                render(
+                        grouping,
+                        reading,
+                        narrowing,
+                        narrowingMany,
+                        guarding,
+                        waits,
+                        options,
+                        List.of(process, control),
+                        following,
+                        flood,
+                        threads));
 
         assertTrue(Files.exists(report), "the benchmark wrote no table");
     }
@@ -175,15 +290,17 @@ final class OperationBenchmark {
     /** Is told: a control client attached for the whole run, reading the output tmux pushes. */
     private static String push(Server server) {
         Pane pane = waiting(server);
-        try (ControlClient client = ControlClient.attach(
-                        server.config(), server.session("wait").orElseThrow().id());
+        try (ControlClient client = server.control(server.session("wait").orElseThrow());
                 EventSubscription<PaneOutput> output = client.subscribeOutput(1024)) {
             for (int round = 0; round < WAIT_ROUNDS; round++) {
                 pane.sendLine(printsAfterDelay(round));
                 StringBuilder seen = new StringBuilder();
                 while (seen.indexOf("mark-" + round) < 0) {
                     seen.append(
-                            output.next(Duration.ofSeconds(10)).orElseThrow().data());
+                            output.next(Duration.ofSeconds(10)).orElseThrow()
+                                            instanceof Delivery.Event<PaneOutput> event
+                                    ? event.value().data()
+                                    : "");
                 }
             }
         } catch (InterruptedException e) {
@@ -214,6 +331,75 @@ final class OperationBenchmark {
             String name = "bench-" + index;
             session.newWindow(window -> window.named(name).detached());
         }
+    }
+
+    private static void plantSessions(Server server) {
+        for (int index = 0; index < 5; index++) {
+            server.newSession("bench-" + index);
+        }
+    }
+
+    /** Fifty sessions of three windows, so a whole-server read has something to pay for. */
+    private static void plantManySessions(Server server) {
+        for (int index = 0; index < 50; index++) {
+            Session session = server.newSession("bench-" + index);
+            session.newWindow(window -> window.detached());
+            session.newWindow(window -> window.detached());
+        }
+    }
+
+    /** A pane both plantings create, in a session other than the first. */
+    private static final PaneId FIFTH_PANE = new PaneId("%4");
+
+    /** One pane found by reading everything and looking. */
+    private static String findPaneInSnapshot(Server server, PaneId id) {
+        String seen = "";
+        for (int round = 0; round < ROUNDS; round++) {
+            seen = server.snapshot().panes().stream()
+                    .filter(pane -> pane.id().equals(id))
+                    .findFirst()
+                    .orElseThrow()
+                    .id()
+                    .value();
+        }
+        return seen;
+    }
+
+    /** The same pane asked for by id, which reads only the session holding it. */
+    private static String paneById(Server server, PaneId id) {
+        String seen = "";
+        for (int round = 0; round < ROUNDS; round++) {
+            seen = server.pane(id).orElseThrow().id().value();
+        }
+        return seen;
+    }
+
+    /** One session found by reading everything and looking. */
+    private static String findInSnapshot(Server server) {
+        String seen = "";
+        for (int round = 0; round < ROUNDS; round++) {
+            seen = server.snapshot().session("bench-3").orElseThrow().name();
+        }
+        return seen;
+    }
+
+    /** The same session asked for by name, which lists only that session. */
+    private static String sessionByName(Server server) {
+        String seen = "";
+        for (int round = 0; round < ROUNDS; round++) {
+            seen = server.session("bench-3").orElseThrow().name();
+        }
+        return seen;
+    }
+
+    /** A filter tmux applies, matching two sessions. */
+    private static String filtered(Server server) {
+        int seen = 0;
+        for (int round = 0; round < ROUNDS; round++) {
+            seen = server.sessions(Session_.name().in(List.of("bench-1", "bench-3")))
+                    .size();
+        }
+        return Integer.toString(seen);
     }
 
     /** Builds a workspace one call at a time: what a program setting tmux up does naively. */
@@ -352,37 +538,281 @@ final class OperationBenchmark {
                 scenario, sorted.get(sorted.size() / 2), sorted.getFirst(), sorted.getLast(), dispatches, output);
     }
 
-    private Sample once(Path root, String scenario, int sample, Consumer<Server> setUp, Function<Server, String> work)
+    Sample once(Path root, String scenario, int sample, Consumer<Server> setUp, Function<Server, String> work)
             throws IOException {
-        Path home = root.resolve(scenario.replace("()", "").replace(' ', '-') + "-" + sample);
+        ServerConfig built = configFor(root.resolve(scenario.replace("()", "").replace(' ', '-') + "-" + sample));
+        Counting counting = new Counting(new ProcessTransport());
+        try (Server server = Server.using(built, counting)) {
+            try {
+                server.newSession("bench");
+                tmux = server.version().toString();
+                setUp.accept(server);
+                // Warm: the first command pays for starting a server, which is not what is being
+                // compared. Whatever the scenario needed is already in place, so none of it is timed.
+                server.windows();
+                int before = counting.dispatches.get();
+                long started = System.nanoTime();
+                String output = work.apply(server);
+                long millis = (System.nanoTime() - started) / 1_000_000;
+                int dispatches = counting.dispatches.get() - before;
+                return new Sample(millis, dispatches, output);
+            } finally {
+                // Closing leaves tmux running, and the socket goes with the temporary directory,
+                // so a scenario that throws would leave a daemon nothing can reach.
+                server.killServer();
+            }
+        } finally {
+            counting.close();
+        }
+    }
+
+    /** One scenario's isolated server: its own socket and an empty configuration, under {@code home}. */
+    private static ServerConfig configFor(Path home) throws IOException {
         Files.createDirectories(home);
         Path config = home.resolve("empty.conf");
         Files.writeString(config, "");
-        ServerConfig built = ServerConfig.builder()
+        return ServerConfig.builder()
                 .binary(System.getProperty("libtmux.tmux", "tmux"))
                 .endpoint(ServerEndpoint.socketPath(home.resolve("s")))
                 .configFile(config)
                 .defaultTimeout(Duration.ofSeconds(30))
                 .build();
+    }
 
+    // -------------------------------------------------------------------- control vs. process
+
+    /**
+     * Sends {@link #TRANSPORT_PROBE} {@link #TRANSPORT_ROUNDS} times as a fresh tmux process each,
+     * timing each dispatch on its own so the spread is a distribution rather than a single total.
+     */
+    private Timed measureProcessPerCommand(Path root) throws IOException {
+        try (Server server = Server.using(configFor(root.resolve("transport-process")), new ProcessTransport())) {
+            try {
+                server.newSession("bench");
+                server.windows();
+                for (int round = 0; round < TRANSPORT_WARMUP; round++) {
+                    if (!server.cmd(TRANSPORT_PROBE).succeeded()) {
+                        throw new AssertionError("process warmup failed");
+                    }
+                }
+                long[] nanos = new long[TRANSPORT_ROUNDS];
+                for (int round = 0; round < TRANSPORT_ROUNDS; round++) {
+                    long started = System.nanoTime();
+                    CommandResult result = server.cmd(TRANSPORT_PROBE);
+                    nanos[round] = System.nanoTime() - started;
+                    if (!result.succeeded()) {
+                        throw new AssertionError("process probe failed: " + result);
+                    }
+                }
+                return new Timed("process: one command", median(nanos), percentile95(nanos), TRANSPORT_ROUNDS);
+            } finally {
+                server.killServer();
+            }
+        }
+    }
+
+    /**
+     * Sends {@link #TRANSPORT_PROBE} {@link #TRANSPORT_ROUNDS} times over one attached
+     * {@link ControlClient}, opened before timing starts so the attach itself is not counted.
+     */
+    private Timed measureControlPerCommand(Path root) throws IOException {
+        try (Server server = Server.using(configFor(root.resolve("transport-control")), new ProcessTransport())) {
+            try {
+                Session session = server.newSession("bench");
+                server.windows();
+                try (ControlClient client = server.control(session)) {
+                    for (int round = 0; round < TRANSPORT_WARMUP; round++) {
+                        if (!client.send(TRANSPORT_PROBE).succeeded()) {
+                            throw new AssertionError("control warmup failed");
+                        }
+                    }
+                    long[] nanos = new long[TRANSPORT_ROUNDS];
+                    for (int round = 0; round < TRANSPORT_ROUNDS; round++) {
+                        long started = System.nanoTime();
+                        ControlReply reply = client.send(TRANSPORT_PROBE);
+                        nanos[round] = System.nanoTime() - started;
+                        if (!reply.succeeded()) {
+                            throw new AssertionError("control probe failed: " + reply);
+                        }
+                    }
+                    return new Timed(
+                            "control: one command (attached)", median(nanos), percentile95(nanos), TRANSPORT_ROUNDS);
+                }
+            } finally {
+                server.killServer();
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------- live state
+
+    /** How many changes the mirror is asked to follow. */
+    private static final int MIRROR_ROUNDS = 20;
+
+    /** What following one change cost: how long until it was published, and what the rebuilds took. */
+    private record Following(long medianNanos, long p95Nanos, double dispatchesPerChange, int changes) {}
+
+    /**
+     * Opens a {@link ServerMirror} on a counted server, then makes {@link #MIRROR_ROUNDS} windows
+     * through a second, uncounted client, timing each from sending the command to the mirror
+     * publishing a view that holds it. The counted client carries only the mirror's rebuilds.
+     */
+    private Following measureMirrorFollowing(Path root) throws Exception {
+        ServerConfig config = configFor(root.resolve("mirror"));
         Counting counting = new Counting(new ProcessTransport());
-        try (Server server = Server.using(built, counting)) {
-            server.newSession("bench");
-            tmux = server.version().toString();
-            setUp.accept(server);
-            // Warm: the first command pays for starting a server, which is not what is being
-            // compared. Whatever the scenario needed is already in place, so none of it is timed.
-            server.windows();
-            int before = counting.dispatches.get();
-            long started = System.nanoTime();
-            String output = work.apply(server);
-            long millis = (System.nanoTime() - started) / 1_000_000;
-            int dispatches = counting.dispatches.get() - before;
-            server.killServer();
-            return new Sample(millis, dispatches, output);
+        try (Server maker = Server.open(config);
+                Server watched = Server.using(config, counting)) {
+            try {
+                Session session = maker.newSession("bench");
+                try (ServerMirror mirror =
+                        ServerMirror.open(watched.session(session.id()).orElseThrow())) {
+                    awaitQuiet(counting);
+                    int before = counting.dispatches.get();
+                    long[] nanos = new long[MIRROR_ROUNDS];
+                    for (int round = 0; round < MIRROR_ROUNDS; round++) {
+                        String name = "followed-" + round;
+                        long started = System.nanoTime();
+                        // A raw command: newWindow would also read the window back, and the
+                        // rebuild would finish during that read, before the clock could see it.
+                        maker.run(List.of("new-window", "-d", "-t", session.id().value() + ":", "-n", name));
+                        ServerMirror.View view = mirror.current();
+                        while (view.snapshot().windows().stream()
+                                .noneMatch(w -> w.name().equals(name))) {
+                            view = mirror.awaitNewer(view.epoch(), Duration.ofSeconds(10))
+                                    .orElseThrow(() -> new AssertionError("the mirror never published " + name));
+                        }
+                        nanos[round] = System.nanoTime() - started;
+                    }
+                    awaitQuiet(counting);
+                    double perChange = (counting.dispatches.get() - before) / (double) MIRROR_ROUNDS;
+                    return new Following(median(nanos), percentile95(nanos), perChange, MIRROR_ROUNDS);
+                }
+            } finally {
+                maker.killServer();
+            }
         } finally {
             counting.close();
         }
+    }
+
+    /** Until the count stops moving for a quarter of a second: rebuilds already under way finish. */
+    private static void awaitQuiet(Counting counting) throws InterruptedException {
+        int seen = -1;
+        while (seen != counting.dispatches.get()) {
+            seen = counting.dispatches.get();
+            Thread.sleep(250);
+        }
+    }
+
+    /** Lines a pane prints for the flood. */
+    private static final int FLOOD_LINES = 50_000;
+
+    /** What reading a flood of output through {@code poll()} and {@code onReady} delivered. */
+    private record Flood(long millis, int lines, long frames, long gapped) {}
+
+    /**
+     * A pane prints {@link #FLOOD_LINES} numbered lines, and a subscription reads them the way the
+     * Kotlin and Scala stream bridges do: {@code poll()} until empty, then a one-shot {@code onReady}
+     * to wait without a thread. The buffer is sized so nothing is dropped, which makes this the
+     * ceiling those bridges sit under.
+     */
+    private Flood measureFlood(Path root) throws Exception {
+        try (Server server = Server.using(configFor(root.resolve("flood")), new ProcessTransport())) {
+            try {
+                Session session = server.newSession("bench");
+                Pane pane = session.windows().getFirst().panes().getFirst();
+                try (ControlClient client = server.control(session);
+                        EventSubscription<PaneOutput> output = client.subscribeOutput(1 << 16)) {
+                    // The marker is computed, so the echo of the typed line cannot end the read.
+                    pane.sendLine("seq 1 " + FLOOD_LINES + "; echo flood-$((6*7))-done");
+                    long started = System.nanoTime();
+                    long frames = 0;
+                    long gapped = 0;
+                    StringBuilder tail = new StringBuilder();
+                    while (tail.indexOf("flood-42-done") < 0) {
+                        java.util.Optional<Delivery<PaneOutput>> step = output.poll();
+                        if (step.isEmpty()) {
+                            java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(1);
+                            output.onReady(ready::countDown);
+                            if (!ready.await(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                                throw new AssertionError("the flood stopped arriving");
+                            }
+                            continue;
+                        }
+                        if (step.get() instanceof Delivery.Gap<PaneOutput> gap) {
+                            gapped += gap.missed();
+                            continue;
+                        }
+                        frames++;
+                        tail.append(Delivery.kept(step.get()).data());
+                        if (tail.length() > 256) {
+                            tail.delete(0, tail.length() - 256);
+                        }
+                    }
+                    long millis = (System.nanoTime() - started) / 1_000_000;
+                    return new Flood(millis, FLOOD_LINES, frames, gapped);
+                }
+            } finally {
+                server.killServer();
+            }
+        }
+    }
+
+    /** The library's own platform threads at each step, counted rather than stated. */
+    private record Threads(int idle, int afterConcurrentReads, int controlAttached, int subscribed) {}
+
+    /**
+     * Counts platform threads whose names this library gives them. Virtual threads — the mirror's
+     * listener, the default publisher executor — are not counted: they hold no carrier while they
+     * wait.
+     */
+    private Threads measureThreads(Path root) throws Exception {
+        try (Server server = Server.using(configFor(root.resolve("threads")), new ProcessTransport(4))) {
+            try {
+                Session session = server.newSession("bench");
+                server.windows();
+                int idle = libtmuxThreads();
+                try (java.util.concurrent.ExecutorService callers =
+                        java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+                    List<java.util.concurrent.Future<?>> reads = new ArrayList<>();
+                    for (int caller = 0; caller < 8; caller++) {
+                        reads.add(callers.submit(() -> server.snapshot()));
+                    }
+                    for (java.util.concurrent.Future<?> read : reads) {
+                        read.get();
+                    }
+                }
+                int afterReads = libtmuxThreads();
+                try (ControlClient client = server.control(session)) {
+                    int attached = libtmuxThreads();
+                    try (EventSubscription<PaneOutput> output = client.subscribeOutput(64)) {
+                        output.poll();
+                        return new Threads(idle, afterReads, attached, libtmuxThreads());
+                    }
+                }
+            } finally {
+                server.killServer();
+            }
+        }
+    }
+
+    private static int libtmuxThreads() {
+        return (int) Thread.getAllStackTraces().keySet().stream()
+                .filter(thread -> thread.isAlive() && thread.getName().startsWith("libtmux-"))
+                .count();
+    }
+
+    private static long median(long[] values) {
+        long[] sorted = values.clone();
+        Arrays.sort(sorted);
+        return sorted[sorted.length / 2];
+    }
+
+    private static long percentile95(long[] values) {
+        long[] sorted = values.clone();
+        Arrays.sort(sorted);
+        int index = Math.max(0, Math.min(sorted.length - 1, (int) Math.ceil(sorted.length * 0.95) - 1));
+        return sorted[index];
     }
 
     // --------------------------------------------------------------------------------- the table
@@ -390,15 +820,34 @@ final class OperationBenchmark {
     private String render(
             List<Measured> grouping,
             List<Measured> reading,
+            List<Measured> narrowing,
+            List<Measured> narrowingMany,
             List<Measured> guarding,
             List<Measured> waits,
-            List<Measured> options) {
+            List<Measured> options,
+            List<Timed> transports,
+            Following following,
+            Flood flood,
+            Threads threads) {
         StringBuilder out = new StringBuilder();
         out.append("# What an operation costs, measured\n\n")
-                .append("Regenerated by `./gradlew operationBenchmark`. Never edit by hand.\n\n")
-                .append("Measured against tmux `")
+                .append("Regenerated by `./gradlew operationBenchmark`. Never edit by hand.\n\n");
+
+        out.append("| environment | value |\n")
+                .append("| --- | --- |\n")
+                .append("| tmux | `")
                 .append(tmux)
-                .append("`, ")
+                .append("` |\n| JVM | `")
+                .append(jvm())
+                .append("` |\n| OS | `")
+                .append(os())
+                .append("` |\n| CPU | `")
+                .append(cpu())
+                .append("` |\n| commit | `")
+                .append(commit())
+                .append("` |\n\n");
+
+        out.append("Measured ")
                 .append(ROUNDS)
                 .append(" rounds per scenario, each scenario run ")
                 .append(SAMPLES)
@@ -424,6 +873,17 @@ final class OperationBenchmark {
                 .append("server is, then run the four listings as one group fenced against that ")
                 .append("answer. Two commands, whatever the hierarchy holds.\n\n");
         table(out, "read", reading);
+
+        out.append("\n## Narrow reads\n\n")
+                .append("Five sessions, one wanted. A lookup by name, by pane id, or by a filter tmux can ")
+                .append("apply reads who the server is, then lists only the sessions it wants, with their ")
+                .append("windows and panes, as one fenced group: two commands, the same as a snapshot, ")
+                .append("over less of the server. A pane or window condition is looped over each ")
+                .append("session inside tmux, so no probe comes first.\n\n");
+        table(out, "read", narrowing);
+        out.append("\nThe same reads against fifty sessions of three windows each. The commands do not ")
+                .append("change; what a whole-server read pays for is the rows.\n\n");
+        table(out, "read", narrowingMany);
 
         out.append("\n## What the staleness guard costs\n\n")
                 .append("A handle fences every command it sends behind `if-shell -F`, so that a ")
@@ -465,6 +925,93 @@ final class OperationBenchmark {
         table(out, "read", options);
         out.append("\nThat is the cost: one option is one command, and a listing is two whatever ")
                 .append("its size, until it outgrows what one command may carry.\n");
+
+        out.append("\n## One command, two transports\n\n")
+                .append("The same read, `display-message -p \"#{session_name}\"`, sent ")
+                .append(TRANSPORT_ROUNDS)
+                .append(" times after ")
+                .append(TRANSPORT_WARMUP)
+                .append(" untimed: once as a `ProcessTransport` dispatch, a fresh tmux process per ")
+                .append("command, and once as a request over an attached `ControlClient`, which stays ")
+                .append("connected between requests. Nanoseconds, because that is the size of the gap ")
+                .append("a persistent control-mode transport would close.\n\n");
+        out.append("| transport | median per command | p95 per command | commands |\n")
+                .append("| --- | --- | --- | --- |\n");
+        for (Timed row : transports) {
+            out.append("| `%s` | %s | %s | %d |%n"
+                    .formatted(row.label(), micros(row.medianNanos()), micros(row.p95Nanos()), row.commands()));
+        }
+        out.append("\nThis justifies keeping the process transport the default and control opt-in; it ")
+                .append("does not justify making a persistent control transport the default, and it does ")
+                .append("not offset what control mode gives up to get there. A control reply is an ")
+                .append("acknowledgement, not a completion — a queued `run-shell` finishes later, off ")
+                .append("this measurement. Standard input has no per-command channel in control mode, so ")
+                .append("`Pane.paste` still needs a process. One control client answers one request at a ")
+                .append("time, so concurrent callers serialize behind it, where the process transport ")
+                .append("runs them at once. An untargeted command sent over control resolves against the ")
+                .append("attached session, not whichever session a caller meant.\n");
+        out.append("\nA persistent, general-purpose control-backed transport was investigated and not ")
+                .append("built: `if-shell`'s guarded branch, and each command inside a semicolon-joined ")
+                .append("batch, answer as their own separate reply blocks rather than folding into one, so ")
+                .append("a transport forwarding this library's existing fenced and batched commands to a ")
+                .append("persistent control client would return truncated or empty results for nearly ")
+                .append("every typed operation, `Server.snapshot()` included. ")
+                .append("`docs/decisions/0018-control-backed-transport-rejected.md` has the measurements.\n");
+
+        out.append("\n## Following a change\n\n")
+                .append("A `ServerMirror` listens through a control client and takes a fresh snapshot for ")
+                .append("each announcement. ")
+                .append(following.changes())
+                .append(" windows were created through another client, each timed from sending the ")
+                .append("command to the mirror publishing a view that held it: the command's own process, ")
+                .append("tmux's announcement, and the rebuild.\n\n")
+                .append("| measure | value |\n| --- | --- |\n")
+                .append("| median, command sent to view published | %s |%n".formatted(micros(following.medianNanos())))
+                .append("| p95 | %s |%n".formatted(micros(following.p95Nanos())))
+                .append("| commands the mirror dispatched per change | %.1f |%n"
+                        .formatted(following.dispatchesPerChange()))
+                .append("\nA rebuild is a snapshot, two commands. A new window is announced more than once, ")
+                .append("and announcements that arrive during a rebuild fold into one more, so a change ")
+                .append("costs one or two rebuilds rather than one per announcement.\n");
+
+        out.append("\n## Output through `poll()` and `onReady`\n\n")
+                .append("A pane prints ")
+                .append(flood.lines())
+                .append(" numbered lines; a subscription reads them as the Kotlin `Flow` and fs2 bridges do, ")
+                .append("polling until empty and then arming a one-shot `onReady`, so no thread waits. ")
+                .append("The buffer holds the whole flood, so this is the ceiling those bridges sit ")
+                .append("under.\n\n")
+                .append("| measure | value |\n| --- | --- |\n")
+                .append("| wall clock, command to last line | %d ms |%n".formatted(flood.millis()))
+                .append("| lines per second | %d |%n"
+                        .formatted(flood.millis() == 0 ? 0 : flood.lines() * 1000L / flood.millis()))
+                .append("| frames delivered | %d |%n".formatted(flood.frames()))
+                .append("| events dropped | %d |%n".formatted(flood.gapped()))
+                .append("\ntmux batches output into `%output` frames, so frames are far fewer than lines. ")
+                .append("The number is tmux's pace as much as this library's: a pane writes to a pty, and ")
+                .append("tmux reads, parses and re-encodes it before a control client sees it.\n");
+
+        out.append("\n## Threads the library holds\n\n")
+                .append("Platform threads named `libtmux-*`, counted at each step on a transport bounded ")
+                .append("at four processes. Virtual threads, such as a mirror's listener, are not counted: ")
+                .append("they hold no carrier while they wait.\n\n")
+                .append("| step | threads |\n| --- | --- |\n")
+                .append("| server open, a session made and listed | %d |%n".formatted(threads.idle()))
+                .append("| after eight concurrent snapshots | %d |%n".formatted(threads.afterConcurrentReads()))
+                .append("| a control client attached | %d |%n".formatted(threads.controlAttached()))
+                .append("| an output subscription open | %d |%n".formatted(threads.subscribed()))
+                .append("\nThree drain threads per admission slot, and never more however many callers ")
+                .append("queue: eight concurrent snapshots on four slots held no more than four sequential ")
+                .append("commands did. A fixed pool starts a new thread for each of its first tasks even ")
+                .append("while others are idle, so a few commands in a row already hold all of them; ")
+                .append("each lets go after ten idle seconds, which is how an unclosed transport still ")
+                .append("lets a program exit. A control client adds three. A subscription adds none.\n");
+
+        out.append("\n## What this does not measure\n\n")
+                .append("Not measured here: MCP tool call overhead, and the Kotlin and Scala stream layers ")
+                .append("above `poll()`. Their stress tests account for every event under a producer ")
+                .append("that outruns the consumer (`FlowBridgeStressTest`, `ObservationStressSuite`); ")
+                .append("their throughput is bounded by the flood above.\n");
         return out.toString();
     }
 
@@ -481,6 +1028,72 @@ final class OperationBenchmark {
         return row.low() == row.high()
                 ? "%d ms".formatted(row.millis())
                 : "%d ms (%d-%d)".formatted(row.millis(), row.low(), row.high());
+    }
+
+    private static String micros(long nanos) {
+        return "%.1f µs".formatted(nanos / 1000.0);
+    }
+
+    // ----------------------------------------------------------------------------- environment
+
+    /**
+     * The revision measured, and whether the code differed from it. The table itself is left out of
+     * that comparison: regenerating it is what changes it.
+     */
+    private static String commit() {
+        java.util.Optional<String> head = git("rev-parse", "--short=12", "HEAD");
+        if (head.isEmpty()) {
+            return "unknown";
+        }
+        java.util.Optional<String> changed =
+                git("status", "--porcelain", "--untracked-files=no", "--", ":/", ":(exclude,top)docs/benchmarks");
+        return head.get() + (changed.map(String::isBlank).orElse(false) ? "" : " with uncommitted changes");
+    }
+
+    private static java.util.Optional<String> git(String... arguments) {
+        List<String> command = new java.util.ArrayList<>(List.of("git"));
+        command.addAll(List.of(arguments));
+        try {
+            Process process =
+                    new ProcessBuilder(command).redirectErrorStream(true).start();
+            String output =
+                    new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            return process.waitFor() == 0 ? java.util.Optional.of(output.strip()) : java.util.Optional.empty();
+        } catch (IOException e) {
+            return java.util.Optional.empty();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return java.util.Optional.empty();
+        }
+    }
+
+    private static String jvm() {
+        return System.getProperty("java.version") + " (" + System.getProperty("java.vendor") + ")";
+    }
+
+    private static String os() {
+        return System.getProperty("os.name") + " " + System.getProperty("os.version") + " ("
+                + System.getProperty("os.arch") + ")";
+    }
+
+    private static String cpu() {
+        int cores = Runtime.getRuntime().availableProcessors();
+        return cpuModel().orElse("unknown model") + ", " + cores + (cores == 1 ? " core" : " cores");
+    }
+
+    /** Linux only: the one fact {@code Runtime} does not report about the CPU this ran on. */
+    private static java.util.Optional<String> cpuModel() {
+        Path cpuinfo = Path.of("/proc/cpuinfo");
+        if (!Files.isReadable(cpuinfo)) {
+            return java.util.Optional.empty();
+        }
+        try (var lines = Files.lines(cpuinfo)) {
+            return lines.filter(line -> line.startsWith("model name"))
+                    .map(line -> line.substring(line.indexOf(':') + 1).strip())
+                    .findFirst();
+        } catch (IOException e) {
+            return java.util.Optional.empty();
+        }
     }
 
     private static List<String> labelled(List<Measured> rows) {

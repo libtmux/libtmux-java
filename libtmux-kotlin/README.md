@@ -1,100 +1,226 @@
 # libtmux-kotlin
 
-**Kotlin ergonomics over the Java API. Sugar, not enablement.**
-
-You do not need this module to use libtmux from Kotlin. The core is annotated
-with [JSpecify](https://jspecify.dev/), which Kotlin has read since 1.5.20, so
-every type already arrives as `Window` rather than `Window!`.
+**Coroutine wrapper classes, a session/window/split DSL, and `Flow`/`StateFlow`
+bridges over the Java API.**
 
 `io.github.libtmux:libtmux-kotlin` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin).
 
 > **Alpha.** The API will change without notice.
 
+Needs Kotlin 2.1 or later. The module is compiled for Kotlin 2.2 metadata and
+the 2.2 standard library, the level kotlinx-coroutines 1.11 is compiled for, and
+a Kotlin compiler reads metadata up to one minor version newer than itself.
+`ConsumerBaselineTest` fails if a build raises that level.
+
 Every Kotlin example below is executed against a real tmux server by
 [`ReadmeExamplesTest`](src/test/kotlin/io/github/libtmux/kotlin/ReadmeExamplesTest.kt),
 one test per section.
-
-## What already works with no module at all
-
-```kotlin
-Server.open(config).use { server ->                        // AutoCloseable
-    val session = server.newSession { it.named("build") }  // SAM conversion
-
-    session.name()                       // → build
-    server.sessions().size               // → 2
-}
-```
-
-Make a nullness mismatch an error rather than a warning:
-
-<!-- snippet: skip: build configuration, not library code -->
-```kotlin
-kotlin {
-    compilerOptions { freeCompilerArgs.addAll("-Xjspecify-annotations=strict") }
-}
-```
-
-This module is built that way, which is how the claim stays honest: its `!`
-operator did not compile until its type parameter was bounded `T : Any`, because
-`@NullMarked` makes the core's `FilterExpr` a `FilterExpr<T : Any>`.
 
 ## Install
 
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.14"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.15"))
     implementation("io.github.libtmux:libtmux-kotlin")
 }
 ```
 
-## What it adds
+## Wrapper classes, not the Java types directly
 
-**Absence as `null`.** `Optional` is inert in Kotlin — `?.`, `?:` and smart casts
-do not work on it — so the accessors that can genuinely be absent get a nullable
-form:
-
-```kotlin
-import io.github.libtmux.kotlin.activeWindowOrNull
-import io.github.libtmux.kotlin.floatingOrNull
-import io.github.libtmux.kotlin.getOrNull
-
-// A window id, or null once the session has gone.
-session.activeWindowOrNull()?.id()?.value()?.startsWith("@")   // → true
-
-// A Boolean on tmux 3.7 and later, and null before it, which cannot report the
-// flag at all. Absence and false are different answers, and this keeps them so.
-pane.floatingOrNull()
-
-// Absent rather than Optional.empty, so ?: and ?. work on it.
-server.options().getOrNull("no-such-option")                   // → null
-```
-
-**Filtering with an expression.** Kotlin's own `filter` takes a function, not a
-`Predicate`, so handing it a `FilterExpr` does not compile — the one place where
-reading the Java documentation and writing Kotlin part company. This module adds
-the overload:
+`Server`, `Session`, `Window`, `Pane`, `Client`, and `ControlClient` here are
+Kotlin classes over the matching Java handle, which each answers as `asJava`;
+`Server.fromJava` wraps a server opened in Java. Every operation that reaches
+tmux is `suspend`; captured state is a plain property.
+`withServer` opens one and closes it even if the block throws or is
+cancelled:
 
 ```kotlin
-import io.github.libtmux.kotlin.filter
+// Given: config: ServerConfig
+withServer(config) { server ->
+    val session = server.newSession("build")
 
-val editors = server.panes().filter(Pane_.command().startsWith("nvim"))
+    session.name                          // → build
+    server.admissionBound > 0             // → true
+}
 ```
 
-**Negation as an operator:**
+## Declare a session, its windows, and their splits with the DSL
+
+`@DslMarker` keeps a nested block from reaching an outer block's receiver by
+accident: a `split { }` inside a `window { }` cannot set the *session's*
+`directory` without writing `this@newSession.directory` to say so. tmux
+always gives a new session one window; the first `window { }` block renames
+that one, and each later block is a genuine new window — two blocks make two
+windows, not three.
 
 ```kotlin
-import io.github.libtmux.kotlin.filter
-import io.github.libtmux.kotlin.not
+// Given: config: ServerConfig
+withServer(config) { server ->
+    val session = server.newSession {
+        name = "editors"
+        window { name = "left" }
+        window {
+            name = "right"
+            split { toRight(); percent(30) }
+        }
+    }
 
-val idle = server.panes().filter(!Pane_.active().isTrue())
+    session.windows.size                  // → 2
+}
 ```
 
-There is deliberately no `and`/`or` here. Those are already methods on
-`FilterExpr`, and an extension of the same name would be shadowed by the member
-inside its own body while winning at an infix call site — correct either way, for
-a reason no reader should have to work out. `a.and(b)` is one character longer
-than `a and b` and always means what it appears to.
+## Send keys, capture output, run a command
+
+```kotlin
+// Given: config: ServerConfig
+import io.github.libtmux.kotlin.orNull
+import kotlin.time.Duration.Companion.seconds
+
+withServer(config) { server ->
+    val session = server.newSession("keys-demo")
+    val pane = session.activeWindow?.activePane ?: error("no active pane")
+
+    pane.sendLine("echo ready")
+    pane.awaitText("ready", timeout = 5.seconds)
+    val lines = pane.capture()
+
+    val run = pane.run("echo hi && exit 3", timeout = 5.seconds)
+    run.exitStatus.orNull()                // → 3
+    lines.isNotEmpty()                    // → true
+}
+```
+
+## Query with typed fields on the companion
+
+Fields live on the handle type's companion — `Pane.command`, not a static
+`Pane_.command()` — generated from the same `field-catalog.tsv` that
+generates the Java metamodel, so the two can never disagree.
+
+```kotlin
+// Given: config: ServerConfig
+import io.github.libtmux.kotlin.query.active
+import io.github.libtmux.kotlin.query.command
+
+withServer(config) { server ->
+    server.newSession("query-demo")
+    val editors = server.panes(Pane.command startsWith "nvim")
+    val activePanes = server.panes(Pane.active.isTrue())
+
+    editors.size >= 0                     // → true
+    activePanes.isNotEmpty()              // → true
+}
+```
+
+`server.session(expr)` throws `CardinalityException` on no match or more than
+one; `server.sessionOrNull(expr)` is null on no match and still throws on
+more than one — Kotlin's own collection convention (`single`/`singleOrNull`),
+applied to a tmux lookup.
+
+## Exhaustive `when` over the sealed failure tree
+
+```kotlin
+import io.github.libtmux.exception.CardinalityException
+import io.github.libtmux.exception.CommandRejectedException
+import io.github.libtmux.exception.ControlEndedException
+import io.github.libtmux.exception.DispatchException
+import io.github.libtmux.exception.LibTmuxException
+import io.github.libtmux.exception.MalformedResponseException
+import io.github.libtmux.exception.ServerUnavailableException
+import io.github.libtmux.exception.TargetGoneException
+import io.github.libtmux.exception.UnencodableTextException
+import io.github.libtmux.exception.UnsupportedFeatureException
+
+fun nextStep(failure: LibTmuxException): String =
+    when (failure) {                                // exhaustive, no else
+        is TargetGoneException -> "look it up again"
+        is ServerUnavailableException -> "start a server"
+        is CommandRejectedException -> "change the request"
+        is DispatchException -> if (failure.safeToRetry()) "send it again" else "read state first"
+        is ControlEndedException -> "attach again"
+        is UnsupportedFeatureException -> "do without"
+        is UnencodableTextException -> "use a UTF-8 locale"
+        is MalformedResponseException -> "report it"
+        is CardinalityException.NoMatch -> "nothing matched"
+        is CardinalityException.MultipleMatches -> "ambiguous"
+    }
+
+nextStep(CardinalityException.MultipleMatches("many", 3))   // → ambiguous
+```
+
+A new leaf breaks every such `when` at the branch that omits it:
+`ExhaustivenessCompileTest` compiles a `when` one branch short and asserts the
+compiler rejects it.
+
+## A subscription as a cold `Flow`
+
+```kotlin
+// Given: config: ServerConfig
+import io.github.libtmux.control.Delivery
+import kotlinx.coroutines.flow.first
+
+withServer(config) { server ->
+    val session = server.newSession("flow-demo")
+    withControl(server, session) { control ->
+        val step = control.output(capacity = 64) {
+            control.send("send-keys", "-t", session.name, "echo flowed", "Enter")
+        }.first()
+        val outcome = when (step) {            // exhaustive, no else
+            is Delivery.Event -> "kept"
+            is Delivery.Gap -> "lost ${step.missed}"
+        }
+        outcome                                // → kept
+    }
+}
+```
+
+`output`/`events` open a *fresh* Java subscription per `collect()` — over
+`EventSubscription.poll`/`onReady`, never a parked thread — and close it when
+collection ends, is cancelled, or throws. Output tmux sends before that
+subscription opens is not delivered, so the command whose output you want goes
+in the trailing `onSubscribed` block, which runs once the subscription exists
+and before the first read. A `Delivery.Gap` is an element like any other,
+ahead of the events that survived a full buffer; nothing is silently dropped.
+
+## The live server as a `StateFlow`
+
+```kotlin
+// Given: config: ServerConfig
+import kotlinx.coroutines.flow.first
+
+withServer(config) { server ->
+    val session = server.newSession("live-demo")
+    server.withLiveState(session) { live ->
+        val view = live.first()
+
+        view.epoch >= 0L                  // → true
+    }
+}
+```
+
+Wraps Java's `ServerMirror` — resnapshot on notification, on gap, and on
+reconnect happen once, inside it — rather than patching state in Kotlin.
+Named `liveState`, not `ServerMirror`, so it does not collide with the Java
+type it wraps. `liveState`'s own background pump runs until its scope ends,
+by design — a caller collecting for a program's whole life passes its own
+long-lived scope — so `withLiveState` is the scoped form for everything
+shorter: it cancels the pump once its block returns, the same shape
+`withServer`/`withControl` already have for the resources they open.
+
+## Retry using the safe-to-retry predicate
+
+```kotlin
+// Given: config: ServerConfig
+withServer(config) { server ->
+    val version = retryIfSafe(times = 3) { server.version() }
+    version.major >= 3                    // → true
+}
+```
+
+`retryIfSafe` catches only `DispatchException` and checks
+`failure.safeToRetry()`, computed by the operation that threw it from its own
+catalogued idempotence — no retry executor, and no catalog lookup at the call
+site.
 
 ## Why nothing in Java may depend on this
 
@@ -108,5 +234,5 @@ NullAway. The dependency runs one way only.
 ## Next
 
 - [Kotlin guide](../docs/guide/kotlin.md)
-- [`libtmux`](../libtmux/) — the API this sweetens
+- [`libtmux`](../libtmux/) — the API this wraps
 - [Root README](../README.md)

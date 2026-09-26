@@ -1,6 +1,6 @@
 # Snapshots and handles
 
-Every snippet here is executed by `ExamplesTest`.
+Every snippet here is executed by `DocumentationSnippetsTest`.
 
 ## A capture is a moment
 
@@ -25,16 +25,47 @@ in one listing and its panes from after it closed.
 A capture costs two tmux commands: one asks which server this is, and one runs the
 four listings as a group fenced against that answer. Because tmux runs a group
 inside the server, the rows cannot come from two of them, and a server replaced
-under the capture is refused rather than half-read. What that costs is measured in
-[`docs/benchmarks/operations.md`](../benchmarks/operations.md).
+under the capture is refused rather than half-read. "Which server" is its pid and
+when it started: a pid can be reused, and a handle is refused by a tmux started
+since on the same one. tmux reports that start in whole seconds, so a server
+replaced on the same pid within the same second would pass; nothing short of a
+token planted in the server closes that gap. What that costs is measured in
+[`docs/benchmarks/operation-costs.md`](../benchmarks/operation-costs.md).
 
 `refresh()` is how to look again. Every live listing, finder and snapshot
 capture throws when it fails. An absent daemon throws
-`ServerNotRunningException`; any other failed capture throws
+`ServerUnavailableException`; any other failed capture throws
 `LibTmuxException`. Empty collections and optionals mean a successful capture
 contained no matches. This changes the earlier alpha behavior that hid failed
 reads behind empty results. Use `isAlive()` when you only need to probe
 whether a daemon answers; transport failures still throw.
+
+## What a snapshot stores
+
+`info()` is that moment. `name()`, `title()`, and `size()` read it. A method
+that sends keys, renames, or waits talks to tmux and does not update `info()`.
+
+The formats read into the snapshot are:
+
+| Object | Formats |
+| --- | --- |
+| Server | `pid`, `version`, `start_time` |
+| Session | `session_id`, `session_name`, `session_attached`, `session_windows` |
+| Window | `session_id`, `window_id`, `window_index`, `window_name`, `window_active`, `window_panes`, `window_linked`, `window_width`, `window_height`, `window_layout` |
+| Pane | `session_id`, `window_id`, `window_index`, `pane_id`, `pane_index`, `pane_active`, `pane_current_command`, `pane_width`, `pane_height`, `pane_left`, `pane_top`, `pane_title`, `pane_current_path`, `pane_pid`, `pane_at_top`, `pane_at_bottom`, `pane_at_left`, `pane_at_right`, and `pane_floating_flag` on tmux 3.7 and later |
+| Client | `client_name`, `session_id` |
+
+Anything else is a live read. `expand` formats one string. `variables` reads
+named formats for one target. `paneFields` reads named formats for every pane.
+Those three are the supported way out of the table above.
+
+```java
+// Given: Server server
+Session session = server.newSession("captured");
+
+session.info().name();       // → captured
+session.info().windows();    // → 1
+```
 
 ## Identity is what a user cannot change
 
@@ -90,13 +121,11 @@ If the effect alone is needed, make that choice explicit:
 var unused = session.rename("effect-only");
 ```
 
-`Client.refresh()` returns an `Optional<Client>` because a client can detach
-while its daemon stays reachable. Empty means that client is gone; a failed
-capture still throws. The other handles' `refresh()` methods return a
-replacement or throw `ObjectDoesNotExistException` when their target is gone
-from a server that still answers. An absent daemon throws
-`ServerNotRunningException` there too, like every other read. None changes the
-previous handle.
+Every handle's `refresh()` returns a replacement, or throws
+`TargetGoneException` when its target is gone from a server that still
+answers: a session killed, a pane closed, a client detached. An absent daemon
+throws `ServerUnavailableException` there too, like every other read. None
+changes the previous handle.
 
 `Window.id()` compares the underlying window across links.
 
@@ -134,4 +163,20 @@ List<String> recent = pane.capture(c -> c.from(-10));
 
 // The history contains at least what is on screen, whatever the shell has printed.
 recent.size() <= everything.size();                             // → true
+```
+
+## Commands that are not a snapshot
+
+These talk to tmux. They do not update `info()`.
+
+`server.shell()` runs a shell command, or chooses one from an exit status.
+`server.commands().list()` is the catalog this tmux knows. `server.prompt()`
+is prompt history, present since tmux 3.3. `server.messageLog().lines()` is
+the server log. Before 3.6 it needs a client attached. `server.keys()` binds
+keys. `server.lock()` locks every attached client. It stays a method on
+`Server`: it is one command, not a group. The Scala facades call it `lock`.
+
+```java
+// Given: Server server
+server.commands().list().isEmpty();                            // → false
 ```

@@ -179,7 +179,7 @@ final class ToolSurface {
     static Map<String, Object> socket(Server server) {
         Selection chosen =
                 switch (server.config().endpoint()) {
-                    case ServerEndpoint.Default unused -> new Selection("inherited", "inherit");
+                    case ServerEndpoint.Default _ -> new Selection("inherited", "inherit");
                     case ServerEndpoint.NamedSocket named -> new Selection("operator-current", "name:" + named.name());
                     case ServerEndpoint.SocketPath path -> new Selection("operator-current", "path:" + path.path());
                 };

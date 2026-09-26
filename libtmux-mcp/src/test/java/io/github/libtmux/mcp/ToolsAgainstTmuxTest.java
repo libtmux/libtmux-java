@@ -6,14 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.LibTmuxException;
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.WakeReason;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -280,8 +280,11 @@ final class ToolsAgainstTmuxTest {
                 .value();
         server.cmd("move-pane", "-s", pane, "-t", destination);
 
-        assertThrows(IllegalStateException.class, () -> Shaping.kill(confirmed));
+        IllegalStateException refused = assertThrows(IllegalStateException.class, () -> Shaping.kill(confirmed));
 
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("retry"), message);
+        assertTrue(message.contains("restart"), message);
         assertTrue(server.panes().stream()
                 .anyMatch(candidate -> candidate.id().value().equals(pane)));
     }
@@ -467,8 +470,7 @@ final class ToolsAgainstTmuxTest {
 
     @Test
     void aTargetThatIsNotThereNamesTheToolThatFindsOne(Server server) {
-        ObjectDoesNotExistException missing =
-                assertThrows(ObjectDoesNotExistException.class, () -> Targets.window(server, "@999"));
+        TargetGoneException missing = assertThrows(TargetGoneException.class, () -> Targets.window(server, "@999"));
 
         assertTrue(String.valueOf(missing.getMessage()).contains("list_windows"), missing.getMessage());
     }
@@ -522,6 +524,7 @@ final class ToolsAgainstTmuxTest {
      * it, this call reached an uncaught {@code ArrayIndexOutOfBoundsException}, which the answer
      * dispatcher in {@code TmuxMcpServer} does not catch, so it left the tool boundary as a
      * transport-level failure instead of an {@code isError} result the model can read and act on.
+     * tmux 3.2a exits without saying anything, so there the reason names the missing directory.
      */
     @Test
     void createSessionUnderAMissingSocketDirectoryReportsTmuxsOwnReason(@TempDir Path directory) throws IOException {
@@ -530,12 +533,15 @@ final class ToolsAgainstTmuxTest {
                 .build();
 
         try (Server broken = Server.open(missingDirectory)) {
+            String reported = broken.run(List.of("-V")).stdout().get(0);
+            boolean speaks = TmuxVersion.parse(reported.substring(reported.indexOf(' ') + 1))
+                    .atLeast(new TmuxVersion(3, 3, ""));
             LibTmuxException failure = assertThrows(
                     LibTmuxException.class, () -> Operations.createSession(TestCalls.on(broken, "session_name", "x")));
 
             assertTrue(
-                    String.valueOf(failure.getMessage()).contains("error creating"),
-                    "tmux's own reason, not a generic message: " + failure.getMessage());
+                    String.valueOf(failure.getMessage()).contains(speaks ? "error creating" : "does not exist"),
+                    "the reason, not a generic message: " + failure.getMessage());
         }
     }
 }

@@ -17,10 +17,10 @@ pins this.
 
 **tmux's own command grammar is not inert.** tmux ends a command at a semicolon
 ending any argument, so an argument built from untrusted text can add a command.
-`ControlClient.isCommandGroup` is the library's reading of that rule, and
-`docs/spikes/21-command-group-boundaries.md` measures it. Treat text you did not
-author as data: pass it as a single argument, and do not concatenate it into
-one.
+`ControlClient.isCommandGroup` is the library's reading of that rule; see
+`docs/decisions/0009-command-groups-are-transport-agnostic.md`. Treat text you
+did not author as data: pass it as a single argument, and do not concatenate it
+into one.
 
 **tmux expands formats before any shell runs.** tmux expands `#{...}` and
 `#(...)` in many argument positions, and `#(...)` runs a command. The expansion
@@ -29,8 +29,8 @@ measured on tmux 3.7d, a `#(...)` inside single quotes ran through both
 `run-shell` and `pipe-pane`. Every argument this library composes itself passes
 through `TmuxFormats.literal`, which doubles `#`. The commands a *caller*
 composes cannot be neutralized for them, because expansion there is sometimes
-the point: `Pane.pipeTo`, `Window.displayPopup`, `Server.runShell`,
-`Server.runShellCapturing`, `Server.ifShell` and `Options.setExpanded` take
+the point: `Pane.pipeTo`, `Window.displayPopup`, `Shell.run`,
+`Shell.capturing`, `Shell.choose` and `Options.setExpanded` take
 caller-authored text, and a value interpolated into one of those needs
 `TmuxFormats.literal` applied to it. No MCP tool reaches these positions with
 model-supplied text.
@@ -51,6 +51,18 @@ pane, and expires after an hour without another write. Submitted or erased
 lines expire after ten seconds; a live wait retains those echoes it has
 observed until that wait ends. Tracking writes nothing to disk or logs and
 sends nothing elsewhere; the text exists only for comparison with pane reads.
+
+## What the build trusts
+
+Every artifact the Gradle build resolves, plugins included, is checked against
+the SHA-256 recorded for it in `gradle/verification-metadata.xml`, and a
+mismatch fails the build. The build does not verify PGP signatures. A signature
+proves an artifact came from whoever holds the signing key. Many artifacts on
+Maven Central are signed by keys nobody has cross-certified, and trusting such a
+key is only trust on first use again. The recorded checksum already detects an
+artifact changed after it was reviewed, so a signature adds a key to manage
+without a real gain in assurance. Adding or upgrading a dependency changes that
+file, so the change shows up in review.
 
 ## Supported versions
 

@@ -2,6 +2,7 @@ package io.github.libtmux.scaladsl.cats
 
 import _root_.cats.effect.{Async, Resource}
 import io.github.libtmux.{ServerConfig, SessionId}
+import io.github.libtmux.scaladsl as direct
 import io.github.libtmux.batch.OperationOutcome
 import io.github.libtmux.control.{
   ControlClient,
@@ -36,6 +37,39 @@ final class Control[F[_]] private[cats] (
     new Control.Ack(underlying.send(argv.asJava, timeout))
   }
 
+  /** Whether this attachment's process is still running. */
+  def isAlive: F[Boolean] = execution {
+    requireOpen()
+    underlying.isAlive()
+  }
+
+  /** Error text from this control process, at most 4096 bytes. */
+  def standardError: F[String] = execution {
+    requireOpen()
+    underlying.standardError()
+  }
+
+  /** Whether `standardError` stopped before the process finished writing. */
+  def standardErrorTruncated: F[Boolean] = execution {
+    requireOpen()
+    underlying.standardErrorTruncated()
+  }
+
+  /** Asks tmux to report `format` when it changes. A target that does not name
+    * a pane or window watches the attached session.
+    */
+  def watch(name: String, target: String, format: String): F[Control.Ack] =
+    execution {
+      requireOpen()
+      new Control.Ack(underlying.watch(name, target, format))
+    }
+
+  /** Removes a watch registered under `name`. */
+  def unwatch(name: String): F[Control.Ack] = execution {
+    requireOpen()
+    new Control.Ack(underlying.unwatch(name))
+  }
+
   /** Registers decoded text output before the returned resource body runs.
     * Terminal bytes and character boundaries are not preserved by Java.
     */
@@ -68,22 +102,60 @@ final class Control[F[_]] private[cats] (
 object Control {
 
   /** Retains tmux's raw reply framing and line shape. */
-  final class Ack private[cats] (val asJava: ControlReply) {
+  final class Ack private[cats] (private[scaladsl] val asJava: ControlReply) {
+    def unsafeJava: ControlReply = asJava
 
     /** True for a %end reply. Deferred tmux work can still be running. */
-    def accepted: Boolean = asJava.outcome() == OperationOutcome.COMPLETE
+    def accepted: Boolean = asJava.outcome().equals(OperationOutcome.COMPLETE)
     val lines: Vector[String] = asJava.lines().asScala.toVector
   }
 
-  /** Attaches lazily to an endpoint and session id, without an incarnation
-    * guard. Bounds simultaneous acknowledgement calls. Release stops their
-    * owned work before detaching the client and preserves the tmux daemon.
+  /** Attaches lazily to whatever server now answers this endpoint, without an
+    * incarnation guard; prefer attaching a captured session. Bounds
+    * simultaneous acknowledgement calls. Release stops their owned work before
+    * detaching the client and preserves the tmux daemon.
     */
-  def attach[F[_]: Async](
+  def attachUnfenced[F[_]: Async](
       config: ServerConfig,
       session: SessionId,
       timeout: Duration = Duration.ofSeconds(30),
       maxConcurrentCalls: Int = 4
+  ): Resource[F, Control[F]] =
+    owned(
+      maxConcurrentCalls,
+      Async[F].interruptible(
+        ControlClient.attachUnfenced(config, session, timeout)
+      )
+    )
+
+  /** Attaches to the process the captured session named. */
+  def attach[F[_]: Async](session: Session[F]): Resource[F, Control[F]] =
+    attach(session, Duration.ofSeconds(30), 4)
+
+  /** Attaches to the process the captured session named. */
+  def attach[F[_]: Async](
+      session: Session[F],
+      timeout: Duration,
+      maxConcurrentCalls: Int
+  ): Resource[F, Control[F]] =
+    attach(session.underlying, timeout, maxConcurrentCalls)
+
+  /** Attaches to the process the captured session named. */
+  def attach[F[_]: Async](
+      session: direct.Session,
+      timeout: Duration,
+      maxConcurrentCalls: Int
+  ): Resource[F, Control[F]] =
+    owned(
+      maxConcurrentCalls,
+      Async[F].interruptible(
+        session.asJava.server().control(session.asJava, timeout)
+      )
+    )
+
+  private def owned[F[_]: Async](
+      maxConcurrentCalls: Int,
+      open: F[ControlClient]
   ): Resource[F, Control[F]] = {
     val F = Async[F]
     for {
@@ -91,11 +163,9 @@ object Control {
         F.delay(require(maxConcurrentCalls >= 1, "capacity must be positive"))
       )
       closed <- Resource.eval(F.delay(new AtomicBoolean(false)))
-      underlying <- Resource.make(
-        F.interruptible(
-          ControlClient.attach(config, session, timeout)
-        )
-      )(client => F.blocking(client.close()))
+      underlying <- Resource.make(open)(client =>
+        F.interruptible(client.close())
+      )
       execution <- Execution.resource[F](maxConcurrentCalls)
       control <- Resource.make(
         F.pure(new Control[F](underlying, closed, execution))

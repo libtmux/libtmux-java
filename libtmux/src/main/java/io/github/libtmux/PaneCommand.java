@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.catalog.Advanced;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.HexFormat;
@@ -7,6 +8,7 @@ import java.util.List;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.StringJoiner;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * The line typed at a pane's shell to run one command to its end, and how its output is read back.
@@ -28,6 +30,7 @@ import java.util.StringJoiner;
  * around orchestration of its own — the MCP server holds a pane for other clients while a run is
  * uncertain, which the library has no reason to.
  */
+@Advanced
 public final class PaneCommand {
 
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -193,7 +196,7 @@ public final class PaneCommand {
      * @param exact whether both markers were found, so the lines are only the command's output
      * @param status the exit status, when the end marker was read
      */
-    public record Framed(List<String> lines, boolean exact, OptionalInt status) {
+    public record Framed(@ReadOnly List<String> lines, boolean exact, OptionalInt status) {
 
         public Framed {
             lines = List.copyOf(lines);

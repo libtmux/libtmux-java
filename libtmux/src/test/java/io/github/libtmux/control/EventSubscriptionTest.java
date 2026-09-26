@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.ControlEndedException;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
@@ -15,6 +16,61 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 final class EventSubscriptionTest {
+
+    @Test
+    void aGapIsNotAKeptEvent() {
+        IllegalStateException failure =
+                assertThrows(IllegalStateException.class, () -> Delivery.kept(new Delivery.Gap<>(3)));
+
+        assertTrue(String.valueOf(failure.getMessage()).contains("3"), failure.getMessage());
+        assertEquals("x", Delivery.kept(new Delivery.Event<>("x")));
+    }
+
+    @Test
+    void aStreamReadsTheGapThenTheEventsAndEndsWithTheSubscription() {
+        var subscription = new EventSubscription<String>(1, ignored -> {});
+        subscription.offer("lost");
+        subscription.offer("kept");
+        subscription.close();
+
+        // Closing discards buffered events, so only the gap is still owed.
+        try (var steps = subscription.stream()) {
+            assertEquals(java.util.List.of(new Delivery.Gap<String>(1)), steps.toList());
+        }
+
+        var open = new EventSubscription<String>(2, ignored -> {});
+        open.offer("first");
+        open.offer("second");
+        try (var steps = open.stream()) {
+            assertEquals(
+                    java.util.List.of("first", "second"),
+                    steps.limit(2).map(Delivery::kept).toList());
+        }
+        assertTrue(open.isClosed(), "closing the stream closes the subscription");
+    }
+
+    @Test
+    void aStreamFailsWithTheCauseWhenTheClientEndedIt() {
+        var subscription = new EventSubscription<String>(1, ignored -> {});
+        var cause = new ControlEndedException("", false, null);
+        subscription.end(cause);
+
+        try (var steps = subscription.stream()) {
+            assertEquals(cause, assertThrows(ControlEndedException.class, steps::toList));
+        }
+    }
+
+    @Test
+    void closingFromAnotherThreadEndsAWaitingStream() throws Exception {
+        var subscription = new EventSubscription<String>(1, ignored -> {});
+        FutureTask<java.util.List<Delivery<String>>> reading =
+                new FutureTask<>(() -> subscription.stream().toList());
+        Thread reader = new Thread(reading);
+        reader.start();
+        subscription.close();
+
+        assertEquals(java.util.List.of(), reading.get(5, TimeUnit.SECONDS));
+    }
 
     @Test
     void capacityMustLeaveRoomForOneValue() {
@@ -34,7 +90,8 @@ final class EventSubscriptionTest {
         try (var subscription = new EventSubscription<String>(1, ignored -> {})) {
             subscription.offer("ready");
 
-            assertEquals(Optional.of("ready"), subscription.next(Duration.ofSeconds(Long.MAX_VALUE)));
+            assertEquals(
+                    Optional.of(new Delivery.Event<>("ready")), subscription.next(Duration.ofSeconds(Long.MAX_VALUE)));
         }
     }
 
@@ -44,8 +101,8 @@ final class EventSubscriptionTest {
             subscription.offer("first");
             subscription.offer("second");
 
-            assertEquals(Optional.of("first"), subscription.next(Duration.ZERO));
-            assertEquals(Optional.of("second"), subscription.next(Duration.ZERO));
+            assertEquals(Optional.of(new Delivery.Event<>("first")), subscription.next(Duration.ZERO));
+            assertEquals(Optional.of(new Delivery.Event<>("second")), subscription.next(Duration.ZERO));
         }
     }
 
@@ -57,8 +114,9 @@ final class EventSubscriptionTest {
             subscription.offer("third");
 
             assertEquals(1, subscription.droppedCount());
-            assertEquals(Optional.of("second"), subscription.next(Duration.ZERO));
-            assertEquals(Optional.of("third"), subscription.next(Duration.ZERO));
+            assertEquals(Optional.of(new Delivery.Gap<>(1)), subscription.next(Duration.ZERO));
+            assertEquals(Optional.of(new Delivery.Event<>("second")), subscription.next(Duration.ZERO));
+            assertEquals(Optional.of(new Delivery.Event<>("third")), subscription.next(Duration.ZERO));
         }
     }
 
@@ -66,7 +124,7 @@ final class EventSubscriptionTest {
     void nextWaitsUntilAValueArrives() throws Exception {
         try (var subscription = new EventSubscription<String>(1, ignored -> {})) {
             CountDownLatch entered = new CountDownLatch(1);
-            FutureTask<Optional<String>> waiting = new FutureTask<>(() -> {
+            FutureTask<Optional<Delivery<String>>> waiting = new FutureTask<>(() -> {
                 entered.countDown();
                 return subscription.next();
             });
@@ -77,7 +135,7 @@ final class EventSubscriptionTest {
             assertFalse(waiting.isDone());
 
             subscription.offer("arrived");
-            assertEquals(Optional.of("arrived"), waiting.get(5, TimeUnit.SECONDS));
+            assertEquals(Optional.of(new Delivery.Event<>("arrived")), waiting.get(5, TimeUnit.SECONDS));
             consumer.join();
         }
     }
@@ -99,7 +157,7 @@ final class EventSubscriptionTest {
     void closeWakesAWaitingConsumer() throws Exception {
         var subscription = new EventSubscription<String>(1, ignored -> {});
         CountDownLatch entered = new CountDownLatch(1);
-        FutureTask<Optional<String>> waiting = new FutureTask<>(() -> {
+        FutureTask<Optional<Delivery<String>>> waiting = new FutureTask<>(() -> {
             entered.countDown();
             return subscription.next();
         });
@@ -127,6 +185,52 @@ final class EventSubscriptionTest {
         subscription.close();
 
         assertEquals(1, removals.get());
+    }
+
+    @Test
+    void aGapIsDeliveredBeforeTheEventsThatSurvivedClose() throws Exception {
+        var subscription = new EventSubscription<String>(1, ignored -> {});
+        subscription.offer("first");
+        subscription.offer("second");
+        subscription.close();
+
+        assertEquals(Optional.of(new Delivery.Gap<>(1)), subscription.next(Duration.ZERO));
+        assertTrue(subscription.cause().isEmpty());
+        assertEquals(Optional.empty(), subscription.next(Duration.ZERO));
+    }
+
+    @Test
+    void theClientEndingASubscriptionIsReadableAsItsCause() throws Exception {
+        var failure = new IllegalStateException("ended");
+        var subscription = new EventSubscription<String>(1, ignored -> {});
+
+        subscription.end(failure);
+
+        assertEquals(failure, subscription.cause().orElseThrow());
+        assertEquals(Optional.empty(), subscription.next(Duration.ZERO));
+        subscription.close();
+        assertEquals(failure, subscription.cause().orElseThrow());
+    }
+
+    /** The caller closing discards what it chose not to read; the client ending loses nothing. */
+    @Test
+    void whatArrivedBeforeTheClientEndedIsStillRead() throws Exception {
+        var failure = new IllegalStateException("ended");
+        var subscription = new EventSubscription<String>(2, ignored -> {});
+        subscription.offer("first");
+        subscription.offer("second");
+        subscription.offer("third");
+
+        subscription.end(failure);
+
+        assertEquals(Optional.of(new Delivery.Gap<>(1)), subscription.next(Duration.ZERO));
+        assertEquals(Optional.of(new Delivery.Event<>("second")), subscription.next(Duration.ZERO));
+        assertEquals(Optional.of(new Delivery.Event<>("third")), subscription.next());
+        assertEquals(Optional.empty(), subscription.next());
+        assertEquals(failure, subscription.cause().orElseThrow());
+        try (var steps = subscription.stream()) {
+            assertThrows(IllegalStateException.class, steps::toList);
+        }
     }
 
     @Test
@@ -164,6 +268,123 @@ final class EventSubscriptionTest {
                 second.join();
             }
         }
+    }
+
+    /** Two readers at once would split one gap-counted sequence between them; the second is refused. */
+    @Test
+    void anOverlappingReadIsRefused() throws Exception {
+        var subscription = new EventSubscription<String>(4, ignored -> {});
+        CountDownLatch reading = new CountDownLatch(1);
+        FutureTask<Optional<Delivery<String>>> first = new FutureTask<>(() -> {
+            reading.countDown();
+            return subscription.next();
+        });
+        Thread reader = Thread.ofVirtual().start(first);
+        try {
+            assertTrue(reading.await(1, TimeUnit.SECONDS));
+            awaitWaiting(reader);
+
+            IllegalStateException refused =
+                    assertThrows(IllegalStateException.class, () -> subscription.next(Duration.ZERO));
+            assertTrue(String.valueOf(refused.getMessage()).contains("subscribe again"), refused.getMessage());
+            assertThrows(IllegalStateException.class, subscription::poll);
+
+            subscription.offer("after");
+            assertEquals(Optional.of(new Delivery.Event<>("after")), first.get(1, TimeUnit.SECONDS));
+            assertEquals(Optional.empty(), subscription.poll(), "sequential reads from another thread stay legal");
+        } finally {
+            subscription.close();
+            reader.join();
+        }
+    }
+
+    @Test
+    void aStreamTakesTheSubscriptionWhole() {
+        var subscription = new EventSubscription<String>(4, ignored -> {});
+        try (var steps = subscription.stream()) {
+            assertThrows(IllegalStateException.class, () -> subscription.next(Duration.ZERO));
+            assertThrows(IllegalStateException.class, subscription::poll);
+            assertThrows(IllegalStateException.class, subscription::stream);
+            subscription.offer("mine");
+            assertEquals("mine", Delivery.kept(steps.findFirst().orElseThrow()));
+        }
+    }
+
+    @Test
+    void pollNeverWaitsAndReadsTheGapFirst() {
+        var subscription = new EventSubscription<String>(1, ignored -> {});
+
+        assertEquals(Optional.empty(), subscription.poll());
+        subscription.offer("lost");
+        subscription.offer("kept");
+
+        assertEquals(Optional.of(new Delivery.Gap<String>(1)), subscription.poll());
+        assertEquals(Optional.of(new Delivery.Event<>("kept")), subscription.poll());
+        assertEquals(Optional.empty(), subscription.poll());
+    }
+
+    /** A one-shot arm: it wakes a waiting reader once, and the reader drains with poll before arming again. */
+    @Test
+    void onReadyFiresOnceWhenSomethingArrives() {
+        var subscription = new EventSubscription<String>(4, ignored -> {});
+        AtomicInteger fired = new AtomicInteger();
+
+        subscription.onReady(fired::incrementAndGet);
+        assertEquals(0, fired.get());
+        subscription.offer("first");
+        subscription.offer("second");
+
+        assertEquals(1, fired.get(), "a burst wakes the reader once");
+        subscription.onReady(fired::incrementAndGet);
+        assertEquals(2, fired.get(), "arming while something is readable fires at once, on this thread");
+    }
+
+    @Test
+    void onReadyFiresWhenTheSubscriptionEnds() {
+        var subscription = new EventSubscription<String>(4, ignored -> {});
+        AtomicInteger fired = new AtomicInteger();
+        subscription.onReady(fired::incrementAndGet);
+
+        subscription.close();
+
+        assertEquals(1, fired.get(), "an ended subscription must not leave its reader waiting");
+        subscription.onReady(fired::incrementAndGet);
+        assertEquals(2, fired.get(), "arming an ended subscription fires at once");
+    }
+
+    @Test
+    void aSecondArmIsRefusedAndClearReadyDisarms() {
+        var subscription = new EventSubscription<String>(4, ignored -> {});
+        AtomicInteger fired = new AtomicInteger();
+        subscription.onReady(fired::incrementAndGet);
+
+        assertThrows(IllegalStateException.class, () -> subscription.onReady(fired::incrementAndGet));
+        subscription.clearReady();
+        subscription.offer("unwatched");
+
+        assertEquals(0, fired.get());
+        subscription.onReady(fired::incrementAndGet);
+        assertEquals(1, fired.get());
+    }
+
+    @Test
+    void aThrowingReadinessCallbackDoesNotStopDelivery() {
+        var subscription = new EventSubscription<String>(4, ignored -> {});
+        subscription.onReady(() -> {
+            throw new IllegalStateException("a broken waker");
+        });
+
+        subscription.offer("still delivered");
+
+        assertEquals(Optional.of(new Delivery.Event<>("still delivered")), subscription.poll());
+    }
+
+    private static void awaitWaiting(Thread thread) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (thread.getState() != Thread.State.WAITING && System.nanoTime() < deadline) {
+            Thread.sleep(5);
+        }
+        assertEquals(Thread.State.WAITING, thread.getState(), "the reader never blocked");
     }
 
     private static FutureTask<Void> closeTask(EventSubscription<?> subscription) {

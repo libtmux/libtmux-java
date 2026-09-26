@@ -1,6 +1,13 @@
 package io.github.libtmux;
 
 import com.google.errorprone.annotations.CheckReturnValue;
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.snapshot.WindowState;
@@ -8,6 +15,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * One tmux window at one of its positions, as one capture saw it.
@@ -16,6 +24,9 @@ import java.util.function.Consumer;
  * into two sessions is one window and two handles, because tmux orders and addresses those
  * positions separately. {@link #id()} stays available for asking whether two links are the same
  * underlying window.
+ *
+ * <p>A method named for a captured field returns what {@link #info()} holds and does no I/O;
+ * {@link #refresh()} reads again. Every other method asks tmux now.
  */
 public final class Window {
 
@@ -29,37 +40,50 @@ public final class Window {
         this.state = state;
     }
 
+    /** The fields this capture stored. A later rename is not visible here. */
+    @Operation(Kind.CAPTURED)
+    public WindowState info() {
+        return state;
+    }
+
     /** The underlying window, shared by every link to it. */
+    @Operation(Kind.CAPTURED)
     public WindowId id() {
         return state.context().window();
     }
 
     /** Where this link sits in its session. */
+    @Operation(Kind.CAPTURED)
     public WindowIndex index() {
         return state.context().index();
     }
 
     /** The winlink this handle addresses. */
+    @Operation(Kind.CAPTURED)
     public WindowContext context() {
         return state.context();
     }
 
     /** The window name. */
+    @Operation(Kind.CAPTURED)
     public String name() {
         return state.name();
     }
 
     /** Whether this was its session's active window when captured. */
+    @Operation(Kind.CAPTURED)
     public boolean active() {
         return state.active();
     }
 
     /** Whether the underlying window is linked into more than one session. */
+    @Operation(Kind.CAPTURED)
     public boolean linked() {
         return state.linked();
     }
 
     /** How large the window was when captured, in terminal cells. */
+    @Operation(Kind.CAPTURED)
     public Dimensions size() {
         return state.size();
     }
@@ -70,6 +94,7 @@ public final class Window {
      * <p>Classic before tmux 3.8 and JSON from it, and the type says which. Hand it back with {@link
      * #applyLayout(WindowLayout)}.
      */
+    @Operation(Kind.CAPTURED)
     public WindowLayout layout() {
         return WindowLayout.of(state.layout());
     }
@@ -80,16 +105,19 @@ public final class Window {
      * <p>Empty only when the capture holds no pane marked active for this window, which a complete
      * capture of a live window does not.
      */
+    @Operation(Kind.CAPTURED)
     public Optional<Pane> activePane() {
         return panes().stream().filter(Pane::active).findFirst();
     }
 
     /** Makes this the active window of its session. */
+    @Operation(Kind.MUTATION)
     public void select() {
         server.run(snapshot, state.context(), List.of("select-window", "-t", linkTarget()));
     }
 
     /** The server this window lives on. */
+    @Operation(Kind.CAPTURED)
     public Server server() {
         return server;
     }
@@ -99,23 +127,29 @@ public final class Window {
     }
 
     /** The session this link belongs to. A pure read of the capture. */
+    @Operation(Kind.CAPTURED)
     public Session session() {
         return snapshot.session(state.context().session())
                 .map(session -> new Session(server, snapshot, session))
-                .orElseThrow(() -> new LibTmuxException("the capture holds a window whose session it never saw"));
+                .orElseThrow(
+                        () -> new MalformedResponseException("the capture holds a window whose session it never saw"));
     }
 
     /** This window's own hooks, which every link to it shares. */
+    @Operation(Kind.CAPTURED)
     public Hooks hooks() {
         return Hooks.window(server, snapshot, id());
     }
 
     /** This window's own options, which every link to it shares. */
+    @Operation(Kind.CAPTURED)
     public Options options() {
         return Options.window(server, snapshot, id());
     }
 
     /** This link's panes, in tmux's order. A pure read of the capture. */
+    @ReadOnly
+    @Operation(Kind.CAPTURED)
     public List<Pane> panes() {
         return snapshot.panesOf(state.context()).stream()
                 .map(pane -> new Pane(server, snapshot, pane))
@@ -127,6 +161,7 @@ public final class Window {
      *
      * @return the pane that appeared
      */
+    @Operation(Kind.MUTATION)
     public Pane split() {
         return split(SplitSpec.builder().build());
     }
@@ -136,8 +171,9 @@ public final class Window {
      *
      * @param configure receives a builder holding tmux's defaults
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
+    @Operation(Kind.MUTATION)
     public Pane split(Consumer<SplitSpec.Builder> configure) {
         SplitSpec.Builder builder = SplitSpec.builder();
         configure.accept(builder);
@@ -148,8 +184,9 @@ public final class Window {
      * Splits this window's active pane according to a spec, which may be reused across windows.
      *
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
+    @Operation(Kind.MUTATION)
     public Pane split(SplitSpec spec) {
         return Pane.created(server, snapshot, spec.argv(target(), Pane.createdFormat(), server.version(snapshot)));
     }
@@ -163,12 +200,14 @@ public final class Window {
      * @return the expansion, whole when it spans lines and empty when the format expanded to
      *     nothing
      */
+    @Operation(Kind.READ)
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
-        List<String> reported = server.run(
-                        snapshot, state.context(), List.of("display-message", "-p", "-t", linkTarget(), "--", format))
-                .stdout();
-        return String.join("\n", reported);
+        return PrintedText.printed(server.run(
+                        snapshot,
+                        state.context(),
+                        List.of("display-message", "-p", "-t", linkTarget(), "--", PrintedText.expansion(format)))
+                .stdout());
     }
 
     /**
@@ -181,12 +220,14 @@ public final class Window {
      * both. Unlike a session name, a window name is never rewritten.
      */
     @CheckReturnValue
+    @Operation(Kind.MUTATION)
     public Window rename(String name) {
         server.run(snapshot, List.of("rename-window", "-t", target(), "--", TmuxFormats.literal(name)));
         return refresh();
     }
 
     /** Links this window into another session, so one window sits in both. */
+    @Operation(Kind.MUTATION)
     public void linkTo(Session session) {
         Objects.requireNonNull(session, "session");
         server.requireSameIncarnation(snapshot, session.server(), session.snapshot());
@@ -200,11 +241,13 @@ public final class Window {
      *
      * @throws LibTmuxException if this is the window's only link, which tmux refuses to remove
      */
+    @Operation(Kind.MUTATION)
     public void unlink() {
         server.run(snapshot, state.context(), List.of("unlink-window", "-t", linkTarget()));
     }
 
     /** Moves this window into another session. */
+    @Operation(Kind.MUTATION)
     public void moveTo(Session session) {
         Objects.requireNonNull(session, "session");
         server.requireSameIncarnation(snapshot, session.server(), session.snapshot());
@@ -215,6 +258,7 @@ public final class Window {
     }
 
     /** Moves this window to an exact index in another session. */
+    @Operation(Kind.MUTATION)
     public void moveTo(Session session, int index) {
         if (index < 0) {
             throw new IllegalArgumentException("window index is negative: " + index);
@@ -228,6 +272,7 @@ public final class Window {
     }
 
     /** Resizes this window in terminal cells. */
+    @Operation(Kind.MUTATION)
     public void resizeTo(Dimensions size) {
         Objects.requireNonNull(size, "size");
         server.run(
@@ -249,16 +294,19 @@ public final class Window {
      * {@link Pane#pipeTo} and {@link Pane#stopPiping} already do for the other state a window
      * carries.
      */
+    @Operation(Kind.MUTATION)
     public void synchronizePanes() {
         options().set("synchronize-panes", "on");
     }
 
     /** Stops copying input between this window's panes. */
+    @Operation(Kind.MUTATION)
     public void stopSynchronizingPanes() {
         options().set("synchronize-panes", "off");
     }
 
     /** Rotates the panes within this window. */
+    @Operation(Kind.MUTATION)
     public void rotate() {
         server.run(snapshot, List.of("rotate-window", "-t", target()));
     }
@@ -266,8 +314,9 @@ public final class Window {
     /**
      * Rearranges this window's panes into one of tmux's built-in layouts.
      *
-     * @throws UnsupportedTmuxVersionException if the layout arrived after the release this server runs
+     * @throws UnsupportedFeatureException if the layout arrived after the release this server runs
      */
+    @Operation(Kind.MUTATION)
     public void selectLayout(Layout layout) {
         Objects.requireNonNull(layout, "layout");
         layout.requireSupported(server.version(snapshot));
@@ -275,11 +324,13 @@ public final class Window {
     }
 
     /** Moves to the next built-in layout, as tmux's own binding does. */
+    @Operation(Kind.MUTATION)
     public void nextLayout() {
         server.run(snapshot, List.of("next-layout", "-t", target()));
     }
 
     /** Moves to the previous built-in layout, as tmux's own binding does. */
+    @Operation(Kind.MUTATION)
     public void previousLayout() {
         server.run(snapshot, List.of("previous-layout", "-t", target()));
     }
@@ -301,9 +352,10 @@ public final class Window {
      * to match the order the layout was saved in. Confirmed by hand on 3.2a and 3.7c.
      *
      * @throws IllegalArgumentException if the string is not a layout tmux wrote
-     * @throws UnsupportedTmuxVersionException if it is JSON-shaped but this server predates JSON
+     * @throws UnsupportedFeatureException if it is JSON-shaped but this server predates JSON
      *     layouts
      */
+    @Operation(Kind.MUTATION)
     public void applyLayout(WindowLayout layout) {
         Objects.requireNonNull(layout, "layout");
         applyLayout(layout.value());
@@ -313,9 +365,10 @@ public final class Window {
      * As {@link #applyLayout(WindowLayout)}, for a layout held as text — one saved to a file, say.
      *
      * @throws IllegalArgumentException if the string is not a layout tmux wrote
-     * @throws UnsupportedTmuxVersionException if it is JSON-shaped but this server predates JSON
+     * @throws UnsupportedFeatureException if it is JSON-shaped but this server predates JSON
      *     layouts
      */
+    @Operation(Kind.MUTATION)
     public void applyLayout(String layout) {
         Objects.requireNonNull(layout, "layout");
         server.run(
@@ -324,6 +377,7 @@ public final class Window {
     }
 
     /** Kills what is running in this window and starts it again. */
+    @Operation(Kind.MUTATION)
     public void respawn() {
         server.run(snapshot, List.of("respawn-window", "-k", "-t", target()));
     }
@@ -338,11 +392,13 @@ public final class Window {
      * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
      * mean it to be expanded.
      */
+    @Operation(Kind.MUTATION)
     public void displayPopup(String shellCommand) {
         server.run(snapshot, List.of("display-popup", "-E", "-t", target(), "--", shellCommand));
     }
 
     /** Closes this window. */
+    @Operation(Kind.MUTATION)
     public void kill() {
         server.run(snapshot, List.of("kill-window", "-t", target()));
     }
@@ -350,16 +406,17 @@ public final class Window {
     /**
      * Takes a new capture and returns this winlink as it is now.
      *
-     * @throws ObjectDoesNotExistException if this window is no longer linked here, from a server
+     * @throws TargetGoneException if this window is no longer linked here, from a server
      *     that still answers
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      */
     @CheckReturnValue
+    @Operation(Kind.READ)
     public Window refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.window(state.context())
                 .map(window -> new Window(server, fresh, window))
-                .orElseThrow(() -> new ObjectDoesNotExistException("window " + id() + " no longer exists here"));
+                .orElseThrow(() -> new TargetGoneException("window " + id() + " no longer exists here"));
     }
 
     /** Addresses the underlying window, which every link to it shares. */

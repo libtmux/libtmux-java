@@ -1,7 +1,9 @@
 package io.github.libtmux.mcp;
 
 import io.github.libtmux.Pane;
+import io.github.libtmux.PaneInput;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
@@ -74,37 +76,55 @@ final class Typing {
         // thing this server refuses, and a command that hangs can never be stopped through it.
         boolean stopping = !literal && !enter && keys.stream().allMatch(STOPS::contains);
         try (PaneInputReservations.Lease lease = stopping
-                ? PaneInputReservations.interrupting(cohort, "send_keys")
-                : PaneInputReservations.keys(cohort, "send_keys")) {
-            Runnable beforeSend = () -> lease.requireSameKeys(PaneInputCohort.resolve(pane, cohort.caller()));
-            List<String> resolved = cohort.configuredKeyRecipientIds();
-            // A boolean is right here and wrong on Pane: this one is a tool argument off the wire,
-            // not a choice a reader of this file makes.
-            if (literal) {
-                pane.sendLiteral(keys, beforeSend);
-            } else {
-                pane.sendKeys(keys, beforeSend);
+                ? PaneInputReservations.interrupting(pane, cohort, "send_keys")
+                : PaneInputReservations.keys(pane, cohort, "send_keys")) {
+            if (!lease.passesThrough()) {
+                return deliver(pane, keys, literal, enter, cohort, lease);
             }
-            if (enter) {
-                // A keypress, sent by name, inside the same reservation as the text above - nothing
-                // else can interleave between typing a line and submitting it, and this can never be
-                // the "-l typed the word Enter" trap because it never goes through sendLiteral.
-                pane.sendKeys(List.of("Enter"), beforeSend);
+            // The run already holds the shared pane lease. Enter it so sendKeys can stop the
+            // command without taking that hold away from the run.
+            try (PaneInput.Lease pass = PaneInput.enterInterrupt(pane)) {
+                Objects.requireNonNull(pass, "pass");
+                return deliver(pane, keys, literal, enter, cohort, lease);
             }
-            return new Sent(
-                    pane.id().value(),
-                    keys.size(),
-                    literal,
-                    resolved,
-                    "Sent, not waited for. A command you authored is run_shell_command's job, which frames and"
-                            + " waits for it correctly; reach for capture_since or wait_for_text here only for input"
-                            + " that is not a command to run to completion. Either way, a wait_for_text pattern that"
-                            + " repeats text from these keys can match the pane's own echo of them rather than what"
-                            + " runs - and on a pane whose shell has not drawn its first prompt yet, that echo can"
-                            + " land glued to the prompt with nothing separating them, which defeats even the"
-                            + " matching this server does to discount it: wait for the prompt before typing into a"
-                            + " cold shell.");
         }
+    }
+
+    private static Sent deliver(
+            Pane pane,
+            List<String> keys,
+            boolean literal,
+            boolean enter,
+            PaneInputCohort.Resolution cohort,
+            PaneInputReservations.Lease lease) {
+        Runnable beforeSend = () -> lease.requireSameKeys(PaneInputCohort.resolve(pane, cohort.caller()));
+        List<String> resolved = cohort.configuredKeyRecipientIds();
+        // A boolean is right here and wrong on Pane: this one is a tool argument off the wire,
+        // not a choice a reader of this file makes.
+        if (literal) {
+            pane.sendLiteral(keys, beforeSend);
+        } else {
+            pane.sendKeys(keys, beforeSend);
+        }
+        if (enter) {
+            // A keypress, sent by name, inside the same reservation as the text above - nothing
+            // else can interleave between typing a line and submitting it, and this can never be
+            // the "-l typed the word Enter" trap because it never goes through sendLiteral.
+            pane.sendKeys(List.of("Enter"), beforeSend);
+        }
+        return new Sent(
+                pane.id().value(),
+                keys.size(),
+                literal,
+                resolved,
+                "Sent, not waited for. A command you authored is run_shell_command's job, which frames and"
+                        + " waits for it correctly; reach for capture_since or wait_for_text here only for input"
+                        + " that is not a command to run to completion. Either way, a wait_for_text pattern that"
+                        + " repeats text from these keys can match the pane's own echo of them rather than what"
+                        + " runs - and on a pane whose shell has not drawn its first prompt yet, that echo can"
+                        + " land glued to the prompt with nothing separating them, which defeats even the"
+                        + " matching this server does to discount it: wait for the prompt before typing into a"
+                        + " cold shell.");
     }
 
     /**
@@ -122,7 +142,7 @@ final class Typing {
         String text = call.stringIncludingEmpty("text");
         boolean enter = call.flag("enter", false);
         PaneInputCohort.Resolution initial = PaneInputCohort.resolve(pane, call.caller());
-        try (PaneInputReservations.Lease lease = PaneInputReservations.paste(initial, "paste_text")) {
+        try (PaneInputReservations.Lease lease = PaneInputReservations.paste(pane, initial, "paste_text")) {
             if (text.isEmpty() && !enter) {
                 return new Pasted(pane.id().value(), 0, 0, "Empty text without Enter; nothing was sent.");
             }

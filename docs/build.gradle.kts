@@ -1,0 +1,77 @@
+// Compiles the code in the documentation. Never published.
+//
+// A snippet is the part of a project people copy and the part nothing compiles, so it goes stale
+// without anything saying so. This module puts every Java fence in the READMEs and guides through
+// javac against the real artifacts, so a snippet that stopped working fails the build.
+//
+// Scala fences run the same way, as a munit suite generated from the documents: each fence is
+// classified by the directive above it, and an unclassified one fails the build.
+//
+// Depends on every published module because the documentation does.
+import io.github.libtmux.buildlogic.GenerateScalaDocumentationSuite
+
+plugins {
+    id("libtmux.scala-library")
+    id("libtmux.tmux-matrix")
+}
+
+dependencies {
+    testImplementation(project(":libtmux"))
+    testImplementation(project(":libtmux-jackson"))
+    testImplementation(project(":libtmux-junit5"))
+    testImplementation(project(":libtmux-mcp"))
+    testImplementation(project(":libtmux-workspace"))
+    testImplementation(project(":libtmux-scala"))
+    testImplementation(project(":libtmux-scala-cats"))
+    testImplementation(testFixtures(project(":integration-tests")))
+}
+
+val generateScalaDocumentationSuite =
+    tasks.register<GenerateScalaDocumentationSuite>("generateScalaDocumentationSuite") {
+        description = "Turns every Scala fence in the documentation into a munit test."
+        group = "build"
+        root = rootProject.layout.projectDirectory
+        outputDirectory = layout.buildDirectory.dir("generated/sources/documentation/scala")
+    }
+
+sourceSets.test { scala.srcDir(generateScalaDocumentationSuite.map { it.outputDirectory }) }
+
+// The snippets are compiled against the compile classpath, which the compiler has to be told about
+// explicitly: it runs in-process and does not inherit Gradle's. Compile rather than runtime because
+// that is what a consumer gets from a published POM — api dependencies and nothing more — so a
+// snippet needing an implementation dependency to compile fails here rather than for a reader.
+// Running one still uses the test JVM's classpath, which is what a consumer's runtime has.
+//
+// Every document this reads is an input. Without that, editing a README leaves the task up to date
+// and the check silently stops happening.
+tasks.withType<Test>().configureEach {
+    val classpath = sourceSets.test.get().compileClasspath
+    val root = rootProject.layout.projectDirectory
+    val documents =
+        rootProject.fileTree(root) {
+            include("README.md", "MIGRATION.md", "*/README.md", "docs/guide/**/*.md", "docs/parity/*.md")
+        }
+
+    // The sources too: two gates here read them — for tracker ids, and for the methods that say
+    // why they leave tmux's options open. Every file the tracker-id scan reads, build scripts and
+    // build-logic's deeper tree included.
+    val sources =
+        rootProject.fileTree(root) {
+            include("**/*.java", "**/*.kt", "**/*.kts", "**/*.scala")
+            exclude("**/build/**", "**/target/**", ".gradle/**", "**/.gradle/**")
+        }
+
+    // theFilteringGuideListsExactlyTheCatalogsFields compares this against the guide directly; an
+    // edit to the catalog alone must not leave that gate sitting UP-TO-DATE.
+    val fieldCatalog =
+        rootProject.file("libtmux/src/main/resources/META-INF/io.github.libtmux/field-catalog.tsv")
+
+    inputs.files(classpath)
+    inputs.files(documents).withPropertyName("documentation").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(sources).withPropertyName("sources").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(fieldCatalog).withPropertyName("fieldCatalog").withPathSensitivity(PathSensitivity.RELATIVE)
+
+    doFirst { systemProperty("libtmux.docs.classpath", classpath.asPath) }
+    systemProperty("libtmux.docs.root", root.asFile.path)
+    systemProperty("libtmux.scala.docs.root", root.asFile.path)
+}

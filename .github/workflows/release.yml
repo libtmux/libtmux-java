@@ -17,25 +17,57 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+  # To read whether this commit's CI and tmux matrix passed.
+  actions: read
 
 jobs:
   publish:
+    # A tag push is already a tag ref by construction; a dispatch is refused unless the ref it runs
+    # against is one too, so signing and Central secrets are never reachable from a branch.
+    if: github.event_name == 'push' || startsWith(github.ref, 'refs/tags/v')
+    # RELEASING.md records the one-time step this file cannot do: create this environment with a
+    # tag-only deployment policy and a required reviewer, and move the signing and Central secrets
+    # into it. A workflow condition can refuse a branch; only the environment protects the secrets
+    # themselves if that condition is ever wrong.
+    environment: release
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # check alone takes about twelve minutes on a hosted runner; the upload follows it.
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # This job checks on one JDK and one tmux. The commit is released on what it proved everywhere:
+      # CI on JDK 25 and 27, and every supported tmux lane, each for exactly this commit; macOS is reported only.
+      # Nothing is re-run here: a workflow still running, or never run for this commit, refuses the
+      # release, which is started again once it has passed.
+      - name: Require this commit's CI and tmux matrix to have passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for workflow in ci.yml tmux-matrix.yml; do
+            passed=$(gh run list --workflow "$workflow" --commit "$GITHUB_SHA" --limit 50 \
+              --json conclusion --jq 'map(select(.conclusion == "success")) | length')
+            if [ "$passed" -lt 1 ]; then
+              echo "::error::$workflow has no successful run for $GITHUB_SHA; let it pass, then release again"
+              exit 1
+            fi
+            echo "$workflow passed on $GITHUB_SHA"
+          done
 
       - name: Install tmux
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y tmux
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
           validate-wrappers: true
 
@@ -94,6 +126,24 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
           VERSION: ${{ steps.version.outputs.version }}
         run: ./gradlew publishToMavenCentral -PlibtmuxVersion="$VERSION" --stacktrace
+
+      # The Portal records the files. This records which commit and workflow
+      # produced them. A tag can be moved; the attestation cannot.
+      - name: Attest the published jars
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            libtmux/build/libs/*.jar
+            libtmux-jackson/build/libs/*.jar
+            libtmux-junit5/build/libs/*.jar
+            libtmux-kotlin/build/libs/*.jar
+            libtmux-mcp/build/libs/*.jar
+            libtmux-workspace/build/libs/*.jar
+            libtmux-workspace-cli/build/libs/*.jar
+            libtmux-scala/build/libs/*.jar
+            libtmux-scala-cats/build/libs/*.jar
+            libtmux-scala-ox/build/libs/*.jar
+            libtmux-bom/build/publications/maven/pom-default.xml
 
       - name: What to do next
         run: |

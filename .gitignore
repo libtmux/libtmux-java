@@ -7,6 +7,7 @@ target/
 .bloop/
 .metals/
 project/project/
+__pycache__/
 
 # Editors and desktops
 .idea/

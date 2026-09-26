@@ -10,19 +10,23 @@ import io.github.libtmux.Session;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.control.ControlReply;
+import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
+import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.DispatchOutcome;
-import io.github.libtmux.transport.TmuxTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Flow;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -61,7 +65,7 @@ final class ControlModeIntegrationTest {
         java.util.logging.Level before = jul.getLevel();
         jul.setLevel(java.util.logging.Level.FINE);
         jul.addHandler(capture);
-        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient client = server.control(session)) {
             client.send("display-message", "-p", "hunter2-secret");
         } finally {
             jul.removeHandler(capture);
@@ -90,7 +94,7 @@ final class ControlModeIntegrationTest {
         Session session = server.sessions().get(0);
         List<String> nonDaemon = new ArrayList<>();
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id())) {
+        try (ControlClient client = server.control(session)) {
             assertTrue(client.isAlive(), "the client has to be running for its threads to exist");
             Thread.getAllStackTraces().keySet().stream()
                     .filter(thread -> thread.getName().startsWith("libtmux-control"))
@@ -105,7 +109,7 @@ final class ControlModeIntegrationTest {
 
     private static ControlClient attach(Server server) {
         Session session = server.sessions().get(0);
-        return ControlClient.attach(server.config(), session.id());
+        return server.control(session);
     }
 
     @Test
@@ -116,6 +120,50 @@ final class ControlModeIntegrationTest {
 
             assertTrue(reply.succeeded());
             assertEquals(List.of("hello"), reply.lines());
+        }
+    }
+
+    /**
+     * tmux answers a command another one queues, as if-shell queues its branch, with a reply block
+     * of its own, numbered like any other. A request waiting behind the if-shell must still get its
+     * own reply, however long the branch keeps the reader busy.
+     */
+    @Test
+    void aCommandThatQueuesOthersDoesNotTakeTheNextReply(Server server) throws Exception {
+        String branch = String.join(" ; ", java.util.Collections.nCopies(200, "display-message -p queued"));
+        try (ControlClient client = attach(server)) {
+            for (int round = 0; round < 5; round++) {
+                FutureTask<ControlReply> queuing =
+                        new FutureTask<>(() -> client.send("if-shell", "-F", "1", branch, ""));
+                FutureTask<ControlReply> behind = new FutureTask<>(() -> client.send("display-message", "-p", "after"));
+                Thread.ofVirtual().start(queuing);
+                Thread.ofVirtual().start(behind);
+
+                assertEquals(List.of("after"), behind.get(10, TimeUnit.SECONDS).lines(), "round " + round);
+                queuing.get(10, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    /** What a hook runs is answered in a block of its own too, and answers no request. */
+    @Test
+    void aHookDoesNotAnswerTheNextRequest(Server server) throws Exception {
+        // Many commands, so their blocks are still arriving when the next request is written.
+        server.cmd(
+                "set-hook",
+                "-g",
+                "after-new-window",
+                String.join(" ; ", java.util.Collections.nCopies(200, "display-message -p hooked")));
+        try (ControlClient client = attach(server)) {
+            for (int round = 0; round < 5; round++) {
+                FutureTask<ControlReply> hooking = new FutureTask<>(() -> client.send("new-window", "-d"));
+                FutureTask<ControlReply> behind = new FutureTask<>(() -> client.send("display-message", "-p", "after"));
+                Thread.ofVirtual().start(hooking);
+                Thread.ofVirtual().start(behind);
+
+                assertEquals(List.of("after"), behind.get(10, TimeUnit.SECONDS).lines(), "round " + round);
+                hooking.get(10, TimeUnit.SECONDS);
+            }
         }
     }
 
@@ -223,6 +271,123 @@ final class ControlModeIntegrationTest {
         }
     }
 
+    /**
+     * The {@code Flow.Publisher} view of a subscription, driven at bounded demand — one element
+     * requested at a time, the way a reactive caller such as Reactor or RxJava would drive it.
+     */
+    @Test
+    void thePublisherDeliversPaneOutputUnderBoundedDemand(Server server) throws Exception {
+        try (ControlClient client = attach(server);
+                EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
+            StringBuilder seen = new StringBuilder();
+            CountDownLatch found = new CountDownLatch(1);
+            AtomicReference<Flow.Subscription> demand = new AtomicReference<>();
+            output.publisher().subscribe(new Flow.Subscriber<Delivery<PaneOutput>>() {
+                @Override
+                public void onSubscribe(Flow.Subscription subscription) {
+                    demand.set(subscription);
+                    subscription.request(1);
+                }
+
+                @Override
+                public void onNext(Delivery<PaneOutput> item) {
+                    seen.append(Delivery.kept(item).data());
+                    if (seen.indexOf("publisher-saw-this") >= 0) {
+                        found.countDown();
+                    } else {
+                        demand.get().request(1);
+                    }
+                }
+
+                @Override
+                public void onError(Throwable throwable) {
+                    found.countDown();
+                }
+
+                @Override
+                public void onComplete() {
+                    found.countDown();
+                }
+            });
+
+            client.send("send-keys", "-t", "libtmux", "echo publisher-saw-this", "Enter");
+
+            assertTrue(found.await(10, TimeUnit.SECONDS), "the publisher never saw the echoed text");
+            assertTrue(seen.indexOf("publisher-saw-this") >= 0, seen.toString());
+            demand.get().cancel();
+        }
+    }
+
+    /**
+     * tmux cuts output into %output lines by byte count. A pane written to in large blocks, as
+     * {@code cat} writes a file, has some of its two-byte characters cut in half; a program that
+     * writes one character at a time never does. Joined, the text holds every character whole, and
+     * the bytes are the file's.
+     */
+    @Test
+    void outputCutMidCharacterJoinsBackExactly(Server server) throws Exception {
+        byte[] wanted = ("x" + "é".repeat(40_000) + "END").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        java.nio.file.Path file = java.nio.file.Files.createTempFile("cut", ".txt");
+        java.nio.file.Files.write(file, wanted);
+        try (ControlClient client = attach(server);
+                EventSubscription<PaneOutput> output = client.subscribeOutput(4096)) {
+            client.send("send-keys", "-t", "libtmux", "cat " + file, "Enter");
+
+            StringBuilder text = new StringBuilder();
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
+            while (text.indexOf("END") < 0 && System.nanoTime() < deadline) {
+                var next = output.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
+                if (next.isEmpty()) {
+                    break;
+                }
+                PaneOutput piece = Delivery.kept(next.orElseThrow());
+                text.append(piece.data());
+                java.nio.ByteBuffer raw = piece.bytes();
+                byte[] copy = new byte[raw.remaining()];
+                raw.get(copy);
+                bytes.write(copy);
+            }
+
+            assertTrue(text.indexOf("x" + "é".repeat(40_000) + "END") >= 0, "the text lost or split a character");
+            assertTrue(
+                    java.util.Collections.indexOfSubList(asList(bytes.toByteArray()), asList(wanted)) >= 0,
+                    "the joined bytes are not the file's");
+        } finally {
+            java.nio.file.Files.delete(file);
+        }
+    }
+
+    /** With tmux's own flow control on, output arrives as {@code %extended-output}; it is still output. */
+    @Test
+    void outputStillArrivesWithTmuxFlowControlOn(Server server) throws Exception {
+        try (ControlClient client = attach(server);
+                EventSubscription<PaneOutput> output = client.subscribeOutput(256)) {
+            assertTrue(client.send("refresh-client", "-f", "pause-after=30").succeeded());
+            client.send("send-keys", "-t", "libtmux", "echo flow-$((6*7))", "Enter");
+
+            StringBuilder text = new StringBuilder();
+            long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+            while (text.indexOf("flow-42") < 0 && System.nanoTime() < deadline) {
+                var next = output.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
+                if (next.isEmpty()) {
+                    break;
+                }
+                text.append(Delivery.kept(next.orElseThrow()).data());
+            }
+
+            assertTrue(text.indexOf("flow-42") >= 0, "no output arrived once tmux flow control was on");
+        }
+    }
+
+    private static List<Byte> asList(byte[] bytes) {
+        List<Byte> list = new ArrayList<>(bytes.length);
+        for (byte value : bytes) {
+            list.add(value);
+        }
+        return list;
+    }
+
     @Test
     void anIdleSubscriberDoesNotDelayAnotherSubscriberOrReplies(Server server) throws Exception {
         try (ControlClient client = attach(server);
@@ -290,8 +455,8 @@ final class ControlModeIntegrationTest {
         try (ControlClient client = attach(server)) {
             signal("-STOP", pid);
             try {
-                TmuxTimeoutException failure = assertThrows(
-                        TmuxTimeoutException.class,
+                DispatchException.TimedOut failure = assertThrows(
+                        DispatchException.TimedOut.class,
                         () -> client.send(List.of("display-message", "-p", "unanswerable"), Duration.ofMillis(500)));
 
                 assertEquals(
@@ -329,7 +494,8 @@ final class ControlModeIntegrationTest {
             if (next.isEmpty()) {
                 return false;
             }
-            if (next.orElseThrow().data().contains(expected)) {
+            if (next.orElseThrow() instanceof Delivery.Event<PaneOutput> event
+                    && event.value().data().contains(expected)) {
                 return true;
             }
         }

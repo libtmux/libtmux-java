@@ -2,13 +2,14 @@ package io.github.libtmux.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
 import io.github.libtmux.format.RowFormat;
-import io.github.libtmux.format.TmuxFormatException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
@@ -43,7 +44,7 @@ final class PaneInputCohortTest {
     @MethodSource("malformedRows")
     void malformedAuthoritativeRowsFailClosed(String label, List<String> stdout) {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse("%0", new CommandResult(0, stdout, List.of())),
                 label);
     }
@@ -62,7 +63,7 @@ final class PaneInputCohortTest {
             })
     void noncanonicalPaneIdsFailClosed(String paneId) {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0", answer(row("%0", "1", "0", "0", "sh"), row(paneId, "1", "0", "0", "sh"))));
     }
@@ -70,7 +71,7 @@ final class PaneInputCohortTest {
     @Test
     void strayPhysicalLineCannotBecomePaneId() {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0", answer(row("%0", "1", "0", "0", "sh"), "junk", row("%1", "1", "0", "0", "sh"))));
     }
@@ -105,7 +106,9 @@ final class PaneInputCohortTest {
 
         IllegalStateException refused =
                 assertThrows(IllegalStateException.class, () -> resolved.requireKeyRecipients("send_keys"));
-        assertTrue(String.valueOf(refused.getMessage()).contains("%0"));
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("%0"), message);
+        assertTrue(message.contains("capture_pane"), message);
     }
 
     @Test
@@ -116,9 +119,23 @@ final class PaneInputCohortTest {
         var outside =
                 PaneInputCohort.parse("%0", answer(row("%0", "0", "0", "0", "sh"), row("%1", "1", "0", "1", "sh")));
 
-        assertThrows(IllegalStateException.class, () -> deadSource.requireKeyRecipients("send_keys"));
+        IllegalStateException sourceRefused =
+                assertThrows(IllegalStateException.class, () -> deadSource.requireKeyRecipients("send_keys"));
+        assertTrue(String.valueOf(sourceRefused.getMessage()).contains("capture_pane"), sourceRefused.getMessage());
+        assertTrue(String.valueOf(sourceRefused.getMessage()).contains("respawn_pane"), sourceRefused.getMessage());
         assertThrows(IllegalStateException.class, () -> deadPeer.requireKeyRecipients("send_keys"));
         assertEquals(List.of("%0"), outside.requireKeyRecipients("send_keys"));
+    }
+
+    @Test
+    void inputDisabledMemberNamesTheRecovery() {
+        var resolved = PaneInputCohort.parse("%0", answer(row("%0", "0", "0", "0", "sh", "1")));
+
+        IllegalStateException refused =
+                assertThrows(IllegalStateException.class, () -> resolved.requireKeyRecipients("send_keys"));
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("%0"), message);
+        assertTrue(message.contains("capture_pane"), message);
     }
 
     @Test
@@ -150,7 +167,22 @@ final class PaneInputCohortTest {
         IllegalStateException refused =
                 assertThrows(IllegalStateException.class, () -> resolved.requireKeyRecipients("send_keys"));
 
-        assertTrue(String.valueOf(refused.getMessage()).contains(peer.id().value()), refused.getMessage());
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains(peer.id().value()), message);
+        assertTrue(message.contains("this MCP server runs in"), message);
+    }
+
+    /** A caller's inherited claim not matching what tmux reports now names the fix: restart. */
+    @Test
+    void inconsistentCallerIdentityNamesARestart(Server server) {
+        String pane = server.panes().getFirst().id().value();
+        Caller caller = TestCalls.asCaller(server, pane).caller();
+
+        IllegalStateException refused = assertThrows(
+                IllegalStateException.class,
+                () -> PaneInputCohort.parse(pane, answer(row(pane, "0", "0", "0", "sh")), answer(), caller));
+
+        assertTrue(String.valueOf(refused.getMessage()).contains("restart"), refused.getMessage());
     }
 
     @Test
@@ -164,7 +196,9 @@ final class PaneInputCohortTest {
         IllegalStateException refused =
                 assertThrows(IllegalStateException.class, () -> resolved.requireKeyRecipients("send_keys"));
 
-        assertTrue(String.valueOf(refused.getMessage()).contains("%1"), refused.getMessage());
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("%1"), message);
+        assertTrue(message.contains("capture_pane"), message);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -179,7 +213,7 @@ final class PaneInputCohortTest {
     @Test
     void unknownTerminalClientPaneFailsClosed() {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0",
                         answer(row("%0", "0", "0", "0", "sh")),
@@ -199,7 +233,7 @@ final class PaneInputCohortTest {
     @MethodSource("invalidTerminalClientPlacements")
     void terminalClientPlacementMustMatchThePaneSnapshot(String label, String client) {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0", answer(row("%0", "0", "0", "0", "sh")), answer(client), Caller.nowhere()),
                 label);
@@ -225,12 +259,12 @@ final class PaneInputCohortTest {
     @ValueSource(strings = {"", "-1", "+0", "01", "4294967296"})
     void windowIndexesMustBeCanonicalUnsigned32BitValues(String index) {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0",
                         answer(row("%0", "0", "0", "0", "sh", "0", "$0", "@0", index, "1", "1", "/tmp/test-tmux"))));
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0",
                         answer(row("%0", "0", "0", "0", "sh")),
@@ -241,7 +275,7 @@ final class PaneInputCohortTest {
     @Test
     void everyPaneInALinkedWindowNeedsTheSamePlacementRectangle() {
         assertThrows(
-                TmuxFormatException.class,
+                MalformedResponseException.class,
                 () -> PaneInputCohort.parse(
                         "%0",
                         answer(
@@ -274,7 +308,7 @@ final class PaneInputCohortTest {
         var moved = PaneInputCohort.parse(
                 "%0", panes, answer(clientRow("0", "$1", "@1", "7", "%1", "0")), Caller.nowhere());
 
-        try (var lease = PaneInputReservations.run(initial, "run_shell_command")) {
+        try (var lease = PaneInputReservations.run(server.panes().getFirst(), initial, "run_shell_command")) {
             assertThrows(IllegalStateException.class, () -> lease.requireSameRun(moved));
         }
     }
@@ -301,7 +335,28 @@ final class PaneInputCohortTest {
         IllegalStateException refused =
                 assertThrows(IllegalStateException.class, () -> resolved.requirePasteTarget("paste_text"));
 
-        assertTrue(String.valueOf(refused.getMessage()).contains("caller"), refused.getMessage());
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("caller"), message);
+        assertTrue(message.contains("TMUX_PANE"), message);
+    }
+
+    @Test
+    void reservationConflictNamesThePaneAndTheHolder(Server server) {
+        var pane = server.panes().getFirst();
+        var initial = PaneInputCohort.resolve(pane);
+
+        try (var lease = PaneInputReservations.keys(pane, initial, "send_keys")) {
+            assertNotNull(lease);
+            IllegalStateException refused = assertThrows(
+                    IllegalStateException.class,
+                    () -> PaneInputReservations.keys(pane, PaneInputCohort.resolve(pane), "paste_text"));
+
+            String message = String.valueOf(refused.getMessage());
+            assertTrue(message.contains(pane.id().value()), message);
+            assertTrue(message.contains("send_keys"), message);
+            assertTrue(message.contains("owned"), message);
+            assertTrue(message.contains("retry"), message);
+        }
     }
 
     @Test
@@ -366,7 +421,7 @@ final class PaneInputCohortTest {
     void retainedOwnershipNeedsAuthenticatedPaneOrGenerationAbsence(Server server) {
         var source = server.panes().getFirst();
         source.split();
-        try (var lease = PaneInputReservations.run(PaneInputCohort.resolve(source), "retained_test")) {
+        try (var lease = PaneInputReservations.run(source, PaneInputCohort.resolve(source), "retained_test")) {
             assertEquals(PaneInputCohort.Presence.PRESENT, lease.presence(source));
 
             AtomicBoolean unavailable = new AtomicBoolean();
@@ -398,7 +453,7 @@ final class PaneInputCohortTest {
         }
 
         var survivor = server.panes().getFirst();
-        try (var lease = PaneInputReservations.run(PaneInputCohort.resolve(survivor), "retained_test")) {
+        try (var lease = PaneInputReservations.run(survivor, PaneInputCohort.resolve(survivor), "retained_test")) {
             server.killServer();
 
             assertEquals(PaneInputCohort.Presence.GONE, lease.presence(survivor));

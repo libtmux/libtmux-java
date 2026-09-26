@@ -1,10 +1,11 @@
 package io.github.libtmux.mcp;
 
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.TypedText;
 import io.github.libtmux.batch.BatchResult;
 import io.github.libtmux.batch.OperationResult;
+import io.github.libtmux.exception.CommandRejectedException;
+import io.github.libtmux.exception.MalformedResponseException;
 import java.util.ArrayList;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
@@ -216,7 +217,7 @@ final class Screen {
                 .add("display-message", "-p", "-t", id, "#{pid} #{history_size} #{cursor_y}")
                 .run();
         if (read.operations().size() != 2 || read.operations().stream().anyMatch(operation -> !operation.succeeded())) {
-            throw new LibTmuxException("could not read pane content and position as one batch");
+            throw new CommandRejectedException("could not read pane content and position as one batch");
         }
         OperationResult capture = read.operations().get(0);
         OperationResult position = read.operations().get(1);
@@ -231,22 +232,22 @@ final class Screen {
 
     private static long[] numbers(List<String> stdout) {
         if (stdout.size() != 1) {
-            throw new LibTmuxException("tmux returned no unambiguous pane position");
+            throw new MalformedResponseException("tmux returned no unambiguous pane position");
         }
         String[] words = stdout.get(0).trim().split("\\s+", -1);
         if (words.length != 3) {
-            throw new LibTmuxException("tmux returned a malformed pane position");
+            throw new MalformedResponseException("tmux returned a malformed pane position");
         }
         long[] read = new long[3];
         for (int index = 0; index < read.length; index++) {
             try {
                 read[index] = Long.parseLong(words[index]);
             } catch (NumberFormatException e) {
-                throw new LibTmuxException("tmux returned a nonnumeric pane position", e);
+                throw new MalformedResponseException("tmux returned a nonnumeric pane position", e);
             }
         }
         if (read[0] <= 0 || read[1] < 0 || read[2] < 0) {
-            throw new LibTmuxException("tmux returned an invalid pane position");
+            throw new MalformedResponseException("tmux returned an invalid pane position");
         }
         return read;
     }

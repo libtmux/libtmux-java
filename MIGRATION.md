@@ -5,6 +5,229 @@ API changes that require updates to calling code are recorded here. See
 
 ## Next release
 
+A breaking type is named on its own `api-break:` line. Mentioning the type in
+the prose is not that line.
+
+### `CommandResult.stdout()` keeps carriage returns
+
+Each line of `stdout()` is split at LF alone, so a `\r` tmux sent stays at the
+end of its line, and `Buffers.show`, pane captures and option reads return it.
+Where your code compared a line with a bare string, strip the carriage return
+first:
+
+```java
+// Given: Server server
+CommandResult result = server.cmd("list-sessions", "-F", "#{session_name}");
+List<String> lines = result.stdout().stream()
+        .map(line -> line.endsWith("\r") ? line.substring(0, line.length() - 1) : line)
+        .toList();
+```
+
+### JDK 25 is the floor
+
+Building or running on JDK 21 through 24 no longer works. The toolchain and
+`options.release` in every module, the Kotlin and Scala compilation targets,
+and the CI matrix move from JDK 21 to JDK 25. Kotlin's oldest supported
+consumer compiler stays 2.1; it cannot itself emit JDK 25 bytecode, so the
+module's own oldest-consumer check now compiles at that compiler's ceiling,
+`-jvm-target 23`, while still linking against this module's JDK 25 bytecode.
+Scala 3.9 accepts `-release:25`.
+
+### `Client.refresh()` returns the client or throws
+
+api-break: Client
+
+`Client.refresh()` returns `Client`, and throws `TargetGoneException` once the
+client has detached, as every other handle's `refresh()` does; it returned
+`Optional<Client>`. `fetchAttachment()` throws the same way. Catch
+`TargetGoneException` where you tested for empty.
+
+### `Server.setMouseEnabled` is gone
+
+api-break: Server
+
+Write the option instead:
+
+```java
+// Given: Server server
+server.globalOptions().set("mouse", "on");
+```
+
+### `libtmux-kotlin` is wrapper classes now, not extensions on the Java types
+
+api-break: Server
+api-break: Session
+api-break: Window
+api-break: Pane
+api-break: Client
+api-break: ControlClient
+
+`io.github.libtmux.kotlin.Server`/`Session`/`Window`/`Pane`/`Client`/
+`ControlClient` are new Kotlin classes, distinct from the Java types of the
+same simple name. Code that already holds a Java `Server` wraps it with
+`Server.fromJava(server)`, and every wrapper answers its Java handle as
+`asJava`. Every operation that reaches tmux is `suspend`; captured
+state is a property. `Optional` is already unwrapped to a nullable return, so
+the old `activeWindowOrNull`/`activePaneOrNull`/`floatingOrNull`/`modeOrNull`/
+`sessionOrNull`/`paneOrNull`/`windowOrNull`/`getOrNull` extension functions are
+gone — call the property or `suspend` method directly and read the nullable
+result. `EventSubscription<T>.deliveries()`/`awaitDelivery()` are gone; use
+`ControlClient.output(capacity)`/`events(capacity)`, a cold `Flow` over the
+same subscription. `Pane.awaitText`/`await`/`run` and `Server.control` move
+from extensions on the Java types to members on the Kotlin wrapper classes,
+with the same names and `kotlin.time.Duration` parameters:
+
+```kotlin
+// Given: config: ServerConfig
+withServer(config) { server ->
+    val session = server.newSession("build")
+    val pane = session.activeWindow?.activePane ?: error("no active pane")
+    pane.sendLine("echo ready")
+}
+```
+
+### An `EventSubscription` has one reader
+
+api-break: EventSubscription
+
+A read that overlaps another — two threads in `next()` at once — or any read
+after `stream()` or `publisher()` took the subscription throws
+`IllegalStateException`. Readers used to split the events between them, and
+each other's gaps with them. Subscribe again for a second reader: each
+subscription gets every event. Reading from one thread after another stays
+legal.
+
+### Failures are one sealed tree in `io.github.libtmux.exception`
+
+api-break: LibTmuxException
+api-break: ObjectDoesNotExistException
+api-break: ServerNotRunningException
+api-break: UnsupportedTmuxVersionException
+api-break: UnencodableTextException
+api-break: ControlEndedException
+api-break: TmuxFormatException
+api-break: TmuxTransportException
+api-break: TmuxTimeoutException
+api-break: Selections
+api-break: SchemaException
+
+Every failure now lives in `io.github.libtmux.exception`, under an abstract,
+sealed `LibTmuxException`, so a `switch` in Java, a `when` in Kotlin and a
+`match` in Scala over it is checked for exhaustiveness. Change the imports and
+these names:
+
+| Before | Now |
+| --- | --- |
+| `ObjectDoesNotExistException` | `TargetGoneException` |
+| `ServerNotRunningException` | `ServerUnavailableException` |
+| `TmuxTransportException` | `DispatchException`, thrown as `DispatchException.Failed` |
+| `TmuxTimeoutException` | `DispatchException.TimedOut` |
+| `TmuxFormatException` | `MalformedResponseException` |
+| `UnsupportedTmuxVersionException` | `UnsupportedFeatureException` |
+| `Selections.NoMatchException` | `CardinalityException.NoMatch` |
+| `Selections.MultipleMatchesException` | `CardinalityException.MultipleMatches` |
+| `ControlEndedException`, `UnencodableTextException` | same names, new package |
+
+A command tmux ran and refused, which threw a bare `LibTmuxException`, throws
+`CommandRejectedException`. `LibTmuxException` is abstract; construct a leaf.
+
+A handle used after its `Server` was closed throws `ServerClosedException`, an
+`IllegalStateException` outside the tree, where it threw a plain
+`IllegalStateException` or, when the close raced a running command, a
+`TmuxTransportException`. Its `outcome()` says whether tmux may have run that
+command.
+
+`DispatchException.safeToRetry()` answers whether the same request may be sent
+again: always when it never reached tmux, and otherwise only when every command
+in it reads. Hand it to your retry library instead of deciding from
+`outcome()`.
+
+`CardinalityException.MultipleMatches.atLeast()` is how many matched, at
+least. `Selections` stops at the second match, so there it is two.
+
+`libtmux-jackson`'s `SchemaException` is an `IllegalArgumentException`: a
+document that is not a filter is bad input, not a tmux failure.
+
+An interrupt during `EventSubscription.stream()` or `publisher()`, which cannot
+throw `InterruptedException`, ends the read with
+`java.util.concurrent.CancellationException` rather than `LibTmuxException`.
+
+```java
+final class Recovery {
+    static String nextStep(LibTmuxException failure) {
+        return switch (failure) {
+            case TargetGoneException gone -> "look the handle up again";
+            case ServerUnavailableException down -> "start a server";
+            case CommandRejectedException refused -> "change the request: " + refused.errorLines();
+            case DispatchException failed -> failed.safeToRetry() ? "send it again" : "read tmux's state first";
+            case ControlEndedException ended -> "attach again and take a snapshot";
+            case UnsupportedFeatureException unsupported -> "do without it: " + unsupported.getMessage();
+            case UnencodableTextException unencodable -> "start the JVM in a UTF-8 locale";
+            case MalformedResponseException malformed -> "report it: " + malformed.getMessage();
+            case CardinalityException.NoMatch none -> "nothing matched";
+            case CardinalityException.MultipleMatches many -> many.atLeast() + " matched";
+        };
+    }
+}
+```
+
+### `Notification` has four more cases
+
+api-break: Notification
+
+`Notification.Pause`, `Continue`, `Message`, and `ConfigError` join the sealed
+set. A `switch` over `Notification` with no `default` no longer compiles until
+it handles them; one with a `default`, or that matches `Unknown` for
+everything else, is unaffected, though those four no longer arrive as
+`Unknown`.
+
+### Kotlin reads core collections as read-only
+
+A list, set, or map the core returns is a Kotlin `List`, `Set`, or `Map`. Code
+that declared one as `MutableList` or called `add` on it no longer compiles;
+the call threw before. Copy with `toMutableList()` to change one. No Java
+signature changed, so no type is named here.
+
+### An attachment that skips the incarnation check says so
+
+api-break: ControlClient
+
+`ControlClient.attach(config, session)` and its timeout overload are
+`attachUnfenced`. They attach to whatever server now answers the endpoint, and
+a replacement server can reuse the session id. Prefer `server.control(session)`,
+which leaves unless the live server is the process the capture named. The Cats
+`Control.attach(config, session, ...)` is `Control.attachUnfenced` for the same
+reason.
+
+### `EventSubscription.next` returns a gap before the events that remain
+
+api-break: EventSubscription
+
+`next` and `next(Duration)` return `Optional<Delivery<T>>`. A full buffer still
+drops its oldest event. The next read is `Delivery.Gap`, carrying how many were
+discarded since the previous read, and the reads after that are the events that
+remain. `droppedCount()` is still the total.
+
+`cause()` is empty when the caller closed the subscription. It is set when the
+control client ended it. `ControlClient.standardError()` is the bounded text
+that process wrote to its error stream. A subscription does not reconnect.
+Attach again with `Server.control` and read a snapshot. Events already missed
+are not replayed.
+
+### Prompt history is `server.prompt()`
+
+api-break: Server
+
+`promptHistory` and `clearPromptHistory` are `prompt().history()` and
+`prompt().clear()`. `messages()` is `messageLog().lines()`. `runShell`,
+`runShellCapturing` and `ifShell` are `shell().run`, `shell().capturing` and
+`shell().choose`. `listCommands()` is `commands().list()`.
+### `search_panes` reports `truncated`, not `limited`
+
+The MCP tool's output field naming a budget cut is now `truncated`, matching
+`capture_pane`, `capture_since`, `wait_for_text`, and `run_shell_command`.
+Read `truncated` instead of `limited` from a `search_panes` result.
+
 ### A tmux release candidate keeps its name and counts as its release
 
 `TmuxVersion` now carries the pre-release a version named, so a server running
@@ -113,8 +336,10 @@ or catch it and restore the flag.
 
 ```java
 // Given: Server server
+Channel ready = server.channel("ready");
+ready.signal(); // tmux keeps a signal nobody was waiting for, so this wait returns at once
 try {
-    server.channel("ready").await(java.time.Duration.ofSeconds(30));
+    ready.await(java.time.Duration.ofSeconds(30));
 } catch (InterruptedException cancelled) {
     Thread.currentThread().interrupt();
 }

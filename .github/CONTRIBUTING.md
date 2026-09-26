@@ -10,18 +10,19 @@ messages, API documentation, and source comments — is set out separately in
 
 A Gradle directory is a published artifact exactly when it declares a Maven
 publication, and the Gradle build fails when that set stops matching
-`libtmux-bom`. The shared sbt build validates separately released Scala
-coordinates. Nothing about this is a convention you have to remember:
+`libtmux-bom`. Nothing about this is a convention you have to remember:
 
 | directory | published | holds |
 | --- | --- | --- |
-| `libtmux*/` | yes | one artifact each, named for its directory |
-| `integration-tests/` | no | the real-tmux suite, which spans artifacts |
+| `libtmux*/` | yes | one artifact each, named for its directory; the Scala ones are suffixed `_3` |
+| `integration-tests/` | no | the real-tmux suites, Java and Scala, which span artifacts |
 | `examples/` | no | whole runnable programs, run by its own suite |
-| [`docs-tests/`](../docs-tests/) | no | compiles and runs every snippet in the docs |
-| `scripts/` | no | what the build does not do |
-| `build-logic/` | no | convention plugins, as an included build |
-| `docs/`, `gradle/`, `.github/` | no | everything else |
+| `benchmarks/` | no | what an operation costs, measured on demand |
+| [`module-tests/`](../module-tests/) | no | builds of their own that consume the staged artifacts |
+| [`docs/`](../docs/) | no | the guides, and the suite that runs every snippet in them |
+| `build-logic/` | no | convention plugins, code generators and the catalog Doclet, as an included build |
+| [`tools/`](../tools/) | no | developer tooling the build does not run |
+| `gradle/`, `.github/` | no | the wrapper, versions and checksums; CI |
 
 The real-tmux suite lives outside every published module on purpose. A suite
 inside one artifact's tests makes that artifact's dependencies and lifecycle
@@ -29,7 +30,7 @@ answerable for how the whole library is tested.
 
 ## Building
 
-You need JDK 21 or newer and tmux on `PATH`. Nothing else — Gradle provisions
+You need JDK 25 or newer and tmux on `PATH`. Nothing else — Gradle provisions
 the toolchain, and the library has no runtime dependencies. The workspace CLI
 adds its own runtime dependencies; its terminal regression tests also require
 Python 3 for the standard-library PTY driver and Bash on `PATH` for interactive
@@ -85,7 +86,7 @@ Kill only sockets under this port's roots. Another port's servers are not yours
 to reap, however much they cost us:
 
 ```console
-$ ./scripts/reap-stale-servers.sh
+$ ./tools/reap-stale-servers.sh
 ```
 
 A unix socket path cannot exceed about 104 bytes, and tmux reports a longer one
@@ -102,7 +103,7 @@ The matrix is a local tree of built tmuxes, one directory per lane, each with
 `bin/tmux`. Build one:
 
 ```console
-$ ./scripts/tmux-matrix.sh ~/tmux-builds
+$ ./tools/tmux-matrix.sh ~/tmux-builds
 ```
 
 It reads the lane list out of the build, so it cannot drift from what the matrix
@@ -128,13 +129,12 @@ claims around it — the version in every install block, what the platform says 
 manages — are checked with it:
 
 ```console
-$ ./gradlew :docs-tests:test
+$ ./gradlew :docs:test
 ```
 
 How a fence says what it is — the directives, the `// →` assertions, the
-fixtures a snippet may assume — is in
-[`docs-tests/README.md`](../docs-tests/README.md), beside the code that reads
-them.
+fixtures a snippet may assume — is in [`docs/README.md`](../docs/README.md#how-these-pages-are-tested), beside
+the code that reads them.
 
 A green `check` that reported `UP-TO-DATE` for every task verified nothing.
 Force it when that matters:
@@ -157,6 +157,25 @@ question that would have.
 The tmux matrix is not part of `check`, and a green `check` has not predicted
 it. Run the matrix before a release.
 
+Nor is the published coordinate. The builds in
+[`module-tests/`](../module-tests/) are builds of their own that resolve only
+what the root build staged: `java/` requires `io.github.libtmux` as a named
+module at the staged version, `kotlin/` and `scala/` resolve through the staged
+BOM, and all three run commands through tmux; `sbt/` resolves each artifact with
+the install line the documentation shows. CI runs them in its release
+rehearsal, against a staging signed at the version a tag would publish and
+checked by [`tools/verify-staged-release.sh`](../tools/verify-staged-release.sh);
+locally, stage and run one:
+
+```console
+$ ./gradlew publishAllPublicationsToStagingRepository
+```
+
+```console
+$ ./gradlew -p module-tests/java run \
+    -PlibtmuxVersion="$(sed -n 's/^libtmuxVersion=//p' gradle.properties)"
+```
+
 ## Pull requests
 
 One subject per pull request. Unrelated cleanup found along the way belongs in
@@ -168,8 +187,11 @@ What a change is expected to carry:
   was real; without it there is nothing to distinguish a fix from a coincidence.
   A passing gate is evidence only once it has been shown capable of failing.
 - **A measurement, when the claim is about tmux.** tmux's behaviour differs
-  across the supported range in ways no amount of reading settles. Notes under
-  `docs/spikes/` record what was measured and against which release.
+  across the supported range in ways no amount of reading settles. A version
+  quirk a source comment relies on belongs in
+  [`docs/internals/tmux-behaviour.md`](../docs/internals/tmux-behaviour.md); a
+  decision the measurement forced belongs in
+  [`docs/decisions/`](../docs/decisions/) as a short ADR.
 - **A changelog entry, when a caller can observe the change.** It goes under
   `## Unreleased`. Nothing enforces this, which is why it is written down.
 - **Nothing generated-looking.** Names that say what a thing is for, comments
@@ -204,11 +226,11 @@ to do things in — is in [`RELEASING.md`](../RELEASING.md).
 
 ## Compatibility
 
-**JDK 21 is the floor.** Three places state it and all three have to agree: the
+**JDK 25 is the floor.** Three places state it and all three have to agree: the
 toolchain and `options.release` in
-`build-logic/src/main/kotlin/libtmux.java-library.gradle.kts`, the version
-matrix in the CI workflow, which builds on 21 and 25, and the claim `README.md`
-makes under `Requirements`.
+`build-logic/conventions/src/main/kotlin/libtmux.java-library.gradle.kts`, the
+version matrix in the CI workflow, which builds on 25 and 27, and the claim
+`README.md` makes under `Requirements`.
 
 **tmux 3.2a through 3.7c is the supported range**, and it is not a claim: the
 whole real-tmux suite runs against every one of those releases, and each lane

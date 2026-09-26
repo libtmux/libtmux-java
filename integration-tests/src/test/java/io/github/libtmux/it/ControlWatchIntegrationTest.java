@@ -10,6 +10,7 @@ import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.Window;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.control.ControlEvent;
+import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.Notification;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -33,7 +34,7 @@ final class ControlWatchIntegrationTest {
     void aWindowAppearingIsAnnouncedWithoutAnythingAsking(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
 
             session.newWindow("appeared");
@@ -48,10 +49,10 @@ final class ControlWatchIntegrationTest {
     void aRenameIsAnnouncedWithTheNameItWasGiven(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
 
-            var unused = session.windows().get(0).rename("renamed-now");
+            var _ = session.windows().get(0).rename("renamed-now");
 
             assertTrue(
                     awaitEvent(
@@ -63,6 +64,32 @@ final class ControlWatchIntegrationTest {
     }
 
     /**
+     * A message another client aims at this one arrives as a notification, " : " and all. A name
+     * cannot carry that separator across releases: 3.2a to 3.6 store {@code :} as {@code _} and 3.7
+     * refuses it, so the message is the real-tmux proof that only a subscription is split there.
+     */
+    @Test
+    void aMessageAimedAtTheClientArrivesTyped(Server server) throws Exception {
+        if (!server.version().atLeast(new TmuxVersion(3, 4, ""))) {
+            return; // %message arrived in tmux 3.4
+        }
+        Session session = server.sessions().get(0);
+
+        try (ControlClient client = server.control(session);
+                EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
+            String name = client.send("display-message", "-p", "#{client_name}")
+                    .lines()
+                    .get(0);
+
+            var _ = server.run(java.util.List.of("display-message", "-c", name, "hello : there"));
+
+            assertTrue(
+                    awaitEvent(events, event -> event.notification().equals(new Notification.Message("hello : there"))),
+                    "the message did not arrive typed and whole");
+        }
+    }
+
+    /**
      * A watch is the general form: any tmux format, reported when its value changes. The comparison
      * happens inside tmux, so nothing here polls.
      */
@@ -70,7 +97,7 @@ final class ControlWatchIntegrationTest {
     void aWatchedFormatIsReportedWhenItsValueChanges(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
             client.watch("windows", "", "#{session_windows}");
 
@@ -90,7 +117,7 @@ final class ControlWatchIntegrationTest {
     void aWatchOverEveryWindowNamesTheWindowEachValueIsFor(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
             client.watch("names", "@*", "#{window_name}");
             var made = session.newWindow("distinctly-named");
@@ -124,7 +151,7 @@ final class ControlWatchIntegrationTest {
             return; // classic-only releases have no JSON layout to disagree about
         }
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
             window.split();
 
@@ -156,9 +183,9 @@ final class ControlWatchIntegrationTest {
         Session session = server.sessions().get(0);
         Window window = session.windows().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
-            var unused = window.rename("build  logs");
+            var _ = window.rename("build  logs");
 
             Optional<ControlEvent> renamed = awaitMatchingEvent(
                     events,
@@ -176,7 +203,7 @@ final class ControlWatchIntegrationTest {
     void aWatchThatIsRemovedStopsBeingReported(Server server) throws Exception {
         Session session = server.sessions().get(0);
 
-        try (ControlClient client = ControlClient.attach(server.config(), session.id());
+        try (ControlClient client = server.control(session);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
             client.watch("windows", "", "#{session_windows}");
             assertTrue(awaitEvent(
@@ -220,12 +247,15 @@ final class ControlWatchIntegrationTest {
             throws InterruptedException {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadline) {
-            var event = events.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
-            if (event.isEmpty()) {
-                return Optional.empty();
+            var step = events.next(Duration.ofNanos(Math.max(0L, deadline - System.nanoTime())));
+            if (step.isEmpty() || !(step.orElseThrow() instanceof Delivery.Event<ControlEvent> event)) {
+                if (step.isEmpty()) {
+                    return Optional.empty();
+                }
+                continue;
             }
-            if (match.test(event.orElseThrow())) {
-                return event;
+            if (match.test(event.value())) {
+                return Optional.of(event.value());
             }
         }
         return Optional.empty();

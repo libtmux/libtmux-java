@@ -14,7 +14,7 @@ something — Jackson, JUnit, Kotlin, MCP, tmuxp — and depends on this.
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.14"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.15"))
     implementation("io.github.libtmux:libtmux")
 }
 ```
@@ -28,7 +28,7 @@ dependencies {
     <dependency>
       <groupId>io.github.libtmux</groupId>
       <artifactId>libtmux-bom</artifactId>
-      <version>0.0.1-alpha.14</version>
+      <version>0.0.1-alpha.15</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -42,11 +42,10 @@ dependencies {
 ```
 </details>
 
-Needs JDK 21 and a tmux between 3.2a and 3.7c.
+Needs JDK 25 and a tmux between 3.2a and 3.7c.
 
 ## Thirty seconds
 
-<!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
 // Given: Path socket
 ServerConfig config = ServerConfig.builder()
@@ -119,7 +118,7 @@ logs.get(0).name();                  // → logs
 
 Typed fields fail at **compile** time, not at runtime:
 
-<!-- snippet: does-not-compile -->
+<!-- snippet: does-not-compile: method startsWith -->
 ```java
 Pane_.index().startsWith("2");   // index is a number
 Pane_.active().contains("yes");  // active is a flag
@@ -138,7 +137,7 @@ Session build = Selections.exactlyOne(
 build.name();                        // → build
 ```
 
-`NoMatchException` for none, `MultipleMatchesException` for several — never a
+`CardinalityException.NoMatch` for none, `CardinalityException.MultipleMatches` for several — never a
 silent `first()`.
 
 Full guide: **[Filtering](../docs/guide/filtering.md)**.
@@ -180,7 +179,7 @@ the transport reports which happened rather than collapsing both:
 // Given: Server server
 try {
     server.cmd(List.of("kill-session", "-t", "=gone"));
-} catch (TmuxTransportException e) {
+} catch (DispatchException e) {
     if (e.outcome() == DispatchOutcome.NOT_DISPATCHED) {
         retry();      // tmux never saw it, so sending it again is safe
     } else {
@@ -205,7 +204,7 @@ try {
 
 - [Getting started](../docs/guide/getting-started.md) · [Snapshots and handles](../docs/guide/snapshots-and-handles.md)
 - [Filtering](../docs/guide/filtering.md) · [Batching and chaining](../docs/guide/batching-and-chaining.md)
-- [Streaming](../docs/guide/streaming.md)
+- [Streaming](../docs/guide/streaming.md) · [Concurrency](../docs/guide/concurrency.md)
 - [Options and hooks](../docs/guide/options-and-hooks.md)
 - Runnable programs: [`examples/`](../examples/)
 - Testing your own code against real tmux: [`libtmux-junit5`](../libtmux-junit5/)

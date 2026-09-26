@@ -82,6 +82,22 @@ public sealed interface Notification {
             String name, String value, Optional<SessionId> session, Optional<WindowId> window, Optional<PaneId> pane)
             implements Notification {}
 
+    /**
+     * {@code %pause}: tmux stopped sending a pane's output to this client, which turned flow control
+     * on with {@code refresh-client -f pause-after=N} and fell N seconds behind. {@code refresh-client
+     * -A '%1:continue'} resumes it. tmux 3.2 and later.
+     */
+    record Pause(PaneId pane) implements Notification {}
+
+    /** {@code %continue}: a paused pane's output flows to this client again. tmux 3.2 and later. */
+    record Continue(PaneId pane) implements Notification {}
+
+    /** {@code %message}: text another client showed on this one with {@code display-message -c}. tmux 3.4 and later. */
+    record Message(String text) implements Notification {}
+
+    /** {@code %config-error}: a configuration file tmux loaded for this client had an error. tmux 3.4 and later. */
+    record ConfigError(String cause) implements Notification {}
+
     /** {@code %exit}: the client is exiting, with tmux's reason when it gave one. */
     record Exit(Optional<String> reason) implements Notification {}
 
@@ -157,6 +173,12 @@ public sealed interface Notification {
                                         words.length > 1 ? session(words[1]) : Optional.empty(),
                                         words.length > 2 ? window(words[2]) : Optional.empty(),
                                         words.length > 4 ? pane(words[4]) : Optional.empty());
+                    case "pause" ->
+                        pane(first).map(p -> (Notification) new Pause(p)).orElse(null);
+                    case "continue" ->
+                        pane(first).map(p -> (Notification) new Continue(p)).orElse(null);
+                    case "message" -> new Message(rest);
+                    case "config-error" -> new ConfigError(rest);
                     case "exit" -> new Exit(rest.isEmpty() ? Optional.empty() : Optional.of(rest));
                     default -> null;
                 };

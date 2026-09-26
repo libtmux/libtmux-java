@@ -2,13 +2,20 @@ package io.github.libtmux;
 
 import com.google.errorprone.annotations.CheckReturnValue;
 import io.github.libtmux.batch.Batch;
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnencodableTextException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.transport.DispatchOutcome;
-import io.github.libtmux.transport.TmuxTimeoutException;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -20,37 +27,20 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * One tmux pane, as one capture saw it.
  *
  * <p>Identity is the server and the pane id. An index is state: panes renumber as neighbours come
  * and go.
+ *
+ * <p>A method named for a captured field returns what {@link #info()} holds and does no I/O;
+ * {@link #refresh()} reads again. Every other method asks tmux now.
  */
 public final class Pane {
-
-    /**
-     * How often a wait looks again.
-     *
-     * <p>Short enough that a wait reports promptly, long enough that a wait held open for minutes
-     * is not thousands of tmux invocations. A caller who needs an exact moment wants a signal on a
-     * {@link Channel}, not a shorter interval here.
-     */
-    private static final Duration POLL = Duration.ofMillis(50);
-
-    private static final Duration SHORTEST_POLL = Duration.ofMillis(10);
-
-    /**
-     * The least a wait's first read is given, and the budget for telling a dead server from a read
-     * that failed.
-     *
-     * <p>A quarter of a second, what {@link Channel#drain} gives a pending signal to come straight
-     * back: long enough for tmux to answer, short enough not to be a wait.
-     */
-    private static final Duration SHORTEST_READ = Duration.ofMillis(250);
 
     private static final RowFormat BROKEN_OUT = RowFormat.of("session_id", "window_id", "window_index");
 
@@ -63,7 +53,7 @@ public final class Pane {
      * NULL)} where it meant {@code == NULL} - fixed by {@code 84291b02}, which {@code git tag
      * --contains} places on 3.7a and nothing earlier, matching CHANGES' "3.7 TO 3.7a": "Fix crash in
      * break-pane when no name is provided." Not probeable: break-pane's args are unchanged across the
-     * fix, so nothing in {@link Server#listCommands} distinguishes the two releases.
+     * fix, so nothing in {@link Commands#list} distinguishes the two releases.
      */
     private static final TmuxVersion BREAK_PANE_NAMING_BROKEN = new TmuxVersion(3, 7, "");
 
@@ -77,22 +67,32 @@ public final class Pane {
         this.state = state;
     }
 
+    /** The fields this capture stored. A later title change is not visible here. */
+    @Operation(Kind.CAPTURED)
+    public PaneState info() {
+        return state;
+    }
+
     /** The pane's stable id. */
+    @Operation(Kind.CAPTURED)
     public PaneId id() {
         return state.id();
     }
 
     /** The pane's position, which shifts as neighbours come and go. */
+    @Operation(Kind.CAPTURED)
     public int index() {
         return state.index();
     }
 
     /** Whether this was its window's active pane when captured. */
+    @Operation(Kind.CAPTURED)
     public boolean active() {
         return state.active();
     }
 
     /** The command tmux reported running here. */
+    @Operation(Kind.CAPTURED)
     public String currentCommand() {
         return state.currentCommand();
     }
@@ -103,21 +103,25 @@ public final class Pane {
      * <p>Empty is not "no". tmux before 3.7 expands the format to nothing, and answering {@code false}
      * there would be indistinguishable from a tmux that looked and found the pane was not floating.
      */
+    @Operation(Kind.CAPTURED)
     public Optional<Boolean> floating() {
         return state.floating();
     }
 
     /** How large the pane was when captured, in terminal cells. */
+    @Operation(Kind.CAPTURED)
     public Dimensions size() {
         return state.size();
     }
 
     /** Where the pane's top-left corner sat in its window when captured, in terminal cells. */
+    @Operation(Kind.CAPTURED)
     public PanePosition position() {
         return state.position();
     }
 
     /** The pane title, which a program running inside it can change. */
+    @Operation(Kind.CAPTURED)
     public String title() {
         return state.title();
     }
@@ -133,12 +137,13 @@ public final class Pane {
      * @throws LibTmuxException if this JVM's encoding cannot represent the name, which a UTF-8
      *     locale fixes
      */
+    @Operation(Kind.CAPTURED)
     public Path currentPath() {
         String reported = state.currentPath();
         try {
             return Path.of(reported);
         } catch (InvalidPathException unrepresentable) {
-            throw new LibTmuxException(
+            throw new UnencodableTextException(
                     "this JVM cannot represent the directory of pane " + state.id()
                             + " as a path; start the JVM in a UTF-8 locale (LC_ALL=C.UTF-8), or read"
                             + " currentPathText()",
@@ -147,6 +152,7 @@ public final class Pane {
     }
 
     /** The working directory tmux reported for the pane, exactly as tmux reported it. */
+    @Operation(Kind.CAPTURED)
     public String currentPathText() {
         return state.currentPath();
     }
@@ -161,6 +167,7 @@ public final class Pane {
      * pane that ran one and it has since died. Before 3.8 a dead pane still reports its stale pid.
      * {@link #dead()} is the live read that tells a caller which.
      */
+    @Operation(Kind.CAPTURED)
     public OptionalLong pid() {
         return state.pid();
     }
@@ -175,19 +182,20 @@ public final class Pane {
      *
      * <p>A dead pane is not necessarily a gone one: {@code remain-on-exit} keeps it around, still
      * listed, to be read. A pane with no {@code remain-on-exit} is simply removed once its process
-     * exits — {@link #refresh()} on this handle then throws {@link ObjectDoesNotExistException}, and
+     * exits — {@link #refresh()} on this handle then throws {@link TargetGoneException}, and
      * this method throws too. Unlike every other command {@code Pane} sends, {@code display-message
      * -t} does not error on a target it cannot resolve — it exits 0 with nothing on stdout — so a
      * gone pane looks like a live one that answered nothing rather than like a failure. That empty
      * read, and not a "can't find pane" from tmux, is what this method throws on: a real pane always
      * answers {@code 0} or {@code 1} for this format, never nothing.
      *
-     * @throws ObjectDoesNotExistException if the pane is gone from a server that still answers
+     * @throws TargetGoneException if the pane is gone from a server that still answers
      */
+    @Operation(Kind.READ)
     public boolean dead() {
         String value = expand("#{pane_dead}");
         if (value.isEmpty()) {
-            throw new ObjectDoesNotExistException("pane " + state.id() + " no longer exists");
+            throw new TargetGoneException("pane " + state.id() + " no longer exists");
         }
         return "1".equals(value);
     }
@@ -198,6 +206,7 @@ public final class Pane {
      * @param direction which way to grow, named rather than flagged
      * @param cells how many terminal cells to grow by
      */
+    @Operation(Kind.MUTATION)
     public void resize(Direction direction, int cells) {
         if (cells < 1) {
             throw new IllegalArgumentException("cells is not positive: " + cells);
@@ -207,11 +216,13 @@ public final class Pane {
     }
 
     /** Which sides of its window the pane touches. */
+    @Operation(Kind.CAPTURED)
     public PaneEdges edges() {
         return state.edges();
     }
 
     /** Puts this pane into copy mode, where its scrollback can be navigated. */
+    @Operation(Kind.MUTATION)
     public void copyMode() {
         server.run(snapshot, List.of("copy-mode", "-t", state.id().value()));
     }
@@ -225,6 +236,7 @@ public final class Pane {
      * @return the mode, or empty when the pane is showing its program
      * @throws LibTmuxException if this tmux named a mode outside the supported range
      */
+    @Operation(Kind.READ)
     public Optional<PaneMode> mode() {
         String reported = expand("#{pane_mode}");
         return reported.isEmpty() ? Optional.empty() : Optional.of(PaneMode.of(reported));
@@ -237,11 +249,13 @@ public final class Pane {
      * and a chooser go the same way. The name is tmux's history rather than its behaviour, so it is
      * not the one exposed here.
      */
+    @Operation(Kind.MUTATION)
     public void exitMode() {
         server.run(snapshot, List.of("copy-mode", "-q", "-t", state.id().value()));
     }
 
     /** Makes this the active pane of its window. */
+    @Operation(Kind.MUTATION)
     public void select() {
         server.run(snapshot, List.of("select-pane", "-t", state.id().value()));
     }
@@ -255,6 +269,7 @@ public final class Pane {
      * reports that one instead. This says what the title is now, not what it will stay.
      */
     @CheckReturnValue
+    @Operation(Kind.MUTATION)
     public Pane retitle(String title) {
         Objects.requireNonNull(title, "title");
         server.run(snapshot, List.of("select-pane", "-t", state.id().value(), "-T", TmuxFormats.literal(title)));
@@ -262,6 +277,7 @@ public final class Pane {
     }
 
     /** Resizes this pane. */
+    @Operation(Kind.MUTATION)
     public void resizeTo(Dimensions size) {
         server.run(
                 snapshot,
@@ -276,11 +292,13 @@ public final class Pane {
     }
 
     /** The server this pane lives on. */
+    @Operation(Kind.CAPTURED)
     public Server server() {
         return server;
     }
 
     /** Collects commands fenced to the server incarnation that produced this pane. */
+    @Operation(Kind.CAPTURED)
     public Batch batch() {
         return server.batch(snapshot);
     }
@@ -290,39 +308,31 @@ public final class Pane {
     }
 
     /** The window link this pane was reached through. A pure read of the capture. */
+    @Operation(Kind.CAPTURED)
     public Window window() {
         return snapshot.window(state.context())
                 .map(window -> new Window(server, snapshot, window))
-                .orElseThrow(() -> new LibTmuxException("the capture holds a pane whose window it never saw"));
+                .orElseThrow(
+                        () -> new MalformedResponseException("the capture holds a pane whose window it never saw"));
     }
 
     /** This pane's own hooks. */
+    @Operation(Kind.CAPTURED)
     public Hooks hooks() {
         return Hooks.pane(server, snapshot, state.id());
     }
 
     /** This pane's own options. */
+    @Operation(Kind.CAPTURED)
     public Options options() {
         return Options.pane(server, snapshot, state.id());
     }
 
     /** This pane's visible content, one element per line. */
+    @ReadOnly
+    @Operation(Kind.READ)
     public List<String> capture() {
         return capture(CaptureSpec.builder().build());
-    }
-
-    /**
-     * What the pane has shown that this library did not type, as whole lines.
-     *
-     * <p>What a wait has to read, and different from {@link #capture()} twice over. Wrapped rows are
-     * rejoined, because a terminal breaks a long line wherever the pane happens to end and text
-     * split across that break is in no single row — a wait watching for it would never see it while
-     * it sits in plain view. And an echo of what this library just typed is taken out, because a
-     * terminal shows the caller's own command back and a wait for something that command's text
-     * contains would otherwise be answered by the question.
-     */
-    private List<String> shown(TypedText typed) {
-        return typed.withoutEcho(capture(CaptureSpec.Builder::joiningWrappedLines));
     }
 
     /**
@@ -333,6 +343,7 @@ public final class Pane {
      * or {@link #sendLiteral} already records synchronized recipients. Include a trailing line break
      * when the external write submitted its line; otherwise the text remains pending.
      */
+    @Operation(Kind.MUTATION)
     public void noteTyped(String text) {
         Objects.requireNonNull(text, "text");
         server.echo().recordLiteral(identity(), state.id(), text).confirm();
@@ -371,8 +382,9 @@ public final class Pane {
      * @throws InterruptedException if the waiting thread is interrupted, which is a cancellation
      *     rather than a timeout and so is not reported as one
      */
+    @Operation(Kind.WAIT)
     public TextOutcome awaitText(String text, Duration timeout) throws InterruptedException {
-        return awaitText(text, timeout, POLL);
+        return awaitText(text, timeout, PaneWait.POLL);
     }
 
     /**
@@ -385,26 +397,10 @@ public final class Pane {
      * @param every how long to leave between looks, at least 10 ms
      * @throws IllegalArgumentException if {@code every} is shorter than 10 ms
      */
+    @Operation(Kind.WAIT)
     public TextOutcome awaitText(String text, Duration timeout, Duration every) throws InterruptedException {
         Objects.requireNonNull(text, "text");
-        TypedText typed = TypedText.in(this);
-        boolean[] reading = {true, false};
-        WakeReason ended = awaitCondition(
-                bounded -> {
-                    boolean found = bounded.shown(typed).stream().anyMatch(line -> line.contains(text));
-                    if (reading[0]) {
-                        reading[0] = false;
-                        reading[1] = found;
-                    }
-                    return found;
-                },
-                timeout,
-                every);
-        return switch (ended) {
-            case SIGNALLED -> reading[1] ? TextOutcome.PRESENT_AT_ENTRY : TextOutcome.APPEARED;
-            case TIMED_OUT -> TextOutcome.TIMED_OUT;
-            case SERVER_GONE -> TextOutcome.SERVER_GONE;
-        };
+        return PaneWait.awaitText(this, text, timeout, every);
     }
 
     /**
@@ -436,29 +432,33 @@ public final class Pane {
      * @throws IllegalStateException if the pane is not running a POSIX shell
      * @throws InterruptedException if the waiting thread is interrupted
      */
+    @Operation(Kind.WAIT)
     public PaneRun run(String command, Duration timeout) throws InterruptedException {
-        Objects.requireNonNull(command, "command");
-        Objects.requireNonNull(timeout, "timeout");
-        // What the pane is running and where its server listens, read together: one command, and the
-        // same moment, so the shell checked is the shell the line is typed into.
-        Map<String, String> here = variables(List.of("pane_current_command", "socket_path"));
-        String running = here.getOrDefault("pane_current_command", "");
-        PaneCommand.requirePosixShell(running.isEmpty() ? state.currentCommand() : running);
-        PaneCommand frame = PaneCommand.fresh();
-        List<String> tmux = List.of(server.config().binaryPath(), "-S", here.getOrDefault("socket_path", ""));
-        sendLine(frame.typed(tmux, command));
+        try (PaneInput.Lease input = PaneInput.hold(this)) {
+            Objects.requireNonNull(input, "input");
+            Objects.requireNonNull(command, "command");
+            Objects.requireNonNull(timeout, "timeout");
+            // What the pane is running and where its server listens, read together: one command, and the
+            // same moment, so the shell checked is the shell the line is typed into.
+            Map<String, String> here = variables(List.of("pane_current_command", "socket_path"));
+            String running = here.getOrDefault("pane_current_command", "");
+            PaneCommand.requirePosixShell(running.isEmpty() ? state.currentCommand() : running);
+            PaneCommand frame = PaneCommand.fresh();
+            List<String> tmux = List.of(server.config().binaryPath(), "-S", here.getOrDefault("socket_path", ""));
+            sendLine(frame.typed(tmux, command));
 
-        WakeReason woke = server.channel(frame.channel()).await(timeout);
-        if (woke == WakeReason.SERVER_GONE) {
-            return new PaneRun(PaneRun.Outcome.SERVER_GONE, OptionalInt.empty(), List.of(), false);
+            WakeReason woke = server.channel(frame.channel()).await(timeout);
+            if (woke == WakeReason.SERVER_GONE) {
+                return new PaneRun(PaneRun.Outcome.SERVER_GONE, OptionalInt.empty(), List.of(), false);
+            }
+            // Rows rejoined, so a line the command printed wider than the pane comes back as it printed it,
+            // and the typed line — which wraps — is one line that holds the markers without equalling one.
+            PaneCommand.Framed framed =
+                    frame.frame(capture(spec -> spec.fromStartOfHistory().joiningWrappedLines()));
+            return woke == WakeReason.SIGNALLED
+                    ? new PaneRun(PaneRun.Outcome.FINISHED, framed.status(), framed.lines(), framed.exact())
+                    : new PaneRun(PaneRun.Outcome.TIMED_OUT, OptionalInt.empty(), framed.lines(), false);
         }
-        // Rows rejoined, so a line the command printed wider than the pane comes back as it printed it,
-        // and the typed line — which wraps — is one line that holds the markers without equalling one.
-        PaneCommand.Framed framed =
-                frame.frame(capture(spec -> spec.fromStartOfHistory().joiningWrappedLines()));
-        return woke == WakeReason.SIGNALLED
-                ? new PaneRun(PaneRun.Outcome.FINISHED, framed.status(), framed.lines(), framed.exact())
-                : new PaneRun(PaneRun.Outcome.TIMED_OUT, OptionalInt.empty(), framed.lines(), false);
     }
 
     /**
@@ -477,12 +477,13 @@ public final class Pane {
      * @param settled receives this pane as it is now
      * @param timeout how long to keep looking
      * @return why the wait ended
-     * @throws ObjectDoesNotExistException if this pane is killed while its server stays up, which is not a
+     * @throws TargetGoneException if this pane is killed while its server stays up, which is not a
      *     timeout
      * @throws InterruptedException if the waiting thread is interrupted
      */
+    @Operation(Kind.WAIT)
     public WakeReason await(Predicate<Pane> settled, Duration timeout) throws InterruptedException {
-        return await(settled, timeout, POLL);
+        return await(settled, timeout, PaneWait.POLL);
     }
 
     /**
@@ -491,88 +492,14 @@ public final class Pane {
      * @param every how long to leave between looks, at least 10 ms
      * @throws IllegalArgumentException if {@code every} is shorter than 10 ms
      */
+    @Operation(Kind.WAIT)
     public WakeReason await(Predicate<Pane> settled, Duration timeout, Duration every) throws InterruptedException {
         Objects.requireNonNull(settled, "settled");
-        return awaitCondition(bounded -> settled.test(bounded.refresh().through(server)), timeout, every);
-    }
-
-    /**
-     * One deadline for both public waits, applied to the reads as well as to the gaps between them.
-     *
-     * <p>Each read goes through {@link Server#within} with what is left of the deadline, so a read
-     * cannot outlast the wait. A read that runs out of that budget has reached the wait's own
-     * deadline, and is a timeout. Once the deadline has passed no further read starts, which is what
-     * keeps text that arrives late from being reported.
-     *
-     * <p>An ordinary timeout asks tmux nothing more. The last read answered, so the server was there
-     * a poll interval ago, and a liveness probe after the deadline would only spend time the caller
-     * did not give. A read that <em>failed</em> is different: tmux reports "no server" and "no such
-     * pane" the same way, so that one gets a second look to tell {@link WakeReason#SERVER_GONE} from a
-     * failure that belongs to the caller.
-     */
-    private WakeReason awaitCondition(Predicate<Pane> poll, Duration timeout, Duration every)
-            throws InterruptedException {
-        Objects.requireNonNull(timeout, "timeout");
-        Objects.requireNonNull(every, "every");
-        if (every.compareTo(SHORTEST_POLL) < 0) {
-            throw new IllegalArgumentException("looking more often than every " + SHORTEST_POLL.toMillis()
-                    + " ms spends a tmux process per look for no reading a person could tell apart: " + every);
-        }
-        if (timeout.isNegative()) {
-            throw new IllegalArgumentException("timeout is negative: " + timeout);
-        }
-        long deadline = System.nanoTime() + timeout.toNanos();
-        boolean first = true;
-        while (true) {
-            if (Thread.interrupted()) {
-                throw new InterruptedException(
-                        "interrupted while waiting on pane " + state.id().value());
-            }
-            Duration left = Duration.ofNanos(Math.max(1, deadline - System.nanoTime()));
-            Duration budget = first && left.compareTo(SHORTEST_READ) < 0 ? SHORTEST_READ : left;
-            first = false;
-            try {
-                if (poll.test(through(server.within(budget)))) {
-                    return WakeReason.SIGNALLED;
-                }
-            } catch (TmuxTimeoutException expired) {
-                return WakeReason.TIMED_OUT;
-            } catch (LibTmuxException unreadable) {
-                return afterFailedRead(unreadable);
-            }
-            long remaining = deadline - System.nanoTime();
-            if (remaining <= 0) {
-                return WakeReason.TIMED_OUT;
-            }
-            TimeUnit.NANOSECONDS.sleep(Math.min(every.toNanos(), remaining));
-            if (System.nanoTime() >= deadline) {
-                return WakeReason.TIMED_OUT;
-            }
-        }
-    }
-
-    /**
-     * Tells a server that went away from a read that failed for a reason of the caller's.
-     *
-     * <p>A probe that cannot get an answer in time proves nothing either way, so the original failure
-     * is what the caller sees, carrying the probe's.
-     */
-    private WakeReason afterFailedRead(LibTmuxException unreadable) {
-        boolean alive;
-        try {
-            alive = server.isAlive(SHORTEST_READ);
-        } catch (TmuxTimeoutException unanswered) {
-            unreadable.addSuppressed(unanswered);
-            throw unreadable;
-        }
-        if (alive) {
-            throw unreadable;
-        }
-        return WakeReason.SERVER_GONE;
+        return PaneWait.await(this, settled, timeout, every);
     }
 
     /** This pane's captured state, addressed through another view of the same server. */
-    private Pane through(Server via) {
+    Pane through(Server via) {
         return new Pane(via, snapshot, state);
     }
 
@@ -585,8 +512,10 @@ public final class Pane {
      * }</pre>
      *
      * @param configure receives a builder that reads the visible area and nothing else
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
+    @ReadOnly
+    @Operation(Kind.READ)
     public List<String> capture(Consumer<CaptureSpec.Builder> configure) {
         CaptureSpec.Builder builder = CaptureSpec.builder();
         configure.accept(builder);
@@ -596,8 +525,10 @@ public final class Pane {
     /**
      * Reads part of this pane according to a spec, which may be reused across panes.
      *
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
+    @ReadOnly
+    @Operation(Kind.READ)
     public List<String> capture(CaptureSpec spec) {
         return server.run(snapshot, spec.argv(state.id().value(), server.version(snapshot)))
                 .stdout();
@@ -612,6 +543,7 @@ public final class Pane {
      * because tmux types anything here that is not one of its key names and a terminal echoes what
      * is typed.
      */
+    @Operation(Kind.MUTATION)
     public void send(String keys) {
         sendKeys(List.of(keys));
     }
@@ -623,6 +555,7 @@ public final class Pane {
      * Recorded input includes effective synchronized recipients. Known dispatch failures undo the
      * record; uncertain delivery retains it. {@link #sendLiteral} types every entry literally.
      */
+    @Operation(Kind.MUTATION)
     public void sendKeys(List<String> keys) {
         sendKeys(keys, () -> {});
     }
@@ -635,21 +568,25 @@ public final class Pane {
      *
      * @param beforeSend validates current input ownership
      */
+    @Operation(Kind.MUTATION)
     public void sendKeys(List<String> keys, Runnable beforeSend) {
-        Objects.requireNonNull(beforeSend, "beforeSend");
-        List<String> argv = sendKeysArgv(keys, false);
-        List<PaneId> recipients = keyRecipients();
-        beforeSend.run();
-        List<PaneEcho.Recorded> recorded = recipients.stream()
-                .map(id -> server.echo().recordKeys(identity(), id, keys))
-                .toList();
-        try {
-            server.run(snapshot, argv);
-        } catch (RuntimeException failure) {
-            recorded.forEach(record -> settleFailure(record, failure));
-            throw failure;
+        try (PaneInput.Lease input = PaneInput.hold(this)) {
+            Objects.requireNonNull(input, "input");
+            Objects.requireNonNull(beforeSend, "beforeSend");
+            List<String> argv = sendKeysArgv(keys, false);
+            List<PaneId> recipients = keyRecipients();
+            beforeSend.run();
+            List<PaneEcho.Recorded> recorded = recipients.stream()
+                    .map(id -> server.echo().recordKeys(identity(), id, keys))
+                    .toList();
+            try {
+                server.run(snapshot, argv);
+            } catch (RuntimeException failure) {
+                recorded.forEach(record -> settleFailure(record, failure));
+                throw failure;
+            }
+            recorded.forEach(PaneEcho.Recorded::confirm);
         }
-        recorded.forEach(PaneEcho.Recorded::confirm);
     }
 
     /**
@@ -659,6 +596,7 @@ public final class Pane {
      * before dispatch, with a line break in the joined text treated as tmux treats it: a submit the
      * instant it reaches the pane, whether or not the caller also presses Enter afterward.
      */
+    @Operation(Kind.MUTATION)
     public void sendLiteral(List<String> keys) {
         sendLiteral(keys, () -> {});
     }
@@ -671,22 +609,26 @@ public final class Pane {
      *
      * @param beforeSend validates current input ownership
      */
+    @Operation(Kind.MUTATION)
     public void sendLiteral(List<String> keys, Runnable beforeSend) {
-        Objects.requireNonNull(beforeSend, "beforeSend");
-        List<String> argv = sendKeysArgv(keys, true);
-        String joined = String.join("", keys);
-        List<PaneId> recipients = keyRecipients();
-        beforeSend.run();
-        List<PaneEcho.Recorded> recorded = recipients.stream()
-                .map(id -> server.echo().recordLiteral(identity(), id, joined))
-                .toList();
-        try {
-            server.run(snapshot, argv);
-        } catch (RuntimeException failure) {
-            recorded.forEach(record -> settleFailure(record, failure));
-            throw failure;
+        try (PaneInput.Lease input = PaneInput.hold(this)) {
+            Objects.requireNonNull(input, "input");
+            Objects.requireNonNull(beforeSend, "beforeSend");
+            List<String> argv = sendKeysArgv(keys, true);
+            String joined = String.join("", keys);
+            List<PaneId> recipients = keyRecipients();
+            beforeSend.run();
+            List<PaneEcho.Recorded> recorded = recipients.stream()
+                    .map(id -> server.echo().recordLiteral(identity(), id, joined))
+                    .toList();
+            try {
+                server.run(snapshot, argv);
+            } catch (RuntimeException failure) {
+                recorded.forEach(record -> settleFailure(record, failure));
+                throw failure;
+            }
+            recorded.forEach(PaneEcho.Recorded::confirm);
         }
-        recorded.forEach(PaneEcho.Recorded::confirm);
     }
 
     private List<String> sendKeysArgv(List<String> keys, boolean literal) {
@@ -704,6 +646,7 @@ public final class Pane {
     }
 
     /** Sends a line to this pane and presses Enter, which is how a command gets run. */
+    @Operation(Kind.MUTATION)
     public void sendLine(String command) {
         Objects.requireNonNull(command, "command");
         sendLiteral(List.of(command + "\r"));
@@ -737,7 +680,7 @@ public final class Pane {
     }
 
     private static void settleFailure(PaneEcho.Recorded recorded, RuntimeException failure) {
-        if (failure instanceof TmuxTransportException transportFailure
+        if (failure instanceof DispatchException transportFailure
                 && transportFailure.outcome() != DispatchOutcome.NOT_DISPATCHED) {
             recorded.confirm();
         } else {
@@ -745,8 +688,8 @@ public final class Pane {
         }
     }
 
-    /** Which server incarnation this pane's echo record belongs to. */
-    private ServerIdentity identity() {
+    /** Which server incarnation this pane belongs to: its echo record and its input hold. */
+    ServerIdentity identity() {
         return server.identity(snapshot);
     }
 
@@ -757,6 +700,7 @@ public final class Pane {
      * there ends the server and every session on it. The name supplied is the one tmux would have
      * chosen, so the result is the same window either way.
      */
+    @Operation(Kind.MUTATION)
     public Window breakOut() {
         // The name tmux would have chosen anyway, supplied only so 3.7 does not have to choose it.
         // Read live rather than from the capture: a pane's command changes as its shell starts, and
@@ -785,16 +729,18 @@ public final class Pane {
      * @return the expansion, whole when it spans lines and empty when the format expanded to
      *     nothing
      */
+    @Operation(Kind.READ)
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
-        List<String> reported = server.run(
+        return PrintedText.printed(server.run(
                         snapshot,
-                        List.of("display-message", "-p", "-t", state.id().value(), "--", format))
-                .stdout();
-        return String.join("\n", reported);
+                        List.of("display-message", "-p", "-t", state.id().value(), "--", PrintedText.expansion(format)))
+                .stdout());
     }
 
     /** Reads validated tmux variables in this pane's format context. */
+    @ReadOnly
+    @Operation(Kind.READ)
     public Map<String, String> variables(List<String> names) {
         return server.variables(names, this::expand);
     }
@@ -806,18 +752,29 @@ public final class Pane {
      * so what is asked for is always the killing form. Restarting a live process is the whole point
      * of the call.
      */
+    @Operation(Kind.MUTATION)
     public void respawn() {
         server.run(snapshot, List.of("respawn-pane", "-k", "-t", state.id().value()));
     }
 
-    /** Restarts the configured pane process in a caller-supplied literal directory. */
+    /**
+     * Restarts the configured pane process in a caller-supplied literal directory, resolved against
+     * this process's working directory when relative.
+     */
+    @Operation(Kind.MUTATION)
     public void respawnIn(Path directory) {
         Objects.requireNonNull(directory, "directory");
         server.run(snapshot, respawnArgv(state.id(), directory));
     }
 
     static List<String> respawnArgv(PaneId pane, Path directory) {
-        return List.of("respawn-pane", "-k", "-c", TmuxFormats.literal(directory.toString()), "-t", pane.value());
+        return List.of(
+                "respawn-pane",
+                "-k",
+                "-c",
+                TmuxFormats.literal(directory.toAbsolutePath().toString()),
+                "-t",
+                pane.value());
     }
 
     /**
@@ -825,6 +782,7 @@ public final class Pane {
      *
      * @param command the command and its arguments
      */
+    @Operation(Kind.MUTATION)
     public void respawn(String... command) {
         if (command.length == 0) {
             throw new IllegalArgumentException("command is empty");
@@ -846,17 +804,20 @@ public final class Pane {
      * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
      * mean it to be expanded.
      */
+    @Operation(Kind.MUTATION)
     public void pipeTo(String shellCommand) {
         Objects.requireNonNull(shellCommand, "shellCommand");
         server.run(snapshot, List.of("pipe-pane", "-O", "-t", state.id().value(), "--", shellCommand));
     }
 
     /** Stops sending this pane's output anywhere. Doing so twice is not an error. */
+    @Operation(Kind.MUTATION)
     public void stopPiping() {
         server.run(snapshot, List.of("pipe-pane", "-t", state.id().value()));
     }
 
     /** Moves this pane into a window of its own with the given name. */
+    @Operation(Kind.MUTATION)
     public Window breakOut(String windowName) {
         Objects.requireNonNull(windowName, "windowName");
         return breakNamed(Optional.of(windowName), windowName);
@@ -883,7 +844,7 @@ public final class Pane {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.window(created)
                 .map(window -> new Window(server, fresh, window))
-                .orElseThrow(() -> new ObjectDoesNotExistException("the window just broken out is already gone"));
+                .orElseThrow(() -> new TargetGoneException("the window just broken out is already gone"));
     }
 
     /**
@@ -891,6 +852,7 @@ public final class Pane {
      *
      * @return the pane that appeared
      */
+    @Operation(Kind.MUTATION)
     public Pane split() {
         return split(SplitSpec.builder().build());
     }
@@ -905,11 +867,12 @@ public final class Pane {
      *
      * @param configure receives a builder holding tmux's defaults
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
-     * @throws ObjectDoesNotExistException if a command with no {@link SplitSpec.Builder#keepOnExit}
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
+     * @throws TargetGoneException if a command with no {@link SplitSpec.Builder#keepOnExit}
      *     exits before the pane it ran in can be read back — see {@link SplitSpec.Builder#running}.
      *     tmux still made the pane and ran the command; only this confirming read lost the race.
      */
+    @Operation(Kind.MUTATION)
     public Pane split(Consumer<SplitSpec.Builder> configure) {
         SplitSpec.Builder builder = SplitSpec.builder();
         configure.accept(builder);
@@ -920,11 +883,12 @@ public final class Pane {
      * Splits this pane according to a spec, which may be reused across panes.
      *
      * @return the pane that appeared
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
-     * @throws ObjectDoesNotExistException if a command with no {@link SplitSpec.Builder#keepOnExit}
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
+     * @throws TargetGoneException if a command with no {@link SplitSpec.Builder#keepOnExit}
      *     exits before the pane it ran in can be read back — see {@link SplitSpec.Builder#running}.
      *     tmux still made the pane and ran the command; only this confirming read lost the race.
      */
+    @Operation(Kind.MUTATION)
     public Pane split(SplitSpec spec) {
         return created(server, snapshot, spec.argv(state.id().value(), CREATED.template(), server.version(snapshot)));
     }
@@ -939,7 +903,7 @@ public final class Pane {
     static Pane created(Server server, ServerSnapshot previous, List<String> argv) {
         List<String> reported = server.run(previous, argv).stdout();
         if (reported.isEmpty()) {
-            throw new LibTmuxException("tmux created a pane without reporting which");
+            throw new MalformedResponseException("tmux created a pane without reporting which");
         }
         PaneId id = new PaneId(CREATED.split(reported.get(0)).get(0));
         ServerSnapshot fresh = server.refresh(previous);
@@ -947,7 +911,7 @@ public final class Pane {
                 .filter(pane -> pane.id().equals(id))
                 .findFirst()
                 .map(pane -> new Pane(server, fresh, pane))
-                .orElseThrow(() -> new ObjectDoesNotExistException("the pane just created is already gone"));
+                .orElseThrow(() -> new TargetGoneException("the pane just created is already gone"));
     }
 
     /** The format a creating command reports its new pane through. */
@@ -956,10 +920,15 @@ public final class Pane {
     }
 
     /** Pastes a named buffer into this pane, as though it had been typed. */
+    @Operation(Kind.MUTATION)
     public void pasteBuffer(String name) {
-        Objects.requireNonNull(name, "name");
-        server.run(
-                snapshot, List.of("paste-buffer", "-b", name, "-t", state.id().value()));
+        try (PaneInput.Lease input = PaneInput.hold(this)) {
+            Objects.requireNonNull(input, "input");
+            Objects.requireNonNull(name, "name");
+            server.run(
+                    snapshot,
+                    List.of("paste-buffer", "-b", name, "-t", state.id().value()));
+        }
     }
 
     /**
@@ -978,48 +947,52 @@ public final class Pane {
      *
      * @throws IllegalArgumentException if the text contains NUL, which a terminal cannot receive and
      *     {@link #send} refuses too
-     * @throws UnsupportedTmuxVersionException before tmux 3.4, where deleting the buffer left by a failed
+     * @throws UnsupportedFeatureException before tmux 3.4, where deleting the buffer left by a failed
      *     paste can remove one this did not create
      */
+    @Operation(Kind.MUTATION)
     public void paste(String text) {
-        Objects.requireNonNull(text, "text");
-        if (text.indexOf('\0') >= 0) {
-            throw new IllegalArgumentException("pasted text cannot contain NUL");
-        }
-        TmuxVersion running = server.version(snapshot);
-        if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-            throw new UnsupportedTmuxVersionException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
-        }
-        String buffer = "libtmux-paste-" + UUID.randomUUID();
-        // Recorded before dispatch: a wait already watching this pane must never see the pasted
-        // content on screen before the record that discounts it exists. Rolled back below if the
-        // paste never lands.
-        PaneEcho.Recorded recorded = server.echo().recordLiteral(identity(), state.id(), text);
-        try {
-            server.runTogether(
-                    snapshot,
-                    text,
-                    List.of(
-                            List.of("load-buffer", "-b", buffer, "-"),
-                            // -d removes the buffer as it pastes, so the success path leaves nothing
-                            // even when this is the last thing the caller manages to run.
-                            List.of(
-                                    "paste-buffer",
-                                    "-d",
-                                    "-b",
-                                    buffer,
-                                    "-t",
-                                    state.id().value())));
-        } catch (RuntimeException failure) {
-            settleFailure(recorded, failure);
-            try {
-                server.buffers().delete(buffer);
-            } catch (RuntimeException ignored) {
-                // Already gone, or the server is; neither changes what the caller is told.
+        try (PaneInput.Lease input = PaneInput.hold(this)) {
+            Objects.requireNonNull(input, "input");
+            Objects.requireNonNull(text, "text");
+            if (text.indexOf('\0') >= 0) {
+                throw new IllegalArgumentException("pasted text cannot contain NUL");
             }
-            throw failure;
+            TmuxVersion running = server.version(snapshot);
+            if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
+                throw new UnsupportedFeatureException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
+            }
+            String buffer = "libtmux-paste-" + UUID.randomUUID();
+            // Recorded before dispatch: a wait already watching this pane must never see the pasted
+            // content on screen before the record that discounts it exists. Rolled back below if the
+            // paste never lands.
+            PaneEcho.Recorded recorded = server.echo().recordLiteral(identity(), state.id(), text);
+            try {
+                server.runTogether(
+                        snapshot,
+                        text,
+                        List.of(
+                                List.of("load-buffer", "-b", buffer, "-"),
+                                // -d removes the buffer as it pastes, so the success path leaves nothing
+                                // even when this is the last thing the caller manages to run.
+                                List.of(
+                                        "paste-buffer",
+                                        "-d",
+                                        "-b",
+                                        buffer,
+                                        "-t",
+                                        state.id().value())));
+            } catch (RuntimeException failure) {
+                settleFailure(recorded, failure);
+                try {
+                    server.buffers().delete(buffer);
+                } catch (RuntimeException ignored) {
+                    // Already gone, or the server is; neither changes what the caller is told.
+                }
+                throw failure;
+            }
+            recorded.confirm();
         }
-        recorded.confirm();
     }
 
     /**
@@ -1029,52 +1002,58 @@ public final class Pane {
      *
      * @param beforePaste runs after staging and immediately before the paste dispatch
      */
+    @Operation(Kind.MUTATION)
     public void paste(String text, Runnable beforePaste) {
-        Objects.requireNonNull(text, "text");
-        Objects.requireNonNull(beforePaste, "beforePaste");
-        if (text.indexOf('\0') >= 0) {
-            throw new IllegalArgumentException("pasted text cannot contain NUL");
-        }
-        TmuxVersion running = server.version(snapshot);
-        if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-            throw new UnsupportedTmuxVersionException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
-        }
-        String buffer = "libtmux-paste-" + UUID.randomUUID();
-        try {
-            server.runTogether(snapshot, text, List.of(List.of("load-buffer", "-b", buffer, "-")));
-            beforePaste.run();
-            PaneEcho.Recorded recorded = server.echo().recordLiteral(identity(), state.id(), text);
+        try (PaneInput.Lease input = PaneInput.hold(this)) {
+            Objects.requireNonNull(input, "input");
+            Objects.requireNonNull(text, "text");
+            Objects.requireNonNull(beforePaste, "beforePaste");
+            if (text.indexOf('\0') >= 0) {
+                throw new IllegalArgumentException("pasted text cannot contain NUL");
+            }
+            TmuxVersion running = server.version(snapshot);
+            if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
+                throw new UnsupportedFeatureException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
+            }
+            String buffer = "libtmux-paste-" + UUID.randomUUID();
             try {
-                server.run(
-                        snapshot,
-                        List.of(
-                                "paste-buffer",
-                                "-d",
-                                "-b",
-                                buffer,
-                                "-t",
-                                state.id().value()));
+                server.runTogether(snapshot, text, List.of(List.of("load-buffer", "-b", buffer, "-")));
+                beforePaste.run();
+                PaneEcho.Recorded recorded = server.echo().recordLiteral(identity(), state.id(), text);
+                try {
+                    server.run(
+                            snapshot,
+                            List.of(
+                                    "paste-buffer",
+                                    "-d",
+                                    "-b",
+                                    buffer,
+                                    "-t",
+                                    state.id().value()));
+                } catch (RuntimeException failure) {
+                    settleFailure(recorded, failure);
+                    throw failure;
+                }
+                recorded.confirm();
             } catch (RuntimeException failure) {
-                settleFailure(recorded, failure);
+                try {
+                    server.buffers().delete(buffer);
+                } catch (RuntimeException ignored) {
+                    // Already gone, or the server is; neither changes what the caller is told.
+                }
                 throw failure;
             }
-            recorded.confirm();
-        } catch (RuntimeException failure) {
-            try {
-                server.buffers().delete(buffer);
-            } catch (RuntimeException ignored) {
-                // Already gone, or the server is; neither changes what the caller is told.
-            }
-            throw failure;
         }
     }
 
     /** Discards this pane's scrollback. */
+    @Operation(Kind.MUTATION)
     public void clearHistory() {
         server.run(snapshot, List.of("clear-history", "-t", state.id().value()));
     }
 
     /** Swaps this pane's position with another's. */
+    @Operation(Kind.MUTATION)
     public void swapWith(Pane other) {
         Objects.requireNonNull(other, "other");
         server.requireSameIncarnation(snapshot, other.server(), other.snapshot());
@@ -1084,6 +1063,7 @@ public final class Pane {
     }
 
     /** Moves this pane into another window, splitting it. */
+    @Operation(Kind.MUTATION)
     public void joinTo(Window window) {
         Objects.requireNonNull(window, "window");
         server.requireSameIncarnation(snapshot, window.server(), window.snapshot());
@@ -1093,6 +1073,7 @@ public final class Pane {
     }
 
     /** Closes this pane. */
+    @Operation(Kind.MUTATION)
     public void kill() {
         server.run(snapshot, List.of("kill-pane", "-t", state.id().value()));
         server.echo().forget(identity(), state.id());
@@ -1103,17 +1084,18 @@ public final class Pane {
      *
      * <p>This handle remains unchanged. Use the returned handle for subsequent state reads.
      *
-     * @throws ObjectDoesNotExistException if the pane is gone from a server that still answers
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws TargetGoneException if the pane is gone from a server that still answers
+     * @throws ServerUnavailableException if no daemon is running
      */
     @CheckReturnValue
+    @Operation(Kind.READ)
     public Pane refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.panes().stream()
                 .filter(pane -> pane.id().equals(state.id()))
                 .findFirst()
                 .map(pane -> new Pane(server, fresh, pane))
-                .orElseThrow(() -> new ObjectDoesNotExistException("pane " + state.id() + " no longer exists"));
+                .orElseThrow(() -> new TargetGoneException("pane " + state.id() + " no longer exists"));
     }
 
     @Override

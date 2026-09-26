@@ -15,7 +15,7 @@ For testing *your* code against real tmux — not for testing libtmux — or, wi
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    testImplementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.14"))
+    testImplementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.15"))
     testImplementation("io.github.libtmux:libtmux-junit5")
 }
 ```
@@ -106,7 +106,8 @@ signal. So:
 
 A live owner is never touched, so Gradle's per-module workers and a tmux version
 matrix can all share one root safely. The measurements, and the two designs that
-lost, are in [`docs/spikes/22`](../docs/spikes/22-abandoned-servers.md).
+lost, are in
+[`docs/decisions/0006`](../docs/decisions/0006-real-tmux-junit5-fixture-lifecycle.md).
 
 **Cleanup failures are loud.** If a fixture's tmux will not die, the test fails
 rather than quietly unlinking a socket a live daemon still owns.
@@ -118,7 +119,7 @@ $ ./gradlew test -Dlibtmux.tmux=/path/to/tmux
 ```
 
 Which is how one suite runs against a whole matrix of releases — see
-[`scripts/tmux-matrix.sh`](../scripts/tmux-matrix.sh).
+[`tools/tmux-matrix.sh`](../tools/tmux-matrix.sh).
 
 ## Without tmux
 
@@ -144,8 +145,26 @@ try (Server server = tmux.server()) {
 tmux.sent().getLast().getFirst();     // → send-keys
 ```
 
-`restart()` replaces the server under every handle made so far, which is how to
-test code that has to survive one. For behaviour that depends on tmux itself —
+It is a control-mode server too. `server.control(session)` attaches a client
+the fake answers, and `output` pushes what a pane wrote, so code that reads a
+subscription can be tested without tmux:
+
+```java
+FakeTmux tmux = new FakeTmux();
+PaneId pane = tmux.addSession("work");
+
+try (Server server = tmux.server();
+        ControlClient client = server.control(server.sessions().getFirst());
+        EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
+    tmux.output(pane, "built");
+    Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow()).data();   // → built
+}
+```
+
+`notify` pushes a notification line, such as `%window-renamed @1 logs`.
+
+`restart()` replaces the server under every handle made so far, and ends every
+attached control client, which is how to test code that has to survive one. For behaviour that depends on tmux itself —
 what a release does with a flag, how a shell echoes — use the extension above.
 
 ## Keep servers off other people's sockets

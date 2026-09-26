@@ -9,15 +9,11 @@ name: docs
 # one — without it the build resolves a developer's home directory, finds
 # nothing, and fails every inlined example.
 #
-# Temporary and deliberately minimal: no port has published through this
-# workflow yet. It publishes trunk to <locale>/java/latest with is-default
-# false, so the tree is reachable and linkable but stays out of the search
-# index until the shape is proven.
+# Publishes trunk from master to <locale>/java/latest. is-default stays
+# false, so the tree is reachable and stays out of the search index.
 on:
   push:
-    # DO NOT MERGE: docs-site publishes /en/java/latest/ before anything
-    # merges. Drop it from this list in the change that merges to master.
-    branches: [master, docs-site]
+    branches: [master]
   workflow_dispatch:
 
 # Workflow level, so a second push queues behind the first rather than racing
@@ -33,7 +29,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: port
 
@@ -42,17 +38,17 @@ jobs:
       # trailing comment. Bump this and the `uses:` below together: they must
       # name the same commit, or the build script and the publish contract
       # drift apart.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: libtmux/docs
           ref: b1e3bb25b1b5aaad9381365f4566019586cd00ff
           path: docs
 
       # The pnpm pin lives in the docs checkout's package.json, not this repo's.
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           package_json_file: docs/package.json
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '26'
           cache: pnpm
@@ -64,12 +60,12 @@ jobs:
         working-directory: docs
         env:
           LIBTMUX_DOCS_CHECKOUT_JAVA: ${{ github.workspace }}/port
-        run: ./scripts/build-site.sh --ports java --skip-refs --skip-pagefind
+        run: ./scripts/build-site.sh --ports java --skip-pagefind
 
       # The directory itself, not its parent: its contents become the contents
       # of <locale>/java/latest. Uploading docs/_site/en/java would nest the
       # tree one level deeper than the prefix already implies.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: docs-dist
           path: docs/_site/en/java/latest

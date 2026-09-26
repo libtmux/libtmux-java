@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -33,6 +34,31 @@ final class AbandonedServerTest {
     private static Path socketFor(Path root, long owner) throws IOException {
         Path directory = Files.createDirectory(root.resolve("libtmux-" + owner + "-" + System.nanoTime()));
         return directory.resolve("s");
+    }
+
+    /** Names a directory the way a JVM that knows its start does: pid, then start, then a suffix. */
+    private static Path socketFor(Path root, long owner, String start) throws IOException {
+        Path directory =
+                Files.createDirectory(root.resolve("libtmux-" + owner + "-" + start + "-" + System.nanoTime()));
+        return directory.resolve("s");
+    }
+
+    private static Path socketFor(Path root, long owner, long startMillis) throws IOException {
+        return socketFor(root, owner, Long.toString(startMillis));
+    }
+
+    /** This JVM's start as the extension records it. */
+    private static String thisStart() {
+        return TmuxExtension.startOf(ProcessHandle.current().pid())
+                .orElseThrow(() -> new AssertionError("this platform reports no start"));
+    }
+
+    /** A start this JVM did not have: an earlier tick, or an instant well past any clock drift. */
+    private static String someOtherStart() {
+        String start = thisStart();
+        return start.startsWith("k")
+                ? "k" + (Long.parseLong(start.substring(1)) - 1)
+                : Long.toString(Long.parseLong(start) - Duration.ofMinutes(10).toMillis());
     }
 
     private static void startServer(Path socket) throws Exception {
@@ -146,7 +172,7 @@ final class AbandonedServerTest {
     @Test
     void aServerWhoseOwnerIsStillRunningIsLeftAlone() throws Exception {
         Path root = testRoot();
-        Path socket = socketFor(root, ProcessHandle.current().pid());
+        Path socket = socketFor(root, ProcessHandle.current().pid(), thisStart());
         try {
             startServer(socket);
 
@@ -154,6 +180,56 @@ final class AbandonedServerTest {
 
             assertEquals(0, reaped);
             assertTrue(alive(socket), "this JVM is still running, so this server is still owned");
+        } finally {
+            cleanup(root, socket);
+        }
+    }
+
+    /**
+     * The pid alone is not proof of ownership: this JVM is alive, but a directory that recorded a
+     * different start for it names a process that already exited and whose pid this one only
+     * happens to now hold.
+     */
+    @Test
+    void aServerWhoseOwnerPidWasReusedIsReaped() throws Exception {
+        Path root = testRoot();
+        Path socket = socketFor(root, ProcessHandle.current().pid(), someOtherStart());
+        try {
+            startServer(socket);
+            assertTrue(alive(socket), "the fixture for this test must actually be running");
+
+            int reaped = TmuxExtension.reapAbandoned(root);
+
+            assertEquals(1, reaped);
+            assertFalse(alive(socket), "a directory naming a stale start instant for a live pid must be reaped");
+        } finally {
+            cleanup(root, socket);
+        }
+    }
+
+    /**
+     * Two JVMs need not agree on when a third started. Linux reports a start as ticks since boot, and
+     * the JDK turns that into an instant with the boot time it read once at its own start. That boot
+     * time moves whenever the wall clock is stepped, so a sweep in a JVM started a few seconds later
+     * can compute a different instant for a run that is still going.
+     */
+    @Test
+    void aStartThatDriftedBySecondsStillNamesItsOwner() throws Exception {
+        Path root = testRoot();
+        long thisPid = ProcessHandle.current().pid();
+        long thisStart = ProcessHandle.current()
+                .info()
+                .startInstant()
+                .orElseThrow(() -> new AssertionError("this platform reports no start instant"))
+                .toEpochMilli();
+        Path socket = socketFor(root, thisPid, thisStart + 3_000);
+        try {
+            startServer(socket);
+
+            int reaped = TmuxExtension.reapAbandoned(root);
+
+            assertEquals(0, reaped);
+            assertTrue(alive(socket), "a live run's server was reaped over a few seconds of clock drift");
         } finally {
             cleanup(root, socket);
         }

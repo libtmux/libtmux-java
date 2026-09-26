@@ -44,7 +44,7 @@ final class Reading {
             int linesSearched,
             int bytesSearched,
             double workSeconds,
-            boolean limited,
+            boolean truncated,
             List<Hit> matches,
             @Nullable String note) {}
 

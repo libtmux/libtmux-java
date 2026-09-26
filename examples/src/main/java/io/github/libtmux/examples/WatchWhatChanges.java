@@ -6,6 +6,7 @@ import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.control.ControlEvent;
+import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -47,7 +48,7 @@ public final class WatchWhatChanges {
         try (Server server = Server.open(config)) {
             Session session = server.sessions().get(0);
 
-            try (ControlClient client = ControlClient.attach(server.config(), session.id());
+            try (ControlClient client = server.control(session);
                     EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
 
                 // Every window's name, reported whenever one of them changes. The comparison happens
@@ -63,7 +64,7 @@ public final class WatchWhatChanges {
                         if (next.isEmpty()) {
                             break;
                         }
-                        ControlEvent arrived = next.orElseThrow();
+                        ControlEvent arrived = Delivery.kept(next.orElseThrow());
                         seen.add(arrived);
                         onChange.accept(arrived);
                     } catch (InterruptedException e) {

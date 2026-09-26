@@ -5,9 +5,9 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
-import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
+import io.github.libtmux.exception.ServerUnavailableException;
 import java.nio.file.Path;
 import java.util.Optional;
 
@@ -23,7 +23,7 @@ public final class BuildAWorkspace {
     private BuildAWorkspace() {}
 
     public static void main(String[] args) {
-        run(Path.of(args.length > 0 ? args[0] : "/tmp/libtmux-java-dev/demo/s"));
+        System.out.println(run(Path.of(args.length > 0 ? args[0] : "/tmp/libtmux-java-dev/demo/s")));
     }
 
     /** Separated from {@code main} so the suite can run exactly what a reader runs. */
@@ -41,7 +41,7 @@ public final class BuildAWorkspace {
             Optional<Session> existing;
             try {
                 existing = server.session("work");
-            } catch (ServerNotRunningException absent) {
+            } catch (ServerUnavailableException absent) {
                 existing = Optional.empty();
             }
             Session session = existing.orElseGet(() -> server.newSession("work"));

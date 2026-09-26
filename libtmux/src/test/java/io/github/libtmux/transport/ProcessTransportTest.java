@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.ServerClosedException;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -181,8 +183,8 @@ final class ProcessTransportTest {
     @Test
     void anExecutableThatDoesNotExistIsNotDispatched() {
         try (ProcessTransport transport = new ProcessTransport()) {
-            TmuxTransportException failure = assertThrows(
-                    TmuxTransportException.class,
+            DispatchException failure = assertThrows(
+                    DispatchException.class,
                     () -> transport.execute(CommandRequest.of(List.of("/nonexistent/tmux"), List.of("ls"), GENEROUS)));
 
             assertEquals(
@@ -195,14 +197,35 @@ final class ProcessTransportTest {
     @Test
     void aChildThatOutlivesItsDeadlineIsKilledAndReportedUnknown() {
         try (ProcessTransport transport = new ProcessTransport()) {
-            TmuxTimeoutException failure = assertThrows(
-                    TmuxTimeoutException.class, () -> transport.execute(shell("sleep 30", Duration.ofMillis(250))));
+            DispatchException.TimedOut failure = assertThrows(
+                    DispatchException.TimedOut.class,
+                    () -> transport.execute(shell("sleep 30", Duration.ofMillis(250))));
 
             assertEquals(
                     DispatchOutcome.UNKNOWN,
                     failure.outcome(),
                     "tmux may already have applied the command before it hung");
         }
+    }
+
+    @Test
+    void aTimedOutReadIsSafeToResendAndATimedOutChangeIsNot() {
+        try (ProcessTransport transport = new ProcessTransport()) {
+            DispatchException.TimedOut read = assertThrows(
+                    DispatchException.TimedOut.class, () -> transport.execute(hangingAs(List.of("list-sessions"))));
+            DispatchException.TimedOut change = assertThrows(
+                    DispatchException.TimedOut.class, () -> transport.execute(hangingAs(List.of("kill-server"))));
+
+            assertEquals(DispatchOutcome.UNKNOWN, read.outcome());
+            assertTrue(read.safeToRetry(), "a read that may have run changed nothing");
+            assertFalse(change.safeToRetry(), "a change that may have run must not be sent twice");
+        }
+    }
+
+    /** A process that hangs, sent as {@code command}: the shell takes the command's words as arguments. */
+    private static CommandRequest hangingAs(List<String> command) {
+        return new CommandRequest(
+                List.of("/bin/sh", "-c", "sleep 30", "sh"), List.of(command), Duration.ofMillis(250), "");
     }
 
     @Test
@@ -220,7 +243,7 @@ final class ProcessTransportTest {
 
         try {
             ExecutionException ended = assertThrows(ExecutionException.class, () -> request.get(5, TimeUnit.SECONDS));
-            TmuxTimeoutException failure = assertInstanceOf(TmuxTimeoutException.class, ended.getCause());
+            DispatchException.TimedOut failure = assertInstanceOf(DispatchException.TimedOut.class, ended.getCause());
             assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
             assertFalse(child.get().isAlive(), "the child survived its input deadline");
             assertEquals(
@@ -254,9 +277,9 @@ final class ProcessTransportTest {
             return new ProcessBuilder(command).start();
         };
         try (ProcessTransport transport =
-                new ProcessTransport(1, 1_024, starter, () -> clockReads.getAndIncrement() == 0 ? 10L : 12L)) {
-            TmuxTimeoutException failure = assertThrows(
-                    TmuxTimeoutException.class,
+                new ProcessTransport(1, 1_024, starter, () -> clockReads.getAndIncrement() < 2 ? 10L : 12L)) {
+            DispatchException.TimedOut failure = assertThrows(
+                    DispatchException.TimedOut.class,
                     () -> transport.execute(shell("echo must-not-run", Duration.ofNanos(1))));
 
             assertEquals(DispatchOutcome.NOT_DISPATCHED, failure.outcome());
@@ -267,8 +290,8 @@ final class ProcessTransportTest {
     @Test
     void outputBeyondTheConfiguredChannelLimitEndsTheChildAndReclaimsTheTransport() {
         try (ProcessTransport transport = new ProcessTransport(1, 1_024)) {
-            TmuxTransportException failure = assertThrows(
-                    TmuxTransportException.class,
+            DispatchException failure = assertThrows(
+                    DispatchException.class,
                     () -> transport.execute(shell("head -c 4096 /dev/zero | tr '\\0' x", GENEROUS)));
 
             assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
@@ -284,12 +307,13 @@ final class ProcessTransportTest {
         try (ProcessTransport transport = new ProcessTransport(1, 1_024)) {
             long started = System.nanoTime();
 
-            TmuxTransportException failure = assertThrows(
-                    TmuxTransportException.class,
+            DispatchException failure = assertThrows(
+                    DispatchException.class,
                     () -> transport.execute(
                             bash("trap '' TERM; while :; do printf 1234567890; done", Duration.ofSeconds(5))));
 
-            assertFalse(failure instanceof TmuxTimeoutException, "the pump observed overflow before the deadline");
+            assertFalse(
+                    failure instanceof DispatchException.TimedOut, "the pump observed overflow before the deadline");
             assertTrue(String.valueOf(failure.getMessage()).contains("1024 byte channel limit"));
             assertTrue(
                     Duration.ofNanos(System.nanoTime() - started).compareTo(Duration.ofSeconds(2)) < 0,
@@ -303,8 +327,8 @@ final class ProcessTransportTest {
         process.finish();
 
         try (ProcessTransport transport = new ProcessTransport(1, 1_024, command -> process, System::nanoTime)) {
-            TmuxTransportException failure =
-                    assertThrows(TmuxTransportException.class, () -> transport.execute(shell("ignored", GENEROUS)));
+            DispatchException failure =
+                    assertThrows(DispatchException.class, () -> transport.execute(shell("ignored", GENEROUS)));
 
             assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
         }
@@ -322,7 +346,7 @@ final class ProcessTransportTest {
                 List.of("/bin/bash"), List.of("-c", script, "probe", descendantPid.toString()), GENEROUS);
 
         try (ProcessTransport transport = new ProcessTransport(1, 1_024)) {
-            assertThrows(TmuxTransportException.class, () -> transport.execute(request));
+            assertThrows(DispatchException.class, () -> transport.execute(request));
             assertTrue(awaitFile(descendantPid), "the overflowing process never started its descendant");
             descendant = Long.parseLong(Files.readString(descendantPid).trim());
 
@@ -372,7 +396,7 @@ final class ProcessTransportTest {
         long descendant = -1;
 
         try (ProcessTransport transport = new ProcessTransport(1, 1_024, starter, System::nanoTime)) {
-            assertThrows(TmuxTransportException.class, () -> transport.execute(request));
+            assertThrows(DispatchException.class, () -> transport.execute(request));
             assertTrue(awaitFile(descendantPid), "the cleanup-time descendant never started");
             descendant = Long.parseLong(Files.readString(descendantPid).trim());
 
@@ -406,8 +430,8 @@ final class ProcessTransportTest {
             caller.join(TimeUnit.SECONDS.toMillis(20));
 
             Object result = outcome.poll(10, TimeUnit.SECONDS);
-            TmuxTransportException failure =
-                    assertInstanceOf(TmuxTransportException.class, result, "an interrupt is not a tmux answer");
+            DispatchException failure =
+                    assertInstanceOf(DispatchException.class, result, "an interrupt is not a tmux answer");
             assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
             assertTrue(interruptRestored.get(), "swallowing the interrupt would strand the caller's canceller");
         }
@@ -454,8 +478,8 @@ final class ProcessTransportTest {
         caller.join(TimeUnit.SECONDS.toMillis(20));
 
         Object result = outcome.poll(10, TimeUnit.SECONDS);
-        TmuxTransportException failure = assertInstanceOf(
-                TmuxTransportException.class, result, "our own kill must not be reported as tmux's exit status");
+        ServerClosedException failure = assertInstanceOf(
+                ServerClosedException.class, result, "our own kill must not be reported as tmux's exit status");
         assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
     }
 
@@ -627,8 +651,8 @@ final class ProcessTransportTest {
                 }
                 assertTrue(Files.exists(started), "the first request never occupied admission");
 
-                TmuxTimeoutException failure = assertThrows(
-                        TmuxTimeoutException.class,
+                DispatchException.TimedOut failure = assertThrows(
+                        DispatchException.TimedOut.class,
                         () -> transport.execute(shell("echo never-started", Duration.ofMillis(50))));
 
                 assertEquals(DispatchOutcome.NOT_DISPATCHED, failure.outcome());
@@ -664,11 +688,11 @@ final class ProcessTransportTest {
                 assertTrue(output.readStarted.await(5, TimeUnit.SECONDS), "a waiting request never started");
             }
 
-            TmuxTransportException refused = assertThrows(
-                    TmuxTransportException.class,
+            DispatchException refused = assertThrows(
+                    DispatchException.class,
                     () -> transport.executeWaiting(shell("echo should-not-start", Duration.ofMillis(50))));
 
-            assertEquals(TmuxTransportException.class, refused.getClass(), "a full wait lane queued to its timeout");
+            assertEquals(DispatchException.Failed.class, refused.getClass(), "a full wait lane queued to its timeout");
             assertEquals("waiting capacity is full; retry after another wait ends", refused.getMessage());
             assertEquals(DispatchOutcome.NOT_DISPATCHED, refused.outcome());
             assertEquals(bound - 1, starts.get(), "a fourth waiting process crossed the reserved boundary");
@@ -695,8 +719,8 @@ final class ProcessTransportTest {
             return new ProcessBuilder(command).start();
         };
         try (ProcessTransport transport = new ProcessTransport(1, 1_024, starter, System::nanoTime)) {
-            TmuxTransportException refused = assertThrows(
-                    TmuxTransportException.class,
+            DispatchException refused = assertThrows(
+                    DispatchException.class,
                     () -> transport.executeWaiting(shell("echo should-not-start", Duration.ofSeconds(1))));
 
             assertEquals(DispatchOutcome.NOT_DISPATCHED, refused.outcome());
@@ -740,7 +764,7 @@ final class ProcessTransportTest {
             blocked.forEach(GatedInputStream::release);
 
             ExecutionException ended = assertThrows(ExecutionException.class, () -> admitted.get(5, TimeUnit.SECONDS));
-            TmuxTransportException failure = assertInstanceOf(TmuxTransportException.class, ended.getCause());
+            ServerClosedException failure = assertInstanceOf(ServerClosedException.class, ended.getCause());
             assertEquals(DispatchOutcome.NOT_DISPATCHED, failure.outcome());
             assertEquals(bound, starts.get(), "the blocked waiting call reached the process starter");
             closing.get(5, TimeUnit.SECONDS);
@@ -834,7 +858,7 @@ final class ProcessTransportTest {
 
         try (ProcessTransport transport = new ProcessTransport()) {
             assertThrows(
-                    TmuxTransportException.class,
+                    DispatchException.class,
                     () -> transport.execute(shell("sleep 30 # " + marker, Duration.ofMillis(250))));
 
             assertTrue(awaitAbsent(marker), "a child that outran its deadline is still running");
@@ -895,7 +919,7 @@ final class ProcessTransportTest {
                 transport.execute(shell("true", Duration.ofMillis(1)));
             } catch (IllegalStateException expected) {
                 return true;
-            } catch (TmuxTransportException expected) {
+            } catch (DispatchException expected) {
                 assertEquals(DispatchOutcome.NOT_DISPATCHED, expected.outcome());
             }
             Thread.sleep(1);

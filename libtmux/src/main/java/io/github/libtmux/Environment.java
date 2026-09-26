@@ -1,5 +1,9 @@
 package io.github.libtmux;
 
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.ServerUnavailableException;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.transport.CommandResult;
 import java.util.ArrayList;
@@ -10,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -72,9 +77,10 @@ public final class Environment {
     /**
      * The value set for this name, or empty when it is removed or absent.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the read otherwise fails
      */
+    @Operation(Kind.READ)
     public Optional<String> get(String name) {
         return entry(name).flatMap(Entry::value);
     }
@@ -82,14 +88,17 @@ public final class Environment {
     /**
      * Whether new processes are told not to inherit this name.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the read otherwise fails
      */
+    @Operation(Kind.READ)
     public boolean isRemoved(String name) {
         return entry(name).filter(Entry::removed).isPresent();
     }
 
     /** Every name set at this scope, in tmux's order. Removed names are not values, so not here. */
+    @ReadOnly
+    @Operation(Kind.READ)
     public Map<String, String> all() {
         Map<String, String> values = new LinkedHashMap<>();
         for (Map.Entry<String, Entry> entry : listing().entrySet()) {
@@ -108,9 +117,11 @@ public final class Environment {
      *
      * <p>The counterpart to {@link Options#effective()}, and named after it.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if a read otherwise fails
      */
+    @ReadOnly
+    @Operation(Kind.READ)
     public Map<String, String> effective() {
         if (snapshot == null) {
             return all();
@@ -122,6 +133,8 @@ public final class Environment {
     }
 
     /** Every name this scope tells a new process not to inherit. */
+    @ReadOnly
+    @Operation(Kind.READ)
     public Set<String> removed() {
         Set<String> names = new LinkedHashSet<>();
         listing().forEach((name, entry) -> {
@@ -138,16 +151,19 @@ public final class Environment {
      * <p>The value is not expanded: a {@code #{...}} in it arrives as those characters. {@link
      * #setExpanded} is how to ask for the other thing.
      */
+    @Operation(Kind.MUTATION)
     public void set(String name, String value) {
         run(argv(List.of("--", required(name), value)));
     }
 
     /** Sets a name to what a tmux format expands to now. */
+    @Operation(Kind.MUTATION)
     public void setExpanded(String name, String format) {
         run(argv(List.of("-F", "--", required(name), format)));
     }
 
     /** Removes the name from this scope, so it is neither set nor marked. */
+    @Operation(Kind.MUTATION)
     public void unset(String name) {
         run(argv(List.of("-u", "--", required(name))));
     }
@@ -158,6 +174,7 @@ public final class Environment {
      * <p>Different from {@link #unset}: the name is remembered, as removed, and tmux subtracts it
      * from what a new process is given rather than simply not adding it.
      */
+    @Operation(Kind.MUTATION)
     public void remove(String name) {
         run(argv(List.of("-r", "--", required(name))));
     }

@@ -7,16 +7,16 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -254,6 +254,7 @@ final class RunningCommandsTest {
         String message = String.valueOf(refused.getMessage());
         assertTrue(message.contains("run_shell_command"), message);
         assertTrue(message.contains("one"), message);
+        assertTrue(message.contains("set_synchronize_panes"), message);
         assertFalse(capture(server, source.id().value()).contains(marker));
         assertFalse(capture(server, peer.id().value()).contains(marker));
     }
@@ -541,7 +542,7 @@ final class RunningCommandsTest {
     @Test
     void aDeadPaneProvesRetainedOwnershipEnded(Server server) throws Exception {
         Pane pane = server.panes().getFirst();
-        try (var lease = PaneInputReservations.run(PaneInputCohort.resolve(pane), "retained_test")) {
+        try (var lease = PaneInputReservations.run(pane, PaneInputCohort.resolve(pane), "retained_test")) {
             pane.options().set("remain-on-exit", "on");
             pane.sendLine("exit");
             assertTrue(await(() -> "1".equals(pane.expand("#{pane_dead}"))), "the pane did not become dead");
@@ -621,13 +622,14 @@ final class RunningCommandsTest {
             TmuxTransport uncertain = borrowing(request -> {
                 CommandResult result = processes.execute(request);
                 if (request.commands().get(0).stream().anyMatch(argument -> argument.contains("ch_lt"))) {
-                    throw new TmuxTransportException("simulated failure after delivery", DispatchOutcome.UNKNOWN, null);
+                    throw new DispatchException.Failed(
+                            "simulated failure after delivery", DispatchOutcome.UNKNOWN, null);
                 }
                 return result;
             });
             try (Server measured = Server.using(server.config(), uncertain)) {
                 assertThrows(
-                        TmuxTransportException.class,
+                        DispatchException.class,
                         () -> RunningCommands.run(TestCalls.on(
                                 measured,
                                 "pane_id",
@@ -656,14 +658,14 @@ final class RunningCommandsTest {
         try (ProcessTransport processes = new ProcessTransport()) {
             TmuxTransport notDispatched = borrowing(request -> {
                 if (nonce(request).isPresent() && refused.compareAndSet(false, true)) {
-                    throw new TmuxTransportException(
+                    throw new DispatchException.Failed(
                             "simulated refusal before delivery", DispatchOutcome.NOT_DISPATCHED, null);
                 }
                 return processes.execute(request);
             });
             try (Server measured = Server.using(server.config(), notDispatched)) {
                 assertThrows(
-                        TmuxTransportException.class,
+                        DispatchException.class,
                         () -> RunningCommands.run(
                                 TestCalls.on(measured, "pane_id", pane, "command", "printf 'must-not-run\\n'")));
 
@@ -756,8 +758,8 @@ final class RunningCommandsTest {
 
     @Test
     void aPaneThatIsNotThereSaysWhichToolFindsOne(Server server) {
-        ObjectDoesNotExistException refused = assertThrows(
-                ObjectDoesNotExistException.class,
+        TargetGoneException refused = assertThrows(
+                TargetGoneException.class,
                 () -> RunningCommands.run(TestCalls.on(server, "pane_id", "%999", "command", "true")));
 
         String message = String.valueOf(refused.getMessage());
@@ -843,7 +845,7 @@ final class RunningCommandsTest {
         Pane pane = server.panes().getFirst();
         PaneInputCohort.Resolution free = PaneInputCohort.resolve(pane);
 
-        try (PaneInputReservations.Lease held = PaneInputReservations.interrupting(free, "send_keys")) {
+        try (PaneInputReservations.Lease held = PaneInputReservations.interrupting(pane, free, "send_keys")) {
             assertNotNull(held);
             assertInputOwned(server, pane.id().value());
         }

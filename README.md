@@ -15,7 +15,48 @@ Typed, blocking access to [tmux](https://github.com/tmux/tmux) from the JVM.
 A sibling of the Python [libtmux](https://libtmux.git-pull.com/), targeting
 practical parity while reading as Java rather than as a translation.
 
-<!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
+**JDK 25 or newer.** Add the library through
+[`libtmux-bom`](libtmux-bom/), which names one version for every BOM-managed
+coordinate:
+
+<!-- snippet: skip: build configuration, not library code -->
+```kotlin
+dependencies {
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.15"))
+
+    implementation("io.github.libtmux:libtmux")
+    testImplementation("io.github.libtmux:libtmux-junit5")
+}
+```
+
+<details>
+<summary>Maven</summary>
+
+```xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>io.github.libtmux</groupId>
+      <artifactId>libtmux-bom</artifactId>
+      <version>0.0.1-alpha.15</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+
+<dependency>
+  <groupId>io.github.libtmux</groupId>
+  <artifactId>libtmux</artifactId>
+</dependency>
+```
+
+</details>
+
+[Installation](#installation) and [Requirements](#requirements) below cover
+the rest: tmux's supported range, locale behaviour, and every module's
+coordinate.
+
 ```java
 // Given: Path socket
 ServerConfig config = ServerConfig.builder()
@@ -46,14 +87,16 @@ window.refresh().panes().size();           // → 2
 ```
 
 **Every Java snippet in this file, in every package README, and in every guide is
-compiled and then run against a real tmux** by [`docs-tests`](docs-tests/). A
-snippet that stopped working fails the build; one that claims the compiler rejects
-it must actually be rejected.
+compiled, and run against a real tmux** by
+[the documentation suite](docs/README.md#how-these-pages-are-tested), unless a
+directive above it says `compile-only` or `skip` and why. A snippet that stopped
+working fails the build; one that claims the compiler rejects it must actually be
+rejected.
 
 A fence's first line, `// Given: Server server` and the like, names what the
 snippet *reads* rather than builds — real code still needs its own imports and,
 for `Server`, a call such as the `Server.open(ServerConfig...)` shown above.
-`docs-tests` also hands every snippet a `Server` that already holds one session,
+The suite also hands every snippet a `Server` that already holds one session,
 so `server.sessions().get(0)` finds something without the snippet creating it
 first; a snippet that opens its own session instead — as several below do —
 depends on nothing already being there.
@@ -145,7 +188,7 @@ Session build = Selections.exactlyOne(
 build.name();                        // → build
 ```
 
-`exactlyOne` raises `NoMatchException` for none and `MultipleMatchesException`
+`exactlyOne` raises `CardinalityException.NoMatch` for none and `CardinalityException.MultipleMatches`
 for several, because those are different bugs in the calling code.
 
 ### Run a command to its end
@@ -271,8 +314,8 @@ rather than collapsing both into one error.
 ## Modules
 
 Group `io.github.libtmux`. Each listed published directory is an artifact with
-its own README. Java artifacts are [on Maven Central](https://central.sonatype.com/namespace/io.github.libtmux);
-the separately released Scala artifacts are staged from this source tree.
+its own README. They are [on Maven Central](https://central.sonatype.com/namespace/io.github.libtmux),
+the Scala artifacts suffixed `_3`.
 
 - **[`libtmux`](libtmux/)** — the library itself. Transport, snapshots,
   entities, options, hooks, batching, control mode, query model.
@@ -287,16 +330,20 @@ the separately released Scala artifacts are staged from this source tree.
   and pushes notifications as tmux changes.
 
 - **[`libtmux-junit5`](libtmux-junit5/)** — test *your* code against real tmux.
-  One server per test, guaranteed gone afterwards even if the JVM is killed.
+  One server per test. A JVM killed outright leaves its server for the next
+  run sharing the fixture root to reap.
 
 - **[`libtmux-kotlin`](libtmux-kotlin/)** — Kotlin ergonomics. Optional: the core
   is already null-safe from Kotlin without it.
 
-- **[`libtmux-scala`](libtmux-scala/)** — Scala collections, blocking
-  operations, and typed local queries.
+- **[`libtmux-scala`](libtmux-scala/)** — Scala 3 collections, opaque handles
+  over the Java ones, and the typed query DSL.
 
 - **[`libtmux-scala-cats`](libtmux-scala-cats/)** — optional Cats Effect
   resources and FS2 observations.
+
+- **[`libtmux-scala-ox`](libtmux-scala-ox/)** — an optional Ox `Flow` over
+  subscriptions and live views.
 
 - **[`libtmux-jackson`](libtmux-jackson/)** — a filter expression as a versioned
   JSON document, so it can be stored, sent, or written by something that is not
@@ -305,26 +352,20 @@ the separately released Scala artifacts are staged from this source tree.
 - **[`libtmux-workspace`](libtmux-workspace/)** — build a session from a
   tmuxp-shaped YAML file.
 
+- **[`libtmux-workspace-cli`](libtmux-workspace-cli/)** — the `tmux-workspace`
+  command: load, capture, convert and import workspaces, with tmuxp's command
+  names and JSON or NDJSON output. A separate implementation from
+  `libtmux-workspace`, whose package documentation states how their document
+  shapes and building behaviour diverge.
+
 Not published, and part of how the library is built:
 [`examples/`](examples/) · [`integration-tests/`](integration-tests/) ·
-[`docs-tests/`](docs-tests/) ·
-[`scripts/`](scripts/) · `build-logic/`
+[`module-tests/`](module-tests/) · [`benchmarks/`](benchmarks/) ·
+[`docs/`](docs/) · [`tools/`](tools/) · `build-logic/`
 
-The Gradle modules and shared Scala build declare the listed artifacts.
-`platformCoversEveryPublishedModule` validates Gradle publications against the
-BOM; the shared sbt build validates the separately released Scala coordinates.
-
-The local [`workspace-cli`](workspace-cli/) application provides the
-`tmux-workspace` launcher over native workspace services. It is built as a
-distribution and is not a Maven publication.
-
-`workspace-cli` and `libtmux-workspace` are two implementations, and the CLI
-does not call the library. `libtmux-workspace`'s package documentation states
-how their document shapes and building behaviour diverge. Code the CLI's
-behaviour against the CLI.
-
-A directory is a published artifact exactly when it appears above, and
-`platformCoversEveryPublishedModule` fails the build if that stops being true.
+A directory is a published artifact exactly when it appears in the list above,
+and `platformCoversEveryPublishedModule` fails the build when the published
+artifacts stop matching the BOM.
 
 ## Installation
 
@@ -335,7 +376,7 @@ were built against each other.
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.14"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.15"))
 
     implementation("io.github.libtmux:libtmux")
     testImplementation("io.github.libtmux:libtmux-junit5")
@@ -351,7 +392,7 @@ dependencies {
     <dependency>
       <groupId>io.github.libtmux</groupId>
       <artifactId>libtmux-bom</artifactId>
-      <version>0.0.1-alpha.14</version>
+      <version>0.0.1-alpha.15</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -380,14 +421,15 @@ the `Consumer<Builder>` overloads take trailing lambdas. `libtmux-kotlin` adds
 what Java cannot express: absence as `null` rather than `Optional`, and `!expr`
 on a filter.
 
-**Scala** can consume the Java artifacts directly. This source tree also has an
-in-progress Scala facade with locally staged `_2.13` and `_3` artifacts; those
-suffixes apply only to the facade, never to the Java artifact. See the
+**Scala** can consume the Java artifacts directly. This source tree also has a
+Scala 3 facade with locally staged `_3` artifacts; that suffix applies only to
+the facade, never to the Java artifact. See the
 [Scala facade guide](libtmux-scala/README.md) and [direct Java guide](docs/guide/scala.md).
 
 ## Requirements
 
-JDK 21 or newer.
+JDK 25 or newer, on the module path or the classpath: `libtmux` is the named
+module `io.github.libtmux`. The jars carry no OSGi bundle headers.
 
 **Any locale.** A JVM encodes a child process's arguments with the platform's
 encoding, which the locale decides before `main` runs, so under `LANG=C` — the
@@ -410,7 +452,12 @@ $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds
 
 ## Documentation
 
-See the [migration notes](MIGRATION.md) when upgrading.
+See the [migration notes](MIGRATION.md) when upgrading. Every public type and
+member is in the [API reference](https://libtmux.org/en/java/latest/reference/),
+built from the current trunk; each released version's Javadoc is on
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux). The
+[documentation index](docs/README.md) groups every guide, generated reference,
+and decision record, one line each.
 
 - [Getting started](docs/guide/getting-started.md)
 - [Filtering](docs/guide/filtering.md)
@@ -418,18 +465,25 @@ See the [migration notes](MIGRATION.md) when upgrading.
 - [Batching and chaining](docs/guide/batching-and-chaining.md)
 - [Snapshots and handles](docs/guide/snapshots-and-handles.md)
 - [Streaming](docs/guide/streaming.md)
+- [Failures, telemetry, and pane input](docs/guide/operating-a-service.md)
+- [Threads, cancellation, and what runs at once](docs/guide/concurrency.md)
 - [Driving tmux from a model](docs/guide/mcp.md)
 - [Testing with real tmux](docs/guide/testing.md)
-- [Workspace commands](workspace-cli/README.md)
+- [Workspace commands](libtmux-workspace-cli/README.md)
 - [Kotlin](docs/guide/kotlin.md) and [Scala](docs/guide/scala.md)
 - [Releasing](RELEASING.md)
 
 Whole runnable programs live in [`examples/`](examples/), and the suite there runs
 every one of them against a real tmux.
 
-The design is recorded under `docs/spikes/`. Each note carries the measurements
-behind the decision it records, including the ones that overturned an earlier
-choice.
+The Scala facade's runnable programs are in
+[`libtmux-scala/examples/`](libtmux-scala/examples/): blocking workspace
+operations, bounded concurrent capture, notification loss and reconciliation,
+and Cats Effect resource ownership and cancellation.
+
+Decisions still in force are recorded as short ADRs under
+[`docs/decisions/`](docs/decisions/), each citing the tmux behaviour that
+forced it.
 
 ## Contributing
 

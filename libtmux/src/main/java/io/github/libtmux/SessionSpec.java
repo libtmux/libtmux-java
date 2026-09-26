@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -9,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -72,6 +74,7 @@ public final class SessionSpec {
     }
 
     /** Variables set for the new session, in the order they were given. */
+    @ReadOnly
     public Map<String, String> environment() {
         return environment;
     }
@@ -109,11 +112,13 @@ public final class SessionSpec {
     }
 
     /** Client flags, which tmux takes as one comma-separated list. */
+    @ReadOnly
     public List<String> clientFlags() {
         return clientFlags;
     }
 
     /** What the session's first pane runs, empty for the default shell. */
+    @ReadOnly
     public List<String> command() {
         return command;
     }
@@ -127,13 +132,13 @@ public final class SessionSpec {
      *
      * @param format the row format the caller will read the result back with
      * @param running what the server about to run this is, asked only if it matters
-     * @throws UnsupportedTmuxVersionException if the spec asks for something {@code running} does not have
+     * @throws UnsupportedFeatureException if the spec asks for something {@code running} does not have
      */
     List<String> argv(String format, Supplier<TmuxVersion> running) {
         if (size != null) {
             TmuxVersion version = running.get();
             if (!version.atLeast(SIZE_SINCE)) {
-                throw new UnsupportedTmuxVersionException("a size for a detached session", SIZE_SINCE, version);
+                throw new UnsupportedFeatureException("a size for a detached session", SIZE_SINCE, version);
             }
         }
         List<String> argv = new ArrayList<>(24);
@@ -162,7 +167,7 @@ public final class SessionSpec {
         }
         if (directory != null) {
             argv.add("-c");
-            argv.add(TmuxFormats.literal(directory.toString()));
+            argv.add(TmuxFormats.literal(directory.toAbsolutePath().toString()));
         }
         if (!clientFlags.isEmpty()) {
             // tmux reads -f as one comma-separated list, not as a flag that may repeat.
@@ -226,7 +231,7 @@ public final class SessionSpec {
             return this;
         }
 
-        /** Starts the session in this directory. */
+        /** Starts the session in this directory, resolved against this process's when relative. */
         public Builder in(Path directory) {
             this.directory = Objects.requireNonNull(directory, "directory");
             return this;

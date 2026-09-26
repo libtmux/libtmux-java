@@ -1,7 +1,8 @@
 # Getting started
 
-Every snippet here is executed by `ExamplesTest`. If one stops working the build
-fails, rather than the page quietly going stale.
+Every snippet here is run by `DocumentationSnippetsTest`, except one marked
+compile-only, which says why. If one stops working the build fails, rather
+than the page quietly going stale.
 
 Every Java block in this guide runs against a real tmux server when the build
 runs, and every value shown after a `→` is asserted.
@@ -11,7 +12,6 @@ runs, and every value shown after a `→` is asserted.
 A `Server` is a client, not the tmux process. Closing one closes your connection;
 it never ends anybody's sessions.
 
-<!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
 // Given: Path socket
 ServerConfig config = ServerConfig.builder()
@@ -105,13 +105,13 @@ choice too: a shell, a command, or nothing at all. tmux rejects a command on an
 empty pane, so no spec can carry both.
 
 Options that arrived in tmux 3.7 — an empty pane, keeping a pane after its
-command exits, per-pane styles — throw `UnsupportedTmuxVersionException` on an
+command exits, per-pane styles — throw `UnsupportedFeatureException` on an
 older server:
 
 ```java
 // Given: Server server, Pane pane
 if (!server.version().atLeast(new TmuxVersion(3, 7, ""))) {
-    assertThrows(UnsupportedTmuxVersionException.class, () -> pane.split(s -> s.empty()));
+    assertThrows(UnsupportedFeatureException.class, () -> pane.split(s -> s.empty()));
 }
 ```
 
@@ -215,7 +215,7 @@ A control client stays attached and pushes terminal output as it happens:
 
 ```java
 // Given: Server server, Session session
-try (ControlClient client = ControlClient.attach(server.config(), session.id());
+try (ControlClient client = server.control(session);
         EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
 
     client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
@@ -223,7 +223,7 @@ try (ControlClient client = ControlClient.attach(server.config(), session.id());
     // Output arrives in frames as tmux flushes it, so one line can span several.
     StringBuilder seen = new StringBuilder();
     while (seen.indexOf("streamed") < 0) {
-        seen.append(output.next(Duration.ofSeconds(5)).orElseThrow().data());
+        seen.append(Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow()).data());
     }
     seen.indexOf("streamed") >= 0;  // → true
 }
@@ -232,7 +232,10 @@ try (ControlClient client = ControlClient.attach(server.config(), session.id());
 Control-mode requests are independent: a failure discards nothing behind it, and
 every reply carries the request that produced it. Attaching is what makes tmux
 push output at all. The bounded subscription reports overflow through
-`droppedCount()` and never runs caller code on the reply reader.
+`droppedCount()` and never runs caller code on the reply reader. A full buffer's
+next read is a `Delivery.Gap` before the events that remain. `Delivery.kept`
+fails that read. Match on `Delivery.Gap` to continue. A subscription does
+not reconnect.
 
 ## Pinning tmux's configuration
 
@@ -241,14 +244,17 @@ can predict. Pin one:
 
 ```java
 // Given: Path directory
-Path tmuxConf = Files.writeString(directory.resolve("tmux.conf"), "");
+Path tmuxConf = Files.writeString(directory.resolve("tmux.conf"), "set -g base-index 5\n");
 
 ServerConfig pinned = ServerConfig.builder()
-        .endpoint(ServerEndpoint.socketPath(directory.resolve("s")))
+        .endpoint(ServerEndpoint.socketPath(directory.resolve("pinned")))
         .configFile(tmuxConf)
         .build();
 
-pinned.configFile().isPresent();           // → true
+try (Server server = Server.open(pinned)) {
+    server.newSession("configured").windows().get(0).index().value();   // → 5
+    server.killServer();
+}
 ```
 
 ## Where to next
@@ -260,6 +266,7 @@ pinned.configFile().isPresent();           // → true
 | send several commands at once     | [batching and chaining](batching-and-chaining.md) |
 | understand what a handle is       | [snapshots and handles](snapshots-and-handles.md) |
 | watch output as it happens        | [streaming](streaming.md)                     |
+| call it from several threads      | [concurrency](concurrency.md)                 |
 | test your own code against tmux   | [testing](testing.md)                         |
 
 See the [migration notes](../../MIGRATION.md) when upgrading.

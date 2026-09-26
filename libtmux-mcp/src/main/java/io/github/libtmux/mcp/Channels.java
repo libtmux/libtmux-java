@@ -39,7 +39,7 @@ final class Channels {
         WakeReason wake;
         try {
             if (drained) {
-                var unused = call.server().channel(channel).drain();
+                var _ = call.server().channel(channel).drain();
             }
             wake = call.server().channel(channel).awaitReservingCapacity(timeout);
         } catch (InterruptedException cancelled) {

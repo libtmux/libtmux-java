@@ -259,8 +259,30 @@ final class McpLauncherTest {
 
             assertTrue(instructions.contains("WAIT, DO NOT POLL"), instructions);
             assertTrue(instructions.contains("get_server_info"), "a model has to be told how to identify the server");
+            assertTrue(instructions.contains("snapshot_pane"), "a model has to be told the combined pane read");
             assertTrue(instructions.contains("Do NOT use them for browser tabs"), "anti-triggers must be stated");
             assertTrue(instructions.contains("Tool filtering"), "the interface boundary must be stated");
+            assertTrue(
+                    instructions.contains("call_read_tools_batch") && instructions.contains("send_keys_batch"),
+                    "the batch tools must be pointed to: " + instructions);
+            assertTrue(
+                    instructions.contains("command") && instructions.contains("no filter"),
+                    "list_panes has no filter, and its command field is how to find a pane: " + instructions);
+            assertTrue(
+                    instructions.contains("human-owned") && instructions.contains("synchronized"),
+                    "pane input refusing a modal or synchronized pane must be stated: " + instructions);
+            assertTrue(
+                    instructions.contains("attended panes")
+                            && instructions.contains("a terminal client is currently displaying"),
+                    "'attended' must be defined where a model reads it before meeting it "
+                            + "in a tool description or refusal: " + instructions);
+            assertTrue(
+                    instructions.contains("ABSENT ON PURPOSE")
+                            && instructions.contains("No hook writing")
+                            && instructions.contains("No environment writes")
+                            && instructions.contains("No buffer reading by default"),
+                    "a deliberately absent tool family must read as a choice, not a gap a model "
+                            + "should keep searching for: " + instructions);
         }
     }
 
