@@ -55,6 +55,12 @@ production.
 
 ### Fixed
 
+- **Scala's `LiveView.snapshots`, `LiveView.snapshotsAfter` and Ox's
+  `Flows.liveView` fail with the mirror's cause once its anchor session or
+  server has gone.** They ended as if the view had been closed, so a caller
+  could not tell a dead session from a quiet one, and they also stopped after a
+  day with no change. (#23)
+
 - **A relative start directory resolves against this process on every
   release.** `WindowSpec.Builder.in`, `SplitSpec.Builder.in`,
   `SessionSpec.Builder.in` and `Pane.respawnIn` send it absolute. tmux 3.2a
