@@ -35,7 +35,13 @@ def declared(manifest):
 
 def artifact_names(module, version):
     stem = module + "-" + version
-    return (stem + ".jar", stem + "-sources.jar", stem + "-javadoc.jar", stem + ".pom")
+    return (
+        stem + ".jar",
+        stem + "-sources.jar",
+        stem + "-javadoc.jar",
+        stem + ".pom",
+        stem + "-cyclonedx.json",
+    )
 
 
 def expected_files(module, version):

@@ -161,10 +161,17 @@ Format Scala source and sbt settings:
 $ ./libtmux-scala/sbtw fmt
 ```
 
-Compile and check formatting:
+Compile and check formatting and the dependency lock:
 
 ```console
 $ ./libtmux-scala/sbtw lint
+```
+
+The `build.sbt.lock` files pin every third-party dependency and its hash. After
+changing a Scala dependency, write them again:
+
+```console
+$ ./libtmux-scala/sbtw dependencyLockWrite
 ```
 
 Generate the facades' API documentation:
@@ -173,8 +180,10 @@ Generate the facades' API documentation:
 $ ./libtmux-scala/sbtw docs
 ```
 
-The generated Scaladoc starts at `libtmux-scala/target/scala-3.9.0/api/index.html`
-and `libtmux-scala-cats/target/scala-3.9.0/api/index.html`. Begin with
+The generated Scaladoc starts at `libtmux-scala/target/scala-3.9.0/api/index.html`,
+`libtmux-scala-cats/target/scala-3.9.0/api/index.html` and
+`libtmux-scala-ox/target/scala-3.9.0/api/index.html`. Its source browser includes
+the generated operations and fields under `generated/`. Begin with
 [direct-style `Server`][server] or [Cats `Server`][cats-server].
 
 These commands need the Java coordinate selected for the local stage; set
