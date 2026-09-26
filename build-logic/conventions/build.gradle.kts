@@ -10,4 +10,11 @@ dependencies {
         libs.plugins.maven.publish.map { "com.vanniktech:gradle-maven-publish-plugin:${it.version}" }
     )
     implementation(libs.plugins.cyclonedx.map { "org.cyclonedx:cyclonedx-gradle-plugin:${it.version}" })
+
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(kotlin("test"))
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
+
+tasks.withType<Test>().configureEach { useJUnitPlatform() }

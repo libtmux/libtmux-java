@@ -4,6 +4,7 @@
 // munit suites run on the JUnit Platform through the vintage engine, beside any JUnit 5 suite in the
 // same module, so one Test task configuration covers both.
 import com.diffplug.gradle.spotless.SpotlessExtension
+import io.github.libtmux.buildlogic.pruneStaleTasty
 
 plugins {
     id("libtmux.java-library")
@@ -32,6 +33,8 @@ tasks.withType<ScalaCompile>().configureEach {
         "-sourceroot",
         rootDir.absolutePath,
     )
+    // Before the output is cached: a removed source's TASTy outlives its classes, see pruneStaleTasty.
+    doLast { pruneStaleTasty(destinationDirectory.get().asFile) }
 }
 
 extensions.configure<SpotlessExtension> {
