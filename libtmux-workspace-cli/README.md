@@ -61,12 +61,12 @@ keep using its source tool.
 Build the local distribution from the repository root:
 
 ```console
-$ ./gradlew :workspace-cli:installDist \
+$ ./gradlew :libtmux-workspace-cli:installDist \
     --max-workers=2 \
     --no-parallel
 ```
 
-The launcher is `workspace-cli/build/install/tmux-workspace/bin/tmux-workspace`.
+The launcher is `libtmux-workspace-cli/build/install/tmux-workspace/bin/tmux-workspace`.
 Add that directory to `PATH`, or use the full relative launcher path. This
 application distribution is separate from the published library artifacts.
 
@@ -394,7 +394,7 @@ in every output mode.
 For repeated CLI execution while editing, keep Gradle watching the sources:
 
 ```console
-$ ./gradlew :workspace-cli:runDevelopment \
+$ ./gradlew :libtmux-workspace-cli:runDevelopment \
     --args='--help' \
     --continuous \
     --configuration-cache \
@@ -415,7 +415,7 @@ setting also limits later optimization in long-running commands. Use normal
 Run the CLI checks with cached Gradle configuration:
 
 ```console
-$ ./gradlew :workspace-cli:check \
+$ ./gradlew :libtmux-workspace-cli:check \
     --configuration-cache \
     --max-workers=2 \
     --no-parallel
