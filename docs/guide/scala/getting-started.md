@@ -7,8 +7,7 @@ The Scala facades need Scala 3.9 and JDK 25 or newer, and tmux 3.2a through
 
 Three artifacts, all in group `io.github.libtmux` and all at the same version
 as `libtmux` itself. `%%` adds the `_3` suffix that marks a Scala 3 artifact.
-None is on Maven Central yet: they publish with the Java artifacts, starting
-with the first release that includes them.
+They are on Maven Central and release with the Java artifacts.
 
 - **`libtmux-scala_3`** — direct-style handles, collections and the typed query
   DSL.

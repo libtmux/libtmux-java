@@ -14,7 +14,7 @@ libraryDependencies += "io.github.libtmux" %% "libtmux-scala-ox" % "<version>"
 ```
 
 From Gradle or Maven the coordinate is `io.github.libtmux:libtmux-scala-ox_3`.
-None is on Maven Central yet; the Scala artifacts publish with the Java ones.
+It is on Maven Central and releases with the Java artifacts.
 
 **This project is alpha.** Releases carry an `-alpha` prerelease tag. The API is
 not settled, and any release may change or remove exported identifiers without a
@@ -34,7 +34,8 @@ then every newer one, so a change published between reading a view and
 collecting the flow is not missed.
 
 Both are cold: nothing is read until the flow runs, and the flow's scope owns
-the reading.
+the reading. [`WatchWithOx`][example] is a runnable program: a supervised fork
+collects a live view's flow while the main body adds a window.
 
 ## Documentation
 
@@ -44,3 +45,5 @@ covers subscriptions, loss and cancellation. Source: [`Flows`][flows].
 
 [flows]:
   src/main/scala/io/github/libtmux/scaladsl/ox/Flows.scala
+[example]:
+  ../examples/src/main/scala/io/github/libtmux/scaladsl/examples/WatchWithOx.scala

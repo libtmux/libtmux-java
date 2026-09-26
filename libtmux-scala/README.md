@@ -29,9 +29,8 @@ libraryDependencies += "io.github.libtmux" %% "libtmux-scala" % "<version>"
 ```
 
 From Gradle or Maven the coordinate is `io.github.libtmux:libtmux-scala_3`.
-The version is always `libtmux`'s own: the Scala artifacts publish with the Java
-ones, starting with the first release that includes them, and none is on Maven
-Central yet. Core depends on `libtmux` and the Scala 3 library only; Cats, FS2
+The version is always `libtmux`'s own: the Scala artifacts are on Maven Central
+and release with the Java ones. Core depends on `libtmux` and the Scala 3 library only; Cats, FS2
 and Ox arrive through [`libtmux-scala-cats`](../libtmux-scala-cats/) and
 [`libtmux-scala-ox`](../libtmux-scala-ox/).
 
