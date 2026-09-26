@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.SessionId;
+import io.github.libtmux.exception.ControlEndedException;
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.transport.DispatchOutcome;
@@ -299,6 +300,35 @@ final class ControlClientTest {
             client.close();
         }
         assertTrue(controlThreadsSettled(before), "control threads survived close");
+    }
+
+    /**
+     * A subscriber told the client ended must find it dead: the tmux client process can outlive the
+     * end of its output, and a carrier reading {@link ControlClient#isAlive} after the end would
+     * otherwise send to a client with nothing left to answer.
+     */
+    @Test
+    void aClientWhoseOutputEndedIsNotAliveWhileItsProcessLingers(@TempDir Path directory) throws Exception {
+        Path subscribed = directory.resolve("subscribed");
+        ServerConfig config = fakeTmux(directory, """
+                printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                read_request
+                answer
+                while [ ! -e 'SUBSCRIBED' ]; do sleep 0.01; done
+                exec 1>&-
+                sleep 5
+                """.replace("SUBSCRIBED", subscribed.toString()));
+
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofSeconds(2))) {
+            EventSubscription<PaneOutput> output = client.subscribeOutput(4);
+            // Runs on the thread that delivers the end, at the moment it is delivered.
+            var aliveAtTheEnd = new java.util.concurrent.CompletableFuture<Boolean>();
+            output.onReady(() -> aliveAtTheEnd.complete(client.isAlive()));
+            Files.createFile(subscribed);
+
+            assertFalse(aliveAtTheEnd.get(5, TimeUnit.SECONDS), "the subscription ended before the client did");
+            assertInstanceOf(ControlEndedException.class, output.cause().orElseThrow());
+        }
     }
 
     @Test
