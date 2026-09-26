@@ -190,6 +190,56 @@ final class EventSubscriptionPublisherTest {
         }
     }
 
+    /**
+     * Rules 1.8 and 3.5: a subscriber that cancels while its last requested item is being delivered
+     * is owed nothing after that item. The cancel closes the subscription, so the drain, once the
+     * delivery returns, finds it exhausted; it must not then report the end to a subscriber that
+     * already walked away.
+     */
+    @Test
+    void aCancelDuringTheLastDeliveryIsNotFollowedByTheEnd() throws Exception {
+        java.util.concurrent.CountDownLatch delivering = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch cancelled = new java.util.concurrent.CountDownLatch(1);
+        BlockingQueue<String> after = new LinkedBlockingQueue<>();
+        java.util.concurrent.atomic.AtomicReference<Flow.Subscription> granted =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        try (var subscription = new EventSubscription<String>(4, ignored -> {})) {
+            subscription.publisher().subscribe(new Flow.Subscriber<Delivery<String>>() {
+                @Override
+                public void onSubscribe(Flow.Subscription given) {
+                    granted.set(given);
+                    given.request(1);
+                }
+
+                @Override
+                public void onNext(Delivery<String> item) {
+                    delivering.countDown();
+                    try {
+                        cancelled.await(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+
+                @Override
+                public void onError(Throwable error) {
+                    after.add("onError " + error);
+                }
+
+                @Override
+                public void onComplete() {
+                    after.add("onComplete");
+                }
+            });
+            subscription.offer("last");
+            assertTrue(delivering.await(5, TimeUnit.SECONDS), "the item was never delivered");
+            granted.get().cancel();
+            cancelled.countDown();
+
+            assertNull(after.poll(500, TimeUnit.MILLISECONDS), "a cancelled subscriber was signalled again");
+        }
+    }
+
     /** Rule 2.13: a subscriber that throws from onNext has cancelled, so the subscription is released. */
     @Test
     void aSubscriberThatThrowsIsTreatedAsHavingCancelled() throws Exception {
