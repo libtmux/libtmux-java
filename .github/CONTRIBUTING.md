@@ -185,8 +185,11 @@ What a change is expected to carry:
   was real; without it there is nothing to distinguish a fix from a coincidence.
   A passing gate is evidence only once it has been shown capable of failing.
 - **A measurement, when the claim is about tmux.** tmux's behaviour differs
-  across the supported range in ways no amount of reading settles. Notes under
-  `docs/spikes/` record what was measured and against which release.
+  across the supported range in ways no amount of reading settles. A version
+  quirk a source comment relies on belongs in
+  [`docs/internals/tmux-behaviour.md`](../docs/internals/tmux-behaviour.md); a
+  decision the measurement forced belongs in
+  [`docs/decisions/`](../docs/decisions/) as a short ADR.
 - **A changelog entry, when a caller can observe the change.** It goes under
   `## Unreleased`. Nothing enforces this, which is why it is written down.
 - **Nothing generated-looking.** Names that say what a thing is for, comments

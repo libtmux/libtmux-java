@@ -114,7 +114,8 @@ rather than folding the output into the command that queued it, so a
 transport built to forward this library's existing fenced and batched
 commands to a persistent control client would return truncated or empty
 results for nearly every typed operation
-([the spike](../spikes/32-control-backed-transport.md) has the measurements).
+(see [0018](../decisions/0018-control-backed-transport-rejected.md) for the
+measurements).
 
 A subscription has one reader. Reads from different threads one after another
 are fine, as a coroutine or fiber moves between threads, but a read that

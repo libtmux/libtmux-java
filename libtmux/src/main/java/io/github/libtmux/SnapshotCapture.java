@@ -334,7 +334,7 @@ final class SnapshotCapture {
      *
      * <p>The filter loops each listed row's own session, so every listing keeps whole sessions, and a
      * window linked into two sessions brings both. tmux evaluates this loop inside {@code -f} the same
-     * way on every release from 3.2a; {@code docs/spikes/28-loop-filters.md} has the measurement.
+     * way on every release from 3.2a; see {@code docs/decisions/0005-pushdown-lowering-is-exact-or-refused.md}.
      */
     Optional<ServerSnapshot> sessionsHolding(PaneId id) {
         ServerProcess process = process()

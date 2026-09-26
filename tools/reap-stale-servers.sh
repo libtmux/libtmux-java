@@ -4,7 +4,7 @@
 #   ./tools/reap-stale-servers.sh          # say what would be reaped
 #   ./tools/reap-stale-servers.sh --reap   # actually reap it
 #
-# The suite does this for itself — see docs/spikes/22 — but a server whose test JVM was killed and
+# The suite does this for itself — see docs/decisions/0006 — but a server whose test JVM was killed and
 # whose socket the temporary-file cleaner has since removed is reachable by nothing except its own
 # argv, and nothing reaps it until the next run. This is that, by hand.
 #
