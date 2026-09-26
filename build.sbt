@@ -194,13 +194,14 @@ lazy val sourceDocumentation = Seq(
   )
 )
 
-/** Hand-written sources, then the generated operations and fields, which ship
-  * in the sources jar and so belong in the source browser too.
+/** Hand-written sources and the generated operations and fields, at the paths
+  * the sources jar gives them, so the source browser and the jar list the same
+  * files.
   */
 lazy val documentedRoots = Def.setting(
   Seq(
     (Compile / scalaSource).value -> "",
-    (Compile / sourceManaged).value -> "generated/"
+    (Compile / sourceManaged).value -> ""
   )
 )
 

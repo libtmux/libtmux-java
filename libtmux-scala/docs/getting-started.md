@@ -183,7 +183,7 @@ $ ./libtmux-scala/sbtw docs
 The generated Scaladoc starts at `libtmux-scala/target/scala-3.9.0/api/index.html`,
 `libtmux-scala-cats/target/scala-3.9.0/api/index.html` and
 `libtmux-scala-ox/target/scala-3.9.0/api/index.html`. Its source browser includes
-the generated operations and fields under `generated/`. Begin with
+the generated operations and fields, at the paths the sources jar gives them. Begin with
 [direct-style `Server`][server] or [Cats `Server`][cats-server].
 
 These commands need the Java coordinate selected for the local stage; set

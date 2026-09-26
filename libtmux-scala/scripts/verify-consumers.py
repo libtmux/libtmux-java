@@ -20,8 +20,12 @@ from zipfile import BadZipFile, ZipFile
 
 
 ROOT = Path(__file__).resolve().parents[2]
+# The build declares what it publishes here and fails when that stops matching; reading it rather
+# than repeating it is what kept a new module from being staged and then refused.
 MODULES = tuple(
-    f"{name}_3" for name in ("libtmux-scala", "libtmux-scala-cats")
+    line.strip().split(":", 1)[1]
+    for line in (ROOT / "libtmux-scala/publications.txt").read_text().splitlines()
+    if line.strip() and not line.startswith("#")
 )
 SCALAS = ("3.9.0",)
 GROUP = "io.github.libtmux"
@@ -94,6 +98,11 @@ def verify_pom(path, module, version, java_version):
         expected.update({(GROUP, "libtmux-scala_" + suffix),
                          ("org.typelevel", "cats-effect_" + suffix),
                          ("co.fs2", "fs2-core_" + suffix)})
+        pinned = (GROUP, "libtmux-scala_" + suffix)
+        pinned_version = version
+    elif module.startswith("libtmux-scala-ox_"):
+        expected.update({(GROUP, "libtmux-scala_" + suffix),
+                         ("com.softwaremill.ox", "core_" + suffix)})
         pinned = (GROUP, "libtmux-scala_" + suffix)
         pinned_version = version
     else:
@@ -203,7 +212,8 @@ def require_stage(scala_stage, java_stage, version, java_version):
 
 
 def build_fences(root):
-    ignored = {".git", ".gradle", ".bsp", ".metals", ".idea", "target", "build", "node_modules"}
+    # .claude holds agents' git worktrees: whole copies of this repository, docs included.
+    ignored = {".git", ".gradle", ".bsp", ".metals", ".idea", ".claude", "target", "build", "node_modules"}
     found = {}
     directive = re.compile(r"^<!--\s*snippet:\s*scala-build:\s*([a-z0-9][a-z0-9-]*)(?:\s*\|.*?)?\s*-->$")
     for directory, folders, files in os.walk(root):
