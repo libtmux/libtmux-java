@@ -654,7 +654,7 @@ final class OperationBenchmark {
 
     /**
      * Opens a {@link ServerMirror} on a counted server, then makes {@link #MIRROR_ROUNDS} windows
-     * through a second, uncounted client, timing each from the command returning to the mirror
+     * through a second, uncounted client, timing each from sending the command to the mirror
      * publishing a view that holds it. The counted client carries only the mirror's rebuilds.
      */
     private Following measureMirrorFollowing(Path root) throws Exception {
@@ -671,8 +671,10 @@ final class OperationBenchmark {
                     long[] nanos = new long[MIRROR_ROUNDS];
                     for (int round = 0; round < MIRROR_ROUNDS; round++) {
                         String name = "followed-" + round;
-                        session.newWindow(name);
                         long started = System.nanoTime();
+                        // A raw command: newWindow would also read the window back, and the
+                        // rebuild would finish during that read, before the clock could see it.
+                        maker.run(List.of("new-window", "-d", "-t", session.id().value() + ":", "-n", name));
                         ServerMirror.View view = mirror.current();
                         while (view.snapshot().windows().stream()
                                 .noneMatch(w -> w.name().equals(name))) {
@@ -960,11 +962,11 @@ final class OperationBenchmark {
                 .append("A `ServerMirror` listens through a control client and takes a fresh snapshot for ")
                 .append("each announcement. ")
                 .append(following.changes())
-                .append(" windows were created through another client, each timed from the command ")
-                .append("returning to the mirror publishing a view that held it.\n\n")
+                .append(" windows were created through another client, each timed from sending the ")
+                .append("command to the mirror publishing a view that held it: the command's own process, ")
+                .append("tmux's announcement, and the rebuild.\n\n")
                 .append("| measure | value |\n| --- | --- |\n")
-                .append("| median, command returned to view published | %s |%n"
-                        .formatted(micros(following.medianNanos())))
+                .append("| median, command sent to view published | %s |%n".formatted(micros(following.medianNanos())))
                 .append("| p95 | %s |%n".formatted(micros(following.p95Nanos())))
                 .append("| commands the mirror dispatched per change | %.1f |%n"
                         .formatted(following.dispatchesPerChange()))
