@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # This job checks on one JDK and one tmux. The commit is released on what it proved everywhere:
-      # CI on JDK 25, 27, and macOS, and every supported tmux lane, each for exactly this commit.
+      # CI on JDK 25 and 27, and every supported tmux lane, each for exactly this commit; macOS is reported only.
       # Nothing is re-run here: a workflow still running, or never run for this commit, refuses the
       # release, which is started again once it has passed.
       - name: Require this commit's CI and tmux matrix to have passed
