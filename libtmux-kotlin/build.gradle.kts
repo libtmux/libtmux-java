@@ -116,9 +116,7 @@ kotlin.sourceSets.named("main") { kotlin.srcDir(generateOperationWrappers.map { 
 // Kotlin 2.1 is the oldest compiler this module says can read it. The metadata test checks the
 // number the build wrote; this compiles a consumer with that compiler, against the jar this module
 // publishes, so the claim is what a 2.1 project actually meets.
-val oldestKotlin: Configuration by configurations.creating {
-    isCanBeConsumed = false
-}
+val oldestKotlin = configurations.create("oldestKotlin") { isCanBeConsumed = false }
 
 dependencies { oldestKotlin("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.1.21") }
 
@@ -126,7 +124,7 @@ val compileOldestConsumer =
     tasks.register<JavaExec>("compileOldestConsumer") {
         description = "Compiles a consumer of this module with Kotlin 2.1, the oldest it claims."
         group = "verification"
-        val consumer = layout.projectDirectory.file("src/consumer/Consumer.kt")
+        val consumer = layout.projectDirectory.file("src/test/resources/oldest-consumer/Consumer.kt")
         val published = files(tasks.named("jar"), configurations.named("runtimeClasspath"))
         val output = layout.buildDirectory.dir("oldest-consumer")
         inputs.file(consumer).withPathSensitivity(PathSensitivity.RELATIVE)
