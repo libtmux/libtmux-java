@@ -13,13 +13,15 @@ import scala.jdk.OptionConverters._
   * reconnect: attach again and read a snapshot.
   *
   * The stream itself suspends the *fiber*, not a platform thread, while idle:
-  * [[EventSubscription]] is already single-consumer by construction at the Java
-  * layer, with a non-blocking [[EventSubscription#poll poll]] plus a one-shot
-  * [[EventSubscription#onReady onReady]] wakeup. Each wait polls first — if
-  * something is already buffered, nothing suspends at all — and only then arms
-  * `onReady`, disarming it with [[EventSubscription#clearReady clearReady]] if
-  * the fiber is cancelled first. No `ExecutionContext` sized for blocking
-  * stream reads is needed, because no read here ever blocks a thread.
+  * [[io.github.libtmux.control.EventSubscription EventSubscription]] is already
+  * single-consumer by construction at the Java layer, with a non-blocking
+  * [[io.github.libtmux.control.EventSubscription#poll poll]] plus a one-shot
+  * [[io.github.libtmux.control.EventSubscription#onReady onReady]] wakeup. Each
+  * wait polls first — if something is already buffered, nothing suspends at all
+  * — and only then arms `onReady`, disarming it with
+  * [[io.github.libtmux.control.EventSubscription#clearReady clearReady]] if the
+  * fiber is cancelled first. No `ExecutionContext` sized for blocking stream
+  * reads is needed, because no read here ever blocks a thread.
   */
 final class Observation[F[_], A] private[cats] (
     private[scaladsl] val underlying: EventSubscription[A],

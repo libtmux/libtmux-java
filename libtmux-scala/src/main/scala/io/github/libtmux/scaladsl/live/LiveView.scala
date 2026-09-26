@@ -6,7 +6,8 @@ import java.time.Duration
 import scala.jdk.OptionConverters._
 
 /** A live view of one tmux server's sessions, windows, panes and clients,
-  * opaque over Java's own [[JavaServerMirror ServerMirror]] — re-snapshotting
+  * opaque over Java's own
+  * [[io.github.libtmux.snapshot.ServerMirror ServerMirror]] — re-snapshotting
   * on notification, on a gap and on reconnect is entirely Java's job; this only
   * wraps it, rather than re-deriving resnapshot-on-notification from a raw
   * control subscription. `close()` comes from the `AutoCloseable` bound with no
@@ -55,7 +56,9 @@ object LiveView {
       */
     def isEnded: Boolean = self.isEnded()
 
-    /** Why this mirror ended, when something other than [[close]] ended it. */
+    /** Why this mirror ended, when something other than
+      * [[java.lang.AutoCloseable#close close]] ended it.
+      */
     def cause: Option[Throwable] = self.cause().toScala
 
     /** The current view, then every newer one, one per notification, blocking

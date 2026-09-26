@@ -25,7 +25,7 @@ final class Observation[T] private (private val sub: EventSubscription[T])
     * poll, until the subscription closes. Rejects a second, overlapping `read`
     * on this observation.
     *
-    * @throws IllegalStateException
+    * @throws java.lang.IllegalStateException
     *   if another `read` on this observation is already in progress
     */
   def read[A](pollTimeout: Duration)(use: Iterator[Delivery[T]] => A): A = {
@@ -42,8 +42,9 @@ final class Observation[T] private (private val sub: EventSubscription[T])
     finally reading.set(false)
   }
 
-  /** The cumulative overflow count. A [[Delivery.Gap]] read by [[read]] says
-    * where it sits.
+  /** The cumulative overflow count. A
+    * [[io.github.libtmux.control.Delivery$Gap Delivery.Gap]] read by [[read]]
+    * says where it sits.
     */
   def droppedCount: Long = sub.droppedCount()
 
