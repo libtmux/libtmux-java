@@ -757,7 +757,10 @@ public final class Pane {
         server.run(snapshot, List.of("respawn-pane", "-k", "-t", state.id().value()));
     }
 
-    /** Restarts the configured pane process in a caller-supplied literal directory. */
+    /**
+     * Restarts the configured pane process in a caller-supplied literal directory, resolved against
+     * this process's working directory when relative.
+     */
     @Operation(Kind.MUTATION)
     public void respawnIn(Path directory) {
         Objects.requireNonNull(directory, "directory");
@@ -765,7 +768,13 @@ public final class Pane {
     }
 
     static List<String> respawnArgv(PaneId pane, Path directory) {
-        return List.of("respawn-pane", "-k", "-c", TmuxFormats.literal(directory.toString()), "-t", pane.value());
+        return List.of(
+                "respawn-pane",
+                "-k",
+                "-c",
+                TmuxFormats.literal(directory.toAbsolutePath().toString()),
+                "-t",
+                pane.value());
     }
 
     /**

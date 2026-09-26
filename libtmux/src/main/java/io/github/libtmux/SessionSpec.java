@@ -167,7 +167,7 @@ public final class SessionSpec {
         }
         if (directory != null) {
             argv.add("-c");
-            argv.add(TmuxFormats.literal(directory.toString()));
+            argv.add(TmuxFormats.literal(directory.toAbsolutePath().toString()));
         }
         if (!clientFlags.isEmpty()) {
             // tmux reads -f as one comma-separated list, not as a flag that may repeat.
@@ -231,7 +231,7 @@ public final class SessionSpec {
             return this;
         }
 
-        /** Starts the session in this directory. */
+        /** Starts the session in this directory, resolved against this process's when relative. */
         public Builder in(Path directory) {
             this.directory = Objects.requireNonNull(directory, "directory");
             return this;

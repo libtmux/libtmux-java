@@ -53,13 +53,15 @@ production.
   tmux sent them. Strip `\r` yourself where a line ending must be bare.
   `stderr()` still turns CRLF and CR into LF. (#16)
 
-- **`WindowSpec.Builder.in` takes an absolute directory on tmux 3.2a, and
-  needs 3.3a for a relative one.** Before 3.3a, tmux resolves a relative `-c`
-  against the server's own working directory and falls back to home, so a
-  relative directory on 3.3 now throws `UnsupportedFeatureException`. Pass an
-  absolute path there. (#16)
-
 ### Fixed
+
+- **A relative start directory resolves against this process on every
+  release.** `WindowSpec.Builder.in`, `SplitSpec.Builder.in`,
+  `SessionSpec.Builder.in` and `Pane.respawnIn` send it absolute. tmux 3.2a
+  resolved a relative `-c` against the server's working directory, falling
+  back to home, so a pane could start somewhere the caller never named.
+  `WindowSpec.Builder.in` also works on 3.2a now, where it threw
+  `UnsupportedFeatureException`. (#16, #23)
 
 - **Option values read from tmux 3.4 and 3.5 keep a carriage return apart from
   a literal `\r`.** Both releases print the two alike under `-v`, so

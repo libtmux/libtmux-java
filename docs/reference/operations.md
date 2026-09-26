@@ -111,7 +111,7 @@ Generated from `@Operation`-annotated methods by the operation-catalog Doclet; d
 | `io.github.libtmux.Pane` | `expand(java.lang.String)` | READ | Expands a tmux format in this pane's context, and answers with what it came to. |
 | `io.github.libtmux.Pane` | `variables(java.util.List<java.lang.String>)` | READ | Reads validated tmux variables in this pane's format context. |
 | `io.github.libtmux.Pane` | `respawn()` | MUTATION | Kills whatever runs here and starts the pane's default command again. |
-| `io.github.libtmux.Pane` | `respawnIn(java.nio.file.Path)` | MUTATION | Restarts the configured pane process in a caller-supplied literal directory. |
+| `io.github.libtmux.Pane` | `respawnIn(java.nio.file.Path)` | MUTATION | Restarts the configured pane process in a caller-supplied literal directory, resolved against this process's working directory when relative. |
 | `io.github.libtmux.Pane` | `respawn(java.lang.String[])` | MUTATION | Kills whatever runs here and starts the given command instead. |
 | `io.github.libtmux.Pane` | `pipeTo(java.lang.String)` | MUTATION | Sends everything this pane prints to a shell command, until {@link #stopPiping}. |
 | `io.github.libtmux.Pane` | `stopPiping()` | MUTATION | Stops sending this pane's output anywhere. |
