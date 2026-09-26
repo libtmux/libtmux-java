@@ -104,7 +104,7 @@ final class ArgumentTerminatorTest {
         TmuxVersion version = new TmuxVersion(3, 7, "c");
         List<List<String>> commands = List.of(
                 SessionSpec.builder().running(DASHED).build().argv("#{pane_id}", () -> version),
-                WindowSpec.builder().running(DASHED).build().argv("$0", "#{pane_id}", version),
+                WindowSpec.builder().running(DASHED).build().argv("$0", "#{pane_id}"),
                 SplitSpec.builder().running(DASHED).build().argv("%0", "#{pane_id}", version));
 
         for (List<String> argv : commands) {

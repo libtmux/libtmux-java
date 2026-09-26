@@ -47,13 +47,14 @@ attribute of a just-created pane must come from a later read.
 `new-window` and `new-session` have not gained or lost a flag since 3.2a — the
 version-gated concerns are behavioral, not syntactic:
 
-- **3.2a resolves no relative `new-window -c`.** An absolute directory is
-  honored on every supported release. A relative one reaches the child
-  unchanged, so it resolves against the server's own working directory and
-  falls back to `$HOME`, exit `0`; 3.3a prefixes it with the requesting
-  client's directory (`spawn.c`). A relative directory is refused below 3.3a
-  rather than sent; an absolute one is not gated. `split-window`,
-  `new-session` and `respawn-pane` share the same spawn code.
+- **3.2a resolves a relative `-c` against the server's working directory.**
+  The path reaches the child unchanged, so it lands wherever the server was
+  started, or in `$HOME` when that directory has no such path, exit `0`
+  either way. 3.3 onwards resolves it against the requesting client's
+  directory. `new-window`, `split-window`, `new-session` and `respawn-pane`
+  share the spawn code, so all four do this. An absolute directory is honored
+  on every release, and every directory is sent absolute, resolved against the
+  calling process, so each release starts the process where 3.3 does.
 - **3.2a ignores `new-session -x/-y` (sizing)**, silently and with exit `0`.
   It is refused before dispatch rather than accepted and ignored.
 - **`new-window -S` (reuse-if-named) reports nothing.** It correctly selects

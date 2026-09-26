@@ -179,7 +179,7 @@ public final class SplitSpec {
         }
         if (directory != null) {
             argv.add("-c");
-            argv.add(TmuxFormats.literal(directory.toString()));
+            argv.add(TmuxFormats.literal(directory.toAbsolutePath().toString()));
         }
         for (Map.Entry<String, String> variable : environment.entrySet()) {
             argv.add("-e");
@@ -355,7 +355,7 @@ public final class SplitSpec {
             return this;
         }
 
-        /** Starts the new pane in this directory. */
+        /** Starts the new pane in this directory, resolved against this process's when relative. */
         public Builder in(Path directory) {
             this.directory = Objects.requireNonNull(directory, "directory");
             return this;

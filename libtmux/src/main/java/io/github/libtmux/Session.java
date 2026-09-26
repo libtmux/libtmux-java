@@ -6,7 +6,6 @@ import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.exception.ServerUnavailableException;
 import io.github.libtmux.exception.TargetGoneException;
-import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.SessionState;
@@ -198,7 +197,6 @@ public final class Session {
      *
      * @param configure receives a builder holding tmux's defaults
      * @return a handle on the created window, from a fresh capture
-     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
     @Operation(Kind.MUTATION)
     public Window newWindow(Consumer<WindowSpec.Builder> configure) {
@@ -211,12 +209,10 @@ public final class Session {
      * Creates a window in this session according to a spec, which may be reused across sessions.
      *
      * @return a handle on the created window, from a fresh capture
-     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
     @Operation(Kind.MUTATION)
     public Window newWindow(WindowSpec spec) {
-        List<String> reported = server.run(
-                        snapshot, spec.argv(state.id().value(), CREATED.template(), server.version(snapshot)))
+        List<String> reported = server.run(snapshot, spec.argv(state.id().value(), CREATED.template()))
                 .stdout();
         ServerSnapshot fresh = server.refresh(snapshot);
         if (reported.isEmpty()) {

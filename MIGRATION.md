@@ -23,14 +23,6 @@ List<String> lines = result.stdout().stream()
         .toList();
 ```
 
-### A relative window directory needs tmux 3.3a
-
-`WindowSpec.Builder.in` with a relative path throws
-`UnsupportedFeatureException` below tmux 3.3a, where tmux resolves it against
-the server's working directory instead of yours. Resolve it first:
-`builder.in(directory.toAbsolutePath())`. An absolute directory now works from
-3.2a.
-
 ### JDK 25 is the floor
 
 Building or running on JDK 21 through 24 no longer works. The toolchain and
