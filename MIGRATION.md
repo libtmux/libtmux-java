@@ -8,6 +8,8 @@ API changes that require updates to calling code are recorded here. See
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+## 0.0.1-alpha.16
+
 ### `CommandResult.stdout()` keeps carriage returns
 
 Each line of `stdout()` is split at LF alone, so a `\r` tmux sent stays at the
@@ -22,6 +24,50 @@ List<String> lines = result.stdout().stream()
         .map(line -> line.endsWith("\r") ? line.substring(0, line.length() - 1) : line)
         .toList();
 ```
+
+### `libtmux-kotlin`'s subsystem accessors answer wrapper classes too
+
+`Pane.options()`, `Server.hooks()`/`Session.hooks()`/`Window.hooks()`,
+`Server.options()`/`Server.globalOptions()`/`Session.options()`/
+`Window.options()`, `Server.shell()`, `Server.commands()`, `Server.buffers()`,
+`Server.environment()`/`Session.environment()`, `Server.messageLog()`,
+`Server.prompt()`, `Server.keys()`, `Server.batch()`/`Pane.batch()`, and
+`Server.chain()` answer new `io.github.libtmux.kotlin` wrapper classes
+(`Options`, `Hooks`, `Shell`, `Commands`, `Buffers`, `Environment`,
+`MessageLog`, `Prompt`, `Keys`, `Batch`, `CommandChain`), not the Java types of
+the same simple name. Every operation on them that reaches tmux is `suspend`,
+the same contract every other Kotlin wrapper already carries. Code that needs
+the Java handle reads it as `asJava`:
+
+```kotlin
+// Given: config: ServerConfig
+withServer(config) { server ->
+    server.hooks().set("after-new-window", "display-message hello")
+    server.hooks().asJava
+}
+```
+
+`Keys.in(table)` answers the Kotlin `Keys`, not the Java one. `Options.get`/
+`set` keep both overloads — by name and by `OptionKey<T>` — as `suspend`
+members on the Kotlin `Options`.
+
+### `libtmux-scala-cats`'s subsystem accessors answer `F[_]` wrapper classes too
+
+On the Cats facade, `Server.hooks`, `Pane.options`, `Server.shell`,
+`Server.commands`, `Server.buffers`, `Session.environment`,
+`Server.messageLog`, `Server.prompt`, and `Server.keys` answer new
+`io.github.libtmux.scaladsl.cats` classes (`Hooks[F]`, `Options[F]`,
+`Shell[F]`, `Commands[F]`, `Buffers[F]`, `Environment[F]`, `MessageLog[F]`,
+`Prompt[F]`, `Keys[F]`), not the raw Java handle the accessor used to answer.
+Their own reads and mutations run through `F`, admission-bounded and
+cancellable like every other Cats operation; read the Java handle as
+`asJava`. The direct-style `libtmux-scala` facade is unchanged: these
+accessors still answer the raw Java handle there, since direct style is
+blocking by design. `Keys[F].in(table)` answers the Cats `Keys[F]`.
+`Options[F].get`/`set` keep both overloads — by name and by `OptionKey<T>` —
+each returning `F[_]`.
+
+## 0.0.1-alpha.15
 
 ### JDK 25 is the floor
 
@@ -85,48 +131,6 @@ withServer(config) { server ->
     pane.sendLine("echo ready")
 }
 ```
-
-### `libtmux-kotlin`'s subsystem accessors answer wrapper classes too
-
-`Pane.options()`, `Server.hooks()`/`Session.hooks()`/`Window.hooks()`,
-`Server.options()`/`Server.globalOptions()`/`Session.options()`/
-`Window.options()`, `Server.shell()`, `Server.commands()`, `Server.buffers()`,
-`Server.environment()`/`Session.environment()`, `Server.messageLog()`,
-`Server.prompt()`, `Server.keys()`, `Server.batch()`/`Pane.batch()`, and
-`Server.chain()` answer new `io.github.libtmux.kotlin` wrapper classes
-(`Options`, `Hooks`, `Shell`, `Commands`, `Buffers`, `Environment`,
-`MessageLog`, `Prompt`, `Keys`, `Batch`, `CommandChain`), not the Java types of
-the same simple name. Every operation on them that reaches tmux is `suspend`,
-the same contract every other Kotlin wrapper already carries. Code that needs
-the Java handle reads it as `asJava`:
-
-```kotlin
-// Given: config: ServerConfig
-withServer(config) { server ->
-    server.hooks().set("after-new-window", "display-message hello")
-    server.hooks().asJava
-}
-```
-
-`Keys.in(table)` answers the Kotlin `Keys`, not the Java one. `Options.get`/
-`set` keep both overloads — by name and by `OptionKey<T>` — as `suspend`
-members on the Kotlin `Options`.
-
-### `libtmux-scala-cats`'s subsystem accessors answer `F[_]` wrapper classes too
-
-On the Cats facade, `Server.hooks`, `Pane.options`, `Server.shell`,
-`Server.commands`, `Server.buffers`, `Session.environment`,
-`Server.messageLog`, `Server.prompt`, and `Server.keys` answer new
-`io.github.libtmux.scaladsl.cats` classes (`Hooks[F]`, `Options[F]`,
-`Shell[F]`, `Commands[F]`, `Buffers[F]`, `Environment[F]`, `MessageLog[F]`,
-`Prompt[F]`, `Keys[F]`), not the raw Java handle the accessor used to answer.
-Their own reads and mutations run through `F`, admission-bounded and
-cancellable like every other Cats operation; read the Java handle as
-`asJava`. The direct-style `libtmux-scala` facade is unchanged: these
-accessors still answer the raw Java handle there, since direct style is
-blocking by design. `Keys[F].in(table)` answers the Cats `Keys[F]`.
-`Options[F].get`/`set` keep both overloads — by name and by `OptionKey<T>` —
-each returning `F[_]`.
 
 ### An `EventSubscription` has one reader
 
@@ -264,11 +268,14 @@ api-break: Server
 `prompt().clear()`. `messages()` is `messageLog().lines()`. `runShell`,
 `runShellCapturing` and `ifShell` are `shell().run`, `shell().capturing` and
 `shell().choose`. `listCommands()` is `commands().list()`.
+
 ### `search_panes` reports `truncated`, not `limited`
 
 The MCP tool's output field naming a budget cut is now `truncated`, matching
 `capture_pane`, `capture_since`, `wait_for_text`, and `run_shell_command`.
 Read `truncated` instead of `limited` from a `search_panes` result.
+
+## 0.0.1-alpha.14 and earlier
 
 ### A tmux release candidate keeps its name and counts as its release
 

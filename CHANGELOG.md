@@ -12,6 +12,8 @@ production.
 
 ## Unreleased
 
+## 0.0.1-alpha.16 — 2026-09-26
+
 ### Added
 
 - **`tmux-workspace` is on Maven Central as
