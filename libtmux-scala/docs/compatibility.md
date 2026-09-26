@@ -23,14 +23,17 @@ actual version.
 | Job | Configuration |
 | --- | --- |
 | Artifact stage | Linux, JDK 25, Scala 3.9, tmux 3.7c |
-| Scala runtime | Linux and macOS, JDK 25, Scala 3.9, tmux 3.7c |
 | Installed consumer | Linux, JDK 25, Scala 3.9, tmux 3.7c |
 
-The artifact and runtime jobs run formatting, unit and integration tests,
-executed documentation and examples, packaging, and cleanup. The consumer job
-runs independent sbt and Gradle consumers against the artifacts staged on
-Linux. Source dependencies, direct jar paths, and Maven-local fallback do not
-satisfy the consumer check.
+The artifact stage job runs formatting, unit and integration tests, executed
+documentation and examples, packaging, and cleanup. The consumer job runs
+independent sbt and Gradle consumers against the artifacts staged on Linux.
+Source dependencies, direct jar paths, and Maven-local fallback do not satisfy
+the consumer check. macOS runs only on manual dispatch (`manual-macos-primary`,
+`manual-macos-consumers`) — a 3.3.8 compiler cannot read this build's own 3.9
+TASTy, so there is no still-useful older-compiler cell to keep running
+routinely on that platform; the manual gate covers JDK 25 and 27 at 3.9
+instead.
 
 A completed job records its source and artifact identities, selected
 compiler/JVM/tmux versions, command, exit status, test inventory, and owned

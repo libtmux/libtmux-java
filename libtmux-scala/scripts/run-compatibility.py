@@ -14,7 +14,7 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SCALA = ("3.3.8",)
+SCALA = ("3.9.0",)
 TMUX = ("3.2a", "3.3", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b")
 
 
@@ -29,14 +29,14 @@ def cell(name, jdk, scala, tmux, primary):
 
 def cells():
     result = {}
-    for index, (jdk, scala) in enumerate(((25, "3.3.8"), (27, "3.3.8")), 1):
+    for index, (jdk, scala) in enumerate(((25, "3.9.0"), (27, "3.9.0")), 1):
         name = "P%02d" % index
         result[name] = cell(name, jdk, scala, "3.7c", True)
     for index, version in enumerate(TMUX):
         for scala_index, scala in enumerate(SCALA):
             name = "T%02d" % (index * len(SCALA) + scala_index + 1)
             result[name] = cell(name, 25, scala, version, False)
-    for index, (jdk, scala) in enumerate(((25, "3.3.8"), (27, "3.3.8")), 3):
+    for index, (jdk, scala) in enumerate(((25, "3.9.0"), (27, "3.9.0")), 3):
         name = "P%02d" % index
         result[name] = {**cell(name, jdk, scala, "3.7c", True), "os": "macos"}
     return result

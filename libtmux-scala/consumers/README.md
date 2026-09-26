@@ -22,8 +22,8 @@ $ python3 libtmux-scala/scripts/verify-consumers.py \
     --output libtmux-scala/target/consumers/linux-jdk25-scala3.9.0
 ```
 
-Repeat with Scala 3.3.8, each supported JDK, and both operating systems. Use a
-separate output directory for each cell. The evidence JSON lists all 16
+Repeat with each supported JDK and both operating systems. Use a
+separate output directory for each cell. The evidence JSON lists all 8
 build-tool cells; only the two executed cells can pass. It records the
 selected JVM, compiler jars, tmux version, commands, timing, input hashes,
 runtime coordinates and staged jar hashes. Cleanup witnesses are printed only
