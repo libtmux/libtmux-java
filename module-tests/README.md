@@ -7,12 +7,14 @@ Each resolves only the published coordinates, from the staging repository the
 root build writes, so a POM that names the wrong dependency, a jar missing a
 class, or a module descriptor that does not load fails here, not for a user.
 
-| build | checks |
-| --- | --- |
-| [`java/`](java/) | `libtmux` loads as the named module `io.github.libtmux`, records its version, and drives a real tmux |
-| [`kotlin/`](kotlin/) | the BOM selects `libtmux-kotlin`, which drives a real tmux |
-| [`scala/`](scala/) | the BOM selects the Scala facades, which drive a real tmux; the core facade alone brings no Cats, FS2 or Ox |
-| [`sbt/`](sbt/) | sbt resolves each artifact with the install line the documentation shows |
+- **[`java/`](java/)** — `libtmux` loads as the named module
+  `io.github.libtmux`, records its version, and drives a real tmux.
+- **[`kotlin/`](kotlin/)** — the BOM selects `libtmux-kotlin`, which drives a
+  real tmux.
+- **[`scala/`](scala/)** — the BOM selects the Scala facades, which drive a
+  real tmux; the core facade alone brings no Cats, FS2 or Ox.
+- **[`sbt/`](sbt/)** — sbt resolves each artifact with the install line the
+  documentation shows.
 
 ## Run them
 

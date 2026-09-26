@@ -10,11 +10,10 @@ as `libtmux` itself. `%%` adds the `_3` suffix that marks a Scala 3 artifact.
 None is on Maven Central yet: they publish with the Java artifacts, starting
 with the first release that includes them.
 
-| Artifact | Adds |
-| --- | --- |
-| `libtmux-scala_3` | Direct-style handles, collections and the typed query DSL |
-| `libtmux-scala-cats_3` | Cats Effect resources and FS2 observations |
-| `libtmux-scala-ox_3` | An Ox `Flow` over subscriptions and live views |
+- **`libtmux-scala_3`** — direct-style handles, collections and the typed query
+  DSL.
+- **`libtmux-scala-cats_3`** — Cats Effect resources and FS2 observations.
+- **`libtmux-scala-ox_3`** — an Ox `Flow` over subscriptions and live views.
 
 <!-- snippet: scala-build: install-core -->
 ```sbt
