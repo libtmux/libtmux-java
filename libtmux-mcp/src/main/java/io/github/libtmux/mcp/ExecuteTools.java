@@ -265,8 +265,10 @@ final class ExecuteTools {
                         Catalog.field("pane_id", STRING),
                         Catalog.field("resolved_pane_ids", ARRAY),
                         Catalog.field("success", BOOLEAN),
-                        Catalog.field("error", STRING))
-                .withOptionalFields("error")
+                        Catalog.field("error", STRING),
+                        Catalog.field("error_code", STRING),
+                        Catalog.field("retryable", BOOLEAN))
+                .withOptionalFields("error", "error_code", "retryable")
                 .withPropertySchema("resolved_pane_ids", Catalog.arrayOf(Map.of("type", "string")));
         return Catalog.shape(Catalog.field("results", ARRAY), Catalog.field("completed", INTEGER))
                 .withPropertySchema("results", Catalog.arrayOf(row.wireSchema()));
