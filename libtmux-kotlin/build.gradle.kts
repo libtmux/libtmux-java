@@ -10,6 +10,7 @@ plugins {
     id("libtmux.sbom")
     id("libtmux.tmux-matrix")
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.dokka)
 }
 
 kotlin {
@@ -31,12 +32,16 @@ kotlin {
         // a mismatch against a @NullMarked type into an error here, so this module compiling is
         // itself evidence that the annotations downstairs are correct.
         freeCompilerArgs.addAll("-Xjspecify-annotations=strict")
+        // Ruling 4's collision rule: a hand-written member of the same name as a catalog-generated
+        // extension silently wins (EXTENSION_SHADOWED_BY_MEMBER), so that warning has to fail the
+        // build rather than ship a dead generated function no caller can ever reach.
+        allWarningsAsErrors.set(true)
     }
 }
 
 dependencies {
     api(project(":libtmux"))
-    // Flow is part of the public signature. The core stays free of this.
+    // Flow and StateFlow are part of the public signature. The core stays free of this.
     api(libs.kotlinx.coroutines.core)
 
     // For the tests that execute this module's README, against a real tmux server.
@@ -45,9 +50,23 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(kotlin("test"))
     testRuntimeOnly(libs.junit.platform.launcher)
+    // The exhaustiveness compile-test drives a real kotlinc against a fixture, in-process.
+    testImplementation(libs.kotlin.compiler.embeddable)
 }
 
-tasks.withType<Test>().configureEach { useJUnitPlatform() }
+// This module applies no libtmux.java-library, so it needs its own copy of the newest-JDK lane's
+// launcher selection: compiled for 25, run on whichever JDK a lane names via libtmux.testJdk (see
+// libtmux.java-library.gradle.kts for the full rationale).
+val testJdk = providers.gradleProperty("libtmux.testJdk").map(String::toInt).orElse(25)
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = testJdk.map { JavaLanguageVersion.of(it) }
+        vendor = JvmVendorSpec.ADOPTIUM
+    }
+    systemProperty("libtmux.testJdk", testJdk.get())
+}
 
 // Reproducible archives, as every other module here publishes them.
 tasks.withType<AbstractArchiveTask>().configureEach {
@@ -65,6 +84,44 @@ tasks.jar {
         )
     }
 }
+
+// ------------------------------------------------------------------------- operation catalog
+
+// :tools:kotlin-operation-codegen's own runtime classpath, resolved as a project dependency so this
+// task always runs the codegen tool this build just compiled, never a stale published one.
+val operationCodegen: Configuration by configurations.creating {
+    isCanBeConsumed = false
+}
+
+dependencies { operationCodegen(project(":tools:kotlin-operation-codegen")) }
+
+// Stand-in for the javadoc Doclet's operation-catalog.json (operation-catalog-schema.md), hand-
+// curated from this commit's real @Operation-annotated methods. Swapping in the Doclet's real
+// artifact, once :libtmux ships META-INF/io.github.libtmux/operation-catalog.json in its jar, is a
+// change to this one path — the generator and everything downstream of it stays as written.
+val operationCatalog = layout.projectDirectory.file("catalog/bootstrap-operation-catalog.json")
+
+val generateOperationWrappers =
+    tasks.register<JavaExec>("generateOperationWrappers") {
+        description = "Generates the Kotlin suspend mirror from operation-catalog.json with KotlinPoet."
+        group = "build"
+        val output = layout.buildDirectory.dir("generated/sources/operations/kotlin")
+        inputs.file(operationCatalog).withPathSensitivity(PathSensitivity.RELATIVE)
+        outputs.dir(output)
+        classpath = operationCodegen
+        mainClass = "io.github.libtmux.codegen.kotlin.MainKt"
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+        argumentProviders.add(
+            CommandLineArgumentProvider {
+                listOf("--catalog", operationCatalog.asFile.path, "--outputDir", output.get().asFile.path)
+            },
+        )
+        // Regeneration is additive-only otherwise: an operation the catalog stopped naming would
+        // leave its stale generated function behind rather than being removed.
+        doFirst { project.delete(output) }
+    }
+
+kotlin.sourceSets.named("main") { kotlin.srcDir(generateOperationWrappers) }
 
 // ------------------------------------------------------------------------- oldest consumer
 
