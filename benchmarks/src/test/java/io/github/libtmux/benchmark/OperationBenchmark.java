@@ -115,6 +115,10 @@ final class OperationBenchmark {
 
     @Test
     void writeTheOperationTable(@TempDir Path directory) throws Exception {
+        // First: every other scenario leaves drain threads that idle out only after ten seconds, and
+        // a count taken after them would count those too.
+        Threads threads = measureThreads(directory);
+
         List<Measured> grouping = List.of(
                 measure(directory, "one-at-a-time", server -> {}, OperationBenchmark::create),
                 measure(directory, "batch", server -> {}, OperationBenchmark::createBatched),
@@ -196,12 +200,13 @@ final class OperationBenchmark {
         Timed control = measureControlPerCommand(directory);
         Following following = measureMirrorFollowing(directory);
         Flood flood = measureFlood(directory);
-        Threads threads = measureThreads(directory);
 
         assertEquals(0, flood.gapped(), "the flood overflowed a buffer sized to hold it");
         assertTrue(
-                threads.afterConcurrentReads() <= 3 * 4
-                        && threads.controlAttached() - threads.afterConcurrentReads() == 3,
+                threads.idle() <= 3 * 4
+                        && threads.afterConcurrentReads() <= 3 * 4
+                        && threads.controlAttached() - threads.afterConcurrentReads() == 3
+                        && threads.subscribed() == threads.controlAttached(),
                 "the thread budget moved: " + threads);
 
         assertEquals(
@@ -989,13 +994,16 @@ final class OperationBenchmark {
                 .append("at four processes. Virtual threads, such as a mirror's listener, are not counted: ")
                 .append("they hold no carrier while they wait.\n\n")
                 .append("| step | threads |\n| --- | --- |\n")
-                .append("| server open, one command run | %d |%n".formatted(threads.idle()))
+                .append("| server open, a session made and listed | %d |%n".formatted(threads.idle()))
                 .append("| after eight concurrent snapshots | %d |%n".formatted(threads.afterConcurrentReads()))
                 .append("| a control client attached | %d |%n".formatted(threads.controlAttached()))
                 .append("| an output subscription open | %d |%n".formatted(threads.subscribed()))
-                .append("\nThree drain threads per running process, reused and released after ten idle ")
-                .append("seconds, so the reads never need more than three per admission slot however ")
-                .append("many callers queue; three more for a control client; none for a subscription.\n");
+                .append("\nThree drain threads per admission slot, and never more however many callers ")
+                .append("queue: eight concurrent snapshots on four slots held no more than four sequential ")
+                .append("commands did. A fixed pool starts a new thread for each of its first tasks even ")
+                .append("while others are idle, so a few commands in a row already hold all of them; ")
+                .append("each lets go after ten idle seconds, which is how an unclosed transport still ")
+                .append("lets a program exit. A control client adds three. A subscription adds none.\n");
 
         out.append("\n## What this does not measure\n\n")
                 .append("Not measured here: MCP tool call overhead, and the Kotlin and Scala stream layers ")
