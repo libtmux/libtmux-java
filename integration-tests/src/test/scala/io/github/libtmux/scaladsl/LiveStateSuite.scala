@@ -53,4 +53,32 @@ final class LiveStateSuite extends FunSuite {
       }
     }
   }
+
+  /** A mirror whose anchor has gone fails the iteration with the reason, where
+    * a closed one ends it: a caller could not otherwise tell a dead session
+    * from a quiet one.
+    */
+  test(
+    "LiveView snapshots fail with the cause once the anchor session is gone"
+  ) {
+    OwnedTmux.use { fixture =>
+      Using.resource(Server.open(fixture.config)) { server =>
+        server.newSession("live-keep")
+        val anchor = server.newSession("live-anchor")
+        Using.resource(LiveView.attach(anchor)) { live =>
+          val views = live.snapshotsAfter(live.current.epoch)
+          anchor.kill()
+
+          val failed = intercept[Throwable](
+            Await.result(
+              Future(while views.hasNext do views.next()),
+              30.seconds
+            )
+          )
+          assert(live.isEnded)
+          assertEquals(live.cause, Some(failed))
+        }
+      }
+    }
+  }
 }

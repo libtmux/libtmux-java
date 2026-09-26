@@ -29,7 +29,8 @@ object Flows {
     }
 
   /** The current view when the flow starts, then every newer one, one per
-    * notification.
+    * notification. Completes when the view is closed, and fails with its cause
+    * when the anchor session or server has gone.
     */
   def liveView(view: LiveView): Flow[ServerMirror.View] =
     Flow.usingEmit { emit =>

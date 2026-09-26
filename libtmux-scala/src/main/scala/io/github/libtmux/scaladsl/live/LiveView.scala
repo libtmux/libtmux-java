@@ -19,6 +19,24 @@ object LiveView {
 
   private[live] val AwaitBudget: Duration = Duration.ofHours(24)
 
+  /** The first view newer than `epoch`, waiting as long as the mirror lives.
+    * Empty once it was closed; the reason is thrown when something else ended
+    * it, since an empty wait alone cannot tell an ended mirror from a quiet
+    * one.
+    */
+  @annotation.tailrec
+  private def following(
+      self: JavaServerMirror,
+      epoch: Long
+  ): Option[(JavaServerMirror.View, Long)] =
+    self.awaitNewer(epoch, AwaitBudget).toScala match {
+      case Some(next)             => Some((next, next.epoch()))
+      case None if self.isEnded() =>
+        self.cause().toScala.foreach(cause => throw cause)
+        None
+      case None => following(self, epoch)
+    }
+
   /** Listens through a control client attached to `anchor`, rebuilding on every
     * announcement.
     */
@@ -62,25 +80,22 @@ object LiveView {
     def cause: Option[Throwable] = self.cause().toScala
 
     /** The current view, then every newer one, one per notification, blocking
-      * up to a day between them: as a `StateFlow` or an fs2 `Signal` does. A
-      * change made before this call is in the first view rather than lost
-      * between reading [[current]] and starting to iterate.
+      * between them: as a `StateFlow` or an fs2 `Signal` does. A change made
+      * before this call is in the first view rather than lost between reading
+      * [[current]] and starting to iterate. Ends when this view is closed, and
+      * throws [[cause]] when its anchor or server has gone.
       */
     def snapshots: Iterator[JavaServerMirror.View] = {
       val now = self.current()
       Iterator.single(now) ++ snapshotsAfter(now.epoch())
     }
 
-    /** Every view newer than `epoch`, one per notification, blocking up to a
-      * day between them. A view already published after `epoch` comes first, so
-      * nothing is missed between reading a view and starting to iterate.
+    /** Every view newer than `epoch`, one per notification, blocking between
+      * them. A view already published after `epoch` comes first, so nothing is
+      * missed between reading a view and starting to iterate. Ends and throws
+      * as [[snapshots]] does.
       */
     def snapshotsAfter(epoch: Long): Iterator[JavaServerMirror.View] =
-      Iterator.unfold(epoch) { previous =>
-        self
-          .awaitNewer(previous, LiveView.AwaitBudget)
-          .toScala
-          .map(next => (next, next.epoch()))
-      }
+      Iterator.unfold(epoch)(previous => LiveView.following(self, previous))
   }
 }
