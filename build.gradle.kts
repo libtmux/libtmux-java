@@ -91,4 +91,7 @@ tasks.register("check") {
     description = "Every gate that must hold before publication."
     dependsOn(subprojects.filter { it.buildFile.exists() }.map { "${it.path}:check" })
     dependsOn(platformCoversEveryPublishedModule, kotlinStaysDownstream)
+    // An included build's tasks are not this build's subprojects, so its tests would otherwise
+    // never run in the gate: the generators every facade compiles against, and the Doclet's lint.
+    dependsOn(listOf("codegen", "catalog-doclet").map { gradle.includedBuild("build-logic").task(":$it:check") })
 }

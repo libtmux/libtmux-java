@@ -124,7 +124,7 @@ See [execution](execution.md) for control acknowledgement limits, and
 [build]: ../../build.sbt
 [sbt-version]: ../../project/build.properties
 [tmux-matrix]:
-  ../../build-logic/src/main/kotlin/libtmux.tmux-matrix.gradle.kts
+  ../../build-logic/conventions/src/main/kotlin/libtmux.tmux-matrix.gradle.kts
 [java-options]:
   ../../libtmux/src/main/java/io/github/libtmux/Options.java
 [buffers]:
