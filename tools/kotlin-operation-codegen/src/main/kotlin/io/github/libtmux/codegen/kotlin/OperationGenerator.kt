@@ -30,6 +30,42 @@ internal val WRAPPED_HANDLES: Map<String, ClassName> = mapOf(
 /** Kinds the generator mirrors as a `suspend` extension function. Everything else is handwritten. */
 private val GENERATED_KINDS = setOf("READ", "MUTATION")
 
+/**
+ * Catalogued operations a handwritten member already covers under a different contract, so the
+ * generator must never emit them (ruling 4's collision rule: `allWarningsAsErrors` would otherwise
+ * fail the build the moment it did). `owner#name(erasedParamType,...)`, matching the stable id
+ * `operation-catalog-schema.md` names.
+ *
+ * `Server#session(FilterExpr)`/`window(FilterExpr)`/`pane(FilterExpr)` return `Optional` in Java;
+ * the handwritten [io.github.libtmux.kotlin.Server.session] throws on no match instead, per ruling 9,
+ * and [io.github.libtmux.kotlin.Server.sessionOrNull] is its generator-can-never-emit sibling.
+ */
+private val HANDWRITTEN_OVERRIDES = setOf(
+    "io.github.libtmux.Server#session(io.github.libtmux.query.FilterExpr)",
+    "io.github.libtmux.Server#window(io.github.libtmux.query.FilterExpr)",
+    "io.github.libtmux.Server#pane(io.github.libtmux.query.FilterExpr)",
+)
+
+/** The stable id `operation-catalog-schema.md` describes: erased parameter types, joined. */
+private fun stableId(operation: CatalogOperation): String {
+    val erasedParams = operation.parameters.joinToString(",") { parseJavaType(it.type).erasedName() }
+    return "${operation.owner}#${operation.name}($erasedParams)"
+}
+
+private fun JavaType.erasedName(): String = when (this) {
+    JavaType.Void -> "void"
+    is JavaType.Primitive -> kotlinName.lowercase()
+    is JavaType.Opaque -> fqcn
+    is JavaType.ListOf -> "java.util.List"
+    is JavaType.MapOf -> "java.util.Map"
+    is JavaType.OptionalOf -> "java.util.Optional"
+    JavaType.OptionalInt -> "java.util.OptionalInt"
+    JavaType.OptionalLong -> "java.util.OptionalLong"
+    is JavaType.FilterExprOf -> "io.github.libtmux.query.FilterExpr"
+    is JavaType.ArrayOf -> "${element.erasedName()}[]"
+    is JavaType.ConsumerOf -> "java.util.function.Consumer"
+}
+
 private fun classNameOf(fqcn: String): ClassName {
     val simple = fqcn.substringAfterLast('.')
     val pkg = fqcn.removeSuffix(".$simple")
@@ -52,11 +88,22 @@ private fun kotlinTypeName(type: JavaType): TypeName = when (type) {
     is JavaType.FilterExprOf ->
         ClassName("io.github.libtmux.query", "FilterExpr").parameterizedBy(classNameOf(type.elementFqcn))
     is JavaType.ArrayOf -> kotlinTypeName(type.element)
+    is JavaType.ConsumerOf ->
+        error("a Consumer-typed parameter reached kotlinTypeName; isGeneratable should have filtered it out")
 }
 
-/** Whether wrapping this catalog operation's owner is something this generator recognizes. */
-public fun isGeneratable(operation: CatalogOperation): Boolean =
-    operation.kind in GENERATED_KINDS && WRAPPED_HANDLES.containsKey(operation.owner)
+/**
+ * Whether this generates a `suspend` extension function: the right [operation.kind], a wrapped
+ * owner, no [JavaType.ConsumerOf] parameter (its Spec-typed sibling generates instead — see
+ * `design-kotlin.md` §6a), and not one of [HANDWRITTEN_OVERRIDES].
+ */
+public fun isGeneratable(operation: CatalogOperation): Boolean {
+    if (operation.kind !in GENERATED_KINDS) return false
+    if (!WRAPPED_HANDLES.containsKey(operation.owner)) return false
+    if (operation.parameters.any { parseJavaType(it.type) is JavaType.ConsumerOf }) return false
+    if (stableId(operation) in HANDWRITTEN_OVERRIDES) return false
+    return true
+}
 
 /**
  * Builds one `FileSpec` per owner, each holding every [isGeneratable] operation for that owner as a
@@ -147,5 +194,7 @@ private fun wrapReturn(javaCall: String, type: JavaType, serverExpr: String): St
     }
     JavaType.OptionalInt -> "$javaCall.let { if (it.isPresent) it.asInt else null }"
     JavaType.OptionalLong -> "$javaCall.let { if (it.isPresent) it.asLong else null }"
-    is JavaType.MapOf, is JavaType.Primitive, is JavaType.FilterExprOf, is JavaType.ArrayOf -> javaCall
+    is JavaType.MapOf, is JavaType.Primitive, is JavaType.FilterExprOf,
+    is JavaType.ArrayOf, is JavaType.ConsumerOf,
+    -> javaCall
 }
