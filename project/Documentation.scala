@@ -278,7 +278,7 @@ object Documentation {
               "val evaluated = new java.util.concurrent.atomic.AtomicBoolean(false)\n" +
               invoke + ".flatMap(_ => _root_.cats.effect.IO(evaluated.set(true)))\n" +
               ".timeout(_root_.scala.concurrent.duration.FiniteDuration(1, java.util.concurrent.TimeUnit.SECONDS))\n" +
-              ".unsafeRunSync()(_root_.cats.effect.unsafe.IORuntime.global)\n" +
+              ".unsafeRunSync()(using _root_.cats.effect.unsafe.IORuntime.global)\n" +
               "assert(evaluated.get(), \"IO snippet was not evaluated\")\n}"
           case "reject" =>
             val code =
@@ -304,7 +304,7 @@ private[docs] object DocumentationRuntime {
     val found = Vector.newBuilder[java.nio.file.Path]
     java.nio.file.Files.walkFileTree(root, new java.nio.file.SimpleFileVisitor[java.nio.file.Path] {
       override def preVisitDirectory(path: java.nio.file.Path, attributes: java.nio.file.attribute.BasicFileAttributes): java.nio.file.FileVisitResult =
-        if (path != root && (ignored(path.getFileName.toString) || java.nio.file.Files.exists(path.resolve(".git")))) java.nio.file.FileVisitResult.SKIP_SUBTREE
+        if (!path.equals(root) && (ignored(path.getFileName.toString) || java.nio.file.Files.exists(path.resolve(".git")))) java.nio.file.FileVisitResult.SKIP_SUBTREE
         else java.nio.file.FileVisitResult.CONTINUE
       override def visitFile(path: java.nio.file.Path, attributes: java.nio.file.attribute.BasicFileAttributes): java.nio.file.FileVisitResult = {
         if (attributes.isRegularFile && path.getFileName.toString.endsWith(".md")) found += path
