@@ -93,6 +93,10 @@ public final class ControlClient implements AutoCloseable {
     private final OperationObserver observer;
     private final AtomicLong ids = new AtomicLong();
     private volatile boolean failed;
+
+    /** Set before subscribers hear of the end, so none of them can find this client alive after it. */
+    private volatile boolean readerEnded;
+
     private volatile boolean subscriptionsClosed;
     private static final int STDERR_LIMIT = 4096;
     private final byte[] stderrBytes = new byte[STDERR_LIMIT];
@@ -403,7 +407,7 @@ public final class ControlClient implements AutoCloseable {
      */
     @Operation(Kind.CAPTURED)
     public boolean isAlive() {
-        return !closed.get() && !failed && process.isAlive();
+        return !closed.get() && !failed && !readerEnded && process.isAlive();
     }
 
     /**
@@ -536,6 +540,7 @@ public final class ControlClient implements AutoCloseable {
         } catch (IOException | ControlProtocol.LimitExceeded e) {
             readerFailure = e;
         } finally {
+            readerEnded = true;
             closeSubscriptions(
                     readerFailure == null && closed.get()
                             ? null
