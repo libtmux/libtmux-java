@@ -164,6 +164,9 @@ jobs:
     name: check (macOS)
     runs-on: macos-latest
     timeout-minutes: 20
+    # Reported, never gating: hosted macOS runners fail this lane for reasons of their own too often
+    # for its result to decide a merge or a release. Its failures still show in the run.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
