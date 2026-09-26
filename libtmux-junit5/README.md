@@ -118,7 +118,7 @@ $ ./gradlew test -Dlibtmux.tmux=/path/to/tmux
 ```
 
 Which is how one suite runs against a whole matrix of releases — see
-[`scripts/tmux-matrix.sh`](../scripts/tmux-matrix.sh).
+[`tools/tmux-matrix.sh`](../tools/tmux-matrix.sh).
 
 ## Without tmux
 
