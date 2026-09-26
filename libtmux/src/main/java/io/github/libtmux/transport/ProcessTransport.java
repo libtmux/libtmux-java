@@ -257,8 +257,8 @@ public final class ProcessTransport implements TmuxTransport {
                     error,
                     Duration.ofNanos(Math.max(0, span.queuedNanos)),
                     Duration.ofNanos(Math.max(0, span.runNanos))));
-        } catch (RuntimeException ignored) {
-            LOG.log(System.Logger.Level.WARNING, "operation observer failed");
+        } catch (RuntimeException failure) {
+            LOG.log(System.Logger.Level.WARNING, "operation observer failed", failure);
         }
     }
 
