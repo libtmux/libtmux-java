@@ -27,7 +27,7 @@ import io.github.libtmux.Server as JavaServer
 /**
  * Every Kotlin example in this module's README, run against a real tmux server.
  *
- * `docs-tests` compiles and runs the Java fences in the documentation, and cannot read Kotlin ones —
+ * The documentation module compiles and runs the Java fences in the documentation, and cannot read Kotlin ones —
  * it would need the Kotlin compiler in-process to do it. So the Kotlin examples are executed here
  * instead, one test per README section, and the README says which test covers it.
  */

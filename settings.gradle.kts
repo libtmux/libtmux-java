@@ -30,7 +30,7 @@ include("libtmux-scala-ox")
 
 // Internal: exercised by the build, never released.
 include("benchmarks")
-include("docs-tests")
+include("docs")
 include("examples")
 include("integration-tests")
 include("tools:mcp-swap")
