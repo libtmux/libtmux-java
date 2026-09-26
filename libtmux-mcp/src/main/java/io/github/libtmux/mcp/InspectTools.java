@@ -134,7 +134,8 @@ final class InspectTools {
         tools.add(Catalog.tool(
                 "capture_pane",
                 "Capture a pane",
-                "Returns bounded pane content and a cursor.",
+                "Returns what a pane shows now, its newest lines first to go when bounded, and a cursor"
+                        + " for capture_since. Use it to read a pane once.",
                 INSPECT,
                 NONE,
                 Catalog.effects(OBSERVE),
@@ -152,7 +153,8 @@ final class InspectTools {
         tools.add(Catalog.tool(
                 "capture_since",
                 "Capture new pane output",
-                "Returns pane output produced after a cursor.",
+                "Returns only the output a pane produced after a cursor from capture_pane or an earlier"
+                        + " capture_since. Use it to follow a pane across turns without rereading it.",
                 INSPECT,
                 NONE,
                 Catalog.effects(OBSERVE),
@@ -169,7 +171,8 @@ final class InspectTools {
         tools.add(Catalog.tool(
                 "snapshot_pane",
                 "Snapshot a pane",
-                "Returns pane metadata and bounded terminal content together.",
+                "Returns what a pane shows and its metadata, as list_panes describes a pane, in one"
+                        + " call. Use it when both are needed; capture_pane alone reads less.",
                 INSPECT,
                 NONE,
                 Catalog.effects(OBSERVE),

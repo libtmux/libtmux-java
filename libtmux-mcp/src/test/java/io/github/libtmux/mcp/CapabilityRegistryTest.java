@@ -1104,6 +1104,17 @@ final class CapabilityRegistryTest {
         }
     }
 
+    /**
+     * Three tools answer with terminal text. Each description says when to pick it over its
+     * siblings, so the choice is in the schema a model reads first, not only in the instructions.
+     */
+    @Test
+    void eachCaptureToolSaysWhenToPickItOverItsSiblings() {
+        assertTrue(byName("capture_pane").description().contains("capture_since"));
+        assertTrue(byName("capture_since").description().contains("capture_pane"));
+        assertTrue(byName("snapshot_pane").description().contains("capture_pane"));
+    }
+
     private static ToolSpec byName(String name) {
         return Catalog.tools().stream()
                 .filter(tool -> tool.name().equals(name))
