@@ -18,7 +18,10 @@ class OperationGeneratorTest {
 
     @Test
     fun `one file is produced per owner with a generatable operation`() {
-        assertEquals(setOf("PaneOperations", "ServerOperations", "SessionOperations"), sources.keys)
+        assertEquals(
+            setOf("PaneOperations", "ServerOperations", "SessionOperations", "OptionsOperations", "EnvironmentOperations"),
+            sources.keys,
+        )
     }
 
     @Test
@@ -108,7 +111,39 @@ class OperationGeneratorTest {
 
     @Test
     fun `an operation on an unrecognized owner is skipped rather than crashing`() {
-        assertFalse(sources.values.any { it.contains("fun Options.get") })
+        assertFalse(sources.values.any { it.contains("fun NotWrapped.get") })
+    }
+
+    @Test
+    fun `a newly wrapped subsystem owner generates its READ operation as a suspend extension`() {
+        val options = sources.getValue("OptionsOperations")
+        assertTrue(
+            options.contains("public suspend fun Options.effective(): Map<String, String>"),
+            "expected Options.effective() to generate now that Options is wrapped:\n$options",
+        )
+        assertTrue(options.contains("runInterruptible(server.policy.commands)"), options)
+    }
+
+    @Test
+    fun `a generic method is skipped, not generated with a broken type`() {
+        assertFalse(sources.getValue("OptionsOperations").contains("fun Options.set"), "OptionKey<T> has a type parameter")
+    }
+
+    @Test
+    fun `a handwritten-override overload is skipped even though it is otherwise generatable`() {
+        assertFalse(
+            sources.getValue("OptionsOperations").contains("fun Options.`get`"),
+            "Options#get(String) sits beside the handwritten OptionKey<T> overload and must stay handwritten too",
+        )
+    }
+
+    @Test
+    fun `a Set of a primitive maps to a Kotlin Set, unconverted`() {
+        val environment = sources.getValue("EnvironmentOperations")
+        assertTrue(
+            environment.contains("public suspend fun Environment.removed(): Set<String>"),
+            "expected java.util.Set<String> to become a Kotlin Set<String>:\n$environment",
+        )
     }
 
     @Test

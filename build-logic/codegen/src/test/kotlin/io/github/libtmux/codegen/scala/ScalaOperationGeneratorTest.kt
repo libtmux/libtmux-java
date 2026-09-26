@@ -55,6 +55,72 @@ class ScalaOperationGeneratorTest {
     }
 
     @Test
+    fun `a subsystem CAPTURED accessor wraps into the Cats-only handle, but stays raw on direct style`() {
+        val serverCats = ScalaOperationGenerator.catsForwards(
+            "io.github.libtmux.Server",
+            ScalaOperationGenerator.byOwner(catalog).toMap().getValue("io.github.libtmux.Server"),
+        )
+        assertTrue(
+            serverCats.contains("def hooks: Hooks[F] =\n      new Hooks(self.underlying.asJava.hooks(), self)"),
+            serverCats,
+        )
+        val paneCats = ScalaOperationGenerator.catsForwards(
+            "io.github.libtmux.Pane",
+            ScalaOperationGenerator.byOwner(catalog).toMap().getValue("io.github.libtmux.Pane"),
+        )
+        assertTrue(
+            paneCats.contains(
+                "def options: Options[F] =\n      new Options(self.underlying.asJava.options(), self.server)",
+            ),
+            paneCats,
+        )
+        val serverDirect = ScalaOperationGenerator.combinedDirectStyle(catalog)
+        assertTrue(
+            serverDirect.contains("def hooks: io.github.libtmux.Hooks =\n      self.asJava.hooks()"),
+            "expected direct style to stay on the raw Java Hooks:\n$serverDirect",
+        )
+    }
+
+    @Test
+    fun `a subsystem owner runs its own READ operation through Execution, not the direct-style facade`() {
+        val hooksOps = ScalaOperationGenerator.byOwner(catalog).toMap().getValue("io.github.libtmux.Hooks")
+        val cats = ScalaOperationGenerator.catsForwards("io.github.libtmux.Hooks", hooksOps)
+        assertTrue(
+            cats.contains("def all(): F[") && cats.contains("self.server.execution(") && cats.contains("self.underlying.all()"),
+            cats,
+        )
+    }
+
+    @Test
+    fun `a Set of a primitive maps to a Scala Set, unconverted`() {
+        val environmentOps = ScalaOperationGenerator.byOwner(catalog).toMap().getValue("io.github.libtmux.Environment")
+        val cats = ScalaOperationGenerator.catsForwards("io.github.libtmux.Environment", environmentOps)
+        assertTrue(cats.contains("def removed(): F[Set[String]]"), cats)
+    }
+
+    @Test
+    fun `a generic method is skipped on both facades, not generated with a broken type`() {
+        assertTrue(
+            ScalaOperationGenerator.byOwner(catalog).none { it.first == "io.github.libtmux.Options" },
+            "Options#set(OptionKey<T>, T) has a type parameter and must not be generated",
+        )
+    }
+
+    @Test
+    fun `a Cats-only subsystem owner is not a direct-style owner`() {
+        val directHandles = setOf(
+            "io.github.libtmux.Server",
+            "io.github.libtmux.Session",
+            "io.github.libtmux.Window",
+            "io.github.libtmux.Pane",
+            "io.github.libtmux.Client",
+        )
+        val directOwners = ScalaOperationGenerator.byOwner(catalog, directHandles).map { it.first }.toSet()
+        assertFalse("io.github.libtmux.Hooks" in directOwners)
+        assertFalse("io.github.libtmux.Environment" in directOwners)
+    }
+
+    @Test
     fun `a type spelling parses its arguments at every depth`() {
         assertEquals(
             JavaTypeSpelling.Named(

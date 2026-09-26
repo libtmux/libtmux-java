@@ -11,6 +11,7 @@ public sealed interface JavaType {
     public data class Primitive(val kotlinName: String) : JavaType
     public data class Opaque(val fqcn: String) : JavaType
     public data class ListOf(val element: JavaType) : JavaType
+    public data class SetOf(val element: JavaType) : JavaType
     public data class MapOf(val key: JavaType, val value: JavaType) : JavaType
     public data class OptionalOf(val element: JavaType) : JavaType
     public data object OptionalInt : JavaType
@@ -39,6 +40,7 @@ public fun parseJavaType(raw: String): JavaType {
         s == "java.util.OptionalInt" -> JavaType.OptionalInt
         s == "java.util.OptionalLong" -> JavaType.OptionalLong
         s.startsWith("java.util.List<") -> JavaType.ListOf(parseJavaType(genericArgument(s)))
+        s.startsWith("java.util.Set<") -> JavaType.SetOf(parseJavaType(genericArgument(s)))
         s.startsWith("java.util.Optional<") -> JavaType.OptionalOf(parseJavaType(genericArgument(s)))
         s.startsWith("java.util.Map<") -> {
             val (key, value) = splitTopLevelArguments(genericArgument(s))

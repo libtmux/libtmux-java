@@ -13,9 +13,12 @@ import io.github.libtmux.codegen.catalog.CatalogParameter
  * and `Batch`, whose builder replay needs judgment a template cannot supply.
  *
  * The type mapping covers primitives, `String`, `Duration`, `Optional`/`OptionalInt`/`OptionalLong`,
- * `List`, `Map`, the five wrapped handles, builder `Consumer`s, varargs `String...` and `FilterExpr`.
- * Any other type passes through by its canonical name, unconverted: a plain Java value type with no
- * member worth hiding (`WindowId`, `Dimensions`, `ServerSnapshot`, the `*State` records, ...).
+ * `List`, `Set`, `Map`, builder `Consumer`s, varargs `String...`, `FilterExpr`, and the wrapped
+ * handles: `Server`/`Session`/`Window`/`Pane`/`Client` on both facades, and the tmux subsystems
+ * (`Hooks`, `Options`, `Shell`, ...) on the Cats facade only — direct style leaves those on the raw
+ * Java handle. Any other type passes through by its canonical name, unconverted: a plain Java value
+ * type with no member worth hiding (`WindowId`, `Dimensions`, `ServerSnapshot`, the `*State`
+ * records, ...).
  */
 object ScalaOperationGenerator {
 
@@ -29,13 +32,34 @@ object ScalaOperationGenerator {
 
     private const val SERVER = "io.github.libtmux.Server"
 
-    private val WRAPPED_HANDLES = setOf(
+    /** Owners with a `direct.X` opaque counterpart, wrapped identically on both facades. */
+    private val DIRECT_WRAPPED_HANDLES = setOf(
         SERVER,
         "io.github.libtmux.Session",
         "io.github.libtmux.Window",
         "io.github.libtmux.Pane",
         "io.github.libtmux.Client",
     )
+
+    /**
+     * Subsystem owners wrapped on the Cats facade only, direct style stays on the raw Java handle
+     * (blocking by design). Their Cats class holds the Java handle itself, not a `direct.X`, since
+     * there is no direct-style counterpart to go through: see [CATS_ONLY_HANDLES] in [handle].
+     */
+    private val CATS_ONLY_HANDLES = setOf(
+        "io.github.libtmux.Hooks",
+        "io.github.libtmux.Options",
+        "io.github.libtmux.Shell",
+        "io.github.libtmux.Commands",
+        "io.github.libtmux.Buffers",
+        "io.github.libtmux.Environment",
+        "io.github.libtmux.MessageLog",
+        "io.github.libtmux.Prompt",
+        "io.github.libtmux.Keys",
+    )
+
+    /** Every owner the Cats facade wraps: [DIRECT_WRAPPED_HANDLES] plus [CATS_ONLY_HANDLES]. */
+    private val CATS_WRAPPED_HANDLES = DIRECT_WRAPPED_HANDLES + CATS_ONLY_HANDLES
 
     private const val HEADER =
         "// Generated from the operation catalog by build-logic/codegen (ScalaOperationGenerator). Not checked in."
@@ -58,6 +82,7 @@ object ScalaOperationGenerator {
 
     private fun mapNamed(type: JavaTypeSpelling.Named, target: Target, owner: String): Mapped {
         val args = type.arguments
+        val handles = if (target == Target.DIRECT) DIRECT_WRAPPED_HANDLES else CATS_WRAPPED_HANDLES
         return when (type.fqn) {
             "java.lang.String" -> Mapped("String", { it }, { it })
             "java.time.Duration" -> Mapped(
@@ -107,6 +132,16 @@ object ScalaOperationGenerator {
                 toJavaPassthrough = { s -> "_root_.scala.jdk.CollectionConverters.SeqHasAsJava($s).asJava" },
                 toJavaMapped = { s, v -> "_root_.scala.jdk.CollectionConverters.SeqHasAsJava($s.map(v => $v)).asJava" },
             )
+            "java.util.Set" -> container(
+                args.single(), target, owner,
+                scalaType = { "Set[$it]" },
+                toScalaPassthrough = { j -> "_root_.scala.jdk.CollectionConverters.SetHasAsScala($j).asScala.toSet" },
+                toScalaMapped = { j, v ->
+                    "_root_.scala.jdk.CollectionConverters.SetHasAsScala($j).asScala.iterator.map(v => $v).toSet"
+                },
+                toJavaPassthrough = { s -> "_root_.scala.jdk.CollectionConverters.SetHasAsJava($s).asJava" },
+                toJavaMapped = { s, v -> "_root_.scala.jdk.CollectionConverters.SetHasAsJava($s.map(v => $v)).asJava" },
+            )
             "java.util.Map" -> mapOf(args, target, owner)
             // A builder-consumer parameter, e.g. Consumer<SplitSpec.Builder>, for the fluent overload
             // (`pane.split(s => s.toRight().percent(30))`). The mutable Java builder is reused as is; a
@@ -124,7 +159,7 @@ object ScalaOperationGenerator {
                     { s -> "$s.asJava" },
                 )
             }
-            in WRAPPED_HANDLES -> handle(type.fqn, target, owner)
+            in handles -> handle(type.fqn, target, owner)
             else -> {
                 require(args.isEmpty()) { "ScalaOperationGenerator has no mapping for '$type'" }
                 Mapped(type.fqn, { it }, { it })
@@ -188,6 +223,13 @@ object ScalaOperationGenerator {
             // this reuses the held reference and never makes the Java call.
             simple == "Server" && owner != SERVER ->
                 Mapped("Server[F]", { "self.server" }, { s -> "$s.underlying.asJava" })
+            // No direct-style counterpart to wrap through: the Cats class holds the raw Java handle
+            // itself (see CATS_ONLY_HANDLES), constructed directly since its constructor is
+            // package-private to `cats`, the package every generated file lives in.
+            fqn in CATS_ONLY_HANDLES -> {
+                val receiver = if (owner == SERVER) "self" else "self.server"
+                Mapped("$simple[F]", { j -> "new $simple($j, $receiver)" }, { s -> "$s.asJava" })
+            }
             else -> {
                 val receiver = if (owner == SERVER) "self" else "self.server"
                 // Qualified: an unqualified name in the Cats package would resolve to that module's own
@@ -208,7 +250,7 @@ object ScalaOperationGenerator {
         is JavaTypeSpelling.Named ->
             type.fqn != "java.lang.Boolean" &&
                 type.arguments.isEmpty() &&
-                type.fqn !in WRAPPED_HANDLES &&
+                type.fqn !in CATS_WRAPPED_HANDLES &&
                 type.fqn != "io.github.libtmux.query.FilterExpr"
     }
 
@@ -233,7 +275,7 @@ object ScalaOperationGenerator {
     private fun decapitalize(name: String): String = name.replaceFirstChar { it.lowercaseChar() }
 
     private fun requireWrappable(owner: String): String {
-        require(owner in WRAPPED_HANDLES) { "'$owner' is not a wrappable handle" }
+        require(owner in CATS_WRAPPED_HANDLES) { "'$owner' is not a wrappable handle" }
         return simpleNameOf(owner)
     }
 
@@ -302,8 +344,11 @@ object ScalaOperationGenerator {
             val sig = signature(op, Target.CATS)
             // self.underlying.asJava.op(...), not self.underlying.op(...): the latter would resolve
             // through the direct-style facade's same-named top-level extension, which Scala refuses to
-            // choose between; the Java member sidesteps extension resolution entirely.
-            val javaCall = "self.underlying.asJava.${op.name}(${sig.javaArgs})"
+            // choose between; the Java member sidesteps extension resolution entirely. A CATS_ONLY_HANDLES
+            // owner has no direct-style counterpart to collide with, and its `underlying` already is the
+            // raw Java handle, which has no `asJava` of its own.
+            val javaReceiver = if (owner in CATS_ONLY_HANDLES) "self.underlying" else "self.underlying.asJava"
+            val javaCall = "$javaReceiver.${op.name}(${sig.javaArgs})"
             val converted = if (sig.returnType == "Unit") javaCall else mapType(JavaTypeSpelling.parse(op.returns.type), Target.CATS, owner).toScala(javaCall)
             if (op.kind == "CAPTURED") {
                 "${scaladoc(op)}    def ${op.name}${parenthesized(op, sig.params)}: ${sig.returnType} =\n      $converted"
@@ -320,27 +365,65 @@ object ScalaOperationGenerator {
      * one file rather than one per owner.
      */
     fun combinedDirectStyle(catalog: Catalog): String =
-        combined("io.github.libtmux.scaladsl", byOwner(catalog).map { (owner, ops) -> directStyle(owner, ops) })
+        combined(
+            "io.github.libtmux.scaladsl",
+            byOwner(catalog, DIRECT_WRAPPED_HANDLES).map { (owner, ops) -> directStyle(owner, ops) },
+        )
 
     /** As [combinedDirectStyle], for the Cats forwards. */
     fun combinedCatsForwards(catalog: Catalog): String =
-        combined("io.github.libtmux.scaladsl.cats", byOwner(catalog).map { (owner, ops) -> catsForwards(owner, ops) })
+        combined(
+            "io.github.libtmux.scaladsl.cats",
+            byOwner(catalog, CATS_WRAPPED_HANDLES).map { (owner, ops) -> catsForwards(owner, ops) },
+        )
 
     private fun combined(pkg: String, blocks: List<String>): String =
         "package $pkg\n\n$HEADER\n\n${blocks.joinToString("\n\n")}\n"
 
     /**
+     * `owner#name(paramType,...)`, the same shape [io.github.libtmux.codegen.kotlin.OperationGenerator]
+     * uses for its own `HANDWRITTEN_OVERRIDES`.
+     */
+    private fun stableId(operation: CatalogOperation): String =
+        "${operation.owner}#${operation.name}(${operation.parameters.joinToString(",") { it.type }})"
+
+    /**
+     * `Options#get(String)`/`set(String, String)` sit beside a generic `OptionKey<T>` overload of the
+     * same name this generator cannot emit (no bare-type-variable mapping). Two separate `extension`
+     * clauses for the same name and receiver compete rather than complement each other in Scala 3's
+     * extension search, picking whichever one it finds first regardless of which overload actually
+     * matches the call; both overloads are handwritten together in one clause in `Subsystems.scala`
+     * instead, so [io.github.libtmux.scaladsl.cats.Options] gets one coherent overload set.
+     */
+    private val HANDWRITTEN_OVERRIDES = setOf(
+        "io.github.libtmux.Options#get(java.lang.String)",
+        "io.github.libtmux.Options#set(java.lang.String,java.lang.String)",
+    )
+
+    /**
      * Every wrappable owner the catalog names, in catalog order, with its generatable operations.
-     * Owners the facade has no wrapper type for yet (`Options`, `ControlClient`, ...) are skipped; a
-     * caller reaches them through the Java value a wrapped owner's operation returns.
+     * Owners the facade has no wrapper type for yet (`ControlClient`, ...) are skipped; a caller
+     * reaches them through the Java value a wrapped owner's operation returns. A method carrying its
+     * own type parameter (`Options#get(OptionKey<T>)`) is skipped too, and hand-written instead: this
+     * generator's type mapping has no case for a bare type variable.
      *
+     * @param owners which owners are wrappable for the facade being generated: [DIRECT_WRAPPED_HANDLES]
+     *     or [CATS_WRAPPED_HANDLES]
      * @throws IllegalArgumentException if an operation carries a kind this generator does not know
      */
-    fun byOwner(catalog: Catalog): List<Pair<String, List<CatalogOperation>>> {
+    fun byOwner(
+        catalog: Catalog,
+        owners: Set<String> = CATS_WRAPPED_HANDLES,
+    ): List<Pair<String, List<CatalogOperation>>> {
         catalog.operations.forEach {
             require(it.kind in KNOWN_KINDS) { "unknown operation kind '${it.kind}' on ${it.owner}#${it.name}" }
         }
-        val generatable = catalog.operations.filter { it.kind in GENERATABLE_KINDS && it.owner in WRAPPED_HANDLES }
+        val generatable = catalog.operations.filter {
+            it.kind in GENERATABLE_KINDS &&
+                it.owner in owners &&
+                it.typeParameters.isEmpty() &&
+                stableId(it) !in HANDWRITTEN_OVERRIDES
+        }
         return generatable.map { it.owner }.distinct().map { owner -> owner to generatable.filter { it.owner == owner } }
     }
 }

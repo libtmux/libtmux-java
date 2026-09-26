@@ -10,6 +10,7 @@ import com.squareup.kotlinpoet.LONG
 import com.squareup.kotlinpoet.MAP
 import com.squareup.kotlinpoet.ParameterSpec
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import com.squareup.kotlinpoet.SET
 import com.squareup.kotlinpoet.STRING
 import com.squareup.kotlinpoet.TypeName
 import com.squareup.kotlinpoet.UNIT
@@ -27,6 +28,17 @@ internal val WRAPPED_HANDLES: Map<String, ClassName> = mapOf(
     "io.github.libtmux.Pane" to ClassName(FACADE_PACKAGE, "Pane"),
     "io.github.libtmux.Client" to ClassName(FACADE_PACKAGE, "Client"),
     "io.github.libtmux.control.ControlClient" to ClassName(FACADE_PACKAGE, "ControlClient"),
+    "io.github.libtmux.Hooks" to ClassName(FACADE_PACKAGE, "Hooks"),
+    "io.github.libtmux.Options" to ClassName(FACADE_PACKAGE, "Options"),
+    "io.github.libtmux.Shell" to ClassName(FACADE_PACKAGE, "Shell"),
+    "io.github.libtmux.Commands" to ClassName(FACADE_PACKAGE, "Commands"),
+    "io.github.libtmux.Buffers" to ClassName(FACADE_PACKAGE, "Buffers"),
+    "io.github.libtmux.Environment" to ClassName(FACADE_PACKAGE, "Environment"),
+    "io.github.libtmux.MessageLog" to ClassName(FACADE_PACKAGE, "MessageLog"),
+    "io.github.libtmux.Prompt" to ClassName(FACADE_PACKAGE, "Prompt"),
+    "io.github.libtmux.Keys" to ClassName(FACADE_PACKAGE, "Keys"),
+    "io.github.libtmux.batch.Batch" to ClassName(FACADE_PACKAGE, "Batch"),
+    "io.github.libtmux.CommandChain" to ClassName(FACADE_PACKAGE, "CommandChain"),
 )
 
 /** Kinds the generator mirrors as a `suspend` extension function. Everything else is handwritten. */
@@ -41,11 +53,19 @@ private val GENERATED_KINDS = setOf("READ", "MUTATION")
  * `Server#session(FilterExpr)`/`window(FilterExpr)`/`pane(FilterExpr)` return `Optional` in Java;
  * the handwritten [io.github.libtmux.kotlin.Server.session] throws on no match instead, as Kotlin's
  * `single()` does, and [io.github.libtmux.kotlin.Server.sessionOrNull] is its generator-can-never-emit sibling.
+ *
+ * `Options#get(String)`/`set(String, String)` sit beside a generic `OptionKey<T>` overload of the
+ * same name the generator cannot emit (no method type parameter support); once that overload is a
+ * handwritten member, it shadows any generated extension of the same name outright; both overloads
+ * of [io.github.libtmux.kotlin.Options.get]/[io.github.libtmux.kotlin.Options.set] are handwritten
+ * together for that reason.
  */
 private val HANDWRITTEN_OVERRIDES = setOf(
     "io.github.libtmux.Server#session(io.github.libtmux.query.FilterExpr)",
     "io.github.libtmux.Server#window(io.github.libtmux.query.FilterExpr)",
     "io.github.libtmux.Server#pane(io.github.libtmux.query.FilterExpr)",
+    "io.github.libtmux.Options#get(java.lang.String)",
+    "io.github.libtmux.Options#set(java.lang.String,java.lang.String)",
 )
 
 /** The stable id `operation-catalog-schema.md` describes: erased parameter types, joined. */
@@ -59,6 +79,7 @@ private fun JavaType.erasedName(): String = when (this) {
     is JavaType.Primitive -> kotlinName.lowercase()
     is JavaType.Opaque -> fqcn
     is JavaType.ListOf -> "java.util.List"
+    is JavaType.SetOf -> "java.util.Set"
     is JavaType.MapOf -> "java.util.Map"
     is JavaType.OptionalOf -> "java.util.Optional"
     JavaType.OptionalInt -> "java.util.OptionalInt"
@@ -83,6 +104,7 @@ private fun kotlinTypeName(type: JavaType): TypeName = when (type) {
         else -> WRAPPED_HANDLES[type.fqcn] ?: classNameOf(type.fqcn)
     }
     is JavaType.ListOf -> LIST.parameterizedBy(kotlinTypeName(type.element))
+    is JavaType.SetOf -> SET.parameterizedBy(kotlinTypeName(type.element))
     is JavaType.MapOf -> MAP.parameterizedBy(kotlinTypeName(type.key), kotlinTypeName(type.value))
     is JavaType.OptionalOf -> kotlinTypeName(type.element).copy(nullable = true)
     JavaType.OptionalInt -> INT.copy(nullable = true)
@@ -96,12 +118,14 @@ private fun kotlinTypeName(type: JavaType): TypeName = when (type) {
 
 /**
  * Whether this generates a `suspend` extension function: the right [operation.kind], a wrapped
- * owner, no [JavaType.ConsumerOf] parameter (its Spec-typed sibling generates instead — see
- * `design-kotlin.md` §6a), and not one of [HANDWRITTEN_OVERRIDES].
+ * owner, no method type parameter (a generic signature such as `Options#get(OptionKey<T>)` stays
+ * hand-written), no [JavaType.ConsumerOf] parameter (its Spec-typed sibling generates instead —
+ * see `design-kotlin.md` §6a), and not one of [HANDWRITTEN_OVERRIDES].
  */
 public fun isGeneratable(operation: CatalogOperation): Boolean {
     if (operation.kind !in GENERATED_KINDS) return false
     if (!WRAPPED_HANDLES.containsKey(operation.owner)) return false
+    if (operation.typeParameters.isNotEmpty()) return false
     if (operation.parameters.any { parseJavaType(it.type) is JavaType.ConsumerOf }) return false
     if (stableId(operation) in HANDWRITTEN_OVERRIDES) return false
     return true
@@ -196,6 +220,6 @@ private fun wrapReturn(javaCall: String, type: JavaType, serverExpr: String): St
     JavaType.OptionalInt -> "$javaCall.let { if (it.isPresent) it.asInt else null }"
     JavaType.OptionalLong -> "$javaCall.let { if (it.isPresent) it.asLong else null }"
     is JavaType.MapOf, is JavaType.Primitive, is JavaType.FilterExprOf,
-    is JavaType.ArrayOf, is JavaType.ConsumerOf,
+    is JavaType.ArrayOf, is JavaType.ConsumerOf, is JavaType.SetOf,
     -> javaCall
 }

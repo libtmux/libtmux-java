@@ -94,7 +94,7 @@
       "javadoc": { "summary": "Attaches a control client to this session's server." }
     },
     {
-      "owner": "io.github.libtmux.Options",
+      "owner": "io.github.libtmux.NotWrapped",
       "name": "get",
       "kind": "READ",
       "static": false,
@@ -104,6 +104,40 @@
       ],
       "returns": { "type": "java.util.Optional<java.lang.String>", "nullable": false },
       "javadoc": { "summary": "" }
+    },
+    {
+      "owner": "io.github.libtmux.Options",
+      "name": "effective",
+      "kind": "READ",
+      "static": false,
+      "varargs": false,
+      "parameters": [],
+      "returns": { "type": "java.util.Map<java.lang.String, java.lang.String>", "nullable": false },
+      "javadoc": { "summary": "Every option tmux lists at this scope, including inherited built-in values." }
+    },
+    {
+      "owner": "io.github.libtmux.Options",
+      "name": "set",
+      "kind": "MUTATION",
+      "static": false,
+      "varargs": false,
+      "typeParameters": [{ "name": "T", "bounds": [] }],
+      "parameters": [
+        { "name": "key", "type": "io.github.libtmux.OptionKey<T>", "nullable": false },
+        { "name": "value", "type": "T", "nullable": false }
+      ],
+      "returns": { "type": "void", "nullable": false },
+      "javadoc": { "summary": "As set(String, String), written the way tmux reads the key's type." }
+    },
+    {
+      "owner": "io.github.libtmux.Environment",
+      "name": "removed",
+      "kind": "READ",
+      "static": false,
+      "varargs": false,
+      "parameters": [],
+      "returns": { "type": "java.util.Set<java.lang.String>", "nullable": false },
+      "javadoc": { "summary": "Every name this scope tells a new process not to inherit." }
     },
     {
       "owner": "io.github.libtmux.Pane",
