@@ -1,3 +1,36 @@
+public final class io/github/libtmux/kotlin/Batch {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsJava ()Lio/github/libtmux/batch/Batch;
+	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
+	public fun hashCode ()I
+	public final fun length ()I
+	public final fun size ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/libtmux/kotlin/BatchOperationsKt {
+	public static final fun add (Lio/github/libtmux/kotlin/Batch;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun add (Lio/github/libtmux/kotlin/Batch;[Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun run (Lio/github/libtmux/kotlin/Batch;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class io/github/libtmux/kotlin/Buffers {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsJava ()Lio/github/libtmux/Buffers;
+	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/libtmux/kotlin/BuffersOperationsKt {
+	public static final fun delete (Lio/github/libtmux/kotlin/Buffers;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun list (Lio/github/libtmux/kotlin/Buffers;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun load (Lio/github/libtmux/kotlin/Buffers;Ljava/lang/String;Ljava/nio/file/Path;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun save (Lio/github/libtmux/kotlin/Buffers;Ljava/lang/String;Ljava/nio/file/Path;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun set (Lio/github/libtmux/kotlin/Buffers;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun show (Lio/github/libtmux/kotlin/Buffers;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
 public final class io/github/libtmux/kotlin/Client {
 	public static final field Companion Lio/github/libtmux/kotlin/Client$Companion;
 	public fun equals (Ljava/lang/Object;)Z
@@ -20,6 +53,38 @@ public final class io/github/libtmux/kotlin/ClientOperationsKt {
 	public static final fun redraw (Lio/github/libtmux/kotlin/Client;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun refresh (Lio/github/libtmux/kotlin/Client;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun switchTo (Lio/github/libtmux/kotlin/Client;Lio/github/libtmux/kotlin/Session;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class io/github/libtmux/kotlin/CommandChain {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsJava ()Lio/github/libtmux/CommandChain;
+	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/libtmux/kotlin/CommandChainOperationsKt {
+	public static final fun arrange (Lio/github/libtmux/kotlin/CommandChain;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun newWindow (Lio/github/libtmux/kotlin/CommandChain;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun renameWindow (Lio/github/libtmux/kotlin/CommandChain;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun run (Lio/github/libtmux/kotlin/CommandChain;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun sendLine (Lio/github/libtmux/kotlin/CommandChain;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun splitLeftRight (Lio/github/libtmux/kotlin/CommandChain;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun splitTopBottom (Lio/github/libtmux/kotlin/CommandChain;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun then (Lio/github/libtmux/kotlin/CommandChain;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun then (Lio/github/libtmux/kotlin/CommandChain;[Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class io/github/libtmux/kotlin/Commands {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsJava ()Lio/github/libtmux/Commands;
+	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/libtmux/kotlin/CommandsOperationsKt {
+	public static final fun list (Lio/github/libtmux/kotlin/Commands;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
 public final class io/github/libtmux/kotlin/ControlClient : java/lang/AutoCloseable {
@@ -47,6 +112,26 @@ public final class io/github/libtmux/kotlin/DslKt {
 	public static final fun newSession (Lio/github/libtmux/kotlin/Server;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
+public final class io/github/libtmux/kotlin/Environment {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsJava ()Lio/github/libtmux/Environment;
+	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/libtmux/kotlin/EnvironmentOperationsKt {
+	public static final fun all (Lio/github/libtmux/kotlin/Environment;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun effective (Lio/github/libtmux/kotlin/Environment;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun get (Lio/github/libtmux/kotlin/Environment;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun isRemoved (Lio/github/libtmux/kotlin/Environment;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun remove (Lio/github/libtmux/kotlin/Environment;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun removed (Lio/github/libtmux/kotlin/Environment;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun set (Lio/github/libtmux/kotlin/Environment;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun setExpanded (Lio/github/libtmux/kotlin/Environment;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun unset (Lio/github/libtmux/kotlin/Environment;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
 public final class io/github/libtmux/kotlin/ExecutionPolicy {
 	public static final field Companion Lio/github/libtmux/kotlin/ExecutionPolicy$Companion;
 	public synthetic fun <init> (Lkotlinx/coroutines/CoroutineDispatcher;Lkotlinx/coroutines/CoroutineDispatcher;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
@@ -70,6 +155,39 @@ public final class io/github/libtmux/kotlin/FiltersKt {
 	public static final fun not (Lio/github/libtmux/query/FilterExpr;)Lio/github/libtmux/query/FilterExpr;
 }
 
+public final class io/github/libtmux/kotlin/Hooks {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsJava ()Lio/github/libtmux/Hooks;
+	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/libtmux/kotlin/HooksOperationsKt {
+	public static final fun all (Lio/github/libtmux/kotlin/Hooks;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun append (Lio/github/libtmux/kotlin/Hooks;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun append (Lio/github/libtmux/kotlin/Hooks;Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun run (Lio/github/libtmux/kotlin/Hooks;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun set (Lio/github/libtmux/kotlin/Hooks;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun set (Lio/github/libtmux/kotlin/Hooks;Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun unset (Lio/github/libtmux/kotlin/Hooks;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class io/github/libtmux/kotlin/Keys {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsJava ()Lio/github/libtmux/Keys;
+	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
+	public fun hashCode ()I
+	public final fun in (Ljava/lang/String;)Lio/github/libtmux/kotlin/Keys;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/libtmux/kotlin/KeysOperationsKt {
+	public static final fun bind (Lio/github/libtmux/kotlin/Keys;Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun list (Lio/github/libtmux/kotlin/Keys;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun unbind (Lio/github/libtmux/kotlin/Keys;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
 public abstract interface annotation class io/github/libtmux/kotlin/LibTmuxDsl : java/lang/annotation/Annotation {
 }
 
@@ -80,9 +198,42 @@ public final class io/github/libtmux/kotlin/LiveStateKt {
 	public static synthetic fun withLiveState-1Y68eR8$default (Lio/github/libtmux/kotlin/Server;Lio/github/libtmux/kotlin/Session;JLkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
+public final class io/github/libtmux/kotlin/MessageLog {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsJava ()Lio/github/libtmux/MessageLog;
+	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/libtmux/kotlin/MessageLogOperationsKt {
+	public static final fun lines (Lio/github/libtmux/kotlin/MessageLog;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
 public final class io/github/libtmux/kotlin/OptionalsKt {
 	public static final fun orNull (Ljava/util/OptionalInt;)Ljava/lang/Integer;
 	public static final fun orNull (Ljava/util/OptionalLong;)Ljava/lang/Long;
+}
+
+public final class io/github/libtmux/kotlin/Options {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun get (Lio/github/libtmux/OptionKey;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun get (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getAsJava ()Lio/github/libtmux/Options;
+	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
+	public fun hashCode ()I
+	public final fun set (Lio/github/libtmux/OptionKey;Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun set (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/libtmux/kotlin/OptionsOperationsKt {
+	public static final fun all (Lio/github/libtmux/kotlin/Options;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun append (Lio/github/libtmux/kotlin/Options;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun effective (Lio/github/libtmux/kotlin/Options;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun setExpanded (Lio/github/libtmux/kotlin/Options;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun setIfAbsent (Lio/github/libtmux/kotlin/Options;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun unset (Lio/github/libtmux/kotlin/Options;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
 public final class io/github/libtmux/kotlin/Pane {
@@ -91,7 +242,7 @@ public final class io/github/libtmux/kotlin/Pane {
 	public static synthetic fun await-ePrTys8$default (Lio/github/libtmux/kotlin/Pane;JJLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun awaitText-jKevqZI (Ljava/lang/String;JJLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun awaitText-jKevqZI$default (Lio/github/libtmux/kotlin/Pane;Ljava/lang/String;JJLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public final fun batch ()Lio/github/libtmux/batch/Batch;
+	public final fun batch ()Lio/github/libtmux/kotlin/Batch;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getActive ()Z
 	public final fun getAsJava ()Lio/github/libtmux/Pane;
@@ -108,8 +259,8 @@ public final class io/github/libtmux/kotlin/Pane {
 	public final fun getTitle ()Ljava/lang/String;
 	public final fun getWindow ()Lio/github/libtmux/kotlin/Window;
 	public fun hashCode ()I
-	public final fun hooks ()Lio/github/libtmux/Hooks;
-	public final fun options ()Lio/github/libtmux/Options;
+	public final fun hooks ()Lio/github/libtmux/kotlin/Hooks;
+	public final fun options ()Lio/github/libtmux/kotlin/Options;
 	public final fun run-dWUq8MI (Ljava/lang/String;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun run-dWUq8MI$default (Lio/github/libtmux/kotlin/Pane;Ljava/lang/String;JLkotlinx/coroutines/CoroutineDispatcher;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public fun toString ()Ljava/lang/String;
@@ -157,6 +308,19 @@ public final class io/github/libtmux/kotlin/PaneOperationsKt {
 	public static final fun variables (Lio/github/libtmux/kotlin/Pane;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
+public final class io/github/libtmux/kotlin/Prompt {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsJava ()Lio/github/libtmux/Prompt;
+	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/libtmux/kotlin/PromptOperationsKt {
+	public static final fun clear (Lio/github/libtmux/kotlin/Prompt;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun history (Lio/github/libtmux/kotlin/Prompt;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
 public final class io/github/libtmux/kotlin/RetryKt {
 	public static final fun retryIfSafe (ILkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun retryIfSafe$default (ILkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
@@ -171,31 +335,31 @@ public final class io/github/libtmux/kotlin/ScopesKt {
 
 public final class io/github/libtmux/kotlin/Server : java/lang/AutoCloseable {
 	public static final field Companion Lio/github/libtmux/kotlin/Server$Companion;
-	public final fun batch ()Lio/github/libtmux/batch/Batch;
-	public final fun buffers ()Lio/github/libtmux/Buffers;
-	public final fun chain ()Lio/github/libtmux/CommandChain;
+	public final fun batch ()Lio/github/libtmux/kotlin/Batch;
+	public final fun buffers ()Lio/github/libtmux/kotlin/Buffers;
+	public final fun chain ()Lio/github/libtmux/kotlin/CommandChain;
 	public final fun channel (Ljava/lang/String;)Lio/github/libtmux/Channel;
 	public fun close ()V
-	public final fun commands ()Lio/github/libtmux/Commands;
+	public final fun commands ()Lio/github/libtmux/kotlin/Commands;
 	public final fun control-8Mi8wO0 (Lio/github/libtmux/kotlin/Session;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun control-8Mi8wO0$default (Lio/github/libtmux/kotlin/Server;Lio/github/libtmux/kotlin/Session;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public final fun environment ()Lio/github/libtmux/Environment;
+	public final fun environment ()Lio/github/libtmux/kotlin/Environment;
 	public final fun getAdmissionBound ()I
 	public final fun getAsJava ()Lio/github/libtmux/Server;
 	public final fun getConfig ()Lio/github/libtmux/ServerConfig;
 	public final fun getIdentity ()Lio/github/libtmux/ServerIdentity;
 	public final fun getPolicy ()Lio/github/libtmux/kotlin/ExecutionPolicy;
-	public final fun globalOptions ()Lio/github/libtmux/Options;
-	public final fun hooks ()Lio/github/libtmux/Hooks;
-	public final fun keys ()Lio/github/libtmux/Keys;
-	public final fun messageLog ()Lio/github/libtmux/MessageLog;
-	public final fun options ()Lio/github/libtmux/Options;
+	public final fun globalOptions ()Lio/github/libtmux/kotlin/Options;
+	public final fun hooks ()Lio/github/libtmux/kotlin/Hooks;
+	public final fun keys ()Lio/github/libtmux/kotlin/Keys;
+	public final fun messageLog ()Lio/github/libtmux/kotlin/MessageLog;
+	public final fun options ()Lio/github/libtmux/kotlin/Options;
 	public final fun pane (Lio/github/libtmux/query/FilterExpr;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun paneOrNull (Lio/github/libtmux/query/FilterExpr;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public final fun prompt ()Lio/github/libtmux/Prompt;
+	public final fun prompt ()Lio/github/libtmux/kotlin/Prompt;
 	public final fun session (Lio/github/libtmux/query/FilterExpr;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun sessionOrNull (Lio/github/libtmux/query/FilterExpr;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public final fun shell ()Lio/github/libtmux/Shell;
+	public final fun shell ()Lio/github/libtmux/kotlin/Shell;
 	public final fun window (Lio/github/libtmux/query/FilterExpr;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun windowOrNull (Lio/github/libtmux/query/FilterExpr;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
@@ -245,7 +409,7 @@ public final class io/github/libtmux/kotlin/ServerOperationsKt {
 
 public final class io/github/libtmux/kotlin/Session {
 	public static final field Companion Lio/github/libtmux/kotlin/Session$Companion;
-	public final fun environment ()Lio/github/libtmux/Environment;
+	public final fun environment ()Lio/github/libtmux/kotlin/Environment;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getActivePane ()Lio/github/libtmux/kotlin/Pane;
 	public final fun getActiveWindow ()Lio/github/libtmux/kotlin/Window;
@@ -256,8 +420,8 @@ public final class io/github/libtmux/kotlin/Session {
 	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
 	public final fun getWindows ()Ljava/util/List;
 	public fun hashCode ()I
-	public final fun hooks ()Lio/github/libtmux/Hooks;
-	public final fun options ()Lio/github/libtmux/Options;
+	public final fun hooks ()Lio/github/libtmux/kotlin/Hooks;
+	public final fun options ()Lio/github/libtmux/kotlin/Options;
 	public fun toString ()Ljava/lang/String;
 }
 
@@ -265,6 +429,7 @@ public final class io/github/libtmux/kotlin/Session$Companion {
 }
 
 public final class io/github/libtmux/kotlin/SessionBuilder {
+	public final fun env (Ljava/lang/String;Ljava/lang/String;)V
 	public final fun getDirectory ()Ljava/nio/file/Path;
 	public final fun getName ()Ljava/lang/String;
 	public final fun running ([Ljava/lang/String;)V
@@ -288,10 +453,26 @@ public final class io/github/libtmux/kotlin/SessionOperationsKt {
 	public static final fun setHistoryLimit (Lio/github/libtmux/kotlin/Session;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
+public final class io/github/libtmux/kotlin/Shell {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsJava ()Lio/github/libtmux/Shell;
+	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/libtmux/kotlin/ShellOperationsKt {
+	public static final fun capturing (Lio/github/libtmux/kotlin/Shell;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun choose (Lio/github/libtmux/kotlin/Shell;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun choose (Lio/github/libtmux/kotlin/Shell;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun run (Lio/github/libtmux/kotlin/Shell;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
 public final class io/github/libtmux/kotlin/SplitBuilder {
 	public final fun above ()V
 	public final fun below ()V
 	public final fun cells (I)V
+	public final fun env (Ljava/lang/String;Ljava/lang/String;)V
 	public final fun getDirectory ()Ljava/nio/file/Path;
 	public final fun percent (I)V
 	public final fun setDirectory (Ljava/nio/file/Path;)V
@@ -323,8 +504,8 @@ public final class io/github/libtmux/kotlin/Window {
 	public final fun getSession ()Lio/github/libtmux/kotlin/Session;
 	public final fun getSize ()Lio/github/libtmux/Dimensions;
 	public fun hashCode ()I
-	public final fun hooks ()Lio/github/libtmux/Hooks;
-	public final fun options ()Lio/github/libtmux/Options;
+	public final fun hooks ()Lio/github/libtmux/kotlin/Hooks;
+	public final fun options ()Lio/github/libtmux/kotlin/Options;
 	public fun toString ()Ljava/lang/String;
 }
 
@@ -332,6 +513,7 @@ public final class io/github/libtmux/kotlin/Window$Companion {
 }
 
 public final class io/github/libtmux/kotlin/WindowBuilder {
+	public final fun env (Ljava/lang/String;Ljava/lang/String;)V
 	public final fun getDirectory ()Ljava/nio/file/Path;
 	public final fun getName ()Ljava/lang/String;
 	public final fun running ([Ljava/lang/String;)V

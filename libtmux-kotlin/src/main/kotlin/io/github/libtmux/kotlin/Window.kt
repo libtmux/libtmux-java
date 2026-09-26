@@ -1,8 +1,6 @@
 package io.github.libtmux.kotlin
 
 import io.github.libtmux.Dimensions
-import io.github.libtmux.Hooks
-import io.github.libtmux.Options
 import io.github.libtmux.WindowId
 import io.github.libtmux.WindowIndex
 import io.github.libtmux.WindowLayout
@@ -54,10 +52,10 @@ public class Window internal constructor(internal val java: JavaWindow, public v
     public val panes: List<Pane> get() = java.panes().map { Pane(it, server) }
 
     /** This window's own hooks, which every link to it shares. */
-    public fun hooks(): Hooks = java.hooks()
+    public fun hooks(): Hooks = Hooks(java.hooks(), server)
 
     /** This window's own options, which every link to it shares. */
-    public fun options(): Options = java.options()
+    public fun options(): Options = Options(java.options(), server)
 
     override fun equals(other: Any?): Boolean = other is Window && java == other.java
 

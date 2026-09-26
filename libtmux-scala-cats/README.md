@@ -89,6 +89,16 @@ Server.resource[IO](config).use { server =>
 `droppedCount` and reacquire a snapshot when it increases; an event stream
 cannot reconstruct dropped state. A subscription does not reconnect.
 
+## Subsystem handles run through the same execution boundary
+
+`Server.hooks`, `Pane.options`, `Server.shell`, `Server.commands`,
+`Server.buffers`, `Session.environment`, `Server.messageLog`, `Server.prompt`,
+and `Server.keys` each answer a small wrapper class parameterized by `F[_]`,
+not the raw Java handle: their own reads and mutations run through this
+server's `Execution` like every other Cats operation, admission-bounded and
+cancellable. The direct-style facade keeps returning the raw Java handle for
+these, since it is blocking by design.
+
 ## Documentation
 
 The [Scala guides](../docs/guide/scala/getting-started.md) cover installation,

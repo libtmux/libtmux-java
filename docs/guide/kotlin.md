@@ -15,6 +15,13 @@ handle type's companion (`Pane.command`), never as an instance member, so
 `Pane.command` (the field) and `pane.currentCommand` (the captured value)
 never collide.
 
+A tmux subsystem an accessor answers — `Pane.options()`, `Server.hooks()`,
+`Server.shell()`, `Server.commands()`, `Server.buffers()`,
+`Session.environment()`, `Server.messageLog()`, `Server.prompt()`,
+`Server.keys()`, `Server.batch()`, `Server.chain()` — is wrapped the same way:
+a small Kotlin class over the Java handle, whose own operations are `suspend`
+in turn.
+
 ```kotlin
 // Given: config: ServerConfig
 withServer(config) { server ->
@@ -102,6 +109,11 @@ tmux's `SplitSpec.Builder` spells direction and size as method calls —
 `below()`/`above()`/`toRight()`/`toLeft()`, `cells(n)`/`percent(n)` — not an
 enum. The DSL forwards to that real vocabulary directly rather than inventing
 a parallel `SplitDirection`/`PaneSize` type.
+
+`env(name, value)` is on `SessionBuilder`, `WindowBuilder`, and `SplitBuilder`
+alike, matching the Java `SessionSpec.Builder`/`WindowSpec.Builder`/
+`SplitSpec.Builder` each has, and sets a variable in the environment the new
+session, window, or pane's process starts with.
 
 ## Why nothing in Java may depend on this
 

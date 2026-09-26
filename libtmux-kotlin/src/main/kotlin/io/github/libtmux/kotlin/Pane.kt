@@ -1,14 +1,11 @@
 package io.github.libtmux.kotlin
 
 import io.github.libtmux.Dimensions
-import io.github.libtmux.Hooks
-import io.github.libtmux.Options
 import io.github.libtmux.PaneEdges
 import io.github.libtmux.PaneId
 import io.github.libtmux.PaneRun
 import io.github.libtmux.PanePosition
 import io.github.libtmux.TextOutcome
-import io.github.libtmux.batch.Batch
 import io.github.libtmux.WakeReason
 import java.nio.file.Path
 import kotlin.time.Duration
@@ -68,13 +65,13 @@ public class Pane internal constructor(internal val java: JavaPane, public val s
     public val window: Window get() = Window(java.window(), server)
 
     /** Collects commands fenced to the server incarnation that produced this pane. */
-    public fun batch(): Batch = java.batch()
+    public fun batch(): Batch = Batch(java.batch(), server)
 
     /** This pane's own hooks. */
-    public fun hooks(): Hooks = java.hooks()
+    public fun hooks(): Hooks = Hooks(java.hooks(), server)
 
     /** This pane's own options. */
-    public fun options(): Options = java.options()
+    public fun options(): Options = Options(java.options(), server)
 
     /**
      * Waits until [text] shows in this pane.

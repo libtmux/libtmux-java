@@ -31,7 +31,10 @@ dependencies {
 `Server`, `Session`, `Window`, `Pane`, `Client`, and `ControlClient` here are
 Kotlin classes over the matching Java handle, which each answers as `asJava`;
 `Server.fromJava` wraps a server opened in Java. Every operation that reaches
-tmux is `suspend`; captured state is a plain property.
+tmux is `suspend`; captured state is a plain property. A tmux subsystem an
+accessor answers — `Pane.options()`, `Server.hooks()`, `Server.keys()`, and
+the rest — is wrapped the same way, so calling into it never blocks the
+caller's thread outside `ExecutionPolicy`.
 `withServer` opens one and closes it even if the block throws or is
 cancelled:
 

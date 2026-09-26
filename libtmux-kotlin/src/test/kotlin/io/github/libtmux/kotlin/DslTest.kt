@@ -89,6 +89,47 @@ class DslTest {
     }
 
     @Test
+    fun `env sets a variable in the new session's environment`(javaServer: JavaServer) = runBlocking {
+        val server = Server.open(javaServer.config())
+
+        val session = server.newSession {
+            name = "dsl-env"
+            env("LIBTMUX_DSL_TEST", "one")
+        }
+
+        assertEquals("one", session.environment().get("LIBTMUX_DSL_TEST"))
+    }
+
+    /**
+     * `env` on [WindowBuilder] and [SplitBuilder] configures the spawned process's environment
+     * directly, through `WindowSpec.Builder`/`SplitSpec.Builder`, so it has no persistent
+     * `Environment` view to read back; this only proves the DSL exposes it, as [DslTest] otherwise
+     * exercises builder methods through real tmux rather than a compile fixture.
+     */
+    @Test
+    fun `env is also settable on a window and a split block`() {
+        val fixture = """
+            import io.github.libtmux.kotlin.Server
+            import io.github.libtmux.kotlin.newSession
+
+            fun use(server: Server) {
+                suspend fun body() {
+                    server.newSession {
+                        window {
+                            env("A", "1")
+                            split { env("B", "2") }
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val result = KotlincHarness.compile(fixture)
+
+        assertTrue(result.succeeded, "expected env(name, value) on WindowBuilder and SplitBuilder to compile:\n${result.diagnostics}")
+    }
+
+    @Test
     fun `a directory set on both the session and its first window is refused`(javaServer: JavaServer) =
         runBlocking {
             val server = Server.open(javaServer.config())
