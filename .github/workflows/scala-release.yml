@@ -37,9 +37,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      # Staged artifacts, installed sbt and Gradle consumers, and the release version and the oldest
-      # supported compiler ran in the Scala compatibility workflow for this commit; this job re-runs
-      # only the source tests.
+      # Staged artifacts, installed sbt and Gradle consumers, and the release version ran in the
+      # Scala compatibility workflow for this commit; this job re-runs only the source tests.
       - name: Require this commit's Scala compatibility run to have passed
         env:
           GH_TOKEN: ${{ github.token }}
@@ -74,9 +73,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y tmux
 
-      # What is signed is what was tested: the released Scala version and the
-      # oldest supported compiler, against the published Java dependency,
-      # before any key is imported.
+      # What is signed is what was tested: the released Scala version, against the published Java
+      # dependency, before any key is imported. A 3.3.8 compiler cannot read this build's own 3.9
+      # TASTy, so 3.3.8 is not a second pass here — it is not a usable compiler for this source at
+      # all once anything depends on 3.9-emitted output.
       - name: Test against the published Java dependency
         env:
           LIBTMUX_SCALA_RELEASE: central
@@ -85,9 +85,7 @@ jobs:
         run: |
           TMUX_TEST_BINARY="$(command -v tmux)"
           export TMUX_TEST_BINARY
-          ./libtmux-scala/sbtw \
-            core/test cats/test integration/test examples/test \
-            '++3.3.8' core/test cats/test integration/test examples/test
+          ./libtmux-scala/sbtw core/test cats/test integration/test examples/test
 
       - name: Carry the passphrase only if the key has one
         env:

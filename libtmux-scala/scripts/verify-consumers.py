@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 MODULES = tuple(
     f"{name}_3" for name in ("libtmux-scala", "libtmux-scala-cats")
 )
-SCALAS = ("3.3.8", "3.9.0")
+SCALAS = ("3.9.0",)
 GROUP = "io.github.libtmux"
 POM = {"m": "http://maven.apache.org/POM/4.0.0"}
 

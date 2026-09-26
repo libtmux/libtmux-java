@@ -9,12 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       include_macos_release:
-        description: 'Run the manual P08 macOS release cell'
+        description: 'Run the manual P08 and P09 macOS release cells'
         required: false
         default: false
         type: boolean
       include_macos_consumers:
-        description: 'Run the manual C02 through C07 macOS consumer cells'
+        description: 'Run the manual C04 and C07 macOS consumer cells'
         required: false
         default: false
         type: boolean
@@ -162,132 +162,6 @@ jobs:
           path: libtmux-scala/target
           retention-days: 7
 
-  producer-runtime:
-    if: github.event_name != 'workflow_dispatch' || (!inputs.include_macos_release && !inputs.include_macos_consumers)
-    name: ${{ matrix.id }} (${{ matrix.os }}, JDK 25, Scala 3.3.8, tmux 3.7c)
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - id: R01
-            os: ubuntu-latest
-          - id: R02
-            os: macos-latest
-    env:
-      TMUX_LANE: 3.7c
-      TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
-      LIBTMUX_JAVA_REPOSITORY: ${{ github.workspace }}/libtmux-scala/target/java-repository
-      LIBTMUX_SCALA_STAGING: ${{ github.workspace }}/libtmux-scala/target/staging
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
-        with:
-          distribution: temurin
-          java-version: '25'
-
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
-        with:
-          validate-wrappers: true
-
-      - name: Install Linux tmux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
-            build-essential \
-            libevent-dev \
-            libncurses-dev \
-            pkg-config
-
-      - name: Install macOS tmux build dependencies
-        if: runner.os == 'macOS'
-        run: brew install libevent ncurses pkg-config utf8proc jemalloc
-
-      - name: Restore tmux 3.7c
-        id: tmux-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ${{ env.TMUX_PREFIX }}
-          key: scala-tmux-${{ env.TMUX_LANE }}-${{ runner.os }}-${{ runner.arch }}
-
-      - name: Build tmux 3.7c
-        if: steps.tmux-cache.outputs.cache-hit != 'true'
-        run: |
-          work="$(mktemp -d)"
-          trap 'rm -rf "$work"' EXIT
-          curl -fsSL -o "$work/tmux.tar.gz" "https://github.com/tmux/tmux/releases/download/$TMUX_LANE/tmux-$TMUX_LANE.tar.gz"
-          tar -xzf "$work/tmux.tar.gz" -C "$work"
-          cd "$work/tmux-$TMUX_LANE"
-          if [ "$(uname)" = Darwin ]; then
-            event_prefix="$(brew --prefix libevent)"
-            ncurses_prefix="$(brew --prefix ncurses)"
-            utf8proc_prefix="$(brew --prefix utf8proc)"
-            jemalloc_prefix="$(brew --prefix jemalloc)"
-            export PKG_CONFIG_PATH="$event_prefix/lib/pkgconfig:$ncurses_prefix/lib/pkgconfig:$utf8proc_prefix/lib/pkgconfig:$jemalloc_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-            export CPPFLAGS="-I$event_prefix/include -I$ncurses_prefix/include -I$utf8proc_prefix/include${CPPFLAGS:+ $CPPFLAGS}"
-            export LDFLAGS="-L$event_prefix/lib -L$ncurses_prefix/lib -L$utf8proc_prefix/lib -L$jemalloc_prefix/lib${LDFLAGS:+ $LDFLAGS}"
-            ./configure --prefix="$TMUX_PREFIX" --enable-utf8proc --enable-jemalloc
-          else
-            ./configure --prefix="$TMUX_PREFIX"
-          fi
-          make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)"
-          make install
-
-      - name: Verify tmux 3.7c
-        run: |
-          "$TMUX_PREFIX/bin/tmux" -V | grep -Fx "tmux $TMUX_LANE"
-
-      - name: Stage the Java prerequisite
-        run: ./libtmux-scala/scripts/stage-java.sh
-
-      - name: Run Scala checks
-        env:
-          TMUX_TEST_BINARY: ${{ env.TMUX_PREFIX }}/bin/tmux
-        run: |
-          libtmux-scala/sbtw \
-            '++3.3.8' \
-            scalafmtSbtCheck \
-            scalafmtCheckAll \
-            core/test \
-            cats/test \
-            integration/test \
-            examples/test \
-            core/doc \
-            cats/doc \
-            core/package \
-            cats/package \
-            benchmarks/compile
-
-      - name: No tmux server outlived the cell
-        if: always() && runner.os == 'Linux'
-        run: |
-          left="$(pgrep -c tmux || true)"
-          if [ "${left:-0}" -ne 0 ]; then
-            echo "::error::$left tmux server(s) survived ${{ matrix.id }}"
-            for process in $(pgrep tmux); do tr '\0' ' ' < "/proc/$process/cmdline"; echo; done
-            exit 1
-          fi
-
-      - name: No tmux server outlived the cell
-        if: always() && runner.os == 'macOS'
-        run: |
-          left="$(pgrep -c tmux || true)"
-          if [ "${left:-0}" -ne 0 ]; then
-            echo "::error::$left tmux server(s) survived ${{ matrix.id }}"
-            for process in $(pgrep tmux); do ps -o command= -p "$process"; done
-            exit 1
-          fi
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: failure()
-        with:
-          name: scala-runtime-${{ matrix.id }}-${{ github.sha }}
-          path: libtmux-scala/target
-          retention-days: 7
-
   manual-macos-consumers:
     if: github.event_name == 'workflow_dispatch' && inputs.include_macos_consumers
     name: ${{ matrix.id }} (manual macOS consumer, JDK ${{ matrix.java }}, Scala ${{ matrix.scala }}, tmux 3.7c)
@@ -299,15 +173,9 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - id: C03
-            java: '25'
-            scala: 3.3.8
           - id: C04
             java: '25'
             scala: 3.9.0
-          - id: C06
-            java: '27'
-            scala: 3.3.8
           - id: C07
             java: '27'
             scala: 3.9.0
@@ -409,14 +277,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The release version and the oldest supported compiler, installed, on every commit: a
-        # release is gated on this run, so a cell that only the manual macOS dispatch exercised was
-        # never release evidence.
+        # The release version, installed, on every commit: a release is gated on this run, so a
+        # cell that only the manual macOS dispatch exercised was never release evidence.
         include:
           - id: C01
             scala: 3.9.0
-          - id: C08
-            scala: 3.3.8
     env:
       TMUX_LANE: 3.7c
       TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
@@ -516,8 +381,11 @@ jobs:
       matrix:
         include:
           - id: P08
+            java: '25'
+            scala: 3.9.0
+          - id: P09
             java: '27'
-            scala: 3.3.8
+            scala: 3.9.0
     env:
       TMUX_LANE: 3.7c
       TMUX_PREFIX: ${{ github.workspace }}/.ci-tmux/3.7c
@@ -612,20 +480,18 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [artifact-stage, producer-runtime, installed-consumers]
+    needs: [artifact-stage, installed-consumers]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Every routine job succeeded
         env:
           ARTIFACT_STAGE: ${{ needs['artifact-stage'].result }}
-          PRODUCER_RUNTIME: ${{ needs['producer-runtime'].result }}
           INSTALLED_CONSUMERS: ${{ needs['installed-consumers'].result }}
         run: |
           echo "artifact-stage: $ARTIFACT_STAGE"
-          echo "producer-runtime: $PRODUCER_RUNTIME"
           echo "installed-consumers: $INSTALLED_CONSUMERS"
-          for result in "$ARTIFACT_STAGE" "$PRODUCER_RUNTIME" "$INSTALLED_CONSUMERS"; do
+          for result in "$ARTIFACT_STAGE" "$INSTALLED_CONSUMERS"; do
             if [ "$result" != success ]; then
               echo "::error::a routine job did not succeed; this run does not cover the commit"
               exit 1
