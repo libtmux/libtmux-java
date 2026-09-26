@@ -1,5 +1,6 @@
 // Wires field-catalog.tsv into the Java field metamodel it generates. Applied by :libtmux only:
 // Pane_/Session_/Window_/Client_ are that module's own query DSL, not a shape another module emits.
+import com.diffplug.gradle.spotless.SpotlessExtension
 import io.github.libtmux.buildlogic.catalog.GenerateFieldMetamodel
 
 val generateFieldMetamodel =
@@ -13,3 +14,6 @@ val generateFieldMetamodel =
 extensions.getByType<JavaPluginExtension>().sourceSets.named("main") {
     java.srcDir(generateFieldMetamodel.map { it.outputDirectory })
 }
+
+// Generated, not authored: spotless polices style choices a human made, which nobody made here.
+extensions.configure<SpotlessExtension> { java { targetExclude("build/generated/sources/fieldCatalog/**") } }
