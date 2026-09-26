@@ -70,6 +70,47 @@ object BuildSupport {
       }
     }
 
+  /** Reads one entry out of a staged Java artifact's jar (a Maven snapshot's
+    * real filename carries a timestamp, so this finds it by prefix rather than
+    * assuming the plain coordinate name).
+    */
+  def readStagedJarEntry(
+      javaRepository: File,
+      version: String,
+      artifact: String,
+      entryPath: String
+  ): String = {
+    val directory =
+      javaRepository / "io" / "github" / "libtmux" / artifact / version
+    val jar = IO
+      .listFiles(directory, GlobFilter(s"$artifact-*.jar"))
+      .filterNot(file =>
+        file.getName.contains("-sources") || file.getName.contains("-javadoc")
+      )
+      .headOption
+      .getOrElse(
+        sys.error(
+          s"no staged $artifact jar in $directory; run scripts/stage-java.sh"
+        )
+      )
+    val zip = new java.util.zip.ZipFile(jar)
+    try {
+      val entry = Option(zip.getEntry(entryPath))
+        .getOrElse(
+          sys.error(
+            s"$entryPath is missing from $jar; run scripts/stage-java.sh"
+          )
+        )
+      val input = zip.getInputStream(entry)
+      try
+        new String(
+          input.readAllBytes(),
+          java.nio.charset.StandardCharsets.UTF_8
+        )
+      finally input.close()
+    } finally zip.close()
+  }
+
   def requirePublishedJava(version: String): Unit = {
     require(
       !version.endsWith("-SNAPSHOT") && !version.contains("-scala-dev."),
