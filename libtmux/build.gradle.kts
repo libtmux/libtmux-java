@@ -25,7 +25,7 @@ dependencies {
     testImplementation(libs.reactive.streams.tck.flow)
     testRuntimeOnly(libs.testng.engine)
 
-    catalogDoclet(project(":catalog-doclet"))
+    catalogDoclet("io.github.libtmux.build:catalog-doclet")
 }
 
 // The core resolves nothing at runtime. Anything that would change that belongs in another module.

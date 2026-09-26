@@ -13,6 +13,9 @@ dependencyResolutionManagement {
 
 rootProject.name = "libtmux-java"
 
+// Also a library build: :libtmux resolves the operation-catalog Doclet from it by coordinates.
+includeBuild("build-logic")
+
 // Published.
 include("libtmux")
 include("libtmux-bom")
@@ -24,9 +27,7 @@ include("libtmux-mcp")
 
 // Internal: exercised by the build, never released.
 include("benchmarks")
-include("catalog-doclet")
 include("docs-tests")
 include("examples")
 include("integration-tests")
 include("tools:mcp-swap")
-include("tools:kotlin-operation-codegen")
