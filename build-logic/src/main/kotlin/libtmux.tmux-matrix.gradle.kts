@@ -37,6 +37,13 @@ fun registerLane(lane: String) =
         // Declared so the suite can check it got the tmux this lane is named after. Without it a
         // lane that ignored the binary would run against whatever is on PATH and still be green.
         systemProperty("libtmux.tmux.expected", lane)
+        // A bare `tmux` is this lane's build too. Code that names only a socket, as a reader's
+        // does, takes the binary from PATH, and a client of another release talking to this lane's
+        // server makes the server exit.
+        val path = providers.environmentVariable("PATH")
+        doFirst {
+            environment("PATH", File(binary.get()).parent + File.pathSeparator + path.getOrElse(""))
+        }
         onlyIf {
             require(matrix.isPresent) {
                 "no tmux matrix configured; set -PlibtmuxMatrix=<dir> to a tree of tmux builds"
