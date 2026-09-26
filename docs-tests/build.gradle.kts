@@ -4,9 +4,14 @@
 // without anything saying so. This module puts every Java fence in the READMEs and guides through
 // javac against the real artifacts, so a snippet that stopped working fails the build.
 //
+// Scala fences run the same way, as a munit suite generated from the documents: each fence is
+// classified by the directive above it, and an unclassified one fails the build.
+//
 // Depends on every published module because the documentation does.
+import io.github.libtmux.buildlogic.GenerateScalaDocumentationSuite
+
 plugins {
-    id("libtmux.java-library")
+    id("libtmux.scala-library")
     id("libtmux.tmux-matrix")
 }
 
@@ -16,7 +21,20 @@ dependencies {
     testImplementation(project(":libtmux-junit5"))
     testImplementation(project(":libtmux-mcp"))
     testImplementation(project(":libtmux-workspace"))
+    testImplementation(project(":libtmux-scala"))
+    testImplementation(project(":libtmux-scala-cats"))
+    testImplementation(testFixtures(project(":integration-tests")))
 }
+
+val generateScalaDocumentationSuite =
+    tasks.register<GenerateScalaDocumentationSuite>("generateScalaDocumentationSuite") {
+        description = "Turns every Scala fence in the documentation into a munit test."
+        group = "build"
+        root = rootProject.layout.projectDirectory
+        outputDirectory = layout.buildDirectory.dir("generated/sources/documentation/scala")
+    }
+
+sourceSets.test { scala.srcDir(generateScalaDocumentationSuite.map { it.outputDirectory }) }
 
 // The snippets are compiled against the compile classpath, which the compiler has to be told about
 // explicitly: it runs in-process and does not inherit Gradle's. Compile rather than runtime because
@@ -32,7 +50,7 @@ tasks.withType<Test>().configureEach {
     val root = rootProject.layout.projectDirectory
     val documents =
         rootProject.fileTree(root) {
-            include("README.md", "MIGRATION.md", "*/README.md", "docs/guide/*.md", "docs/parity/*.md")
+            include("README.md", "MIGRATION.md", "*/README.md", "docs/guide/**/*.md", "docs/parity/*.md")
         }
 
     // The sources too: two gates here read them — for tracker ids, and for the methods that say
@@ -56,4 +74,5 @@ tasks.withType<Test>().configureEach {
 
     doFirst { systemProperty("libtmux.docs.classpath", classpath.asPath) }
     systemProperty("libtmux.docs.root", root.asFile.path)
+    systemProperty("libtmux.scala.docs.root", root.asFile.path)
 }

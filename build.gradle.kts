@@ -29,11 +29,23 @@ val platformCoversEveryPublishedModule =
                 }
                 .toSortedSet()
         }
+        // A constraint names a project; what the platform's POM manages is that project's published
+        // artifact, whose id can differ from the project name (a Scala artifact's _3 suffix).
         val managed = provider {
             platform.configurations
                 .getByName("api")
                 .dependencyConstraints
-                .map { "${it.group}:${it.name}:${it.version}" }
+                .map { constraint ->
+                    val artifactId = rootProject.findProject(":${constraint.name}")
+                        ?.extensions
+                        ?.findByType(PublishingExtension::class.java)
+                        ?.publications
+                        ?.withType(MavenPublication::class.java)
+                        ?.firstOrNull()
+                        ?.artifactId
+                        ?: constraint.name
+                    "${constraint.group}:$artifactId:${constraint.version}"
+                }
                 .toSortedSet()
         }
 

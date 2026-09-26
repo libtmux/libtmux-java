@@ -205,6 +205,11 @@ production.
   guidance](MIGRATION.md#libtmux-kotlin-is-wrapper-classes-now-not-extensions-on-the-java-types).
   (#23)
 
+- **The Scala artifacts release with the Java ones, at the same version, and
+  `libtmux-bom` manages them.** `libtmux-scala_3`, `libtmux-scala-cats_3` and
+  `libtmux-scala-ox_3` publish from the same tag and Central deployment as
+  `libtmux`, so one BOM version selects a matching Java and Scala set. (#24)
+
 - **The Scala facades are Scala 3.9 only, over opaque handles.**
   `io.github.libtmux.scaladsl.Server`, `Session`, `Window`, `Pane` and
   `Client` are the Java handles under opaque types, with `.asJava` as the way
