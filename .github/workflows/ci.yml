@@ -67,10 +67,14 @@ jobs:
           sudo apt-get install --no-install-recommends -y tmux
           tmux -V
 
+      # Gradle itself runs on the baseline in every lane: its plugins, the formatter among them,
+      # reach into javac internals a newer JDK is free to change. The lane's JDK runs the tests.
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
-          java-version: ${{ matrix.java }}
+          java-version: |
+            ${{ matrix.java }}
+            25
 
       - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
@@ -86,7 +90,8 @@ jobs:
           "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
           echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
 
-      - run: ./gradlew :libtmux-mcp:test check --stacktrace --continue
+      # Runs every check task instead of stopping at the first failure, so one run names them all.
+      - run: ./gradlew :libtmux-mcp:test check --stacktrace --continue -Plibtmux.testJdk=${{ matrix.java }}
 
       # A real-tmux suite that leaves servers running would be invisible here and expensive on a
       # developer's machine. The runner is discarded either way, so this is the only place the
