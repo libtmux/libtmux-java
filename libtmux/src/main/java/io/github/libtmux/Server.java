@@ -1,6 +1,8 @@
 package io.github.libtmux;
 
 import io.github.libtmux.batch.Batch;
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.exception.CardinalityException;
 import io.github.libtmux.exception.CommandRejectedException;
@@ -117,6 +119,7 @@ public final class Server implements AutoCloseable {
      * refuses the name, and 3.7a onwards keeps it — where it then cannot address the session,
      * because a target splits on both. {@link Session#name()} reports what tmux settled on.
      */
+    @Operation(Kind.MUTATION)
     public Session newSession(String name) {
         return newSession(SessionSpec.builder().named(name).build());
     }
@@ -131,6 +134,7 @@ public final class Server implements AutoCloseable {
      * @param configure receives a builder holding tmux's defaults
      * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
+    @Operation(Kind.MUTATION)
     public Session newSession(Consumer<SessionSpec.Builder> configure) {
         SessionSpec.Builder builder = SessionSpec.builder();
         configure.accept(builder);
@@ -142,6 +146,7 @@ public final class Server implements AutoCloseable {
      *
      * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
+    @Operation(Kind.MUTATION)
     public Session newSession(SessionSpec spec) {
         CommandResult result = run(spec.argv("#{session_id}", () -> SessionCreation.versionForCreation(this)));
         List<String> reported = result.stdout();
@@ -160,6 +165,7 @@ public final class Server implements AutoCloseable {
      *
      * @throws ServerUnavailableException if no daemon is running
      */
+    @Operation(Kind.READ)
     public boolean hasSession(String name) {
         Objects.requireNonNull(name, "name");
         return SessionLookup.named(this, name).isPresent();
@@ -173,6 +179,7 @@ public final class Server implements AutoCloseable {
      *
      * @throws LibTmuxException if no session carries the name
      */
+    @Operation(Kind.MUTATION)
     public void killSession(String name) {
         Objects.requireNonNull(name, "name");
         SessionId id =
@@ -185,6 +192,7 @@ public final class Server implements AutoCloseable {
      *
      * <p>Returns false when tmux refuses the probe. Transport failures still throw.
      */
+    @Operation(Kind.READ)
     public boolean isAlive() {
         return isAlive(config.defaultTimeout());
     }
@@ -198,6 +206,7 @@ public final class Server implements AutoCloseable {
      *
      * @param timeout how long to wait for an answer before treating the server as unreachable
      */
+    @Operation(Kind.READ)
     public boolean isAlive(Duration timeout) {
         return cmd(List.of("display-message", "-p", "#{pid}"), timeout).succeeded();
     }
@@ -209,6 +218,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if one is, and could not be reached — a socket this user cannot
      *     open, or a binary that is not tmux, which starting a server would not fix
      */
+    @Operation(Kind.READ)
     public void requireAlive() {
         CommandResult result = cmd(List.of("display-message", "-p", "#{pid}"), config.defaultTimeout());
         if (result.succeeded()) {
@@ -280,6 +290,7 @@ public final class Server implements AutoCloseable {
      * postcondition is checked rather than the wording, which has changed before and says nothing
      * a second look cannot answer better.
      */
+    @Operation(Kind.MUTATION)
     public void killServer() {
         killServer(config.defaultTimeout());
     }
@@ -292,6 +303,7 @@ public final class Server implements AutoCloseable {
      *
      * @param timeout how long to allow for each of the two commands
      */
+    @Operation(Kind.MUTATION)
     public void killServer(Duration timeout) {
         CommandResult result = transport.execute(
                 request(List.of(List.of("display-message", "-p", "#{pid}"), List.of("kill-server")), timeout, ""));
@@ -366,6 +378,7 @@ public final class Server implements AutoCloseable {
      * <p>Each operation gets its own outcome. tmux discards a group after the first failure, so a
      * single exit status cannot say which command failed or which never ran.
      */
+    @Operation(Kind.CAPTURED)
     public Batch batch() {
         return new Batch(commands -> transport.execute(request(commands, config.defaultTimeout(), "")));
     }
@@ -376,6 +389,7 @@ public final class Server implements AutoCloseable {
      * <p>tmux moves its own current target as a group runs, so a chain needs no round trip to learn
      * the id of a window or pane it just created.
      */
+    @Operation(Kind.CAPTURED)
     public CommandChain chain() {
         return new CommandChain(batch(), () -> SessionCreation.versionForCreation(this));
     }
@@ -390,6 +404,7 @@ public final class Server implements AutoCloseable {
      * @return the expansion, whole when it spans lines and empty when the format expanded to
      *     nothing
      */
+    @Operation(Kind.READ)
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
         return PrintedText.printed(run(List.of("display-message", "-p", "--", PrintedText.expansion(format)))
@@ -410,26 +425,31 @@ public final class Server implements AutoCloseable {
     }
 
     /** Shell commands run by tmux, and tmux commands chosen by a shell exit status. */
+    @Operation(Kind.CAPTURED)
     public Shell shell() {
         return new Shell(this);
     }
 
     /** The commands this tmux knows. */
+    @Operation(Kind.CAPTURED)
     public Commands commands() {
         return new Commands(this);
     }
 
     /** Locks every client attached to this server. */
+    @Operation(Kind.MUTATION)
     public void lock() {
         run(List.of("lock-server"));
     }
 
     /** The server's message log. */
+    @Operation(Kind.CAPTURED)
     public MessageLog messageLog() {
         return new MessageLog(this);
     }
 
     /** The command prompt's history. */
+    @Operation(Kind.CAPTURED)
     public Prompt prompt() {
         return new Prompt(this);
     }
@@ -455,12 +475,14 @@ public final class Server implements AutoCloseable {
     }
 
     /** One of this server's wait-for channels, which is where a signal is sent and waited for. */
+    @Operation(Kind.CAPTURED)
     public Channel channel(String name) {
         return new Channel(this, name);
     }
 
     /** Reads only validated tmux variable names, never caller-authored format syntax. */
     @ReadOnly
+    @Operation(Kind.READ)
     public Map<String, String> variables(List<String> names) {
         return variables(names, this::expand);
     }
@@ -501,6 +523,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if the listing otherwise fails
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public Map<PaneId, Map<String, String>> paneFields(List<String> names) {
         List<String> fields = new ArrayList<>(List.of("pane_id"));
         fields.addAll(requireVariableNames(names));
@@ -577,11 +600,13 @@ public final class Server implements AutoCloseable {
     }
 
     /** The server's key bindings: {@code prefix} when binding, every table when listing. */
+    @Operation(Kind.CAPTURED)
     public Keys keys() {
         return new Keys(this, null);
     }
 
     /** The server's paste buffers, which every session shares. */
+    @Operation(Kind.CAPTURED)
     public Buffers buffers() {
         return new Buffers(this);
     }
@@ -591,16 +616,19 @@ public final class Server implements AutoCloseable {
      *
      * @throws LibTmuxException if tmux could not read or run it
      */
+    @Operation(Kind.MUTATION)
     public void sourceFile(Path file) {
         run(List.of("source-file", "--", file.toString()));
     }
 
     /** The server-wide options, the ones tmux keeps once per server. */
+    @Operation(Kind.CAPTURED)
     public Options options() {
         return Options.server(this);
     }
 
     /** The global session options every session inherits unless it sets its own. */
+    @Operation(Kind.CAPTURED)
     public Options globalOptions() {
         return Options.global(this);
     }
@@ -611,11 +639,13 @@ public final class Server implements AutoCloseable {
      * <p>Set here to change what a pane opened later sees — a refreshed {@code SSH_AUTH_SOCK} after
      * reconnecting, say. A pane already running has its own copy and is not affected.
      */
+    @Operation(Kind.CAPTURED)
     public Environment environment() {
         return Environment.global(this);
     }
 
     /** The global hooks every session inherits. */
+    @Operation(Kind.CAPTURED)
     public Hooks hooks() {
         return Hooks.global(this);
     }
@@ -628,6 +658,7 @@ public final class Server implements AutoCloseable {
      *
      * @throws ServerUnavailableException if no daemon is running
      */
+    @Operation(Kind.READ)
     public TmuxVersion version() {
         return capture.process()
                 .map(SnapshotCapture.ServerProcess::version)
@@ -639,6 +670,7 @@ public final class Server implements AutoCloseable {
     }
 
     /** Which server this is. Every handle taken from it is scoped by this. */
+    @Operation(Kind.CAPTURED)
     public ServerIdentity identity() {
         return fence.identity();
     }
@@ -656,6 +688,7 @@ public final class Server implements AutoCloseable {
     }
 
     /** A server over a transport it owns and closes. */
+    @Operation(Kind.LIFECYCLE)
     public static Server open(ServerConfig config) {
         Objects.requireNonNull(config, "config");
         ProcessTransport transport = new ProcessTransport(config.maxConcurrentCommands());
@@ -664,6 +697,7 @@ public final class Server implements AutoCloseable {
     }
 
     /** A server over a transport the caller owns. Closing this server never closes it. */
+    @Operation(Kind.LIFECYCLE)
     public static Server using(ServerConfig config, TmuxTransport transport) {
         return using(config, transport, new PaneEcho());
     }
@@ -695,6 +729,7 @@ public final class Server implements AutoCloseable {
      *
      * @throws IllegalArgumentException if the timeout is not positive
      */
+    @Operation(Kind.LIFECYCLE)
     public Server within(Duration timeout) {
         Objects.requireNonNull(timeout, "timeout");
         if (timeout.isZero() || timeout.isNegative()) {
@@ -704,11 +739,13 @@ public final class Server implements AutoCloseable {
     }
 
     /** A builder holding the documented defaults. */
+    @Operation(Kind.LIFECYCLE)
     public static Builder builder() {
         return new Builder(ServerConfig.builder(), null);
     }
 
     /** How this server was configured. */
+    @Operation(Kind.CAPTURED)
     public ServerConfig config() {
         return config;
     }
@@ -719,16 +756,19 @@ public final class Server implements AutoCloseable {
      * @param argv the tmux command and its arguments, each already a separate element
      * @return the result, in which a nonzero exit is data rather than a failure
      */
+    @Operation(Kind.MUTATION)
     public CommandResult cmd(String... argv) {
         return cmd(List.of(argv), config.defaultTimeout());
     }
 
     /** Runs one tmux command against this server. */
+    @Operation(Kind.MUTATION)
     public CommandResult cmd(List<String> argv) {
         return cmd(argv, config.defaultTimeout());
     }
 
     /** Runs one tmux command against this server, overriding the configured deadline. */
+    @Operation(Kind.MUTATION)
     public CommandResult cmd(List<String> argv, Duration timeout) {
         return cmd(argv, timeout, "");
     }
@@ -767,6 +807,7 @@ public final class Server implements AutoCloseable {
      * @throws IllegalArgumentException if the session belongs to another server
      * @throws IllegalStateException if this server is closed, or its transport starts no control client
      */
+    @Operation(Kind.LIFECYCLE)
     public ControlClient control(Session session) {
         return control(session, config.defaultTimeout());
     }
@@ -776,6 +817,7 @@ public final class Server implements AutoCloseable {
      *
      * @param timeout how long to wait for the client to become ready
      */
+    @Operation(Kind.LIFECYCLE)
     public ControlClient control(Session session, Duration timeout) {
         Objects.requireNonNull(session, "session");
         Objects.requireNonNull(timeout, "timeout");
@@ -825,6 +867,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if a listing otherwise fails or the listings cannot form one valid
      *     snapshot
      */
+    @Operation(Kind.READ)
     public ServerSnapshot snapshot() {
         requireOpen();
         return capture.attempt()
@@ -851,6 +894,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public List<Session> sessions(FilterExpr<Session> expression) {
         Objects.requireNonNull(expression, "expression");
         ServerSnapshot captured = captured(expression, "list-sessions");
@@ -869,6 +913,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public List<Session> sessions() {
         ServerSnapshot captured = snapshot();
         return captured.sessions().stream()
@@ -884,6 +929,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public List<Window> windows() {
         ServerSnapshot captured = snapshot();
         return captured.windows().stream()
@@ -903,6 +949,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public List<Window> windows(FilterExpr<Window> expression) {
         Objects.requireNonNull(expression, "expression");
         ServerSnapshot captured = captured(expression, "list-windows", "-a");
@@ -920,6 +967,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public List<Pane> panes() {
         ServerSnapshot captured = snapshot();
         return captured.panes().stream()
@@ -939,6 +987,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public List<Pane> panes(FilterExpr<Pane> expression) {
         Objects.requireNonNull(expression, "expression");
         ServerSnapshot captured = captured(expression, "list-panes", "-a");
@@ -957,6 +1006,7 @@ public final class Server implements AutoCloseable {
      *     exact, since the whole capture is in hand
      * @throws ServerUnavailableException if no daemon is running
      */
+    @Operation(Kind.READ)
     public Optional<Session> session(FilterExpr<Session> expression) {
         return atMostOne("session", sessions(expression));
     }
@@ -970,6 +1020,7 @@ public final class Server implements AutoCloseable {
      * @throws CardinalityException.MultipleMatches if more than one link matches
      * @throws ServerUnavailableException if no daemon is running
      */
+    @Operation(Kind.READ)
     public Optional<Window> window(FilterExpr<Window> expression) {
         return atMostOne("window", windows(expression));
     }
@@ -982,6 +1033,7 @@ public final class Server implements AutoCloseable {
      * @throws CardinalityException.MultipleMatches if more than one pane matches
      * @throws ServerUnavailableException if no daemon is running
      */
+    @Operation(Kind.READ)
     public Optional<Pane> pane(FilterExpr<Pane> expression) {
         return atMostOne("pane", panes(expression));
     }
@@ -1004,6 +1056,7 @@ public final class Server implements AutoCloseable {
      *
      * @return the bound, or {@link Integer#MAX_VALUE} for a transport that sets none
      */
+    @Operation(Kind.CAPTURED)
     public int admissionBound() {
         return transport.admissionBound();
     }
@@ -1024,6 +1077,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @Operation(Kind.READ)
     public Optional<Session> session(String name) {
         Objects.requireNonNull(name, "name");
         ServerSnapshot captured = capture.sessionsNamed(name).orElseGet(this::snapshot);
@@ -1040,6 +1094,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @Operation(Kind.READ)
     public Optional<Session> session(SessionId id) {
         Objects.requireNonNull(id, "id");
         return one(id.value(), "session_id");
@@ -1065,6 +1120,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @Operation(Kind.READ)
     public Optional<Pane> pane(PaneId id) {
         Objects.requireNonNull(id, "id");
         if (!TmuxFilters.literal(id.value())) {
@@ -1087,6 +1143,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @Operation(Kind.READ)
     public Optional<Window> window(WindowContext context) {
         Objects.requireNonNull(context, "context");
         ServerSnapshot captured = snapshot();
@@ -1107,6 +1164,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public List<Window> windows(WindowId id) {
         Objects.requireNonNull(id, "id");
         ServerSnapshot captured = snapshot();
@@ -1124,6 +1182,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public List<Client> clients() {
         ServerSnapshot captured = snapshot();
         return captured.clients().stream()
@@ -1139,6 +1198,7 @@ public final class Server implements AutoCloseable {
      * @throws LibTmuxException if the capture otherwise fails
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public List<Session> attachedSessions() {
         return sessions().stream().filter(Session::attached).toList();
     }
@@ -1152,6 +1212,7 @@ public final class Server implements AutoCloseable {
      *
      * @throws LibTmuxException if tmux reported a nonzero exit
      */
+    @Operation(Kind.MUTATION)
     public CommandResult run(List<String> argv) {
         CommandResult result = cmd(argv);
         if (!result.succeeded()) {
@@ -1224,12 +1285,14 @@ public final class Server implements AutoCloseable {
     }
 
     /** A builder holding every configuration and ownership choice this server made. */
+    @Operation(Kind.CAPTURED)
     public Builder toBuilder() {
         // An owned transport is not shared: this server will close it, so a derived server gets its own.
         return new Builder(config.toBuilder(), owned ? null : transport);
     }
 
     /** Releases an owned transport. Idempotent, and never kills tmux. */
+    @Operation(Kind.LIFECYCLE)
     @Override
     public void close() {
         if (!closed.compareAndSet(false, true)) {

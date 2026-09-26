@@ -4,6 +4,8 @@ import io.github.libtmux.PaneId;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.batch.OperationOutcome;
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.exception.CommandRejectedException;
 import io.github.libtmux.exception.ControlEndedException;
 import io.github.libtmux.exception.DispatchException;
@@ -131,6 +133,7 @@ public final class ControlClient implements AutoCloseable {
      * @param config which tmux and which server
      * @param session the session to attach to
      */
+    @Operation(Kind.LIFECYCLE)
     public static ControlClient attachUnfenced(ServerConfig config, SessionId session) {
         return attachUnfenced(config, session, DEFAULT_TIMEOUT);
     }
@@ -143,6 +146,7 @@ public final class ControlClient implements AutoCloseable {
      * @param session the session to attach to
      * @param timeout how long to wait for the client to become ready
      */
+    @Operation(Kind.LIFECYCLE)
     public static ControlClient attachUnfenced(ServerConfig config, SessionId session, Duration timeout) {
         ControlClient client = connect(LOCAL, config, session, timeout);
         client.finishAttach(session);
@@ -158,6 +162,7 @@ public final class ControlClient implements AutoCloseable {
      * @param serverPid the tmux process a capture recorded
      * @param serverVersion the version text that process reported, compared as text
      */
+    @Operation(Kind.LIFECYCLE)
     public static ControlClient attach(
             ServerConfig config, SessionId session, long serverPid, String serverVersion, Duration timeout) {
         return attach(LOCAL, config, session, serverPid, java.util.OptionalLong.empty(), serverVersion, timeout);
@@ -170,6 +175,7 @@ public final class ControlClient implements AutoCloseable {
      * @param serverStartTime when the captured process started, as {@code #{start_time}} reported it;
      *     compared when present, since a restarted tmux can be given the same pid and version
      */
+    @Operation(Kind.LIFECYCLE)
     public static ControlClient attach(
             ControlCarrier carrier,
             ServerConfig config,
@@ -297,11 +303,13 @@ public final class ControlClient implements AutoCloseable {
     }
 
     /** Runs one command and waits for its reply. */
+    @Operation(Kind.MUTATION)
     public ControlReply send(String... argv) {
         return send(List.of(argv), DEFAULT_TIMEOUT);
     }
 
     /** Runs one command and waits for its reply. */
+    @Operation(Kind.MUTATION)
     public ControlReply send(List<String> argv) {
         return send(argv, DEFAULT_TIMEOUT);
     }
@@ -316,6 +324,7 @@ public final class ControlClient implements AutoCloseable {
      *     DispatchException#outcome() outcome} is {@link DispatchOutcome#NOT_DISPATCHED} until
      *     the writer picks the request and {@link DispatchOutcome#UNKNOWN} afterwards
      */
+    @Operation(Kind.MUTATION)
     public ControlReply send(List<String> argv, Duration timeout) {
         if (argv.isEmpty()) {
             throw new IllegalArgumentException("a command has no words");
@@ -391,6 +400,7 @@ public final class ControlClient implements AutoCloseable {
      * A carrier holding one needs to tell "this command failed" from "there is no longer anything
      * to send commands to", which are the same exception until this is asked.
      */
+    @Operation(Kind.CAPTURED)
     public boolean isAlive() {
         return !closed.get() && !failed && process.isAlive();
     }
@@ -403,6 +413,7 @@ public final class ControlClient implements AutoCloseable {
      * @throws IllegalArgumentException if {@code capacity} is not positive
      * @throws IllegalStateException if the client has ended
      */
+    @Operation(Kind.STREAM)
     public EventSubscription<PaneOutput> subscribeOutput(int capacity) {
         return subscribe(outputSubscriptions, capacity);
     }
@@ -415,6 +426,7 @@ public final class ControlClient implements AutoCloseable {
      * @throws IllegalArgumentException if {@code capacity} is not positive
      * @throws IllegalStateException if the client has ended
      */
+    @Operation(Kind.STREAM)
     public EventSubscription<ControlEvent> subscribeEvents(int capacity) {
         return subscribe(eventSubscriptions, capacity);
     }
@@ -432,6 +444,7 @@ public final class ControlClient implements AutoCloseable {
      *     {@code @id}, or the attached session (pass {@code ""} - see below)
      * @param format a tmux format, such as {@code #{pane_current_command}}
      */
+    @Operation(Kind.MUTATION)
     public ControlReply watch(String name, String target, String format) {
         return send("refresh-client", "-B", name + ":" + sessionScopeNormalized(target) + ":" + format);
     }
@@ -450,11 +463,13 @@ public final class ControlClient implements AutoCloseable {
     }
 
     /** Stops a watch. tmux reads a name with no colon in it as one to remove. */
+    @Operation(Kind.MUTATION)
     public ControlReply unwatch(String name) {
         return send("refresh-client", "-B", name);
     }
 
     /** Ends the client, rejecting queued requests and resolving picked requests as uncertain. */
+    @Operation(Kind.LIFECYCLE)
     @Override
     public void close() {
         boolean closeOwner = closed.compareAndSet(false, true);
@@ -556,6 +571,7 @@ public final class ControlClient implements AutoCloseable {
      * <p>Empty when the process wrote none. {@link #standardErrorTruncated()} says the stream
      * continued past that bound. The text is whatever had been read when this is called.
      */
+    @Operation(Kind.CAPTURED)
     public String standardError() {
         synchronized (stderrBytes) {
             return new String(stderrBytes, 0, stderrLength, StandardCharsets.UTF_8);
@@ -563,6 +579,7 @@ public final class ControlClient implements AutoCloseable {
     }
 
     /** Whether {@link #standardError()} stopped before the process finished writing it. */
+    @Operation(Kind.CAPTURED)
     public boolean standardErrorTruncated() {
         synchronized (stderrBytes) {
             return stderrTruncated;

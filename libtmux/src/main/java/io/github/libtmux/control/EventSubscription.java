@@ -1,5 +1,7 @@
 package io.github.libtmux.control;
 
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.exception.ControlEndedException;
 import java.time.Duration;
 import java.util.ArrayDeque;
@@ -113,6 +115,7 @@ public final class EventSubscription<T> implements AutoCloseable {
      *
      * @return the monotonic loss count
      */
+    @Operation(Kind.CAPTURED)
     public long droppedCount() {
         lock.lock();
         try {
@@ -128,6 +131,7 @@ public final class EventSubscription<T> implements AutoCloseable {
      * <p>Empty when the subscription is still open, and empty when the caller closed it. A client
      * that died sets this before the read returns empty.
      */
+    @Operation(Kind.CAPTURED)
     public Optional<Throwable> cause() {
         lock.lock();
         try {
@@ -145,6 +149,7 @@ public final class EventSubscription<T> implements AutoCloseable {
      *     this subscription
      * @throws InterruptedException if the waiting thread is interrupted
      */
+    @Operation(Kind.WAIT)
     public Optional<Delivery<T>> next() throws InterruptedException {
         return read(false, -1);
     }
@@ -159,6 +164,7 @@ public final class EventSubscription<T> implements AutoCloseable {
      *     this subscription
      * @throws InterruptedException if the waiting thread is interrupted
      */
+    @Operation(Kind.WAIT)
     public Optional<Delivery<T>> next(Duration timeout) throws InterruptedException {
         if (timeout.isNegative()) {
             throw new IllegalArgumentException("timeout must not be negative");
@@ -180,6 +186,7 @@ public final class EventSubscription<T> implements AutoCloseable {
      * @throws IllegalStateException if another read is in progress, or a stream or publisher owns
      *     this subscription
      */
+    @Operation(Kind.CAPTURED)
     public Optional<Delivery<T>> poll() {
         lock.lock();
         try {
@@ -210,6 +217,7 @@ public final class EventSubscription<T> implements AutoCloseable {
      * @throws IllegalStateException if a callback is already armed, or a stream or publisher owns
      *     this subscription
      */
+    @Operation(Kind.CAPTURED)
     public void onReady(Runnable callback) {
         Objects.requireNonNull(callback, "callback");
         boolean now;
@@ -234,6 +242,7 @@ public final class EventSubscription<T> implements AutoCloseable {
     }
 
     /** Disarms the readiness callback, if one is armed. For a reader that stopped waiting. */
+    @Operation(Kind.CAPTURED)
     public void clearReady() {
         lock.lock();
         try {
@@ -354,6 +363,7 @@ public final class EventSubscription<T> implements AutoCloseable {
      * @throws io.github.libtmux.exception.LibTmuxException from the stream if the reading thread is
      *     interrupted; its interrupt status is set again
      */
+    @Operation(Kind.STREAM)
     public java.util.stream.Stream<Delivery<T>> stream() {
         claim(null);
         java.util.Spliterator<Delivery<T>> steps =
@@ -393,6 +403,7 @@ public final class EventSubscription<T> implements AutoCloseable {
      *
      * @see #publisher(Executor)
      */
+    @Operation(Kind.STREAM)
     public Flow.Publisher<Delivery<T>> publisher() {
         return publisher(VIRTUAL_THREAD_PER_READ);
     }
@@ -424,6 +435,7 @@ public final class EventSubscription<T> implements AutoCloseable {
      *
      * @param executor where each blocking read for the subscriber runs
      */
+    @Operation(Kind.STREAM)
     public Flow.Publisher<Delivery<T>> publisher(Executor executor) {
         Objects.requireNonNull(executor, "executor");
         return new EventPublisher(executor);
@@ -657,6 +669,7 @@ public final class EventSubscription<T> implements AutoCloseable {
      * <p>This distinguishes a timed read that expired from one that returned empty because the
      * subscription ended. A pending gap can still be read after the subscription has closed.
      */
+    @Operation(Kind.CAPTURED)
     public boolean isClosed() {
         lock.lock();
         try {
@@ -667,6 +680,7 @@ public final class EventSubscription<T> implements AutoCloseable {
     }
 
     /** Discards buffered events, removes this subscriber, and wakes every waiting reader. */
+    @Operation(Kind.LIFECYCLE)
     @Override
     public void close() {
         end(null);

@@ -17,6 +17,7 @@ module io.github.libtmux {
 
     exports io.github.libtmux;
     exports io.github.libtmux.batch;
+    exports io.github.libtmux.catalog;
     exports io.github.libtmux.control;
     exports io.github.libtmux.exception;
     exports io.github.libtmux.format;
