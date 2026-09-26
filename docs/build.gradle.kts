@@ -43,8 +43,7 @@ sourceSets.test { scala.srcDir(generateScalaDocumentationSuite.map { it.outputDi
 // Running one still uses the test JVM's classpath, which is what a consumer's runtime has.
 //
 // Every document this reads is an input. Without that, editing a README leaves the task up to date
-// and the check silently stops happening — which was true here until a deliberately broken snippet
-// failed to fail.
+// and the check silently stops happening.
 tasks.withType<Test>().configureEach {
     val classpath = sourceSets.test.get().compileClasspath
     val root = rootProject.layout.projectDirectory
@@ -54,8 +53,7 @@ tasks.withType<Test>().configureEach {
         }
 
     // The sources too: two gates here read them — for tracker ids, and for the methods that say
-    // why they leave tmux's options open — and a planted codename passed while the task sat up to
-    // date, exactly as the snippets once did.
+    // why they leave tmux's options open.
     val sources =
         rootProject.fileTree(root) {
             include("*/src/main/**/*.java", "*/src/main/**/*.kt", "*/src/test/**/*.java", "*/src/test/**/*.kt")
