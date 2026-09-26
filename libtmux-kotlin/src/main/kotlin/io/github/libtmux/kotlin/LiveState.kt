@@ -6,6 +6,8 @@ import kotlin.time.toJavaDuration
 import kotlin.time.toKotlinDuration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,4 +70,28 @@ public suspend fun Server.liveState(
         }
     }
     return state.asStateFlow()
+}
+
+/**
+ * As [liveState], scoped to [block]: opens the live view, runs [block] against it, and cancels the
+ * background pump before returning — the same `withServer`/`withControl` shape, for the one resource
+ * [liveState] itself cannot close on its own.
+ *
+ * [liveState]'s pump runs until [scope] ends, by design (a caller collecting it for the life of a
+ * program passes its own long-lived scope) — which means a bare `coroutineScope { liveState(...) }`
+ * never returns: `coroutineScope` waits for every child, the pump included, and nothing inside it
+ * asks the pump to stop. This cancels that one child explicitly once [block] is done, whether it
+ * returns or throws.
+ */
+public suspend fun <R> Server.withLiveState(
+    session: Session,
+    attachTimeout: Duration = config.defaultTimeout().toKotlinDuration(),
+    block: suspend (StateFlow<ServerMirror.View>) -> R,
+): R = coroutineScope {
+    val live = liveState(session, this, attachTimeout)
+    try {
+        block(live)
+    } finally {
+        coroutineContext.cancelChildren()
+    }
 }
