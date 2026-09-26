@@ -7,7 +7,7 @@ observations. `libtmux-scala` does not depend on Cats Effect or FS2; add this
 artifact only when an application uses those integrations. Use the same version
 as `libtmux-scala`.
 
-Every Scala block on this page is compiled for Scala 2.13 and 3 and run against a
+Every Scala block on this page is compiled for Scala 3.9 and run against a
 real tmux server by the examples suite.
 
 **This project is alpha.** The API is not settled, and a release may change or
@@ -22,12 +22,12 @@ client for the duration of `use` and the capture remains an ordinary vector.
 <!-- snippet: scala-io: cats-list-active-panes -->
 ```scala
 import _root_.cats.effect.IO
-import io.github.libtmux.scaladsl.cats.Server
+import io.github.libtmux.scaladsl.cats.{config => _, *}
 
 Server.resource[IO](config).use { server =>
-  server.panes.flatMap { panes =>
-    val active = panes.filter(_.info.active)
-    IO.println(active.map(_.info.currentCommand).mkString("\n"))
+  server.panes().flatMap { panes =>
+    val active = panes.filter(_.info.active())
+    IO.println(active.map(_.info.currentCommand()).mkString("\n"))
   }
 }
 ```
@@ -35,18 +35,20 @@ Server.resource[IO](config).use { server =>
 ## Observe a session rename
 
 Register the subscription and start its reader before changing tmux state.
-Match the typed notification before acting on it.
+Match the typed notification before acting on it. The stream suspends the
+fiber, not a platform thread, while idle — `Async[F].async` over the
+subscription's own `poll()`/`onReady()`, not a dedicated blocking pool.
 
 <!-- snippet: scala-io: cats-observe-session-rename -->
 ```scala
 import _root_.cats.effect.IO
 import _root_.cats.syntax.all._
 import io.github.libtmux.control.Notification
-import io.github.libtmux.scaladsl.cats.{Control, Observation, Server}
+import io.github.libtmux.scaladsl.cats.{config => _, *}
 import scala.concurrent.duration._
 
 Server.resource[IO](config).use { server =>
-  server.sessions.flatMap { sessions =>
+  server.sessions().flatMap { sessions =>
     val session = sessions.head
     val name = "scala-cats-readme"
     Control.attach[IO](session).use { control =>
@@ -58,7 +60,7 @@ Server.resource[IO](config).use { server =>
             .map(_.notification())
             .collect { case event: Notification.SessionRenamed => event }
             .filter(event =>
-              event.session() == session.info.id && event.name() == name
+              event.session().value() == session.info.id().value() && event.name() == name
             )
             .take(1)
             .compile
@@ -66,7 +68,7 @@ Server.resource[IO](config).use { server =>
             .start
           renamed <- session.rename(name)
           event <- received.joinWithNever.timeout(1.second)
-          _ <- IO(assert(event.session() == renamed.info.id))
+          _ <- IO(assert(event.session().value() == renamed.info.id().value()))
         } yield ()
       }
     }
