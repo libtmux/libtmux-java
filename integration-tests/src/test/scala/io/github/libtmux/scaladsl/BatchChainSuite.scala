@@ -26,13 +26,13 @@ import scala.jdk.DurationConverters._
 import scala.jdk.OptionConverters._
 
 /** `Batch`/`BatchResult`/`OperationResult`/`CommandChain` remain unwrapped raw
-  * Java types on the direct facade (item 27's own scope note), so these tests
-  * call their real Java accessors directly through the opaque `Server`/`Pane`
-  * handles' generated `batch()`/`chain()` captures, converting Java
-  * collections/`Optional` at the boundary. The two Cats-specific cases route
-  * through `cats.Batch`/`cats.CommandChain` (new, alongside this port): a fresh
-  * Java plan built and dispatched through `Execution` on every `run`, so
-  * cancelling one run never touches a concurrent one.
+  * Java types on the direct facade, so these tests call their real Java
+  * accessors directly through the opaque `Server`/`Pane` handles' generated
+  * `batch()`/`chain()` captures, converting Java collections/`Optional` at the
+  * boundary. The two Cats-specific cases route through
+  * `cats.Batch`/`cats.CommandChain` (new, alongside this port): a fresh Java
+  * plan built and dispatched through `Execution` on every `run`, so cancelling
+  * one run never touches a concurrent one.
   */
 final class BatchChainSuite extends FunSuite {
   private val deadline = Duration.ofMillis(800)

@@ -6,10 +6,9 @@ import java.nio.file.Path
 import munit.FunSuite
 
 /** Proves the opaque direct-style facade is fully usable from a package with no
-  * special access to `io.github.libtmux.scaladsl` — there is no longer a
-  * private wrapper to escape from (item 28: delete `unsafeJava`/`fromJava`
-  * per-handle minting), so `.asJava` and `Server.fromJava` are exercised here
-  * as ordinary public API instead of a named escape hatch.
+  * special access to `io.github.libtmux.scaladsl`: the handles are the Java
+  * ones under opaque types, so `.asJava` and `Server.fromJava` are ordinary
+  * public API rather than a way out of a private wrapper.
   */
 final class UnsafeEscapeSuite extends FunSuite {
 

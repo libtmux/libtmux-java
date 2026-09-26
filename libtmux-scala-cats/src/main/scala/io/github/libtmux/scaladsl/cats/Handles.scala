@@ -66,8 +66,8 @@ final class Pane[F[_]] private[cats] (
 /** `WAIT`-kind operations: handwritten, since the catalog's own facade mapping
   * reserves them for bespoke cancellation, not a per-operation forward. Each
   * still routes through [[Execution#waiting]], which reserves the shared-wait
-  * capacity `Execution.resource` set aside (item 29: "keep the waiter-capacity
-  * reservation").
+  * capacity `Execution.resource` set aside, so a wait cannot take the last slot
+  * an ordinary call needs.
   *
   * In `Pane`'s own companion, defined here beside the class: a top-level `run`
   * extension in a different file would share a name with the generated

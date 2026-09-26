@@ -21,7 +21,7 @@ private val JAVA_OWNERS: Map<String, ClassName> = mapOf(
  * Builds one `FileSpec` per owner in `field-catalog.tsv`, each an extension property on the matching
  * wrapper type's companion — `Pane.command`, `Window.panes`, ... — delegating to the generated Java
  * `Pane_`/`Session_`/`Window_`/`Client_` field object directly, so the Kotlin and Java field
- * namespaces can never disagree (ruling 9). A property, not a member: the companion is empty by hand,
+ * namespaces can never disagree. A property, not a member: the companion is empty by hand,
  * so nothing here can collide with a hand-written declaration.
  */
 public fun generateFieldPropertyFiles(rows: List<FieldRow>): List<FileSpec> =

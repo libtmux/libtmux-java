@@ -5,8 +5,8 @@ import io.github.libtmux.transport.DispatchOutcome
 import munit.FunSuite
 
 /** Matches the real sealed `LibTmuxException` tree directly from Scala, with no
-  * parallel Scala enum (item 33: "no `TmuxFailure`"). Type-test-plus-accessor,
-  * never positional: a Java record synthesizes no Scala `unapply`.
+  * parallel Scala enum to keep in step with it. Type-test-plus-accessor, never
+  * positional: a Java record synthesizes no Scala `unapply`.
   *
   * `classify` below is exhaustive over every one of the tree's eleven leaves,
   * checker-verified under this build's own `-Werror`: a missing case is a

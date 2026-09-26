@@ -40,10 +40,16 @@ final class DocumentationFactsTest {
             "libtmux-kotlin",
             "libtmux-mcp",
             "libtmux-workspace",
+            "libtmux-scala",
+            "libtmux-scala-cats",
+            "libtmux-scala-ox",
             "benchmarks",
             "docs",
             "examples",
-            "integration-tests");
+            "integration-tests",
+            "module-tests",
+            "build-logic",
+            "tools");
 
     /** Published modules, which is what a reader is told to depend on. */
     private static final List<String> PUBLISHED = List.of(
@@ -105,33 +111,44 @@ final class DocumentationFactsTest {
         // A ticket-shaped id is one wherever it sits. A short D-number could be a dimension or a
         // drive, so that one counts only where it reads as a citation.
         Pattern ticket = Pattern.compile("\\bJAVA[0-9]*-[A-Z0-9]+");
+        // A numbered entry in a plan or a review, cited by its number, means nothing to anyone
+        // without the document it came from, which does not ship.
+        Pattern planEntry = Pattern.compile("\\b(?:[Ii]tem|[Rr]uling)s? [0-9]+\\b");
         Pattern shortId = Pattern.compile("\\bD[0-9]{1,2}\\b");
         List<String> found = new ArrayList<>();
         for (String module : SOURCE_MODULES) {
-            for (String set : List.of("src/main", "src/test")) {
-                Path sources = ROOT.resolve(module).resolve(set);
-                if (!Files.isDirectory(sources)) {
-                    continue;
-                }
-                try (Stream<Path> tree = Files.walk(sources)) {
-                    for (Path file : tree.filter(Files::isRegularFile).toList()) {
-                        String name = file.getFileName().toString();
-                        if (!name.endsWith(".java") && !name.endsWith(".kt") && !name.endsWith(".kts")) {
-                            continue;
-                        }
-                        String text = Files.readString(file);
-                        Matcher cited = ticket.matcher(text);
-                        while (cited.find()) {
-                            found.add(ROOT.relativize(file) + ": " + cited.group());
-                        }
-                        Matcher brief = shortId.matcher(text);
-                        while (brief.find()) {
-                            int at = brief.start();
-                            String around =
-                                    text.substring(Math.max(0, at - 2), Math.min(text.length(), brief.end() + 1));
-                            if (around.startsWith("(") || around.startsWith(" (") || around.endsWith(":")) {
-                                found.add(ROOT.relativize(file) + ": " + brief.group());
-                            }
+            // Walked whole, minus build output: build-logic and module-tests nest their sources a
+            // level deeper, and a module's build script is source too.
+            Path sources = ROOT.resolve(module);
+            if (!Files.isDirectory(sources)) {
+                continue;
+            }
+            try (Stream<Path> tree = Files.walk(sources)) {
+                for (Path file : tree.filter(Files::isRegularFile)
+                        .filter(path -> !ROOT.relativize(path).toString().matches(".*/(build|target)/.*"))
+                        .toList()) {
+                    String name = file.getFileName().toString();
+                    if (!name.endsWith(".java")
+                            && !name.endsWith(".kt")
+                            && !name.endsWith(".kts")
+                            && !name.endsWith(".scala")) {
+                        continue;
+                    }
+                    String text = Files.readString(file);
+                    Matcher cited = ticket.matcher(text);
+                    while (cited.find()) {
+                        found.add(ROOT.relativize(file) + ": " + cited.group());
+                    }
+                    Matcher entry = planEntry.matcher(text);
+                    while (entry.find()) {
+                        found.add(ROOT.relativize(file) + ": " + entry.group());
+                    }
+                    Matcher brief = shortId.matcher(text);
+                    while (brief.find()) {
+                        int at = brief.start();
+                        String around = text.substring(Math.max(0, at - 2), Math.min(text.length(), brief.end() + 1));
+                        if (around.startsWith("(") || around.startsWith(" (") || around.endsWith(":")) {
+                            found.add(ROOT.relativize(file) + ": " + brief.group());
                         }
                     }
                 }

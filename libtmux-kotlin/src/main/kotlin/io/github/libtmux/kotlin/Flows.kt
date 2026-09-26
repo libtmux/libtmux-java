@@ -12,8 +12,8 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * [EventSubscription.poll]/[EventSubscription.onReady] path: no thread is parked per subscription.
  *
  * `open()` runs once per [kotlinx.coroutines.flow.Flow.collect], so two concurrent collections each
- * get their own subscription with their own buffer and gap accounting — ruling 5's "fan-out means
- * subscribing twice."
+ * get their own subscription with their own buffer and gap accounting: fanning out means
+ * subscribing twice.
  *
  * This is a plain `flow {}`, deliberately not `callbackFlow`. Every [EventSubscription.poll] runs on
  * the collector's own thread, so delivery order is the subscription's order, and `emit` suspends
