@@ -12,6 +12,276 @@ production.
 
 ## Unreleased
 
+### Added
+
+- **`ServerMirror` keeps a live copy of a server.** It listens through a
+  control client attached to one session and takes a fresh snapshot whenever
+  tmux announces a change, publishing each changed capture as a numbered
+  `View`. `awaitNewer` blocks for the next one and `onNewer` arms a one-shot
+  callback. A lost control client is reattached through the same session;
+  once that session has gone, the mirror ends with `TargetGoneException`.
+  `open(anchor, refreshEvery)` also rebuilds on a timer, for changes tmux
+  does not announce to this client. (#23)
+
+- **`Server.session`, `window` and `pane` take a filter expression.** Each
+  returns the one match or empty, and throws
+  `CardinalityException.MultipleMatches` with the exact count when several
+  match. (#23)
+
+- **Filtered reads are applied by tmux.** `sessions`, `windows` and `panes`
+  with a `FilterExpr`, and the name, id and expression lookups, send what tmux
+  can evaluate as a `-f` format and read only the matching sessions, in two
+  tmux commands whether or not anything matches. Relations and `matches`,
+  whose regular expressions tmux reads in another dialect, stay local; what
+  comes back is still tested against the expression. (#23)
+
+- **`ServerConfig.Builder.maxConcurrentCommands(int)` and
+  `Server.admissionBound()`.** How many tmux commands `Server.open` lets run
+  at once is now a choice, and readable, so a coroutine dispatcher or effect
+  pool can be sized to it. (#23)
+
+- **`EventSubscription.poll()` and `onReady(Runnable)` read without blocking
+  a thread.** `poll()` answers at once; `onReady` arms a one-shot wakeup for
+  when a step arrives or the subscription ends. (#23)
+
+- **`EventSubscription.stream()` and `publisher()`.** `stream()` reads a
+  subscription as a `Stream` on the consuming thread. `publisher()` and
+  `publisher(Executor)` expose a `java.util.concurrent.Flow.Publisher` for
+  Reactor, RxJava or Mutiny through `FlowAdapters`, with demand-driven
+  delivery; it passes the Reactive Streams TCK, and an executor that refuses
+  work ends the subscriber with `onError`. (#23)
+
+- **`DispatchException.safeToRetry()` says whether resending is safe.** A
+  failure is safe to resend when the request never reached tmux, or when
+  every command in it only reads. `CommandRequest.idempotence()` and
+  `DispatchOutcome.canRetryVerbatim` answer the same question for a caller
+  holding its own outcome. Nothing retries on its own. (#23)
+
+- **`ServerConfig.observer` reports each command after it ends.** A report
+  names the verbs, the dispatch outcome, the exit status, and how long the
+  call waited and ran, and omits arguments and output. An observer that
+  throws is logged with its stack trace and does not change the command's
+  result. (#23)
+
+- **`PaneInput.hold` keeps one writer on a pane.** `sendKeys`,
+  `sendLiteral`, `paste`, `pasteBuffer` and `run` take that hold for the
+  call, and another thread is refused until it closes.
+  `holdInterruptible` lets a second thread `enterInterrupt` to stop a long
+  run. `held()` and `heldSince` list what is held, and since when. (#23)
+
+- **Every public tmux operation is classified.** `@Operation` in
+  `io.github.libtmux.catalog` marks each method `CAPTURED`, `READ`,
+  `MUTATION`, `WAIT`, `STREAM` or `LIFECYCLE`, and the jar carries the
+  catalog with each operation's Javadoc at
+  `META-INF/io.github.libtmux/operation-catalog.json`.
+  [`docs/reference/operations.md`](docs/reference/operations.md) is generated
+  from it. (#23)
+
+- **More pane, window and session fields are queryable.** `Pane_.atTop()`,
+  `atBottom()`, `atLeft()` and `atRight()`, `Window_.width()`, `height()` and
+  `paneCount()`, and `Session_.windowCount()`. The field list ships in the
+  jar at `META-INF/io.github.libtmux/field-catalog.tsv`. (#23)
+
+- **`%pause`, `%continue`, `%message` and `%config-error` are typed.**
+  `Notification.Pause`, `Continue`, `Message` and `ConfigError` arrived as
+  `Unknown` before. See [migration
+  guidance](MIGRATION.md#notification-has-four-more-cases). (#23)
+
+- **`Delivery.kept` fails a read on a gap.** A reader that needs every event
+  gets the value, or `lost N` when the buffer discarded some. (#23)
+
+- **`info()` is the captured moment.** `Session`, `Window` and `Pane`
+  return the snapshot record their accessors read. (#23)
+
+- **`FakeTmux` answers control clients and tmux's format loops.** A test can
+  attach a control client, push output and notifications to it, and send
+  pane lookups and filtered reads, without tmux. (#23)
+
+- **Kotlin: `newSession { window { split { } } }` declares a session's
+  shape.** The first `window { }` block names, places and starts tmux's own
+  first window; each later one adds a window; `running(...)` starts a
+  command. (#23)
+
+- **Kotlin: `ControlClient.output` and `events` are cold `Flow`s.** They
+  hold no thread while waiting, and the trailing `onSubscribed` block runs
+  once the subscription is open, so a command whose output is wanted cannot
+  race it: `control.output(32) { control.send("send-keys", ...) }`. (#23)
+
+- **Kotlin: `Server.liveState` is a `StateFlow` over `ServerMirror`.**
+  `withLiveState(session) { live -> ... }` ends it with the block. (#23)
+
+- **Kotlin: query fields live on the handle's companion.** `Pane.command`,
+  `Window.panes`. `server.session(expr)` throws unless exactly one matches;
+  `sessionOrNull(expr)` is null on none. `retryIfSafe(times) { }` retries
+  only what `safeToRetry()` allows. (#23)
+
+- **Scala: a typed query DSL, live state, and an Ox module.** Fields hang on
+  each handle's companion (`Pane.command`), `&&`, `||` and `!` compose them,
+  and `exactlyOne` and `atMostOne` answer a `CardinalityError`. `LiveView`
+  and the Cats `LiveServer` signal wrap `ServerMirror`, starting from the
+  current view. `libtmux-scala-ox` adds an Ox `Flow` over a subscription or a
+  live view. (#23)
+
+- **An MCP tool error carries `error_code` and `retryable`.** `error_code`
+  names the failure's branch of `LibTmuxException`, and `retryable` is that
+  failure's `safeToRetry()`. Both are in `_meta`, so a client validating
+  `structuredContent` against a tool's output schema still accepts an error.
+  (#23)
+
+- **Published modules record their version in `module-info`.** A stack trace
+  names `io.github.libtmux@<version>`. (#23)
+
+- **`libtmux-kotlin` and the Scala artifacts publish a CycloneDX SBOM,** as
+  the Java artifacts do, under the same `cyclonedx` classifier. (#23)
+
+### Changed
+
+- **JDK 25 is the floor, not JDK 21.** Every module, the Kotlin and Scala
+  targets, and CI moved together. See [migration
+  guidance](MIGRATION.md#jdk-25-is-the-floor). (#23)
+
+- **Every failure is one sealed tree in `io.github.libtmux.exception`.**
+  `switch`, `when` and `match` over `LibTmuxException` are checked for
+  exhaustiveness, several types are renamed, and tmux refusing a command is
+  `CommandRejectedException`. A failure carries the command, its exit status
+  and what tmux printed; its message quotes at most 240 characters of that.
+  See [migration
+  guidance](MIGRATION.md#failures-are-one-sealed-tree-in-iogithublibtmuxexception).
+  (#23)
+
+- **A handle used after its `Server` closed throws `ServerClosedException`.**
+  It sits outside the sealed tree, and `outcome()` says whether a command the
+  close interrupted may have reached tmux. (#23)
+
+- **An `EventSubscription` has one reader.** A read that overlaps another, or
+  any read after `stream()` or `publisher()` took it, throws
+  `IllegalStateException`. Subscribe again for a second reader. See
+  [migration guidance](MIGRATION.md#an-eventsubscription-has-one-reader).
+  (#23)
+
+- **`EventSubscription.next` returns a `Delivery`.** A full buffer's next
+  read is a `Delivery.Gap` naming how many events were discarded; `cause()`
+  says why the client ended the subscription. See [migration
+  guidance](MIGRATION.md#eventsubscriptionnext-returns-a-gap-before-the-events-that-remain).
+  (#23)
+
+- **`Client.refresh()` returns the client, and throws `TargetGoneException`
+  once it has detached,** as every other handle does. See [migration
+  guidance](MIGRATION.md#clientrefresh-returns-the-client-or-throws). (#23)
+
+- **A handle is refused by a tmux restarted on its pid.** A capture records
+  when its server started, and every handle command, capture fence and
+  control attach compares it with the pid. `ServerSnapshot.serverStartTime()`
+  reports it. (#23)
+
+- **`Server.control` attaches to the tmux a capture named.** A socket reused
+  by a new server is refused. `ControlClient.attach(config, session)` is now
+  `attachUnfenced`. See [migration
+  guidance](MIGRATION.md#an-attachment-that-skips-the-incarnation-check-says-so).
+  (#23)
+
+- **Server-wide scopes moved off `Server`.** The command catalog is
+  `server.commands().list()`, shell commands are `server.shell()`, the
+  message log is `server.messageLog().lines()`, and prompt history is
+  `server.prompt()`. See [migration
+  guidance](MIGRATION.md#prompt-history-is-serverprompt). (#23)
+
+- **`killServer` returns after the daemon exits,** so a server started
+  straight afterwards cannot reach the dying one. (#23)
+
+- **`search_panes` reports a budget cut as `truncated`, not `limited`,**
+  matching every other MCP read tool. See [migration
+  guidance](MIGRATION.md#search_panes-reports-truncated-not-limited). (#23)
+
+- **The MCP server's instructions define "attended" and say what is absent
+  on purpose.** Hook writes, environment writes and buffer reads are named as
+  choices, with what to do instead. (#23)
+
+- **`libtmux-kotlin` is wrapper classes, not extensions on the Java types.**
+  `Server`, `Session`, `Window`, `Pane`, `Client` and `ControlClient` in
+  `io.github.libtmux.kotlin` make every tmux operation `suspend` and every
+  captured value a property. It is readable from Kotlin 2.1, and Java
+  collections reach it read-only. See [migration
+  guidance](MIGRATION.md#libtmux-kotlin-is-wrapper-classes-now-not-extensions-on-the-java-types).
+  (#23)
+
+- **The Scala facades are Scala 3.9 only, over opaque handles.**
+  `io.github.libtmux.scaladsl.Server`, `Session`, `Window`, `Pane` and
+  `Client` are the Java handles under opaque types, with `.asJava` as the way
+  out. Each Cats call runs through `Execution` under `F.interruptible`,
+  including `Batch`, `CommandChain` and `Channel`; a canceled call ends in
+  `Outcome.Canceled`; and fs2 streams wait without a blocking pool. There is
+  no `_2.13` build. (#23)
+
+### Fixed
+
+- **On tmux 3.2a, a session under a missing socket directory names it.**
+  tmux 3.2a exits 0 and prints nothing when it cannot create its socket, so
+  `newSession` said the binary might not be tmux. (#23)
+
+- **Values read from tmux 3.4 keep their `$`.** tmux 3.4 printed `$HOME` as
+  `\$HOME` in names, titles, options and formats. (#23)
+
+- **A name lookup finds the name tmux stored.** `session(name)`,
+  `hasSession` and `killSession` find a name holding `.`, `:` or a
+  backslash, which tmux stores differently. (#23)
+
+- **Interrupting one `ControlClient.send` no longer ends the client for
+  every other caller.** The interrupted caller fails alone, with outcome
+  `UNKNOWN`. (#23)
+
+- **A control reply is no longer another command's.** A request waiting
+  behind an `if-shell` could receive the branch's output as its reply. (#23)
+
+- **Pushed pane output keeps a character tmux cut in two,** and
+  `PaneOutput.bytes()` is exactly what a push carried. (#23)
+
+- **Output arrives with tmux's flow control on.** After `refresh-client -f
+  pause-after=N`, none of the `%extended-output` tmux sends reached
+  `subscribeOutput`. (#23)
+
+- **A subscription the control client ended keeps what it had delivered.**
+  Buffered events are read before `next()` returns empty. (#23)
+
+- **A notification keeps a name that contains `" : "`.** A window renamed
+  `left : right` was announced as `left`. (#23)
+
+- **A value that ends in a line break keeps it.** `expand` and
+  `Options.get` read `"a\n"` as `"a"`. (#23)
+
+- **The MCP server's instructions reach the model whole.** They exceeded
+  the 2048 bytes Claude Code reads, which dropped the rest without saying
+  so. (#23)
+
+- **An MCP tool that fails unexpectedly still answers as a tool error,** not
+  a JSON-RPC internal error a client may never show the model. (#23)
+
+- **MCP refusals and failures name the recovery.** A pane-input refusal, a
+  kill tool's failed self-check, and a result too large to send each say
+  what to do next. (#23)
+
+- **`TmuxExtension` reaps a fixture whose pid was reused.** A killed run's
+  fixture is named by its JVM's start as well as its pid, so a live process
+  that later holds the pid no longer keeps it. (#23)
+
+### Removed
+
+- **`Server.setMouseEnabled`.** Write `globalOptions().set("mouse", "on")`.
+  (#23)
+
+- **The Kotlin extensions on the Java types,** such as
+  `Session.activeWindowOrNull`, `Options.getOrNull` and `FilterExpr.not`.
+  The wrapper classes' members replace them. (#23)
+
+- **The Scala 2.13 build and the blocking Scala facade's wrapper classes.**
+  The opaque handles replace them. (#23)
+
+### Documented
+
+- **The operations benchmark measures live state, the non-blocking read path
+  and the library's threads.** It also records the machine it ran on and
+  compares a control client with a process per command. (#23)
+
 ## 0.0.1-alpha.14 — 2026-09-20
 
 ### Changed
