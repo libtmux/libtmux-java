@@ -22,7 +22,7 @@ coordinate:
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.16"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.17"))
 
     implementation("io.github.libtmux:libtmux")
     testImplementation("io.github.libtmux:libtmux-junit5")
@@ -38,7 +38,7 @@ dependencies {
     <dependency>
       <groupId>io.github.libtmux</groupId>
       <artifactId>libtmux-bom</artifactId>
-      <version>0.0.1-alpha.16</version>
+      <version>0.0.1-alpha.17</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -376,7 +376,7 @@ were built against each other.
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.16"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.17"))
 
     implementation("io.github.libtmux:libtmux")
     testImplementation("io.github.libtmux:libtmux-junit5")
@@ -392,7 +392,7 @@ dependencies {
     <dependency>
       <groupId>io.github.libtmux</groupId>
       <artifactId>libtmux-bom</artifactId>
-      <version>0.0.1-alpha.16</version>
+      <version>0.0.1-alpha.17</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>

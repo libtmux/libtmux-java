@@ -29,19 +29,19 @@ $ ./gradlew publishAllPublicationsToStagingRepository
 Then run each build with the version it staged:
 
 ```console
-$ ./gradlew -p module-tests/java run -PlibtmuxVersion=0.0.1-alpha.16-SNAPSHOT
+$ ./gradlew -p module-tests/java run -PlibtmuxVersion=0.0.1-alpha.17-SNAPSHOT
 ```
 
 ```console
-$ ./gradlew -p module-tests/scala run -PlibtmuxVersion=0.0.1-alpha.16-SNAPSHOT
+$ ./gradlew -p module-tests/scala run -PlibtmuxVersion=0.0.1-alpha.17-SNAPSHOT
 ```
 
 ```console
-$ module-tests/sbt/sbtw -Dlibtmux.version=0.0.1-alpha.16-SNAPSHOT core/run cats/run ox/run direct/run
+$ module-tests/sbt/sbtw -Dlibtmux.version=0.0.1-alpha.17-SNAPSHOT core/run cats/run ox/run direct/run
 ```
 
 ```console
-$ ./gradlew -p module-tests/cli run -PlibtmuxVersion=0.0.1-alpha.16-SNAPSHOT
+$ ./gradlew -p module-tests/cli run -PlibtmuxVersion=0.0.1-alpha.17-SNAPSHOT
 ```
 
 `sbtw` downloads the pinned sbt launcher once and checks its checksum before

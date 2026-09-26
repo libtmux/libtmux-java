@@ -12,6 +12,11 @@ production.
 
 ## Unreleased
 
+## 0.0.1-alpha.17 — 2026-09-26
+
+No user-visible behaviour changed since 0.0.1-alpha.16: this is the same code,
+released from `master`.
+
 ## 0.0.1-alpha.16 — 2026-09-26
 
 ### Added
