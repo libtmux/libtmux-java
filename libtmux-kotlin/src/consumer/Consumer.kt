@@ -1,59 +1,62 @@
 // Compiled by the oldest Kotlin this module claims, against the jar it publishes, by the
-// compileOldestConsumer task. Every public declaration is reached, so a module a Kotlin 2.1
-// compiler cannot read fails to compile here.
+// compileOldestConsumer task. Every facade class is reached, so a module a Kotlin 2.1 compiler
+// cannot read fails to compile here.
 package consumer
 
-import io.github.libtmux.Channel
-import io.github.libtmux.Pane
-import io.github.libtmux.Pane_
-import io.github.libtmux.Server
-import io.github.libtmux.control.EventSubscription
-import io.github.libtmux.control.PaneOutput
-import io.github.libtmux.kotlin.activePaneOrNull
-import io.github.libtmux.kotlin.activeWindowOrNull
-import io.github.libtmux.kotlin.await
-import io.github.libtmux.kotlin.awaitDelivery
-import io.github.libtmux.kotlin.awaitText
-import io.github.libtmux.kotlin.control
-import io.github.libtmux.kotlin.deliveries
-import io.github.libtmux.kotlin.filter
-import io.github.libtmux.kotlin.getOrNull
-import io.github.libtmux.kotlin.kept
-import io.github.libtmux.kotlin.not
+import io.github.libtmux.ServerConfig
+import io.github.libtmux.kotlin.ExecutionPolicy
+import io.github.libtmux.kotlin.Pane
+import io.github.libtmux.kotlin.Server
+import io.github.libtmux.kotlin.Session
+import io.github.libtmux.kotlin.liveState
+import io.github.libtmux.kotlin.newSession
 import io.github.libtmux.kotlin.orNull
-import io.github.libtmux.kotlin.paneOrNull
-import io.github.libtmux.kotlin.run
+import io.github.libtmux.kotlin.panes
+import io.github.libtmux.kotlin.query.active
+import io.github.libtmux.kotlin.query.command
+import io.github.libtmux.kotlin.query.name
+import io.github.libtmux.kotlin.retryIfSafe
+import io.github.libtmux.kotlin.send
+import io.github.libtmux.kotlin.sendLine
+import io.github.libtmux.kotlin.sessions
+import io.github.libtmux.kotlin.version
+import io.github.libtmux.kotlin.withControl
+import io.github.libtmux.kotlin.withLiveState
+import io.github.libtmux.kotlin.withServer
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
 
-suspend fun reachEverything(server: Server, pane: Pane, channel: Channel, output: EventSubscription<PaneOutput>) {
-    val session = readOnly(server.sessions()).first()
-    readOnly(server.paneFields(listOf("pane_tty")))
-    session.activeWindowOrNull()?.activePaneOrNull()
-    server.paneOrNull(pane.id())
-    server.options().getOrNull("status")
-    server.environment().getOrNull("HOME")
-    pane.pid().orNull()
-    server.panes().filter(!Pane_.command().`is`("vim"))
-    pane.awaitText("ready", 1.seconds, Dispatchers.IO)
-    pane.await({ true }, 1.seconds)
-    pane.run("true", 1.seconds)
-    channel.await(1.seconds)
-    server.control(session, 1.seconds)
-    output.awaitDelivery(1.seconds)?.kept()
-    output.deliveries(Dispatchers.IO).map { it.kept().data() }
+suspend fun reachEverything(config: ServerConfig, scope: CoroutineScope) {
+    val policy = ExecutionPolicy.default(config)
+    withServer(config, policy) { server: Server ->
+        val session: Session =
+            server.newSession {
+                name = "consumer"
+                window {
+                    name = "editor"
+                    split { toRight(); percent(30) }
+                }
+            }
+
+        server.session(Session.name eq "consumer")
+        server.sessionOrNull(Session.name eq "no-such-session")
+        server.sessions()
+        server.panes(Pane.command startsWith "nvim")
+
+        val pane: Pane = session.activeWindow!!.activePane!!
+        pane.sendLine("echo ready")
+        pane.awaitText("ready", timeout = 1.seconds)
+        pane.run("true", timeout = 1.seconds).exitStatus.orNull()
+
+        retryIfSafe(times = 1) { server.version() }
+
+        withControl(server, session) { control ->
+            control.send("display-message")
+            control.output(capacity = 8).first()
+        }
+
+        server.liveState(session, scope).first()
+        server.withLiveState(session) { live -> live.first() }
+    }
 }
-
-// A collection Kotlin reads as mutable resolves to the overload that fails the build.
-private fun <T> readOnly(list: List<T>): List<T> = list
-
-@Deprecated("a core list reached Kotlin as mutable", level = DeprecationLevel.ERROR)
-@JvmName("refuseMutableList")
-private fun <T> readOnly(list: MutableList<T>): List<T> = list
-
-private fun <K, V> readOnly(map: Map<K, V>): Map<K, V> = map
-
-@Deprecated("a core map reached Kotlin as mutable", level = DeprecationLevel.ERROR)
-@JvmName("refuseMutableMap")
-private fun <K, V> readOnly(map: MutableMap<K, V>): Map<K, V> = map
