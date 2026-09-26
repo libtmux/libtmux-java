@@ -19,6 +19,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
@@ -268,14 +269,24 @@ final class ControlWriterTest {
     void interruptingACallerAfterDispatchLeavesTheClientServingOthers() throws Exception {
         AtomicReference<ControlWriter> holder = new AtomicReference<>();
         List<String> held = Collections.synchronizedList(new ArrayList<>());
+        // tmux answers in the order it was asked. A line written while the abandoned request's two
+        // are still unanswered waits behind them, as it would in tmux, rather than overtaking them.
+        List<String> behind = new ArrayList<>();
+        AtomicBoolean heldAnswered = new AtomicBoolean();
         CountDownLatch dispatched = new CountDownLatch(2);
         GatedReplyingWriter output = new GatedReplyingWriter(line -> {
             if (line.contains("abandoned")
                     || (held.size() == 1 && MARKER.matcher(line).matches())) {
                 held.add(line);
                 dispatched.countDown();
-            } else {
-                answer(holder.get(), line);
+                return;
+            }
+            synchronized (behind) {
+                if (heldAnswered.get()) {
+                    answer(holder.get(), line);
+                } else {
+                    behind.add(line);
+                }
             }
         });
         output.releaseFirst.countDown();
@@ -291,8 +302,12 @@ final class ControlWriterTest {
 
         abandoned.interrupt();
         abandoned.join(1_000);
-        answer(writer, held.get(0));
-        answer(writer, held.get(1));
+        synchronized (behind) {
+            answer(writer, held.get(0));
+            answer(writer, held.get(1));
+            heldAnswered.set(true);
+            behind.forEach(line -> answer(writer, line));
+        }
 
         assertEquals(List.of("survivor"), survivor.get(1, TimeUnit.SECONDS).lines());
         assertEquals(DispatchOutcome.UNKNOWN, abandonedFailure.get().outcome(), "tmux may have run it");
