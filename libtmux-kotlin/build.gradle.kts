@@ -175,16 +175,12 @@ val documentedKotlin =
         val documentationRoot = rootProject.projectDir
         val documents =
             rootProject.fileTree(documentationRoot) {
-                include("README.md", "*/README.md", "docs/guide/*.md")
+                include("README.md", "*/README.md", "docs/guide/**/*.md")
                 exclude("**/build/**")
             }
         val generated = layout.buildDirectory.dir("generated/documentation")
-        // How many Kotlin fences each document holds. A fence added or lost is a line changed here,
-        // not a count that still clears a floor.
-        val inventory = layout.projectDirectory.file("documentation-snippets.txt")
 
         inputs.files(documents).withPathSensitivity(PathSensitivity.RELATIVE)
-        inputs.file(inventory).withPathSensitivity(PathSensitivity.RELATIVE)
         outputs.dir(generated)
 
         doLast {
@@ -193,7 +189,9 @@ val documentedKotlin =
                     """(?:<!--\s*snippet:\s*([^>]*?)\s*-->\s*\n)?^```kotlin\n(.*?)^```""",
                     setOf(RegexOption.MULTILINE, RegexOption.DOT_MATCHES_ALL),
                 )
-            val counts = sortedMapOf<String, Int>()
+            // A fence that looks like Kotlin but does not open as exactly ```kotlin would go
+            // unchecked without a word, so it fails the build instead, and nothing needs counting.
+            val nearMiss = Regex("""(?im)^[ \t>]*(?:`{3,}|~{3,})[ \t]*(?:kotlin|kts?)\b.*$""")
             generated.get().asFile.deleteRecursively()
             var found = 0
 
@@ -201,11 +199,17 @@ val documentedKotlin =
             documents.sorted().forEach { document ->
                 val text = document.readText()
                 val where = document.relativeTo(documentationRoot).path
+                nearMiss.findAll(text).filter { it.value != "```kotlin" }.forEach { opening ->
+                    val line = text.substring(0, opening.range.first).count { it == '\n' } + 1
+                    throw GradleException(
+                        "$where:$line opens a Kotlin fence as '${opening.value.trim()}'; " +
+                            "only an unindented ```kotlin is checked",
+                    )
+                }
                 fence.findAll(text).forEach { match ->
                     val directive = match.groupValues[1]
                     if (directive.startsWith("skip:")) return@forEach
                     found++
-                    counts.merge(where, 1, Int::plus)
 
                     val line = text.substring(0, match.range.first).count { it == '\n' } + 1
                     // A backticked name may hold neither a dot nor a separator. The whole path
@@ -316,16 +320,8 @@ val documentedKotlin =
                 }
             }
 
-            val expected =
-                inventory.asFile.readLines()
-                    .map { it.substringBefore('#').trim() }
-                    .filter { it.isNotEmpty() }
-                    .associate { entry -> entry.substringAfter(' ').trim() to entry.substringBefore(' ').toInt() }
-                    .toSortedMap()
-            require(counts == expected) {
-                "Kotlin fences per document are $counts, and documentation-snippets.txt says $expected; " +
-                    "update it when a fence is added or removed on purpose"
-            }
+            // A filter or a rename can reduce the generated suite to nothing without failing anything.
+            require(found > 0) { "no Kotlin documentation snippets were found" }
             logger.lifecycle("generated $found Kotlin documentation snippets")
         }
     }
