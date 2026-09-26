@@ -1,5 +1,7 @@
 package io.github.libtmux;
 
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.util.List;
 import java.util.Objects;
@@ -28,6 +30,7 @@ public final class Shell {
     }
 
     /** Runs a shell command for its effect. Nothing is claimed about what it printed. */
+    @Operation(Kind.MUTATION)
     public void run(String command) {
         Objects.requireNonNull(command, "command");
         server.run(List.of("run-shell", "--", command));
@@ -40,6 +43,7 @@ public final class Shell {
      *     nothing
      */
     @ReadOnly
+    @Operation(Kind.MUTATION)
     public List<String> capturing(String command) {
         Objects.requireNonNull(command, "command");
         TmuxVersion running = server.version();
@@ -57,6 +61,7 @@ public final class Shell {
      * @param condition a shell command, judged by its exit status
      * @param whenTrue the tmux command to run when the condition succeeds
      */
+    @Operation(Kind.MUTATION)
     public void choose(String condition, String whenTrue) {
         Objects.requireNonNull(condition, "condition");
         Objects.requireNonNull(whenTrue, "whenTrue");
@@ -68,6 +73,7 @@ public final class Shell {
      *
      * @param whenFalse the tmux command to run when the condition does not succeed
      */
+    @Operation(Kind.MUTATION)
     public void choose(String condition, String whenTrue, String whenFalse) {
         Objects.requireNonNull(condition, "condition");
         Objects.requireNonNull(whenTrue, "whenTrue");

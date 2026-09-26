@@ -1,5 +1,7 @@
 package io.github.libtmux;
 
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.util.List;
 import kotlin.annotations.jvm.ReadOnly;
@@ -26,6 +28,7 @@ public final class Prompt {
      * @throws UnsupportedFeatureException if this tmux has no such command
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public List<String> history() {
         require();
         return server.run(List.of("show-prompt-history")).stdout();
@@ -36,6 +39,7 @@ public final class Prompt {
      *
      * @throws UnsupportedFeatureException if this tmux has no such command
      */
+    @Operation(Kind.MUTATION)
     public void clear() {
         require();
         server.run(List.of("clear-prompt-history"));

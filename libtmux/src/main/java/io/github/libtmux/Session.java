@@ -1,6 +1,8 @@
 package io.github.libtmux;
 
 import com.google.errorprone.annotations.CheckReturnValue;
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.exception.ServerUnavailableException;
 import io.github.libtmux.exception.TargetGoneException;
@@ -43,26 +45,31 @@ public final class Session {
     }
 
     /** The fields this capture stored. A later rename is not visible here. */
+    @Operation(Kind.CAPTURED)
     public SessionState info() {
         return state;
     }
 
     /** The session's stable id. */
+    @Operation(Kind.CAPTURED)
     public SessionId id() {
         return state.id();
     }
 
     /** The session name, which a user may change at any time. */
+    @Operation(Kind.CAPTURED)
     public String name() {
         return state.name();
     }
 
     /** Whether a client was attached when this was captured. */
+    @Operation(Kind.CAPTURED)
     public boolean attached() {
         return state.attached();
     }
 
     /** The server this session lives on. */
+    @Operation(Kind.CAPTURED)
     public Server server() {
         return server;
     }
@@ -72,16 +79,19 @@ public final class Session {
     }
 
     /** The window tmux had active in this session. A pure read of the capture. */
+    @Operation(Kind.CAPTURED)
     public Optional<Window> activeWindow() {
         return windows().stream().filter(Window::active).findFirst();
     }
 
     /** The active pane of the active window. A pure read of the capture. */
+    @Operation(Kind.CAPTURED)
     public Optional<Pane> activePane() {
         return activeWindow().flatMap(Window::activePane);
     }
 
     /** Makes a window of this session the active one. */
+    @Operation(Kind.MUTATION)
     public void selectWindow(Window window) {
         Objects.requireNonNull(window, "window");
         server.requireSameIncarnation(snapshot, window.server(), window.snapshot());
@@ -98,11 +108,13 @@ public final class Session {
     }
 
     /** Moves to the next window in this session, wrapping at the end. */
+    @Operation(Kind.MUTATION)
     public void nextWindow() {
         server.run(snapshot, List.of("next-window", "-t", state.id().value()));
     }
 
     /** Moves to the previous window in this session, wrapping at the start. */
+    @Operation(Kind.MUTATION)
     public void previousWindow() {
         server.run(snapshot, List.of("previous-window", "-t", state.id().value()));
     }
@@ -113,16 +125,19 @@ public final class Session {
      * @throws LibTmuxException if nothing else has been active yet, which tmux reports rather than
      *     silently staying put
      */
+    @Operation(Kind.MUTATION)
     public void lastWindow() {
         server.run(snapshot, List.of("last-window", "-t", state.id().value()));
     }
 
     /** Detaches every client attached to this session, leaving the session running. */
+    @Operation(Kind.MUTATION)
     public void detachClients() {
         server.run(snapshot, List.of("detach-client", "-s", state.id().value()));
     }
 
     /** This session's own options. */
+    @Operation(Kind.CAPTURED)
     public Options options() {
         return Options.session(server, snapshot, state.id());
     }
@@ -131,16 +146,19 @@ public final class Session {
      * This session's own environment, which a process started in it is given on top of the
      * server's.
      */
+    @Operation(Kind.CAPTURED)
     public Environment environment() {
         return Environment.session(server, snapshot, state.id());
     }
 
     /** This session's own hooks. */
+    @Operation(Kind.CAPTURED)
     public Hooks hooks() {
         return Hooks.session(server, snapshot, state.id());
     }
 
     /** Sets the scrollback retained by panes created in this session. */
+    @Operation(Kind.MUTATION)
     public void setHistoryLimit(int lines) {
         if (lines < 0) {
             throw new IllegalArgumentException("history limit is negative: " + lines);
@@ -150,6 +168,7 @@ public final class Session {
 
     /** This session's windows, in tmux's order. A pure read of the capture. */
     @ReadOnly
+    @Operation(Kind.CAPTURED)
     public List<Window> windows() {
         return snapshot.windowsOf(state.id()).stream()
                 .map(window -> new Window(server, snapshot, window))
@@ -165,6 +184,7 @@ public final class Session {
      * @param name the window name
      * @return a handle on the created window, from a fresh capture
      */
+    @Operation(Kind.MUTATION)
     public Window newWindow(String name) {
         return newWindow(WindowSpec.builder().named(name).build());
     }
@@ -180,6 +200,7 @@ public final class Session {
      * @return a handle on the created window, from a fresh capture
      * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
+    @Operation(Kind.MUTATION)
     public Window newWindow(Consumer<WindowSpec.Builder> configure) {
         WindowSpec.Builder builder = WindowSpec.builder();
         configure.accept(builder);
@@ -192,6 +213,7 @@ public final class Session {
      * @return a handle on the created window, from a fresh capture
      * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
+    @Operation(Kind.MUTATION)
     public Window newWindow(WindowSpec spec) {
         List<String> reported = server.run(
                         snapshot, spec.argv(state.id().value(), CREATED.template(), server.version(snapshot)))
@@ -226,6 +248,7 @@ public final class Session {
      * @return the expansion, whole when it spans lines and empty when the format expanded to
      *     nothing
      */
+    @Operation(Kind.READ)
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
         return PrintedText.printed(server.run(
@@ -240,12 +263,14 @@ public final class Session {
      * <p>Retain the result to read the changed name. This handle keeps its original captured state.
      */
     @CheckReturnValue
+    @Operation(Kind.MUTATION)
     public Session rename(String name) {
         server.run(snapshot, List.of("rename-session", "-t", state.id().value(), "--", TmuxFormats.literal(name)));
         return refresh();
     }
 
     /** Ends this session. Every window in it goes with it. */
+    @Operation(Kind.MUTATION)
     public void kill() {
         server.run(snapshot, List.of("kill-session", "-t", state.id().value()));
     }
@@ -259,6 +284,7 @@ public final class Session {
      * @throws ServerUnavailableException if no daemon is running
      */
     @CheckReturnValue
+    @Operation(Kind.READ)
     public Session refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.session(state.id())
