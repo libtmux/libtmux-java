@@ -273,9 +273,10 @@ val documentedKotlin =
                                     """${result.groupValues[1]}assertEquals("$expected", (${result.groupValues[2]}).toString())"""
                                 }
                             }
-                    // A snippet gets `server`, as the Java fences do. Anything else it reads
-                    // without building has to be named on a `// Given:` line, so a reader sees
-                    // what the snippet assumes rather than finding a name declared nowhere.
+                    // A snippet gets `javaServer`, the raw injected fixture, as the Java fences get
+                    // `server`. Anything else it reads without building has to be named on a
+                    // `// Given:` line, so a reader sees what the snippet assumes rather than finding
+                    // a name declared nowhere.
                     val given =
                         body
                             .firstOrNull { it.isNotBlank() }
@@ -288,10 +289,10 @@ val documentedKotlin =
                             .orEmpty()
                     val fixtures =
                         linkedMapOf(
-                            "config" to "server.config()",
-                            "session" to "server.sessions()[0]",
-                            "window" to "server.sessions()[0].windows()[0]",
-                            "pane" to "server.sessions()[0].windows()[0].panes()[0]",
+                            "config" to "javaServer.config()",
+                            "session" to "javaServer.sessions()[0]",
+                            "window" to "javaServer.sessions()[0].windows()[0]",
+                            "pane" to "javaServer.sessions()[0].windows()[0].panes()[0]",
                             "socket" to "socketPath.path()",
                         )
                     val unknown = given - fixtures.keys
@@ -302,16 +303,22 @@ val documentedKotlin =
                     file.writeText(
                         buildString {
                             appendLine("// Generated from $where line $line. Edit the Markdown, not this file.")
-                            appendLine("@file:Suppress(\"unused\", \"UNUSED_VARIABLE\", \"NAME_SHADOWING\", \"RedundantSuppression\")")
+                            appendLine(
+                                "@file:Suppress(\"unused\", \"UNUSED_VARIABLE\", \"NAME_SHADOWING\", " +
+                                    "\"REDUNDANT_CALL_OF_CONVERSION_METHOD\", \"RedundantSuppression\")",
+                            )
                             appendLine()
                             appendLine("package io.github.libtmux.docs.kotlin.s$found")
                             appendLine()
                             imports.forEach { appendLine(it) }
-                            // What every Java fence may use too: the core, and the harness.
-                            appendLine("import io.github.libtmux.*")
+                            // The Kotlin facade, by default — this module's own surface, not the Java
+                            // core it wraps (a wildcard import of both would make Pane/Session/Window/
+                            // Client ambiguous). A snippet naming a Java-only type imports it itself.
+                            appendLine("import io.github.libtmux.kotlin.*")
                             appendLine("import io.github.libtmux.junit5.TmuxExtension")
                             appendLine("import io.github.libtmux.junit5.TmuxSocketPath")
                             appendLine("import kotlin.test.assertEquals")
+                            appendLine("import kotlinx.coroutines.runBlocking")
                             appendLine("import org.junit.jupiter.api.Test")
                             appendLine("import org.junit.jupiter.api.extension.ExtendWith")
                             appendLine()
@@ -320,12 +327,13 @@ val documentedKotlin =
                                 |@ExtendWith(TmuxExtension::class)
                                 |class Snippet {
                                 |    @Test
-                                |    fun `$name`(server: Server, socketPath: TmuxSocketPath) {
+                                |    fun `$name`(javaServer: io.github.libtmux.Server, socketPath: TmuxSocketPath) {
                                 |$declared
-                                |        // run is inline, so a snippet's own declarations shadow the ones
-                                |        // above rather than colliding with them, and a bare return still
-                                |        // leaves the test.
-                                |        run {
+                                |        // runBlocking is inline, so a snippet's own declarations shadow the
+                                |        // ones above rather than colliding with them, and a bare return still
+                                |        // leaves the test. Every call in this module's own surface is
+                                |        // suspend, so every snippet needs a coroutine to run in.
+                                |        runBlocking {
                                 |${body.joinToString("\n") { "            $it" }}
                                 |        }
                                 |    }
