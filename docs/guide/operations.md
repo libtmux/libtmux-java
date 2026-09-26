@@ -8,23 +8,31 @@ cost, and keep two threads from typing into the same pane.
 
 ## Whether a failed command may run again
 
-A command that throws `DispatchException` says how far it got.
-`NOT_DISPATCHED` means tmux never started, so nothing changed and sending it
-again is safe. `UNKNOWN` means tmux may already have applied it; read the state
-back before deciding, and never send a mutation again blindly:
+A command that throws `DispatchException` says how far it got, and
+`safeToRetry()` turns that into the one decision a caller needs. It is true when
+tmux never started (`NOT_DISPATCHED`), since nothing changed, and when every
+command in the request only reads, since reading twice changes nothing either.
+Otherwise tmux may already have applied it; read the state back before deciding,
+and never send a mutation again blindly:
 
 ```java
 // Given: Server server
 try {
     server.globalOptions().set("@deployed", "yes");
 } catch (DispatchException failure) {
-    if (failure.outcome() == DispatchOutcome.NOT_DISPATCHED) {
+    if (failure.safeToRetry()) {
         server.globalOptions().set("@deployed", "yes");
     } else {
         server.globalOptions().get("@deployed");
     }
 }
 ```
+
+The library never retries on its own. `safeToRetry()` is the predicate to give
+the retry library you already use, such as Resilience4j or Failsafe. A caller
+holding an outcome without an exception, from a report or a batch, asks
+`DispatchOutcome.canRetryVerbatim(idempotence)` the same question, with
+`CommandRequest.idempotence()` saying whether a request only reads.
 
 A timeout is the same exception with the same answer. A group of commands
 reports each one separately, through `OperationOutcome` on its batch result:
@@ -52,8 +60,9 @@ A report carries the command verbs, not their arguments, since arguments hold
 session names, socket paths, and whatever a caller typed. It also carries how
 long the call waited for a free slot (`queued`), how long it ran (`elapsed`),
 line counts, and at most 240 characters of stderr in `boundedError`, which
-`toString` leaves out. An observer that throws is logged and ignored; the
-command's own result is unaffected, and nothing is retried.
+`toString` leaves out. An observer that throws is logged at `WARNING` with its
+stack trace and otherwise ignored; the command's own result is unaffected, and
+nothing is retried.
 
 A report's `id` counts calls on one transport, so two reports can be told
 apart; it is not a request id for tracing. None is needed: the observer runs on
@@ -98,6 +107,18 @@ outermost lease closes. `holdInterruptible` is the hold for a long-running
 command that something else may need to stop: another thread calls
 `enterInterrupt` to send the stop without taking the pane. The lease is
 per JVM. Two processes driving one tmux server do not see each other's holds.
+
+A lease that nothing closes keeps its pane until the JVM exits. `PaneInput.held()`
+lists every pane held right now, with when the hold began and the name of the
+thread holding it, so a test fixture or a service's health check can find one:
+
+```java
+// Given: Pane pane
+try (PaneInput.Lease held = PaneInput.hold(pane)) {
+    PaneInput.heldSince(pane).isPresent();        // → true
+}
+PaneInput.heldSince(pane).isPresent();            // → false
+```
 
 ## Where a control client starts
 
