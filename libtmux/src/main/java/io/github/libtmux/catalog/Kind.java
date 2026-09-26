@@ -8,7 +8,10 @@ package io.github.libtmux.catalog;
  */
 public enum Kind {
 
-    /** Answers from the handle's own capture: no tmux I/O. Field accessors and navigation within one capture. */
+    /**
+     * No tmux I/O: answers from the handle's own capture, or collects a command to send later. Field
+     * accessors, navigation within one capture, and building a batch or chain.
+     */
     CAPTURED,
 
     /** Contacts tmux and changes nothing: listings, captures, {@code show-*}, expansion, liveness, lookups. */

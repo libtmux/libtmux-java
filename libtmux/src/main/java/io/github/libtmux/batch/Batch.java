@@ -38,13 +38,13 @@ public final class Batch {
     }
 
     /** Adds one tmux command, its arguments already separate elements. */
-    @Operation(Kind.MUTATION)
+    @Operation(Kind.CAPTURED)
     public Batch add(String... argv) {
         return add(List.of(argv));
     }
 
     /** Adds one tmux command. */
-    @Operation(Kind.MUTATION)
+    @Operation(Kind.CAPTURED)
     public Batch add(List<String> argv) {
         if (argv.isEmpty()) {
             throw new IllegalArgumentException("an operation has no command");

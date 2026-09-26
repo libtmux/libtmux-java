@@ -63,4 +63,22 @@ class SubsystemFacadeTest {
 
         assertTrue(result.succeeded, "expected a suspend caller to compile:\n${result.diagnostics}")
     }
+
+    /** Collecting commands reaches no tmux, so a plain function builds a batch or a chain; only `run` suspends. */
+    @Test
+    fun `batch and chain steps are collected without suspending`() {
+        val fixture = """
+            import io.github.libtmux.kotlin.Batch
+            import io.github.libtmux.kotlin.CommandChain
+
+            fun collect(batch: Batch, chain: CommandChain) {
+                batch.add("display-message", "-p", "one").add(listOf("display-message", "-p", "two"))
+                chain.newWindow("w").splitLeftRight().splitTopBottom().sendLine("true").then("select-pane", "-L")
+            }
+        """.trimIndent()
+
+        val result = KotlincHarness.compile(fixture)
+
+        assertTrue(result.succeeded, "expected a non-suspend caller to collect steps:\n${result.diagnostics}")
+    }
 }

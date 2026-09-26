@@ -13,6 +13,12 @@ public class Batch internal constructor(internal val java: JavaBatch, public val
     /** The Java batch this wraps: the same object, for a Java API that takes one. */
     public val asJava: JavaBatch get() = java
 
+    /** Adds one tmux command, its arguments already separate elements. Collected, not sent. */
+    public fun add(vararg argv: String): Batch = apply { java.add(*argv) }
+
+    /** Adds one tmux command. Collected, not sent. */
+    public fun add(argv: List<String>): Batch = apply { java.add(argv) }
+
     /** How many operations have been collected. A pure, local read. */
     public fun size(): Int = java.size()
 
