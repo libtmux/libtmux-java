@@ -14,73 +14,78 @@ production.
 
 ### Added
 
-- **`tmux-workspace` discovers, loads, freezes, converts, imports, and searches
-  tmuxp workspaces.** The application provides JSON and NDJSON output, terminal
-  progress, diagnostics, and Bash, Zsh, and Fish completion. (#16)
+- **`tmux-workspace` is on Maven Central as
+  `io.github.libtmux:libtmux-workspace-cli`.** It releases with the other
+  artifacts, at the same version, and `libtmux-bom` manages it. Its main class
+  is `io.github.libtmux.workspace.cli.Main`. (#23)
 
-- **Workspace loading validates every input before building.** It supports
-  pane commands, directories, environment, options, window indexes, focus,
-  scripts, attaching, and appending. Failed loads remove sessions they created;
-  interrupted loads and failed appends report retained objects. Workspace paths
-  under a symlinked home directory show `~/` in output. (#16)
+- **`tmux-workspace` discovers, loads, freezes, converts, imports and searches
+  workspaces.** Command names and flags follow tmuxp 1.74.0. Every command
+  answers in JSON or NDJSON on request, and the CLI adds terminal progress,
+  diagnostics, and Bash, Zsh and Fish completion. (#16)
 
-- **The CLI can run tmuxp Python extensions and interactive shells.** The
-  optional bridge requires tmuxp 1.74.0 and uses the selected tmux binary. Native
-  workspace commands do not require Python. (#16)
+- **`tmux-workspace load` checks every input before it builds anything.** It
+  supports pane commands, directories, environment, options, window indexes,
+  focus, scripts, attaching and appending. A failed load removes the sessions
+  it created, and an interrupted load or a failed append reports what it left
+  behind. (#16)
 
-- **`ServerConfig.force256Colors` and `Server.Builder.force256Colors` advertise
-  256-color support to tmux clients.** `tmux-workspace` exposes it as `load -2`;
-  the default still relies on terminal detection. (#16)
+- **`tmux-workspace` checks a workspace's layouts against the target tmux
+  before creating anything.** Presets resolve by that tmux's version, and pane
+  counts must fit. On tmux 3.8 and later, a JSON layout's cell structure is
+  checked too. (#16)
 
-- **`Layout.byTmuxName` resolves a built-in layout by its exact tmux name**,
-  for a caller that already has the canonical spelling. (#16)
+- **`tmux-workspace` runs tmuxp Python extensions and shells.** That bridge
+  needs tmuxp 1.74.0 and uses the selected tmux binary; native commands never
+  start Python. (#16)
 
-- **`tmux-workspace`'s workspace-file preflight checks pane counts and resolves
-  layout presets against the target tmux version before creating anything.**
-  JSON layout preflight checks cell structure and pane counts on tmux 3.8 and
-  later; classic layouts retain the core library's geometry checks, including
-  inputs tmux could repair. (#16)
+- **`ServerConfig.force256Colors` and `Server.Builder.force256Colors` start
+  tmux clients with 256-color support.** `tmux-workspace load -2` sets it.
+  Left unset, tmux detects the terminal. (#16)
+
+- **`Layout.byTmuxName` resolves a built-in layout by its exact tmux name.**
+  (#16)
+
+### Changed
+
+- **`CommandResult.stdout()` keeps carriage returns.** It splits at LF alone,
+  so `Buffers.show`, pane captures and option reads return `\r` and `\r\n` as
+  tmux sent them. Strip `\r` yourself where a line ending must be bare.
+  `stderr()` still turns CRLF and CR into LF. (#16)
+
+- **`WindowSpec.Builder.in` takes an absolute directory on tmux 3.2a, and
+  needs 3.3a for a relative one.** Before 3.3a, tmux resolves a relative `-c`
+  against the server's own working directory and falls back to home, so a
+  relative directory on 3.3 now throws `UnsupportedFeatureException`. Pass an
+  absolute path there. (#16)
 
 ### Fixed
 
-- **`Server.hasSession` and `Server.killSession` handle names containing `.` or
-  `:`.** tmux's own `-t` target splits on both, so a session tmux 3.7a and later
-  kept with either character answered false to `hasSession` and could not be
-  found to kill; both now resolve the session by comparing names and address it
-  by id. `killSession` throws `ObjectDoesNotExistException` when no session
-  carries the name. (#16)
+- **Option values read from tmux 3.4 and 3.5 keep a carriage return apart from
+  a literal `\r`.** Both releases print the two alike under `-v`, so
+  `Options.get`, `Options.all` and `Options.effective` read tmux's quoted
+  listing on them instead. (#16)
 
-- **`WorkspaceBuilder` rebalances between pane splits.** Windows with more than
-  four panes can be built at the default terminal size. (#16)
+- **`Options.all` and `Options.effective` keep a user option's trailing `*`.**
+  Only the `*` tmux appends to an inherited built-in is removed. (#16)
 
-- **`WorkspaceBuilder` refuses a layout with fewer cells than a window's
-  panes**, checked against the target tmux version before any window is
-  created. (#16)
+- **MCP `select_layout` accepts a unique abbreviation or a checksummed saved
+  layout**, not only an exact built-in name. Mirrored main layouts still need
+  tmux 3.5, and malformed layout syntax is refused before the window is looked
+  up. (#16)
+
+- **`WorkspaceBuilder` rebalances the window after each pane split**, so a
+  window with more than four panes builds at the default terminal size. (#16)
+
+- **`WorkspaceBuilder` refuses a layout with fewer cells than the window has
+  panes**, checked against the target tmux before any window is created. (#16)
 
 - **`WorkspaceBuilder` accepts a layout captured from a JSON-layout session**,
-  refusing it only when the target tmux predates 3.8 instead of rejecting every
-  JSON layout as an unrecognized name regardless of version. (#16)
+  refusing it only when the target tmux predates 3.8, rather than rejecting
+  every JSON layout as an unknown name. (#16)
 
-- **MCP `select_layout` accepts a unique layout abbreviation or a checksummed
-  saved layout, not only an exact built-in name.** A mirrored main layout still
-  requires tmux 3.5; malformed layout syntax is refused before window lookup.
-  (#16)
-
-- **Absolute window start directories work on tmux 3.2a.** Relative directories
-  still require tmux 3.3a. (#16)
-
-- **Option reads preserve custom names ending in `*` and inherited values.** On
-  tmux 3.4 and 3.5 they decode the escaped listing to distinguish control
-  characters from literal escapes; a daemon unreachable during that check still
-  reads as empty rather than raising. (#16)
-
-- **`CommandResult.stdout()` now preserves literal carriage returns**, splitting
-  only at LF instead of also breaking on CR. `Buffers.show`, pane captures, and
-  option reads built on it return `\r` and `\r\n` exactly as tmux sent them;
-  diagnostic stderr still normalizes CRLF and CR to LF. (#16)
-
-- **Classic layout validation accepts trees longer than 8191 characters** while
-  retaining checksum, geometry, depth, and pane-count checks. (#16)
+- **Classic layout validation accepts a layout longer than 8191 characters**,
+  still checking its checksum, geometry, depth and pane count. (#16)
 
 ### Development
 

@@ -8,6 +8,29 @@ API changes that require updates to calling code are recorded here. See
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### `CommandResult.stdout()` keeps carriage returns
+
+Each line of `stdout()` is split at LF alone, so a `\r` tmux sent stays at the
+end of its line, and `Buffers.show`, pane captures and option reads return it.
+Where your code compared a line with a bare string, strip the carriage return
+first:
+
+```java
+// Given: Server server
+CommandResult result = server.cmd("list-sessions", "-F", "#{session_name}");
+List<String> lines = result.stdout().stream()
+        .map(line -> line.endsWith("\r") ? line.substring(0, line.length() - 1) : line)
+        .toList();
+```
+
+### A relative window directory needs tmux 3.3a
+
+`WindowSpec.Builder.in` with a relative path throws
+`UnsupportedFeatureException` below tmux 3.3a, where tmux resolves it against
+the server's working directory instead of yours. Resolve it first:
+`builder.in(directory.toAbsolutePath())`. An absolute directory now works from
+3.2a.
+
 ### JDK 25 is the floor
 
 Building or running on JDK 21 through 24 no longer works. The toolchain and
