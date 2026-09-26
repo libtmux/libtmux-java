@@ -21,11 +21,9 @@ from zipfile import BadZipFile, ZipFile
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULES = tuple(
-    f"{name}_{suffix}"
-    for name in ("libtmux-scala", "libtmux-scala-cats")
-    for suffix in ("2.13", "3")
+    f"{name}_3" for name in ("libtmux-scala", "libtmux-scala-cats")
 )
-SCALAS = ("2.13.18", "3.3.8", "3.9.0")
+SCALAS = ("3.3.8", "3.9.0")
 GROUP = "io.github.libtmux"
 POM = {"m": "http://maven.apache.org/POM/4.0.0"}
 
@@ -91,8 +89,7 @@ def verify_pom(path, module, version, java_version):
             raise ValueError(f"Duplicate POM dependency: {module}")
         dependencies[coordinate] = field("version")
     suffix = module.rsplit("_", 1)[1]
-    standard = "scala-library" if suffix == "2.13" else "scala3-library_3"
-    expected = {("org.scala-lang", standard)}
+    expected = {("org.scala-lang", "scala3-library_3")}
     if module.startswith("libtmux-scala-cats_"):
         expected.update({(GROUP, "libtmux-scala_" + suffix),
                          ("org.typelevel", "cats-effect_" + suffix),
@@ -317,8 +314,10 @@ def runtime_inventory(path, kind, suffix, args):
             raise ValueError(f"Mixed Scala runtime families: {module}")
         standard = group == "org.scala-lang" and module in (
             "scala-library", "scala3-library_3")
+        # The unsuffixed `scala-library` is Scala 3's own transitive Scala 2.13
+        # standard library dependency, not a leftover cross-build artifact.
         compatible_standard = version.startswith("2.13.") or (
-            suffix == "3" and version == args.scala_version and version.startswith("3."))
+            version == args.scala_version and version.startswith("3."))
         if module == "scala-library" and not compatible_standard:
             raise ValueError("Wrong Scala standard library: " + version)
         if kind != "cats" and group != GROUP and not standard:
@@ -490,7 +489,7 @@ def verify(args, staged):
             if result["exit"]:
                 raise ValueError(tool + " consumer failed; inspect " + result["log"])
             log = Path(result["log"]).read_text()
-            suffix = "2.13" if args.scala_version.startswith("2.") else "3"
+            suffix = "3"
             result["runtime"] = {}
             result["compiler_jars"] = {}
             if tool == "sbt":
@@ -506,8 +505,7 @@ def verify(args, staged):
                     raise ValueError("Consumer did not use the pinned build tool")
                 result["build_tool_version"] = expected_tool
                 compiler = (directory / kind / "compiler.txt").read_text().splitlines()
-                compiler_name = "scala-compiler" if suffix == "2.13" else "scala3-compiler_3"
-                if f"{compiler_name}-{args.scala_version}.jar" not in compiler:
+                if f"scala3-compiler_3-{args.scala_version}.jar" not in compiler:
                     raise ValueError("Wrong compiler jars: " + repr(compiler))
                 result["compiler_jars"][kind] = compiler
                 result["runtime"][kind] = runtime_inventory(
