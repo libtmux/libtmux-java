@@ -1,7 +1,7 @@
 subprojects {
     apply plugin: 'scala'
     def compiler = System.getenv('CONSUMER_SCALA_VERSION')
-    def suffix = compiler.startsWith('2.') ? '2.13' : '3'
+    def suffix = '3'
     scala.scalaVersion = compiler
     tasks.withType(ScalaCompile).configureEach {
         scalaCompileOptions.deprecation = true

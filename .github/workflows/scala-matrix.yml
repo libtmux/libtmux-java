@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       include_macos_release:
-        description: 'Run the manual P05, P07 and P08 macOS release cells'
+        description: 'Run the manual P08 macOS release cell'
         required: false
         default: false
         type: boolean
@@ -33,7 +33,7 @@ env:
 jobs:
   artifact-stage:
     if: github.event_name != 'workflow_dispatch' || !inputs.include_macos_release || inputs.include_macos_consumers
-    name: P01 artifacts (Linux, JDK 25, Scala 2.13.18, tmux 3.7c)
+    name: P01 artifacts (Linux, JDK 25, Scala 3.9.0, tmux 3.7c)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -103,7 +103,6 @@ jobs:
           TMUX_TEST_BINARY: ${{ env.TMUX_PREFIX }}/bin/tmux
         run: |
           libtmux-scala/sbtw \
-            '++2.13.18' \
             scalafmtSbtCheck \
             scalafmtCheckAll \
             core/test \
@@ -125,8 +124,8 @@ jobs:
             --version "$LIBTMUX_SCALA_VERSION" \
             --java-version "$LIBTMUX_JAVA_VERSION" \
             --prepare-only \
-            --docs-exports libtmux-scala/examples/target/scala-2.13/resource_managed/test \
-            --scala-version 2.13.18 \
+            --docs-exports libtmux-scala/examples/target/scala-3.9.0/resource_managed/test \
+            --scala-version 3.9.0 \
             --jdk "$JAVA_HOME" \
             --tmux "$TMUX_PREFIX/bin/tmux" \
             --expected-tmux "$TMUX_LANE" \
@@ -137,7 +136,7 @@ jobs:
           tar -C libtmux-scala -czf "$RUNNER_TEMP/scala-consumer-stage.tar.gz" \
             target/staging \
             target/java-repository \
-            examples/target/scala-2.13/resource_managed/test
+            examples/target/scala-3.9.0/resource_managed/test
 
       - name: No tmux server outlived P01
         if: always()
@@ -300,18 +299,12 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - id: C02
-            java: '25'
-            scala: 2.13.18
           - id: C03
             java: '25'
             scala: 3.3.8
           - id: C04
             java: '25'
             scala: 3.9.0
-          - id: C05
-            java: '27'
-            scala: 2.13.18
           - id: C06
             java: '27'
             scala: 3.3.8
@@ -384,7 +377,7 @@ jobs:
             --java-stage libtmux-scala/target/java-repository \
             --version "$LIBTMUX_SCALA_VERSION" \
             --java-version "$LIBTMUX_JAVA_VERSION" \
-            --docs-exports libtmux-scala/examples/target/scala-2.13/resource_managed/test \
+            --docs-exports libtmux-scala/examples/target/scala-3.9.0/resource_managed/test \
             --scala-version ${{ matrix.scala }} \
             --jdk "$JAVA_HOME" \
             --tmux "$TMUX_PREFIX/bin/tmux" \
@@ -416,11 +409,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Both binary families, installed, on every commit: a release is gated on this run, so a
-        # Scala 3 consumer that only the manual macOS dispatch exercised was never release evidence.
+        # The release version and the oldest supported compiler, installed, on every commit: a
+        # release is gated on this run, so a cell that only the manual macOS dispatch exercised was
+        # never release evidence.
         include:
           - id: C01
-            scala: 2.13.18
+            scala: 3.9.0
           - id: C08
             scala: 3.3.8
     env:
@@ -488,7 +482,7 @@ jobs:
             --java-stage libtmux-scala/target/java-repository \
             --version "$LIBTMUX_SCALA_VERSION" \
             --java-version "$LIBTMUX_JAVA_VERSION" \
-            --docs-exports libtmux-scala/examples/target/scala-2.13/resource_managed/test \
+            --docs-exports libtmux-scala/examples/target/scala-3.9.0/resource_managed/test \
             --scala-version ${{ matrix.scala }} \
             --jdk "$JAVA_HOME" \
             --tmux "$TMUX_PREFIX/bin/tmux" \
@@ -521,12 +515,6 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - id: P05
-            java: '25'
-            scala: 2.13.18
-          - id: P07
-            java: '27'
-            scala: 2.13.18
           - id: P08
             java: '27'
             scala: 3.3.8

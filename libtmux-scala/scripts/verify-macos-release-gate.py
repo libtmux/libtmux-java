@@ -8,22 +8,19 @@ import re
 
 ROOT = Path(__file__).resolve().parents[2]
 EXPECTED = {
-    "P05": ("25", "2.13.18"),
-    "P07": ("27", "2.13.18"),
     "P08": ("27", "3.3.8"),
 }
 CONSUMER_CELLS = {
-    "C02": ("25", "2.13.18"),
     "C03": ("25", "3.3.8"),
     "C04": ("25", "3.9.0"),
-    "C05": ("27", "2.13.18"),
     "C06": ("27", "3.3.8"),
     "C07": ("27", "3.9.0"),
 }
-# Installed consumers on every routine run, one per binary family: the Scala
-# release requires this workflow's run on its commit.
+# Installed consumers on every routine run, the release version and the
+# oldest supported compiler: the Scala release requires this workflow's run
+# on its commit.
 ROUTINE_CONSUMER_CELLS = {
-    "C01": "2.13.18",
+    "C01": "3.9.0",
     "C08": "3.3.8",
 }
 TASKS = (
