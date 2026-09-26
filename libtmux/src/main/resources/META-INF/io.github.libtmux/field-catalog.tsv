@@ -1,6 +1,6 @@
 # field-catalog.tsv — one row per queryable tmux field or relation on Pane_/Session_/Window_/
 # Client_. Generates the four classes; do not hand-edit them. See
-# build-logic/src/main/kotlin/io/github/libtmux/buildlogic/catalog/FieldCatalog.kt for the schema
+# build-logic/codegen/src/main/kotlin/io/github/libtmux/codegen/catalog/FieldCatalog.kt for the schema
 # this file is validated against, and docs/guide/filtering.md for the field list a reader sees.
 #
 # name	owner	kind	tmuxFormat	since	relation	accessor	javadoc

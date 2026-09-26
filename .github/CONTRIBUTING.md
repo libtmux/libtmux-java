@@ -221,9 +221,9 @@ to do things in — is in [`RELEASING.md`](../RELEASING.md).
 
 **JDK 25 is the floor.** Three places state it and all three have to agree: the
 toolchain and `options.release` in
-`build-logic/src/main/kotlin/libtmux.java-library.gradle.kts`, the version
-matrix in the CI workflow, which builds on 25 and 27, and the claim `README.md`
-makes under `Requirements`.
+`build-logic/conventions/src/main/kotlin/libtmux.java-library.gradle.kts`, the
+version matrix in the CI workflow, which builds on 25 and 27, and the claim
+`README.md` makes under `Requirements`.
 
 **tmux 3.2a through 3.7c is the supported range**, and it is not a claim: the
 whole real-tmux suite runs against every one of those releases, and each lane

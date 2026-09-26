@@ -13,7 +13,7 @@ set -eu
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 destination="${1:-$HOME/tmux-builds}"
-plugin="$root/build-logic/src/main/kotlin/libtmux.tmux-matrix.gradle.kts"
+plugin="$root/build-logic/conventions/src/main/kotlin/libtmux.tmux-matrix.gradle.kts"
 
 lanes="$(sed -n 's/^val lanes = listOf(\(.*\))$/\1/p' "$plugin" | tr -d '" ' | tr ',' ' ')"
 [ -n "$lanes" ] || { echo "could not read the lanes from $plugin" >&2; exit 1; }

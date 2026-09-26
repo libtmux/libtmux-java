@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Must match the required lanes in build-logic/src/main/kotlin/libtmux.tmux-matrix.gradle.kts
+        # Must match the required lanes in build-logic/conventions/src/main/kotlin/libtmux.tmux-matrix.gradle.kts
         # (its `lanes` list), which is the source of truth. The agree step below fails if they drift
         # apart. This is also what DocumentationFactsTest reads the README's claimed range from, so a
         # preview lane belongs in `include` below and never here.
@@ -54,7 +54,7 @@ jobs:
         env:
           LANE: ${{ matrix.tmux }}
         run: |
-          plugin=build-logic/src/main/kotlin/libtmux.tmux-matrix.gradle.kts
+          plugin=build-logic/conventions/src/main/kotlin/libtmux.tmux-matrix.gradle.kts
           grep -q "\"$LANE\"" "$plugin" || {
             echo "::error::tmux $LANE is not a lane in $plugin"
             exit 1
