@@ -1,4 +1,4 @@
-// Measures what an operation costs, and rewrites docs/benchmarks/operations.md from a real run.
+// Measures what an operation costs, and rewrites docs/benchmarks/operation-costs.md from a real run.
 //
 // Its own module, and never published. A benchmark takes seconds per case and starts a server per
 // case, so it must not run in any ordinary suite; keeping it in a published artifact's tests made
@@ -17,7 +17,7 @@ tasks.named<Test>("test") { useJUnitPlatform { excludeTags("benchmark") } }
 
 tasks.register<Test>("operationBenchmark") {
     group = "verification"
-    description = "Measures what each operation costs and rewrites docs/benchmarks/operations.md."
+    description = "Measures what each operation costs and rewrites docs/benchmarks/operation-costs.md."
     val tests = sourceSets.test.get()
     testClassesDirs = tests.output.classesDirs
     classpath = tests.runtimeClasspath
@@ -25,7 +25,7 @@ tasks.register<Test>("operationBenchmark") {
     systemProperty("libtmux.tmux", providers.gradleProperty("libtmuxTmux").getOrElse("tmux"))
     systemProperty(
         "libtmux.benchmark.out",
-        rootProject.layout.projectDirectory.file("docs/benchmarks/operations.md").asFile.path,
+        rootProject.layout.projectDirectory.file("docs/benchmarks/operation-costs.md").asFile.path,
     )
     outputs.upToDateWhen { false }
 }
