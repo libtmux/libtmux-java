@@ -56,11 +56,14 @@ final class ServerTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 requests.add(request);
-                return switch (request.commands().getFirst().getFirst()) {
-                    case "display-message" -> version.get();
+                return GroupedTmux.execute(request, 4242L, argv -> switch (argv.getFirst()) {
+                    case "display-message" ->
+                        argv.getLast().equals("#{version}")
+                                ? version.get()
+                                : new CommandResult(0, List.of(argv.getLast()), List.of());
                     case "show-options" -> value.get();
                     default -> throw new AssertionError("option read selected another transport command");
-                };
+                });
             }
 
             @Override
@@ -68,9 +71,8 @@ final class ServerTest {
         };
         try (Server server = Server.using(config(directory), transport)) {
             assertEquals(java.util.Optional.of("a\rb"), server.globalOptions().get("@value"));
-            assertEquals(
-                    List.of("show-options", "-g", "-A", "--", "@value"),
-                    requests.getLast().commands().getFirst());
+            assertEquals(1, requests.size(), "the version and the value come from one invocation");
+            assertTrue(requests.getLast().commands().contains(List.of("show-options", "-g", "-A", "--", "@value")));
             value.set(new CommandResult(0, List.of("@value a\\377\\376é"), List.of()));
             assertEquals(
                     java.util.Optional.of("a\\xff\\xfeé"),
@@ -87,8 +89,8 @@ final class ServerTest {
                     ServerUnavailableException.class,
                     () -> server.globalOptions().get("@value"));
             assertEquals(
-                    List.of("show-options", "-g", "-A", "-v", "--", "@value"),
-                    requests.getLast().commands().get(1));
+                    List.of("display-message", "-p", "#{version}"),
+                    requests.getLast().commands().getFirst());
         }
     }
 

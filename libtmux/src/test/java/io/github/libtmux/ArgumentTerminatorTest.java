@@ -172,10 +172,16 @@ final class ArgumentTerminatorTest {
 
         private CommandResult answer(List<String> argv) {
             return switch (argv.get(0)) {
+                // The version, the identity row, or a batch's marker, which is plain text echoed back.
                 case "display-message" ->
                     new CommandResult(
                             0,
-                            List.of(argv.contains("#{version}") ? "3.6" : row("4242", "3.6", "1790000000")),
+                            List.of(
+                                    argv.contains("#{version}")
+                                            ? "3.6"
+                                            : argv.getLast().contains("#{")
+                                                    ? row("4242", "3.6", "1790000000")
+                                                    : argv.getLast()),
                             List.of());
                 case "list-sessions" ->
                     new CommandResult(

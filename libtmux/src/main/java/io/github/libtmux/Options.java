@@ -32,9 +32,9 @@ import org.jspecify.annotations.Nullable;
  * <p>Array options keep the subscript tmux prints — {@code command-alias[0]} — because that is what
  * addresses the individual entry when setting it back.
  *
- * <p>Reads use the captured daemon version when available; otherwise they query the selected
- * daemon before reading values. tmux 3.4 and 3.5 require decoding their escaped listing because
- * their value-only output loses the distinction between control characters and literal escapes.
+ * <p>Every read asks the daemon its version in the same tmux invocation as the values, since how a
+ * value is printed depends on that version: tmux 3.4 and 3.5 print a carriage return and a literal
+ * {@code \r} alike under {@code -v}, so on those two the escaped listing is decoded instead.
  */
 public final class Options {
 
@@ -88,26 +88,30 @@ public final class Options {
      */
     @Operation(Kind.READ)
     public Optional<String> get(String name) {
-        TmuxVersion version = listingVersion();
-        var result = version == null
-                ? server.printed(snapshot, argv("show-options", List.of("-A", "-v", "--", name)))
-                : cmd(argv("show-options", List.of("-A", "--", name)));
-        if (result.succeeded()) {
-            if (version == null) return Optional.of(String.join("\n", result.stdout()));
-            List<String> values = new ArrayList<>();
-            for (String line : result.stdout()) {
-                int split = line.indexOf(' ');
-                values.add(split < 0 ? "" : listedValue(line.substring(split + 1), version));
+        // Both spellings of the value, since which one reads back exactly depends on the version.
+        List<OperationResult> read = withVersion(List.of(
+                argv("show-options", List.of("-A", "-v", "--", name)),
+                argv("show-options", List.of("-A", "--", name))));
+        TmuxVersion version = version(read.get(0));
+        OperationResult printed = read.get(1);
+        if (printed.outcome() != OperationOutcome.COMPLETE) {
+            // The documented meaning of empty, in tmux's own words on every supported release. Any
+            // other failure is a failed read, and answering it with "tmux does not know that option"
+            // makes this method say something it did not find out.
+            if (printed.stderr().stream().anyMatch(line -> line.contains("invalid option"))) {
+                return Optional.empty();
             }
-            return Optional.of(String.join("\n", values));
+            throw failed(printed);
         }
-        // The documented meaning of empty, in tmux's own words on every supported release. Any
-        // other failure is a failed read, and answering it with "tmux does not know that option"
-        // makes this method say something it did not find out.
-        if (result.stderr().stream().anyMatch(line -> line.contains("invalid option"))) {
-            return Optional.empty();
+        if (!escapedListing(version)) {
+            return Optional.of(String.join("\n", TmuxFormats.printed(printed.stdout(), version)));
         }
-        throw server.failed("show-options", result);
+        List<String> values = new ArrayList<>();
+        for (String line : completed(read.get(2)).stdout()) {
+            int split = line.indexOf(' ');
+            values.add(split < 0 ? "" : listedValue(line.substring(split + 1), version));
+        }
+        return Optional.of(String.join("\n", values));
     }
 
     /**
@@ -146,10 +150,12 @@ public final class Options {
      * listing's quoted spelling; elsewhere {@code -v} prints the value itself, as {@link #get} reads it.
      */
     private Map<String, String> read(List<String> flags) {
-        TmuxVersion version = listingVersion();
-        if (version != null) {
+        List<OperationResult> listing = withVersion(List.of(argv("show-options", flags)));
+        TmuxVersion version = version(listing.get(0));
+        List<String> listed = completed(listing.get(1)).stdout();
+        if (escapedListing(version)) {
             Map<String, String> values = new LinkedHashMap<>();
-            for (String line : run(argv("show-options", flags)).stdout()) {
+            for (String line : listed) {
                 int split = line.indexOf(' ');
                 String name = inherited(split < 0 ? line : line.substring(0, split));
                 values.put(name, split < 0 ? "" : listedValue(line.substring(split + 1), version));
@@ -157,7 +163,7 @@ public final class Options {
             return Collections.unmodifiableMap(values);
         }
         List<String> names = new ArrayList<>();
-        for (String line : run(argv("show-options", flags)).stdout()) {
+        for (String line : listed) {
             int split = line.indexOf(' ');
             names.add(inherited(split < 0 ? line : line.substring(0, split)));
         }
@@ -181,21 +187,41 @@ public final class Options {
         return Collections.unmodifiableMap(options);
     }
 
-    /** The selected daemon decides output encoding; a client binary may be a different release. */
-    private @Nullable TmuxVersion listingVersion() {
-        TmuxVersion version = snapshot == null ? null : snapshot.serverVersion().orElse(null);
-        if (version == null) {
-            var result = cmd(List.of("display-message", "-p", "#{version}"));
-            // A daemon that cannot answer cannot serve the read either, and that read reports the
-            // failure the way the scope always has.
-            if (!result.succeeded()) return null;
-            try {
-                version = TmuxVersion.parse(String.join("\n", result.stdout()));
-            } catch (IllegalArgumentException invalid) {
-                throw new MalformedResponseException("could not establish tmux option output encoding", invalid);
-            }
+    /**
+     * The daemon's version, then these reads, in one tmux invocation: the version is the one that
+     * printed them, whatever the client binary is, and a read costs no second process.
+     */
+    private List<OperationResult> withVersion(List<List<String>> reads) {
+        Batch batch = snapshot == null ? server.batch() : server.batch(snapshot);
+        batch.add("display-message", "-p", "#{version}");
+        reads.forEach(batch::add);
+        return batch.run().operations();
+    }
+
+    private TmuxVersion version(OperationResult reported) {
+        List<String> stdout = completed(reported).stdout();
+        try {
+            return TmuxVersion.parse(String.join("\n", stdout));
+        } catch (IllegalArgumentException invalid) {
+            throw new MalformedResponseException("could not establish tmux option output encoding", invalid);
         }
-        return version.major() == 3 && (version.minor() == 4 || version.minor() == 5) ? version : null;
+    }
+
+    /** The releases whose {@code -v} output loses raw-value boundaries, so their listing is decoded. */
+    private static boolean escapedListing(TmuxVersion version) {
+        return version.major() == 3 && (version.minor() == 4 || version.minor() == 5);
+    }
+
+    private OperationResult completed(OperationResult read) {
+        if (read.outcome() != OperationOutcome.COMPLETE) {
+            throw failed(read);
+        }
+        return read;
+    }
+
+    /** A read that did not complete, reported the way a lone {@code show-options} would be. */
+    private LibTmuxException failed(OperationResult read) {
+        return server.failed("show-options", read.outcome().toString(), read.stderr());
     }
 
     /** Inverts args_escape for the releases whose outer print pass loses raw-value boundaries. */
