@@ -58,21 +58,26 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
      *
      * <p>The pid alone is not a stable owner: the OS recycles pids, and a fixture directory left by a
      * killed JVM can end up named for a pid a later, unrelated process now holds. The owning JVM's
-     * start instant rules that out, so it rides along whenever the platform reports one.
+     * start rules that out, so it rides along whenever the platform reports one.
      */
     private static final String PREFIX = prefix();
 
     private static String prefix() {
         ProcessHandle current = ProcessHandle.current();
-        String startSuffix = current.info()
-                .startInstant()
-                .map(instant -> "-" + instant.toEpochMilli())
-                .orElse("");
-        return "libtmux-" + current.pid() + startSuffix + "-";
+        return "libtmux-" + current.pid()
+                + startOf(current.pid()).map(start -> "-" + start).orElse("") + "-";
     }
 
-    /** pid and start instant, the current naming. */
-    private static final Pattern OWNER_WITH_START = Pattern.compile("libtmux-(\\d+)-(\\d+)-.*");
+    /** pid and start, the current naming: {@code k} and ticks since boot on Linux, epoch millis elsewhere. */
+    private static final Pattern OWNER_WITH_START = Pattern.compile("libtmux-(\\d+)-(k?\\d+)-.*");
+
+    /**
+     * How far two JVMs' readings of one process's start instant may differ. Linux reports a start as
+     * ticks since boot; the JDK adds the boot time it read once when it started, and that boot time
+     * moves whenever the wall clock is stepped, by seconds under WSL2 in a few minutes. Only a
+     * directory written before starts were recorded as ticks is compared this way.
+     */
+    private static final long START_SLACK_MILLIS = Duration.ofMinutes(1).toMillis();
 
     /** pid alone, written by a version of this extension that predates {@link #OWNER_WITH_START}. */
     private static final Pattern OWNER = Pattern.compile("libtmux-(\\d+)-.*");
@@ -182,8 +187,7 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
         Matcher withStart = OWNER_WITH_START.matcher(name);
         if (withStart.matches()) {
             long pid = Long.parseLong(withStart.group(1));
-            long recordedStartMillis = Long.parseLong(withStart.group(2));
-            return ownerChanged(pid, recordedStartMillis) ? Optional.of(directory) : Optional.empty();
+            return ownerChanged(pid, withStart.group(2)) ? Optional.of(directory) : Optional.empty();
         }
         Matcher named = OWNER.matcher(name);
         if (!named.matches()) {
@@ -194,20 +198,55 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
     }
 
     /**
-     * True when the pid is free, or a live process holds it but did not start at the instant this
-     * directory recorded. A live process that reports no start instant is trusted rather than reaped:
-     * this platform cannot tell a reused pid from the one that made the directory.
+     * True when the pid is free, or a live process holds it but did not start when this directory
+     * recorded. A live process whose start cannot be read is trusted rather than reaped: this
+     * platform cannot tell a reused pid from the one that made the directory.
      */
-    private static boolean ownerChanged(long pid, long recordedStartMillis) {
+    private static boolean ownerChanged(long pid, String recordedStart) {
         Optional<ProcessHandle> live = ProcessHandle.of(pid);
         if (live.isEmpty()) {
             return true;
         }
+        if (recordedStart.startsWith("k")) {
+            return linuxStartTicks(pid)
+                    .map(ticks -> !recordedStart.equals("k" + ticks))
+                    .orElse(false);
+        }
+        long recordedMillis = Long.parseLong(recordedStart);
         return live.get()
                 .info()
                 .startInstant()
-                .map(instant -> instant.toEpochMilli() != recordedStartMillis)
+                .map(instant -> Math.abs(instant.toEpochMilli() - recordedMillis) > START_SLACK_MILLIS)
                 .orElse(false);
+    }
+
+    /**
+     * When a process started, in a form every JVM on this machine reads the same way: the kernel's
+     * own ticks since boot on Linux, and the platform's start instant elsewhere.
+     */
+    static Optional<String> startOf(long pid) {
+        Optional<Long> ticks = linuxStartTicks(pid);
+        if (ticks.isPresent()) {
+            return Optional.of("k" + ticks.get());
+        }
+        return ProcessHandle.of(pid)
+                .flatMap(process -> process.info().startInstant())
+                .map(instant -> Long.toString(instant.toEpochMilli()));
+    }
+
+    /**
+     * Field 22 of {@code /proc/<pid>/stat}. Counted after the command name's closing parenthesis,
+     * since the name itself may hold spaces and parentheses.
+     */
+    private static Optional<Long> linuxStartTicks(long pid) {
+        Path stat = Path.of("/proc", Long.toString(pid), "stat");
+        try {
+            String text = Files.readString(stat);
+            String[] fields = text.substring(text.lastIndexOf(')') + 2).split(" ", -1);
+            return Optional.of(Long.parseLong(fields[19]));
+        } catch (IOException | RuntimeException unreadable) {
+            return Optional.empty();
+        }
     }
 
     private record AbandonedServer(ProcessHandle process, Path directory) {}
