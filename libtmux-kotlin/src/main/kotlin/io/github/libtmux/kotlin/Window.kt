@@ -17,6 +17,9 @@ import io.github.libtmux.Window as JavaWindow
  */
 public class Window internal constructor(internal val java: JavaWindow, public val server: Server) {
 
+    /** The Java window this wraps: the same object, for a Java API that takes one. */
+    public val asJava: JavaWindow get() = java
+
     /** The underlying window, shared by every link to it. */
     public val id: WindowId get() = java.id()
 

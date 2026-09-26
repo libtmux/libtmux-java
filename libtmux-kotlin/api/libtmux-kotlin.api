@@ -1,6 +1,7 @@
 public final class io/github/libtmux/kotlin/Client {
 	public static final field Companion Lio/github/libtmux/kotlin/Client$Companion;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsJava ()Lio/github/libtmux/Client;
 	public final fun getAttachment ()Lio/github/libtmux/ClientAttachment;
 	public final fun getName ()Ljava/lang/String;
 	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
@@ -25,6 +26,7 @@ public final class io/github/libtmux/kotlin/ControlClient : java/lang/AutoClosea
 	public fun close ()V
 	public final fun events (ILkotlin/jvm/functions/Function1;)Lkotlinx/coroutines/flow/Flow;
 	public static synthetic fun events$default (Lio/github/libtmux/kotlin/ControlClient;ILkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
+	public final fun getAsJava ()Lio/github/libtmux/control/ControlClient;
 	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
 	public final fun getStandardError ()Ljava/lang/String;
 	public final fun getStandardErrorTruncated ()Z
@@ -92,6 +94,7 @@ public final class io/github/libtmux/kotlin/Pane {
 	public final fun batch ()Lio/github/libtmux/batch/Batch;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getActive ()Z
+	public final fun getAsJava ()Lio/github/libtmux/Pane;
 	public final fun getCurrentCommand ()Ljava/lang/String;
 	public final fun getCurrentPath ()Ljava/nio/file/Path;
 	public final fun getEdges ()Lio/github/libtmux/PaneEdges;
@@ -178,6 +181,7 @@ public final class io/github/libtmux/kotlin/Server : java/lang/AutoCloseable {
 	public static synthetic fun control-8Mi8wO0$default (Lio/github/libtmux/kotlin/Server;Lio/github/libtmux/kotlin/Session;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun environment ()Lio/github/libtmux/Environment;
 	public final fun getAdmissionBound ()I
+	public final fun getAsJava ()Lio/github/libtmux/Server;
 	public final fun getConfig ()Lio/github/libtmux/ServerConfig;
 	public final fun getIdentity ()Lio/github/libtmux/ServerIdentity;
 	public final fun getPolicy ()Lio/github/libtmux/kotlin/ExecutionPolicy;
@@ -197,6 +201,8 @@ public final class io/github/libtmux/kotlin/Server : java/lang/AutoCloseable {
 }
 
 public final class io/github/libtmux/kotlin/Server$Companion {
+	public final fun fromJava (Lio/github/libtmux/Server;Lio/github/libtmux/kotlin/ExecutionPolicy;)Lio/github/libtmux/kotlin/Server;
+	public static synthetic fun fromJava$default (Lio/github/libtmux/kotlin/Server$Companion;Lio/github/libtmux/Server;Lio/github/libtmux/kotlin/ExecutionPolicy;ILjava/lang/Object;)Lio/github/libtmux/kotlin/Server;
 	public final fun open (Lio/github/libtmux/ServerConfig;Lio/github/libtmux/kotlin/ExecutionPolicy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun open$default (Lio/github/libtmux/kotlin/Server$Companion;Lio/github/libtmux/ServerConfig;Lio/github/libtmux/kotlin/ExecutionPolicy;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
@@ -243,6 +249,7 @@ public final class io/github/libtmux/kotlin/Session {
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getActivePane ()Lio/github/libtmux/kotlin/Pane;
 	public final fun getActiveWindow ()Lio/github/libtmux/kotlin/Window;
+	public final fun getAsJava ()Lio/github/libtmux/Session;
 	public final fun getAttached ()Z
 	public final fun getId ()Lio/github/libtmux/SessionId;
 	public final fun getName ()Ljava/lang/String;
@@ -304,6 +311,7 @@ public final class io/github/libtmux/kotlin/Window {
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getActive ()Z
 	public final fun getActivePane ()Lio/github/libtmux/kotlin/Pane;
+	public final fun getAsJava ()Lio/github/libtmux/Window;
 	public final fun getContext ()Lio/github/libtmux/snapshot/WindowContext;
 	public final fun getId ()Lio/github/libtmux/WindowId;
 	public final fun getIndex ()Lio/github/libtmux/WindowIndex;

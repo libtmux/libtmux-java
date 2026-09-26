@@ -11,6 +11,9 @@ import io.github.libtmux.Client as JavaClient
  */
 public class Client internal constructor(internal val java: JavaClient, public val server: Server) {
 
+    /** The Java client this wraps: the same object, for a Java API that takes one. */
+    public val asJava: JavaClient get() = java
+
     /** The client's terminal name, which is how tmux addresses it. */
     public val name: String get() = java.name()
 

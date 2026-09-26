@@ -29,8 +29,9 @@ dependencies {
 ## Wrapper classes, not the Java types directly
 
 `Server`, `Session`, `Window`, `Pane`, `Client`, and `ControlClient` here are
-Kotlin classes that hold the matching Java handle privately. Every operation
-that reaches tmux is `suspend`; captured state is a plain property.
+Kotlin classes over the matching Java handle, which each answers as `asJava`;
+`Server.fromJava` wraps a server opened in Java. Every operation that reaches
+tmux is `suspend`; captured state is a plain property.
 `withServer` opens one and closes it even if the block throws or is
 cancelled:
 

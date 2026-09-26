@@ -1,6 +1,6 @@
 # Kotlin
 
-## Wrapper classes hold the Java handle privately
+## Wrapper classes over the Java handles
 
 `Server`, `Session`, `Window`, `Pane`, `Client`, and `ControlClient` in
 `io.github.libtmux.kotlin` are hand-written Kotlin classes, not the Java types
@@ -23,6 +23,13 @@ withServer(config) { server ->
     session.name                          // → guide-demo
 }
 ```
+
+Each wrapper answers the Java handle it holds as `asJava`, the same object
+rather than a copy, for a Java API that takes one. `Server.fromJava` goes the
+other way, over a server opened in Java, such as a test fixture's; closing the
+wrapper closes that server. The two sets of classes share simple names, so a
+file that needs both imports one under an alias:
+`import io.github.libtmux.Server as JavaServer`.
 
 ## `ExecutionPolicy`: two independently sized pools
 

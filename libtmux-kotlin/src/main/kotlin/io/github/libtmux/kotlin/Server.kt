@@ -41,6 +41,12 @@ public class Server private constructor(
     public val policy: ExecutionPolicy,
 ) : AutoCloseable {
 
+    /**
+     * The Java server this wraps, for an operation this class does not mirror or a Java API that
+     * takes one. The same object, not a copy: closing either closes both.
+     */
+    public val asJava: JavaServer get() = java
+
     /** How this server was configured. */
     public val config: ServerConfig get() = java.config()
 
@@ -172,5 +178,14 @@ public class Server private constructor(
             config: ServerConfig,
             policy: ExecutionPolicy = ExecutionPolicy.default(config),
         ): Server = runInterruptible(policy.commands) { Server(JavaServer.open(config), policy) }
+
+        /**
+         * A wrapper over a server opened in Java, such as a test fixture's. It takes the server as
+         * it is: closing the wrapper closes it.
+         */
+        public fun fromJava(
+            server: JavaServer,
+            policy: ExecutionPolicy = ExecutionPolicy.default(server.config()),
+        ): Server = Server(server, policy)
     }
 }
