@@ -170,8 +170,8 @@ lazy val common = Seq(
 )
 
 /** A CycloneDX SBOM published beside each jar. sbt-sbom attaches it itself,
-  * under the classifier and extension the Gradle modules use, so one tool
-  * reads both builds' SBOMs; adding it again would publish it twice.
+  * under the classifier and extension the Gradle modules use, so one tool reads
+  * both builds' SBOMs; adding it again would publish it twice.
   */
 lazy val sbom = Seq(
   bomFileName := s"${moduleName.value}-${version.value}-cyclonedx.json"
