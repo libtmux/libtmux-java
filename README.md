@@ -313,8 +313,9 @@ rather than collapsing both into one error.
 ## Modules
 
 Group `io.github.libtmux`. Each listed published directory is an artifact with
-its own README. Java artifacts are [on Maven Central](https://central.sonatype.com/namespace/io.github.libtmux);
-the separately released Scala artifacts are staged from this source tree.
+its own README. They are [on Maven Central](https://central.sonatype.com/namespace/io.github.libtmux);
+the Scala artifacts, suffixed `_3`, publish with the rest starting with the first
+release that includes them.
 
 - **[`libtmux`](libtmux/)** — the library itself. Transport, snapshots,
   entities, options, hooks, batching, control mode, query model.
@@ -335,11 +336,14 @@ the separately released Scala artifacts are staged from this source tree.
 - **[`libtmux-kotlin`](libtmux-kotlin/)** — Kotlin ergonomics. Optional: the core
   is already null-safe from Kotlin without it.
 
-- **[`libtmux-scala`](libtmux-scala/)** — Scala collections, blocking
-  operations, and typed local queries.
+- **[`libtmux-scala`](libtmux-scala/)** — Scala 3 collections, opaque handles
+  over the Java ones, and the typed query DSL.
 
 - **[`libtmux-scala-cats`](libtmux-scala-cats/)** — optional Cats Effect
   resources and FS2 observations.
+
+- **[`libtmux-scala-ox`](libtmux-scala-ox/)** — an optional Ox `Flow` over
+  subscriptions and live views.
 
 - **[`libtmux-jackson`](libtmux-jackson/)** — a filter expression as a versioned
   JSON document, so it can be stored, sent, or written by something that is not
@@ -353,9 +357,8 @@ Not published, and part of how the library is built:
 [`docs-tests/`](docs-tests/) ·
 [`scripts/`](scripts/) · `build-logic/`
 
-The Gradle modules and shared Scala build declare the listed artifacts.
-`platformCoversEveryPublishedModule` validates Gradle publications against the
-BOM; the shared sbt build validates the separately released Scala coordinates.
+`platformCoversEveryPublishedModule` fails the build when the published artifacts
+stop matching the BOM.
 
 The local [`workspace-cli`](workspace-cli/) application provides the
 `tmux-workspace` launcher over native workspace services. It is built as a

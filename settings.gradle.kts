@@ -24,6 +24,9 @@ include("libtmux-kotlin")
 include("libtmux-junit5")
 include("libtmux-workspace")
 include("libtmux-mcp")
+include("libtmux-scala")
+include("libtmux-scala-cats")
+include("libtmux-scala-ox")
 
 // Internal: exercised by the build, never released.
 include("benchmarks")

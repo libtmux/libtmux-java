@@ -1,13 +1,15 @@
 # Scala
 
 Scala callers can use the Java API directly or the
-[Scala facade](../../libtmux-scala/README.md). The facade supplies native collections,
-optional values and a separate Cats/FS2 adapter. It is an independent sbt build
-targeting Scala 3.9 only, with `_3` artifacts; see its installation and
-verification status before selecting a dependency.
+[Scala facades](../../libtmux-scala/README.md): native collections, optional
+values and opaque handles, with separate Cats/FS2 and Ox modules. They target
+Scala 3.9 only and publish `_3` artifacts with the Java ones. Start with
+[getting started](scala/getting-started.md), then [queries](scala/query.md),
+[ownership](scala/ownership.md), [execution](scala/execution.md),
+[streaming](scala/streaming.md) and [compatibility](scala/compatibility.md).
 
 Runnable programs for both facades live in
-[`libtmux-scala/examples/`](../../libtmux-scala/examples/): blocking workspace
+[`examples/`](../../examples/): blocking workspace
 operations, bounded concurrent capture, notification loss and reconciliation,
 and Cats Effect resource ownership and cancellation.
 
@@ -20,10 +22,8 @@ The Java artifact has no Scala binary-version suffix. Use a single `%`:
 libraryDependencies += "io.github.libtmux" % "libtmux" % "0.0.1-alpha.14"
 ```
 
-Use `%%` for the separate `libtmux-scala` or `libtmux-scala-cats` artifact.
-It must not be used for `libtmux` itself. The
-[facade getting-started guide](../../libtmux-scala/docs/getting-started.md) documents
-its local development prerequisites separately from released Java coordinates.
+Use `%%` for the Scala artifacts (`libtmux-scala`, `libtmux-scala-cats`,
+`libtmux-scala-ox`), never for `libtmux` itself.
 
 ## Java collections and optional values
 
@@ -52,7 +52,7 @@ Using.resource(Server.open(config)) { server =>
 acquired Java handles is local. A failed live read still throws; it does not
 become an empty Scala collection or `None`.
 
-The separate Scala build compiles and runs this example on both producer
-families. See its [query guide](../../libtmux-scala/docs/query.md) for facade predicate
-adapters and strict cardinality, and its
-[ownership guide](../../libtmux-scala/docs/ownership.md) before borrowing Java clients.
+The documentation suite compiles and runs this example against a real tmux.
+See the [query guide](scala/query.md) for facade predicate adapters and strict
+cardinality, and the [ownership guide](scala/ownership.md) before borrowing
+Java clients.

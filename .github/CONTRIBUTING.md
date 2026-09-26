@@ -10,8 +10,7 @@ messages, API documentation, and source comments — is set out separately in
 
 A Gradle directory is a published artifact exactly when it declares a Maven
 publication, and the Gradle build fails when that set stops matching
-`libtmux-bom`. The shared sbt build validates separately released Scala
-coordinates. Nothing about this is a convention you have to remember:
+`libtmux-bom`. Nothing about this is a convention you have to remember:
 
 | directory | published | holds |
 | --- | --- | --- |
