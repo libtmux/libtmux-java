@@ -34,7 +34,11 @@ mavenPublishing {
         signAllPublications()
     }
 
-    coordinates(group.toString(), project.name, version.toString())
+    // A Scala artifact carries the Scala binary version it was compiled for (libtmux-scala_3), since
+    // Scala 2.13 and 3 artifacts cannot share a classpath. The coordinates can be set only once, so
+    // the suffix is decided here, from the plugin the module applied before this one.
+    val artifactId = if (plugins.hasPlugin("scala")) "${project.name}_3" else project.name
+    coordinates(group.toString(), artifactId, version.toString())
 
     pom {
         name = project.name

@@ -45,8 +45,9 @@ final class Documentation {
         } catch (IOException e) {
             throw new UncheckedIOException("could not list the repository root", e);
         }
+        // Walked, not listed: a language with several guides keeps them in a folder of its own.
         Path guides = root.resolve("docs/guide");
-        try (Stream<Path> written = Files.list(guides)) {
+        try (Stream<Path> written = Files.walk(guides)) {
             written.filter(file -> file.getFileName().toString().endsWith(".md"))
                     .sorted()
                     .forEach(found::add);

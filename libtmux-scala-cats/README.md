@@ -7,8 +7,16 @@ observations. `libtmux-scala` does not depend on Cats Effect or FS2; add this
 artifact only when an application uses those integrations. Use the same version
 as `libtmux-scala`.
 
+<!-- snippet: scala-build: cats-readme-install -->
+```sbt
+libraryDependencies += "io.github.libtmux" %% "libtmux-scala-cats" % "<version>"
+```
+
+From Gradle or Maven the coordinate is `io.github.libtmux:libtmux-scala-cats_3`.
+None is on Maven Central yet; the Scala artifacts publish with the Java ones.
+
 Every Scala block on this page is compiled for Scala 3.9 and run against a
-real tmux server by the examples suite.
+real tmux server by the documentation suite.
 
 **This project is alpha.** The API is not settled, and a release may change or
 remove exported identifiers without a deprecation period. Pin an exact version
@@ -83,5 +91,8 @@ cannot reconstruct dropped state. A subscription does not reconnect.
 
 ## Documentation
 
-The [Scala facade guide](../libtmux-scala/README.md) covers installation,
-resource ownership, execution, and streaming contracts.
+The [Scala guides](../docs/guide/scala/getting-started.md) cover installation,
+[ownership](../docs/guide/scala/ownership.md),
+[execution](../docs/guide/scala/execution.md) and
+[streaming](../docs/guide/scala/streaming.md); the
+[direct-style facade](../libtmux-scala/README.md) introduces the handles.

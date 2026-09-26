@@ -6,8 +6,6 @@
 | --- | --- |
 | [`tmux-matrix.sh`](tmux-matrix.sh) | builds every supported tmux release into a tree the version matrix can use |
 | [`reap-stale-servers.sh`](reap-stale-servers.sh) | reports and optionally ends tmux servers this port abandoned |
-| [`require-passed.sh`](require-passed.sh) | fails unless each named workflow passed on one commit, which is what the release workflows ask |
-| [`require-passed.test.sh`](require-passed.test.sh) | exercises `require-passed.sh` against a stub `gh`, run by `ci.yml` |
 | [`mcp-swap`](../tools/mcp-swap/README.md) | points every installed agent CLI at this build of `libtmux-mcp` |
 
 ## Build the tmux matrix

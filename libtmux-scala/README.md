@@ -1,4 +1,6 @@
-# libtmux for Scala
+# libtmux-scala
+
+**Scala 3 collections and opaque handles over libtmux for Java.**
 
 Use Scala collections and explicit effects to inspect and operate tmux through
 libtmux for Java. The direct-style facade's handles are opaque aliases of the
@@ -8,37 +10,34 @@ return immutable `Vector` and `Option` values. The
 effects and FS2 observations. Both retain the original Java handles, targeting
 rules and command engine.
 
-**This project is alpha.** A future Scala release will carry an `-alpha`
-prerelease tag. The API is not settled, and any release may change or remove
-exported identifiers without a deprecation period. Pin an exact version rather
-than a range. Not recommended for production.
+**This project is alpha.** Releases carry an `-alpha` prerelease tag. The API is
+not settled, and any release may change or remove exported identifiers without a
+deprecation period. Pin an exact version rather than a range. Not recommended
+for production.
 
 ## Requirements
 
-The build targets Scala 3.9 with JDK 25 bytecode; there is no Scala 2.13
-cross-build. Java supplies support for tmux 3.2a through 3.7c; the Scala
-operating-system and runtime checks are listed in
-[Compatibility](docs/compatibility.md). A target is not a completed test result.
+Scala 3.9 and JDK 25 or newer; there is no Scala 2.13 build. tmux 3.2a through
+3.7c, which the Java library supports and every tmux lane in CI runs these
+suites against. See [Compatibility](../docs/guide/scala/compatibility.md).
 
 ## Installation
 
-The `libtmux-scala/sbtw` wrapper starts the shared sbt build. These commands
-use local staging; they do not establish a published Scala release. The
-[getting-started guide](docs/getting-started.md) stages the Java prerequisite
-and both Scala artifacts before resolving a consumer.
+<!-- snippet: scala-build: readme-install -->
+```sbt
+libraryDependencies += "io.github.libtmux" %% "libtmux-scala" % "<version>"
+```
 
-| Artifact | Purpose |
-| --- | --- |
-| `libtmux-scala_3` | Direct-style operations and the typed query DSL |
-| `libtmux-scala-cats_3` | Resources and streams |
-
-All coordinates use group `io.github.libtmux`. Use `%` for the unsuffixed Java
-artifact and `%%` for a Scala artifact. Core does not depend on Cats, FS2,
-Jackson, JUnit, Kotlin, MCP or workspace packages.
+From Gradle or Maven the coordinate is `io.github.libtmux:libtmux-scala_3`.
+The version is always `libtmux`'s own: the Scala artifacts publish with the Java
+ones, starting with the first release that includes them, and none is on Maven
+Central yet. Core depends on `libtmux` and the Scala 3 library only; Cats, FS2
+and Ox arrive through [`libtmux-scala-cats`](../libtmux-scala-cats/) and
+[`libtmux-scala-ox`](../libtmux-scala-ox/).
 
 ## Inspect captured panes
 
-Start with [a first client](docs/getting-started.md#a-first-client) to construct
+Start with [a first client](../docs/guide/scala/getting-started.md#a-first-client) to construct
 `ServerConfig` from your tmux executable, owned socket and configuration file.
 Here `config` selects an existing server. Opening the client does not create a
 session. This operation closes its owned client while leaving the daemon
@@ -65,29 +64,24 @@ it does not become an empty vector.
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md): build, staged dependencies and a
-  first owned client.
-- [Queries](docs/query.md): native collections, the typed field DSL and strict
-  cardinality.
-- [Ownership](docs/ownership.md): captured handles, borrowing and cleanup.
-- [Execution](docs/execution.md): direct-style calls, bounded effects and
-  command outcomes.
-- [Streaming](docs/streaming.md): subscriptions, cancellation and visible loss.
-- [Compatibility](docs/compatibility.md): producer, consumer and runtime gates.
-- [Examples](examples/): executed orchestration programs.
+- [Getting started](../docs/guide/scala/getting-started.md): installation, a
+  first owned client, and building from source.
+- [Queries](../docs/guide/scala/query.md): native collections, the typed field
+  DSL and strict cardinality.
+- [Ownership](../docs/guide/scala/ownership.md): captured handles, borrowing and
+  cleanup.
+- [Execution](../docs/guide/scala/execution.md): direct-style calls, bounded
+  effects and command outcomes.
+- [Streaming](../docs/guide/scala/streaming.md): subscriptions, cancellation and
+  visible loss.
+- [Compatibility](../docs/guide/scala/compatibility.md): compilers, runtimes and
+  what CI runs.
+- [Examples](../examples/): runnable programs, each executed against a real tmux.
 
 The [Java guide](../docs/guide/scala.md) shows direct Java use without the
 facade. Source contracts live beside [direct-style operations][server]
 and [Cats resources][cats-server]. For changes to existing APIs, see the
 repository's [migration notes](../MIGRATION.md).
-
-## Status
-
-The implementation and verification are in progress. Local checks do not prove
-the full compatibility matrix or publication readiness. Releases carry an
-`-alpha` prerelease tag. The API is not settled, and any release may change or
-remove exported identifiers without a deprecation period. Pin an exact version
-rather than a range. Not recommended for production.
 
 [server]:
   src/main/scala/io/github/libtmux/scaladsl/Server.scala

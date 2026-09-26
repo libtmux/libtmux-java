@@ -47,7 +47,15 @@ final class DocumentationFactsTest {
 
     /** Published modules, which is what a reader is told to depend on. */
     private static final List<String> PUBLISHED = List.of(
-            "libtmux", "libtmux-jackson", "libtmux-junit5", "libtmux-kotlin", "libtmux-mcp", "libtmux-workspace");
+            "libtmux",
+            "libtmux-jackson",
+            "libtmux-junit5",
+            "libtmux-kotlin",
+            "libtmux-mcp",
+            "libtmux-workspace",
+            "libtmux-scala",
+            "libtmux-scala-cats",
+            "libtmux-scala-ox");
 
     /** The parity inventories, whose every row names the contract test that row will need. */
     private static final List<String> PARITY = List.of("docs/parity/python-api.md", "docs/parity/test-map.md");
@@ -287,8 +295,8 @@ final class DocumentationFactsTest {
         List<String> found = new ArrayList<>(List.of("README.md", "MIGRATION.md"));
         PUBLISHED.forEach(module -> found.add(module + "/README.md"));
         found.add("libtmux-bom/README.md");
-        try (Stream<Path> guides = Files.list(ROOT.resolve("docs/guide"))) {
-            guides.map(guide -> "docs/guide/" + guide.getFileName())
+        try (Stream<Path> guides = Files.walk(ROOT.resolve("docs/guide"))) {
+            guides.map(guide -> ROOT.relativize(guide).toString().replace('\\', '/'))
                     .filter(guide -> guide.endsWith(".md"))
                     .sorted()
                     .forEach(found::add);
@@ -376,18 +384,6 @@ final class DocumentationFactsTest {
         return claimed;
     }
 
-    /** What is signed must be what was tested, and the upload must say which commit made it. */
-    @Test
-    void theScalaReleaseTestsBeforeSigningAndAttestsWhatItUploads() throws IOException {
-        String workflow = Files.readString(ROOT.resolve(".github/workflows/scala-release.yml"));
-        int tested = workflow.indexOf("integration/test");
-        int signed = workflow.indexOf("sbtw stageSigned");
-        int attested = workflow.indexOf("actions/attest@");
-        assertTrue(tested >= 0 && signed > tested, "the Scala release signs before it runs the tests");
-        assertTrue(attested > workflow.indexOf("sbtw sonaUpload"), "the Scala release attests nothing it uploads");
-        assertTrue(workflow.contains("sona-staging/**/*.jar"), "the attestation does not cover the staged jars");
-    }
-
     /** A tag can be moved to other code after review; a commit cannot. Dependabot keeps them current. */
     @Test
     void everyWorkflowActionIsPinnedToACommit() throws IOException {
@@ -405,15 +401,23 @@ final class DocumentationFactsTest {
         assertTrue(unpinned.isEmpty(), "pin these to a commit sha: " + unpinned);
     }
 
-    /** Searched for by file name rather than loaded, since these will not be on this module's path. */
+    /** The release attests what it uploads, so a consumer can tie each jar to the commit that made it. */
     @Test
-    void theReleaseAttestationIncludesTheBomPom() throws IOException {
+    void theReleaseAttestsEveryArtifactItPublishes() throws IOException {
         String workflow = Files.readString(ROOT.resolve(".github/workflows/release.yml"));
-        assertTrue(
-                workflow.contains("libtmux-bom/build/publications/maven/pom-default.xml"),
-                "the BOM pom is published and is not in the attestation");
+        List<String> unattested = new ArrayList<>();
+        for (String module : PUBLISHED) {
+            if (!workflow.contains(module + "/build/libs/*.jar")) {
+                unattested.add(module);
+            }
+        }
+        if (!workflow.contains("libtmux-bom/build/publications/maven/pom-default.xml")) {
+            unattested.add("libtmux-bom");
+        }
+        assertEquals(List.of(), unattested, "published and not in the release attestation");
     }
 
+    /** Searched for by file name rather than loaded, since these will not be on this module's path. */
     private static Optional<Path> sourceOf(String type) {
         try (Stream<Path> tree = Files.walk(ROOT)) {
             return tree.filter(path -> !path.toString().contains("/build/"))

@@ -61,12 +61,14 @@ doing its job.
 
 [`libtmux`](../libtmux/) · [`libtmux-jackson`](../libtmux-jackson/) ·
 [`libtmux-junit5`](../libtmux-junit5/) · [`libtmux-kotlin`](../libtmux-kotlin/) ·
-[`libtmux-mcp`](../libtmux-mcp/) · [`libtmux-workspace`](../libtmux-workspace/)
+[`libtmux-mcp`](../libtmux-mcp/) · [`libtmux-workspace`](../libtmux-workspace/) ·
+[`libtmux-scala`](../libtmux-scala/) · [`libtmux-scala-cats`](../libtmux-scala-cats/) ·
+[`libtmux-scala-ox`](../libtmux-scala-ox/)
 
 That list is checked rather than trusted. `platformCoversEveryPublishedModule`
-fails the build when the set of Gradle-published artifacts stops matching this
-one. Scala artifacts release separately and pin their Java prerequisite in
-their own POMs.
+fails the build when the set of published artifacts stops matching this one.
+The Scala artifacts carry the `_3` suffix in their coordinates, as every Scala 3
+artifact does.
 
 ## Next
 

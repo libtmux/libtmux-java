@@ -1,3 +1,0 @@
-io.github.libtmux:libtmux-scala_3
-io.github.libtmux:libtmux-scala-cats_3
-io.github.libtmux:libtmux-scala-ox_3

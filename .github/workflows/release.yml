@@ -39,11 +39,22 @@ jobs:
 
       # This job checks on one JDK and one tmux. The commit is released on what it proved everywhere:
       # CI on JDK 25, 27, and macOS, and every supported tmux lane, each for exactly this commit.
+      # Nothing is re-run here: a workflow still running, or never run for this commit, refuses the
+      # release, which is started again once it has passed.
       - name: Require this commit's CI and tmux matrix to have passed
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: ./scripts/require-passed.sh "$GITHUB_SHA" ci.yml tmux-matrix.yml
+        run: |
+          for workflow in ci.yml tmux-matrix.yml; do
+            passed=$(gh run list --workflow "$workflow" --commit "$GITHUB_SHA" --limit 50 \
+              --json conclusion --jq 'map(select(.conclusion == "success")) | length')
+            if [ "$passed" -lt 1 ]; then
+              echo "::error::$workflow has no successful run for $GITHUB_SHA; let it pass, then release again"
+              exit 1
+            fi
+            echo "$workflow passed on $GITHUB_SHA"
+          done
 
       - name: Install tmux
         run: |
@@ -127,6 +138,9 @@ jobs:
             libtmux-kotlin/build/libs/*.jar
             libtmux-mcp/build/libs/*.jar
             libtmux-workspace/build/libs/*.jar
+            libtmux-scala/build/libs/*.jar
+            libtmux-scala-cats/build/libs/*.jar
+            libtmux-scala-ox/build/libs/*.jar
             libtmux-bom/build/publications/maven/pom-default.xml
 
       - name: What to do next

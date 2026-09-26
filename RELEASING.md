@@ -188,10 +188,9 @@ and anything naming `oss.sonatype.org` describes a service that no longer exists
 
 ## Gate 3 — an environment the secrets live behind
 
-`release.yml` and `scala-release.yml` each condition their publish job on
-`environment: release`, and each already refuses to run except from the ref
-it needs — a `v*` tag for the Java release, `master` for the Scala one.
-Neither check protects the four secrets themselves: a repository secret is
+`release.yml` conditions its publish job on `environment: release`, and
+already refuses to run except from a `v*` tag. That check does not protect the
+four secrets themselves: a repository secret is
 readable by any workflow this repository runs, and a workflow-level `if:` is
 a text file, not a boundary GitHub enforces. Protecting the secrets is a
 setting on the environment, and creating it is a step no workflow file can
@@ -202,9 +201,8 @@ perform for itself.
    repository's owner is enough. A publish then pauses for that approval
    before the job starts, however it was triggered.
 3. Under **Deployment branches and tags**, choose **Selected branches and
-   tags** and add two rules: the tag pattern `v*`, for `release.yml`, and the
-   branch `master`, for `scala-release.yml`. A run outside both is refused
-   by GitHub before the job starts, not just by the workflow's own `if:`.
+   tags** and add the tag pattern `v*`. A run from any other ref is refused by
+   GitHub before the job starts, not just by the workflow's own `if:`.
 4. Move `SIGNING_KEY`, `SIGNING_PASSWORD`, `CENTRAL_PORTAL_USERNAME`, and
    `CENTRAL_PORTAL_PASSWORD` from **Settings → Secrets and variables →
    Actions → Repository secrets** into this environment's own secrets, then
@@ -247,9 +245,8 @@ Two behaviours worth knowing:
 5. Dry-run locally, which needs no key and no token:
    `./gradlew publishToMavenLocal -PlibtmuxVersion=0.0.1-alpha.1`.
 6. Wait for CI and the tmux matrix to pass on the commit, then tag it. The
-   Release workflow refuses a commit without both, through
-   `scripts/require-passed.sh`, then runs `check`, uploads, and attests the
-   jars and the BOM pom. The attestation names the commit and workflow
+   Release workflow refuses a commit without both, then runs `check`, uploads,
+   and attests every published jar and the BOM pom. The attestation names the commit and workflow
    that built them. A release refused for a run still in progress is started
    again from the Actions tab once it has passed.
 7. Open [the Portal](https://central.sonatype.com/publishing/deployments) and
@@ -261,12 +258,7 @@ Two behaviours worth knowing:
 
 ## Scala facade
 
-The Scala facade publishes as four separately suffixed artifacts after its
-exact Java dependency is available from Central. It does not run from a Java
-tag: the owner starts the manual Scala release workflow with the Scala and
-already-published Java versions. It first requires the Scala compatibility
-workflow, whose staged artifacts and installed consumers are the evidence, to
-have passed on that exact commit. It then signs and verifies a local bundle and
-uploads a pending Central Portal deployment. It never releases
-the deployment automatically; the owner reviews, publishes, or drops it in the
-Portal.
+The Scala facades publish from the same tag, in the same deployment, at the
+same version as the Java artifacts: `libtmux-scala_3`, `libtmux-scala-cats_3`
+and `libtmux-scala-ox_3`, each suffixed with the Scala binary version it was
+compiled for. Nothing about them is a separate step.
