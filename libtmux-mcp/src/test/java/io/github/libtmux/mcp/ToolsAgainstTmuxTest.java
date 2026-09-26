@@ -524,6 +524,7 @@ final class ToolsAgainstTmuxTest {
      * it, this call reached an uncaught {@code ArrayIndexOutOfBoundsException}, which the answer
      * dispatcher in {@code TmuxMcpServer} does not catch, so it left the tool boundary as a
      * transport-level failure instead of an {@code isError} result the model can read and act on.
+     * tmux 3.2a exits without saying anything, so there the reason names the missing directory.
      */
     @Test
     void createSessionUnderAMissingSocketDirectoryReportsTmuxsOwnReason(@TempDir Path directory) throws IOException {
@@ -532,12 +533,15 @@ final class ToolsAgainstTmuxTest {
                 .build();
 
         try (Server broken = Server.open(missingDirectory)) {
+            String reported = broken.run(List.of("-V")).stdout().get(0);
+            boolean speaks = TmuxVersion.parse(reported.substring(reported.indexOf(' ') + 1))
+                    .atLeast(new TmuxVersion(3, 3, ""));
             LibTmuxException failure = assertThrows(
                     LibTmuxException.class, () -> Operations.createSession(TestCalls.on(broken, "session_name", "x")));
 
             assertTrue(
-                    String.valueOf(failure.getMessage()).contains("error creating"),
-                    "tmux's own reason, not a generic message: " + failure.getMessage());
+                    String.valueOf(failure.getMessage()).contains(speaks ? "error creating" : "does not exist"),
+                    "the reason, not a generic message: " + failure.getMessage());
         }
     }
 }
