@@ -16,11 +16,9 @@ does.
 
 ## Artifacts
 
-| Artifact | Adds |
-| --- | --- |
-| `libtmux-scala_3` | Direct-style operations and the typed query DSL |
-| `libtmux-scala-cats_3` | Cats Effect resources and FS2 observations |
-| `libtmux-scala-ox_3` | An Ox `Flow` over subscriptions and live views |
+- **`libtmux-scala_3`** — direct-style operations and the typed query DSL.
+- **`libtmux-scala-cats_3`** — Cats Effect resources and FS2 observations.
+- **`libtmux-scala-ox_3`** — an Ox `Flow` over subscriptions and live views.
 
 Core's runtime dependencies are the Scala 3 library and `libtmux`. Cats Effect
 and FS2 belong to `libtmux-scala-cats`, Ox to `libtmux-scala-ox`. None depends
