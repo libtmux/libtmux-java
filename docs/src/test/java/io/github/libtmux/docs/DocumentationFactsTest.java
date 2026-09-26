@@ -32,24 +32,15 @@ final class DocumentationFactsTest {
 
     private static final Path ROOT = Path.of(System.getProperty("libtmux.docs.root", "."));
 
-    /** Every module with sources, published or not: a codename is no clearer in a test. */
-    private static final List<String> SOURCE_MODULES = List.of(
-            "libtmux",
-            "libtmux-jackson",
-            "libtmux-junit5",
-            "libtmux-kotlin",
-            "libtmux-mcp",
-            "libtmux-workspace",
-            "libtmux-scala",
-            "libtmux-scala-cats",
-            "libtmux-scala-ox",
-            "benchmarks",
-            "docs",
-            "examples",
-            "integration-tests",
-            "module-tests",
-            "build-logic",
-            "tools");
+    /**
+     * Every module with sources, published or not: a codename is no clearer in a test. Read from the
+     * settings, so a module is scanned from the commit that adds it; the two builds the settings do
+     * not include are named here.
+     */
+    private static final List<String> SOURCE_MODULES = Stream.concat(
+                    named("include\\(\"([^\":]+)", read("settings.gradle.kts")).stream(),
+                    Stream.of("module-tests", "build-logic"))
+            .toList();
 
     /** Published modules, which is what a reader is told to depend on. */
     private static final List<String> PUBLISHED = List.of(

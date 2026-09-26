@@ -53,11 +53,12 @@ tasks.withType<Test>().configureEach {
         }
 
     // The sources too: two gates here read them — for tracker ids, and for the methods that say
-    // why they leave tmux's options open.
+    // why they leave tmux's options open. Every file the tracker-id scan reads, build scripts and
+    // build-logic's deeper tree included.
     val sources =
         rootProject.fileTree(root) {
-            include("*/src/main/**/*.java", "*/src/main/**/*.kt", "*/src/test/**/*.java", "*/src/test/**/*.kt")
-            exclude("**/build/**")
+            include("**/*.java", "**/*.kt", "**/*.kts", "**/*.scala")
+            exclude("**/build/**", "**/target/**", ".gradle/**", "**/.gradle/**")
         }
 
     // theFilteringGuideListsExactlyTheCatalogsFields compares this against the guide directly; an
