@@ -20,11 +20,19 @@ class QueryFieldsTest {
     @Test
     fun `a scalar field filters through the companion`(javaServer: JavaServer) = runBlocking {
         val server = Server.open(javaServer.config())
-        val session = server.newSession("field-scalar")
-        val running = session.activeWindow!!.activePane!!.currentCommand
+        // A known command, not the default shell: a new pane is briefly the forked tmux before it
+        // execs, so a shell's name read from one capture may not be the name the next one sees.
+        val pane = server.newSession {
+            name = "field-scalar"
+            running("sleep", "300")
+        }.activeWindow!!.activePane!!
+        val deadline = System.nanoTime() + 10_000_000_000L
+        while (pane.refresh().currentCommand != "sleep" && System.nanoTime() < deadline) {
+            kotlinx.coroutines.delay(20)
+        }
 
-        val matches = server.panes(Pane.command eq running)
-        assertEquals(true, matches.isNotEmpty())
+        val matches = server.panes(Pane.command eq "sleep")
+        assertEquals(listOf(pane.id), matches.map { it.id })
     }
 
     @Test
