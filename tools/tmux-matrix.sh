@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Build every tmux release this project supports into a tree the matrix can use.
 #
-#   ./scripts/tmux-matrix.sh [destination]
+#   ./tools/tmux-matrix.sh [destination]
 #
 # Then:
 #   ./gradlew testTmuxMatrix -PlibtmuxMatrix="$destination"

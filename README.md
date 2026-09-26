@@ -356,7 +356,7 @@ release that includes them.
 Not published, and part of how the library is built:
 [`examples/`](examples/) · [`integration-tests/`](integration-tests/) ·
 [`module-tests/`](module-tests/) · [`benchmarks/`](benchmarks/) ·
-[`docs/`](docs/) · [`scripts/`](scripts/) · [`tools/`](tools/) · `build-logic/`
+[`docs/`](docs/) · [`tools/`](tools/) · `build-logic/`
 
 `platformCoversEveryPublishedModule` fails the build when the published artifacts
 stop matching the BOM.
