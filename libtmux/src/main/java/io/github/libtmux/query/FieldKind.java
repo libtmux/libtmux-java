@@ -4,9 +4,8 @@ package io.github.libtmux.query;
  * The value kind a field reads.
  *
  * <p>Carried explicitly because exactness must not rest on the operand's runtime class. A number
- * field's operand happens to box to {@code Integer}, and two bakeoff contenders substituted that
- * accident for the field's real kind — which silently picks tmux's lexical comparison where the
- * caller meant arithmetic.
+ * field's operand happens to box to {@code Integer}, and reading the kind off that accident would
+ * silently pick tmux's lexical comparison where the caller meant arithmetic.
  */
 public enum FieldKind {
     TEXT,

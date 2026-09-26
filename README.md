@@ -449,8 +449,8 @@ See the [migration notes](MIGRATION.md) when upgrading. Every public type and
 member is in the [API reference](https://libtmux.org/en/java/latest/reference/),
 built from the current trunk; each released version's Javadoc is on
 [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux). The
-[documentation index](docs/README.md) groups
-every guide, benchmark, spike, and study, one line each.
+[documentation index](docs/README.md) groups every guide, generated reference,
+and decision record, one line each.
 
 - [Getting started](docs/guide/getting-started.md)
 - [Filtering](docs/guide/filtering.md)
@@ -458,7 +458,7 @@ every guide, benchmark, spike, and study, one line each.
 - [Batching and chaining](docs/guide/batching-and-chaining.md)
 - [Snapshots and handles](docs/guide/snapshots-and-handles.md)
 - [Streaming](docs/guide/streaming.md)
-- [Failures, telemetry, and pane input](docs/guide/operations.md)
+- [Failures, telemetry, and pane input](docs/guide/operating-a-service.md)
 - [Threads, cancellation, and what runs at once](docs/guide/concurrency.md)
 - [Driving tmux from a model](docs/guide/mcp.md)
 - [Testing with real tmux](docs/guide/testing.md)
@@ -473,9 +473,9 @@ The Scala facade's runnable programs are in
 operations, bounded concurrent capture, notification loss and reconciliation,
 and Cats Effect resource ownership and cancellation.
 
-The design is recorded under `docs/spikes/`. Each note carries the measurements
-behind the decision it records, including the ones that overturned an earlier
-choice.
+Decisions still in force are recorded as short ADRs under
+[`docs/decisions/`](docs/decisions/), each citing the tmux behaviour that
+forced it.
 
 ## Contributing
 
