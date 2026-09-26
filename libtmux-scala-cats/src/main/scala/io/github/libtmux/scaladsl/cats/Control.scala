@@ -2,7 +2,7 @@ package io.github.libtmux.scaladsl.cats
 
 import _root_.cats.effect.{Async, Resource}
 import io.github.libtmux.{ServerConfig, SessionId}
-import io.github.libtmux.scaladsl.blocking
+import io.github.libtmux.scaladsl as direct
 import io.github.libtmux.batch.OperationOutcome
 import io.github.libtmux.control.{
   ControlClient,
@@ -106,7 +106,7 @@ object Control {
     def unsafeJava: ControlReply = asJava
 
     /** True for a %end reply. Deferred tmux work can still be running. */
-    def accepted: Boolean = asJava.outcome() == OperationOutcome.COMPLETE
+    def accepted: Boolean = asJava.outcome().equals(OperationOutcome.COMPLETE)
     val lines: Vector[String] = asJava.lines().asScala.toVector
   }
 
@@ -142,7 +142,7 @@ object Control {
 
   /** Attaches to the process the captured session named. */
   def attach[F[_]: Async](
-      session: blocking.Session,
+      session: direct.Session,
       timeout: Duration,
       maxConcurrentCalls: Int
   ): Resource[F, Control[F]] =
@@ -163,7 +163,9 @@ object Control {
         F.delay(require(maxConcurrentCalls >= 1, "capacity must be positive"))
       )
       closed <- Resource.eval(F.delay(new AtomicBoolean(false)))
-      underlying <- Resource.make(open)(client => F.blocking(client.close()))
+      underlying <- Resource.make(open)(client =>
+        F.interruptible(client.close())
+      )
       execution <- Execution.resource[F](maxConcurrentCalls)
       control <- Resource.make(
         F.pure(new Control[F](underlying, closed, execution))
