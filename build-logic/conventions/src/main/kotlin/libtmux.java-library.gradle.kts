@@ -115,13 +115,13 @@ tasks.withType<Test>().configureEach {
     // place, or an upgraded tmux on PATH, would otherwise report a result it never produced, UP-TO-DATE
     // or from the build cache. Resolved when the task is fingerprinted, after a lane has named its
     // binary.
-    val path = providers.environmentVariable("PATH")
+    val searchPath = providers.environmentVariable("PATH")
     inputs.files(providers.provider {
         val named = systemProperties["libtmux.tmux"]?.toString() ?: "tmux"
         val binary = if (named.contains(File.separatorChar)) {
             File(named)
         } else {
-            path.orNull.orEmpty().split(File.pathSeparator).map { File(it, named) }.firstOrNull(File::canExecute)
+            searchPath.orNull.orEmpty().split(File.pathSeparator).map { File(it, named) }.firstOrNull(File::canExecute)
         }
         listOfNotNull(binary?.takeIf(File::isFile))
     }).withPropertyName("tmuxBinary").withPathSensitivity(PathSensitivity.NONE)
@@ -145,7 +145,9 @@ tasks.withType<Test>().configureEach {
     // directory and is why this is not derived from one.
     val socketRoot = providers.gradleProperty("libtmuxSocketRoot").getOrElse("/tmp/libtmux-java-test")
     val checkoutIdentity = rootProject.rootDir.canonicalPath
-    val taskIdentity = path
+    // This task's own path, :module:test, so each test task in one invocation has a quarantine of its
+    // own and one module's leftover socket cannot fail the next module's tests.
+    val taskIdentity: String = path
     systemProperty("java.io.tmpdir", socketRoot)
     doFirst {
         require(socketRoot.length <= 40) {
