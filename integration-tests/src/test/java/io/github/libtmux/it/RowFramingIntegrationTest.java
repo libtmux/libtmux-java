@@ -2,6 +2,7 @@ package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
@@ -66,8 +67,10 @@ final class RowFramingIntegrationTest {
         Pane pane = session.activePane().orElseThrow();
 
         // Real path: tmux reports the directory with symlinks resolved, and a temporary directory can
-        // sit behind one — on macOS /var is /private/var.
-        assertEquals(awkward.toRealPath(), pane.currentPath());
+        // sit behind one — on macOS /var is /private/var. Awaited, because a pane read before its
+        // child has changed directory reports the server's.
+        Path real = awkward.toRealPath();
+        assertTrue(Await.until(() -> real.equals(pane.refresh().currentPath())), "the pane never reached it");
         assertEquals(2, server.sessions().size(), "a listing must not come back empty because of it");
     }
 
