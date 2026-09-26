@@ -174,6 +174,12 @@ final class TmuxMcpServerTest {
         assertEquals(true, result.path("isError").asBoolean());
         String message = result.path("content").get(0).path("text").asText();
         assertTrue(message.contains("Check that the MCP process selected the socket you intended"), message);
+        assertTrue(
+                result.path("structuredContent").isMissingNode(), "an error result must not carry structuredContent");
+        var meta = result.path("_meta");
+        assertEquals("SERVER_UNAVAILABLE", meta.path("error_code").asText());
+        assertEquals(false, meta.path("retryable").asBoolean());
+        assertEquals(message, meta.path("message").asText());
     }
 
     /** A bug the tool did not anticipate still answers in the tool's error envelope, naming the tool. */
@@ -235,6 +241,11 @@ final class TmuxMcpServerTest {
         String message = result.path("content").get(0).path("text").asText();
         assertTrue(message.contains("list_sessions"), message);
         assertTrue(message.contains("a transport defect"), message);
+        assertTrue(
+                result.path("structuredContent").isMissingNode(), "an error result must not carry structuredContent");
+        var meta = result.path("_meta");
+        assertEquals("INTERNAL_ERROR", meta.path("error_code").asText());
+        assertEquals(false, meta.path("retryable").asBoolean());
     }
 
     @Test

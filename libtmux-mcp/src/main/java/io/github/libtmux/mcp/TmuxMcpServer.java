@@ -2,8 +2,6 @@ package io.github.libtmux.mcp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.libtmux.Server;
-import io.github.libtmux.exception.LibTmuxException;
-import io.github.libtmux.exception.ServerUnavailableException;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
@@ -162,15 +160,8 @@ public final class TmuxMcpServer {
             Object value = tool.answer().apply(call);
             tool.validateOutput(value);
             return Answers.ok(value);
-        } catch (ServerUnavailableException e) {
-            return Answers.failure(e.getMessage() + " Check that the MCP process selected the socket you intended.");
-        } catch (LibTmuxException | IllegalArgumentException | IllegalStateException e) {
-            return Answers.failure(String.valueOf(e.getMessage()));
         } catch (RuntimeException e) {
-            // A defect, not a refusal. Answered as the tool's own error, so the model reads it, rather
-            // than as a JSON-RPC internal error a client may show nobody.
-            return Answers.failure(tool.name() + " failed unexpectedly: " + e + ". What it changed in tmux, "
-                    + "if anything, is unknown: read the target's state before retrying.");
+            return Answers.failure(e, tool.name());
         }
     }
 

@@ -274,6 +274,20 @@ exception, because a transport-level exception never reaches the model — and t
 model is the one participant able to choose a different pane. Each one names the
 recovery: `no pane %9 on this server; call list_panes for the 3 that exist`.
 
+A message is prose a model has to interpret; `_meta.error_code` and
+`_meta.retryable` are not. `error_code` names which branch of the sealed
+`io.github.libtmux.exception.LibTmuxException` tree the failure took —
+`TARGET_GONE`, `COMMAND_REJECTED`, `SERVER_UNAVAILABLE`, and so on — or
+`REFUSED` and `INTERNAL_ERROR` for the two kinds this server itself raises.
+`retryable` says whether sending the exact same call again could possibly
+help: only for `DispatchException`, whose own `safeToRetry()` decides it,
+since that is the one failure where tmux's own state is left uncertain.
+Every other code means tmux already answered or this server's own guard
+refused before asking, so a verbatim retry repeats the same answer. Both live
+in `_meta` rather than `structuredContent`, because a tool that declares an
+`outputSchema` describes its success shape there, and an error does not
+match it.
+
 ## Further reading
 
 - [`libtmux-mcp` README](../../libtmux-mcp/README.md) — running it, and the tool list

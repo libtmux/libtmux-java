@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
@@ -181,9 +182,9 @@ final class Operations {
                 operation.tool().validateOutput(answer);
                 envelope = Answers.ok(answer);
             } catch (RuntimeException failure) {
-                String message = String.valueOf(failure.getMessage());
-                error = message;
-                envelope = Answers.failure(message);
+                envelope = Answers.failure(failure, operation.name());
+                error = Objects.requireNonNull(
+                        Objects.requireNonNull(envelope.meta(), "meta").get("message"), "message");
             }
             boolean success = !Boolean.TRUE.equals(envelope.isError());
             results.add(values(
@@ -381,6 +382,7 @@ final class Operations {
                 results.add(values(
                         "index", index, "pane_id", paneId, "resolved_pane_ids", resolvedPaneIds, "success", true));
             } catch (RuntimeException failure) {
+                Answers.Classified classified = Answers.classify(failure, "send_keys_batch");
                 results.add(values(
                         "index",
                         index,
@@ -391,7 +393,11 @@ final class Operations {
                         "success",
                         false,
                         "error",
-                        String.valueOf(failure.getMessage())));
+                        classified.message(),
+                        "error_code",
+                        classified.errorCode(),
+                        "retryable",
+                        classified.retryable()));
                 if (!keepGoing) {
                     break;
                 }

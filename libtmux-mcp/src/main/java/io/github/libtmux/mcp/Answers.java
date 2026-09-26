@@ -5,7 +5,17 @@ import com.fasterxml.jackson.core.JacksonException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import io.github.libtmux.exception.CardinalityException;
+import io.github.libtmux.exception.CommandRejectedException;
+import io.github.libtmux.exception.ControlEndedException;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnencodableTextException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,16 +63,85 @@ final class Answers {
     }
 
     /**
-     * A failure a model can act on.
+     * A failure a model can act on, with a stable code and a retry decision alongside the message.
      *
-     * <p>Reported as a tool error rather than thrown: a transport-level exception never reaches the
-     * model, so the one participant able to choose a different pane never hears which one was wrong.
+     * <p>Every failure this server raises is either a {@code LibTmuxException} branch, one of the two
+     * validation refusals the tool layer itself throws, or a defect neither anticipated. Collapsing
+     * all of those into one message string is how a model loses the one thing it needs to decide what
+     * to do next: whether resending the exact same call could possibly help. {@code error_code} names
+     * the branch and {@code retryable} answers that question; {@code message} is the same prose a
+     * caller not reading {@code _meta} still gets from {@code content[0].text}.
+     *
+     * <p>Carried in {@code _meta} rather than {@code structuredContent}: a tool's {@code
+     * outputSchema} describes its success shape, and a client that validates {@code
+     * structuredContent} against it on every answer would reject this one for not matching.
+     * {@code _meta} carries no such schema.
      */
-    static McpSchema.CallToolResult failure(String message) {
+    static McpSchema.CallToolResult failure(RuntimeException cause, String toolName) {
+        Classified classified = classify(cause, toolName);
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("error_code", classified.errorCode());
+        meta.put("retryable", classified.retryable());
+        meta.put("message", classified.message());
         return McpSchema.CallToolResult.builder()
-                .content(List.of(new McpSchema.TextContent(null, message, null)))
+                .content(List.of(new McpSchema.TextContent(null, classified.message(), null)))
+                .meta(Collections.unmodifiableMap(meta))
                 .isError(true)
                 .build();
+    }
+
+    /** {@code errorCode} is stable across releases; branch on it rather than on {@code message}. */
+    record Classified(String errorCode, boolean retryable, String message) {}
+
+    /**
+     * Names which branch of the sealed exception tree a failure took, and whether resending the exact
+     * same call is safe.
+     *
+     * <p>{@link DispatchException#safeToRetry()} is the only case where that answer depends on
+     * anything but the branch itself: dispatch failed or timed out with tmux's own state left
+     * uncertain, and whether a second identical send can double an effect depends on what the request
+     * changes. Every other branch means tmux either refused the request or never saw it because this
+     * server's own guards did, so retrying verbatim repeats the same refusal.
+     */
+    static Classified classify(RuntimeException cause, String toolName) {
+        return switch (cause) {
+            case ServerUnavailableException e ->
+                new Classified(
+                        "SERVER_UNAVAILABLE",
+                        false,
+                        e.getMessage() + " Check that the MCP process selected the socket you intended.");
+            case TargetGoneException e -> new Classified("TARGET_GONE", false, String.valueOf(e.getMessage()));
+            case CommandRejectedException e ->
+                new Classified("COMMAND_REJECTED", false, String.valueOf(e.getMessage()));
+            case CardinalityException.NoMatch e -> new Classified("NO_MATCH", false, String.valueOf(e.getMessage()));
+            case CardinalityException.MultipleMatches e ->
+                new Classified("MULTIPLE_MATCHES", false, String.valueOf(e.getMessage()));
+            case DispatchException e -> {
+                String code =
+                        switch (e) {
+                            case DispatchException.Failed failed -> "DISPATCH_FAILED";
+                            case DispatchException.TimedOut timedOut -> "DISPATCH_TIMED_OUT";
+                        };
+                yield new Classified(code, e.safeToRetry(), String.valueOf(e.getMessage()));
+            }
+            case MalformedResponseException e ->
+                new Classified("MALFORMED_RESPONSE", false, String.valueOf(e.getMessage()));
+            case UnencodableTextException e ->
+                new Classified("UNENCODABLE_TEXT", false, String.valueOf(e.getMessage()));
+            case UnsupportedFeatureException e ->
+                new Classified("UNSUPPORTED_FEATURE", false, String.valueOf(e.getMessage()));
+            case ControlEndedException e -> new Classified("CONTROL_ENDED", false, String.valueOf(e.getMessage()));
+            case IllegalArgumentException e -> new Classified("REFUSED", false, String.valueOf(e.getMessage()));
+            case IllegalStateException e -> new Classified("REFUSED", false, String.valueOf(e.getMessage()));
+            default ->
+                // A defect, not a refusal. Named so the model reads it as the tool's own error rather
+                // than a JSON-RPC internal error a client may show nobody.
+                new Classified(
+                        "INTERNAL_ERROR",
+                        false,
+                        toolName + " failed unexpectedly: " + cause + ". What it changed in tmux, "
+                                + "if anything, is unknown: read the target's state before retrying.");
+        };
     }
 
     /** The complete nested MCP result, preserving structured data, content, metadata and error state. */
