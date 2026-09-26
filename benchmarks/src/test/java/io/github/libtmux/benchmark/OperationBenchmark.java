@@ -19,6 +19,7 @@ import io.github.libtmux.control.ControlReply;
 import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
+import io.github.libtmux.snapshot.ServerMirror;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
@@ -193,6 +194,15 @@ final class OperationBenchmark {
 
         Timed process = measureProcessPerCommand(directory);
         Timed control = measureControlPerCommand(directory);
+        Following following = measureMirrorFollowing(directory);
+        Flood flood = measureFlood(directory);
+        Threads threads = measureThreads(directory);
+
+        assertEquals(0, flood.gapped(), "the flood overflowed a buffer sized to hold it");
+        assertTrue(
+                threads.afterConcurrentReads() <= 3 * 4
+                        && threads.controlAttached() - threads.afterConcurrentReads() == 3,
+                "the thread budget moved: " + threads);
 
         assertEquals(
                 1,
@@ -220,7 +230,10 @@ final class OperationBenchmark {
                         guarding,
                         waits,
                         options,
-                        List.of(process, control)));
+                        List.of(process, control),
+                        following,
+                        flood,
+                        threads));
 
         assertTrue(Files.exists(report), "the benchmark wrote no table");
     }
@@ -626,6 +639,162 @@ final class OperationBenchmark {
         }
     }
 
+    // ------------------------------------------------------------------------- live state
+
+    /** How many changes the mirror is asked to follow. */
+    private static final int MIRROR_ROUNDS = 20;
+
+    /** What following one change cost: how long until it was published, and what the rebuilds took. */
+    private record Following(long medianNanos, long p95Nanos, double dispatchesPerChange, int changes) {}
+
+    /**
+     * Opens a {@link ServerMirror} on a counted server, then makes {@link #MIRROR_ROUNDS} windows
+     * through a second, uncounted client, timing each from the command returning to the mirror
+     * publishing a view that holds it. The counted client carries only the mirror's rebuilds.
+     */
+    private Following measureMirrorFollowing(Path root) throws Exception {
+        ServerConfig config = configFor(root.resolve("mirror"));
+        Counting counting = new Counting(new ProcessTransport());
+        try (Server maker = Server.open(config);
+                Server watched = Server.using(config, counting)) {
+            try {
+                Session session = maker.newSession("bench");
+                try (ServerMirror mirror =
+                        ServerMirror.open(watched.session(session.id()).orElseThrow())) {
+                    awaitQuiet(counting);
+                    int before = counting.dispatches.get();
+                    long[] nanos = new long[MIRROR_ROUNDS];
+                    for (int round = 0; round < MIRROR_ROUNDS; round++) {
+                        String name = "followed-" + round;
+                        session.newWindow(name);
+                        long started = System.nanoTime();
+                        ServerMirror.View view = mirror.current();
+                        while (view.snapshot().windows().stream()
+                                .noneMatch(w -> w.name().equals(name))) {
+                            view = mirror.awaitNewer(view.epoch(), Duration.ofSeconds(10))
+                                    .orElseThrow(() -> new AssertionError("the mirror never published " + name));
+                        }
+                        nanos[round] = System.nanoTime() - started;
+                    }
+                    awaitQuiet(counting);
+                    double perChange = (counting.dispatches.get() - before) / (double) MIRROR_ROUNDS;
+                    return new Following(median(nanos), percentile95(nanos), perChange, MIRROR_ROUNDS);
+                }
+            } finally {
+                maker.killServer();
+            }
+        } finally {
+            counting.close();
+        }
+    }
+
+    /** Until the count stops moving for a quarter of a second: rebuilds already under way finish. */
+    private static void awaitQuiet(Counting counting) throws InterruptedException {
+        int seen = -1;
+        while (seen != counting.dispatches.get()) {
+            seen = counting.dispatches.get();
+            Thread.sleep(250);
+        }
+    }
+
+    /** Lines a pane prints for the flood. */
+    private static final int FLOOD_LINES = 50_000;
+
+    /** What reading a flood of output through {@code poll()} and {@code onReady} delivered. */
+    private record Flood(long millis, int lines, long frames, long gapped) {}
+
+    /**
+     * A pane prints {@link #FLOOD_LINES} numbered lines, and a subscription reads them the way the
+     * Kotlin and Scala stream bridges do: {@code poll()} until empty, then a one-shot {@code onReady}
+     * to wait without a thread. The buffer is sized so nothing is dropped, which makes this the
+     * ceiling those bridges sit under.
+     */
+    private Flood measureFlood(Path root) throws Exception {
+        try (Server server = Server.using(configFor(root.resolve("flood")), new ProcessTransport())) {
+            try {
+                Session session = server.newSession("bench");
+                Pane pane = session.windows().getFirst().panes().getFirst();
+                try (ControlClient client = server.control(session);
+                        EventSubscription<PaneOutput> output = client.subscribeOutput(1 << 16)) {
+                    // The marker is computed, so the echo of the typed line cannot end the read.
+                    pane.sendLine("seq 1 " + FLOOD_LINES + "; echo flood-$((6*7))-done");
+                    long started = System.nanoTime();
+                    long frames = 0;
+                    long gapped = 0;
+                    StringBuilder tail = new StringBuilder();
+                    while (tail.indexOf("flood-42-done") < 0) {
+                        java.util.Optional<Delivery<PaneOutput>> step = output.poll();
+                        if (step.isEmpty()) {
+                            java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(1);
+                            output.onReady(ready::countDown);
+                            if (!ready.await(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                                throw new AssertionError("the flood stopped arriving");
+                            }
+                            continue;
+                        }
+                        if (step.get() instanceof Delivery.Gap<PaneOutput> gap) {
+                            gapped += gap.missed();
+                            continue;
+                        }
+                        frames++;
+                        tail.append(Delivery.kept(step.get()).data());
+                        if (tail.length() > 256) {
+                            tail.delete(0, tail.length() - 256);
+                        }
+                    }
+                    long millis = (System.nanoTime() - started) / 1_000_000;
+                    return new Flood(millis, FLOOD_LINES, frames, gapped);
+                }
+            } finally {
+                server.killServer();
+            }
+        }
+    }
+
+    /** The library's own platform threads at each step, counted rather than stated. */
+    private record Threads(int idle, int afterConcurrentReads, int controlAttached, int subscribed) {}
+
+    /**
+     * Counts platform threads whose names this library gives them. Virtual threads — the mirror's
+     * listener, the default publisher executor — are not counted: they hold no carrier while they
+     * wait.
+     */
+    private Threads measureThreads(Path root) throws Exception {
+        try (Server server = Server.using(configFor(root.resolve("threads")), new ProcessTransport(4))) {
+            try {
+                Session session = server.newSession("bench");
+                server.windows();
+                int idle = libtmuxThreads();
+                try (java.util.concurrent.ExecutorService callers =
+                        java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+                    List<java.util.concurrent.Future<?>> reads = new ArrayList<>();
+                    for (int caller = 0; caller < 8; caller++) {
+                        reads.add(callers.submit(() -> server.snapshot()));
+                    }
+                    for (java.util.concurrent.Future<?> read : reads) {
+                        read.get();
+                    }
+                }
+                int afterReads = libtmuxThreads();
+                try (ControlClient client = server.control(session)) {
+                    int attached = libtmuxThreads();
+                    try (EventSubscription<PaneOutput> output = client.subscribeOutput(64)) {
+                        output.poll();
+                        return new Threads(idle, afterReads, attached, libtmuxThreads());
+                    }
+                }
+            } finally {
+                server.killServer();
+            }
+        }
+    }
+
+    private static int libtmuxThreads() {
+        return (int) Thread.getAllStackTraces().keySet().stream()
+                .filter(thread -> thread.isAlive() && thread.getName().startsWith("libtmux-"))
+                .count();
+    }
+
     private static long median(long[] values) {
         long[] sorted = values.clone();
         Arrays.sort(sorted);
@@ -649,7 +818,10 @@ final class OperationBenchmark {
             List<Measured> guarding,
             List<Measured> waits,
             List<Measured> options,
-            List<Timed> transports) {
+            List<Timed> transports,
+            Following following,
+            Flood flood,
+            Threads threads) {
         StringBuilder out = new StringBuilder();
         out.append("# What an operation costs, measured\n\n")
                 .append("Regenerated by `./gradlew operationBenchmark`. Never edit by hand.\n\n");
@@ -779,11 +951,57 @@ final class OperationBenchmark {
                 .append("every typed operation, `Server.snapshot()` included. ")
                 .append("`docs/spikes/32-control-backed-transport.md` has the measurements.\n");
 
+        out.append("\n## Following a change\n\n")
+                .append("A `ServerMirror` listens through a control client and takes a fresh snapshot for ")
+                .append("each announcement. ")
+                .append(following.changes())
+                .append(" windows were created through another client, each timed from the command ")
+                .append("returning to the mirror publishing a view that held it.\n\n")
+                .append("| measure | value |\n| --- | --- |\n")
+                .append("| median, command returned to view published | %s |%n"
+                        .formatted(micros(following.medianNanos())))
+                .append("| p95 | %s |%n".formatted(micros(following.p95Nanos())))
+                .append("| commands the mirror dispatched per change | %.1f |%n"
+                        .formatted(following.dispatchesPerChange()))
+                .append("\nA rebuild is a snapshot, two commands. A new window is announced more than once, ")
+                .append("and announcements that arrive during a rebuild fold into one more, so a change ")
+                .append("costs one or two rebuilds rather than one per announcement.\n");
+
+        out.append("\n## Output through `poll()` and `onReady`\n\n")
+                .append("A pane prints ")
+                .append(flood.lines())
+                .append(" numbered lines; a subscription reads them as the Kotlin `Flow` and fs2 bridges do, ")
+                .append("polling until empty and then arming a one-shot `onReady`, so no thread waits. ")
+                .append("The buffer holds the whole flood, so this is the ceiling those bridges sit ")
+                .append("under.\n\n")
+                .append("| measure | value |\n| --- | --- |\n")
+                .append("| wall clock, command to last line | %d ms |%n".formatted(flood.millis()))
+                .append("| lines per second | %d |%n"
+                        .formatted(flood.millis() == 0 ? 0 : flood.lines() * 1000L / flood.millis()))
+                .append("| frames delivered | %d |%n".formatted(flood.frames()))
+                .append("| events dropped | %d |%n".formatted(flood.gapped()))
+                .append("\ntmux batches output into `%output` frames, so frames are far fewer than lines. ")
+                .append("The number is tmux's pace as much as this library's: a pane writes to a pty, and ")
+                .append("tmux reads, parses and re-encodes it before a control client sees it.\n");
+
+        out.append("\n## Threads the library holds\n\n")
+                .append("Platform threads named `libtmux-*`, counted at each step on a transport bounded ")
+                .append("at four processes. Virtual threads, such as a mirror's listener, are not counted: ")
+                .append("they hold no carrier while they wait.\n\n")
+                .append("| step | threads |\n| --- | --- |\n")
+                .append("| server open, one command run | %d |%n".formatted(threads.idle()))
+                .append("| after eight concurrent snapshots | %d |%n".formatted(threads.afterConcurrentReads()))
+                .append("| a control client attached | %d |%n".formatted(threads.controlAttached()))
+                .append("| an output subscription open | %d |%n".formatted(threads.subscribed()))
+                .append("\nThree drain threads per running process, reused and released after ten idle ")
+                .append("seconds, so the reads never need more than three per admission slot however ")
+                .append("many callers queue; three more for a control client; none for a subscription.\n");
+
         out.append("\n## What this does not measure\n\n")
-                .append("Not measured here: MCP tool call overhead, and FS2 stream throughput through the ")
-                .append("Cats Effect facade. Neither has an existing harness to extend — this file times a ")
-                .append("`Server` against real tmux, not a running MCP session or a bounded stream — and ")
-                .append("building one is its own project rather than an addition to this one.\n");
+                .append("Not measured here: MCP tool call overhead, and the Kotlin and Scala stream layers ")
+                .append("above `poll()`. Their stress tests account for every event under a producer ")
+                .append("that outruns the consumer (`FlowBridgeStressTest`, `ObservationStressSuite`); ")
+                .append("their throughput is bounded by the flood above.\n");
         return out.toString();
     }
 
