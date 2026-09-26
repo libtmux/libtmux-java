@@ -1,0 +1,37 @@
+# field-catalog.tsv — one row per queryable tmux field or relation on Pane_/Session_/Window_/
+# Client_. Generates the four classes; do not hand-edit them. See
+# build-logic/src/main/kotlin/io/github/libtmux/buildlogic/catalog/FieldCatalog.kt for the schema
+# this file is validated against, and docs/guide/filtering.md for the field list a reader sees.
+#
+# name	owner	kind	tmuxFormat	since	relation	accessor	javadoc
+id	Pane	TEXT	pane_id	1.7	-	pane -> pane.id().value()	The pane id.
+command	Pane	TEXT	pane_current_command	1.8	-	Pane::currentCommand	The command tmux reported running in the pane.
+index	Pane	NUMBER	pane_index	1.7	-	Pane::index	The pane's position in its window.
+active	Pane	FLAG	pane_active	1.7	-	Pane::active	Whether this was its window's active pane.
+title	Pane	TEXT	pane_title	1.7	-	Pane::title	The pane's title, which a program running in it can set.
+path	Pane	TEXT	pane_current_path	1.7	-	Pane::currentPathText	The pane's working directory, as the text tmux reported.
+width	Pane	NUMBER	pane_width	1.7	-	pane -> pane.size().width()	The pane's width, in cells.
+height	Pane	NUMBER	pane_height	1.7	-	pane -> pane.size().height()	The pane's height, in cells.
+left	Pane	NUMBER	pane_left	2.0	-	pane -> pane.position().left()	The column of the pane's left edge in its window.
+top	Pane	NUMBER	pane_top	2.0	-	pane -> pane.position().top()	The row of the pane's top edge in its window.
+atTop	Pane	FLAG	pane_at_top	2.6	-	pane -> pane.edges().top()	Whether the pane touches the top of its window.
+atBottom	Pane	FLAG	pane_at_bottom	2.6	-	pane -> pane.edges().bottom()	Whether the pane touches the bottom of its window.
+atLeft	Pane	FLAG	pane_at_left	2.6	-	pane -> pane.edges().left()	Whether the pane touches the left of its window.
+atRight	Pane	FLAG	pane_at_right	2.6	-	pane -> pane.edges().right()	Whether the pane touches the right of its window.
+id	Session	TEXT	session_id	1.8	-	session -> session.id().value()	The session id, as text, so it can be compared and listed.
+name	Session	TEXT	session_name	1.7	-	Session::name	The session name.
+attached	Session	FLAG	session_attached	1.7	-	Session::attached	Whether a client was attached when this was captured.
+windowCount	Session	NUMBER	session_windows	1.7	-	session -> session.windows().size()	How many windows this session holds.
+windows	Session	-	-	-	to-many:Window	Session::windows	This session's windows.
+id	Window	TEXT	window_id	1.7	-	window -> window.id().value()	The underlying window id, shared by every link to it.
+name	Window	TEXT	window_name	1.7	-	Window::name	The window name.
+index	Window	NUMBER	window_index	1.7	-	window -> window.index().value()	Where this link sits in its session.
+active	Window	FLAG	window_active	1.7	-	Window::active	Whether this was its session's active window.
+linked	Window	FLAG	window_linked	2.1	-	Window::linked	Whether the underlying window is linked into more than one session.
+width	Window	NUMBER	window_width	1.7	-	window -> window.size().width()	The window's width, in cells.
+height	Window	NUMBER	window_height	1.7	-	window -> window.size().height()	The window's height, in cells.
+paneCount	Window	NUMBER	window_panes	1.7	-	window -> window.panes().size()	How many panes this link holds.
+panes	Window	-	-	-	to-many:Pane	Window::panes	This link's panes.
+session	Window	-	-	-	to-one:Session	window -> java.util.Optional.of(window.session())	The session this link belongs to.
+name	Client	TEXT	client_name	2.4	-	Client::name	The client's terminal name, which is how tmux addresses it.
+session	Client	-	-	-	to-one:Session	Client::session	The session this client was attached to, if any.

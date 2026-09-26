@@ -28,6 +28,43 @@ Field ids are tmux's own format names — `pane_current_command`, `window_name` 
 which is what keeps an expression meaningful to something that is not this
 library.
 
+Every field and relation these four classes expose, generated from
+[`field-catalog.tsv`](../../libtmux/src/main/resources/META-INF/io.github.libtmux/field-catalog.tsv):
+
+| Owner | Field | Kind | tmux format |
+| --- | --- | --- | --- |
+| Pane | `id` | TEXT | `pane_id` |
+| Pane | `command` | TEXT | `pane_current_command` |
+| Pane | `index` | NUMBER | `pane_index` |
+| Pane | `active` | FLAG | `pane_active` |
+| Pane | `title` | TEXT | `pane_title` |
+| Pane | `path` | TEXT | `pane_current_path` |
+| Pane | `width` | NUMBER | `pane_width` |
+| Pane | `height` | NUMBER | `pane_height` |
+| Pane | `left` | NUMBER | `pane_left` |
+| Pane | `top` | NUMBER | `pane_top` |
+| Pane | `atTop` | FLAG | `pane_at_top` |
+| Pane | `atBottom` | FLAG | `pane_at_bottom` |
+| Pane | `atLeft` | FLAG | `pane_at_left` |
+| Pane | `atRight` | FLAG | `pane_at_right` |
+| Session | `id` | TEXT | `session_id` |
+| Session | `name` | TEXT | `session_name` |
+| Session | `attached` | FLAG | `session_attached` |
+| Session | `windowCount` | NUMBER | `session_windows` |
+| Session | `windows` | to-many:Window | — |
+| Window | `id` | TEXT | `window_id` |
+| Window | `name` | TEXT | `window_name` |
+| Window | `index` | NUMBER | `window_index` |
+| Window | `active` | FLAG | `window_active` |
+| Window | `linked` | FLAG | `window_linked` |
+| Window | `width` | NUMBER | `window_width` |
+| Window | `height` | NUMBER | `window_height` |
+| Window | `paneCount` | NUMBER | `window_panes` |
+| Window | `panes` | to-many:Pane | — |
+| Window | `session` | to-one:Session | — |
+| Client | `name` | TEXT | `client_name` |
+| Client | `session` | to-one:Session | — |
+
 ## Composition and relations
 
 `and`, `or` and `negate` compose expressions. Relations quantify:

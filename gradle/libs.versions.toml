@@ -21,6 +21,7 @@ picocli = "4.7.7"
 reactive-streams = "1.0.4"
 snakeyaml = "2.5"
 testng-engine = "1.1.0"
+javapoet = "0.20.0"
 
 [libraries]
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
@@ -48,6 +49,7 @@ picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
 reactive-streams-tck-flow = { module = "org.reactivestreams:reactive-streams-tck-flow", version.ref = "reactive-streams" }
 snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }
 testng-engine = { module = "org.junit.support:testng-engine", version.ref = "testng-engine" }
+javapoet = { module = "com.palantir.javapoet:javapoet", version.ref = "javapoet" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

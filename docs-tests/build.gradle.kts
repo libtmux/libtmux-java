@@ -44,9 +44,15 @@ tasks.withType<Test>().configureEach {
             exclude("**/build/**")
         }
 
+    // theFilteringGuideListsExactlyTheCatalogsFields compares this against the guide directly; an
+    // edit to the catalog alone must not leave that gate sitting UP-TO-DATE.
+    val fieldCatalog =
+        rootProject.file("libtmux/src/main/resources/META-INF/io.github.libtmux/field-catalog.tsv")
+
     inputs.files(classpath)
     inputs.files(documents).withPropertyName("documentation").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.files(sources).withPropertyName("sources").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(fieldCatalog).withPropertyName("fieldCatalog").withPathSensitivity(PathSensitivity.RELATIVE)
 
     doFirst { systemProperty("libtmux.docs.classpath", classpath.asPath) }
     systemProperty("libtmux.docs.root", root.asFile.path)
