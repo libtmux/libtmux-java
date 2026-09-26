@@ -84,7 +84,7 @@ final class Documentation {
         if (directive == null) {
             return Snippet.Expectation.RUNS;
         }
-        if (directive.equals("does-not-compile")) {
+        if (directive.startsWith("does-not-compile:") && directive.length() > "does-not-compile:".length()) {
             return Snippet.Expectation.DOES_NOT_COMPILE;
         }
         if (directive.startsWith("throws:") && directive.length() > "throws:".length()) {
@@ -99,11 +99,14 @@ final class Documentation {
         // A directive nobody recognises is a snippet nobody is checking, which is the state this
         // exists to prevent. Naming the file because a typo here is silent otherwise.
         throw new IllegalArgumentException("unknown snippet directive '" + directive + "' in " + file
-                + "; expected 'does-not-compile', 'throws: <exception>', 'compile-only: <reason>'"
+                + "; expected 'does-not-compile: <diagnostic phrase>', 'throws: <exception>', 'compile-only: <reason>'"
                 + " or 'skip: <reason>'");
     }
 
-    /** Whatever followed the colon: an exception's simple name, or a reason nobody parses. */
+    /**
+     * Whatever followed the colon: an exception's simple name, a phrase the compiler's diagnostic
+     * must contain, or a reason nobody parses.
+     */
     private static String detailOf(String directive) {
         if (directive == null) {
             return "";

@@ -57,7 +57,6 @@ dependencies {
 the rest: tmux's supported range, locale behaviour, and every module's
 coordinate.
 
-<!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
 // Given: Path socket
 ServerConfig config = ServerConfig.builder()
