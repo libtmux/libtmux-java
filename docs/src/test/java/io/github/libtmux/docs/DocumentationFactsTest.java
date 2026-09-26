@@ -163,9 +163,8 @@ final class DocumentationFactsTest {
      *
      * <p>"That range is not a claim" is true exactly while the matrix runs its ends. A release
      * added to the workflow and not to the README understates what is tested; one removed from the
-     * workflow and left in the README is a promise nothing keeps. A spelled-out count is worse
-     * again — it was "eight" against a nine-lane matrix — so prose says "every supported release"
-     * and the ends are checked here.
+     * workflow and left in the README is a promise nothing keeps. A spelled-out count drifts as
+     * lanes are added, so prose says "every supported release" and the ends are checked here.
      */
     @Test
     void theReadmeNamesTheEndsOfTheMatrixItClaims() {
@@ -310,8 +309,7 @@ final class DocumentationFactsTest {
      * Every example program is in the index that introduces them.
      *
      * <p>The examples exist because nobody compiles what everybody reads first, and an example
-     * nothing points at is no better than one nothing runs. Two had been written and never listed
-     * when this gate was added.
+     * nothing points at is no better than one nothing runs.
      */
     @Test
     void everyExampleIsListedWhereExamplesAreIntroduced() throws IOException {
