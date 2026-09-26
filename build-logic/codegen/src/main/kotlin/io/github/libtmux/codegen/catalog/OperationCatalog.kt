@@ -14,6 +14,8 @@ data class CatalogOperation(
     val static: Boolean = false,
     val varargs: Boolean = false,
     val summary: String = "",
+    /** Names of the method's own type parameters, e.g. `["T"]` for `<T> Optional<T> get(OptionKey<T>)`. */
+    val typeParameters: List<String> = emptyList(),
 )
 
 /** One parameter of a [CatalogOperation], with the schema's nullability flag beside its spelling. */
@@ -58,6 +60,7 @@ private fun readOperation(node: JsonNode): CatalogOperation =
         static = node.path("static").asBoolean(false),
         varargs = node.path("varargs").asBoolean(false),
         summary = node.path("javadoc").path("summary").asText(""),
+        typeParameters = node.path("typeParameters").map { it.requiredText("name") },
     )
 
 private fun JsonNode.required(field: String): JsonNode =

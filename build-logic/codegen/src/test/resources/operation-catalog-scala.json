@@ -210,6 +210,60 @@
       "parameters": [],
       "returns": { "type": "void", "nullable": false },
       "javadoc": { "summary": "Closes this window." }
+    },
+    {
+      "owner": "io.github.libtmux.Server",
+      "name": "hooks",
+      "kind": "CAPTURED",
+      "static": false,
+      "varargs": false,
+      "parameters": [],
+      "returns": { "type": "io.github.libtmux.Hooks", "nullable": false },
+      "javadoc": { "summary": "The global hooks every session inherits." }
+    },
+    {
+      "owner": "io.github.libtmux.Pane",
+      "name": "options",
+      "kind": "CAPTURED",
+      "static": false,
+      "varargs": false,
+      "parameters": [],
+      "returns": { "type": "io.github.libtmux.Options", "nullable": false },
+      "javadoc": { "summary": "This pane's own options." }
+    },
+    {
+      "owner": "io.github.libtmux.Hooks",
+      "name": "all",
+      "kind": "READ",
+      "static": false,
+      "varargs": false,
+      "parameters": [],
+      "returns": { "type": "java.util.Map<java.lang.String, java.util.List<java.lang.String>>", "nullable": false },
+      "javadoc": { "summary": "Every hook at this scope." }
+    },
+    {
+      "owner": "io.github.libtmux.Environment",
+      "name": "removed",
+      "kind": "READ",
+      "static": false,
+      "varargs": false,
+      "parameters": [],
+      "returns": { "type": "java.util.Set<java.lang.String>", "nullable": false },
+      "javadoc": { "summary": "Every name this scope tells a new process not to inherit." }
+    },
+    {
+      "owner": "io.github.libtmux.Options",
+      "name": "set",
+      "kind": "MUTATION",
+      "static": false,
+      "varargs": false,
+      "typeParameters": [{ "name": "T", "bounds": [] }],
+      "parameters": [
+        { "name": "key", "type": "io.github.libtmux.OptionKey<T>", "nullable": false },
+        { "name": "value", "type": "T", "nullable": false }
+      ],
+      "returns": { "type": "void", "nullable": false },
+      "javadoc": { "summary": "As set(String, String), written the way tmux reads the key's type." }
     }
   ]
 }
