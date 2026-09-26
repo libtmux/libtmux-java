@@ -185,6 +185,36 @@ final class DocumentationFactsTest {
         assertEquals(List.of(), wrong, "install snippets name a version this build does not publish: " + expected);
     }
 
+    /**
+     * The filtering guide's field table is generated prose: it names every field
+     * `field-catalog.tsv` declares, or it is lying about what `Pane_`/`Session_`/`Window_`/`Client_`
+     * expose.
+     */
+    @Test
+    void theFilteringGuideListsExactlyTheCatalogsFields() {
+        Set<String> catalog = new TreeSet<>();
+        for (String line : read("libtmux/src/main/resources/META-INF/io.github.libtmux/field-catalog.tsv")
+                .split("\n", -1)) {
+            String trimmed = line.strip();
+            if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                continue;
+            }
+            String[] columns = trimmed.split("\t", -1);
+            catalog.add(columns[1] + "." + columns[0]);
+        }
+        assertTrue(!catalog.isEmpty(), "field-catalog.tsv lists no fields");
+
+        Set<String> guide = new TreeSet<>();
+        Matcher row = Pattern.compile("(?m)^\\| (Pane|Session|Window|Client) \\| `([A-Za-z]+)` \\|")
+                .matcher(read("docs/guide/filtering.md"));
+        while (row.find()) {
+            guide.add(row.group(1) + "." + row.group(2));
+        }
+        assertTrue(!guide.isEmpty(), "docs/guide/filtering.md lists no fields");
+
+        assertEquals(catalog, guide, "docs/guide/filtering.md's field table disagrees with field-catalog.tsv");
+    }
+
     /** What the platform's own README says it manages, against what it actually constrains. */
     @Test
     void theBomReadmeListsWhatTheBomManages() {
