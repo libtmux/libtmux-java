@@ -1,9 +1,10 @@
 # Getting started
 
-Use JDK 25 or 27 and an explicit tmux executable. Run the build commands from
-the repository root. `JAVA_HOME` selects the JDK; `TMUX_TEST_BINARY` must be the
-absolute path of the tmux binary used by live tests. The checked `libtmux-scala/sbtw`
-launcher pins sbt and clears inherited `TMUX` and `TMUX_PANE` before testing.
+Use JDK 25 or newer and an explicit tmux executable. Run the build commands
+from the repository root. `JAVA_HOME` selects the JDK; `TMUX_TEST_BINARY` must
+be the absolute path of the tmux binary used by live tests. The checked
+`libtmux-scala/sbtw` launcher pins sbt and clears inherited `TMUX` and
+`TMUX_PANE` before testing.
 
 ## Stage development artifacts
 
@@ -19,14 +20,14 @@ The default repository is `libtmux-scala/target/java-repository`. The local
 stage makes the released Java prerequisite and test fixtures explicit without
 using Maven local.
 
-Run both producer families' pure and live checks:
+Run the pure and live checks:
 
 ```console
 $ LIBTMUX_JAVA_VERSION=0.0.1-alpha.14 \
-    ./libtmux-scala/sbtw crossUnit crossLive
+    ./libtmux-scala/sbtw unit live
 ```
 
-Stage the two facade modules for both Scala binary families:
+Stage the facade modules:
 
 ```console
 $ LIBTMUX_JAVA_VERSION=0.0.1-alpha.14 \
@@ -59,10 +60,11 @@ libraryDependencies += "io.github.libtmux" %% "libtmux-scala-cats" %
   "0.0.1-alpha.12-scala-dev.1"
 ```
 
-`%%` selects `_2.13` or `_3` from the consumer's Scala version. The Java library
-uses the unsuffixed artifact `libtmux` and a single `%`. A released facade must
-pin an available non-SNAPSHOT Java dependency. Do not substitute an unpublished
-development coordinate into release installation instructions.
+`%%` selects `_3` from the consumer's Scala 3.9 version — this build is Scala
+3 only, with no `_2.13` cross-build. The Java library uses the unsuffixed
+artifact `libtmux` and a single `%`. A released facade must pin an available
+non-SNAPSHOT Java dependency. Do not substitute an unpublished development
+coordinate into release installation instructions.
 
 ## A first client
 
@@ -91,7 +93,7 @@ fixture's `config`; the function builds and uses its own configuration.
 import io.github.libtmux.{
   Layout, ServerConfig, ServerEndpoint, SessionSpec, SplitSpec
 }
-import io.github.libtmux.scaladsl.blocking.Server
+import io.github.libtmux.scaladsl.{config => _, *}
 import java.nio.file.{Files, Path}
 import java.time.Duration
 import scala.util.Using
@@ -123,9 +125,11 @@ def firstClient(binary: String, socket: Path, configFile: Path): Unit = {
       )
       window.selectLayout(Layout.EVEN_HORIZONTAL)
       second.select()
-      val captured = window.refresh()
-      assert(captured.panes.size == 2)
-      assert(captured.panes.exists(_.info.id == second.info.id))
+      // window.panes is CAPTURED: it answers from window's own frozen capture, taken before the
+      // split, so this refreshes first rather than reading stale data.
+      val panes = window.refresh().panes
+      assert(panes.size == 2)
+      assert(panes.exists(_.info.id().value() == second.info.id().value()))
     } finally session.kill()
   }
 }
@@ -141,9 +145,9 @@ config.endpoint() match {
 }
 ```
 
-Timeouts are `java.time.Duration`, as the Java client takes them. From a
-`FiniteDuration`, `scala.jdk.DurationConverters._` makes the one-call
-conversion: `5.seconds.toJava`.
+Timeouts are `scala.concurrent.duration.FiniteDuration` at every public entry
+point, converted once at the boundary: `pane.awaitText("$", 5.seconds)`
+never surfaces `java.time.Duration` to the caller.
 
 Follow with [queries](query.md), [ownership](ownership.md), then
 [execution](execution.md). For immediate access without the facade, use the
@@ -157,29 +161,28 @@ Format Scala source and sbt settings:
 $ ./libtmux-scala/sbtw fmt
 ```
 
-Compile both producer families and check formatting:
+Compile and check formatting:
 
 ```console
 $ ./libtmux-scala/sbtw lint
 ```
 
-Generate both families' API documentation:
+Generate the facades' API documentation:
 
 ```console
 $ ./libtmux-scala/sbtw docs
 ```
 
-The generated Scaladoc starts at `libtmux-scala/target/scala-2.13/api/index.html`
-and `libtmux-scala-cats/target/scala-2.13/api/index.html`. Scala 3 uses the
-corresponding `scala-3.3.8/api/` directories. Begin with
-[blocking `Server`][blocking-server] or [Cats `Server`][cats-server].
+The generated Scaladoc starts at `libtmux-scala/target/scala-3.9.0/api/index.html`
+and `libtmux-scala-cats/target/scala-3.9.0/api/index.html`. Begin with
+[direct-style `Server`][server] or [Cats `Server`][cats-server].
 
 These commands need the Java coordinate selected for the local stage; set
 `LIBTMUX_JAVA_VERSION` when it differs from `gradle.properties`. Bootstrap and
 compilation belong to the outer verification tier.
 Use a resident sbt shell for focused development tests.
 
-[blocking-server]:
-  ../src/main/scala/io/github/libtmux/scaladsl/blocking/Server.scala
+[server]:
+  ../src/main/scala/io/github/libtmux/scaladsl/Server.scala
 [cats-server]:
   ../../libtmux-scala-cats/src/main/scala/io/github/libtmux/scaladsl/cats/Server.scala

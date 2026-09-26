@@ -16,7 +16,7 @@ and the CI matrix move from JDK 21 to JDK 25. Kotlin's oldest supported
 consumer compiler stays 2.1; it cannot itself emit JDK 25 bytecode, so the
 module's own oldest-consumer check now compiles at that compiler's ceiling,
 `-jvm-target 23`, while still linking against this module's JDK 25 bytecode.
-Scala 2.13.18 and 3.3.8 both accept `-release:25`.
+Scala 3.9 accepts `-release:25`.
 
 ### `Client.refresh()` returns the client or throws
 

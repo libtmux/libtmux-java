@@ -5,18 +5,20 @@ transport and local workers; it does not kill the tmux daemon. `killServer` is
 an explicit, separate operation. A borrowed facade leaves the original Java
 client under its existing owner's control.
 
-## Blocking scopes
+## Direct-style scopes
 
-[`blocking.Server.open`][blocking-server] returns an `AutoCloseable` client for
-`scala.util.Using.resource` or an explicit `try`/`finally` scope. Its `close` is
-idempotent. `blocking.Server.fromJava` borrows a client: closing that Scala
-facade disables its operations without closing the Java client.
+[`Server.open`][server] returns an opaque `Server`, bounded by `AutoCloseable`,
+for `scala.util.Using.resource` or an explicit `try`/`finally` scope — the
+bound is the type's own, so `close()` needs no forwarding of its own. Its
+`close` is idempotent. `Server.fromJava` borrows a client instead of owning
+one; closing that facade closes the Java client too, so a caller who only
+means to borrow keeps the original owner's `close()` as the one that matters.
 
-Handle operations use the owning Scala server's closed-scope check. Captured
-information and traversal remain readable after closure, but refresh and
-mutation through those handles fail. The blocking facade does not supervise
-concurrent borrowed calls; its owner controls the Java transport's lifetime.
-Coordinate that lifetime with every other user of the borrowed client.
+An opaque handle carries no Scala-side scope state of its own — no
+owned/closed/parent bookkeeping to keep in sync with Java's. Whether a call
+through it fails after the owning `Server` closes is exactly Java's own
+use-after-close contract (`ServerClosedException`), not a second policy this
+facade adds.
 
 ## Effect scopes
 
@@ -49,33 +51,34 @@ answers after that scope ends:
 ```scala
 import _root_.cats.effect.{IO, Resource}
 import io.github.libtmux.{Server => JavaServer}
+import io.github.libtmux.scaladsl.cats.{config => _, *}
 import io.github.libtmux.scaladsl.cats.{Server => ScalaServer}
 
 Resource
   .make(IO.blocking(JavaServer.open(config)))(java => IO.blocking(java.close()))
   .use { java =>
     ScalaServer.fromJava[IO](java).use { server =>
-      server.sessions.flatMap(values => IO(assert(values.nonEmpty)))
+      server.sessions().flatMap(values => IO(assert(values.nonEmpty)))
     }.flatMap(_ => IO.blocking(assert(java.isAlive())))
   }
 ```
 
-## Java identity and escape hatches
+## Java identity and one escape hatch
 
-Operational [handles][handles] retain their original Java handles and delegate
-equality and hash codes to them. A pane's identity is physical; a window's
-identity includes its captured session and window index. Borrowing does not
-replace that identity by reacquiring the same textual ID. Refresh follows the
-Java contract and can return a pane through a different window occurrence.
-`Pane.fromJava`, and each other handle's `fromJava`, wraps the handle's Java
-server in a borrowed facade of its own: closing that facade closes nothing, and
-the Java server's owner still decides when it closes.
+Every direct-style handle is opaque over its Java one — the same object, not a
+copy — so equality and hash code are Java's own. A pane's identity is
+physical; a window's identity includes its captured session and window
+index. Borrowing does not replace that identity by reacquiring the same
+textual ID. Refresh follows the Java contract and can return a pane through a
+different window occurrence.
 
-`unsafeJava` returns the underlying Java object without transferring
-ownership. It is the escape from the Scala scope checks and effect scheduling.
-Code using it must follow the Java client's ownership and threading contracts.
-Keeping `unsafeJava` from an owned scope does not keep that client open.
-Keeping it from a borrowed scope does not make the Scala facade its owner.
+`.asJava` is the one escape hatch, on every handle, always public: opaque
+wrapping is free, so it is a zero-cost coercion, never a copy and never a
+second, more "unsafe" name to reach for. Code using the raw Java handle must
+still follow its ownership and threading contract. Reaching `.asJava` from an
+owned scope does not keep that client open past the Scala facade's own
+`close()`; reaching it from a borrowed scope does not make the Scala facade
+its owner.
 
 ## Control attachments
 
@@ -95,12 +98,10 @@ attachments separate when canceling a command must not end observation.
 See [execution](execution.md) for admission bounds, cancellation uncertainty,
 and the difference between a control acknowledgement and command completion.
 
-[blocking-server]:
-  ../src/main/scala/io/github/libtmux/scaladsl/blocking/Server.scala
+[server]:
+  ../src/main/scala/io/github/libtmux/scaladsl/Server.scala
 [cats-server]:
   ../../libtmux-scala-cats/src/main/scala/io/github/libtmux/scaladsl/cats/Server.scala
-[handles]:
-  ../../libtmux-scala-cats/src/main/scala/io/github/libtmux/scaladsl/cats/Handles.scala
 [control]:
   ../../libtmux-scala-cats/src/main/scala/io/github/libtmux/scaladsl/cats/Control.scala
 [observation]:
