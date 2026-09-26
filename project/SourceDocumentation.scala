@@ -10,19 +10,22 @@ object SourceDocumentation {
   private val href = "(?i)\\bhref\\s*=\\s*(\"([^\"]*)\"|'([^']*)')".r
   private val lineAnchor = "L([1-9][0-9]*)".r
 
-  def options(binaryVersion: String, root: File): Seq[String] =
-    if (binaryVersion == "3")
-      Seq(
-        "-source-links:" + root.getAbsolutePath + "=https://" + host +
-          "€{FILE_PATH_EXT}.html#L€{FILE_LINE}"
-      )
-    else
-      Seq(
-        "-sourcepath",
-        root.getAbsolutePath,
-        "-doc-source-url",
-        "https://" + host + "/€{FILE_PATH_EXT}.html#L€{FILE_LINE}"
-      )
+  /** Each root is a source directory and the prefix its files take in the
+    * source browser: hand-written sources at the top, generated ones beside
+    * them, so a generated operation's documentation links to the code that
+    * ships.
+    */
+  def options(roots: Seq[(File, String)]): Seq[String] =
+    Seq(
+      "-source-links:" + roots
+        .map { case (root, prefix) =>
+          // FILE_PATH_EXT starts with a slash of its own.
+          root.getAbsolutePath + "=https://" + host +
+            (if (prefix.isEmpty) "" else "/" + prefix.stripSuffix("/")) +
+            "€{FILE_PATH_EXT}.html#L€{FILE_LINE}"
+        }
+        .mkString(",")
+    )
 
   private def escape(value: String): String =
     value
@@ -38,8 +41,14 @@ object SourceDocumentation {
   private def uriPath(path: String): String =
     new URI(null, null, path, null).toASCIIString
 
-  def complete(output: File, root: File, sources: Seq[File]): File = {
-    val sourceRoot = root.toPath.toAbsolutePath.normalize()
+  def complete(
+      output: File,
+      roots: Seq[(File, String)],
+      sources: Seq[File]
+  ): File = {
+    val sourceRoots = roots.map { case (root, prefix) =>
+      (root.toPath.toAbsolutePath.normalize(), prefix)
+    }
     val browser = (output / "_sources").toPath.toAbsolutePath.normalize()
     val pages = (output ** "*.html").get.filterNot(file =>
       file.toPath.toAbsolutePath.normalize().startsWith(browser)
@@ -50,11 +59,14 @@ object SourceDocumentation {
       .filter(_.getName.endsWith(".scala"))
       .map { file =>
         val path = file.toPath.toAbsolutePath.normalize()
-        require(
-          path.startsWith(sourceRoot),
-          "Scaladoc source is outside its module source root"
-        )
-        val relative = pathString(sourceRoot.relativize(path))
+        val (sourceRoot, prefix) = sourceRoots
+          .find { case (root, _) => path.startsWith(root) }
+          .getOrElse(
+            sys.error(
+              "Scaladoc source is outside its module source roots: " + path
+            )
+          )
+        val relative = prefix + pathString(sourceRoot.relativize(path))
         val bytes = Files.readAllBytes(path)
         val text = new String(bytes, UTF_8)
         val lines = text.replace("\r\n", "\n").split("\n", -1).toVector

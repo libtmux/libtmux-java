@@ -1,0 +1,45 @@
+{
+  "lockVersion" : 1,
+  "timestamp" : "2026-09-26T07:51:22.032264322Z",
+  "configurations" : [
+    "compile",
+    "optional",
+    "provided",
+    "runtime",
+    "test"
+  ],
+  "dependencies" : [
+    {
+      "org" : "org.scala-lang",
+      "name" : "scala-library",
+      "version" : "3.9.0",
+      "artifacts" : [
+        {
+          "name" : "scala-library.jar",
+          "hash" : "sha1:08f3ebf03aa11fa0f422e3430b3401c4f81e688a"
+        }
+      ],
+      "configurations" : [
+        "compile",
+        "runtime",
+        "test"
+      ]
+    },
+    {
+      "org" : "org.scala-lang",
+      "name" : "scala3-library_3",
+      "version" : "3.9.0",
+      "artifacts" : [
+        {
+          "name" : "scala3-library_3.jar",
+          "hash" : "sha1:ca71b2166bba365481723d935f6058a213a071fe"
+        }
+      ],
+      "configurations" : [
+        "compile",
+        "runtime",
+        "test"
+      ]
+    }
+  ]
+}
