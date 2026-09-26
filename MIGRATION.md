@@ -38,6 +38,37 @@ Write the option instead:
 server.globalOptions().set("mouse", "on");
 ```
 
+### `libtmux-kotlin` is wrapper classes now, not extensions on the Java types
+
+api-break: Server
+api-break: Session
+api-break: Window
+api-break: Pane
+api-break: Client
+api-break: ControlClient
+
+`io.github.libtmux.kotlin.Server`/`Session`/`Window`/`Pane`/`Client`/
+`ControlClient` are new Kotlin classes, distinct from the Java types of the
+same simple name. Every operation that reaches tmux is `suspend`; captured
+state is a property. `Optional` is already unwrapped to a nullable return, so
+the old `activeWindowOrNull`/`activePaneOrNull`/`floatingOrNull`/`modeOrNull`/
+`sessionOrNull`/`paneOrNull`/`windowOrNull`/`getOrNull` extension functions are
+gone — call the property or `suspend` method directly and read the nullable
+result. `EventSubscription<T>.deliveries()`/`awaitDelivery()` are gone; use
+`ControlClient.output(capacity)`/`events(capacity)`, a cold `Flow` over the
+same subscription. `Pane.awaitText`/`await`/`run` and `Server.control` move
+from extensions on the Java types to members on the Kotlin wrapper classes,
+with the same names and `kotlin.time.Duration` parameters:
+
+```kotlin
+// Given: config: ServerConfig
+withServer(config) { server ->
+    val session = server.newSession("build")
+    val pane = session.activeWindow?.activePane ?: error("no active pane")
+    pane.sendLine("echo ready")
+}
+```
+
 ### An `EventSubscription` has one reader
 
 api-break: EventSubscription
