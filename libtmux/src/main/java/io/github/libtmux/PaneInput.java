@@ -1,7 +1,12 @@
 package io.github.libtmux;
 
+import io.github.libtmux.catalog.Advanced;
+import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * One writer at a time for a pane's keyboard, paste, and shell run.
@@ -17,6 +22,7 @@ import java.util.Map;
  * to send a stop, and that entry does not take the pane. Closing the run's lease still releases
  * it, including from the thread that notices the command has finished.
  */
+@Advanced
 public final class PaneInput {
 
     private static final Map<Key, Hold> HELD = new HashMap<>();
@@ -62,6 +68,52 @@ public final class PaneInput {
         return acquire(identity, pane, false, true);
     }
 
+    /**
+     * Reports when the current hold on this pane was acquired, so a lease nothing ever closes can
+     * be found from outside the thread holding it.
+     *
+     * @return empty when the pane is not held
+     */
+    public static Optional<Instant> heldSince(Pane pane) {
+        return heldSince(pane.identity(), pane.id());
+    }
+
+    static Optional<Instant> heldSince(ServerIdentity identity, PaneId pane) {
+        synchronized (HELD) {
+            Hold current = HELD.get(new Key(identity, pane));
+            return current == null ? Optional.empty() : Optional.of(current.since);
+        }
+    }
+
+    /**
+     * Every pane held right now, for diagnosing a lease nothing ever closes.
+     *
+     * @return an immutable snapshot, one entry per held pane regardless of how many times its
+     *     owning thread has re-entered it
+     */
+    @ReadOnly
+    public static List<Held> held() {
+        synchronized (HELD) {
+            return HELD.entrySet().stream()
+                    .map(entry -> new Held(
+                            entry.getKey().identity(),
+                            entry.getKey().pane(),
+                            entry.getValue().since,
+                            entry.getValue().thread.getName()))
+                    .toList();
+        }
+    }
+
+    /**
+     * One pane's outstanding hold.
+     *
+     * @param server which server's pane this is
+     * @param pane the held pane
+     * @param since when the hold was acquired
+     * @param holdingThread the name of the thread that holds it
+     */
+    public record Held(ServerIdentity server, PaneId pane, Instant since, String holdingThread) {}
+
     private static Lease acquire(ServerIdentity identity, PaneId pane, boolean interruptible, boolean guest) {
         Key key = new Key(identity, pane);
         Thread self = Thread.currentThread();
@@ -93,6 +145,7 @@ public final class PaneInput {
     }
 
     /** Releases one matching hold. Closing twice releases once. Any thread may close it. */
+    @Advanced
     public static final class Lease implements AutoCloseable {
 
         private final Key key;
@@ -139,6 +192,7 @@ public final class PaneInput {
     private static final class Hold {
         private final Thread thread;
         private final boolean interruptible;
+        private final Instant since = Instant.now();
         private final Map<Thread, Integer> guests = new HashMap<>();
         private int depth = 1;
 
