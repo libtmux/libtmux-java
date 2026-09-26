@@ -260,6 +260,7 @@ public final class io/github/libtmux/kotlin/Session$Companion {
 public final class io/github/libtmux/kotlin/SessionBuilder {
 	public final fun getDirectory ()Ljava/nio/file/Path;
 	public final fun getName ()Ljava/lang/String;
+	public final fun running ([Ljava/lang/String;)V
 	public final fun setDirectory (Ljava/nio/file/Path;)V
 	public final fun setName (Ljava/lang/String;)V
 	public final fun window (Lkotlin/jvm/functions/Function1;)V
@@ -325,6 +326,7 @@ public final class io/github/libtmux/kotlin/Window$Companion {
 public final class io/github/libtmux/kotlin/WindowBuilder {
 	public final fun getDirectory ()Ljava/nio/file/Path;
 	public final fun getName ()Ljava/lang/String;
+	public final fun running ([Ljava/lang/String;)V
 	public final fun setDirectory (Ljava/nio/file/Path;)V
 	public final fun setName (Ljava/lang/String;)V
 	public final fun split (Lkotlin/jvm/functions/Function1;)V
