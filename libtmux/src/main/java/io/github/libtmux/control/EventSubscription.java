@@ -433,7 +433,9 @@ public final class EventSubscription<T> implements AutoCloseable {
      * keeps filling regardless of demand, and a full buffer still reports its loss as a {@link
      * Delivery.Gap}, exactly as {@link #next()} does.
      *
-     * @param executor where each blocking read for the subscriber runs
+     * @param executor where each blocking read for the subscriber runs; one that runs a task on the
+     *     calling thread makes {@link Flow.Subscription#request request} block on tmux, which the
+     *     Reactive Streams rules forbid
      */
     @Operation(Kind.STREAM)
     public Flow.Publisher<Delivery<T>> publisher(Executor executor) {

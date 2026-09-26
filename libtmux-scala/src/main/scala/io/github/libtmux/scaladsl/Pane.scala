@@ -38,6 +38,8 @@ object Pane {
     def asJava: JavaPane = self
 
     // WAIT, handwritten: bespoke cancellation and a deadline, not a per-operation forward.
+    // Each blocks its thread; interrupting that thread cancels the wait with InterruptedException,
+    // as the Java method declares.
 
     /** Waits until `text` appears, or `timeout` passes first. */
     def awaitText(text: String, timeout: FiniteDuration): TextOutcome =
