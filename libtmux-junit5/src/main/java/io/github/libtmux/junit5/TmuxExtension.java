@@ -95,8 +95,9 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
 
     static {
         // Covers the exits a lifecycle callback does not: a cancelled build, a SIGTERM, a
-        // System.exit from something else in the JVM. Measured in docs/spikes/22: the hook runs on
-        // termination and normal exit, and does not run on SIGKILL — which is what the sweep is for.
+        // System.exit from something else in the JVM. The hook runs on termination and normal exit,
+        // and does not run on SIGKILL — which is what the sweep is for. See
+        // docs/decisions/0006-real-tmux-junit5-fixture-lifecycle.md.
         Runtime.getRuntime().addShutdownHook(new Thread(TmuxExtension::releaseAll, "libtmux-fixture-shutdown"));
     }
 

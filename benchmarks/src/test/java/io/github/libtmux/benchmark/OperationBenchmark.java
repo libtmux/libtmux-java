@@ -45,8 +45,8 @@ import org.junit.jupiter.api.io.TempDir;
  * seconds rather than milliseconds and it writes a file. Run it with
  * {@code ./gradlew operationBenchmark}.
  *
- * <p>Numbers are never written by hand. This regenerates {@code docs/benchmarks/operations.md} from
- * a run on the tmux it is given, and stamps which tmux that was, because a table without its
+ * <p>Numbers are never written by hand. This regenerates {@code docs/benchmarks/operation-costs.md}
+ * from a run on the tmux it is given, and stamps which tmux that was, because a table without its
  * conditions is a claim rather than a measurement.
  */
 @Tag("benchmark")
@@ -223,7 +223,7 @@ final class OperationBenchmark {
 
         // Told where to write rather than guessing from a working directory, which for a Gradle
         // Test task is the module and not the root.
-        Path report = Path.of(System.getProperty("libtmux.benchmark.out", "build/operations.md"));
+        Path report = Path.of(System.getProperty("libtmux.benchmark.out", "build/operation-costs.md"));
         Files.createDirectories(report.getParent());
         Files.writeString(
                 report,
@@ -956,7 +956,7 @@ final class OperationBenchmark {
                 .append("a transport forwarding this library's existing fenced and batched commands to a ")
                 .append("persistent control client would return truncated or empty results for nearly ")
                 .append("every typed operation, `Server.snapshot()` included. ")
-                .append("`docs/spikes/32-control-backed-transport.md` has the measurements.\n");
+                .append("`docs/decisions/0018-control-backed-transport-rejected.md` has the measurements.\n");
 
         out.append("\n## Following a change\n\n")
                 .append("A `ServerMirror` listens through a control client and takes a fresh snapshot for ")

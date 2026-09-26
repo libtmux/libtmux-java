@@ -17,10 +17,10 @@ pins this.
 
 **tmux's own command grammar is not inert.** tmux ends a command at a semicolon
 ending any argument, so an argument built from untrusted text can add a command.
-`ControlClient.isCommandGroup` is the library's reading of that rule, and
-`docs/spikes/21-command-group-boundaries.md` measures it. Treat text you did not
-author as data: pass it as a single argument, and do not concatenate it into
-one.
+`ControlClient.isCommandGroup` is the library's reading of that rule; see
+`docs/decisions/0009-command-groups-are-transport-agnostic.md`. Treat text you
+did not author as data: pass it as a single argument, and do not concatenate it
+into one.
 
 **tmux expands formats before any shell runs.** tmux expands `#{...}` and
 `#(...)` in many argument positions, and `#(...)` runs a command. The expansion

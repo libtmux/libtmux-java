@@ -13,9 +13,9 @@ import java.util.stream.Stream;
 /**
  * Finds the Java in the documentation.
  *
- * <p>Only the documents a reader is expected to act on. Notes under {@code docs/spikes},
- * {@code docs/plans} and {@code docs/studies} are dated records of what was measured or decided at
- * the time; holding them to today's API would either break the build or quietly rewrite history,
+ * <p>Only the documents a reader is expected to act on: the root and per-package guides, and
+ * {@code docs/guide}. Records under {@code docs/decisions} and {@code docs/internals} are dated or
+ * historical; holding them to today's API would either break the build or quietly rewrite history,
  * and neither is what a record is for.
  */
 final class Documentation {

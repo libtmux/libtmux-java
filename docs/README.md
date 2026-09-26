@@ -1,7 +1,8 @@
 # docs
 
-**An index of this directory: task-oriented guides first, then the dated record
-of how the library got here.**
+**An index of what remains: task-oriented guides, the generated reference and
+benchmark pages, decisions still in force, and background reference
+material.**
 
 API reference: [current trunk](https://libtmux.org/en/java/latest/reference/),
 or [a released version](https://javadoc.io/doc/io.github.libtmux/libtmux) on
@@ -23,8 +24,8 @@ Task-oriented. Start here.
   freezes, and when to call `refresh()`.
 - [Streaming](guide/streaming.md) — watching pane output as it happens, cheapest
   first.
-- [Failures, telemetry, and pane input](guide/operations.md) — driving tmux from
-  a service: retries, logging, and pane input.
+- [Operating a service](guide/operating-a-service.md) — driving tmux from a
+  service: retries, telemetry, and pane input.
 - [Threads, cancellation, and what runs at once](guide/concurrency.md) — the
   blocking and thread-safety contract, and what cancellation leaves behind.
 - [Driving tmux from a model](guide/mcp.md) — the `libtmux-mcp` server, for any
@@ -36,113 +37,55 @@ Task-oriented. Start here.
 - [Scala](guide/scala.md) — the direct-Java path and the separate Scala facade,
   with their runnable examples.
 
-## Benchmarks
+## Reference and benchmarks
 
-- [Operation costs](benchmarks/operations.md) — measured wall-clock and
+Generated; do not edit by hand.
+
+- [Operation catalog](reference/operations.md) — every `@Operation`, generated
+  from its annotation.
+- [Operation costs](benchmarks/operation-costs.md) — measured wall-clock and
   tmux-process cost for one-at-a-time, batched, and chained calls; regenerated
   by `./gradlew operationBenchmark`.
 - [Scala facade costs](../libtmux-scala/benchmarks/README.md) — the blocking
   and Cats Effect facades against the Java core, with warmups, raw samples, and
   allocated bytes; one committed run in `results/`.
 
-## Spikes
+## Decisions
 
-Design records: what was measured against a real tmux before a decision, dated
-to when it was measured and kept even after the decision it fed became
-obsolete. `docs/plans/2026-08-09-disposable-spikes.md` records the process that
-produced them.
+Short ADRs for decisions still in force, each citing the tmux (or JDK, Gradle,
+or Kotlin) behaviour that forced it. Format: Status, Context, Decision,
+Consequences.
 
-- [00 Protocol](spikes/00-protocol.md) — the ground rules: what a spike may
-  touch, stage, and claim.
-- [01 Build and coordinates](spikes/01-build-and-coordinates.md) — the included
-  `build-logic` convention build, and the coordinates it publishes.
-- [02 Transport](spikes/02-transport.md) — admission-bounded prestarted platform
-  pumps, chosen over virtual-thread drains.
-- [03 Hydration](spikes/03-hydration.md) — one server-wide listing per entity
-  kind, not a walk per object.
-- [04 Query metamodel](spikes/04-query-metamodel.md) — superseded in part; the
-  note at the top names the current handle design.
-- [05 JUnit lifecycle](spikes/05-junit-lifecycle.md) — fixtures held in the
-  extension store, released from a lifecycle callback.
-- [06 Integrated synthesis](spikes/06-integrated-synthesis.md) — the frozen
-  contracts from five bakeoffs, built as one vertical slice.
-- [07 Row framing](spikes/07-row-framing.md) — splitting listing rows on a
-  separator generated per process, not a fixed one.
-- [08 Control mode](spikes/08-control-mode.md) — one command per control-mode
-  line, attributed by tmux's own reply framing.
-- [09 break-pane on 3.7](spikes/09-break-pane-3.7.md) — always naming the window
-  `break-pane` creates, and the rename 3.7 needs.
-- [10 wait-for](spikes/10-wait-for.md) — reporting why a wait ended, not just
-  whether it succeeded.
-- [11 split-window flags](spikes/11-split-window-flags.md) — one size flag,
-  `-l`, and never `-p`, across the supported range.
-- [12 Socket path reuse](spikes/12-socket-path-reuse.md) — never starting a
-  server on a socket path that has held one before.
-- [13 Creation call shape](spikes/13-creation-call-shape.md) — a builder-built
-  spec, applied by three overloads.
-- [14 new-window and new-session](spikes/14-new-window-and-new-session.md) — the
-  two behaviors that differ by release, and the one flag left unexposed.
-- [15 Pane modes](spikes/15-pane-modes.md) — every pane mode works on a server
-  nobody is attached to.
-- [16 run-shell output](spikes/16-run-shell-output.md) — a version rule for a
-  gap that opens and closes within the supported range.
-- [17 find-window](spikes/17-find-window.md) — why `find-window` is exposed as a
-  chooser, not a search.
-- [18 select-layout on 3.3a](spikes/18-select-layout-kills-3.3a.md) — why an
-  unparseable layout string is never handed to `select-layout`.
-- [19 Execution mode seam](spikes/19-execution-mode-seam.md) — the one seam an
-  execution mode needs, in an already mode-agnostic entity layer.
-- [20 Mode taxonomy](spikes/20-mode-taxonomy.md) — `ExecutionMode` is `DIRECT`
-  or `CONTROL`, not five modes, chosen once per server.
-- [21 Command group boundaries](spikes/21-command-group-boundaries.md) — the
-  first real disagreement between the transport carriers under test.
-- [22 Abandoned servers](spikes/22-abandoned-servers.md) — a shutdown hook plus
-  a sweep that reads ownership from the process table.
-- [23 Control subscriptions](spikes/23-control-subscriptions.md) — watching a
-  server with `refresh-client -B` instead of polling.
-- [24 MCP concurrency](spikes/24-mcp-concurrency.md) — serving with
-  `McpServer.sync`, which runs handlers off the connection thread.
-- [25 run-command framing](spikes/25-run-command-framing.md) — framing a command
-  with a random nonce and cutting on whole-line equality.
-- [26 Agent behaviour](spikes/26-agent-behaviour.md) — how a model given no
-  briefing on this API actually ends up using it.
-- [27 Torn reads](spikes/27-torn-reads.md) — capturing output and cursor
-  position in one tmux invocation.
-- [28 Loop filters](spikes/28-loop-filters.md) — a pane lookup and a filtered
-  read, each with one `-f` filter.
-- [29 Output cuts](spikes/29-output-cuts.md) — `%output` is cut by byte count,
-  not by character.
-- [30 Server start time](spikes/30-server-start-time.md) — naming a server by
-  `#{pid}` and `#{start_time}` together.
-- [31 Kotlin read-only](spikes/31-kotlin-read-only.md) — every public
-  collection-returning method in the core, checked from Kotlin.
+- [0001 Build-logic convention build](decisions/0001-build-logic-convention-build.md)
+- [0002 Blocking process transport](decisions/0002-blocking-process-transport.md)
+- [0003 Hierarchy hydration, per-entity listings](decisions/0003-hierarchy-hydration-per-entity-listings.md)
+- [0004 Query expressions, hand-written metamodel](decisions/0004-query-expressions-hand-written-metamodel.md)
+- [0005 Pushdown lowering is exact or refused](decisions/0005-pushdown-lowering-is-exact-or-refused.md)
+- [0006 Real-tmux JUnit 5 fixture lifecycle](decisions/0006-real-tmux-junit5-fixture-lifecycle.md)
+- [0007 Row framing with a random separator](decisions/0007-row-framing-with-a-random-separator.md)
+- [0008 Control-mode framing and quoting](decisions/0008-control-mode-framing-and-quoting.md)
+- [0009 Command groups are transport-agnostic](decisions/0009-command-groups-are-transport-agnostic.md)
+- [0010 Single process carrier, no execution mode](decisions/0010-single-process-carrier-no-execution-mode.md)
+- [0011 Wait outcomes name why a wait ended](decisions/0011-wait-outcomes-name-why-a-wait-ended.md)
+- [0012 Creation specs are builder-built](decisions/0012-creation-specs-are-builder-built.md)
+- [0013 Server identity is pid and start time](decisions/0013-server-identity-is-pid-and-start-time.md)
+- [0014 Watch a server with refresh-client](decisions/0014-watch-a-server-with-refresh-client.md)
+- [0015 Atomic capture and cursor position](decisions/0015-atomic-capture-and-cursor-position.md)
+- [0016 libtmux-mcp serves synchronously](decisions/0016-libtmux-mcp-serves-synchronously.md)
+- [0017 Kotlin sees core collections as read-only](decisions/0017-kotlin-sees-core-collections-as-read-only.md)
+- [0018 Control-backed transport rejected](decisions/0018-control-backed-transport-rejected.md)
 
-## Design, parity, and studies
+## Internals
 
-Historical and reference material: what was decided, what Python's own surface
-and tests look like, and how the two compare.
+- [tmux behaviour](internals/tmux-behaviour.md) — version quirks and protocol
+  facts cited from source comments, kept in one lean, reachable place.
 
-- [Architecture](design/2026-08-09-architecture.md) — the accepted specification
-  the spikes above executed against.
-- [Disposable spikes plan](plans/2026-08-09-disposable-spikes.md) — the
-  task-by-task plan that produced the spikes and studies below.
-- [Architecture review](reviews/2026-08-09-architecture.md) — three independent
-  reviews of the specification, before any spike ran.
-- [Spike evidence review](reviews/2026-08-09-spike-evidence.md) — an audit of
-  what the early spike notes claimed against what still verifies; superseded in
-  part.
+## Parity with Python libtmux
+
 - [Python API parity](parity/python-api.md) — every public Python declaration,
   and what this port does with it.
 - [Python test parity map](parity/test-map.md) — every Python test, mapped to
   the contract test that would port it.
-- [CPython subprocess study](studies/cpython-subprocess.md) — what the Java
-  transport has to match about CPython's own subprocess handling.
-- [Engine-ops seam study](studies/engine-ops-seams.md) — a read-only comparison
-  against the Python port's `engine-ops` branch.
-- [Java library pattern study](studies/java-library-patterns.md) — patterns and
-  counterexamples drawn from released Java libraries, not tutorials.
-- [tmux protocol study](studies/tmux-protocol.md) — the released tmux 3.7b
-  command-line contract, separated from implementation detail.
 
 ## How these pages are tested
 
@@ -335,6 +278,6 @@ Snippets come from `README.md`, `MIGRATION.md`, every package's `README.md`, and
 every guide under `docs/guide/`. The checks above that are not about snippets read more than
 that, and each row says where it looks.
 
-Not `docs/spikes`, `docs/plans` or `docs/studies`: those are dated records of what
-was measured or decided at the time. Holding them to today's API would either
-break the build or quietly rewrite history, and neither is what a record is for.
+Not `docs/decisions` or `docs/internals`: those are dated or historical
+records. Holding them to today's API would either break the build or quietly
+rewrite history, and neither is what a record is for.

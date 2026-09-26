@@ -221,7 +221,7 @@ public final class Session {
         ServerSnapshot fresh = server.refresh(snapshot);
         if (reported.isEmpty()) {
             // Only reuseExisting gets here: tmux selects the window it already had and reports
-            // nothing, so the answer has to come from a lookup. See docs/spikes/14.
+            // nothing, so the answer has to come from a lookup. See docs/internals/tmux-behaviour.md.
             return spec.name()
                     .flatMap(wanted -> new Session(server, fresh, state)
                             .windows().stream()

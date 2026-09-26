@@ -31,7 +31,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Where one tmux command ends and the next begins, and what a control-mode line makes of that.
  *
  * <p>Every expectation here was measured against tmux rather than derived from this code. The
- * measurements are in {@code docs/spikes/21-command-group-boundaries.md}.
+ * measurements are in {@code docs/decisions/0009-command-groups-are-transport-agnostic.md}.
  */
 final class ControlClientTest {
 

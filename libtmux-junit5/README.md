@@ -106,7 +106,8 @@ signal. So:
 
 A live owner is never touched, so Gradle's per-module workers and a tmux version
 matrix can all share one root safely. The measurements, and the two designs that
-lost, are in [`docs/spikes/22`](../docs/spikes/22-abandoned-servers.md).
+lost, are in
+[`docs/decisions/0006`](../docs/decisions/0006-real-tmux-junit5-fixture-lifecycle.md).
 
 **Cleanup failures are loud.** If a fixture's tmux will not die, the test fails
 rather than quietly unlinking a socket a live daemon still owns.

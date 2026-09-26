@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
  * Reading what tmux volunteers.
  *
  * <p>The shapes here are tmux's own, taken from {@code control-notify.c} and {@code control.c} and
- * confirmed against a running 3.7 server in {@code docs/spikes/23-control-subscriptions.md}.
+ * documented in {@code docs/decisions/0014-watch-a-server-with-refresh-client.md}.
  */
 final class ControlEventTest {
 

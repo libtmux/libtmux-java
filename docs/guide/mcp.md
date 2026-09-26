@@ -154,7 +154,7 @@ two unrelated screens together.
 Handing back lines that do not follow the ones before them, without saying so, is
 worse than handing back nothing. Which is why two things about that look are not
 optional, and both were measured after a false `continuous: false` reached CI
-([the spike](../spikes/27-torn-reads.md)):
+(see [0015](../decisions/0015-atomic-capture-and-cursor-position.md)):
 
 **The capture and the pane's position come from one tmux invocation.** Where a
 line sits in a capture depends on how far the pane has scrolled, so two
@@ -294,4 +294,4 @@ match it.
 - [Filtering](filtering.md) — the expression model Java applications can use
   outside MCP
 - [Watching output as it happens](streaming.md) — the control client directly
-- [Control-mode subscriptions](../spikes/23-control-subscriptions.md) — what was measured
+- [Control-mode subscriptions](../decisions/0014-watch-a-server-with-refresh-client.md) — what was measured
