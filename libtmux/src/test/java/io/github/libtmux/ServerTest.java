@@ -942,6 +942,25 @@ final class ServerTest {
     }
 
     /**
+     * tmux 3.2a exits 0 and prints nothing when it cannot create its socket: the server queues the
+     * error and tells the client to exit in the same breath, and the client leaves first. 3.3 and
+     * later print {@code error creating ...}. So when tmux says nothing, the directory is checked here.
+     */
+    @Test
+    void aSilentExitUnderAMissingSocketDirectoryNamesTheDirectory(@TempDir Path directory) {
+        Path socket = directory.resolve("missing").resolve("s");
+        ServerConfig config = ServerConfig.builder()
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .build();
+
+        String message = SessionCreation.failureMessage(config, new CommandResult(0, List.of(), List.of()));
+
+        assertTrue(
+                message.contains(String.valueOf(socket.getParent())) && message.contains("does not exist"),
+                "names the missing directory rather than doubting the binary: " + message);
+    }
+
+    /**
      * A transport that answers the identity probe with {@code version} and {@code list-commands}
      * with {@code lines}, whatever the real relationship between the two would be.
      */
