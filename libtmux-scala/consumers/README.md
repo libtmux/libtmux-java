@@ -5,7 +5,7 @@ Each build has separate core and Cats projects. Their test applications use
 the existing `OwnedTmux` test utility and the staged Java fixture in test scope;
 neither fixture belongs to the application runtime graph.
 
-First generate the documentation inventory and stage both Scala families.
+First generate the documentation inventory and stage the Scala artifacts.
 Select JDK 25 or 27 in `JAVA_HOME` and the explicit tmux 3.7c executable in
 `TMUX_TEST_BINARY`. Run one consumer compiler/JDK/OS cell through both tools:
 
@@ -15,16 +15,16 @@ $ python3 libtmux-scala/scripts/verify-consumers.py \
     --java-stage libtmux-scala/target/java-repository \
     --version 0.0.1-alpha.12-scala-dev.1 \
     --java-version 0.0.1-alpha.14 \
-    --docs-exports libtmux-scala/examples/target/scala-2.13/resource_managed/test \
-    --scala-version 2.13.18 \
+    --docs-exports libtmux-scala/examples/target/scala-3.9.0/resource_managed/test \
+    --scala-version 3.9.0 \
     --jdk "$JAVA_HOME" \
     --tmux "$TMUX_TEST_BINARY" \
-    --output libtmux-scala/target/consumers/linux-jdk25-scala2.13.18
+    --output libtmux-scala/target/consumers/linux-jdk25-scala3.9.0
 ```
 
-Repeat with Scala 3.3.8 and 3.9.0, each supported JDK, and both operating
-systems. Use a separate output directory for each cell. The evidence JSON lists
-all 24 build-tool cells; only the two executed cells can pass. It records the
+Repeat with Scala 3.3.8, each supported JDK, and both operating systems. Use a
+separate output directory for each cell. The evidence JSON lists all 16
+build-tool cells; only the two executed cells can pass. It records the
 selected JVM, compiler jars, tmux version, commands, timing, input hashes,
 runtime coordinates and staged jar hashes. Cleanup witnesses are printed only
 after the owned fixture has closed.
