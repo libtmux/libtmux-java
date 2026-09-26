@@ -82,6 +82,12 @@ production.
 - **Classic layout validation accepts trees longer than 8191 characters** while
   retaining checksum, geometry, depth, and pane-count checks. (#16)
 
+### Development
+
+- **The preview lane runs tmux 3.8-rc2.** tmux replaced its `3.8-rc` tag with
+  `3.8-rc2`, so the lane asked for a tag that no longer exists and reported
+  nothing about the next release. (#26)
+
 ## 0.0.1-alpha.14 — 2026-09-20
 
 ### Changed

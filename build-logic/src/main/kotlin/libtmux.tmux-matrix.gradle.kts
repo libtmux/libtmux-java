@@ -12,9 +12,9 @@ val lanes = listOf("3.2a", "3.3", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3
 
 // Ahead of the supported range: previews of what tmux ships next, run so a break shows up before the
 // release that makes it real rather than after. Allowed to fail, and left out of testTmuxMatrix and
-// the README's claimed range on purpose — 3.8-rc is a candidate for a release not yet cut, and master
+// the README's claimed range on purpose — 3.8-rc2 is a candidate for a release not yet cut, and master
 // is upstream's development branch, not a version at all.
-val previewLanes = listOf("3.8-rc", "master")
+val previewLanes = listOf("3.8-rc2", "master")
 
 val matrix = providers.gradleProperty("libtmuxMatrix")
 
