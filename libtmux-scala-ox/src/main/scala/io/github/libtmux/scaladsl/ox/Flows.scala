@@ -36,7 +36,7 @@ object Flows {
       finally observation.close()
     }
 
-  /** Every view newer than the one held when the flow starts, one per
+  /** The current view when the flow starts, then every newer one, one per
     * notification.
     */
   def liveView(view: LiveView): Flow[ServerMirror.View] =
