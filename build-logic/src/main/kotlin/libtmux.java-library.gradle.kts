@@ -87,7 +87,19 @@ spotless {
     }
 }
 
+// Compiled for 25 everywhere; run on whichever JDK a lane names. A library is run on JDKs its author
+// never chose, and the ones that break it break at runtime, so the newest-JDK lane has to execute the
+// suites there rather than only host Gradle on it. The property travels into the JVM so a test can
+// prove where it ran.
+val testJdk = providers.gradleProperty("libtmux.testJdk").map(String::toInt).orElse(25)
+
 tasks.withType<Test>().configureEach {
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = testJdk.map { JavaLanguageVersion.of(it) }
+        vendor = JvmVendorSpec.ADOPTIUM
+    }
+    systemProperty("libtmux.testJdk", testJdk.get())
+
     // "fixture" marks classes that exist to be executed by a nested engine — one of them fails on
     // purpose — so no ordinary suite may discover them. Excluded here rather than per module because
     // it holds everywhere. Tags a single module owns stay in that module: repeated useJUnitPlatform
