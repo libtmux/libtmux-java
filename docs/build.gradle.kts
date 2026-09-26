@@ -49,7 +49,9 @@ tasks.withType<Test>().configureEach {
     val root = rootProject.layout.projectDirectory
     val documents =
         rootProject.fileTree(root) {
-            include("README.md", "MIGRATION.md", "*/README.md", "docs/guide/**/*.md", "docs/parity/*.md")
+            // Every Markdown file: the link check reads them all.
+            include("**/*.md")
+            exclude("**/build/**", "**/target/**", ".gradle/**", "**/.gradle/**", ".claude/**")
         }
 
     // The sources too: two gates here read them — for tracker ids, and for the methods that say

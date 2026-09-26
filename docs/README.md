@@ -46,9 +46,10 @@ Generated; do not edit by hand.
 - [Operation costs](benchmarks/operation-costs.md) — measured wall-clock and
   tmux-process cost for one-at-a-time, batched, and chained calls; regenerated
   by `./gradlew operationBenchmark`.
-- [Scala facade costs](../libtmux-scala/benchmarks/README.md) — the blocking
-  and Cats Effect facades against the Java core, with warmups, raw samples, and
-  allocated bytes; one committed run in `results/`.
+- [Scala facade modes](../benchmarks/README.md#the-scala-facades-modes) — the
+  blocking and Cats Effect facades against the Java core on one live tmux, as
+  raw samples with allocation and latency percentiles; a run describes its
+  machine, so none is committed.
 
 ## Decisions
 

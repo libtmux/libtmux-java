@@ -463,6 +463,42 @@ final class DocumentationFactsTest {
         assertEquals(List.of(), unattested, "published and not in the release attestation");
     }
 
+    /**
+     * Every relative link in the repository's Markdown names a file or directory that exists. A link
+     * GitHub renders as a 404 is found by a reader first, since nothing else follows it.
+     */
+    @Test
+    void everyRelativeMarkdownLinkResolves() throws IOException {
+        Pattern inline = Pattern.compile("\\]\\(([^)\\s]+)\\)");
+        Pattern reference = Pattern.compile("(?m)^\\[[^\\]]+\\]:\\s*\\n?\\s*(\\S+)");
+        List<String> broken = new ArrayList<>();
+        try (Stream<Path> tree = Files.walk(ROOT)) {
+            for (Path file : tree.filter(path -> path.toString().endsWith(".md"))
+                    .filter(path -> !ROOT.relativize(path)
+                            .toString()
+                            .matches("(.*/)?(build|target|\\.gradle|\\.git|\\.claude)/.*"))
+                    .toList()) {
+                // Code is not prose: `Resource[IO](config)` in a fence is a call, not a link.
+                String text = Files.readString(file)
+                        .replaceAll("(?ms)^\\s*```.*?^\\s*```", "")
+                        .replaceAll("`[^`\\n]*`", "");
+                for (Pattern pattern : List.of(inline, reference)) {
+                    Matcher link = pattern.matcher(text);
+                    while (link.find()) {
+                        String target = link.group(1).replaceFirst("#.*", "");
+                        if (target.isEmpty() || target.matches("[a-z][a-z0-9+.-]*:.*") || target.startsWith("<")) {
+                            continue;
+                        }
+                        if (!Files.exists(file.resolveSibling(target))) {
+                            broken.add(ROOT.relativize(file) + " -> " + link.group(1));
+                        }
+                    }
+                }
+            }
+        }
+        assertEquals(List.of(), broken, "these relative links name nothing");
+    }
+
     /** Searched for by file name rather than loaded, since these will not be on this module's path. */
     private static Optional<Path> sourceOf(String type) {
         try (Stream<Path> tree = Files.walk(ROOT)) {

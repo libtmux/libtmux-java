@@ -79,7 +79,7 @@ interrupt status. What tmux did depends on when:
 | in a wait such as `awaitText` or `Channel.await` | `InterruptedException` | a wait changes nothing |
 
 `UNKNOWN` means read the state back before deciding; never send a mutation again
-blindly. [Failures, telemetry, and pane input](operations.md) has the whole retry
+blindly. [Failures, telemetry, and pane input](operating-a-service.md) has the whole retry
 rule, and the observer that reports every call's certainty on the thread that
 made it.
 
@@ -90,7 +90,7 @@ Typing, pasting, and a shell run share one screen. `sendKeys`, `sendLiteral`,
 that tries meanwhile is refused with `IllegalStateException` rather than
 interleaving its keys. `PaneInput.hold` keeps it for longer. The hold is per JVM:
 two processes driving one tmux do not see each other's. See
-[operations](operations.md#one-writer-per-pane).
+[operating a service](operating-a-service.md#one-writer-per-pane).
 
 ## The control client
 
