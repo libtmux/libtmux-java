@@ -340,7 +340,17 @@ object ScalaCodegen {
       if (owner == "io.github.libtmux.Server") operations
       else
         operations.filterNot(op => op.name == "server" && op.parameters.isEmpty)
-    val body = skippingOwnServerField
+    // batch()/chain()/channel() are handwritten instead of generated on the Cats side (cats.Batch/
+    // cats.CommandChain/cats.Channel, in their own files): a raw Java Batch/CommandChain's run() is
+    // an eager, uninterruptible synchronous call, and Channel.await blocks the calling thread
+    // outright, so a pure CAPTURED forward would hand a Cats caller a value with none of
+    // Execution's admission bound, cancellation safety, or shared-wait capacity reservation. Direct
+    // style keeps the plain generated forward; only Cats needs the wrap.
+    val skippingHandwrittenPlans =
+      skippingOwnServerField.filterNot(op =>
+        op.name == "batch" || op.name == "chain" || op.name == "channel"
+      )
+    val body = skippingHandwrittenPlans
       .map { op =>
         val (params, javaArgs, returnType) = signature(op, CatsStyle)
         val returnMapped = mapType(op.returns.tpe, CatsStyle, owner)
