@@ -69,6 +69,17 @@ final class Pane[F[_]] private[cats] (
 object Pane {
   extension [F[_]](self: Pane[F])(using F: Async[F]) {
 
+    // Handwritten, not generated: see Server.scala's own batch/chain extension for why.
+
+    /** An immutable batch plan; each run dispatches a fresh Java `Batch`
+      * through this pane's server's `Execution`.
+      */
+    def batch: Batch[F] =
+      new Batch(
+        () => self.underlying.asJava.batch(),
+        self.server.execution
+      )
+
     /** Waits until `text` appears, or `timeout` passes first. */
     def awaitText(
         text: String,
