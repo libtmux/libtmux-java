@@ -46,20 +46,24 @@ object LiveServer {
       mirror <- Resource.make(
         F.interruptible(JavaServerMirror.open(anchor.underlying.asJava))
       )(m => F.interruptible(m.close()))
-      ref <- Resource.eval(
-        SignallingRef.of[F, JavaServerMirror.View](mirror.current())
-      )
+      initial <- Resource.eval(F.delay(mirror.current()))
+      ref <- Resource.eval(SignallingRef.of[F, JavaServerMirror.View](initial))
       outcomeD <- Resource.eval(Deferred[F, Either[Throwable, Unit]])
-      _ <- pollLoop(mirror, ref).guaranteeCase {
+      _ <- pollLoop(mirror, ref, initial.epoch()).guaranteeCase {
         case Outcome.Succeeded(_) => outcomeD.complete(Right(())).void
         case Outcome.Errored(e)   => outcomeD.complete(Left(e)).void
         case Outcome.Canceled()   => outcomeD.complete(Right(())).void
       }.background
     } yield new LiveServer(ref, outcomeD)
 
+  /** Waits from the epoch the signal was seeded with, not a second read of
+    * `current()`: a view published between two reads would never reach the
+    * signal.
+    */
   private def pollLoop[F[_]](
       mirror: JavaServerMirror,
-      ref: SignallingRef[F, JavaServerMirror.View]
+      ref: SignallingRef[F, JavaServerMirror.View],
+      seeded: Long
   )(implicit
       F: Async[F]
   ): F[Unit] = {
@@ -73,6 +77,6 @@ object LiveServer {
             step(epoch) // AwaitBudget elapsed with no change; keep waiting.
         }
       }
-    step(mirror.current().epoch())
+    step(seeded)
   }
 }
