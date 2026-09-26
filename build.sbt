@@ -125,6 +125,13 @@ ThisBuild / scalacOptions ++= Seq(
 )
 ThisBuild / javacOptions ++= Seq("--release", "25", "-Xlint:all", "-Werror")
 ThisBuild / Test / parallelExecution := false
+// The lock pins third-party dependencies. The staged libtmux Java jars are this build's own and
+// change with every Java edit, so a lock over them would only ever say that.
+ThisBuild / dependencyLockModuleFilter := moduleFilter(organization =
+  "io.github.libtmux"
+)
+// Read inside makeBom's own task, which sbt's unused-key lint cannot see.
+Global / excludeLintKeys += bomFileName
 Global / concurrentRestrictions += Tags.limit(Tags.Test, 1)
 
 lazy val common = Seq(
@@ -162,6 +169,16 @@ lazy val common = Seq(
   Test / testOptions += Tests.Argument("+l")
 )
 
+/** A CycloneDX SBOM published beside each jar, under the classifier and
+  * extension the Gradle modules use, so one tool reads both builds' SBOMs.
+  */
+lazy val sbom = Seq(
+  bomFileName := s"${moduleName.value}-${version.value}-cyclonedx.json"
+) ++ addArtifact(
+  Def.setting(Artifact(moduleName.value, "json", "json", "cyclonedx")),
+  makeBom
+)
+
 lazy val unpublished = Seq(
   publish / skip := true,
   publishLocal / skip := true,
@@ -170,22 +187,30 @@ lazy val unpublished = Seq(
 
 lazy val sourceDocumentation = Seq(
   Compile / doc / scalacOptions ++= SourceDocumentation.options(
-    scalaBinaryVersion.value,
-    (Compile / scalaSource).value
+    documentedRoots.value
   ),
   Compile / doc := SourceDocumentation.complete(
     (Compile / doc).value,
-    (Compile / scalaSource).value,
+    documentedRoots.value,
     (Compile / sources).value
   )
 )
 
-/** Fixture-driven codegen, until the Doclet's real `operation-catalog.json` is
-  * wired in (see `libtmux-scala/project/fixtures/README.md`). `who` selects
-  * `ScalaCodegen.combinedDirectStyle` (`core`) or
-  * `ScalaCodegen.combinedCatsForwards` (`cats`). One file for the whole
-  * project: Scala 3 requires same-named top-level definitions to share one
-  * compilation unit, and generated operation names repeat across owners
+/** Hand-written sources, then the generated operations and fields, which ship
+  * in the sources jar and so belong in the source browser too.
+  */
+lazy val documentedRoots = Def.setting(
+  Seq(
+    (Compile / scalaSource).value -> "",
+    (Compile / sourceManaged).value -> "generated/"
+  )
+)
+
+/** Operations generated from the Doclet's `operation-catalog.json`, read off
+  * the staged `libtmux` jar. `who` selects `ScalaCodegen.combinedDirectStyle`
+  * (`core`) or `ScalaCodegen.combinedCatsForwards` (`cats`). One file for the
+  * whole project: Scala 3 requires same-named top-level definitions to share
+  * one compilation unit, and generated operation names repeat across owners
   * (`kill`, `info`, ...).
   */
 def generatedOperations(who: OperationCatalog.Catalog => String) = Seq(
@@ -267,6 +292,7 @@ lazy val root = project
 lazy val core = project
   .in(file("libtmux-scala"))
   .settings(common)
+  .settings(sbom)
   .settings(sourceDocumentation)
   .settings(generatedOperations(ScalaCodegen.combinedDirectStyle))
   .settings(generatedFields)
@@ -338,6 +364,7 @@ lazy val cats = project
   .in(file("libtmux-scala-cats"))
   .dependsOn(core)
   .settings(common)
+  .settings(sbom)
   .settings(sourceDocumentation)
   .settings(generatedOperations(ScalaCodegen.combinedCatsForwards))
   .settings(
@@ -353,6 +380,7 @@ lazy val ox = project
   .in(file("libtmux-scala-ox"))
   .dependsOn(core)
   .settings(common)
+  .settings(sbom)
   .settings(sourceDocumentation)
   .settings(
     name := "libtmux-scala-ox",
@@ -426,7 +454,7 @@ lazy val benchmarks = project
 addCommandAlias("fmt", ";scalafmtSbt;scalafmtAll")
 addCommandAlias(
   "lint",
-  ";scalafmtSbtCheck;scalafmtCheckAll;core/compile;cats/compile;ox/compile"
+  ";scalafmtSbtCheck;scalafmtCheckAll;dependencyLockCheck;core/compile;cats/compile;ox/compile"
 )
 addCommandAlias("unit", ";core/test;cats/test;ox/test")
 addCommandAlias("live", ";integration/test;examples/test")

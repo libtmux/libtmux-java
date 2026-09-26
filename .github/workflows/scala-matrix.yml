@@ -105,14 +105,18 @@ jobs:
           libtmux-scala/sbtw \
             scalafmtSbtCheck \
             scalafmtCheckAll \
+            dependencyLockCheck \
             core/test \
             cats/test \
+            ox/test \
             integration/test \
             examples/test \
             core/doc \
             cats/doc \
+            ox/doc \
             core/package \
             cats/package \
+            ox/package \
             benchmarks/compile
 
       - name: Stage and inspect Scala artifacts
@@ -447,14 +451,18 @@ jobs:
             "++${{ matrix.scala }}" \
             scalafmtSbtCheck \
             scalafmtCheckAll \
+            dependencyLockCheck \
             core/test \
             cats/test \
+            ox/test \
             integration/test \
             examples/test \
             core/doc \
             cats/doc \
+            ox/doc \
             core/package \
             cats/package \
+            ox/package \
             benchmarks/compile
 
       - name: No tmux server outlived the cell
