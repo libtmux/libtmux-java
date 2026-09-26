@@ -12,6 +12,10 @@ apiDiff {
     excludePackages.add("io.github.libtmux.internal")
 }
 
+// Not a dependency of the published jar: the Doclet reads @Operation by annotation name, never
+// loading the annotation's class, so nothing here leaks into libtmux's own dependency graph.
+val catalogDoclet = configurations.create("catalogDoclet") { isCanBeConsumed = false }
+
 dependencies {
     compileOnly(libs.errorprone.annotations)
     // Kotlin reads a Java collection marked @ReadOnly as a read-only List, Set, or Map, with or
@@ -20,6 +24,8 @@ dependencies {
     testImplementation(libs.asm)
     testImplementation(libs.reactive.streams.tck.flow)
     testRuntimeOnly(libs.testng.engine)
+
+    catalogDoclet(project(":catalog-doclet"))
 }
 
 // The core resolves nothing at runtime. Anything that would change that belongs in another module.
@@ -150,3 +156,143 @@ val checkSbomHasNoRuntimeDependencies =
     }
 
 tasks.check { dependsOn(checkSbomHasNoRuntimeDependencies) }
+
+// ------------------------------------------------------------------------------ operation catalog
+
+// One record per @Operation method, read from source (not the built jar) so the Kotlin and Scala
+// generators, and the docs table, get real Javadoc text alongside the annotation values. See
+// operation-catalog-schema.md for the JSON this produces.
+//
+// Gradle's own Javadoc task type always emits -d and a handful of StandardDoclet-only options
+// (-doctitle, -notimestamp, -Xdoclint, ...); a minimal custom Doclet that never declares those
+// options has the javadoc tool reject them as "invalid flag", so this runs the toolchain's
+// javadoc binary directly with exactly the flags the Doclet supports.
+val operationCatalogDocletClass = "io.github.libtmux.catalog.doclet.OperationCatalogDoclet"
+
+fun registerOperationCatalogGenerator(
+    taskName: String,
+    jsonFile: Provider<RegularFile>,
+    markdownFile: Provider<RegularFile>? = null,
+) =
+    tasks.register<Exec>(taskName) {
+        group = "documentation"
+        description = "Runs the operation-catalog Doclet over this module's sources, emitting operation-catalog.json."
+
+        val docletClasspath = catalogDoclet
+        // module-info.java documents a module, not a type; the Doclet only walks classes and
+        // interfaces, and feeding it in would push javadoc into module mode for no benefit here.
+        val sources = sourceSets.main.get().allJava.matching { exclude("module-info.java") }
+        val compileClasspath = sourceSets.main.get().compileClasspath
+
+        inputs.files(sources).withPropertyName("sources").withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.files(compileClasspath)
+            .withPropertyName("compileClasspath")
+            .withNormalizer(ClasspathNormalizer::class.java)
+        inputs.files(docletClasspath)
+            .withPropertyName("catalogDocletClasspath")
+            .withNormalizer(ClasspathNormalizer::class.java)
+        inputs.property("doclet", operationCatalogDocletClass)
+        outputs.file(jsonFile)
+        if (markdownFile != null) {
+            outputs.file(markdownFile)
+        }
+
+        // Exec's executable is a plain, eagerly-resolved property, not Provider-aware, so the
+        // toolchain lookup happens here rather than through a lazy map chain.
+        executable = javaToolchains.javadocToolFor(java.toolchain).get().executablePath.asFile.absolutePath
+        doFirst {
+            jsonFile.get().asFile.parentFile.mkdirs()
+            markdownFile?.get()?.asFile?.parentFile?.mkdirs()
+        }
+        argumentProviders.add(
+            CommandLineArgumentProvider {
+                val arguments = mutableListOf(
+                    "-doclet", operationCatalogDocletClass,
+                    "-docletpath", docletClasspath.asPath,
+                    "-classpath", compileClasspath.asPath,
+                    "-private",
+                    "-quiet",
+                    "-out", jsonFile.get().asFile.absolutePath,
+                )
+                if (markdownFile != null) {
+                    arguments += listOf("-markdown-out", markdownFile.get().asFile.absolutePath)
+                }
+                arguments + sources.files.map { it.absolutePath }.sorted()
+            }
+        )
+    }
+
+val operationCatalogJson = layout.buildDirectory.file("generated/operation-catalog/operation-catalog.json")
+val generatedOperationsReference = layout.buildDirectory.file("generated/operation-catalog/operations.md")
+val generateOperationCatalog =
+    registerOperationCatalogGenerator("generateOperationCatalog", operationCatalogJson, generatedOperationsReference)
+
+tasks.named<ProcessResources>("processResources") {
+    dependsOn(generateOperationCatalog)
+    from(operationCatalogJson) { into("META-INF/io.github.libtmux") }
+}
+
+// docs/reference/operations.md is checked in so it renders on GitHub without a build step; this
+// gate fails when regenerating it from the current @Operation catalog would change it.
+val checkedInOperationsReference = rootProject.file("docs/reference/operations.md")
+
+val checkOperationsReferenceIsCurrent =
+    tasks.register("checkOperationsReferenceIsCurrent") {
+        group = "verification"
+        description = "Fails when docs/reference/operations.md is stale against the current @Operation catalog."
+        dependsOn(generateOperationCatalog)
+        inputs.file(generatedOperationsReference)
+        inputs.file(checkedInOperationsReference)
+
+        doLast {
+            require(checkedInOperationsReference.isFile) {
+                "docs/reference/operations.md does not exist; run :libtmux:updateOperationsReference"
+            }
+            val expected = generatedOperationsReference.get().asFile.readText()
+            val actual = checkedInOperationsReference.readText()
+            require(expected == actual) {
+                "docs/reference/operations.md is stale; run :libtmux:updateOperationsReference to refresh it"
+            }
+            logger.lifecycle("docs/reference/operations.md matches the current @Operation catalog")
+        }
+    }
+
+tasks.check { dependsOn(checkOperationsReferenceIsCurrent) }
+
+val updateOperationsReference =
+    tasks.register<Copy>("updateOperationsReference") {
+        group = "documentation"
+        description = "Regenerates docs/reference/operations.md from the current @Operation catalog."
+        dependsOn(generateOperationCatalog)
+        from(generatedOperationsReference)
+        into(checkedInOperationsReference.parentFile)
+        rename { checkedInOperationsReference.name }
+    }
+
+// A second, independent Doclet run over the same sources, compared byte-for-byte against the
+// first: the Kotlin and Scala generators, and the docs table, treat this file as content-addressed
+// input, so a run that reordered or reformatted anything would silently break every consumer.
+val operationCatalogJsonRepeat =
+    layout.buildDirectory.file("generated/operation-catalog/operation-catalog-repeat.json")
+val generateOperationCatalogAgain =
+    registerOperationCatalogGenerator("generateOperationCatalogAgain", operationCatalogJsonRepeat)
+
+val checkOperationCatalogIsByteStable =
+    tasks.register("checkOperationCatalogIsByteStable") {
+        group = "verification"
+        description = "Fails when two Doclet runs over identical sources produce different operation-catalog.json bytes."
+        dependsOn(generateOperationCatalog, generateOperationCatalogAgain)
+        inputs.file(operationCatalogJson)
+        inputs.file(operationCatalogJsonRepeat)
+
+        doLast {
+            val first = operationCatalogJson.get().asFile.readBytes()
+            val second = operationCatalogJsonRepeat.get().asFile.readBytes()
+            require(first.contentEquals(second)) {
+                "operation-catalog.json is not byte-stable across two Doclet runs over the same sources"
+            }
+            logger.lifecycle("operation-catalog.json is byte-stable across two Doclet runs")
+        }
+    }
+
+tasks.check { dependsOn(checkOperationCatalogIsByteStable) }
