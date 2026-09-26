@@ -36,7 +36,7 @@ Four things near the top are compatibility claims, and they move together:
   with one of the two already open.
 
 Every Java block in the README is compiled and then run against a real tmux by
-[`docs-tests`](../docs-tests/). A snippet is a test: it cannot be illustrative
+[the documentation module](../docs/README.md#how-these-pages-are-tested). A snippet is a test: it cannot be illustrative
 pseudo-code, an elided `try` block, or a call that no longer exists, and one
 that stops working fails the build. A block that is meant not to compile says so
 and is checked for being rejected.
@@ -69,7 +69,7 @@ The README and getting-started guide show the current API. Link to
 sections there. Keep the changelog entry brief: state the impact and
 replacement, then link to the migration notes for detailed steps.
 
-Migration examples remain part of `docs-tests`. Use its `does-not-compile`
+Migration examples remain part of the documentation suite. Use its `does-not-compile`
 directive for obsolete Java examples that demonstrate a rejected API; current
 replacement examples must compile and run.
 

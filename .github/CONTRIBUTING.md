@@ -127,13 +127,12 @@ claims around it — the version in every install block, what the platform says 
 manages — are checked with it:
 
 ```console
-$ ./gradlew :docs-tests:test
+$ ./gradlew :docs:test
 ```
 
 How a fence says what it is — the directives, the `// →` assertions, the
-fixtures a snippet may assume — is in
-[`docs-tests/README.md`](../docs-tests/README.md), beside the code that reads
-them.
+fixtures a snippet may assume — is in [`docs/README.md`](../docs/README.md#how-these-pages-are-tested), beside
+the code that reads them.
 
 A green `check` that reported `UP-TO-DATE` for every task verified nothing.
 Force it when that matters:

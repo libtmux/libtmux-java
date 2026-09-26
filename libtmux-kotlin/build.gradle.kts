@@ -162,7 +162,7 @@ tasks.named("check") { dependsOn(compileOldestConsumer) }
 
 // Every Kotlin fence in the documentation, turned into a test.
 //
-// docs-tests reads the Java fences and cannot read these: doing it the same way would mean running
+// The documentation module reads the Java fences and cannot read these: doing it the same way would mean running
 // the Kotlin compiler in-process. Generating a source file instead lets the ordinary Kotlin
 // compilation and the ordinary test run do the checking, which is the same guarantee by a shorter
 // road — and the generated file is the README, so the two cannot drift.
@@ -214,7 +214,7 @@ val documentedKotlin =
                     // the same line would otherwise generate one function twice.
                     val name = "${where.replace('/', ' ').replace('.', ' ')} line $line"
 
-                    // A shown result becomes an assertion, the same rule docs-tests applies to the
+                    // A shown result becomes an assertion, the same rule the documentation module applies to the
                     // Java fences: what a reader sees after the arrow is what toString produced, so
                     // documentation cannot claim a value the library does not give.
                     val shown = Regex("""^(\s*)(.+?)\s*//\s*(?:\u2192|->)\s*(.*?)\s*$""")

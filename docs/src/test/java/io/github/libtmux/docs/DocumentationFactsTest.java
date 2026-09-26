@@ -41,7 +41,7 @@ final class DocumentationFactsTest {
             "libtmux-mcp",
             "libtmux-workspace",
             "benchmarks",
-            "docs-tests",
+            "docs",
             "examples",
             "integration-tests");
 
