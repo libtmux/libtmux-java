@@ -19,6 +19,7 @@ dependencies {
     implementation(project(":libtmux-kotlin"))
     implementation(project(":libtmux-scala"))
     implementation(project(":libtmux-scala-cats"))
+    implementation(project(":libtmux-scala-ox"))
 
     // Embedding libtmux-mcp means supplying the transport, which means supplying its JSON mapper.
     implementation(project(":libtmux-mcp"))
