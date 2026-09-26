@@ -88,11 +88,6 @@ withServer(config) { server ->
 
 ### `libtmux-kotlin`'s subsystem accessors answer wrapper classes too
 
-api-break: Server
-api-break: Session
-api-break: Window
-api-break: Pane
-
 `Pane.options()`, `Server.hooks()`/`Session.hooks()`/`Window.hooks()`,
 `Server.options()`/`Server.globalOptions()`/`Session.options()`/
 `Window.options()`, `Server.shell()`, `Server.commands()`, `Server.buffers()`,
@@ -118,11 +113,6 @@ withServer(config) { server ->
 members on the Kotlin `Options`.
 
 ### `libtmux-scala-cats`'s subsystem accessors answer `F[_]` wrapper classes too
-
-api-break: Server
-api-break: Session
-api-break: Window
-api-break: Pane
 
 On the Cats facade, `Server.hooks`, `Pane.options`, `Server.shell`,
 `Server.commands`, `Server.buffers`, `Session.environment`,

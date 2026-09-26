@@ -25,14 +25,14 @@ Generated from `@Operation`-annotated methods by the operation-catalog Doclet; d
 | `io.github.libtmux.Client` | `attachment()` | CAPTURED | What this client was looking at when captured. |
 | `io.github.libtmux.Client` | `fetchAttachment()` | READ | Takes a new capture and returns what this client is looking at now. |
 | `io.github.libtmux.Client` | `refresh()` | READ | Takes a new capture and returns this client as it is now. |
-| `io.github.libtmux.CommandChain` | `newWindow(java.lang.String)` | MUTATION | Creates a window and makes it the one following steps act on. |
-| `io.github.libtmux.CommandChain` | `renameWindow(java.lang.String)` | MUTATION | Renames the current window. |
-| `io.github.libtmux.CommandChain` | `splitLeftRight()` | MUTATION | Splits the current pane into a left and a right one. |
-| `io.github.libtmux.CommandChain` | `splitTopBottom()` | MUTATION | Splits the current pane into a top and a bottom one. |
-| `io.github.libtmux.CommandChain` | `sendLine(java.lang.String)` | MUTATION | Types a line into the current pane and presses Enter, which is how a command gets run. |
+| `io.github.libtmux.CommandChain` | `newWindow(java.lang.String)` | CAPTURED | Creates a window and makes it the one following steps act on. |
+| `io.github.libtmux.CommandChain` | `renameWindow(java.lang.String)` | CAPTURED | Renames the current window. |
+| `io.github.libtmux.CommandChain` | `splitLeftRight()` | CAPTURED | Splits the current pane into a left and a right one. |
+| `io.github.libtmux.CommandChain` | `splitTopBottom()` | CAPTURED | Splits the current pane into a top and a bottom one. |
+| `io.github.libtmux.CommandChain` | `sendLine(java.lang.String)` | CAPTURED | Types a line into the current pane and presses Enter, which is how a command gets run. |
 | `io.github.libtmux.CommandChain` | `arrange(java.lang.String)` | MUTATION | Arranges the current window. |
-| `io.github.libtmux.CommandChain` | `then(java.lang.String[])` | MUTATION | Adds any tmux command, for whatever this class does not name. |
-| `io.github.libtmux.CommandChain` | `then(java.util.List<java.lang.String>)` | MUTATION | Adds any tmux command. |
+| `io.github.libtmux.CommandChain` | `then(java.lang.String[])` | CAPTURED | Adds any tmux command, for whatever this class does not name. |
+| `io.github.libtmux.CommandChain` | `then(java.util.List<java.lang.String>)` | CAPTURED | Adds any tmux command. |
 | `io.github.libtmux.CommandChain` | `run()` | MUTATION | Runs the whole chain in one tmux invocation, attributing each step. |
 | `io.github.libtmux.Commands` | `list()` | READ | Every command, as tmux prints it. |
 | `io.github.libtmux.Environment` | `get(java.lang.String)` | READ | The value set for this name, or empty when it is removed or absent. |
@@ -256,8 +256,8 @@ Generated from `@Operation`-annotated methods by the operation-catalog Doclet; d
 | `io.github.libtmux.Window` | `displayPopup(java.lang.String)` | MUTATION | Shows a popup over this window, running a command in it. |
 | `io.github.libtmux.Window` | `kill()` | MUTATION | Closes this window. |
 | `io.github.libtmux.Window` | `refresh()` | READ | Takes a new capture and returns this winlink as it is now. |
-| `io.github.libtmux.batch.Batch` | `add(java.lang.String[])` | MUTATION | Adds one tmux command, its arguments already separate elements. |
-| `io.github.libtmux.batch.Batch` | `add(java.util.List<java.lang.String>)` | MUTATION | Adds one tmux command. |
+| `io.github.libtmux.batch.Batch` | `add(java.lang.String[])` | CAPTURED | Adds one tmux command, its arguments already separate elements. |
+| `io.github.libtmux.batch.Batch` | `add(java.util.List<java.lang.String>)` | CAPTURED | Adds one tmux command. |
 | `io.github.libtmux.batch.Batch` | `size()` | CAPTURED | How many operations have been collected. |
 | `io.github.libtmux.batch.Batch` | `length()` | CAPTURED | How many bytes the collected operations come to as the one command tmux parses. |
 | `io.github.libtmux.batch.Batch` | `run()` | MUTATION | Runs every collected operation in one tmux invocation. |
