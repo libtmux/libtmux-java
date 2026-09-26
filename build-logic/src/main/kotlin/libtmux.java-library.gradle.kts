@@ -42,6 +42,10 @@ dependencies {
 
 tasks.withType<JavaCompile>().configureEach {
     options.release = 25
+    // Recorded in module-info, so a stack trace names io.github.libtmux@<version> and a consumer can
+    // tell which release it resolved. Lazy: the publication convention sets the version later, and a
+    // module that is never published has none to record.
+    options.javaModuleVersion = provider { project.version.toString().takeUnless { it == "unspecified" } }
     options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
     options.errorprone {
         disableWarningsInGeneratedCode = true

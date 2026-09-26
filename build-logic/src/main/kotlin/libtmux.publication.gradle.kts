@@ -70,3 +70,15 @@ mavenPublishing {
         }
     }
 }
+
+// A repository on disk that holds exactly what Central would receive, for a consumer build to
+// resolve the published coordinates from. Proving the coordinates work needs a build that sees only
+// them: not this build's project dependencies, and not whatever else sits in ~/.m2.
+publishing {
+    repositories {
+        maven {
+            name = "Staging"
+            url = uri(rootProject.layout.buildDirectory.dir("staging-repository"))
+        }
+    }
+}

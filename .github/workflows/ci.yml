@@ -112,6 +112,14 @@ jobs:
       - name: Publish to a local repository
         run: ./gradlew publishToMavenLocal --stacktrace
 
+      # A build of its own that sees only the published coordinates: it requires io.github.libtmux as
+      # a named module, checks the module version is the one staged, and runs a command through tmux.
+      - name: A consumer resolves the staged coordinates as a module
+        run: |
+          ./gradlew publishAllPublicationsToStagingRepository --stacktrace
+          ./gradlew -p consumers/java run --stacktrace \
+            -PlibtmuxVersion="$(sed -n 's/^libtmuxVersion=//p' gradle.properties)"
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: failure()
         with:
