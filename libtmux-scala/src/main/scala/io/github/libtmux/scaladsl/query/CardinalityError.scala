@@ -2,10 +2,12 @@ package io.github.libtmux.scaladsl.query
 
 import io.github.libtmux.exception.CardinalityException
 
-/** Mirrors [[CardinalityException]]'s two leaves losslessly, including the
-  * match count Java's own `MultipleMatches.atLeast()` carries — dropping it
-  * would be exactly the hand-authored lossy projection this facade's opaque
-  * handles exist to make impossible everywhere else.
+/** Mirrors
+  * [[io.github.libtmux.exception.CardinalityException CardinalityException]]'s
+  * two leaves losslessly, including the match count Java's own
+  * `MultipleMatches.atLeast()` carries — dropping it would be exactly the
+  * hand-authored lossy projection this facade's opaque handles exist to make
+  * impossible everywhere else.
   */
 enum CardinalityError derives CanEqual {
   case NoMatch

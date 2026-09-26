@@ -5,12 +5,12 @@ import io.github.libtmux.control.ControlClient
 import scala.concurrent.duration.FiniteDuration
 import scala.jdk.DurationConverters._
 
-/** The Java client, opaque: every member beyond [[AutoCloseable#close]] is an
-  * extension, generated from the operation catalog or handwritten where the
-  * catalog marks it `WAIT`, `STREAM` or `LIFECYCLE`. Closing an owned client
-  * releases its transport, not tmux; `close()` comes from the `AutoCloseable`
-  * bound with no forwarding of its own, so `Using.resource(server) { ... }`
-  * works.
+/** The Java client, opaque: every member beyond
+  * [[java.lang.AutoCloseable#close]] is an extension, generated from the
+  * operation catalog or handwritten where the catalog marks it `WAIT`, `STREAM`
+  * or `LIFECYCLE`. Closing an owned client releases its transport, not tmux;
+  * `close()` comes from the `AutoCloseable` bound with no forwarding of its
+  * own, so `Using.resource(server) { ... }` works.
   */
 opaque type Server <: AutoCloseable = JavaServer
 
