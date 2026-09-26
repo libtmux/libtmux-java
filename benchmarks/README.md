@@ -4,7 +4,7 @@
 
 This benchmark uses `ProcessTransport`, which starts a tmux process for each
 dispatch. It measures how many dispatches each operation takes and regenerates
-[`docs/benchmarks/operations.md`](../docs/benchmarks/operations.md) from a real
+[`docs/benchmarks/operation-costs.md`](../docs/benchmarks/operation-costs.md) from a real
 run.
 
 ```console
@@ -47,4 +47,4 @@ revision it ran on, so none is committed.
 
 ## Next
 
-- [Batching and chaining](../docs/guide/batching-and-chaining.md) · [the measured table](../docs/benchmarks/operations.md)
+- [Batching and chaining](../docs/guide/batching-and-chaining.md) · [the measured table](../docs/benchmarks/operation-costs.md)

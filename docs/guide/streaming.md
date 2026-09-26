@@ -320,4 +320,4 @@ persistent event stream is the requirement.
 One command answers faster over an attached control client than as its own
 process, but a reply is an acknowledgement rather than a completion, and one
 client serializes every caller: [measured, with what that number does and
-does not justify](../benchmarks/operations.md#one-command-two-transports).
+does not justify](../benchmarks/operation-costs.md#one-command-two-transports).

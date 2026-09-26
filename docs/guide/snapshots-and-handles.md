@@ -30,7 +30,7 @@ when it started: a pid can be reused, and a handle is refused by a tmux started
 since on the same one. tmux reports that start in whole seconds, so a server
 replaced on the same pid within the same second would pass; nothing short of a
 token planted in the server closes that gap. What that costs is measured in
-[`docs/benchmarks/operations.md`](../benchmarks/operations.md).
+[`docs/benchmarks/operation-costs.md`](../benchmarks/operation-costs.md).
 
 `refresh()` is how to look again. Every live listing, finder and snapshot
 capture throws when it fails. An absent daemon throws

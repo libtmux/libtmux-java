@@ -13,11 +13,11 @@ A batch and a chain both put several commands into one invocation.
 | a command no method covers | `server.cmd(...)` to inspect the answer, `server.run(...)` to require success | one |
 | several independent commands, each answered | `batch()` | one, however many |
 | steps where each acts on what the last made | `chain()` | one |
-| to know when something in a pane has happened | `Pane.awaitText`, `Channel.await`, or `Pane.run` | [measured](../benchmarks/operations.md#push-against-poll) |
+| to know when something in a pane has happened | `Pane.awaitText`, `Channel.await`, or `Pane.run` | [measured](../benchmarks/operation-costs.md#push-against-poll) |
 | output as it arrives | `server.control(session)`, then a subscription | one attached client |
 
 The same twenty windows cost 64 processes made one at a time and 5 as a batch or
-a chain: [`operations.md`](../benchmarks/operations.md#collapsing-round-trips)
+a chain: [`operation-costs.md`](../benchmarks/operation-costs.md#collapsing-round-trips)
 has the rows.
 
 ## A batch: several commands, each with its own outcome
