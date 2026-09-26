@@ -1,4 +1,5 @@
 import BuildSupport._
+
 import com.jsuereth.sbtpgp.PgpKeys
 
 lazy val verifyJavaStage = taskKey[Unit]("Check the selected Java Maven stage.")
@@ -16,10 +17,21 @@ lazy val centralPortalRelease =
   settingKey[Boolean](
     "Publish signed artifacts into the Central Portal bundle."
   )
+lazy val operationCatalog =
+  taskKey[File](
+    "The real operation-catalog.json, extracted from the staged libtmux jar."
+  )
+lazy val generateOperationSources =
+  taskKey[Seq[File]](
+    "Generate direct-style extensions or Cats forwards from operationCatalog."
+  )
+lazy val codegenSelfTest =
+  taskKey[Unit](
+    "Prove ScalaCodegen's mapping is correct, and that a bad catalog fails it."
+  )
 
 ThisBuild / organization := "io.github.libtmux"
-ThisBuild / scalaVersion := "2.13.18"
-ThisBuild / crossScalaVersions := Seq("2.13.18", "3.3.8")
+ThisBuild / scalaVersion := "3.9.0"
 ThisBuild / scalafmtConfig :=
   (ThisBuild / baseDirectory).value / ".scalafmt.conf"
 ThisBuild / version := configured(
@@ -100,7 +112,8 @@ ThisBuild / scalacOptions ++= Seq(
   "-feature",
   "-unchecked",
   "-Werror",
-  "-release:25"
+  "-release:25",
+  "-language:strictEquality"
 )
 ThisBuild / javacOptions ++= Seq("--release", "25", "-Xlint:all", "-Werror")
 ThisBuild / Test / parallelExecution := false
@@ -159,13 +172,51 @@ lazy val sourceDocumentation = Seq(
   )
 )
 
+/** Fixture-driven codegen, until the Doclet's real `operation-catalog.json` is
+  * wired in (see `libtmux-scala/project/fixtures/README.md`). `who` selects
+  * `ScalaCodegen.combinedDirectStyle` (`core`) or
+  * `ScalaCodegen.combinedCatsForwards` (`cats`). One file for the whole
+  * project: Scala 3 requires same-named top-level definitions to share one
+  * compilation unit, and generated operation names repeat across owners
+  * (`kill`, `info`, ...).
+  */
+def generatedOperations(who: OperationCatalog.Catalog => String) = Seq(
+  operationCatalog := {
+    val json = readStagedJarEntry(
+      (ThisBuild / javaRepository).value,
+      (ThisBuild / javaArtifactVersion).value,
+      "libtmux",
+      "META-INF/io.github.libtmux/operation-catalog.json"
+    )
+    val file = (Compile / target).value / "operation-catalog.json"
+    IO.write(file, json)
+    file
+  },
+  generateOperationSources := {
+    val catalog = OperationCatalog.parse(IO.read(operationCatalog.value))
+    val outputDir = (Compile / sourceManaged).value / "operations"
+    IO.createDirectory(outputDir)
+    val file = outputDir / "GeneratedOperations.scala"
+    IO.write(file, who(catalog))
+    Seq(file)
+  },
+  Compile / sourceGenerators += generateOperationSources.taskValue
+)
+
+/** The small, hand-authored catalog `codegenSelfTest` proves `ScalaCodegen`'s
+  * mapping against — see `libtmux-scala/project/fixtures/README.md`. Kept
+  * separate from `operationCatalog`, which reads the real, Doclet-produced
+  * catalog off the staged jar.
+  */
+lazy val fixtureCatalog =
+  settingKey[File]("The small fixture operation-catalog.json.")
+
 lazy val root = project
   .in(file("."))
-  .aggregate(core, cats, integration, examples, benchmarks)
+  .aggregate(core, cats, ox, integration, examples, benchmarks)
   .settings(unpublished)
   .settings(
     name := "libtmux-scala-build",
-    crossScalaVersions := Nil,
     publicationCoordinates := {
       val result = requireDeclaredPublications(
         state.value,
@@ -181,11 +232,69 @@ lazy val core = project
   .in(file("libtmux-scala"))
   .settings(common)
   .settings(sourceDocumentation)
+  .settings(generatedOperations(ScalaCodegen.combinedDirectStyle))
   .settings(
     name := "libtmux-scala",
     description := "Scala collections and blocking operations over libtmux for Java.",
     libraryDependencies += organization.value % "libtmux" %
-      (ThisBuild / javaArtifactVersion).value
+      (ThisBuild / javaArtifactVersion).value,
+    fixtureCatalog := (ThisBuild / baseDirectory).value / "libtmux-scala" / "project" / "fixtures" /
+      "operation-catalog.json",
+    codegenSelfTest := {
+      val catalog = OperationCatalog.parse(IO.read(fixtureCatalog.value))
+      val byOwner = ScalaCodegen.byOwner(catalog).toMap
+      val paneOps = byOwner.getOrElse(
+        "io.github.libtmux.Pane",
+        sys.error("codegen self-test: fixture catalog has no Pane operations")
+      )
+      val paneSource =
+        ScalaCodegen.directStyle("io.github.libtmux.Pane", paneOps)
+      require(
+        paneSource.contains("def sendLine(command: String): Unit ="),
+        "codegen self-test: expected a generated Pane.sendLine forward; the fixture or template drifted"
+      )
+      require(
+        paneSource.contains("def respawn(command: String*): Unit ="),
+        "codegen self-test: expected a generated varargs Pane.respawn forward; the fixture or template drifted"
+      )
+      val corrupted = catalog.copy(operations =
+        catalog.operations
+          .updated(0, catalog.operations.head.copy(kind = "BOGUS"))
+      )
+      val rejected =
+        try {
+          ScalaCodegen.byOwner(corrupted)
+          false
+        } catch {
+          case _: IllegalArgumentException => true
+        }
+      require(
+        rejected,
+        "codegen self-test: an unknown operation kind must fail byOwner, not pass silently"
+      )
+      // Direct-vs-Cats parity, checked at the template level: reflecting over the compiled
+      // extension methods cannot compare the two facades directly (Scala 3 extension methods are
+      // not members of the receiver's class at the JVM level; they are static-shaped methods on a
+      // synthetic holder, with the receiver as an explicit first parameter), so this instead proves
+      // the shared template branches identically for both layers, for every kind, from one owner's
+      // operations: a CAPTURED operation forwards purely on both sides, and a MUTATION operation is
+      // F-wrapped on the Cats side only.
+      val catsSource =
+        ScalaCodegen.catsForwards("io.github.libtmux.Pane", paneOps)
+      require(
+        paneSource
+          .contains("def info: io.github.libtmux.snapshot.PaneState =") &&
+          catsSource
+            .contains("def info: io.github.libtmux.snapshot.PaneState ="),
+        "codegen self-test: a CAPTURED operation must forward purely (no F[_]) on both facades"
+      )
+      require(
+        paneSource.contains("def kill(): Unit =") && catsSource
+          .contains("def kill(): F[Unit] ="),
+        "codegen self-test: a MUTATION operation must be F-wrapped on the Cats facade only"
+      )
+    },
+    Compile / compile := (Compile / compile).dependsOn(codegenSelfTest).value
   )
 
 lazy val cats = project
@@ -193,6 +302,7 @@ lazy val cats = project
   .dependsOn(core)
   .settings(common)
   .settings(sourceDocumentation)
+  .settings(generatedOperations(ScalaCodegen.combinedCatsForwards))
   .settings(
     name := "libtmux-scala-cats",
     description := "Cats Effect resources and FS2 observations for libtmux.",
@@ -202,9 +312,20 @@ lazy val cats = project
     )
   )
 
+lazy val ox = project
+  .in(file("libtmux-scala-ox"))
+  .dependsOn(core)
+  .settings(common)
+  .settings(sourceDocumentation)
+  .settings(
+    name := "libtmux-scala-ox",
+    description := "An Ox Flow and live view over libtmux's direct-style facade.",
+    libraryDependencies += "com.softwaremill.ox" %% "core" % "1.0.8"
+  )
+
 lazy val integration = project
   .in(file("libtmux-scala/integration"))
-  .dependsOn(core, cats)
+  .dependsOn(core, cats, ox)
   .settings(common)
   .settings(unpublished)
   .settings(
@@ -268,12 +389,13 @@ lazy val benchmarks = project
 addCommandAlias("fmt", ";scalafmtSbt;scalafmtAll")
 addCommandAlias(
   "lint",
-  ";scalafmtSbtCheck;scalafmtCheckAll;+core/compile;+cats/compile"
+  ";scalafmtSbtCheck;scalafmtCheckAll;core/compile;cats/compile;ox/compile"
 )
-addCommandAlias("unit", ";core/test;cats/test")
-addCommandAlias("crossUnit", ";+core/test;+cats/test")
+addCommandAlias("unit", ";core/test;cats/test;ox/test")
 addCommandAlias("live", ";integration/test;examples/test")
-addCommandAlias("crossLive", ";+integration/test;+examples/test")
-addCommandAlias("docs", ";+core/doc;+cats/doc")
-addCommandAlias("stage", ";+core/publish;+cats/publish")
-addCommandAlias("stageSigned", ";+core/publishSigned;+cats/publishSigned")
+addCommandAlias("docs", ";core/doc;cats/doc;ox/doc")
+addCommandAlias("stage", ";core/publish;cats/publish;ox/publish")
+addCommandAlias(
+  "stageSigned",
+  ";core/publishSigned;cats/publishSigned;ox/publishSigned"
+)
