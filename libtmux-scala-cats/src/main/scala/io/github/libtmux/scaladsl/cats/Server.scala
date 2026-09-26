@@ -74,4 +74,27 @@ object Server {
       )
       execution <- Execution.resource[F](maxConcurrentCalls)
     } yield new Server(server, execution)
+
+  // Handwritten, not generated: ScalaCodegen.catsForwards skips batch()/chain() so a Cats caller
+  // gets Execution's admission bound and cancellation safety instead of a raw Java Batch/
+  // CommandChain's eager, uninterruptible run().
+  extension [F[_]](self: Server[F])(using F: Async[F]) {
+
+    /** An immutable batch plan; each run dispatches a fresh Java `Batch`
+      * through this server's `Execution`.
+      */
+    def batch: Batch[F] =
+      new Batch(() => self.underlying.asJava.batch(), self.execution)
+
+    /** An immutable chain plan using tmux's evolving current target; each run
+      * dispatches a fresh Java `CommandChain` through this server's
+      * `Execution`.
+      */
+    def chain: CommandChain[F] =
+      new CommandChain(() => self.underlying.asJava.chain(), self.execution)
+
+    /** One of tmux's wait-for channels, named once. */
+    def channel(name: String): Channel[F] =
+      new Channel(self.underlying.asJava.channel(name), self.execution)
+  }
 }
