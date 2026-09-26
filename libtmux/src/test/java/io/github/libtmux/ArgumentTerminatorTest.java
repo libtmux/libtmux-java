@@ -34,8 +34,8 @@ final class ArgumentTerminatorTest {
     void everyCallerValueReachesTmuxWithTheOptionsAlreadyEnded() {
         Map<String, Consumer<Server>> sites = new LinkedHashMap<>();
         sites.put("Server.expand", server -> server.expand(DASHED));
-        sites.put("Server.runShell", server -> server.runShell(DASHED));
-        sites.put("Server.runShellCapturing", server -> server.runShellCapturing(DASHED));
+        sites.put("Shell.run", server -> server.shell().run(DASHED));
+        sites.put("Shell.capturing", server -> server.shell().capturing(DASHED));
         sites.put("Window.displayPopup", server -> server.windows().get(0).displayPopup(DASHED));
         sites.put("Pane.pipeTo", server -> server.panes().get(0).pipeTo(DASHED));
         sites.put("Keys.bind", server -> server.keys().bind(DASHED, List.of("display-message", "hi")));
@@ -57,13 +57,13 @@ final class ArgumentTerminatorTest {
         sites.put("Buffers.save", server -> server.buffers().save("b", Path.of(DASHED)));
         sites.put("Buffers.load", server -> server.buffers().load("b", Path.of(DASHED)));
         sites.put("Session.rename", server -> {
-            var unused = server.sessions().get(0).rename(DASHED);
+            var _ = server.sessions().get(0).rename(DASHED);
         });
         sites.put("Window.rename", server -> {
-            var unused = server.windows().get(0).rename(DASHED);
+            var _ = server.windows().get(0).rename(DASHED);
         });
         sites.put("Pane.retitle", server -> {
-            var unused = server.panes().get(0).retitle(DASHED);
+            var _ = server.panes().get(0).retitle(DASHED);
         });
         sites.put("Pane.send", server -> server.panes().get(0).send(DASHED));
         sites.put("Pane.sendKeys", server -> server.panes().get(0).sendKeys(List.of(DASHED)));
@@ -104,7 +104,7 @@ final class ArgumentTerminatorTest {
         TmuxVersion version = new TmuxVersion(3, 7, "c");
         List<List<String>> commands = List.of(
                 SessionSpec.builder().running(DASHED).build().argv("#{pane_id}", () -> version),
-                WindowSpec.builder().running(DASHED).build().argv("$0", "#{pane_id}", version),
+                WindowSpec.builder().running(DASHED).build().argv("$0", "#{pane_id}"),
                 SplitSpec.builder().running(DASHED).build().argv("%0", "#{pane_id}", version));
 
         for (List<String> argv : commands) {
@@ -172,9 +172,25 @@ final class ArgumentTerminatorTest {
 
         private CommandResult answer(List<String> argv) {
             return switch (argv.get(0)) {
+                // The version, the identity row, or a batch's marker, which is plain text echoed back.
                 case "display-message" ->
-                    new CommandResult(0, List.of(argv.contains("#{version}") ? "3.6" : row("4242", "3.6")), List.of());
-                case "list-sessions" -> new CommandResult(0, List.of(row("$0", DASHED, "1", "1")), List.of());
+                    new CommandResult(
+                            0,
+                            List.of(
+                                    argv.contains("#{version}")
+                                            ? "3.6"
+                                            : argv.getLast().contains("#{")
+                                                    ? row("4242", "3.6", "1790000000")
+                                                    : argv.getLast()),
+                            List.of());
+                case "list-sessions" ->
+                    new CommandResult(
+                            0,
+                            List.of(
+                                    argv.toString().contains("#{session_attached}")
+                                            ? row("$0", DASHED, "1", "1")
+                                            : row("$0", DASHED, "3.6")),
+                            List.of());
                 case "list-windows" ->
                     new CommandResult(
                             0, List.of(row("$0", "@7", "0", "editor", "1", "1", "1", "80", "24", "layout")), List.of());

@@ -14,7 +14,7 @@ $ ./gradlew :integration-tests:test
 Against every supported tmux release:
 
 ```console
-$ ./scripts/tmux-matrix.sh ~/tmux-builds
+$ ./tools/tmux-matrix.sh ~/tmux-builds
 ```
 
 ```console
@@ -27,7 +27,7 @@ This host may carry hundreds of tmux servers belonging to sibling ports. Count
 first:
 
 ```console
-$ ./scripts/reap-stale-servers.sh
+$ ./tools/reap-stale-servers.sh
 ```
 
 [`CONTRIBUTING.md`](../.github/CONTRIBUTING.md) explains why their debris

@@ -1,8 +1,10 @@
 package io.github.libtmux.format;
 
+import io.github.libtmux.exception.MalformedResponseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * A listing template and the reader for the rows it produces.
@@ -83,41 +85,41 @@ public final class RowFormat {
         /**
          * The field as a whole number.
          *
-         * @throws TmuxFormatException if tmux did not print one
+         * @throws MalformedResponseException if tmux did not print one
          */
         public int number(String field) {
             String value = text(field);
             try {
                 return Integer.parseInt(value);
             } catch (NumberFormatException e) {
-                throw new TmuxFormatException(field + " was not a number", e);
+                throw new MalformedResponseException(field + " was not a number", e);
             }
         }
 
         /**
          * The field as a whole count.
          *
-         * @throws TmuxFormatException if tmux did not print one
+         * @throws MalformedResponseException if tmux did not print one
          */
         public long count(String field) {
             String value = text(field);
             try {
                 return Long.parseLong(value);
             } catch (NumberFormatException e) {
-                throw new TmuxFormatException(field + " was not a count", e);
+                throw new MalformedResponseException(field + " was not a count", e);
             }
         }
 
         /**
          * The field as one of tmux's flags, which it prints as 0 or 1.
          *
-         * @throws TmuxFormatException if tmux printed anything else
+         * @throws MalformedResponseException if tmux printed anything else
          */
         public boolean flag(String field) {
             return switch (text(field)) {
                 case "0" -> false;
                 case "1" -> true;
-                default -> throw new TmuxFormatException(field + " was neither 0 nor 1");
+                default -> throw new MalformedResponseException(field + " was neither 0 nor 1");
             };
         }
 
@@ -139,9 +141,10 @@ public final class RowFormat {
      * theoretical. A row is closed by carrying every separator, not by the line ending.
      *
      * @param lines the listing as tmux printed it
-     * @throws TmuxFormatException if the listing ends mid-row, or a row does not have exactly the
+     * @throws MalformedResponseException if the listing ends mid-row, or a row does not have exactly the
      *     expected number of fields
      */
+    @ReadOnly
     public List<Row> rows(List<String> lines) {
         if (lines.stream().noneMatch(line -> line.endsWith(TERMINATOR))) {
             return lines.stream().map(line -> new Row(split(line))).toList();
@@ -163,7 +166,7 @@ public final class RowFormat {
             }
         }
         if (open) {
-            throw new TmuxFormatException("a tmux listing ended before its last row did");
+            throw new MalformedResponseException("a tmux listing ended before its last row did");
         }
         return List.copyOf(rows);
     }
@@ -171,9 +174,10 @@ public final class RowFormat {
     /**
      * Reads one row back into its fields.
      *
-     * @throws TmuxFormatException if the row does not have exactly the expected number of fields,
+     * @throws MalformedResponseException if the row does not have exactly the expected number of fields,
      *     which is the only chance to notice that something shifted
      */
+    @ReadOnly
     public List<String> split(String row) {
         if (row.endsWith(TERMINATOR)) {
             row = row.substring(0, row.length() - TERMINATOR.length());
@@ -181,7 +185,8 @@ public final class RowFormat {
         List<String> values = List.of(SPLITTER.split(row, -1));
         if (values.size() != fields.size()) {
             // Counts only: a row carries names and pane content, and this message reaches logs.
-            throw new TmuxFormatException("expected " + fields.size() + " fields in a tmux row, got " + values.size());
+            throw new MalformedResponseException(
+                    "expected " + fields.size() + " fields in a tmux row, got " + values.size());
         }
         return values;
     }

@@ -15,9 +15,10 @@ These hold for every change, whatever it touches:
 - A passing gate is evidence only once it has been shown capable of failing.
   Pair a new test with a deliberate break that proves it bites.
 - Every tmux server this project starts belongs under `/tmp/libtmux-java-test/`
-  or `/tmp/libtmux-java-dev/` — never a bare `/tmp/libtmux-…`, which a sibling
-  port on this machine is also using. `.github/CONTRIBUTING.md` explains what
-  goes wrong when they share.
+  or `/tmp/libtmux-java-dev/` — never a bare `/tmp/libtmux-…`. Other tools and
+  other libtmux ports may use that prefix on any given machine, and this
+  project's own servers are only safe to find and reap by their exact root.
+  `.github/CONTRIBUTING.md` explains what goes wrong when they share.
 
 ## Additional guidance
 

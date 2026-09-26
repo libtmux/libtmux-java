@@ -1,11 +1,13 @@
 package io.github.libtmux.mcp;
 
 import io.github.libtmux.Pane;
+import io.github.libtmux.PaneInput;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -26,9 +28,9 @@ final class PaneInputReservations {
 
     private PaneInputReservations() {}
 
-    static Lease keys(PaneInputCohort.Resolution initial, String operation) {
+    static Lease keys(Pane pane, PaneInputCohort.Resolution initial, String operation) {
         initial.requireKeyRecipients(operation);
-        return acquire(initial, initial.keyRecipients(), operation, false);
+        return acquire(pane, initial, initial.keyRecipients(), operation, false);
     }
 
     /**
@@ -45,22 +47,23 @@ final class PaneInputReservations {
      * exclusion the other operations rely on; only the panes a run is holding are passed through,
      * and those the run goes on owning.
      */
-    static Lease interrupting(PaneInputCohort.Resolution initial, String operation) {
+    static Lease interrupting(Pane pane, PaneInputCohort.Resolution initial, String operation) {
         initial.requireKeyRecipients(operation);
-        return acquire(initial, initial.keyRecipients(), operation, true);
+        return acquire(pane, initial, initial.keyRecipients(), operation, true);
     }
 
-    static Lease paste(PaneInputCohort.Resolution initial, String operation) {
+    static Lease paste(Pane pane, PaneInputCohort.Resolution initial, String operation) {
         initial.requirePasteTarget(operation);
-        return acquire(initial, List.of(initial.source()), operation, false);
+        return acquire(pane, initial, List.of(initial.source()), operation, false);
     }
 
-    static Lease run(PaneInputCohort.Resolution initial, String operation) {
+    static Lease run(Pane pane, PaneInputCohort.Resolution initial, String operation) {
         initial.requireSingularCommandPane(operation);
-        return acquire(initial, initial.keyRecipients(), operation, false);
+        return acquire(pane, initial, initial.keyRecipients(), operation, false);
     }
 
     private static Lease acquire(
+            Pane pane,
             PaneInputCohort.Resolution initial,
             List<PaneInputCohort.Member> members,
             String operation,
@@ -69,20 +72,34 @@ final class PaneInputReservations {
         Set<PaneKey> panes = signature.keys(members);
         DaemonIdentity daemon = DaemonIdentity.capture(initial.authority());
         Set<PaneKey> owned = new HashSet<>();
+        boolean takeSource;
         synchronized (MONITOR) {
-            for (PaneKey pane : panes) {
-                String holder = HELD.get(pane);
+            for (PaneKey key : panes) {
+                String holder = HELD.get(key);
                 if (holder != null && !(interrupting && holder.equals(RUN))) {
-                    throw new IllegalStateException(
-                            operation + " refuses pane input already owned by another operation");
+                    throw new IllegalStateException(operation + " refuses pane " + key.paneId() + "; already owned"
+                            + " by " + holder + ", which is writing to it — retry once it finishes");
                 }
                 if (holder == null) {
-                    owned.add(pane);
+                    owned.add(key);
                 }
             }
-            owned.forEach(pane -> HELD.put(pane, operation));
+            owned.forEach(key -> HELD.put(key, operation));
+            takeSource =
+                    owned.stream().anyMatch(key -> key.paneId().equals(pane.id().value()));
         }
-        return new Lease(operation, initial.authority(), daemon, signature, owned);
+        List<PaneInput.Lease> input = new ArrayList<>();
+        if (takeSource) {
+            try {
+                input.add(operation.equals(RUN) ? PaneInput.holdInterruptible(pane) : PaneInput.hold(pane));
+            } catch (RuntimeException failure) {
+                synchronized (MONITOR) {
+                    HELD.keySet().removeAll(owned);
+                }
+                throw failure;
+            }
+        }
+        return new Lease(operation, initial.authority(), daemon, signature, owned, input, interrupting && !takeSource);
     }
 
     static final class Lease implements AutoCloseable {
@@ -94,6 +111,8 @@ final class PaneInputReservations {
         /** The panes this lease put in {@link #HELD}: all of them, or the ones no run was holding. */
         private final Set<PaneKey> owned;
 
+        private final List<PaneInput.Lease> input;
+        private final boolean interruptPass;
         private boolean closed;
 
         private Lease(
@@ -101,12 +120,21 @@ final class PaneInputReservations {
                 PaneInputCohort.Authority authority,
                 DaemonIdentity daemon,
                 Signature initial,
-                Set<PaneKey> owned) {
+                Set<PaneKey> owned,
+                List<PaneInput.Lease> input,
+                boolean interruptPass) {
             this.operation = operation;
             this.authority = authority;
             this.daemon = daemon;
             this.initial = initial;
             this.owned = Set.copyOf(owned);
+            this.input = List.copyOf(input);
+            this.interruptPass = interruptPass;
+        }
+
+        /** True when a run already holds this pane and this lease may only stop it. */
+        boolean passesThrough() {
+            return interruptPass;
         }
 
         List<String> requireSameKeys(PaneInputCohort.Resolution fresh) {
@@ -146,12 +174,16 @@ final class PaneInputReservations {
 
         @Override
         public void close() {
+            List<PaneInput.Lease> releasing;
             synchronized (MONITOR) {
-                if (!closed) {
-                    HELD.keySet().removeAll(owned);
-                    closed = true;
+                if (closed) {
+                    return;
                 }
+                HELD.keySet().removeAll(owned);
+                closed = true;
+                releasing = input;
             }
+            releasing.forEach(PaneInput.Lease::close);
         }
     }
 

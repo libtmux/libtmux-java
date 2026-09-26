@@ -1,8 +1,32 @@
 import java.lang.module.ModuleFinder
 
-plugins { id("libtmux.published-library") }
+plugins {
+    id("libtmux.published-library")
+    id("libtmux.api-diff")
+    id("libtmux.field-catalog")
+}
 
-dependencies { compileOnly(libs.errorprone.annotations) }
+apiDiff {
+    // The module descriptor, not Java accessibility, is what actually hides this package (see the
+    // module-descriptor check below); a caller can never reach it either way.
+    excludePackages.add("io.github.libtmux.internal")
+}
+
+// Not a dependency of the published jar: the Doclet reads @Operation by annotation name, never
+// loading the annotation's class, so nothing here leaks into libtmux's own dependency graph.
+val catalogDoclet = configurations.create("catalogDoclet") { isCanBeConsumed = false }
+
+dependencies {
+    compileOnly(libs.errorprone.annotations)
+    // Kotlin reads a Java collection marked @ReadOnly as a read-only List, Set, or Map, with or
+    // without this jar on the caller's path; nothing reads it at runtime.
+    compileOnly(libs.kotlin.annotations.jvm)
+    testImplementation(libs.asm)
+    testImplementation(libs.reactive.streams.tck.flow)
+    testRuntimeOnly(libs.testng.engine)
+
+    catalogDoclet("io.github.libtmux.build:catalog-doclet")
+}
 
 // The core resolves nothing at runtime. Anything that would change that belongs in another module.
 // No Automatic-Module-Name: module-info.java names this module, and the manifest attribute is
@@ -38,7 +62,17 @@ tasks.jar {
 // Every other lint stays on. -exports fires only because the annotations above are required
 // statically and not transitively, which is the point: a consumer never sees them at runtime, and
 // making them transitive to silence this made every modular consumer fail to compile.
-tasks.compileJava { options.compilerArgs.add("-Xlint:-exports") }
+tasks.compileJava {
+    options.compilerArgs.add("-Xlint:-exports")
+    // kotlin-annotations-jvm names no module, so it sits on the classpath, which a named module
+    // cannot read unless told to. It is needed only here: its annotation is kept in the class file
+    // for the Kotlin compiler and never loaded.
+    options.compilerArgs.addAll(listOf("--add-reads", "io.github.libtmux=ALL-UNNAMED"))
+}
+
+tasks.javadoc {
+    (options as StandardJavadocDocletOptions).addStringOption("-add-reads", "io.github.libtmux=ALL-UNNAMED")
+}
 
 // A consumer with a module descriptor of its own, compiled against the built jar and nothing else.
 // The descriptor check above reads what the jar declares; this reads what a consumer can do with it,
@@ -90,132 +124,10 @@ val carrierTest =
 
 tasks.check { dependsOn(carrierTest) }
 
-// ------------------------------------------------------------------------------- API-diff gate
-
-// This project's API carries no compatibility guarantee (see CONTRIBUTING.md): a release may break
-// callers without notice. What it promises instead is that every break is written down. This gate
-// compares the built jar against the last released one and fails when a binary-incompatible change
-// touches a public type that MIGRATION.md's "## Next release" section does not name.
-val apiBaselineVersion = providers.gradleProperty("libtmuxApiBaseline")
-
-val japicmpTool = configurations.create("japicmpTool") { isCanBeConsumed = false }
-val apiBaselineJar =
-    configurations.create("apiBaselineJar") {
-        isCanBeConsumed = false
-        isTransitive = false
-    }
-
-dependencies {
-    "japicmpTool"("com.github.siom79.japicmp:japicmp:${libs.versions.japicmp.get()}:jar-with-dependencies")
-    apiBaselineVersion.orNull?.let { "apiBaselineJar"("io.github.libtmux:libtmux:$it") }
-}
-
-// Lenient: an unresolvable baseline (no network, or a version not yet published) is reported by the
-// gate below rather than by a hard failure here, which would also break every offline build.
-val apiBaselineFiles = apiBaselineJar.incoming.artifactView { isLenient = true }.files
-
-val apiDiffReport = layout.buildDirectory.file("reports/japicmp/report.xml")
-
-val generateApiDiffReport =
-    tasks.register<JavaExec>("generateApiDiffReport") {
-        group = "verification"
-        description = "Runs japicmp comparing this build's jar against the last released one."
-        classpath = japicmpTool
-        mainClass.set("japicmp.JApiCmp")
-
-        val newJar = tasks.jar.flatMap { it.archiveFile }
-        val report = apiDiffReport
-
-        inputs.file(newJar)
-        inputs.files(apiBaselineFiles).optional(true)
-        outputs.file(report)
-
-        onlyIf { !apiBaselineFiles.isEmpty }
-
-        doFirst {
-            report.get().asFile.parentFile.mkdirs()
-            args(
-                "--old",
-                apiBaselineFiles.singleFile.absolutePath,
-                "--new",
-                newJar.get().asFile.absolutePath,
-                "-a",
-                "public",
-                // The module descriptor, not Java accessibility, is what actually hides this package
-                // (see the module-descriptor check above); a caller can never reach it either way.
-                "--exclude",
-                "io.github.libtmux.internal",
-                "--ignore-missing-classes",
-                "--xml-file",
-                report.get().asFile.absolutePath,
-            )
-        }
-    }
-
-tasks.register("checkApiDiffAgainstMigrationNotes") {
-    group = "verification"
-    description = "Fails when a binary-incompatible public API change is missing from MIGRATION.md."
-    dependsOn(generateApiDiffReport)
-
-    val report = apiDiffReport
-    val migrationNotes = rootProject.file("MIGRATION.md")
-    val baselineVersion = apiBaselineVersion
-    val baselineResolvable = provider { !apiBaselineFiles.isEmpty }
-    inputs.file(migrationNotes)
-
-    doLast {
-        if (!baselineVersion.isPresent) {
-            logger.warn("API gate skipped: no libtmuxApiBaseline property is set")
-            return@doLast
-        }
-        if (!baselineResolvable.get()) {
-            logger.warn(
-                "API gate skipped: io.github.libtmux:libtmux:${baselineVersion.get()} is not " +
-                    "resolvable from the configured repositories"
-            )
-            return@doLast
-        }
-
-        val nextRelease = run {
-            val notes = migrationNotes.readText()
-            val start = notes.indexOf("## Next release")
-            require(start >= 0) { "MIGRATION.md has no \"## Next release\" section" }
-            val end = notes.indexOf("\n## ", start + 1).let { if (it < 0) notes.length else it }
-            notes.substring(start, end)
-        }
-
-        val document = javax.xml.parsers.DocumentBuilderFactory.newInstance()
-            .newDocumentBuilder()
-            .parse(report.get().asFile)
-        val classes = document.getElementsByTagName("class")
-
-        val undocumented = sortedSetOf<String>()
-        for (i in 0 until classes.length) {
-            val element = classes.item(i) as org.w3c.dom.Element
-            if (element.getAttribute("binaryCompatible") != "false") continue
-            val fqn = element.getAttribute("fullyQualifiedName")
-            // A nested class folds into its enclosing top-level class: MIGRATION.md documents a
-            // break at the granularity it names things, and a caller never imports a class by its
-            // binary $-name.
-            val simpleName = fqn.substringAfterLast('.').substringBefore('$')
-            val named = Regex("\\b${Regex.escape(simpleName)}\\b").containsMatchIn(nextRelease)
-            if (!named) undocumented += "$fqn (as $simpleName)"
-        }
-
-        require(undocumented.isEmpty()) {
-            "binary-incompatible change(s) not recorded in MIGRATION.md's \"## Next release\" section:\n" +
-                undocumented.joinToString("\n") { "  $it" }
-        }
-        logger.lifecycle("every binary-incompatible public API change is recorded in MIGRATION.md")
-    }
-}
-
-tasks.check { dependsOn("checkApiDiffAgainstMigrationNotes") }
-
 // ------------------------------------------------------------------------------------- SBOM
 
 // The claim in README.md ("No runtime dependencies") is falsifiable, so the SBOM the build already
-// produces (see libtmux.published-library.gradle.kts) is read back rather than trusted: a component
+// produces (see libtmux.sbom.gradle.kts) is read back rather than trusted: a component
 // listed here is a runtime dependency the README does not know about.
 val checkSbomHasNoRuntimeDependencies =
     tasks.register("checkSbomHasNoRuntimeDependencies") {
@@ -244,3 +156,143 @@ val checkSbomHasNoRuntimeDependencies =
     }
 
 tasks.check { dependsOn(checkSbomHasNoRuntimeDependencies) }
+
+// ------------------------------------------------------------------------------ operation catalog
+
+// One record per @Operation method, read from source (not the built jar) so the Kotlin and Scala
+// generators, and the docs table, get real Javadoc text alongside the annotation values. See
+// operation-catalog-schema.md for the JSON this produces.
+//
+// Gradle's own Javadoc task type always emits -d and a handful of StandardDoclet-only options
+// (-doctitle, -notimestamp, -Xdoclint, ...); a minimal custom Doclet that never declares those
+// options has the javadoc tool reject them as "invalid flag", so this runs the toolchain's
+// javadoc binary directly with exactly the flags the Doclet supports.
+val operationCatalogDocletClass = "io.github.libtmux.catalog.doclet.OperationCatalogDoclet"
+
+fun registerOperationCatalogGenerator(
+    taskName: String,
+    jsonFile: Provider<RegularFile>,
+    markdownFile: Provider<RegularFile>? = null,
+) =
+    tasks.register<Exec>(taskName) {
+        group = "documentation"
+        description = "Runs the operation-catalog Doclet over this module's sources, emitting operation-catalog.json."
+
+        val docletClasspath = catalogDoclet
+        // module-info.java documents a module, not a type; the Doclet only walks classes and
+        // interfaces, and feeding it in would push javadoc into module mode for no benefit here.
+        val sources = sourceSets.main.get().allJava.matching { exclude("module-info.java") }
+        val compileClasspath = sourceSets.main.get().compileClasspath
+
+        inputs.files(sources).withPropertyName("sources").withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.files(compileClasspath)
+            .withPropertyName("compileClasspath")
+            .withNormalizer(ClasspathNormalizer::class.java)
+        inputs.files(docletClasspath)
+            .withPropertyName("catalogDocletClasspath")
+            .withNormalizer(ClasspathNormalizer::class.java)
+        inputs.property("doclet", operationCatalogDocletClass)
+        outputs.file(jsonFile)
+        if (markdownFile != null) {
+            outputs.file(markdownFile)
+        }
+
+        // Exec's executable is a plain, eagerly-resolved property, not Provider-aware, so the
+        // toolchain lookup happens here rather than through a lazy map chain.
+        executable = javaToolchains.javadocToolFor(java.toolchain).get().executablePath.asFile.absolutePath
+        doFirst {
+            jsonFile.get().asFile.parentFile.mkdirs()
+            markdownFile?.get()?.asFile?.parentFile?.mkdirs()
+        }
+        argumentProviders.add(
+            CommandLineArgumentProvider {
+                val arguments = mutableListOf(
+                    "-doclet", operationCatalogDocletClass,
+                    "-docletpath", docletClasspath.asPath,
+                    "-classpath", compileClasspath.asPath,
+                    "-private",
+                    "-quiet",
+                    "-out", jsonFile.get().asFile.absolutePath,
+                )
+                if (markdownFile != null) {
+                    arguments += listOf("-markdown-out", markdownFile.get().asFile.absolutePath)
+                }
+                arguments + sources.files.map { it.absolutePath }.sorted()
+            }
+        )
+    }
+
+val operationCatalogJson = layout.buildDirectory.file("generated/operation-catalog/operation-catalog.json")
+val generatedOperationsReference = layout.buildDirectory.file("generated/operation-catalog/operations.md")
+val generateOperationCatalog =
+    registerOperationCatalogGenerator("generateOperationCatalog", operationCatalogJson, generatedOperationsReference)
+
+tasks.named<ProcessResources>("processResources") {
+    dependsOn(generateOperationCatalog)
+    from(operationCatalogJson) { into("META-INF/io.github.libtmux") }
+}
+
+// docs/reference/operations.md is checked in so it renders on GitHub without a build step; this
+// gate fails when regenerating it from the current @Operation catalog would change it.
+val checkedInOperationsReference = rootProject.file("docs/reference/operations.md")
+
+val checkOperationsReferenceIsCurrent =
+    tasks.register("checkOperationsReferenceIsCurrent") {
+        group = "verification"
+        description = "Fails when docs/reference/operations.md is stale against the current @Operation catalog."
+        dependsOn(generateOperationCatalog)
+        inputs.file(generatedOperationsReference)
+        inputs.file(checkedInOperationsReference)
+
+        doLast {
+            require(checkedInOperationsReference.isFile) {
+                "docs/reference/operations.md does not exist; run :libtmux:updateOperationsReference"
+            }
+            val expected = generatedOperationsReference.get().asFile.readText()
+            val actual = checkedInOperationsReference.readText()
+            require(expected == actual) {
+                "docs/reference/operations.md is stale; run :libtmux:updateOperationsReference to refresh it"
+            }
+            logger.lifecycle("docs/reference/operations.md matches the current @Operation catalog")
+        }
+    }
+
+tasks.check { dependsOn(checkOperationsReferenceIsCurrent) }
+
+val updateOperationsReference =
+    tasks.register<Copy>("updateOperationsReference") {
+        group = "documentation"
+        description = "Regenerates docs/reference/operations.md from the current @Operation catalog."
+        dependsOn(generateOperationCatalog)
+        from(generatedOperationsReference)
+        into(checkedInOperationsReference.parentFile)
+        rename { checkedInOperationsReference.name }
+    }
+
+// A second, independent Doclet run over the same sources, compared byte-for-byte against the
+// first: the Kotlin and Scala generators, and the docs table, treat this file as content-addressed
+// input, so a run that reordered or reformatted anything would silently break every consumer.
+val operationCatalogJsonRepeat =
+    layout.buildDirectory.file("generated/operation-catalog/operation-catalog-repeat.json")
+val generateOperationCatalogAgain =
+    registerOperationCatalogGenerator("generateOperationCatalogAgain", operationCatalogJsonRepeat)
+
+val checkOperationCatalogIsByteStable =
+    tasks.register("checkOperationCatalogIsByteStable") {
+        group = "verification"
+        description = "Fails when two Doclet runs over identical sources produce different operation-catalog.json bytes."
+        dependsOn(generateOperationCatalog, generateOperationCatalogAgain)
+        inputs.file(operationCatalogJson)
+        inputs.file(operationCatalogJsonRepeat)
+
+        doLast {
+            val first = operationCatalogJson.get().asFile.readBytes()
+            val second = operationCatalogJsonRepeat.get().asFile.readBytes()
+            require(first.contentEquals(second)) {
+                "operation-catalog.json is not byte-stable across two Doclet runs over the same sources"
+            }
+            logger.lifecycle("operation-catalog.json is byte-stable across two Doclet runs")
+        }
+    }
+
+tasks.check { dependsOn(checkOperationCatalogIsByteStable) }

@@ -4,6 +4,7 @@ import io.github.libtmux.PaneId;
 import io.github.libtmux.WindowId;
 import java.util.List;
 import java.util.Optional;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * Something tmux volunteered, rather than an answer to a request.
@@ -22,7 +23,8 @@ import java.util.Optional;
  * @param value what followed a {@code :} separator, which only a subscription carries
  * @param notification the same notification, typed
  */
-public record ControlEvent(String kind, List<String> fields, Optional<String> value, Notification notification) {
+public record ControlEvent(
+        String kind, @ReadOnly List<String> fields, Optional<String> value, Notification notification) {
 
     public ControlEvent {
         fields = List.copyOf(fields);
@@ -49,7 +51,9 @@ public record ControlEvent(String kind, List<String> fields, Optional<String> va
             return Optional.empty();
         }
         String body = line.substring(1);
-        int separator = body.indexOf(" : ");
+        // Only a subscription separates a value with " : ". Anywhere else it is part of what tmux
+        // wrote: a window, session, or buffer name may hold one, as may a message.
+        int separator = body.startsWith("subscription-changed ") ? body.indexOf(" : ") : -1;
         String head = separator < 0 ? body : body.substring(0, separator);
         // A subscription's value is whatever the format expanded to, so it is taken whole rather than
         // split: it may contain spaces, and often does.

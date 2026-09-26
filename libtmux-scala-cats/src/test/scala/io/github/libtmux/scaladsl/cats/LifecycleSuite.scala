@@ -1,5 +1,6 @@
 package io.github.libtmux.scaladsl.cats
 
+import io.github.libtmux.exception.DispatchException
 import _root_.cats.effect.{Deferred, IO}
 import _root_.cats.effect.unsafe.implicits.global
 import _root_.cats.syntax.all._
@@ -8,8 +9,7 @@ import io.github.libtmux.transport.{
   CommandRequest,
   CommandResult,
   DispatchOutcome,
-  TmuxTransport,
-  TmuxTransportException
+  TmuxTransport
 }
 import java.util.List
 import java.time.Duration
@@ -17,6 +17,8 @@ import java.util.concurrent.{CompletableFuture, CountDownLatch, TimeUnit}
 import java.util.concurrent.atomic.AtomicInteger
 import munit.FunSuite
 import scala.concurrent.duration._
+import scala.jdk.CollectionConverters._
+import scala.jdk.DurationConverters._
 
 final class LifecycleSuite extends FunSuite {
   private val config = ServerConfig.builder().build()
@@ -33,7 +35,7 @@ final class LifecycleSuite extends FunSuite {
     val release = new CountDownLatch(1)
     val settle = new CountDownLatch(1)
     val cause = new IllegalArgumentException("preserve this cause")
-    val failure = new TmuxTransportException(
+    val failure = new DispatchException.Failed(
       "preserve this failure",
       DispatchOutcome.UNKNOWN,
       cause
@@ -56,6 +58,17 @@ final class LifecycleSuite extends FunSuite {
                 throw new AssertionError("cleanup was not released")
               finished.complete(())
               throw problem
+          }
+        case "unknown-block" =>
+          entered.complete(())
+          try {
+            if (!release.await(1, TimeUnit.SECONDS))
+              throw new AssertionError("blocking producer was not interrupted")
+          } catch {
+            case _: InterruptedException =>
+              interrupted.complete(())
+              Thread.currentThread().interrupt()
+              throw failure
           }
         case "fail"    => throw failure
         case "nonzero" =>
@@ -81,8 +94,8 @@ final class LifecycleSuite extends FunSuite {
           first <- command
           second <- command
           _ <- IO {
-            assertEquals(first.stdout, Vector("1"))
-            assertEquals(second.stdout, Vector("2"))
+            assertEquals(first.stdout.asScala.toVector, Vector("1"))
+            assertEquals(second.stdout.asScala.toVector, Vector("2"))
             assert(
               transport.thread.startsWith("io-compute-blocker-") ||
                 transport.thread.startsWith("io-blocking-"),
@@ -96,8 +109,8 @@ final class LifecycleSuite extends FunSuite {
             assertEquals(transport.failure.outcome(), DispatchOutcome.UNKNOWN)
             assert(transport.failure.getCause eq transport.cause)
             assertEquals(nonzero.exitCode, 17)
-            assertEquals(nonzero.stdout, Vector("partial"))
-            assertEquals(nonzero.stderr, Vector("failure"))
+            assertEquals(nonzero.stdout.asScala.toVector, Vector("partial"))
+            assertEquals(nonzero.stderr.asScala.toVector, Vector("failure"))
           }
         } yield command
       }
@@ -112,6 +125,22 @@ final class LifecycleSuite extends FunSuite {
         } yield ()
       }
     program.timeout(1.second).unsafeToFuture()
+  }
+
+  test("canceling a dispatched call is still a cancellation") {
+    val transport = new Transport
+    val java = JavaServer.using(config, transport)
+    val program = Server.fromJava[IO](java).use { server =>
+      for {
+        running <- server.cmd(Vector("unknown-block")).start
+        _ <- event(transport.entered)
+        _ <- running.cancel
+        _ <- event(transport.interrupted)
+        outcome <- running.join
+        _ <- IO(assert(outcome.isCanceled, outcome.toString))
+      } yield ()
+    }
+    program.timeout(2.seconds).unsafeToFuture()
   }
 
   test(
@@ -140,8 +169,70 @@ final class LifecycleSuite extends FunSuite {
           _ <- IO {
             assert(firstOutcome.isCanceled)
             assert(queuedOutcome.isCanceled)
-            assertEquals(sibling.stdout, Vector("2"))
+            assertEquals(sibling.stdout.asScala.toVector, Vector("2"))
           }
+        } yield ()
+      }
+      .timeout(1.second)
+      .unsafeToFuture()
+  }
+
+  test(
+    "canceling a call queued on the permit never dispatches and does not leak it"
+  ) {
+    val transport = new Transport
+    val java = JavaServer.using(config, transport)
+    Server
+      .fromJava[IO](java, maxConcurrentCalls = 1)
+      .use { server =>
+        for {
+          holder <- server.cmd(Vector("block")).start
+          _ <- event(transport.entered)
+          queued <- server.cmd(Vector("queued")).start
+          // The sole permit is held by "holder", so "queued" has nowhere to run
+          // except blocked acquiring it. A short race against its own join,
+          // rather than a bare sleep, turns that into an assertion instead of
+          // an assumption.
+          stillQueued <- IO
+            .race(queued.join, IO.sleep(200.millis))
+            .map(_.isRight)
+          _ <- IO(
+            assert(
+              stillQueued,
+              "expected the second call to queue on the permit"
+            )
+          )
+          canceled <- (queued.cancel *> queued.join).timeout(500.millis)
+          _ <- IO {
+            assert(canceled.isCanceled, canceled.toString)
+            assertEquals(transport.calls.get(), 1)
+          }
+          _ <- IO(transport.release.countDown())
+          _ <- holder.joinWithNever
+          sibling <- server.cmd(Vector("sibling"))
+          _ <- IO(assertEquals(sibling.stdout.asScala.toVector, Vector("2")))
+        } yield ()
+      }
+      .timeout(1.second)
+      .unsafeToFuture()
+  }
+
+  test(
+    "canceling a running call interrupts it and frees its permit for a sibling"
+  ) {
+    val transport = new Transport
+    val java = JavaServer.using(config, transport)
+    Server
+      .fromJava[IO](java, maxConcurrentCalls = 1)
+      .use { server =>
+        for {
+          running <- server.cmd(Vector("block")).start
+          _ <- event(transport.entered)
+          outcome <- (running.cancel *> running.join).timeout(500.millis)
+          _ <- IO(assert(outcome.isCanceled, outcome.toString))
+          _ <- event(transport.interrupted)
+          sibling <- server.cmd(Vector("sibling"))
+          _ <- IO(assertEquals(sibling.stdout.asScala.toVector, Vector("2")))
         } yield ()
       }
       .timeout(1.second)
@@ -182,13 +273,16 @@ final class LifecycleSuite extends FunSuite {
     Server
       .fromJava[IO](java, maxConcurrentCalls = 1)
       .use { server =>
-        server.channel("capacity").await(Duration.ofMillis(500)).attempt.map {
-          outcome =>
+        server
+          .channel("capacity")
+          .await(Duration.ofMillis(500).toScala)
+          .attempt
+          .map { outcome =>
             assert(
               outcome.left.toOption.exists(_.getMessage.contains("capacity"))
             )
             assertEquals(transport.calls.get(), 0)
-        }
+          }
       }
       .timeout(1.second)
       .unsafeToFuture()

@@ -401,10 +401,10 @@ final class PaneEchoTest {
         PaneId pane = new PaneId("%1");
         ServerIdentity before = ServerIdentity.of(
                         "test", ServerEndpoint.socketPath(Path.of("/tmp/pane-echo-before.sock")))
-                .at(111);
+                .at(111, java.util.OptionalLong.of(1_790_000_000L));
         ServerIdentity after = ServerIdentity.of(
                         "test", ServerEndpoint.socketPath(Path.of("/tmp/pane-echo-before.sock")))
-                .at(222);
+                .at(222, java.util.OptionalLong.of(1_790_000_000L));
         echo.recordKeys(before, pane, List.of("stale-from-before-restart")).confirm();
 
         assertEquals(List.of(), echo.liveFor(after, pane).pending());

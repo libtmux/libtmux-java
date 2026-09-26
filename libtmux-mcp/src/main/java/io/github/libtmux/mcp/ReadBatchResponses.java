@@ -65,7 +65,8 @@ final class ReadBatchResponses {
                 recordTruncation(output, encodedBytes(removed) - encodedBytes(TRUNCATED_ERROR));
                 continue;
             }
-            throw new IllegalStateException("read batch metadata exceeds its fixed response limit");
+            throw new IllegalStateException("read batch metadata exceeds its fixed response limit even with "
+                    + "every row's result and error truncated; call call_read_tools_batch with fewer operations");
         }
     }
 
@@ -126,7 +127,10 @@ final class ReadBatchResponses {
         try {
             return Answers.JSON.writeValueAsBytes(value).length;
         } catch (JacksonException failure) {
-            throw new IllegalStateException("could not measure a read batch response", failure);
+            throw new IllegalStateException(
+                    "could not measure a response against the wire size limit; retry the call with "
+                            + "different arguments, since part of this output could not be serialized",
+                    failure);
         }
     }
 

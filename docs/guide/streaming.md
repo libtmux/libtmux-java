@@ -1,6 +1,7 @@
 # Watching output as it happens
 
-Every snippet here is executed by `ExamplesTest`.
+Every snippet here is run by `DocumentationSnippetsTest`, except one marked
+compile-only, which says why.
 
 ## Waiting for one thing, cheapest first
 
@@ -14,7 +15,7 @@ tmux process covers the whole wait however long it takes. The `;` fires the
 signal whether the command succeeded or failed, so the wait cannot deadlock on
 failure.
 
-<!-- snippet: compile-only: the signal comes from a shell inside a pane, whose readiness this fixture cannot establish; it timed out on the 3.6 through 3.7c matrix lanes and passed on the rest -->
+<!-- snippet: compile-only: the signal comes from a shell inside a pane, whose readiness this fixture cannot establish -->
 ```java
 // Given: Server server, Pane pane, Path socket
 Channel done = server.channel("build-finished");
@@ -97,14 +98,14 @@ rather than being asked:
 
 ```java
 // Given: Server server, Session session
-try (ControlClient client = ControlClient.attach(server.config(), session.id());
+try (ControlClient client = server.control(session);
         EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
 
     client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
 
     StringBuilder seen = new StringBuilder();
     while (seen.indexOf("streamed") < 0) {
-        seen.append(output.next(Duration.ofSeconds(5)).orElseThrow().data());
+        seen.append(Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow()).data());
     }
     seen.indexOf("streamed") >= 0;  // → true
 }
@@ -117,9 +118,102 @@ tmux decides where one push ends and the next begins, so what a caller wants can
 arrive split across several: read until you have it rather than testing the
 first one. The loop above is bounded by the timeout each `next` carries.
 
+tmux cuts pushes by byte count, not by character, and a pane written to in large
+blocks has some of its characters cut in two. `data()` is decoded per pane, so a
+cut character arrives whole with the later push. `bytes()` is exactly what one
+push carried: a pane's pushes concatenate to the bytes it wrote, which is what a
+recording of the terminal needs. A byte that is not UTF-8 appears in `data()` as
+`\xHH`.
+
+`stream()` reads the same steps as a `java.util.stream.Stream`, pulled one at a
+time on the consuming thread. It ends when the subscription closes, so a timer
+that closes it bounds the whole read, and closing the stream closes the
+subscription:
+
+```java
+// Given: Server server, Session session
+try (ControlClient client = server.control(session);
+        EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
+
+    client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
+    CompletableFuture.delayedExecutor(5, TimeUnit.SECONDS).execute(output::close);
+
+    StringBuilder seen = new StringBuilder();
+    try (Stream<Delivery<PaneOutput>> steps = output.stream()) {
+        Iterator<PaneOutput> outputs = steps.map(Delivery::kept).iterator();
+        while (seen.indexOf("streamed") < 0 && outputs.hasNext()) {
+            seen.append(outputs.next().data());
+        }
+    }
+    seen.indexOf("streamed") >= 0;  // → true
+}
+```
+
 Each subscriber chooses a fixed buffer capacity. A full buffer drops its oldest
-value, and `droppedCount()` reports the exact loss. The control reader only fills
-those buffers; caller code runs on the thread that calls `next()`.
+value. The next read is a `Delivery.Gap` naming how many were lost since the
+previous read, and only then the events that remain. `droppedCount()` is the
+total. `cause()` is empty when the caller closed the subscription and set when
+the control client ended it. Closing discards what is still buffered; a client
+that ends leaves it to be read first. A subscription does not reconnect: attach again
+with `server.control(session)` and read a snapshot. Nothing already missed is
+replayed. The control reader only fills those buffers; caller code runs on the
+thread that calls `next()`. `standardError()` is the bounded text the tmux
+process wrote to its error stream.
+
+`publisher()` reads the same steps as a `java.util.concurrent.Flow.Publisher`,
+for a reactive caller — Reactor, RxJava, Mutiny, Spring — through
+`FlowAdapters` or `JdkFlowAdapter`. Delivery is demand-driven: `request`
+bounds what reaches the subscriber, `Long.MAX_VALUE` asks for everything, and
+only one subscriber is ever accepted — a second gets `onError` rather than
+sharing the steps. `cancel()` closes the subscription, the same as `stream()`
+closing does. Each read that waits for the next step runs on a fresh virtual
+thread; `publisher(Executor)` reads somewhere else instead.
+
+Demand only bounds what reaches the subscriber, not what tmux sends: this
+subscription's own bounded buffer keeps filling regardless, and a full buffer
+still reports its loss as a `Delivery.Gap`, delivered like any other element.
+Pausing tmux's own push is `pause-after`, further down.
+
+```java
+// Given: Server server, Session session
+try (ControlClient client = server.control(session);
+        EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
+
+    client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
+
+    StringBuilder seen = new StringBuilder();
+    CountDownLatch done = new CountDownLatch(1);
+    output.publisher().subscribe(new Flow.Subscriber<Delivery<PaneOutput>>() {
+        Flow.Subscription subscription;
+
+        public void onSubscribe(Flow.Subscription subscription) {
+            this.subscription = subscription;
+            subscription.request(1);
+        }
+
+        public void onNext(Delivery<PaneOutput> step) {
+            seen.append(Delivery.kept(step).data());
+            if (seen.indexOf("streamed") >= 0) {
+                subscription.cancel();
+                done.countDown();
+            } else {
+                subscription.request(1);
+            }
+        }
+
+        public void onError(Throwable failure) {
+            done.countDown();
+        }
+
+        public void onComplete() {
+            done.countDown();
+        }
+    });
+
+    done.await(5, TimeUnit.SECONDS);
+    seen.indexOf("streamed") >= 0;  // → true
+}
+```
 
 ## Pushed changes
 
@@ -129,22 +223,55 @@ renamed, a session switched, a layout moved — without asking. Each arrives as 
 
 ```java
 // Given: Server server, Session session
-try (ControlClient client = ControlClient.attach(server.config(), session.id());
+try (ControlClient client = server.control(session);
         EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
 
     var unused = session.windows().get(0).rename("build logs");
 
-    Notification seen = events.next(Duration.ofSeconds(5)).orElseThrow().notification();
-    while (!(seen instanceof Notification.WindowRenamed)) {
-        seen = events.next(Duration.ofSeconds(5)).orElseThrow().notification();
+    String renamed = null;
+    while (renamed == null) {
+        Notification seen = Delivery.kept(events.next(Duration.ofSeconds(5)).orElseThrow()).notification();
+        renamed = switch (seen) {
+            case Notification.WindowRenamed(var window, var name, var attached) -> name;
+            default -> null;
+        };
     }
-    ((Notification.WindowRenamed) seen).name();   // → build logs
+    renamed;                                      // → build logs
 }
 ```
 
 The set is sealed with an `Unknown` case: tmux adds notifications between
 releases, and one this library does not model yet still arrives, as `Unknown`,
 with `kind()` and `fields()` carrying what tmux wrote.
+
+## A live copy of the server
+
+A notification says that something changed, not what everything now is.
+`ServerMirror` turns them into whole snapshots. Each announcement starts a
+fresh capture, and each capture that differs from the last is published as a
+numbered view:
+
+```java
+// Given: Session session
+try (ServerMirror mirror = ServerMirror.open(session)) {
+    session.newWindow("mirrored");
+
+    ServerMirror.View view = mirror.current();
+    while (view.snapshot().windows().stream().noneMatch(w -> w.name().equals("mirrored"))) {
+        view = mirror.awaitNewer(view.epoch(), Duration.ofSeconds(5)).orElseThrow();
+    }
+    view.epoch() > 0;                             // → true
+}
+```
+
+`onNewer(epoch, callback)` is the same wait without a thread: a one-shot
+callback for a coroutine or fiber to resume from. tmux replays nothing to a
+client that attaches late. When the mirror's control client ends, it attaches
+again through the same session and starts from a fresh capture. Once that
+session has gone, the mirror ends, and `cause()` says why. tmux does not
+announce every change to every client: a pane retitled in another session is
+seen at the next rebuild, or within `refreshEvery` when the mirror is opened
+with one.
 
 ## Pausing and muting a pane
 
@@ -177,9 +304,20 @@ withheld was lost outright rather than queued. `pause`/`continue` never
 reaches other clients at all; it drops output for the pausing client only, on
 every version.
 
+tmux can also pause a pane on its own. After `client.send("refresh-client",
+"-f", "pause-after=5")`, a pane whose output this client is more than five
+seconds behind on is paused and announced as `Notification.Pause`; output keeps
+reaching `subscribeOutput` until then, and `refresh-client -A <pane>:continue`
+resumes it, announced as `Notification.Continue`. tmux 3.2 and later.
+
 ## Requests are serialized
 
 A control client has one reply stream, so `send` calls run one at a time. A
 timeout closes the client because the next reply can no longer be attributed
 safely. Use `Server` for ordinary commands; use `ControlClient` when the
 persistent event stream is the requirement.
+
+One command answers faster over an attached control client than as its own
+process, but a reply is an acknowledgement rather than a completion, and one
+client serializes every caller: [measured, with what that number does and
+does not justify](../benchmarks/operation-costs.md#one-command-two-transports).

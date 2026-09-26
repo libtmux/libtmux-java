@@ -7,18 +7,19 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Dimensions;
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.SessionSpec;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowSpec;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -36,7 +37,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 final class CreationIntegrationTest {
 
     private static final TmuxVersion SIZE_SINCE = new TmuxVersion(3, 3, "");
-    private static final TmuxVersion RELATIVE_DIRECTORY_SINCE = new TmuxVersion(3, 3, "a");
 
     // ------------------------------------------------------------------------------ new-window
 
@@ -138,7 +138,7 @@ final class CreationIntegrationTest {
         other.select();
 
         assertAll(
-                () -> assertThrows(ObjectDoesNotExistException.class, stale::select),
+                () -> assertThrows(TargetGoneException.class, stale::select),
                 () -> assertEquals(
                         other.id(),
                         session.refresh().activeWindow().orElseThrow().id(),
@@ -159,34 +159,54 @@ final class CreationIntegrationTest {
     }
 
     /**
-     * A relative directory resolves against the calling process before 3.3a only by accident: tmux
-     * passes it to the child unchanged, so it lands wherever the server was started. Refused there
-     * rather than sent, so the caller is never handed a window that started somewhere else.
+     * A relative directory starts every kind of process where this JVM's working directory says. The
+     * daemon is started from another directory, because tmux 3.2a resolves a relative {@code -c}
+     * against the server's own, and a daemon started from here would agree with it by accident.
      */
     @Test
-    void aRelativeStartDirectoryIsHonouredOrRefusedDependingOnTheRelease(Server server, @TempDir Path directory)
-            throws Exception {
-        Session session = server.sessions().get(0);
-        Path real = directory.toRealPath();
-        Path relative = Path.of("").toAbsolutePath().relativize(real);
-        Path written = real.resolve("seen");
+    void aRelativeStartDirectoryResolvesAgainstThisProcess(@TempDir Path directory) throws Exception {
+        // Beneath the working directory, so the path climbs nothing: a relative path that climbs to
+        // the root first names the same place from any directory.
+        Path relative = Path.of("build", "relative-start", Long.toString(System.nanoTime()));
+        Path real = Files.createDirectories(relative).toRealPath();
+        Path elsewhere = Files.createDirectory(directory.resolve("elsewhere"));
+        Path config = Files.writeString(directory.resolve("empty.conf"), "");
+        Path socket = directory.resolve("s");
+        String binary = System.getProperty("libtmux.tmux", "tmux");
+        Process daemon = new ProcessBuilder(
+                        binary, "-S", socket.toString(), "-f", config.toString(), "new-session", "-d")
+                .directory(elsewhere.toFile())
+                .start();
+        assertEquals(0, daemon.waitFor(), "the daemon did not start");
 
-        if (server.version().atLeast(RELATIVE_DIRECTORY_SINCE)) {
-            session.newWindow(w -> w.named("relative")
-                    .in(relative)
-                    .running("/bin/sh", "-c", "pwd > \"$1\"; sleep 30", "probe", written.toString()));
+        try (Server other = Server.open(io.github.libtmux.ServerConfig.builder()
+                .binary(binary)
+                .endpoint(io.github.libtmux.ServerEndpoint.socketPath(socket))
+                .build())) {
+            Session session = other.sessions().get(0);
+            String script = "pwd > \"$1\"; sleep 30";
+            session.newWindow(w -> w.in(relative).running("/bin/sh", "-c", script, "probe", real + "/window"));
+            session.windows()
+                    .get(0)
+                    .split(p -> p.in(relative).running("/bin/sh", "-c", script, "probe", real + "/split"));
+            other.newSession(s -> s.in(relative).running("/bin/sh", "-c", script, "probe", real + "/session"));
+            Pane respawned = session.windows().get(0).split();
+            respawned.respawnIn(relative);
 
-            assertTrue(Await.until(() -> Files.exists(written)), "the command never ran");
-            // tmux joins the relative path onto the client's directory without normalising it,
-            // so the shell reports a spelling of the directory rather than its real path.
-            assertEquals(real, Path.of(Files.readString(written).strip()).toRealPath());
-        } else {
-            assertThrows(
-                    UnsupportedTmuxVersionException.class,
-                    () -> session.newWindow(w -> w.named("relative").in(relative)));
-            assertTrue(
-                    session.refresh().windows().stream().noneMatch(window -> "relative".equals(window.name())),
-                    "a refused spec must not have reached tmux");
+            for (String made : List.of("window", "split", "session")) {
+                Path written = real.resolve(made);
+                assertTrue(Await.until(() -> Files.exists(written)), made + " never ran");
+                // tmux joins a relative path onto the client's directory without normalising it, so
+                // the shell reports a spelling of the directory rather than its real path.
+                assertEquals(real, Path.of(Files.readString(written).strip()).toRealPath(), made);
+            }
+            assertTrue(Await.until(() -> real.equals(respawned.refresh().currentPath())), "respawn-pane");
+            other.killServer();
+        } finally {
+            try (var left = Files.walk(real)) {
+                left.sorted(java.util.Comparator.reverseOrder())
+                        .forEach(path -> path.toFile().delete());
+            }
         }
     }
 
@@ -227,7 +247,7 @@ final class CreationIntegrationTest {
             assertEquals(wanted, sized.windows().get(0).size());
         } else {
             assertThrows(
-                    UnsupportedTmuxVersionException.class,
+                    UnsupportedFeatureException.class,
                     () -> server.newSession(s -> s.named("sized").sized(wanted)));
             assertTrue(
                     server.sessions().stream().noneMatch(session -> "sized".equals(session.name())),
@@ -278,7 +298,7 @@ final class CreationIntegrationTest {
                 fresh.killServer();
             } else {
                 assertThrows(
-                        UnsupportedTmuxVersionException.class,
+                        UnsupportedFeatureException.class,
                         () -> fresh.newSession(s -> s.named("sized").sized(wanted)));
                 assertTrue(Files.notExists(socket), "a refused spec must not have started the daemon");
             }

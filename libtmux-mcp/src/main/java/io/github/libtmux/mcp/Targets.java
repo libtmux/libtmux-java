@@ -1,6 +1,5 @@
 package io.github.libtmux.mcp;
 
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
@@ -9,7 +8,9 @@ import io.github.libtmux.SessionId;
 import io.github.libtmux.Session_;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowId;
+import io.github.libtmux.exception.TargetGoneException;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Finds the thing a model asked for, or says what to do about not finding it.
@@ -36,7 +37,7 @@ final class Targets {
         return panes.stream()
                 .filter(pane -> pane.id().equals(wanted))
                 .findFirst()
-                .orElseThrow(() -> new ObjectDoesNotExistException(
+                .orElseThrow(() -> new TargetGoneException(
                         "no pane " + id + " on this server; call list_panes for the " + panes.size() + " that exist"));
     }
 
@@ -53,7 +54,7 @@ final class Targets {
         return windows.stream()
                 .filter(window -> window.id().equals(wanted))
                 .findFirst()
-                .orElseThrow(() -> new ObjectDoesNotExistException("no window " + id
+                .orElseThrow(() -> new TargetGoneException("no window " + id
                         + " on this server; call list_windows for the " + windows.size() + " that exist"));
     }
 
@@ -62,8 +63,24 @@ final class Targets {
         return sessions.stream()
                 .filter(Session_.name().is(name))
                 .findFirst()
-                .orElseThrow(() -> new ObjectDoesNotExistException("no session named '" + name + "'; this server has "
+                .orElseThrow(() -> new TargetGoneException("no session named '" + name + "'; this server has "
                         + sessions.stream().map(Session::name).toList()));
+    }
+
+    /** The session a call names by {@code session_id} or by {@code session_name}, or empty for neither. */
+    static Optional<Session> session(Call call) {
+        Optional<String> id = call.maybe("session_id");
+        Optional<String> name = call.maybe("session_name");
+        if (id.isPresent() && name.isPresent()) {
+            throw new IllegalArgumentException("pass session_id or session_name, not both");
+        }
+        return id.map(value -> sessionById(call.server(), value))
+                .or(() -> name.map(value -> sessionNamed(call.server(), value)));
+    }
+
+    /** A session scope's target: an ID such as {@code $1}, as tmux reads one, or else an exact name. */
+    static Session sessionByIdOrName(Server server, String target) {
+        return target.matches("\\$[0-9]+") ? sessionById(server, target) : sessionNamed(server, target);
     }
 
     static Session sessionById(Server server, String id) {
@@ -72,7 +89,7 @@ final class Targets {
         return sessions.stream()
                 .filter(session -> session.id().equals(wanted))
                 .findFirst()
-                .orElseThrow(() -> new ObjectDoesNotExistException("no session " + id
+                .orElseThrow(() -> new TargetGoneException("no session " + id
                         + " on this server; call list_sessions for the " + sessions.size() + " that exist"));
     }
 

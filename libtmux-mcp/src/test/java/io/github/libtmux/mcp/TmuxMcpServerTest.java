@@ -174,6 +174,78 @@ final class TmuxMcpServerTest {
         assertEquals(true, result.path("isError").asBoolean());
         String message = result.path("content").get(0).path("text").asText();
         assertTrue(message.contains("Check that the MCP process selected the socket you intended"), message);
+        assertTrue(
+                result.path("structuredContent").isMissingNode(), "an error result must not carry structuredContent");
+        var meta = result.path("_meta");
+        assertEquals("SERVER_UNAVAILABLE", meta.path("error_code").asText());
+        assertEquals(false, meta.path("retryable").asBoolean());
+        assertEquals(message, meta.path("message").asText());
+    }
+
+    /** A bug the tool did not anticipate still answers in the tool's error envelope, naming the tool. */
+    @Test
+    void anUnexpectedFailureStillAnswersAsAToolError() throws Exception {
+        java.util.concurrent.atomic.AtomicBoolean armed = new java.util.concurrent.atomic.AtomicBoolean();
+        TmuxTransport broken = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                if (armed.get()) {
+                    throw new UnsupportedOperationException("a transport defect");
+                }
+                return new CommandResult(1, List.of(), List.of("no server running"));
+            }
+
+            @Override
+            public void close() {}
+        };
+        ToolSurface surface =
+                ToolSurface.resolve(Map.of(ToolSurface.TOOLSETS_ENV, "", ToolSurface.TOOLS_ENV, "list_sessions"));
+        WireOutput output = new WireOutput();
+
+        try (Server brokenServer = Server.using(ServerConfig.builder().build(), broken);
+                PipedInputStream input = new PipedInputStream();
+                PipedOutputStream client = new PipedOutputStream(input)) {
+            McpSyncServer mcp = TmuxMcpServer.overStdio(brokenServer, input, output, surface, () -> {});
+            try {
+                client.write(initialize());
+                client.flush();
+                assertTrue(output.first.await(3, TimeUnit.SECONDS), "initialization did not answer");
+
+                client.write("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
+                        .getBytes(StandardCharsets.UTF_8));
+                armed.set(true);
+                client.write((Answers.JSON.writeValueAsString(Map.of(
+                                        "jsonrpc",
+                                        "2.0",
+                                        "id",
+                                        "unexpected-failure",
+                                        "method",
+                                        "tools/call",
+                                        "params",
+                                        Map.of("name", "list_sessions", "arguments", Map.of())))
+                                + "\n")
+                        .getBytes(StandardCharsets.UTF_8));
+                client.flush();
+                assertTrue(output.second.await(5, TimeUnit.SECONDS), "list_sessions did not answer");
+            } finally {
+                mcp.close();
+            }
+        }
+
+        String response = output.lines().stream()
+                .filter(line -> line.contains("unexpected-failure"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("list_sessions response is absent"));
+        var result = Answers.JSON.readTree(response).path("result");
+        assertEquals(true, result.path("isError").asBoolean(), response);
+        String message = result.path("content").get(0).path("text").asText();
+        assertTrue(message.contains("list_sessions"), message);
+        assertTrue(message.contains("a transport defect"), message);
+        assertTrue(
+                result.path("structuredContent").isMissingNode(), "an error result must not carry structuredContent");
+        var meta = result.path("_meta");
+        assertEquals("INTERNAL_ERROR", meta.path("error_code").asText());
+        assertEquals(false, meta.path("retryable").asBoolean());
     }
 
     @Test

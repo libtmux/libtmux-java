@@ -1,13 +1,30 @@
 package io.github.libtmux;
 
 import io.github.libtmux.batch.Batch;
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
+import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.exception.CardinalityException;
+import io.github.libtmux.exception.CommandRejectedException;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerClosedException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.internal.CommandStrings;
+import io.github.libtmux.internal.ErrorText;
+import io.github.libtmux.query.FilterExpr;
+import io.github.libtmux.query.TmuxFilters;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.DispatchOutcome;
+import io.github.libtmux.transport.OperationObserver;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
 import java.nio.file.Path;
@@ -24,6 +41,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -57,7 +75,7 @@ public final class Server implements AutoCloseable {
     private final boolean owned;
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    private final ServerIdentity identity;
+    private final IncarnationFence fence;
     private final SnapshotCapture capture;
 
     /**
@@ -75,7 +93,7 @@ public final class Server implements AutoCloseable {
         this.config = config;
         this.transport = transport;
         this.owned = owned;
-        this.identity = ServerIdentity.of(transport.realm(), config.endpoint());
+        this.fence = new IncarnationFence(this, ServerIdentity.of(transport.realm(), config.endpoint()));
         this.capture = new SnapshotCapture(this);
         this.echo = echo;
     }
@@ -83,6 +101,11 @@ public final class Server implements AutoCloseable {
     /** What this library last typed into each of this server's panes. */
     PaneEcho echo() {
         return echo;
+    }
+
+    /** How this server's own hierarchy is read back, for helpers that need one listing directly. */
+    SnapshotCapture capture() {
+        return capture;
     }
 
     /**
@@ -97,6 +120,7 @@ public final class Server implements AutoCloseable {
      * delimiter, so {@link #hasSession} and {@link #killSession} resolve the id by comparing names
      * instead of building one. {@link Session#name()} reports what tmux settled on.
      */
+    @Operation(Kind.MUTATION)
     public Session newSession(String name) {
         return newSession(SessionSpec.builder().named(name).build());
     }
@@ -109,8 +133,9 @@ public final class Server implements AutoCloseable {
      * }</pre>
      *
      * @param configure receives a builder holding tmux's defaults
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
+    @Operation(Kind.MUTATION)
     public Session newSession(Consumer<SessionSpec.Builder> configure) {
         SessionSpec.Builder builder = SessionSpec.builder();
         configure.accept(builder);
@@ -120,43 +145,31 @@ public final class Server implements AutoCloseable {
     /**
      * Creates a session according to a spec, which may be reused across servers.
      *
-     * @throws UnsupportedTmuxVersionException if the spec asks for something this server does not have
+     * @throws UnsupportedFeatureException if the spec asks for something this server does not have
      */
+    @Operation(Kind.MUTATION)
     public Session newSession(SessionSpec spec) {
-        CommandResult result = run(spec.argv("#{session_id}", this::versionForCreation));
+        CommandResult result = run(spec.argv("#{session_id}", () -> SessionCreation.versionForCreation(this)));
         List<String> reported = result.stdout();
         if (reported.isEmpty()) {
-            throw new LibTmuxException(sessionCreationFailureMessage(result));
+            throw new MalformedResponseException(SessionCreation.failureMessage(config, result));
         }
         SessionId created = new SessionId(reported.get(0));
         ServerSnapshot fresh = snapshot();
         return fresh.session(created)
                 .map(session -> new Session(this, fresh, session))
-                .orElseThrow(() -> new ObjectDoesNotExistException("the session just created is already gone"));
-    }
-
-    /**
-     * tmux exits 0 even when nothing was created: an explicit {@code -S} under a directory that does
-     * not exist prints its own {@code error creating ...} and still returns success, and a binary
-     * that is not tmux at all can exit 0 with nothing on stdout the same way {@code run} cannot tell
-     * apart from a real session id. Reads tmux's own words when it spoke and names the configured
-     * binary when it did not, rather than letting an empty list reach {@code SessionId} and throw
-     * an unchecked collection exception with neither in it.
-     */
-    private String sessionCreationFailureMessage(CommandResult result) {
-        if (!result.stderr().isEmpty()) {
-            return "tmux new-session failed: " + String.join("; ", result.stderr());
-        }
-        return config.binary() + " exited 0 and reported no session id; is it tmux?";
+                .orElseThrow(() -> new TargetGoneException("the session just created is already gone"));
     }
 
     /**
      * Whether a session with this name exists.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      */
+    @Operation(Kind.READ)
     public boolean hasSession(String name) {
-        return sessionNamed(name).isPresent();
+        Objects.requireNonNull(name, "name");
+        return SessionLookup.named(this, name).isPresent();
     }
 
     /**
@@ -167,23 +180,12 @@ public final class Server implements AutoCloseable {
      *
      * @throws LibTmuxException if no session carries the name
      */
+    @Operation(Kind.MUTATION)
     public void killSession(String name) {
         Objects.requireNonNull(name, "name");
-        Session session =
-                sessionNamed(name).orElseThrow(() -> new ObjectDoesNotExistException("no session is named " + name));
-        run(List.of("kill-session", "-t", session.id().value()));
-    }
-
-    /**
-     * The session whose name matches exactly, found by listing and comparing in this process rather
-     * than through {@code -t}: tmux's own exact-match prefix is applied to the string after a target
-     * is split on {@code :} and {@code .}, so a name holding either defeats it, and {@link #newSession}
-     * already resolves this same way for the session it just made.
-     */
-    private Optional<Session> sessionNamed(String name) {
-        return sessions().stream()
-                .filter(session -> session.name().equals(name))
-                .findFirst();
+        SessionId id =
+                SessionLookup.named(this, name).orElseThrow(() -> new TargetGoneException("no session named " + name));
+        run(List.of("kill-session", "-t", id.value()));
     }
 
     /**
@@ -191,6 +193,7 @@ public final class Server implements AutoCloseable {
      *
      * <p>Returns false when tmux refuses the probe. Transport failures still throw.
      */
+    @Operation(Kind.READ)
     public boolean isAlive() {
         return isAlive(config.defaultTimeout());
     }
@@ -204,6 +207,7 @@ public final class Server implements AutoCloseable {
      *
      * @param timeout how long to wait for an answer before treating the server as unreachable
      */
+    @Operation(Kind.READ)
     public boolean isAlive(Duration timeout) {
         return cmd(List.of("display-message", "-p", "#{pid}"), timeout).succeeded();
     }
@@ -211,10 +215,11 @@ public final class Server implements AutoCloseable {
     /**
      * Requires a running tmux daemon that answers the liveness probe.
      *
-     * @throws ServerNotRunningException if no daemon is there to answer
+     * @throws ServerUnavailableException if no daemon is there to answer
      * @throws LibTmuxException if one is, and could not be reached — a socket this user cannot
      *     open, or a binary that is not tmux, which starting a server would not fix
      */
+    @Operation(Kind.READ)
     public void requireAlive() {
         CommandResult result = cmd(List.of("display-message", "-p", "#{pid}"), config.defaultTimeout());
         if (result.succeeded()) {
@@ -236,23 +241,24 @@ public final class Server implements AutoCloseable {
      * stop there.
      */
     LibTmuxException failed(String command, CommandResult result) {
-        return failed(command, "exit " + result.exitCode(), result.stderr());
+        return failed(command, result.exitCode(), "exit " + result.exitCode(), result.stderr());
+    }
+
+    /** As {@link #failed(String, CommandResult)}, for an outcome no exit code describes. */
+    LibTmuxException failed(String command, String status, List<String> stderr) {
+        return failed(command, -1, status, stderr);
     }
 
     /**
-     * As {@link #failed(String, CommandResult)}, for an outcome no exit code describes.
-     *
-     * <p>Both end here so that "no daemon" is decided once. It used to be decided at each site that
-     * cared, which is why seven reads and every mutation reported a missing server as an ordinary
-     * failure while the fifteen reads that had the check reported it as {@link
-     * ServerNotRunningException} — the one thing {@code MIGRATION.md} tells a caller it can catch
+     * Both command failures end here, so "no daemon" is decided once and reported as {@link
+     * ServerUnavailableException} — the one thing {@code MIGRATION.md} tells a caller it can catch
      * instead of matching on a message.
      */
-    LibTmuxException failed(String command, String status, List<String> stderr) {
+    private LibTmuxException failed(String command, int exitCode, String status, List<String> stderr) {
         String message = failure(command, config.binary(), status, stderr);
         return stderr.stream().anyMatch(Server::serverAbsent)
-                ? new ServerNotRunningException(message)
-                : new LibTmuxException(message);
+                ? new ServerUnavailableException(message, command, exitCode, stderr)
+                : new CommandRejectedException(message, command, exitCode, stderr);
     }
 
     /**
@@ -260,11 +266,9 @@ public final class Server implements AutoCloseable {
      *     for it — a batch reports which of its commands never ran, which no single exit code says
      */
     static String failure(String command, String binary, String status, List<String> stderr) {
-        String reported = stderr.stream().filter(line -> !line.isBlank()).collect(Collectors.joining("; "));
+        String reported = ErrorText.suffix(stderr);
         return "tmux " + command + " failed (" + status + ")"
-                + (reported.isEmpty()
-                        ? "; it printed no error, so check that " + binary + " is tmux"
-                        : ": " + reported);
+                + (reported.isEmpty() ? "; it printed no error, so check that " + binary + " is tmux" : reported);
     }
 
     /** Whether a failed command's stderr says the daemon itself is gone, rather than refusing the request. */
@@ -287,6 +291,7 @@ public final class Server implements AutoCloseable {
      * postcondition is checked rather than the wording, which has changed before and says nothing
      * a second look cannot answer better.
      */
+    @Operation(Kind.MUTATION)
     public void killServer() {
         killServer(config.defaultTimeout());
     }
@@ -299,12 +304,73 @@ public final class Server implements AutoCloseable {
      *
      * @param timeout how long to allow for each of the two commands
      */
+    @Operation(Kind.MUTATION)
     public void killServer(Duration timeout) {
-        CommandResult result = cmd(List.of("kill-server"), timeout);
-        if (result.succeeded() || !isAlive(timeout)) {
+        CommandResult result = transport.execute(
+                request(List.of(List.of("display-message", "-p", "#{pid}"), List.of("kill-server")), timeout, ""));
+        if (result.succeeded()) {
+            // Only a process transport runs tmux on this host; another transport's pid belongs to
+            // whatever it talks to.
+            if (transport instanceof ProcessTransport) {
+                awaitExit(result.stdout(), timeout);
+            }
             return;
         }
-        throw new LibTmuxException("could not kill the server: " + String.join("; ", result.stderr()));
+        if (!isAlive(timeout)) {
+            return;
+        }
+        throw new CommandRejectedException(
+                "could not kill the server" + ErrorText.suffix(result.stderr()),
+                "kill-server",
+                result.exitCode(),
+                result.stderr());
+    }
+
+    /**
+     * tmux answers {@code kill-server} before its daemon exits, and the daemon keeps its socket
+     * until every client has gone, so a server started straight afterwards could reach the dying
+     * one. Waits only for a process of this user that is tmux, or is already exiting.
+     */
+    private static void awaitExit(List<String> reported, Duration timeout) {
+        if (reported.size() != 1) {
+            return;
+        }
+        long pid;
+        try {
+            pid = Long.parseLong(reported.get(0).strip());
+        } catch (NumberFormatException notAPid) {
+            return;
+        }
+        // A daemon already exiting has no readable command and still has to be waited for; its
+        // user stays readable. Another user's process never has a readable command, so the user
+        // is what keeps an unrelated pid from being waited on.
+        Optional<String> me = ProcessHandle.current().info().user();
+        Optional<ProcessHandle> daemon = ProcessHandle.of(pid)
+                .filter(handle -> me.isPresent() && handle.info().user().equals(me))
+                .filter(handle -> handle.info()
+                        .command()
+                        .map(command -> command.contains("tmux"))
+                        .orElse(true));
+        if (daemon.isEmpty()) {
+            return;
+        }
+        try {
+            daemon.get().onExit().get(timeout.toNanos(), java.util.concurrent.TimeUnit.NANOSECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new DispatchException.Failed(
+                    "interrupted waiting for tmux server " + pid + " to exit", DispatchOutcome.COMPLETE, interrupted);
+        } catch (java.util.concurrent.TimeoutException late) {
+            throw new DispatchException.TimedOut(
+                    "tmux server " + pid + " was still running " + timeout + " after kill-server",
+                    DispatchOutcome.COMPLETE,
+                    late);
+        } catch (java.util.concurrent.ExecutionException unexpected) {
+            throw new DispatchException.Failed(
+                    "could not wait for tmux server " + pid + " to exit",
+                    DispatchOutcome.COMPLETE,
+                    unexpected.getCause());
+        }
     }
 
     /**
@@ -313,6 +379,7 @@ public final class Server implements AutoCloseable {
      * <p>Each operation gets its own outcome. tmux discards a group after the first failure, so a
      * single exit status cannot say which command failed or which never ran.
      */
+    @Operation(Kind.CAPTURED)
     public Batch batch() {
         return new Batch(commands -> transport.execute(request(commands, config.defaultTimeout(), "")));
     }
@@ -323,32 +390,10 @@ public final class Server implements AutoCloseable {
      * <p>tmux moves its own current target as a group runs, so a chain needs no round trip to learn
      * the id of a window or pane it just created.
      */
+    @Operation(Kind.CAPTURED)
     public CommandChain chain() {
-        return new CommandChain(batch(), this::versionForCreation);
+        return new CommandChain(batch(), () -> SessionCreation.versionForCreation(this));
     }
-
-    /**
-     * 3.2a answers "unknown command" for both of the prompt-history commands; {@code
-     * cmd-show-prompt-history.c} lands in tmux itself at tag 3.3, under CHANGES' "3.2a TO 3.3"
-     * section, not 3.3a. The matrix has no plain-3.3 lane, only 3.2a and 3.3a, so this floor is
-     * exercised against tmux's own history rather than a real 3.3 build.
-     *
-     * <p>Not what gates {@link #requirePromptHistory}: a whole command's presence is answerable by
-     * the daemon itself, through {@link #listCommands}, so the live answer decides it. This is kept
-     * only for the message a refusal reads, which names the release most callers will recognise.
-     */
-    private static final TmuxVersion PROMPT_HISTORY_SINCE = new TmuxVersion(3, 3, "");
-
-    /**
-     * tmux lost run-shell's output in 3.3a and found it again in 3.5 - confirmed against the matrix:
-     * {@code run-shell "echo hi"} without an attached client prints {@code hi} on 3.2a and 3.5, and
-     * only {@code no current client} on 3.3a and 3.4. Not probeable through {@link #listCommands}:
-     * {@code run-shell} exists on every one of those releases, and its args are unchanged across the
-     * gap, so a probe reading either would answer the same wrong way everywhere in the range.
-     */
-    private static final TmuxVersion SHELL_OUTPUT_LOST = new TmuxVersion(3, 3, "");
-
-    private static final TmuxVersion SHELL_OUTPUT_FOUND = new TmuxVersion(3, 5, "");
 
     /**
      * Expands a tmux format against the server, and answers with what it came to.
@@ -360,148 +405,54 @@ public final class Server implements AutoCloseable {
      * @return the expansion, whole when it spans lines and empty when the format expanded to
      *     nothing
      */
+    @Operation(Kind.READ)
     public String expand(String format) {
         Objects.requireNonNull(format, "format");
-        List<String> reported =
-                run(List.of("display-message", "-p", "--", format)).stdout();
-        return String.join("\n", reported);
+        return PrintedText.printed(run(List.of("display-message", "-p", "--", PrintedText.expansion(format)))
+                .stdout());
     }
 
     /**
-     * Runs a shell command through tmux, for its effect.
-     *
-     * <p>Nothing is claimed about what it printed — see {@link #runShellCapturing} for that, and for
-     * why the two are separate.
-     *
-     * @param command run by the user's shell, so it may redirect and pipe
-     *
-     * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
-     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
-     * mean it to be expanded.
+     * Runs one read with the server's version printed first in the same invocation, and answers
+     * with its output as tmux held the text, and without that version line. Line breaks at
+     * the end of the output are kept.
      */
-    public void runShell(String command) {
-        Objects.requireNonNull(command, "command");
-        run(List.of("run-shell", "--", command));
+    CommandResult printed(@Nullable ServerSnapshot snapshot, List<String> argv) {
+        List<List<String>> group = PrintedText.framed(argv);
+        CommandResult result = snapshot == null
+                ? transport.execute(request(group, config.defaultTimeout(), ""))
+                : fence.guarded(snapshot, CommandStrings.group(group));
+        return PrintedText.unwrap(result);
     }
 
-    /**
-     * Runs a shell command through tmux and answers with what it printed.
-     *
-     * <p>Separate from {@link #runShell} because tmux 3.3a and 3.4 run the command and then report
-     * nothing, on every attempt. A caller who wants the effect is fine there; a caller who wants the
-     * output would silently get none, so this one refuses rather than answering emptily.
-     *
-     * @throws UnsupportedTmuxVersionException on the releases that lose the output
-     *
-     * <p>tmux expands {@code #(...)} in this command before a shell sees it, and shell quoting does
-     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
-     * mean it to be expanded.
-     */
-    public List<String> runShellCapturing(String command) {
-        Objects.requireNonNull(command, "command");
-        TmuxVersion running = version();
-        if (running.atLeast(SHELL_OUTPUT_LOST) && !running.atLeast(SHELL_OUTPUT_FOUND)) {
-            throw new UnsupportedTmuxVersionException(
-                    "reading what run-shell printed is broken between tmux 3.3a and 3.4, and this server runs "
-                            + running);
-        }
-        return run(List.of("run-shell", "--", command)).stdout();
+    /** Shell commands run by tmux, and tmux commands chosen by a shell exit status. */
+    @Operation(Kind.CAPTURED)
+    public Shell shell() {
+        return new Shell(this);
     }
 
-    /** Every command this tmux knows, as it prints them. */
-    public List<String> listCommands() {
-        return withoutStartingServer("list-commands").stdout();
-    }
-
-    /**
-     * Runs one tmux command or another, according to whether a shell command succeeds.
-     *
-     * <p>The choosing happens inside tmux rather than here, which is the point: the condition and
-     * both outcomes go out as one request, so nothing can change between asking and acting.
-     *
-     *
-     * <p>tmux expands {@code #(...)} in the condition before a shell sees it, and shell quoting does
-     * not prevent that. Pass any interpolated value through {@link TmuxFormats#literal} unless you
-     * mean it to be expanded.
-     * @param condition a shell command, judged by its exit status
-     * @param whenTrue the tmux command to run when the condition succeeds
-     */
-    public void ifShell(String condition, String whenTrue) {
-        Objects.requireNonNull(condition, "condition");
-        Objects.requireNonNull(whenTrue, "whenTrue");
-        run(List.of("if-shell", "--", condition, whenTrue));
-    }
-
-    /**
-     * Runs one tmux command or another, according to whether a shell command succeeds.
-     *
-     * @param condition a shell command, judged by its exit status
-     * @param whenTrue the tmux command to run when the condition succeeds
-     * @param whenFalse the tmux command to run when it does not
-     */
-    public void ifShell(String condition, String whenTrue, String whenFalse) {
-        Objects.requireNonNull(condition, "condition");
-        Objects.requireNonNull(whenTrue, "whenTrue");
-        Objects.requireNonNull(whenFalse, "whenFalse");
-        run(List.of("if-shell", "--", condition, whenTrue, whenFalse));
+    /** The commands this tmux knows. */
+    @Operation(Kind.CAPTURED)
+    public Commands commands() {
+        return new Commands(this);
     }
 
     /** Locks every client attached to this server. */
+    @Operation(Kind.MUTATION)
     public void lock() {
         run(List.of("lock-server"));
     }
 
-    /**
-     * The server's own message log, newest last.
-     *
-     * <p>Deliberately not version-gated, though tmux before 3.6 answers {@code no current client}
-     * when nothing is attached. A gate would refuse the case that works: with a client attached the
-     * log is readable on every supported release, and only a detached 3.2a through 3.5 cannot answer.
-     * The failure tmux reports is accurate and says exactly what is missing, so it is left to reach
-     * the caller.
-     *
-     * @throws LibTmuxException before 3.6 when no client is attached
-     */
-    public List<String> messages() {
-        return run(List.of("show-messages")).stdout();
+    /** The server's message log. */
+    @Operation(Kind.CAPTURED)
+    public MessageLog messageLog() {
+        return new MessageLog(this);
     }
 
-    /**
-     * What has been typed at tmux's command prompt, oldest first.
-     *
-     * @throws UnsupportedTmuxVersionException if this tmux has no such command at all
-     */
-    public List<String> promptHistory() {
-        requirePromptHistory();
-        return run(List.of("show-prompt-history")).stdout();
-    }
-
-    /**
-     * Forgets what has been typed at tmux's command prompt.
-     *
-     * @throws UnsupportedTmuxVersionException if this tmux has no such command at all
-     */
-    public void clearPromptHistory() {
-        requirePromptHistory();
-        run(List.of("clear-prompt-history"));
-    }
-
-    /**
-     * Whether the command exists is answerable by the daemon itself, so it is asked rather than
-     * inferred from a version: {@link #listCommands} either names {@code show-prompt-history} or it
-     * does not, on whatever this tmux turns out to be.
-     */
-    private void requirePromptHistory() {
-        if (listCommands().stream().anyMatch(line -> commandNamed(line, "show-prompt-history"))) {
-            return;
-        }
-        throw new UnsupportedTmuxVersionException("the command prompt's history", PROMPT_HISTORY_SINCE, version());
-    }
-
-    /** Whether a {@link #listCommands} line names this command - not one of its aliases. */
-    private static boolean commandNamed(String line, String name) {
-        int space = line.indexOf(' ');
-        return (space < 0 ? line : line.substring(0, space)).equals(name);
+    /** The command prompt's history. */
+    @Operation(Kind.CAPTURED)
+    public Prompt prompt() {
+        return new Prompt(this);
     }
 
     /**
@@ -513,10 +464,6 @@ public final class Server implements AutoCloseable {
      * {@code -N} says not to, on every supported release, and tmux then reports the absent server
      * the way every other read does.
      */
-    private CommandResult withoutStartingServer(String command) {
-        return withoutStartingServer(List.of(command));
-    }
-
     CommandResult withoutStartingServer(List<String> command) {
         List<String> argv = new ArrayList<>(config.endpointCommand());
         argv.add(1, "-N");
@@ -529,11 +476,14 @@ public final class Server implements AutoCloseable {
     }
 
     /** One of this server's wait-for channels, which is where a signal is sent and waited for. */
+    @Operation(Kind.CAPTURED)
     public Channel channel(String name) {
         return new Channel(this, name);
     }
 
     /** Reads only validated tmux variable names, never caller-authored format syntax. */
+    @ReadOnly
+    @Operation(Kind.READ)
     public Map<String, String> variables(List<String> names) {
         return variables(names, this::expand);
     }
@@ -546,7 +496,7 @@ public final class Server implements AutoCloseable {
         List<RowFormat.Row> rows =
                 format.rows(List.of(expand.apply(format.template()).split("\n", -1)));
         if (rows.size() != 1) {
-            throw new LibTmuxException("tmux answered " + rows.size() + " rows for one set of variables");
+            throw new MalformedResponseException("tmux answered " + rows.size() + " rows for one set of variables");
         }
         Map<String, String> values = new LinkedHashMap<>();
         for (String name : names) {
@@ -570,16 +520,19 @@ public final class Server implements AutoCloseable {
      * @param names tmux format variable names, at most 32
      * @return each pane's values keyed by the names asked for, in tmux's pane order
      * @throws IllegalArgumentException if a name is not a tmux variable name
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the listing otherwise fails
      */
+    @ReadOnly
+    @Operation(Kind.READ)
     public Map<PaneId, Map<String, String>> paneFields(List<String> names) {
         List<String> fields = new ArrayList<>(List.of("pane_id"));
         fields.addAll(requireVariableNames(names));
         RowFormat format = RowFormat.of(fields.toArray(String[]::new));
         Map<PaneId, Map<String, String>> panes = new LinkedHashMap<>();
         for (RowFormat.Row row : format.rows(
-                run(List.of("list-panes", "-a", "-F", format.template())).stdout())) {
+                PrintedText.printedRows(run(List.of("list-panes", "-a", "-F", PrintedText.versioned(format.template())))
+                        .stdout()))) {
             Map<String, String> values = new LinkedHashMap<>();
             for (String name : names) {
                 values.put(name, row.text(name));
@@ -606,11 +559,6 @@ public final class Server implements AutoCloseable {
         return names;
     }
 
-    /** Enables or disables mouse handling for sessions on this server. */
-    public void setMouseEnabled(boolean enabled) {
-        globalOptions().set("mouse", enabled ? "on" : "off");
-    }
-
     WakeReason awaitChannel(String channel, Duration timeout, boolean reserveSignalCapacity)
             throws InterruptedException {
         try {
@@ -620,7 +568,7 @@ public final class Server implements AutoCloseable {
             } else {
                 transport.execute(request);
             }
-        } catch (io.github.libtmux.transport.TmuxTimeoutException e) {
+        } catch (DispatchException.TimedOut e) {
             if (Thread.interrupted()) {
                 throw cancelled(channel, e);
             }
@@ -629,7 +577,7 @@ public final class Server implements AutoCloseable {
             }
             // The transport killed the waiting client at the deadline; nothing signalled it.
             return isAlive() ? WakeReason.TIMED_OUT : WakeReason.SERVER_GONE;
-        } catch (io.github.libtmux.transport.TmuxTransportException e) {
+        } catch (DispatchException e) {
             if (Thread.interrupted()) {
                 throw cancelled(channel, e);
             }
@@ -653,11 +601,13 @@ public final class Server implements AutoCloseable {
     }
 
     /** The server's key bindings: {@code prefix} when binding, every table when listing. */
+    @Operation(Kind.CAPTURED)
     public Keys keys() {
         return new Keys(this, null);
     }
 
     /** The server's paste buffers, which every session shares. */
+    @Operation(Kind.CAPTURED)
     public Buffers buffers() {
         return new Buffers(this);
     }
@@ -667,16 +617,19 @@ public final class Server implements AutoCloseable {
      *
      * @throws LibTmuxException if tmux could not read or run it
      */
+    @Operation(Kind.MUTATION)
     public void sourceFile(Path file) {
         run(List.of("source-file", "--", file.toString()));
     }
 
     /** The server-wide options, the ones tmux keeps once per server. */
+    @Operation(Kind.CAPTURED)
     public Options options() {
         return Options.server(this);
     }
 
     /** The global session options every session inherits unless it sets its own. */
+    @Operation(Kind.CAPTURED)
     public Options globalOptions() {
         return Options.global(this);
     }
@@ -687,11 +640,13 @@ public final class Server implements AutoCloseable {
      * <p>Set here to change what a pane opened later sees — a refreshed {@code SSH_AUTH_SOCK} after
      * reconnecting, say. A pane already running has its own copy and is not affected.
      */
+    @Operation(Kind.CAPTURED)
     public Environment environment() {
         return Environment.global(this);
     }
 
     /** The global hooks every session inherits. */
+    @Operation(Kind.CAPTURED)
     public Hooks hooks() {
         return Hooks.global(this);
     }
@@ -702,97 +657,48 @@ public final class Server implements AutoCloseable {
      * <p>Asked of the running server rather than of the binary, because the server may have been
      * started by a different build than the one this client is invoking.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      */
+    @Operation(Kind.READ)
     public TmuxVersion version() {
         return capture.process()
                 .map(SnapshotCapture.ServerProcess::version)
-                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
+                .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
     }
 
     TmuxVersion version(ServerSnapshot snapshot) {
         return snapshot.serverVersion().orElseGet(this::version);
     }
 
-    /**
-     * The version to gate a session-creation spec against.
-     *
-     * <p>{@code new-session} is the one command that may be the first thing said to a fresh socket,
-     * so asking {@link #version()} — which needs an already-answering daemon — fails exactly when a
-     * spec depends on the answer and nothing has started the daemon yet. Preferring the running
-     * daemon when there is one keeps {@link #version()}'s own reasoning: a server already up may
-     * have been started by a different build than this client is invoking. Only when nothing answers
-     * at all does this fall back to {@link #binaryVersion}, which asks the executable directly and
-     * needs no server.
-     *
-     * <p>Reads {@link SnapshotCapture#processForCreation()} directly rather than going through
-     * {@link #version()}: a daemon this client is too old to talk to fails the identity probe the
-     * same way one that was never started does ("server exited unexpectedly", confirmed against the
-     * matrix), and {@link #version()}'s own {@link ServerNotRunningException} does not keep that
-     * distinction once raised. Falling back to {@code binaryVersion} for that case would report the
-     * configured binary's own version as though it were the daemon's — exactly the guarantee this
-     * method exists to keep.
-     */
-    TmuxVersion versionForCreation() {
-        return capture.processForCreation()
-                .map(SnapshotCapture.ServerProcess::version)
-                .orElseGet(this::binaryVersion);
-    }
-
-    /**
-     * Which tmux the configured binary is, without asking any server.
-     *
-     * <p>{@code -V} is handled before tmux touches a socket at all, so it answers even against an
-     * endpoint nothing is listening on yet — confirmed against every matrix release, with or without
-     * a {@code -f} pointed at a config file that does not exist.
-     *
-     * @throws LibTmuxException if the binary could not be run or did not report a version
-     */
-    private TmuxVersion binaryVersion() {
-        CommandResult result = cmd(List.of("-V"));
-        if (!result.succeeded() || result.stdout().isEmpty()) {
-            throw new LibTmuxException("tmux -V did not report a version: " + String.join("; ", result.stderr()));
-        }
-        String reported = result.stdout().get(0);
-        int space = reported.indexOf(' ');
-        if (space < 0) {
-            throw new LibTmuxException("tmux -V reported an unexpected line: " + reported);
-        }
-        return TmuxVersion.parse(reported.substring(space + 1));
-    }
-
     /** Which server this is. Every handle taken from it is scoped by this. */
+    @Operation(Kind.CAPTURED)
     public ServerIdentity identity() {
-        return identity;
+        return fence.identity();
     }
 
     void requireSameServer(Server other) {
-        Objects.requireNonNull(other, "other");
-        if (!identity.equals(other.identity)) {
-            throw new IllegalArgumentException("handles belong to different tmux servers");
-        }
+        fence.requireSameServer(other);
     }
 
     void requireSameIncarnation(ServerSnapshot snapshot, Server other, ServerSnapshot otherSnapshot) {
-        requireSameServer(other);
-        if (!identity(snapshot).equals(other.identity(otherSnapshot))) {
-            throw new IllegalArgumentException("handles belong to different tmux server incarnations");
-        }
+        fence.requireSameIncarnation(snapshot, other, otherSnapshot);
     }
 
     ServerIdentity identity(ServerSnapshot snapshot) {
-        return snapshot.serverPid().isPresent()
-                ? identity.at(snapshot.serverPid().orElseThrow())
-                : identity;
+        return fence.identity(snapshot);
     }
 
     /** A server over a transport it owns and closes. */
+    @Operation(Kind.LIFECYCLE)
     public static Server open(ServerConfig config) {
         Objects.requireNonNull(config, "config");
-        return new Server(config, new ProcessTransport(), true);
+        ProcessTransport transport = new ProcessTransport(config.maxConcurrentCommands());
+        transport.observe(config.observer());
+        return new Server(config, transport, true);
     }
 
     /** A server over a transport the caller owns. Closing this server never closes it. */
+    @Operation(Kind.LIFECYCLE)
     public static Server using(ServerConfig config, TmuxTransport transport) {
         return using(config, transport, new PaneEcho());
     }
@@ -801,6 +707,9 @@ public final class Server implements AutoCloseable {
     static Server using(ServerConfig config, TmuxTransport transport, PaneEcho echo) {
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(transport, "transport");
+        if (!config.observer().equals(OperationObserver.NONE)) {
+            transport.observe(config.observer());
+        }
         return new Server(config, transport, false, echo);
     }
 
@@ -821,6 +730,7 @@ public final class Server implements AutoCloseable {
      *
      * @throws IllegalArgumentException if the timeout is not positive
      */
+    @Operation(Kind.LIFECYCLE)
     public Server within(Duration timeout) {
         Objects.requireNonNull(timeout, "timeout");
         if (timeout.isZero() || timeout.isNegative()) {
@@ -830,11 +740,13 @@ public final class Server implements AutoCloseable {
     }
 
     /** A builder holding the documented defaults. */
+    @Operation(Kind.LIFECYCLE)
     public static Builder builder() {
         return new Builder(ServerConfig.builder(), null);
     }
 
     /** How this server was configured. */
+    @Operation(Kind.CAPTURED)
     public ServerConfig config() {
         return config;
     }
@@ -845,21 +757,25 @@ public final class Server implements AutoCloseable {
      * @param argv the tmux command and its arguments, each already a separate element
      * @return the result, in which a nonzero exit is data rather than a failure
      */
+    @Operation(Kind.MUTATION)
     public CommandResult cmd(String... argv) {
         return cmd(List.of(argv), config.defaultTimeout());
     }
 
     /** Runs one tmux command against this server. */
+    @Operation(Kind.MUTATION)
     public CommandResult cmd(List<String> argv) {
         return cmd(argv, config.defaultTimeout());
     }
 
     /** Runs one tmux command against this server, overriding the configured deadline. */
+    @Operation(Kind.MUTATION)
     public CommandResult cmd(List<String> argv, Duration timeout) {
         return cmd(argv, timeout, "");
     }
 
-    private CommandResult cmd(List<String> argv, Duration timeout, String input) {
+    /** Package-private so {@link IncarnationFence} can send its guard with the caller's input. */
+    CommandResult cmd(List<String> argv, Duration timeout, String input) {
         return transport.execute(request(List.of(argv), timeout, input));
     }
 
@@ -874,8 +790,68 @@ public final class Server implements AutoCloseable {
 
     private void requireOpen() {
         if (closed.get()) {
-            throw new IllegalStateException("server is closed");
+            throw new ServerClosedException("server is closed", DispatchOutcome.NOT_DISPATCHED);
         }
+    }
+
+    /**
+     * Attaches a control client to this session's server, and only to the process this capture
+     * named.
+     *
+     * <p>The client is started by this server's transport. A transport that cannot start processes
+     * fails here rather than attaching on the local machine. The process id is checked before the
+     * client starts and again on the client itself; a server that has taken over the socket is
+     * detached before this client changes it.
+     *
+     * @param session a session captured from this server
+     * @throws TargetGoneException if that process is no longer the one on this socket
+     * @throws IllegalArgumentException if the session belongs to another server
+     * @throws IllegalStateException if this server is closed, or its transport starts no control client
+     */
+    @Operation(Kind.LIFECYCLE)
+    public ControlClient control(Session session) {
+        return control(session, config.defaultTimeout());
+    }
+
+    /**
+     * As {@link #control(Session)}, with the caller's deadline for the attach and the identity read.
+     *
+     * @param timeout how long to wait for the client to become ready
+     */
+    @Operation(Kind.LIFECYCLE)
+    public ControlClient control(Session session, Duration timeout) {
+        Objects.requireNonNull(session, "session");
+        Objects.requireNonNull(timeout, "timeout");
+        if (!session.server().identity().equals(identity())) {
+            throw new IllegalArgumentException("session belongs to another server");
+        }
+        requireOpen();
+        ServerSnapshot captured = session.snapshot();
+        long pid = captured.serverPid()
+                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
+        CommandResult live = fence.guarded(captured, "display-message -p '#{pid} #{version}'", "");
+        if (!live.succeeded() || live.stdout().size() != 1) {
+            throw failed("display-message", live);
+        }
+        String reported = live.stdout().get(0);
+        int space = reported.indexOf(' ');
+        if (space < 1) {
+            throw new MalformedResponseException("tmux reported a malformed server identity");
+        }
+        long seen;
+        try {
+            seen = Long.parseLong(reported.substring(0, space));
+        } catch (NumberFormatException e) {
+            throw new MalformedResponseException("tmux reported a malformed server pid");
+        }
+        if (seen != pid) {
+            throw new TargetGoneException("the tmux server this handle belonged to has ended");
+        }
+        ControlCarrier carrier = transport
+                .controlCarrier()
+                .orElseThrow(() -> new IllegalStateException("this transport does not start control clients"));
+        return ControlClient.attach(
+                carrier, config, session.id(), pid, captured.serverStartTime(), reported.substring(space + 1), timeout);
     }
 
     /**
@@ -888,21 +864,45 @@ public final class Server implements AutoCloseable {
      * <p>A failed read throws, including when no daemon is running. An empty graph means a live
      * server successfully reported no sessions.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if a listing otherwise fails or the listings cannot form one valid
      *     snapshot
      */
+    @Operation(Kind.READ)
     public ServerSnapshot snapshot() {
         requireOpen();
-        try {
-            return capture.attempt()
-                    .or(capture::attempt)
-                    .orElseThrow(() -> new LibTmuxException("tmux server changed during snapshot capture"));
-        } catch (LibTmuxException e) {
-            throw e;
-        } catch (RuntimeException e) {
-            throw new LibTmuxException("could not hydrate tmux snapshot: " + e.getMessage(), e);
-        }
+        return capture.attempt()
+                .or(capture::attempt)
+                .orElseThrow(() ->
+                        new TargetGoneException("the tmux server was replaced twice while one snapshot was captured"));
+    }
+
+    private ServerSnapshot captured(FilterExpr<?> expression, String... listing) {
+        return TmuxFilters.format(expression)
+                .map(format -> capture.sessionsWhere(format, listing))
+                .orElseGet(this::snapshot);
+    }
+
+    /**
+     * The sessions this expression matches, captured now.
+     *
+     * <p>A safe expression is sent as {@code list-sessions -f}. The sessions that come back are still
+     * tested with the expression. A relation, or an expression tmux cannot apply, reads the whole server and
+     * filters that capture; a filtered read that finds nothing is the answer.
+     *
+     * @return an immutable list in tmux order
+     * @throws ServerUnavailableException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
+     */
+    @ReadOnly
+    @Operation(Kind.READ)
+    public List<Session> sessions(FilterExpr<Session> expression) {
+        Objects.requireNonNull(expression, "expression");
+        ServerSnapshot captured = captured(expression, "list-sessions");
+        return captured.sessions().stream()
+                .map(session -> new Session(this, captured, session))
+                .filter(expression)
+                .toList();
     }
 
     /**
@@ -910,9 +910,11 @@ public final class Server implements AutoCloseable {
      *
      * <p>Returns an immutable list in tmux order. Empty means a live server reported no sessions.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
+    @Operation(Kind.READ)
     public List<Session> sessions() {
         ServerSnapshot captured = snapshot();
         return captured.sessions().stream()
@@ -924,9 +926,11 @@ public final class Server implements AutoCloseable {
      * Captures every winlink, preserving each session and index placement.
      *
      * @return an immutable list in tmux order
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
+    @Operation(Kind.READ)
     public List<Window> windows() {
         ServerSnapshot captured = snapshot();
         return captured.windows().stream()
@@ -935,12 +939,36 @@ public final class Server implements AutoCloseable {
     }
 
     /**
+     * The winlinks this expression matches, captured now.
+     *
+     * <p>A safe expression is sent as {@code list-windows -f}. The winlinks that come back are still
+     * tested with the expression. A relation, or an expression tmux cannot apply, reads the whole server and
+     * filters that capture; a filtered read that finds nothing is the answer.
+     *
+     * @return an immutable list in tmux order
+     * @throws ServerUnavailableException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
+     */
+    @ReadOnly
+    @Operation(Kind.READ)
+    public List<Window> windows(FilterExpr<Window> expression) {
+        Objects.requireNonNull(expression, "expression");
+        ServerSnapshot captured = captured(expression, "list-windows", "-a");
+        return captured.windows().stream()
+                .map(window -> new Window(this, captured, window))
+                .filter(expression)
+                .toList();
+    }
+
+    /**
      * Captures every pane on the server.
      *
      * @return an immutable list in tmux order
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
+    @Operation(Kind.READ)
     public List<Pane> panes() {
         ServerSnapshot captured = snapshot();
         return captured.panes().stream()
@@ -949,46 +977,160 @@ public final class Server implements AutoCloseable {
     }
 
     /**
+     * The panes this expression matches, captured now.
+     *
+     * <p>A safe expression is sent as {@code list-panes -f}. The panes that come back are still
+     * tested with the expression. An expression tmux cannot apply reads the whole server and filters that
+     * capture; a filtered read that finds nothing is the answer.
+     *
+     * @return an immutable list in tmux order
+     * @throws ServerUnavailableException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
+     */
+    @ReadOnly
+    @Operation(Kind.READ)
+    public List<Pane> panes(FilterExpr<Pane> expression) {
+        Objects.requireNonNull(expression, "expression");
+        ServerSnapshot captured = captured(expression, "list-panes", "-a");
+        return captured.panes().stream()
+                .map(pane -> new Pane(this, captured, pane))
+                .filter(expression)
+                .toList();
+    }
+
+    /**
+     * The one session this expression matches, captured now, or empty when none does.
+     *
+     * <p>Reads as {@link #sessions(FilterExpr)} does.
+     *
+     * @throws CardinalityException.MultipleMatches if more than one session matches; its count is
+     *     exact, since the whole capture is in hand
+     * @throws ServerUnavailableException if no daemon is running
+     */
+    @Operation(Kind.READ)
+    public Optional<Session> session(FilterExpr<Session> expression) {
+        return atMostOne("session", sessions(expression));
+    }
+
+    /**
+     * The one window link this expression matches, captured now, or empty when none does.
+     *
+     * <p>Reads as {@link #windows(FilterExpr)} does. A window linked into two sessions is two links,
+     * so an expression naming it matches twice.
+     *
+     * @throws CardinalityException.MultipleMatches if more than one link matches
+     * @throws ServerUnavailableException if no daemon is running
+     */
+    @Operation(Kind.READ)
+    public Optional<Window> window(FilterExpr<Window> expression) {
+        return atMostOne("window", windows(expression));
+    }
+
+    /**
+     * The one pane this expression matches, captured now, or empty when none does.
+     *
+     * <p>Reads as {@link #panes(FilterExpr)} does.
+     *
+     * @throws CardinalityException.MultipleMatches if more than one pane matches
+     * @throws ServerUnavailableException if no daemon is running
+     */
+    @Operation(Kind.READ)
+    public Optional<Pane> pane(FilterExpr<Pane> expression) {
+        return atMostOne("pane", panes(expression));
+    }
+
+    private static <T> Optional<T> atMostOne(String what, List<T> matches) {
+        return switch (matches.size()) {
+            case 0 -> Optional.empty();
+            case 1 -> Optional.of(matches.get(0));
+            default ->
+                throw new CardinalityException.MultipleMatches(
+                        "expected at most one " + what + ", found " + matches.size() + ", starting with "
+                                + matches.get(0) + " and " + matches.get(1),
+                        matches.size());
+        };
+    }
+
+    /**
+     * How many tmux commands this server's transport runs at once, from {@link
+     * ServerConfig#maxConcurrentCommands()} for a server {@link #open}ed here.
+     *
+     * @return the bound, or {@link Integer#MAX_VALUE} for a transport that sets none
+     */
+    @Operation(Kind.CAPTURED)
+    public int admissionBound() {
+        return transport.admissionBound();
+    }
+
+    /**
      * The session with this name, captured now.
      *
-     * <p>One read, so the handle carries a capture the way {@link #sessions()} does. The name is
+     * <p>A name tmux can compare as a format is read with {@code list-sessions -f} and then only that
+     * session's windows and panes. A name containing {@code ,}, {@code #}, <code>{</code>,
+     * <code>}</code>, {@code :}, or a backslash falls back to a whole-server capture. The name is
      * matched exactly; tmux would otherwise take a prefix, so asking for {@code build} could answer
-     * with {@code build-cache}.
+     * with {@code build-cache}. It is matched as tmux stores it, which can differ from how it was
+     * given: every release doubles a backslash, and releases before 3.7 store {@code .} and
+     * {@code :} as {@code _}. The name {@link Session#name} reports is found as well.
      *
      * <p>Empty means a successful capture did not contain that name. Capture failures throw.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @Operation(Kind.READ)
     public Optional<Session> session(String name) {
         Objects.requireNonNull(name, "name");
-        ServerSnapshot captured = snapshot();
-        return captured.session(name).map(session -> new Session(this, captured, session));
+        ServerSnapshot captured = capture.sessionsNamed(name).orElseGet(this::snapshot);
+        return TmuxFormats.storedNames(name, version(captured)).stream()
+                .flatMap(stored -> captured.session(stored).stream())
+                .findFirst()
+                .map(session -> new Session(this, captured, session));
     }
 
     /**
      * The session with this id, captured now.
      *
      * @return empty only when a successful capture contains no match
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @Operation(Kind.READ)
     public Optional<Session> session(SessionId id) {
         Objects.requireNonNull(id, "id");
-        ServerSnapshot captured = snapshot();
-        return captured.session(id).map(session -> new Session(this, captured, session));
+        return one(id.value(), "session_id");
+    }
+
+    private Optional<Session> one(String target, String field) {
+        if (!TmuxFilters.literal(target)) {
+            ServerSnapshot captured = snapshot();
+            return field.equals("session_id")
+                    ? captured.session(new SessionId(target)).map(session -> new Session(this, captured, session))
+                    : captured.session(target).map(session -> new Session(this, captured, session));
+        }
+        return capture.oneSession(target, field)
+                .flatMap(captured -> field.equals("session_id")
+                        ? captured.session(new SessionId(target)).map(session -> new Session(this, captured, session))
+                        : captured.session(target).map(session -> new Session(this, captured, session)));
     }
 
     /**
      * The pane with this id, captured now.
      *
      * @return empty only when a successful capture contains no match
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @Operation(Kind.READ)
     public Optional<Pane> pane(PaneId id) {
         Objects.requireNonNull(id, "id");
-        ServerSnapshot captured = snapshot();
+        if (!TmuxFilters.literal(id.value())) {
+            return paneFrom(snapshot(), id);
+        }
+        return capture.sessionsHolding(id).flatMap(captured -> paneFrom(captured, id));
+    }
+
+    private Optional<Pane> paneFrom(ServerSnapshot captured, PaneId id) {
         return captured.panes().stream()
                 .filter(pane -> pane.id().equals(id))
                 .findFirst()
@@ -999,9 +1141,10 @@ public final class Server implements AutoCloseable {
      * The winlink at this exact position, captured now.
      *
      * @return empty only when a successful capture contains no match
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @Operation(Kind.READ)
     public Optional<Window> window(WindowContext context) {
         Objects.requireNonNull(context, "context");
         ServerSnapshot captured = snapshot();
@@ -1018,9 +1161,11 @@ public final class Server implements AutoCloseable {
      * {@link #window(WindowContext)} to name one exactly.
      *
      * @return an immutable list in tmux order, empty if the window was not found
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
+    @Operation(Kind.READ)
     public List<Window> windows(WindowId id) {
         Objects.requireNonNull(id, "id");
         ServerSnapshot captured = snapshot();
@@ -1034,9 +1179,11 @@ public final class Server implements AutoCloseable {
      * Captures every attached client.
      *
      * @return an immutable list in tmux order
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
+    @Operation(Kind.READ)
     public List<Client> clients() {
         ServerSnapshot captured = snapshot();
         return captured.clients().stream()
@@ -1048,9 +1195,11 @@ public final class Server implements AutoCloseable {
      * Captures every session a client is attached to.
      *
      * @return an immutable list in tmux order
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
+    @ReadOnly
+    @Operation(Kind.READ)
     public List<Session> attachedSessions() {
         return sessions().stream().filter(Session::attached).toList();
     }
@@ -1064,6 +1213,7 @@ public final class Server implements AutoCloseable {
      *
      * @throws LibTmuxException if tmux reported a nonzero exit
      */
+    @Operation(Kind.MUTATION)
     public CommandResult run(List<String> argv) {
         CommandResult result = cmd(argv);
         if (!result.succeeded()) {
@@ -1073,27 +1223,24 @@ public final class Server implements AutoCloseable {
     }
 
     CommandResult cmd(ServerSnapshot snapshot, List<String> argv) {
-        return guarded(snapshot, CommandStrings.stringify(argv));
+        return fence.guarded(snapshot, CommandStrings.stringify(argv));
     }
 
     /** A batch whose every command is refused once this handle's server has been replaced. */
     Batch batch(ServerSnapshot snapshot) {
-        long pid = snapshot.serverPid()
-                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
-        return new Batch(commands -> guarded(pid, CommandStrings.group(commands), ""));
+        return new Batch(commands -> fence.guarded(snapshot, CommandStrings.group(commands), ""));
     }
 
     /**
-     * As {@link #batch(ServerSnapshot)}, fenced against a whole identity read separately.
+     * As {@link #batch(ServerSnapshot)}, fenced against an identity read separately.
      *
-     * <p>Both halves, because a pid alone is reusable: a different tmux landing on the one just
-     * probed would answer as if it were the server the rows are being read from.
+     * <p>Both halves, because a pid alone is reusable: a tmux started on the pid of the one just
+     * probed, as a container's first processes often are, would answer as if it were the server the
+     * rows are being read from. Its start time is not the same.
      */
-    Batch batch(long pid, String version) {
-        // The version as tmux reported it, compared as text: any rewriting of it — a parsed version
-        // printing 3.8-rc as 3.8 — fails this fence on every read, and it did.
-        String fence = "#{&&:#{==:#{pid}," + pid + "},#{==:#{version}," + version + "}}";
-        return new Batch(commands -> guarded(pid, fence, CommandStrings.group(commands), ""));
+    Batch batch(long pid, long startTime) {
+        String condition = IncarnationFence.incarnation(pid, java.util.OptionalLong.of(startTime));
+        return new Batch(commands -> fence.guarded(pid, condition, CommandStrings.group(commands), ""));
     }
 
     CommandResult run(ServerSnapshot snapshot, List<String> argv) {
@@ -1117,7 +1264,7 @@ public final class Server implements AutoCloseable {
 
     /** As {@link #runTogether}, with {@code input} on tmux's standard input for the group to read. */
     CommandResult runTogether(ServerSnapshot snapshot, String input, List<List<String>> commands) {
-        CommandResult result = guarded(snapshot, CommandStrings.group(commands), input);
+        CommandResult result = fence.guarded(snapshot, CommandStrings.group(commands), input);
         if (!result.succeeded()) {
             String verbs = commands.stream().map(argv -> argv.get(0)).collect(Collectors.joining(" then "));
             throw failed(verbs, result);
@@ -1125,63 +1272,28 @@ public final class Server implements AutoCloseable {
         return result;
     }
 
-    /** Refuses to reach a tmux server that is not the one this handle was made against. */
-    private CommandResult guarded(ServerSnapshot snapshot, String command) {
-        return guarded(snapshot, command, "");
-    }
-
-    private CommandResult guarded(ServerSnapshot snapshot, String command, String input) {
-        long pid = snapshot.serverPid()
-                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
-        return guarded(pid, command, input);
-    }
-
-    private CommandResult guarded(long pid, String command, String input) {
-        return guarded(pid, "#{==:#{pid}," + pid + "}", command, input);
-    }
-
-    private CommandResult guarded(long pid, String fence, String command, String input) {
-        String stale = "libtmux-stale-handle-" + pid;
-        CommandResult result = cmd(List.of("if-shell", "-F", fence, command, stale), config.defaultTimeout(), input);
-        if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
-            throw new ObjectDoesNotExistException("the tmux server this handle belonged to has ended");
-        }
-        return result;
-    }
-
+    /** As {@link #run(ServerSnapshot, List)}, refused as well once the window has been replaced. */
     CommandResult run(ServerSnapshot snapshot, WindowContext expected, List<String> argv) {
-        long pid = snapshot.serverPid()
-                .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
-        String target = expected.session().value() + ":" + expected.index().value();
-        String stale = "libtmux-stale-winlink-" + pid + "-" + expected.window().value();
-        String condition = "#{&&:#{==:#{pid}," + pid + "},#{==:#{window_id},"
-                + expected.window().value() + "}}";
-        CommandResult result =
-                cmd(List.of("if-shell", "-F", "-t", target, condition, CommandStrings.stringify(argv), stale));
-        if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
-            throw new ObjectDoesNotExistException("window " + expected.window() + " no longer exists here");
-        }
-        if (!result.succeeded()) {
-            throw failed(argv.get(0), result);
-        }
-        return result;
+        return fence.run(snapshot, expected, argv);
     }
 
     ServerSnapshot refresh(ServerSnapshot previous) {
         ServerSnapshot fresh = snapshot();
         if (!identity(previous).equals(identity(fresh))) {
-            throw new ObjectDoesNotExistException("the tmux server this handle belonged to has ended");
+            throw new TargetGoneException("the tmux server this handle belonged to has ended");
         }
         return fresh;
     }
 
     /** A builder holding every configuration and ownership choice this server made. */
+    @Operation(Kind.CAPTURED)
     public Builder toBuilder() {
         // An owned transport is not shared: this server will close it, so a derived server gets its own.
         return new Builder(config.toBuilder(), owned ? null : transport);
     }
 
     /** Releases an owned transport. Idempotent, and never kills tmux. */
+    @Operation(Kind.LIFECYCLE)
     @Override
     public void close() {
         if (!closed.compareAndSet(false, true)) {

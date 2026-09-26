@@ -1,11 +1,14 @@
 package io.github.libtmux.control;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 final class ControlLineReaderTest {
@@ -22,8 +25,8 @@ final class ControlLineReaderTest {
     void lineEndingsAreRemovedButCounted() throws Exception {
         byte[] input = "one\r\ntwo".getBytes(StandardCharsets.UTF_8);
         try (var lines = new ControlLineReader(new ByteArrayInputStream(input), 8)) {
-            assertEquals(new ControlLineReader.Line("one", 4), lines.readLine());
-            assertEquals(new ControlLineReader.Line("two", 3), lines.readLine());
+            assertLine("one", 4, new byte[] {'o', 'n', 'e'}, lines.readLine());
+            assertLine("two", 3, new byte[] {'t', 'w', 'o'}, lines.readLine());
             assertEquals(null, lines.readLine());
         }
     }
@@ -33,7 +36,13 @@ final class ControlLineReaderTest {
         byte[] input = {'a', (byte) 0xff, '\n'};
 
         try (var lines = new ControlLineReader(new ByteArrayInputStream(input), 8)) {
-            assertEquals(new ControlLineReader.Line("a\\xff", 2), lines.readLine());
+            assertLine("a\\xff", 2, new byte[] {'a', (byte) 0xff}, lines.readLine());
         }
+    }
+
+    private static void assertLine(String text, int encodedBytes, byte[] bytes, ControlLineReader.@Nullable Line line) {
+        assertEquals(text, Objects.requireNonNull(line).text());
+        assertEquals(encodedBytes, line.encodedBytes());
+        assertArrayEquals(bytes, line.bytes());
     }
 }

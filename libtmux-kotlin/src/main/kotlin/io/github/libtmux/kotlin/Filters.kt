@@ -1,6 +1,10 @@
 package io.github.libtmux.kotlin
 
 import io.github.libtmux.query.FilterExpr
+import io.github.libtmux.Client as JavaClient
+import io.github.libtmux.Pane as JavaPane
+import io.github.libtmux.Session as JavaSession
+import io.github.libtmux.Window as JavaWindow
 
 /**
  * Inverts an expression, so `!Pane_.active().isTrue()` says what it means.
@@ -32,3 +36,29 @@ public operator fun <T : Any> FilterExpr<T>.not(): FilterExpr<T> = negate()
  * The list is already in hand: this asks tmux nothing.
  */
 public fun <T : Any> Iterable<T>.filter(expression: FilterExpr<T>): List<T> = filter(expression::test)
+
+// Erasure collides these with the type-parameterized overload above (an Iterable<T>.filter(FilterExpr<T>)
+// of any T is one JVM signature), so each needs its own @JvmName; the Kotlin-visible name stays `filter`.
+
+/**
+ * As the type-parameterized overload, for a list of wrapper [Session]s already in hand — filtering
+ * against a query field expression such as `Session.name eq "build"` without a round trip to tmux.
+ */
+@JvmName("filterSessions")
+public fun Iterable<Session>.filter(expression: FilterExpr<JavaSession>): List<Session> =
+    filter { expression.test(it.java) }
+
+/** As the [Session] overload, for wrapper [Window]s. */
+@JvmName("filterWindows")
+public fun Iterable<Window>.filter(expression: FilterExpr<JavaWindow>): List<Window> =
+    filter { expression.test(it.java) }
+
+/** As the [Session] overload, for wrapper [Pane]s. */
+@JvmName("filterPanes")
+public fun Iterable<Pane>.filter(expression: FilterExpr<JavaPane>): List<Pane> =
+    filter { expression.test(it.java) }
+
+/** As the [Session] overload, for wrapper [Client]s. */
+@JvmName("filterClients")
+public fun Iterable<Client>.filter(expression: FilterExpr<JavaClient>): List<Client> =
+    filter { expression.test(it.java) }

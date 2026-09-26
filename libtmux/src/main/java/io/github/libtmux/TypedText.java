@@ -5,6 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * Discounts input recorded by this library when reading a pane's output.
@@ -50,6 +51,7 @@ public final class TypedText {
      * broken across rows. A shell redraw or truncated capture that retains only part of an echo
      * cannot be recognized reliably.
      */
+    @ReadOnly
     public List<String> withoutEcho(List<String> lines) {
         Objects.requireNonNull(lines, "lines");
         PaneEcho.Live live = server.echo().liveFor(identity, paneId);

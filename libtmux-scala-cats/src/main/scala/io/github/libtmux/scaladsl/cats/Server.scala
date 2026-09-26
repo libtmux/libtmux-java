@@ -1,100 +1,32 @@
 package io.github.libtmux.scaladsl.cats
 
 import _root_.cats.effect.{Async, Resource}
-import _root_.cats.syntax.all._
-import io.github.libtmux.{
-  PaneId,
-  Server => JavaServer,
-  ServerConfig,
-  ServerIdentity,
-  SessionId,
-  SessionSpec,
-  TmuxVersion,
-  WindowId
-}
-import io.github.libtmux.scaladsl.{CommandResult, Snapshot, blocking}
-import io.github.libtmux.snapshot.WindowContext
-import java.nio.file.Path
-import java.time.Duration
+import io.github.libtmux.{Server => JavaServer, ServerConfig}
+import io.github.libtmux.scaladsl as direct
 
-/** Lazy operations scoped by a Resource. Cancellation interrupts local Java
-  * work; it does not prove that tmux rolled back a dispatched command.
+/** Lazy operations scoped by a `Resource`. Cancellation interrupts local Java
+  * work; it does not prove that tmux rolled back a dispatched command. Every
+  * acquisition wraps its Java call in `F.interruptible` — including this
+  * class's own construction step, for consistency across every acquisition
+  * site, though nothing in `ProcessTransport`'s constructor actually blocks:
+  * the process-reclaim guarantee that makes cancellation safe applies to
+  * dispatching a command and to opening a control client, not to this step.
   */
 final class Server[F[_]] private[cats] (
-    private[cats] val underlying: blocking.Server,
+    private[cats] val underlying: direct.Server,
     private[cats] val execution: Execution[F]
 )(implicit F: Async[F]) {
 
-  /** Borrows the Java client without transferring ownership. */
+  /** The Java client this wraps: the one escape hatch, as on every handle. */
   val asJava: JavaServer = underlying.asJava
-  def config: ServerConfig = underlying.config
-  def identity: ServerIdentity = underlying.identity
-  private[cats] def session(value: blocking.Session): Session[F] =
-    new Session(value, this)
-  private[cats] def window(value: blocking.Window): Window[F] =
-    new Window(value, this)
-  private[cats] def pane(value: blocking.Pane): Pane[F] = new Pane(value, this)
-  private[cats] def client(value: blocking.Client): Client[F] =
-    new Client(value, this)
 
-  def sessions: F[Vector[Session[F]]] =
-    execution(underlying.sessions()).map(_.map(session))
-  def windows: F[Vector[Window[F]]] =
-    execution(underlying.windows()).map(_.map(window))
-  def windows(id: WindowId): F[Vector[Window[F]]] =
-    execution(underlying.windows(id)).map(_.map(window))
-  def panes: F[Vector[Pane[F]]] = execution(underlying.panes()).map(_.map(pane))
-  def clients: F[Vector[Client[F]]] =
-    execution(underlying.clients()).map(_.map(client))
-  def snapshot: F[Snapshot] = execution(underlying.snapshot())
-  def session(name: String): F[Option[Session[F]]] =
-    execution(underlying.session(name)).map(_.map(session))
-  def session(id: SessionId): F[Option[Session[F]]] =
-    execution(underlying.session(id)).map(_.map(session))
-  def pane(id: PaneId): F[Option[Pane[F]]] =
-    execution(underlying.pane(id)).map(_.map(pane))
-  def window(context: WindowContext): F[Option[Window[F]]] =
-    execution(underlying.window(context)).map(_.map(window))
-  def newSession(name: String): F[Session[F]] =
-    execution(underlying.newSession(name)).map(session)
-  def newSession(spec: SessionSpec): F[Session[F]] =
-    execution(underlying.newSession(spec)).map(session)
-  def hasSession(name: String): F[Boolean] = execution(
-    underlying.hasSession(name)
-  )
-  def killSession(name: String): F[Unit] = execution(
-    underlying.killSession(name)
-  )
-  def killServer: F[Unit] = execution(underlying.killServer())
-  def isAlive: F[Boolean] = execution(underlying.isAlive())
-  def version: F[TmuxVersion] = execution(underlying.version())
-  def expand(format: String): F[String] = execution(underlying.expand(format))
-  def runShell(command: String): F[Unit] = execution(
-    underlying.runShell(command)
-  )
-  def runShellCapturing(command: String): F[Vector[String]] = execution(
-    underlying.runShellCapturing(command)
-  )
-  def sourceFile(file: Path): F[Unit] = execution(underlying.sourceFile(file))
-  def batch: Batch[F] = new Batch(() => underlying.batch(), execution)
-  def chain: CommandChain[F] =
-    new CommandChain(() => underlying.chain(), execution)
-  def cmd(argv: Seq[String]): F[CommandResult] = execution(underlying.cmd(argv))
-  def cmd(argv: Seq[String], timeout: Duration): F[CommandResult] = execution(
-    underlying.cmd(argv, timeout)
-  )
-  def cmd(command: String, arguments: String*): F[CommandResult] = cmd(
-    command +: arguments
-  )
-  def options: Options[F] = new Options(underlying.options, execution)
-  def globalOptions: Options[F] =
-    new Options(underlying.globalOptions, execution)
-  def environment: Environment[F] =
-    new Environment(underlying.environment, execution)
-  def hooks: Hooks[F] = new Hooks(underlying.hooks, execution)
-  def buffers: Buffers[F] = new Buffers(underlying.buffers, execution)
-  def channel(name: String): Channel[F] =
-    new Channel(underlying.channel(name), execution)
+  private[cats] def session(value: direct.Session): Session[F] =
+    new Session(value, this)
+  private[cats] def window(value: direct.Window): Window[F] =
+    new Window(value, this)
+  private[cats] def pane(value: direct.Pane): Pane[F] = new Pane(value, this)
+  private[cats] def client(value: direct.Client): Client[F] =
+    new Client(value, this)
 }
 
 object Server {
@@ -116,8 +48,8 @@ object Server {
           )
         )
       )
-      server <- Resource.make(F.blocking(blocking.Server.open(config)))(
-        server => F.blocking(server.close())
+      server <- Resource.make(F.interruptible(direct.Server.open(config)))(
+        server => F.interruptible(server.close())
       )
       execution <- Execution.resource[F](maxConcurrentCalls)
     } yield new Server(server, execution)
@@ -125,17 +57,43 @@ object Server {
 
   /** Borrows Java without closing it. The bound covers this facade only;
     * transport capacity and interruption remain the owner's responsibility.
+    *
+    * `direct.Server` is opaque, so a borrowed handle and an owned one are the
+    * same runtime object. Release here tears down only this scope's own
+    * `Execution` (its semaphores and supervised fibers); it never calls
+    * `close()` on the borrowed handle, which is `resource`'s job alone.
     */
   def fromJava[F[_]: Async](
       java: JavaServer,
       maxConcurrentCalls: Int = 4
-  ): Resource[F, Server[F]] = {
-    val F = Async[F]
+  ): Resource[F, Server[F]] =
     for {
-      server <- Resource.make(F.delay(blocking.Server.fromJava(java)))(server =>
-        F.blocking(server.close())
+      server <- Resource.eval(
+        Async[F].interruptible(direct.Server.fromJava(java))
       )
       execution <- Execution.resource[F](maxConcurrentCalls)
     } yield new Server(server, execution)
+
+  // Handwritten, not generated: ScalaCodegen.catsForwards skips batch()/chain() so a Cats caller
+  // gets Execution's admission bound and cancellation safety instead of a raw Java Batch/
+  // CommandChain's eager, uninterruptible run().
+  extension [F[_]](self: Server[F])(using F: Async[F]) {
+
+    /** An immutable batch plan; each run dispatches a fresh Java `Batch`
+      * through this server's `Execution`.
+      */
+    def batch: Batch[F] =
+      new Batch(() => self.underlying.asJava.batch(), self.execution)
+
+    /** An immutable chain plan using tmux's evolving current target; each run
+      * dispatches a fresh Java `CommandChain` through this server's
+      * `Execution`.
+      */
+    def chain: CommandChain[F] =
+      new CommandChain(() => self.underlying.asJava.chain(), self.execution)
+
+    /** One of tmux's wait-for channels, named once. */
+    def channel(name: String): Channel[F] =
+      new Channel(self.underlying.asJava.channel(name), self.execution)
   }
 }

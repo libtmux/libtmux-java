@@ -2,15 +2,33 @@
 // these tests exercise every artifact together, and a suite living in one artifact's test source
 // set makes that artifact's dependencies and lifecycle answerable for how the whole library is
 // tested.
+//
+// The Scala facades' suites run here too, as munit tests beside the JUnit ones. OwnedTmux, the Scala
+// fixture over the Java one, is a test fixture so the examples and documentation modules can start
+// servers the same way.
 plugins {
-    id("libtmux.java-library")
+    id("libtmux.scala-library")
     id("libtmux.tmux-matrix")
+    `java-test-fixtures`
 }
 
 dependencies {
     testImplementation(project(":libtmux"))
     testImplementation(project(":libtmux-jackson"))
     testImplementation(project(":libtmux-junit5"))
+    testImplementation(project(":libtmux-scala"))
+    testImplementation(project(":libtmux-scala-cats"))
+    testImplementation(project(":libtmux-scala-ox"))
+
+    testFixturesImplementation(project(":libtmux"))
+    testFixturesImplementation(project(":libtmux-junit5"))
+    testFixturesImplementation(libs.scala3.library)
+}
+
+// A fixture mutant (-Plibtmux.scala.fixture.mutant=omit-client-close) proves OwnedTmux notices a
+// client its test left open: the suite must then fail.
+providers.gradleProperty("libtmux.scala.fixture.mutant").orNull?.let { mutant ->
+    tasks.withType<Test>().configureEach { systemProperty("libtmux.scala.fixture.mutant", mutant) }
 }
 
 // The locale lane needs a JVM whose platform encoding is not UTF-8, which is a process-wide choice

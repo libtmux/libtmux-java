@@ -3,7 +3,11 @@ package io.github.libtmux;
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.batch.OperationResult;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.format.RowFormat;
+import io.github.libtmux.query.TmuxFilters;
 import io.github.libtmux.snapshot.ClientState;
 import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
@@ -74,7 +78,7 @@ final class SnapshotCapture {
      * floating panes work"), which {@code git tag --contains} places on 3.7 and nothing earlier;
      * before that the format expands to nothing, indistinguishable from a real pane answering false.
      * Not probeable: an unknown format variable and a false one both expand empty, and {@link
-     * Server#listCommands} lists commands, not the format variables a running tmux understands.
+     * Commands#list} lists commands, not the format variables a running tmux understands.
      */
     private static final TmuxVersion FLOATING_SINCE = new TmuxVersion(3, 7, "");
 
@@ -83,7 +87,7 @@ final class SnapshotCapture {
     private static final RowFormat PANES_WITH_FLOATING = RowFormat.of(withFloating());
 
     private static final RowFormat CLIENTS = RowFormat.of("client_name", "session_id");
-    private static final RowFormat PROCESS = RowFormat.of("pid", "version");
+    private static final RowFormat PROCESS = RowFormat.of("pid", "version", "start_time");
 
     private final Server server;
 
@@ -94,10 +98,10 @@ final class SnapshotCapture {
     /** One attempt, empty when the server was replaced under it. */
     Optional<ServerSnapshot> attempt() {
         ServerProcess process = process()
-                .orElseThrow(() -> new ServerNotRunningException("no tmux server is answering on this endpoint"));
+                .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
         try {
             return Optional.of(capture(process));
-        } catch (ObjectDoesNotExistException replaced) {
+        } catch (TargetGoneException replaced) {
             // The fence answered: this is no longer the server the identity came from.
             return Optional.empty();
         } catch (RuntimeException failure) {
@@ -122,7 +126,7 @@ final class SnapshotCapture {
 
     /**
      * As {@link #process}, except a live daemon this client cannot actually talk to is never folded
-     * into "no daemon" - used only by {@link Server#versionForCreation}, the one caller for which
+     * into "no daemon" - used only by {@link SessionCreation#versionForCreation}, the one caller for which
      * that distinction matters.
      *
      * <p>tmux reports both the same way from a client's side: "no server running"/"(No such file or
@@ -146,19 +150,23 @@ final class SnapshotCapture {
         }
         List<RowFormat.Row> reported = PROCESS.rows(result.stdout());
         if (reported.isEmpty()) {
-            throw new LibTmuxException(
+            throw new MalformedResponseException(
                     server.config().binary() + " exited 0 and reported nothing for tmux's own identity; is it tmux?");
         }
         if (reported.size() != 1) {
-            throw new LibTmuxException("tmux did not report exactly one server identity row: " + reported);
+            throw new MalformedResponseException("tmux did not report exactly one server identity row: " + reported);
         }
         RowFormat.Row row = reported.get(0);
         long pid = row.count("pid");
         if (pid <= 0) {
-            throw new LibTmuxException("tmux reported a malformed server pid: " + pid);
+            throw new MalformedResponseException("tmux reported a malformed server pid: " + pid);
         }
         String version = row.text("version");
-        return Optional.of(new ServerProcess(pid, TmuxVersion.parse(version), version));
+        long started = row.count("start_time");
+        if (started < 0) {
+            throw new MalformedResponseException("tmux reported a malformed server start time: " + started);
+        }
+        return Optional.of(new ServerProcess(pid, TmuxVersion.parse(version), started));
     }
 
     private static boolean daemonGenuinelyAbsent(String message) {
@@ -169,29 +177,186 @@ final class SnapshotCapture {
     private ServerSnapshot capture(ServerProcess process) {
         boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
         RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
-        Batch listings = server.batch(process.pid(), process.reported());
+        Batch listings = server.batch(process.pid(), process.startTime());
         listings.add(listing(SESSIONS, "list-sessions"));
         listings.add(listing(WINDOWS, "list-windows", "-a"));
         listings.add(listing(paneFormat, "list-panes", "-a"));
         listings.add(listing(CLIENTS, "list-clients"));
         List<OperationResult> answered = listings.run().operations();
 
+        return consistent(() -> {
+            List<SessionState> sessions =
+                    sessionStates(rows(SESSIONS, answered.get(0), "list-sessions", process.version()));
+            if (sessions.isEmpty()) {
+                // A server with no sessions has no current target, so tmux refuses the rest of the
+                // group. An empty sessions listing is the whole hierarchy, so there is nothing to read.
+                return snapshotOf(process, sessions, List.of(), List.of(), List.of());
+            }
+            return snapshotOf(
+                    process,
+                    sessions,
+                    windowStates(rows(WINDOWS, answered.get(1), "list-windows", process.version())),
+                    paneStates(rows(paneFormat, answered.get(2), "list-panes", process.version()), floatingKnown),
+                    clientStates(rows(CLIENTS, answered.get(3), "list-clients", process.version())));
+        });
+    }
+
+    /**
+     * Rows that parse but do not form one valid snapshot are tmux's failure. Only this conversion is
+     * made: anything else thrown while reading is reported as itself.
+     */
+    private static <T> T consistent(java.util.function.Supplier<T> assembly) {
+        try {
+            return assembly.get();
+        } catch (IllegalArgumentException inconsistent) {
+            throw new MalformedResponseException(
+                    "tmux returned listings that do not form one snapshot: " + inconsistent.getMessage(), inconsistent);
+        }
+    }
+
+    /**
+     * One session, its windows, and its panes. Empty when that session is absent. Other sessions are
+     * not read.
+     *
+     * @param target the session name or id passed to {@code -t}
+     * @param field {@code session_name} or {@code session_id}
+     */
+    Optional<ServerSnapshot> oneSession(String target, String field) {
+        ServerProcess process = process()
+                .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
+        return hydrate(
+                process,
+                "#{==:#{" + field + "}," + target + "}",
+                session -> field.equals("session_id")
+                        ? session.id().value().equals(target)
+                        : session.name().equals(target));
+    }
+
+    /**
+     * The sessions stored under any name tmux may keep for this one, read in one fenced call, and
+     * an empty capture when there are none. Empty when a candidate cannot sit inside a format, and
+     * the caller reads the whole server instead.
+     */
+    Optional<ServerSnapshot> sessionsNamed(String name) {
+        ServerProcess process = process()
+                .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
+        List<String> names = TmuxFormats.storedNames(name, process.version());
+        if (!names.stream().allMatch(TmuxFilters::literal)) {
+            return Optional.empty();
+        }
+        String any = "0";
+        for (String stored : names) {
+            any = "#{||:#{==:#{session_name}," + stored + "}," + any + "}";
+        }
+        return Optional.of(hydrate(process, any, session -> names.contains(session.name()))
+                .orElseGet(() -> snapshotOf(process, List.of(), List.of(), List.of(), List.of())));
+    }
+
+    /**
+     * The sessions holding a row that {@code format} selects in this listing, read in full in one
+     * fenced call, and a capture holding nothing when none does.
+     *
+     * <p>Nothing is a real answer: every operator {@link io.github.libtmux.query.TmuxFilters} writes
+     * exists from the oldest supported tmux, so a format it lowers is never one tmux cannot evaluate.
+     * A window or pane format is lifted to its session by looping that session's windows and panes,
+     * so the one call that reads the sessions also decides which ones to read.
+     *
+     * @param command {@code list-sessions}, {@code list-windows -a}, or {@code list-panes -a}
+     */
+    ServerSnapshot sessionsWhere(String format, String... command) {
+        ServerProcess process = process()
+                .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
+        String holding =
+                switch (command[0]) {
+                    case "list-sessions" -> format;
+                    case "list-windows" -> "#{W:#{?" + format + ",1,}}";
+                    case "list-panes" -> "#{W:#{P:#{?" + format + ",1,}}}";
+                    default -> throw new IllegalArgumentException("not a hierarchy listing: " + command[0]);
+                };
+        return hydrate(process, holding, session -> true)
+                .orElseGet(() -> snapshotOf(process, List.of(), List.of(), List.of(), List.of()));
+    }
+
+    /**
+     * The sessions this filter selects, with their windows and panes, in one call fenced to {@code
+     * process}. Every row tmux returns is validated before {@code keep} narrows them, so a malformed
+     * or inconsistent row fails the read instead of hiding behind a miss.
+     */
+    private Optional<ServerSnapshot> hydrate(
+            ServerProcess process, String filter, java.util.function.Predicate<SessionState> keep) {
+        boolean floatingKnown = process.version().atLeast(FLOATING_SINCE);
+        RowFormat paneFormat = floatingKnown ? PANES_WITH_FLOATING : PANES;
+        Batch batch = server.batch(process.pid(), process.startTime());
+        batch.add(listing(SESSIONS, "list-sessions", "-f", filter));
+        batch.add(listing(WINDOWS, "list-windows", "-a", "-f", filter));
+        batch.add(listing(paneFormat, "list-panes", "-a", "-f", filter));
+        List<OperationResult> answered = batch.run().operations();
+        return consistent(() -> kept(process, answered, paneFormat, floatingKnown, keep));
+    }
+
+    private Optional<ServerSnapshot> kept(
+            ServerProcess process,
+            List<OperationResult> answered,
+            RowFormat paneFormat,
+            boolean floatingKnown,
+            java.util.function.Predicate<SessionState> keep) {
+        List<SessionState> listed = sessionStates(rows(SESSIONS, answered.get(0), "list-sessions", process.version()));
+        if (listed.isEmpty()) {
+            // As in a full capture: with no session there is no current target, and tmux refuses
+            // the rest of the group.
+            return Optional.empty();
+        }
+        List<WindowState> windows = windowStates(rows(WINDOWS, answered.get(1), "list-windows", process.version()));
+        List<PaneState> panes =
+                paneStates(rows(paneFormat, answered.get(2), "list-panes", process.version()), floatingKnown);
+        snapshotOf(process, listed, windows, panes, List.of());
+        List<SessionState> sessions = listed.stream().filter(keep).toList();
+        if (sessions.isEmpty()) {
+            return Optional.empty();
+        }
+        java.util.Set<SessionId> ids =
+                sessions.stream().map(SessionState::id).collect(java.util.stream.Collectors.toSet());
+        return Optional.of(snapshotOf(
+                process,
+                sessions,
+                windows.stream()
+                        .filter(window -> ids.contains(window.context().session()))
+                        .toList(),
+                panes.stream()
+                        .filter(pane -> ids.contains(pane.context().session()))
+                        .toList(),
+                List.of()));
+    }
+
+    /**
+     * The sessions holding this pane, with their windows and panes, in one fenced call. Empty when no
+     * session holds it.
+     *
+     * <p>The filter loops each listed row's own session, so every listing keeps whole sessions, and a
+     * window linked into two sessions brings both. tmux evaluates this loop inside {@code -f} the same
+     * way on every release from 3.2a; see {@code docs/decisions/0005-pushdown-lowering-is-exact-or-refused.md}.
+     */
+    Optional<ServerSnapshot> sessionsHolding(PaneId id) {
+        ServerProcess process = process()
+                .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
+        return hydrate(process, "#{W:#{P:#{?#{==:#{pane_id}," + id.value() + "},1,}}}", session -> true);
+    }
+
+    private static List<SessionState> sessionStates(List<RowFormat.Row> rows) {
         List<SessionState> sessions = new ArrayList<>();
-        for (RowFormat.Row row : rows(SESSIONS, answered.get(0), "list-sessions")) {
+        for (RowFormat.Row row : rows) {
             sessions.add(new SessionState(
                     new SessionId(row.text("session_id")),
                     row.text("session_name"),
                     row.count("session_attached") > 0,
                     row.number("session_windows")));
         }
-        if (sessions.isEmpty()) {
-            // A server with no sessions has no current target, so tmux refuses the rest of the
-            // group. An empty sessions listing is the whole hierarchy, so there is nothing to read.
-            return ServerSnapshot.of(
-                    Instant.now(), process.pid(), process.version(), sessions, List.of(), List.of(), List.of());
-        }
+        return sessions;
+    }
+
+    private static List<WindowState> windowStates(List<RowFormat.Row> rows) {
         List<WindowState> windows = new ArrayList<>();
-        for (RowFormat.Row row : rows(WINDOWS, answered.get(1), "list-windows")) {
+        for (RowFormat.Row row : rows) {
             windows.add(new WindowState(
                     context(row),
                     row.text("window_name"),
@@ -201,8 +366,12 @@ final class SnapshotCapture {
                     new Dimensions(row.number("window_width"), row.number("window_height")),
                     row.text("window_layout")));
         }
+        return windows;
+    }
+
+    private static List<PaneState> paneStates(List<RowFormat.Row> rows, boolean floatingKnown) {
         List<PaneState> panes = new ArrayList<>();
-        for (RowFormat.Row row : rows(paneFormat, answered.get(2), "list-panes")) {
+        for (RowFormat.Row row : rows) {
             panes.add(new PaneState(
                     context(row),
                     new PaneId(row.text("pane_id")),
@@ -221,14 +390,18 @@ final class SnapshotCapture {
                             row.flag("pane_at_right")),
                     floatingKnown ? Optional.of(row.flag(FLOATING)) : Optional.empty()));
         }
+        return panes;
+    }
+
+    private static List<ClientState> clientStates(List<RowFormat.Row> rows) {
         List<ClientState> clients = new ArrayList<>();
-        for (RowFormat.Row row : rows(CLIENTS, answered.get(3), "list-clients")) {
+        for (RowFormat.Row row : rows) {
             String session = row.text("session_id");
             clients.add(new ClientState(
                     row.text("client_name"),
                     session.isEmpty() ? Optional.empty() : Optional.of(new SessionId(session))));
         }
-        return ServerSnapshot.of(Instant.now(), process.pid(), process.version(), sessions, windows, panes, clients);
+        return clients;
     }
 
     /**
@@ -257,12 +430,12 @@ final class SnapshotCapture {
     }
 
     /** Reads one listing's rows, insisting tmux actually ran it. */
-    private List<RowFormat.Row> rows(RowFormat format, OperationResult operation, String command) {
+    private List<RowFormat.Row> rows(RowFormat format, OperationResult operation, String command, TmuxVersion version) {
         if (operation.outcome() != OperationOutcome.COMPLETE) {
             throw server.failed(
                     command, operation.outcome().name().toLowerCase(Locale.ROOT).replace('_', ' '), operation.stderr());
         }
-        return format.rows(operation.stdout());
+        return format.rows(TmuxFormats.printed(operation.stdout(), version));
     }
 
     private static WindowContext context(RowFormat.Row row) {
@@ -278,9 +451,23 @@ final class SnapshotCapture {
         return fields;
     }
 
-    /**
-     * @param reported the version exactly as tmux wrote it, which is what the capture's fence
-     *     compares — not the parsed version's text, which need not be byte for byte the same
-     */
-    record ServerProcess(long pid, TmuxVersion version, String reported) {}
+    /** The server a capture reads, named by its process and when that process started. */
+    record ServerProcess(long pid, TmuxVersion version, long startTime) {}
+
+    private static ServerSnapshot snapshotOf(
+            ServerProcess process,
+            List<SessionState> sessions,
+            List<WindowState> windows,
+            List<PaneState> panes,
+            List<ClientState> clients) {
+        return ServerSnapshot.of(
+                Instant.now(),
+                process.pid(),
+                process.startTime(),
+                process.version(),
+                sessions,
+                windows,
+                panes,
+                clients);
+    }
 }

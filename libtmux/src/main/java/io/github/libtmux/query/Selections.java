@@ -1,6 +1,6 @@
 package io.github.libtmux.query;
 
-import io.github.libtmux.LibTmuxException;
+import io.github.libtmux.exception.CardinalityException;
 import java.util.Iterator;
 import java.util.Optional;
 
@@ -15,15 +15,21 @@ public final class Selections {
 
     private Selections() {}
 
-    /** The single match, or a failure naming which way the count was wrong. */
+    /**
+     * The single match, or a failure naming which way the count was wrong.
+     *
+     * @throws CardinalityException.NoMatch if nothing matched
+     * @throws CardinalityException.MultipleMatches if more than one did; the scan stops at the
+     *     second match, so its count is two
+     */
     public static <T> T exactlyOne(Iterable<T> matches) {
         Iterator<T> iterator = matches.iterator();
         if (!iterator.hasNext()) {
-            throw new NoMatchException("expected exactly one match, found none");
+            throw new CardinalityException.NoMatch("expected exactly one match, found none");
         }
         T first = iterator.next();
         if (iterator.hasNext()) {
-            throw new MultipleMatchesException("expected exactly one match, found more than one");
+            throw multiple("exactly one", first, iterator.next());
         }
         return first;
     }
@@ -32,6 +38,8 @@ public final class Selections {
      * The single match if there is one, empty if there is none — but still a failure for several.
      *
      * <p>Returning the first of many would make a caller's ambiguous query look answered.
+     *
+     * @throws CardinalityException.MultipleMatches if more than one matched
      */
     public static <T> Optional<T> oneOrEmpty(Iterable<T> matches) {
         Iterator<T> iterator = matches.iterator();
@@ -40,26 +48,14 @@ public final class Selections {
         }
         T first = iterator.next();
         if (iterator.hasNext()) {
-            throw new MultipleMatchesException("expected at most one match, found more than one");
+            throw multiple("at most one", first, iterator.next());
         }
         return Optional.of(first);
     }
 
-    /** Nothing matched where the caller required something. */
-    public static final class NoMatchException extends LibTmuxException {
-        private static final long serialVersionUID = 1L;
-
-        NoMatchException(String message) {
-            super(message);
-        }
-    }
-
-    /** Several things matched where the caller required at most one. */
-    public static final class MultipleMatchesException extends LibTmuxException {
-        private static final long serialVersionUID = 1L;
-
-        MultipleMatchesException(String message) {
-            super(message);
-        }
+    /** A single pass never reads past the second match, however large or lazy the source is. */
+    private static CardinalityException.MultipleMatches multiple(String wanted, Object first, Object second) {
+        return new CardinalityException.MultipleMatches(
+                "expected " + wanted + " match, found more than one, starting with " + first + " and " + second, 2);
     }
 }

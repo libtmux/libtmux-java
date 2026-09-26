@@ -1,4 +1,7 @@
-plugins { id("libtmux.published-library") }
+plugins {
+    id("libtmux.published-library")
+    id("libtmux.api-diff")
+}
 
 dependencies {
     api(project(":libtmux"))

@@ -5,11 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.Window;
+import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.junit5.TmuxExtension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,13 +50,11 @@ final class NameValidationIntegrationTest {
     }
 
     /**
-     * The consequence of 3.7a accepting the delimiter: a target string built from the name splits on
-     * {@code :}, so hasSession and killSession resolve the id by comparing names in this process
-     * instead of building one. The name is real and findable even though tmux's own {@code -t}
-     * parsing cannot select the session by it.
+     * 3.7a accepts the delimiter, and a {@code -t} target would split on it. The library resolves
+     * the name from a listing instead, so the name still addresses the session.
      */
     @Test
-    void aNameKeptWithItsDelimiterIsStillFoundAndKilledByName(Server server) {
+    void aNameKeptWithItsDelimiterIsStillAddressableByName(Server server) {
         if (!server.version().atLeast(ACCEPTS_AGAIN)) {
             return;
         }
@@ -65,10 +63,41 @@ final class NameValidationIntegrationTest {
         assertEquals("a:b", made.name());
         assertEquals(made.id(), made.refresh().id(), "the id still addresses it");
         assertTrue(server.hasSession("a:b"), "the name is real; only a -t built from it is unusable");
-
+        assertEquals(made.id(), server.session("a:b").orElseThrow().id());
         server.killSession("a:b");
-
         assertFalse(server.hasSession("a:b"));
+    }
+
+    /**
+     * A lookup finds the name tmux stored for the one it was given, and nothing else: from 3.7 a
+     * dot is not an underscore, so {@code x.y} must not answer with a session called {@code x_y}.
+     */
+    @Test
+    void aNameIsNotMistakenForAnotherSessionsStoredName(Server server) {
+        Session underscored = server.newSession("x_y");
+
+        if (server.version().atLeast(REJECTS)) {
+            assertFalse(server.hasSession("x.y"));
+            assertTrue(server.session("x.y").isEmpty());
+            assertThrows(LibTmuxException.class, () -> server.killSession("x.y"));
+            assertTrue(server.hasSession("x_y"), "a refused kill still ended " + underscored.name());
+        } else {
+            // Before 3.7 tmux stores x.y as x_y itself, so they name the same session.
+            assertEquals(underscored.id(), server.session("x.y").orElseThrow().id());
+        }
+    }
+
+    /** Every release doubles a backslash; the given name and the reported one both find it. */
+    @Test
+    void aBackslashNameIsFoundByWhatWasGivenAndByWhatTmuxReports(Server server) {
+        Session made = server.newSession("b\\c\\");
+
+        assertEquals("b\\\\c\\\\", made.name());
+        assertEquals(made.id(), server.session("b\\c\\").orElseThrow().id());
+        assertEquals(made.id(), server.session(made.name()).orElseThrow().id());
+        assertTrue(server.hasSession("b\\c\\"));
+        server.killSession(made.name());
+        assertFalse(server.hasSession("b\\c\\"));
     }
 
     /**

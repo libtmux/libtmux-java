@@ -1,0 +1,5 @@
+session_name: staged-cli
+windows:
+  - window_name: main
+    panes:
+      - shell_command: echo staged

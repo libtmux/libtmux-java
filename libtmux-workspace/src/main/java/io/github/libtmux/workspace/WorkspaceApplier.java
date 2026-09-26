@@ -2,11 +2,11 @@ package io.github.libtmux.workspace;
 
 import io.github.libtmux.Layout;
 import io.github.libtmux.Layouts;
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
+import io.github.libtmux.exception.CommandRejectedException;
 import io.github.libtmux.transport.CommandResult;
 import java.util.ArrayList;
 import java.util.List;
@@ -57,8 +57,11 @@ final class WorkspaceApplier {
             // staging is always "libtmux-ws-" plus a UUID, which never holds ':' or '.'.
             CommandResult cleanup = server.cmd("kill-session", "-t", "=" + staging);
             if (!cleanup.succeeded() && cleanup.stderr().stream().noneMatch(WorkspaceApplier::alreadyAbsent)) {
-                failure.addSuppressed(new LibTmuxException(
-                        "could not clean up staging session: " + String.join("; ", cleanup.stderr())));
+                failure.addSuppressed(new CommandRejectedException(
+                        "could not clean up staging session: " + String.join("; ", cleanup.stderr()),
+                        "kill-session",
+                        cleanup.exitCode(),
+                        cleanup.stderr()));
             }
         } catch (RuntimeException cleanupFailure) {
             failure.addSuppressed(cleanupFailure);

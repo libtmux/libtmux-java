@@ -5,7 +5,6 @@ import io.github.libtmux.Layouts;
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerNotRunningException;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import java.util.Arrays;
@@ -25,111 +24,10 @@ final class Shaping {
 
     private Shaping() {}
 
-    record Made(String kind, String id, @Nullable String paneId, String name, String note) {}
-
     record Changed(
             String kind, String id, String what, @Nullable String note) {}
 
     record Ended(String kind, String id, @Nullable String note) {}
-
-    static Made newSession(Call call) {
-        String name = call.string("name");
-        Server server = call.server();
-        if (taken(server, name)) {
-            throw new IllegalArgumentException(
-                    "a session named '" + name + "' is already there; pick another name, or use it as it is");
-        }
-        Session session = server.newSession(spec -> {
-            spec.named(name);
-        });
-        Pane first = session.windows().get(0).panes().get(0);
-        return new Made(
-                "session",
-                session.id().value(),
-                first.id().value(),
-                session.name(),
-                "Detached, so nothing is watching it. Its first pane is the one to act on.");
-    }
-
-    /** No daemon means no name can already be taken; {@code newSession} will start one. */
-    private static boolean taken(Server server, String name) {
-        try {
-            return server.hasSession(name);
-        } catch (ServerNotRunningException absent) {
-            return false;
-        }
-    }
-
-    static Made newWindow(Call call) {
-        Session session = Targets.sessionNamed(call.server(), call.string("session"));
-        Window window = session.newWindow(spec -> {
-            call.maybe("name").ifPresent(spec::named);
-            spec.detached();
-        });
-        Pane first = window.panes().get(0);
-        return new Made(
-                "window",
-                window.id().value(),
-                first.id().value(),
-                window.name(),
-                "Made without switching to it, so whatever a person was looking at is still there.");
-    }
-
-    /**
-     * Splits a pane, giving the new one back.
-     *
-     * <p>The direction says where the new pane goes, which is the way a person describes it. tmux's
-     * own flags say which way the split runs, and the two are easy to state backwards.
-     */
-    static Made splitPane(Call call) {
-        Pane pane = Targets.pane(call.server(), call.string("pane_id"));
-        String direction = call.maybe("direction").orElse("below").toLowerCase(Locale.ROOT);
-        Pane made = pane.split(spec -> {
-            switch (direction) {
-                case "below", "down" -> spec.below();
-                case "above", "up" -> spec.above();
-                case "right" -> spec.toRight();
-                case "left" -> spec.toLeft();
-                default ->
-                    throw new IllegalArgumentException(
-                            "'" + direction + "' is not a direction; use below, above, left or right");
-            }
-            int percent = call.integer("percent", 0);
-            if (percent > 0) {
-                spec.percent(Math.clamp(percent, 1, 99));
-            }
-        });
-        return new Made(
-                "pane",
-                made.id().value(),
-                made.id().value(),
-                made.window().name(),
-                "The new pane is " + made.id().value() + "; " + pane.id().value() + " is still there.");
-    }
-
-    /** tmux 3.2a-3.6 rewrite ':' and '.' to '_', so the reply names what tmux settled on. */
-    static Changed rename(Call call) {
-        String target = call.string("target");
-        String name = call.string("name");
-        if (target.startsWith("@")) {
-            Window renamed = Targets.window(call.server(), target).rename(name);
-            return new Changed("window", renamed.id().value(), renamed.name(), null);
-        }
-        Session renamed = Targets.sessionById(call.server(), target).rename(name);
-        return new Changed("session", renamed.id().value(), renamed.name(), null);
-    }
-
-    static Changed select(Call call) {
-        String target = call.string("target");
-        if (target.startsWith("%")) {
-            Pane pane = Targets.pane(call.server(), target);
-            pane.select();
-            return new Changed("pane", target, "active", "A person attached to this session now sees it.");
-        }
-        Window window = Targets.window(call.server(), target);
-        window.select();
-        return new Changed("window", target, "active", "A person attached to this session now sees it.");
-    }
 
     /**
      * A name or an unambiguous prefix of one tmux would resolve — {@code layout_set_lookup} is a
@@ -232,7 +130,8 @@ final class Shaping {
         }
         if (confirmed) {
             if (!caller.freshlyAuthenticated(call.server())) {
-                throw new IllegalStateException("Refused. confirm_self requires a freshly authenticated caller pane.");
+                throw new IllegalStateException("Refused. confirm_self requires a freshly authenticated caller "
+                        + "pane; retry, and if it keeps failing, restart this server from a current tmux pane.");
             }
             return;
         }

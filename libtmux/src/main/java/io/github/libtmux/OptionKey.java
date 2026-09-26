@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.MalformedResponseException;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -86,7 +87,7 @@ public final class OptionKey<T> {
         try {
             return Integer.valueOf(reported.strip());
         } catch (NumberFormatException notANumber) {
-            throw new LibTmuxException(
+            throw new MalformedResponseException(
                     "tmux reported option " + name + " as '" + reported + "', which is not a number", notANumber);
         }
     }
@@ -96,7 +97,7 @@ public final class OptionKey<T> {
             case "on" -> true;
             case "off" -> false;
             default ->
-                throw new LibTmuxException(
+                throw new MalformedResponseException(
                         "tmux reported option " + name + " as '" + reported + "', which is not on or off");
         };
     }

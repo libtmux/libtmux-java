@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.DispatchException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -81,8 +82,7 @@ final class CarrierStarvationTest {
                 VirtualDrainTransport transport = new VirtualDrainTransport()) {
             assertTrue(hog.isHolding(), "the fixture did not manage to pin the only carrier");
 
-            TmuxTransportException failure =
-                    assertThrows(TmuxTransportException.class, () -> transport.execute(flood()));
+            DispatchException failure = assertThrows(DispatchException.class, () -> transport.execute(flood()));
 
             assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
         }
@@ -164,7 +164,7 @@ final class CarrierStarvationTest {
             try {
                 process = new ProcessBuilder(request.commandLine()).start();
             } catch (IOException e) {
-                throw new TmuxTransportException("could not start", DispatchOutcome.NOT_DISPATCHED, e);
+                throw new DispatchException.Failed("could not start", DispatchOutcome.NOT_DISPATCHED, e);
             }
             BlockingQueue<byte[]> out = new ArrayBlockingQueue<>(1);
             BlockingQueue<byte[]> err = new ArrayBlockingQueue<>(1);
@@ -172,7 +172,7 @@ final class CarrierStarvationTest {
             Thread.ofVirtual().start(() -> drain(process.getErrorStream(), err));
             try {
                 if (!process.waitFor(request.timeout().toMillis(), TimeUnit.MILLISECONDS)) {
-                    throw new TmuxTransportException("child exceeded its deadline", DispatchOutcome.UNKNOWN, null);
+                    throw new DispatchException.Failed("child exceeded its deadline", DispatchOutcome.UNKNOWN, null);
                 }
                 byte[] stdout = take(out, request.timeout());
                 byte[] stderr = take(err, request.timeout());
@@ -180,7 +180,7 @@ final class CarrierStarvationTest {
                         process.exitValue(), OutputDecoder.stdoutLines(stdout), OutputDecoder.stderrLines(stderr));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new TmuxTransportException("interrupted", DispatchOutcome.UNKNOWN, e);
+                throw new DispatchException.Failed("interrupted", DispatchOutcome.UNKNOWN, e);
             } finally {
                 process.destroyForcibly();
             }
@@ -189,7 +189,7 @@ final class CarrierStarvationTest {
         private static byte[] take(BlockingQueue<byte[]> channel, Duration timeout) throws InterruptedException {
             byte[] bytes = channel.poll(timeout.toMillis(), TimeUnit.MILLISECONDS);
             if (bytes == null) {
-                throw new TmuxTransportException("drain never finished", DispatchOutcome.UNKNOWN, null);
+                throw new DispatchException.Failed("drain never finished", DispatchOutcome.UNKNOWN, null);
             }
             return bytes;
         }

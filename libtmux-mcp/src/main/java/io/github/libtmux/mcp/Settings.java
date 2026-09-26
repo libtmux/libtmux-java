@@ -3,11 +3,13 @@ package io.github.libtmux.mcp;
 import io.github.libtmux.Hooks;
 import io.github.libtmux.Options;
 import io.github.libtmux.Server;
+import io.github.libtmux.Session;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -27,8 +29,6 @@ final class Settings {
 
     record OptionValues(String scope, @Nullable String target, int count, Map<String, String> options) {}
 
-    record OptionSet(String scope, @Nullable String target, String name, String value) {}
-
     record HookValues(String scope, @Nullable String target, int count, Map<String, List<String>> hooks, String note) {}
 
     /**
@@ -45,15 +45,6 @@ final class Settings {
         return new OptionValues(scope, target, values.size(), values);
     }
 
-    static OptionSet setOption(Call call) {
-        String scope = call.maybe("scope").orElse("global").toLowerCase(Locale.ROOT);
-        String target = call.maybe("target").orElse(null);
-        String name = call.string("name");
-        String value = call.string("value");
-        optionsFor(call.server(), scope, target).set(name, value);
-        return new OptionSet(scope, target, name, value);
-    }
-
     static HookValues showHooks(Call call) {
         String scope = call.maybe("scope").orElse("global").toLowerCase(Locale.ROOT);
         String target = call.maybe("target").orElse(null);
@@ -68,11 +59,11 @@ final class Settings {
     }
 
     static Environment environment(Call call) {
-        String name = call.maybe("session").orElse(null);
-        String scope = name == null
-                ? "(global)"
-                : Targets.sessionNamed(call.server(), name).name();
-        List<String> argv = name == null ? List.of("show-environment", "-g") : List.of("show-environment", "-t", scope);
+        Optional<Session> session = Targets.session(call);
+        String scope = session.map(Session::name).orElse("(global)");
+        List<String> argv = session.map(
+                        named -> List.of("show-environment", "-t", named.id().value()))
+                .orElse(List.of("show-environment", "-g"));
         return parseEnvironment(scope, call.server().cmd(argv).stdout());
     }
 
@@ -103,7 +94,7 @@ final class Settings {
             case "global" -> server.globalOptions();
             case "server" -> server.options();
             case "session" ->
-                Targets.sessionNamed(server, required(target, scope)).options();
+                Targets.sessionByIdOrName(server, required(target, scope)).options();
             case "window" -> Targets.window(server, required(target, scope)).options();
             case "pane" -> Targets.pane(server, required(target, scope)).options();
             default ->
@@ -116,7 +107,7 @@ final class Settings {
         return switch (scope) {
             case "global", "server" -> server.hooks();
             case "session" ->
-                Targets.sessionNamed(server, required(target, scope)).hooks();
+                Targets.sessionByIdOrName(server, required(target, scope)).hooks();
             case "window" -> Targets.window(server, required(target, scope)).hooks();
             case "pane" -> Targets.pane(server, required(target, scope)).hooks();
             default ->

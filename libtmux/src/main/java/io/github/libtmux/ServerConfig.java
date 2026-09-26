@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.transport.OperationObserver;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,6 +10,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -24,12 +26,15 @@ import org.jspecify.annotations.Nullable;
 public final class ServerConfig {
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
+    private static final int DEFAULT_CONCURRENT_COMMANDS = 4;
 
     private final String binary;
     private final ServerEndpoint endpoint;
     private final @Nullable Path configFile;
     private final Duration defaultTimeout;
     private final boolean force256Colors;
+    private final OperationObserver observer;
+    private final int maxConcurrentCommands;
 
     private ServerConfig(Builder builder) {
         this.binary = builder.binary;
@@ -37,6 +42,8 @@ public final class ServerConfig {
         this.configFile = builder.configFile;
         this.defaultTimeout = builder.defaultTimeout;
         this.force256Colors = builder.force256Colors;
+        this.observer = builder.observer;
+        this.maxConcurrentCommands = builder.maxConcurrentCommands;
     }
 
     /** A builder holding the documented defaults. */
@@ -97,6 +104,11 @@ public final class ServerConfig {
         return force256Colors;
     }
 
+    /** Where each command's report goes. {@link OperationObserver#NONE} until a caller sets one. */
+    public OperationObserver observer() {
+        return observer;
+    }
+
     /**
      * The argv prefix every command on this server begins with: the binary, {@code -u}, optional color flag, the server
      * selection, and the config file if one was pinned.
@@ -111,6 +123,7 @@ public final class ServerConfig {
      * reach the same conclusion and then be inherited by every pane the server spawns from this
      * client.
      */
+    @ReadOnly
     public List<String> endpointCommand() {
         List<String> command = new ArrayList<>(7);
         command.add(binary);
@@ -124,6 +137,16 @@ public final class ServerConfig {
         return Collections.unmodifiableList(command);
     }
 
+    /**
+     * How many tmux commands {@link Server#open} lets run at once; more wait their turn.
+     *
+     * <p>A coroutine dispatcher or effect pool that runs blocking calls for this server gains nothing
+     * from more threads than this: the rest would only wait for admission.
+     */
+    public int maxConcurrentCommands() {
+        return maxConcurrentCommands;
+    }
+
     /** A builder holding every choice this config made. */
     public Builder toBuilder() {
         Builder builder = new Builder();
@@ -132,6 +155,8 @@ public final class ServerConfig {
         builder.configFile = configFile;
         builder.defaultTimeout = defaultTimeout;
         builder.force256Colors = force256Colors;
+        builder.observer = observer;
+        builder.maxConcurrentCommands = maxConcurrentCommands;
         return builder;
     }
 
@@ -143,6 +168,8 @@ public final class ServerConfig {
         private @Nullable Path configFile;
         private Duration defaultTimeout = DEFAULT_TIMEOUT;
         private boolean force256Colors;
+        private OperationObserver observer = OperationObserver.NONE;
+        private int maxConcurrentCommands = DEFAULT_CONCURRENT_COMMANDS;
 
         private Builder() {}
 
@@ -173,6 +200,25 @@ public final class ServerConfig {
         /** Forces 256-color client support with tmux's {@code -2}; false uses terminal detection. */
         public Builder force256Colors(boolean force256Colors) {
             this.force256Colors = force256Colors;
+            return this;
+        }
+
+        /** Receives a report after each command. The report names verbs, not arguments. */
+        public Builder observer(OperationObserver observer) {
+            this.observer = Objects.requireNonNull(observer, "observer");
+            return this;
+        }
+
+        /**
+         * Sets how many tmux commands {@link Server#open} lets run at once, four unless set.
+         *
+         * @throws IllegalArgumentException if {@code maxConcurrentCommands} is not positive
+         */
+        public Builder maxConcurrentCommands(int maxConcurrentCommands) {
+            if (maxConcurrentCommands < 1) {
+                throw new IllegalArgumentException("maxConcurrentCommands is not positive: " + maxConcurrentCommands);
+            }
+            this.maxConcurrentCommands = maxConcurrentCommands;
             return this;
         }
 

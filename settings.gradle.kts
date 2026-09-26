@@ -3,7 +3,7 @@ pluginManagement {
     repositories { gradlePluginPortal() }
 }
 
-// Resolves the JDK 21 toolchain on a host that does not already have one, so a fresh clone and CI
+// Resolves the JDK 25 toolchain on a host that does not already have one, so a fresh clone and CI
 // both build with no prior setup. A host that has it keeps using its own; nothing is downloaded.
 plugins { id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0" }
 
@@ -13,6 +13,9 @@ dependencyResolutionManagement {
 
 rootProject.name = "libtmux-java"
 
+// Also a library build: :libtmux resolves the operation-catalog Doclet from it by coordinates.
+includeBuild("build-logic")
+
 // Published.
 include("libtmux")
 include("libtmux-bom")
@@ -21,11 +24,14 @@ include("libtmux-kotlin")
 include("libtmux-junit5")
 include("libtmux-workspace")
 include("libtmux-mcp")
+include("libtmux-scala")
+include("libtmux-scala-cats")
+include("libtmux-scala-ox")
 
 // Internal: exercised by the build, never released.
 include("benchmarks")
-include("docs-tests")
+include("docs")
 include("examples")
 include("integration-tests")
 include("tools:mcp-swap")
-include("workspace-cli")
+include("libtmux-workspace-cli")

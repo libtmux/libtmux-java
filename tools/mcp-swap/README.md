@@ -206,5 +206,5 @@ transaction rollback.
 $ ./gradlew :tools:mcp-swap:check
 ```
 
-The module uses the repository's JDK 21 toolchain and is included in the root
+The module uses the repository's JDK 25 toolchain and is included in the root
 build, but it is absent from Maven publication and the BOM.

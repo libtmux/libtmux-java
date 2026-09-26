@@ -3,12 +3,12 @@ package io.github.libtmux;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.TmuxTransport;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -50,14 +50,14 @@ final class TypedTextTest {
                         if (request.commands().stream()
                                 .flatMap(List::stream)
                                 .anyMatch(arg -> arg.contains("send-keys"))) {
-                            throw new TmuxTransportException("reply lost", DispatchOutcome.UNKNOWN, null);
+                            throw new DispatchException.Failed("reply lost", DispatchOutcome.UNKNOWN, null);
                         }
                         return super.execute(request);
                     }
                 },
                 echo)) {
             Pane pane = server.panes().getFirst();
-            assertThrows(TmuxTransportException.class, () -> pane.sendLiteral(List.of("possibly-delivered")));
+            assertThrows(DispatchException.class, () -> pane.sendLiteral(List.of("possibly-delivered")));
             assertEquals(List.of(""), TypedText.in(pane).withoutEcho(List.of("possibly-delivered")));
         }
     }
@@ -74,25 +74,42 @@ final class TypedTextTest {
         }
     }
 
-    private static Server onePaneFixture(PaneEcho echo) {
+    /** One session, one window, one pane, on tmux 3.6; every other command succeeds silently. */
+    static Server onePaneFixture(PaneEcho echo) {
+        return onePaneFixture(echo, GroupedTmux.STARTED);
+    }
+
+    /** As {@link #onePaneFixture(PaneEcho)}, for a server that started at {@code started}. */
+    static Server onePaneFixture(PaneEcho echo, long started) {
         return Server.using(
                 ServerConfig.builder()
                         .endpoint(ServerEndpoint.namedSocket("fixture"))
                         .build(),
-                new OnePane(),
+                new OnePane(started),
                 echo);
     }
 
     private static class OnePane implements TmuxTransport {
 
-        @Override
-        public CommandResult execute(CommandRequest request) {
-            return GroupedTmux.execute(request, 4242L, argv -> answer(argv));
+        private final long started;
+
+        OnePane() {
+            this(GroupedTmux.STARTED);
         }
 
-        private static CommandResult answer(List<String> argv) {
+        OnePane(long started) {
+            this.started = started;
+        }
+
+        @Override
+        public CommandResult execute(CommandRequest request) {
+            return GroupedTmux.execute(request, 4242L, "3.6", started, this::answer);
+        }
+
+        private CommandResult answer(List<String> argv) {
             return switch (argv.get(0)) {
-                case "display-message" -> new CommandResult(0, List.of(row("4242", "3.6")), List.of());
+                case "display-message" ->
+                    new CommandResult(0, List.of(row("4242", "3.6", Long.toString(started))), List.of());
                 case "list-sessions" -> new CommandResult(0, List.of(row("$0", "main", "1", "1")), List.of());
                 case "list-windows" ->
                     new CommandResult(

@@ -3,6 +3,7 @@ package io.github.libtmux;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * Which tmux server to talk to.
@@ -18,6 +19,7 @@ import java.util.Objects;
 public sealed interface ServerEndpoint {
 
     /** The flags that select this server, in argv order. */
+    @ReadOnly
     List<String> flags();
 
     /** tmux's own default server, wherever tmux decides that is. */
@@ -38,6 +40,7 @@ public sealed interface ServerEndpoint {
     /** Adds no flags, so tmux applies its own default socket resolution. */
     record Default() implements ServerEndpoint {
         @Override
+        @ReadOnly
         public List<String> flags() {
             return List.of();
         }
@@ -63,6 +66,7 @@ public sealed interface ServerEndpoint {
         }
 
         @Override
+        @ReadOnly
         public List<String> flags() {
             return List.of("-L", name);
         }
@@ -84,6 +88,7 @@ public sealed interface ServerEndpoint {
         }
 
         @Override
+        @ReadOnly
         public List<String> flags() {
             return List.of("-S", path.toString());
         }

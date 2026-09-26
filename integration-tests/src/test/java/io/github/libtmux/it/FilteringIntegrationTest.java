@@ -11,11 +11,13 @@ import io.github.libtmux.Session;
 import io.github.libtmux.Session_;
 import io.github.libtmux.Window;
 import io.github.libtmux.Window_;
+import io.github.libtmux.exception.CardinalityException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.query.Fields;
 import io.github.libtmux.query.FilterExpr;
 import io.github.libtmux.query.Selections;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -52,7 +54,7 @@ final class FilteringIntegrationTest {
         Window window = server.sessions().get(0).windows().get(0);
         window.resizeTo(new io.github.libtmux.Dimensions(120, 40));
         Pane right = window.refresh().panes().get(0).split(spec -> spec.toRight());
-        var unused = right.retitle("logs");
+        var _ = right.retitle("logs");
 
         List<Pane> panes = server.panes();
 
@@ -123,15 +125,44 @@ final class FilteringIntegrationTest {
 
         assertEquals("only", Selections.exactlyOne(matches).name());
         assertThrows(
-                Selections.NoMatchException.class,
+                CardinalityException.NoMatch.class,
                 () -> Selections.exactlyOne(server.windows().stream()
                         .filter(Window_.name().is("absent"))
                         .toList()),
                 "zero matches and several matches are different bugs in a caller");
         assertThrows(
-                Selections.MultipleMatchesException.class,
+                CardinalityException.MultipleMatches.class,
                 () -> Selections.exactlyOne(server.windows().stream().toList()),
                 "two windows is not one window");
+    }
+
+    /** A lookup answers one or none, and counts exactly when it is ambiguous. */
+    @Test
+    void aLookupByExpressionIsOneOrNone(Server server) {
+        server.newSession("alpha");
+        server.newSession("alpha-2");
+        server.newSession("alpha-3");
+
+        assertEquals(
+                "alpha",
+                server.session(Session_.name().is("alpha")).orElseThrow().name());
+        assertEquals(Optional.empty(), server.session(Session_.name().is("absent")));
+        CardinalityException.MultipleMatches ambiguous = assertThrows(
+                CardinalityException.MultipleMatches.class,
+                () -> server.session(Session_.name().startsWith("alpha")));
+        assertEquals(3, ambiguous.atLeast(), "a lookup holds its whole capture, so the count is exact");
+        assertTrue(String.valueOf(ambiguous.getMessage()).contains("alpha"), ambiguous.getMessage());
+
+        Pane only = server.session(Session_.name().is("alpha-2"))
+                .orElseThrow()
+                .windows()
+                .get(0)
+                .panes()
+                .get(0);
+        assertEquals(
+                only.id(),
+                server.pane(Pane_.id().is(only.id().value())).orElseThrow().id());
+        assertEquals(Optional.empty(), server.window(Window_.name().is("no-such-window")));
     }
 
     @Test

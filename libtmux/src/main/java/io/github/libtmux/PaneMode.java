@@ -1,5 +1,8 @@
 package io.github.libtmux;
 
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+
 /**
  * A mode a pane can be in, as tmux names them.
  *
@@ -56,6 +59,6 @@ public enum PaneMode {
                 return mode;
             }
         }
-        throw new LibTmuxException("tmux reported a mode this library does not know: " + reported);
+        throw new MalformedResponseException("tmux reported a mode this library does not know: " + reported);
     }
 }

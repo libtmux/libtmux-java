@@ -1,0 +1,6 @@
+# name	owner	kind	tmuxFormat	since	relation	accessor	javadoc
+command	Pane	TEXT	pane_current_command	1.8	-	Pane::currentCommand	The command tmux reported running in the pane.
+index	Pane	NUMBER	pane_index	1.7	-	Pane::index	The pane's position in its window.
+active	Pane	FLAG	pane_active	1.7	-	Pane::active	Whether this was its window's active pane.
+panes	Window	-	-	-	to-many:Pane	Window::panes	This link's panes.
+session	Window	-	-	-	to-one:Session	window -> java.util.Optional.of(window.session())	The session this link belongs to.

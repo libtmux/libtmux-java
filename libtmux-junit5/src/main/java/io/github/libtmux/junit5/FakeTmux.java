@@ -7,9 +7,10 @@ import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.TmuxTransport;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -152,8 +153,11 @@ public final class FakeTmux implements TmuxTransport {
             "wait-for");
 
     private long pid;
+    // When this server started, in seconds, as #{start_time} reports it; a restart moves it on.
+    private long started = 1_790_000_000L;
     private final List<FakeSession> sessions = new ArrayList<>();
     private final List<List<String>> sent = new ArrayList<>();
+    private final List<FakeControlClient> controls = new ArrayList<>();
     private final Map<String, List<String>> screens = new HashMap<>();
 
     /** One store per scope tmux keeps: the empty key is the server's, a target names a session's. */
@@ -204,6 +208,9 @@ public final class FakeTmux implements TmuxTransport {
      */
     public synchronized void restart() {
         pid++;
+        started++;
+        controls.forEach(FakeControlClient::end);
+        controls.clear();
         sessions.clear();
         screens.clear();
     }
@@ -231,6 +238,57 @@ public final class FakeTmux implements TmuxTransport {
     @Override
     public synchronized CommandResult execute(CommandRequest request) {
         return run(request.commands());
+    }
+
+    /**
+     * Control clients of this fake: {@code server.control(session)} attaches one, its commands are
+     * answered as this fake answers any other, and it hears what {@link #output} and {@link #notify}
+     * push. A restart ends every client attached, as a server that went away does.
+     */
+    @Override
+    public Optional<ControlCarrier> controlCarrier() {
+        return Optional.of(command -> attach());
+    }
+
+    private synchronized Process attach() {
+        FakeControlClient client = new FakeControlClient(commands -> {
+            synchronized (this) {
+                return run(commands);
+            }
+        });
+        controls.add(client);
+        return client;
+    }
+
+    /**
+     * Pushes what a pane wrote to every attached control client, as tmux's {@code %output}: a
+     * control byte or a backslash as three octal digits, and the rest as it is.
+     */
+    public synchronized void output(PaneId pane, String text) {
+        StringBuilder line = new StringBuilder()
+                .append('%')
+                .append("output ")
+                .append(pane.value())
+                .append(' ');
+        for (byte value : text.getBytes(StandardCharsets.UTF_8)) {
+            int unsigned = value & 0xff;
+            if (unsigned < ' ' || unsigned == '\\') {
+                line.append(String.format("\\%03o", unsigned));
+            } else {
+                line.append((char) unsigned);
+            }
+        }
+        push(line.toString());
+    }
+
+    /** Pushes a notification line, such as {@code %window-renamed @1 logs}, to every attached client. */
+    public synchronized void notify(String line) {
+        push(line);
+    }
+
+    private void push(String line) {
+        controls.removeIf(client -> !client.isAlive());
+        controls.forEach(client -> client.push(line));
     }
 
     @Override
@@ -267,7 +325,7 @@ public final class FakeTmux implements TmuxTransport {
         return switch (verb) {
             case "display-message" -> display(flags);
             case "list-sessions" ->
-                listing(flags, sessions.stream().map(this::context).toList());
+                listing(flags, sessions.stream().map(FakeTmux::first).toList());
             case "list-windows" -> listing(flags, windows(flags));
             case "list-panes" -> listing(flags, panes(flags));
             case "list-clients" -> ok();
@@ -278,12 +336,12 @@ public final class FakeTmux implements TmuxTransport {
             case "new-session" -> newSession(flags);
             case "new-window" -> newWindow(flags);
             case "split-window" -> split(flags);
-            case "rename-session" -> rename(flags, target -> target.session, (session, name) -> session.name = name);
-            case "rename-window" -> rename(flags, target -> target.window, (window, name) -> window.name = name);
+            case "rename-session" -> rename(flags, Target::session, (session, name) -> session.name = name);
+            case "rename-window" -> rename(flags, Target::window, (window, name) -> window.name = name);
             case "select-pane" -> selectPane(flags);
-            case "kill-session" -> kill(flags, target -> sessions.remove(target.session));
-            case "kill-window" -> kill(flags, target -> target.session.windows.remove(target.window));
-            case "kill-pane" -> kill(flags, target -> target.window.panes.remove(target.pane));
+            case "kill-session" -> kill(flags, target -> sessions.remove(target.session()));
+            case "kill-window" -> kill(flags, target -> target.session().windows.remove(target.window()));
+            case "kill-pane" -> kill(flags, target -> target.window().panes.remove(target.pane()));
             case "kill-server" -> {
                 sessions.clear();
                 yield ok();
@@ -305,8 +363,8 @@ public final class FakeTmux implements TmuxTransport {
             return ok();
         }
         Map<String, String> context =
-                resolve(flags.value("-t")).map(this::context).orElseGet(this::serverContext);
-        boolean holds = truthy(Formats.expand(rest.get(0), context::get));
+                Target.resolve(sessions, flags.value("-t")).map(this::context).orElseGet(this::serverContext);
+        boolean holds = Formats.truthy(Formats.expand(rest.get(0), context::get));
         String chosen = holds ? (rest.size() > 1 ? rest.get(1) : "") : (rest.size() > 2 ? rest.get(2) : "");
         return chosen.isEmpty() ? ok() : run(Groups.parse(chosen));
     }
@@ -318,7 +376,8 @@ public final class FakeTmux implements TmuxTransport {
         if (rest.isEmpty()) {
             return ok();
         }
-        Optional<Target> target = flags.value("-t") == null ? active() : resolve(flags.value("-t"));
+        Optional<Target> target =
+                flags.value("-t") == null ? Target.active(sessions) : Target.resolve(sessions, flags.value("-t"));
         Map<String, String> context = target.map(this::context).orElseGet(this::serverContext);
         return ok(Formats.expand(rest.getFirst(), context::get));
     }
@@ -409,40 +468,78 @@ public final class FakeTmux implements TmuxTransport {
         return out.toString();
     }
 
-    private CommandResult listing(Flags flags, List<Map<String, String>> rows) {
+    private CommandResult listing(Flags flags, List<Target> rows) {
         String template = flags.value("-F");
         if (template == null) {
             return ok();
         }
+        String filter = flags.value("-f");
         return new CommandResult(
-                0, rows.stream().map(row -> Formats.expand(template, row::get)).toList(), List.of());
+                0,
+                rows.stream()
+                        .map(this::scope)
+                        .filter(row -> filter == null || Formats.truthy(Formats.expand(filter, row)))
+                        .map(row -> Formats.expand(template, row))
+                        .toList(),
+                List.of());
     }
 
-    private List<Map<String, String>> windows(Flags flags) {
-        List<Map<String, String>> rows = new ArrayList<>();
+    /** A row's variables, and the windows and panes a {@code W:} or {@code P:} loop visits from it. */
+    private Formats.Scope scope(Target target) {
+        Map<String, String> values = context(target);
+        return new Formats.Scope() {
+            @Override
+            public @Nullable String get(String variable) {
+                return values.get(variable);
+            }
+
+            @Override
+            public List<Formats.Scope> windows() {
+                return target.session().windows.stream()
+                        .map(window -> scope(new Target(target.session(), window, window.active())))
+                        .toList();
+            }
+
+            @Override
+            public List<Formats.Scope> panes() {
+                return target.window().panes.stream()
+                        .map(pane -> scope(new Target(target.session(), target.window(), pane)))
+                        .toList();
+            }
+        };
+    }
+
+    private static Target first(FakeSession session) {
+        return new Target(
+                session, session.windows.getFirst(), session.windows.getFirst().active());
+    }
+
+    private List<Target> windows(Flags flags) {
+        List<Target> rows = new ArrayList<>();
         for (FakeSession session : sessions) {
             if (!flags.has("-a") && !isTarget(flags, session)) {
                 continue;
             }
             for (FakeWindow window : session.windows) {
-                rows.add(context(new Target(session, window, window.active())));
+                rows.add(new Target(session, window, window.active()));
             }
         }
         return rows;
     }
 
     /** Every pane with {@code -a}, as the library's own listings ask; otherwise the target window's. */
-    private List<Map<String, String>> panes(Flags flags) {
-        Optional<Target> target =
-                flags.has("-a") ? Optional.empty() : resolve(flags.value("-t")).or(this::active);
-        List<Map<String, String>> rows = new ArrayList<>();
+    private List<Target> panes(Flags flags) {
+        Optional<Target> target = flags.has("-a")
+                ? Optional.empty()
+                : Target.resolve(sessions, flags.value("-t")).or(() -> Target.active(sessions));
+        List<Target> rows = new ArrayList<>();
         for (FakeSession session : sessions) {
             for (FakeWindow window : session.windows) {
-                if (target.isPresent() && target.get().window != window) {
+                if (target.isPresent() && target.get().window() != window) {
                     continue;
                 }
                 for (FakePane pane : window.panes) {
-                    rows.add(context(new Target(session, window, pane)));
+                    rows.add(new Target(session, window, pane));
                 }
             }
         }
@@ -450,20 +547,20 @@ public final class FakeTmux implements TmuxTransport {
     }
 
     private boolean isTarget(Flags flags, FakeSession session) {
-        return resolve(flags.value("-t"))
-                .map(target -> target.session == session)
+        return Target.resolve(sessions, flags.value("-t"))
+                .map(target -> target.session() == session)
                 .orElse(false);
     }
 
     private CommandResult capture(Flags flags) {
-        return resolve(flags.value("-t"))
+        return Target.resolve(sessions, flags.value("-t"))
                 .map(target ->
-                        ok(screens.getOrDefault(target.pane.id, List.of()).toArray(String[]::new)))
+                        ok(screens.getOrDefault(target.pane().id, List.of()).toArray(String[]::new)))
                 .orElseGet(() -> missing(flags.value("-t")));
     }
 
     private CommandResult hasSession(Flags flags) {
-        return resolve(flags.value("-t")).isPresent() ? ok() : missing(flags.value("-t"));
+        return Target.resolve(sessions, flags.value("-t")).isPresent() ? ok() : missing(flags.value("-t"));
     }
 
     // ------------------------------------------------------------------------------ changes
@@ -481,31 +578,32 @@ public final class FakeTmux implements TmuxTransport {
     }
 
     private CommandResult newWindow(Flags flags) {
-        Optional<Target> target = resolve(flags.value("-t"));
+        Optional<Target> target = Target.resolve(sessions, flags.value("-t"));
         if (target.isEmpty()) {
             return missing(flags.value("-t"));
         }
-        FakeSession session = target.get().session;
+        FakeSession session = target.get().session();
         String name = Formats.literal(Optional.ofNullable(flags.value("-n")).orElse(command(flags)));
         FakeWindow window = newWindow(session, name, command(flags), directory(flags));
         return created(flags, context(new Target(session, window, window.active())));
     }
 
     private CommandResult split(Flags flags) {
-        Optional<Target> target = flags.value("-t") == null ? active() : resolve(flags.value("-t"));
+        Optional<Target> target =
+                flags.value("-t") == null ? Target.active(sessions) : Target.resolve(sessions, flags.value("-t"));
         if (target.isEmpty()) {
             return missing(flags.value("-t"));
         }
-        FakeWindow window = target.get().window;
+        FakeWindow window = target.get().window();
         FakePane pane =
                 new FakePane("%" + nextPane++, window.panes.size(), command(flags), directory(flags), 1000 + nextPane);
         window.panes.add(pane);
-        return created(flags, context(new Target(target.get().session, window, pane)));
+        return created(flags, context(new Target(target.get().session(), window, pane)));
     }
 
     private <T> CommandResult rename(
             Flags flags, Function<Target, T> part, java.util.function.BiConsumer<T, String> setter) {
-        Optional<Target> target = resolve(flags.value("-t"));
+        Optional<Target> target = Target.resolve(sessions, flags.value("-t"));
         List<String> rest = flags.positional();
         if (target.isEmpty() || rest.isEmpty()) {
             return missing(flags.value("-t"));
@@ -515,19 +613,19 @@ public final class FakeTmux implements TmuxTransport {
     }
 
     private CommandResult selectPane(Flags flags) {
-        Optional<Target> target = resolve(flags.value("-t"));
+        Optional<Target> target = Target.resolve(sessions, flags.value("-t"));
         if (target.isEmpty()) {
             return missing(flags.value("-t"));
         }
         String title = flags.value("-T");
         if (title != null) {
-            target.get().pane.title = Formats.literal(title);
+            target.get().pane().title = Formats.literal(title);
         }
         return ok();
     }
 
     private CommandResult kill(Flags flags, java.util.function.Consumer<Target> remove) {
-        Optional<Target> target = resolve(flags.value("-t"));
+        Optional<Target> target = Target.resolve(sessions, flags.value("-t"));
         if (target.isEmpty()) {
             return missing(flags.value("-t"));
         }
@@ -571,67 +669,23 @@ public final class FakeTmux implements TmuxTransport {
         return Formats.literal(Optional.ofNullable(flags.value("-c")).orElse("/"));
     }
 
-    // ------------------------------------------------------------------------------ targets
-
-    private record Target(FakeSession session, FakeWindow window, FakePane pane) {}
-
-    private Optional<Target> active() {
-        return sessions.stream().findFirst().map(session -> {
-            FakeWindow window =
-                    session.windows.stream().filter(w -> w.active).findFirst().orElse(session.windows.getFirst());
-            return new Target(session, window, window.active());
-        });
-    }
-
-    /** Resolves {@code $id}, {@code @id}, {@code %id} and {@code =name}, with any trailing separator. */
-    private Optional<Target> resolve(@Nullable String spec) {
-        if (spec == null) {
-            return Optional.empty();
-        }
-        String wanted = spec.replaceAll("[:.]+$", "");
-        for (FakeSession session : sessions) {
-            if (wanted.equals(session.id) || wanted.equals("=" + session.name)) {
-                FakeWindow window = session.windows.stream()
-                        .filter(w -> w.active)
-                        .findFirst()
-                        .orElse(session.windows.getFirst());
-                return Optional.of(new Target(session, window, window.active()));
-            }
-            for (FakeWindow window : session.windows) {
-                if (wanted.equals(window.id)) {
-                    return Optional.of(new Target(session, window, window.active()));
-                }
-                for (FakePane pane : window.panes) {
-                    if (wanted.equals(pane.id)) {
-                        return Optional.of(new Target(session, window, pane));
-                    }
-                }
-            }
-        }
-        return Optional.empty();
-    }
-
     // ------------------------------------------------------------------------------ formats
 
     private Map<String, String> serverContext() {
         Map<String, String> context = new HashMap<>();
         context.put("pid", Long.toString(pid));
         context.put("version", VERSION);
+        context.put("start_time", Long.toString(started));
         context.put("socket_path", "/tmp/libtmux-java-fake/" + pid);
         return context;
-    }
-
-    private Map<String, String> context(FakeSession session) {
-        return context(new Target(
-                session, session.windows.getFirst(), session.windows.getFirst().active()));
     }
 
     /** Every format variable the library asks for, for one pane in its window in its session. */
     private Map<String, String> context(Target target) {
         Map<String, String> context = serverContext();
-        FakeSession session = target.session;
-        FakeWindow window = target.window;
-        FakePane pane = target.pane;
+        FakeSession session = target.session();
+        FakeWindow window = target.window();
+        FakePane pane = target.pane();
         context.put("session_id", session.id);
         context.put("session_name", session.name);
         context.put("session_attached", "0");
@@ -666,10 +720,6 @@ public final class FakeTmux implements TmuxTransport {
         return context;
     }
 
-    private static boolean truthy(String value) {
-        return !value.isEmpty() && !value.equals("0");
-    }
-
     private static CommandResult ok(String... lines) {
         return new CommandResult(0, List.of(lines), List.of());
     }
@@ -677,260 +727,5 @@ public final class FakeTmux implements TmuxTransport {
     private static CommandResult missing(@Nullable String target) {
         return new CommandResult(
                 1, List.of(), List.of("can't find session: " + (target == null ? "" : target.replaceFirst("^=", ""))));
-    }
-
-    // ------------------------------------------------------------------------------- model
-
-    private static final class FakeSession {
-        final String id;
-        String name;
-        final List<FakeWindow> windows = new ArrayList<>();
-
-        FakeSession(String id, String name) {
-            this.id = id;
-            this.name = name;
-        }
-    }
-
-    private static final class FakeWindow {
-        final String id;
-        final int index;
-        String name;
-        boolean active;
-        final List<FakePane> panes = new ArrayList<>();
-
-        FakeWindow(String id, int index, String name) {
-            this.id = id;
-            this.index = index;
-            this.name = name;
-        }
-
-        FakePane active() {
-            return panes.getFirst();
-        }
-    }
-
-    private static final class FakePane {
-        final String id;
-        final int index;
-        final String command;
-        final String directory;
-        final long pid;
-        String title = "";
-
-        FakePane(String id, int index, String command, String directory, long pid) {
-            this.id = id;
-            this.index = index;
-            this.command = command;
-            this.directory = directory;
-            this.pid = pid;
-        }
-    }
-
-    // -------------------------------------------------------------------------- the grammar
-
-    /** A command's flags and the words after them, read as tmux's argument parser reads them. */
-    private record Flags(Map<String, String> values, Set<String> switches, List<String> positional) {
-
-        /**
-         * The flags that take a value, per command, since tmux decides that per command: {@code -f}
-         * is a value to {@code new-session} and a switch to {@code split-window}, and {@code -b} names
-         * a buffer to one and puts a pane before another.
-         */
-        private static final Map<String, Set<String>> VALUED = Map.of(
-                "new-session", Set.of("-t", "-s", "-n", "-c", "-x", "-y", "-F", "-e", "-f"),
-                "new-window", Set.of("-t", "-n", "-c", "-F", "-e"),
-                "split-window", Set.of("-t", "-l", "-c", "-F", "-e", "-s", "-S", "-R", "-m"),
-                "capture-pane", Set.of("-t", "-S", "-E", "-b"),
-                "select-pane", Set.of("-t", "-T"),
-                "if-shell", Set.of("-t"),
-                "set-environment", Set.of("-t"),
-                "show-environment", Set.of("-t"));
-
-        private static final Set<String> DEFAULT_VALUED = Set.of("-t", "-F", "-b", "-c");
-
-        static Flags parse(List<String> argv) {
-            Set<String> valued = VALUED.getOrDefault(argv.getFirst(), DEFAULT_VALUED);
-            Map<String, String> values = new HashMap<>();
-            java.util.Set<String> switches = new java.util.HashSet<>();
-            int index = 1;
-            while (index < argv.size()) {
-                String word = argv.get(index);
-                if (word.equals("--")) {
-                    index++;
-                    break;
-                }
-                if (!word.startsWith("-") || word.length() < 2) {
-                    break;
-                }
-                if (valued.contains(word) && index + 1 < argv.size()) {
-                    values.put(word, argv.get(index + 1));
-                    index += 2;
-                } else {
-                    for (char flag : word.substring(1).toCharArray()) {
-                        switches.add("-" + flag);
-                    }
-                    index++;
-                }
-            }
-            return new Flags(values, switches, List.copyOf(argv.subList(index, argv.size())));
-        }
-
-        boolean has(String flag) {
-            return switches.contains(flag) || values.containsKey(flag);
-        }
-
-        @Nullable
-        String value(String flag) {
-            return values.get(flag);
-        }
-    }
-
-    /**
-     * Reads a command group the way tmux's command parser reads it: words in single quotes, a quote
-     * spelled {@code '\''}, a line break spelled {@code "\n"}, commands separated by {@code ;}.
-     */
-    static final class Groups {
-
-        private Groups() {}
-
-        static List<List<String>> parse(String text) {
-            List<List<String>> commands = new ArrayList<>();
-            List<String> command = new ArrayList<>();
-            StringBuilder word = null;
-            int index = 0;
-            while (index < text.length()) {
-                char character = text.charAt(index);
-                if (character == ' ') {
-                    if (word != null) {
-                        command.add(word.toString());
-                        word = null;
-                    }
-                    index++;
-                } else if (character == ';' && word == null) {
-                    if (!command.isEmpty()) {
-                        commands.add(command);
-                    }
-                    command = new ArrayList<>();
-                    index++;
-                } else {
-                    if (word == null) {
-                        word = new StringBuilder();
-                    }
-                    if (character == '\'') {
-                        int end = text.indexOf('\'', index + 1);
-                        word.append(text, index + 1, end);
-                        index = end + 1;
-                    } else if (character == '"') {
-                        int end = text.indexOf('"', index + 1);
-                        word.append(text.substring(index + 1, end)
-                                .replace("\\n", "\n")
-                                .replace("\\r", "\r"));
-                        index = end + 1;
-                    } else if (character == '\\' && index + 1 < text.length()) {
-                        word.append(text.charAt(index + 1));
-                        index += 2;
-                    } else {
-                        word.append(character);
-                        index++;
-                    }
-                }
-            }
-            if (word != null) {
-                command.add(word.toString());
-            }
-            if (!command.isEmpty()) {
-                commands.add(command);
-            }
-            return commands;
-        }
-    }
-
-    /** The part of tmux's format language the library sends: variables, {@code ==} and {@code &&}. */
-    static final class Formats {
-
-        private Formats() {}
-
-        /** Undoes {@code TmuxFormats.literal}: tmux reads {@code ##} in a format as one {@code #}. */
-        static String literal(String value) {
-            return value.replace("##", "#");
-        }
-
-        static String expand(String format, Function<String, @Nullable String> variables) {
-            StringBuilder out = new StringBuilder();
-            int index = 0;
-            while (index < format.length()) {
-                if (format.startsWith("##", index)) {
-                    out.append('#');
-                    index += 2;
-                } else if (format.startsWith("#{", index)) {
-                    int end = closing(format, index + 2);
-                    out.append(evaluate(format.substring(index + 2, end), variables));
-                    index = end + 1;
-                } else {
-                    out.append(format.charAt(index));
-                    index++;
-                }
-            }
-            return out.toString();
-        }
-
-        private static String evaluate(String inner, Function<String, @Nullable String> variables) {
-            for (String operator : List.of("==:", "!=:", "&&:", "||:")) {
-                if (inner.startsWith(operator)) {
-                    List<String> operands = split(inner.substring(operator.length())).stream()
-                            .map(operand -> expand(operand, variables))
-                            .toList();
-                    String left = operands.isEmpty() ? "" : operands.get(0);
-                    String right = operands.size() < 2 ? "" : operands.get(1);
-                    boolean result =
-                            switch (operator) {
-                                case "==:" -> left.equals(right);
-                                case "!=:" -> !left.equals(right);
-                                case "&&:" -> truthy(left) && truthy(right);
-                                default -> truthy(left) || truthy(right);
-                            };
-                    return result ? "1" : "0";
-                }
-            }
-            String value = variables.apply(inner);
-            return value == null ? "" : value;
-        }
-
-        private static int closing(String format, int from) {
-            int depth = 1;
-            for (int index = from; index < format.length(); index++) {
-                if (format.startsWith("#{", index)) {
-                    depth++;
-                    index++;
-                } else if (format.charAt(index) == '}') {
-                    depth--;
-                    if (depth == 0) {
-                        return index;
-                    }
-                }
-            }
-            return format.length() - 1;
-        }
-
-        /** Splits operands at commas that are not inside a nested format. */
-        private static List<String> split(String operands) {
-            List<String> parts = new ArrayList<>();
-            int depth = 0;
-            int start = 0;
-            for (int index = 0; index < operands.length(); index++) {
-                if (operands.startsWith("#{", index)) {
-                    depth++;
-                    index++;
-                } else if (operands.charAt(index) == '}') {
-                    depth--;
-                } else if (operands.charAt(index) == ',' && depth == 0) {
-                    parts.add(operands.substring(start, index));
-                    start = index + 1;
-                }
-            }
-            parts.add(operands.substring(start));
-            return Collections.unmodifiableList(parts);
-        }
     }
 }

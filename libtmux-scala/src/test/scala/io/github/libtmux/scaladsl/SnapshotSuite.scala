@@ -21,7 +21,13 @@ import io.github.libtmux.snapshot.{
 import java.time.Instant
 import java.util.{ArrayList, List => JList, Optional, OptionalLong}
 import munit.FunSuite
+import scala.jdk.CollectionConverters._
+import scala.jdk.OptionConverters._
 
+/** `ServerSnapshot`/`PaneState`/... are Java's own records, used directly, so
+  * this pins the `windowsOf`/`panesOf`/`session` grouping and
+  * `Optional`/`OptionalLong` boundary behavior against the real Java types.
+  */
 final class SnapshotSuite extends FunSuite {
   private val session = new SessionId("$0")
   private val other = new SessionId("$1")
@@ -72,19 +78,38 @@ final class SnapshotSuite extends FunSuite {
   }
 
   test("capture preserves linked occurrences and optional metadata") {
-    val snapshot = Snapshot.fromJava(javaSnapshot)
-    assertEquals(snapshot.capturedAt, Instant.EPOCH)
-    assertEquals(snapshot.serverPid, Some(123L))
-    assertEquals(snapshot.windows.map(_.context), contexts)
-    assertEquals(snapshot.panes.map(_.context), contexts)
-    assertEquals(snapshot.panes.map(_.id).distinct, Vector(new PaneId("%0")))
-    assertEquals(snapshot.windowsOf(session).map(_.context), contexts.take(2))
-    assertEquals(snapshot.panesOf(contexts(2)).size, 1)
-    assertEquals(snapshot.panes.map(_.pid), Vector(None, None, None))
-    assertEquals(snapshot.panes.map(_.floating), Vector(None, None, None))
-    assertEquals(snapshot.panes.map(_.currentPathText), Vector("", "", ""))
-    assertEquals(snapshot.clients.head.session, None)
-    assertEquals(snapshot.session("missing"), None)
+    val snapshot = javaSnapshot
+    assertEquals(snapshot.capturedAt(), Instant.EPOCH)
+    assertEquals(snapshot.serverPid().toScala, Some(123L))
+    assertEquals(snapshot.windows().asScala.map(_.context()).toVector, contexts)
+    assertEquals(snapshot.panes().asScala.map(_.context()).toVector, contexts)
+    assertEquals(
+      snapshot.panes().asScala.map(_.id()).toVector.distinct,
+      Vector(new PaneId("%0"))
+    )
+    assertEquals(
+      snapshot.windowsOf(session).asScala.map(_.context()).toVector,
+      contexts.take(2)
+    )
+    assertEquals(snapshot.panesOf(contexts(2)).size(), 1)
+    assertEquals(
+      snapshot.panes().asScala.map(_.pid().toScala).toVector,
+      Vector(None, None, None)
+    )
+    assertEquals(
+      snapshot
+        .panes()
+        .asScala
+        .map(_.floating().toScala.map(_.booleanValue()))
+        .toVector,
+      Vector(None, None, None)
+    )
+    assertEquals(
+      snapshot.panes().asScala.map(_.currentPath()).toVector,
+      Vector("", "", "")
+    )
+    assertEquals(snapshot.clients().get(0).session().toScala, None)
+    assertEquals(snapshot.session("missing").toScala, None)
   }
 
   test("conversion distinguishes absent from false and process zero") {
@@ -102,9 +127,8 @@ final class SnapshotSuite extends FunSuite {
       new PaneEdges(false, false, false, false),
       Optional.of(java.lang.Boolean.FALSE)
     )
-    val info = PaneInfo.fromJava(state)
-    assertEquals(info.pid, Some(0L))
-    assertEquals(info.floating, Some(false))
-    assertEquals(info.currentPath().toString, "/tmp")
+    assertEquals(state.pid().toScala, Some(0L))
+    assertEquals(state.floating().toScala.map(_.booleanValue()), Some(false))
+    assertEquals(state.currentPath(), "/tmp")
   }
 }

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -29,7 +30,7 @@ final class CreationSpecTest {
 
     @Test
     void aPlainWindowAsksForNothingBeyondTheWindow() {
-        List<String> argv = WindowSpec.builder().build().argv("$1", FORMAT, V37B);
+        List<String> argv = WindowSpec.builder().build().argv("$1", FORMAT);
 
         assertEquals(List.of("new-window", "-t", "$1", "-P", "-F", FORMAT), argv);
     }
@@ -40,18 +41,16 @@ final class CreationSpecTest {
      */
     @Test
     void onlyASessionIsDetachedByDefault() {
-        assertFalse(WindowSpec.builder().build().argv("$1", FORMAT, V37B).contains("-d"));
-        assertTrue(
-                WindowSpec.builder().detached().build().argv("$1", FORMAT, V37B).contains("-d"));
+        assertFalse(WindowSpec.builder().build().argv("$1", FORMAT).contains("-d"));
+        assertTrue(WindowSpec.builder().detached().build().argv("$1", FORMAT).contains("-d"));
         assertTrue(SessionSpec.builder().build().argv(FORMAT, () -> V37B).contains("-d"));
     }
 
     @Test
     void placementIsAbsentUntilItIsAskedFor() {
-        assertFalse(WindowSpec.builder().build().argv("$1", FORMAT, V37B).contains("-a"));
-        assertTrue(WindowSpec.builder().after().build().argv("$1", FORMAT, V37B).contains("-a"));
-        assertTrue(
-                WindowSpec.builder().before().build().argv("$1", FORMAT, V37B).contains("-b"));
+        assertFalse(WindowSpec.builder().build().argv("$1", FORMAT).contains("-a"));
+        assertTrue(WindowSpec.builder().after().build().argv("$1", FORMAT).contains("-a"));
+        assertTrue(WindowSpec.builder().before().build().argv("$1", FORMAT).contains("-b"));
     }
 
     @Test
@@ -59,20 +58,17 @@ final class CreationSpecTest {
         assertTrue(WindowSpec.builder()
                 .replaceExisting()
                 .build()
-                .argv("$1", FORMAT, V37B)
+                .argv("$1", FORMAT)
                 .contains("-k"));
-        assertTrue(WindowSpec.builder()
-                .reuseExisting()
-                .build()
-                .argv("$1", FORMAT, V37B)
-                .contains("-S"));
+        assertTrue(
+                WindowSpec.builder().reuseExisting().build().argv("$1", FORMAT).contains("-S"));
     }
 
     /** {@code -k} needs an index to replace; without one tmux picks a free one and destroys nothing. */
     @Test
     void anIndexTurnsTheTargetFromASessionIntoAWinlink() {
-        List<String> plain = WindowSpec.builder().build().argv("$1", FORMAT, V37B);
-        List<String> placed = WindowSpec.builder().atIndex(3).build().argv("$1", FORMAT, V37B);
+        List<String> plain = WindowSpec.builder().build().argv("$1", FORMAT);
+        List<String> placed = WindowSpec.builder().atIndex(3).build().argv("$1", FORMAT);
 
         assertEquals("$1", plain.get(plain.indexOf("-t") + 1));
         assertEquals("$1:3", placed.get(placed.indexOf("-t") + 1));
@@ -89,36 +85,41 @@ final class CreationSpecTest {
                 .named("logs")
                 .running("journalctl", "-f")
                 .build()
-                .argv("$1", FORMAT, V37B);
+                .argv("$1", FORMAT);
 
         assertEquals(List.of("journalctl", "-f"), argv.subList(argv.size() - 2, argv.size()));
     }
 
     @Test
     void aWindowStartDirectoryIsPassedToTmux() {
-        List<String> argv = WindowSpec.builder().in(Path.of("/srv")).build().argv("$1", FORMAT, V37B);
+        List<String> argv = WindowSpec.builder().in(Path.of("/srv")).build().argv("$1", FORMAT);
         assertEquals("/srv", argv.get(argv.indexOf("-c") + 1));
     }
 
     /**
-     * An absolute directory is honoured on every supported release; a relative one is resolved
-     * against the server's working directory before 3.3a, which is not the caller's.
+     * tmux 3.2a resolves a relative {@code -c} against the server's working directory, falling back
+     * to home; 3.3 onwards resolves it against the requesting client's, which is this process's.
+     * Every spawn site sends it resolved, so every release starts the process where 3.3 does.
      */
     @Test
-    void aRelativeWindowStartDirectoryIsRefusedBefore33a() {
-        WindowSpec relative = WindowSpec.builder().in(Path.of("sub")).build();
+    void aRelativeDirectoryReachesTmuxResolvedAgainstThisProcess() {
+        Path relative = Path.of("sub");
+        String resolved = relative.toAbsolutePath().toString();
 
-        List<String> honoured = relative.argv("$1", FORMAT, V33A);
+        List<String> session = SessionSpec.builder().in(relative).build().argv(FORMAT, () -> V32A);
+        List<String> window = WindowSpec.builder().in(relative).build().argv("$1", FORMAT);
+        List<String> split = SplitSpec.builder().in(relative).build().argv("%1", FORMAT, V32A);
+        List<String> respawn = Pane.respawnArgv(new PaneId("%1"), relative);
 
-        assertThrows(UnsupportedTmuxVersionException.class, () -> relative.argv("$1", FORMAT, V32A));
-        assertEquals("sub", honoured.get(honoured.indexOf("-c") + 1));
-        assertDoesNotThrow(
-                () -> WindowSpec.builder().in(Path.of("/srv")).build().argv("$1", FORMAT, V32A));
+        assertEquals(resolved, session.get(session.indexOf("-c") + 1));
+        assertEquals(resolved, window.get(window.indexOf("-c") + 1));
+        assertEquals(resolved, split.get(split.indexOf("-c") + 1));
+        assertEquals(resolved, respawn.get(respawn.indexOf("-c") + 1));
     }
 
     @Test
     void aWindowWithoutADirectoryUsesTmuxDefaults() {
-        assertDoesNotThrow(() -> WindowSpec.builder().named("plain").build().argv("$1", FORMAT, V37B));
+        assertDoesNotThrow(() -> WindowSpec.builder().named("plain").build().argv("$1", FORMAT));
     }
 
     // ----------------------------------------------------------------------------- new-session
@@ -150,8 +151,8 @@ final class CreationSpecTest {
     void aSizeIsRefusedOnTheReleaseThatIgnoresIt() {
         SessionSpec spec = SessionSpec.builder().sized(new Dimensions(120, 40)).build();
 
-        UnsupportedTmuxVersionException refused =
-                assertThrows(UnsupportedTmuxVersionException.class, () -> spec.argv(FORMAT, () -> V32A));
+        UnsupportedFeatureException refused =
+                assertThrows(UnsupportedFeatureException.class, () -> spec.argv(FORMAT, () -> V32A));
 
         assertEquals(
                 "a size for a detached session requires tmux 3.3, but this server runs 3.2a", refused.getMessage());
@@ -220,7 +221,7 @@ final class CreationSpecTest {
         String literal = "/srv/##one/####two";
 
         List<String> session = SessionSpec.builder().in(supplied).build().argv(FORMAT, () -> V37B);
-        List<String> window = WindowSpec.builder().in(supplied).build().argv("$1", FORMAT, V37B);
+        List<String> window = WindowSpec.builder().in(supplied).build().argv("$1", FORMAT);
         List<String> split = SplitSpec.builder().in(supplied).build().argv("%1", FORMAT, V37B);
         List<String> respawn = Pane.respawnArgv(new PaneId("%1"), supplied);
 
@@ -241,11 +242,9 @@ final class CreationSpecTest {
         WindowSpec window = WindowSpec.builder().named("shared").build();
         SessionSpec session = SessionSpec.builder().named("shared").build();
 
-        assertEquals(window.argv("$1", FORMAT, V37B), window.argv("$1", FORMAT, V37B));
+        assertEquals(window.argv("$1", FORMAT), window.argv("$1", FORMAT));
         assertEquals(session.argv(FORMAT, () -> V37B), session.argv(FORMAT, () -> V37B));
         assertEquals(
-                "$2",
-                window.argv("$2", FORMAT, V37B)
-                        .get(window.argv("$2", FORMAT, V37B).indexOf("-t") + 1));
+                "$2", window.argv("$2", FORMAT).get(window.argv("$2", FORMAT).indexOf("-t") + 1));
     }
 }

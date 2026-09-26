@@ -1,6 +1,7 @@
 # Driving tmux from a model
 
-Every Java snippet here is executed by `ExamplesTest`.
+Every Java snippet here is run by `DocumentationSnippetsTest`, except one
+marked compile-only, which says why.
 
 [`libtmux-mcp`](../../libtmux-mcp/) serves a tmux server to any MCP client. The
 [module README](../../libtmux-mcp/README.md) is how to run it; this page is why
@@ -153,7 +154,7 @@ two unrelated screens together.
 Handing back lines that do not follow the ones before them, without saying so, is
 worse than handing back nothing. Which is why two things about that look are not
 optional, and both were measured after a false `continuous: false` reached CI
-([the spike](../spikes/27-torn-reads.md)):
+(see [0015](../decisions/0015-atomic-capture-and-cursor-position.md)):
 
 **The capture and the pane's position come from one tmux invocation.** Where a
 line sits in a capture depends on how far the pane has scrolled, so two
@@ -180,11 +181,12 @@ applications directly:
 <!-- snippet: compile-only: a watch reports a format when its value changes -->
 ```java
 // Given: Server server, Session session
-try (ControlClient client = ControlClient.attach(server.config(), session.id());
+try (ControlClient client = server.control(session);
         EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
     client.watch("names", "@*", "#{window_name}");
 
-    ControlEvent event = events.next(Duration.ofSeconds(2)).orElseThrow();
+    Delivery<ControlEvent> step = events.next(Duration.ofSeconds(2)).orElseThrow();
+    ControlEvent event = Delivery.kept(step);
     event.subscription();   // which watch this came from
     event.windowId();        // which window, when the watch is over windows
     event.value();           // what the format expanded to
@@ -248,7 +250,11 @@ is malformed or unprovable; read metadata does not claim an uncertain match.
 
 Every read is capped, keeps the **newest** lines, and reports how many it dropped.
 The tail is what matters: the reason to look at a terminal is almost always what
-it just did.
+it just did. `snapshot_pane` returns that pane's metadata and bounded content
+together, so a model does not spend a turn on `list_panes` and another on
+`capture_pane` for one pane. `capture_pane`, `capture_since`, `wait_for_text`,
+`run_shell_command`, and `search_panes` all report a cut through the same field,
+`truncated`, so one check works across every read tool.
 
 There is a character budget as well as a line budget, because a line has no length
 limit — a pane showing minified JavaScript is one line of half a megabyte, and a
@@ -268,10 +274,24 @@ exception, because a transport-level exception never reaches the model — and t
 model is the one participant able to choose a different pane. Each one names the
 recovery: `no pane %9 on this server; call list_panes for the 3 that exist`.
 
+A message is prose a model has to interpret; `_meta.error_code` and
+`_meta.retryable` are not. `error_code` names which branch of the sealed
+`io.github.libtmux.exception.LibTmuxException` tree the failure took —
+`TARGET_GONE`, `COMMAND_REJECTED`, `SERVER_UNAVAILABLE`, and so on — or
+`REFUSED` and `INTERNAL_ERROR` for the two kinds this server itself raises.
+`retryable` says whether sending the exact same call again could possibly
+help: only for `DispatchException`, whose own `safeToRetry()` decides it,
+since that is the one failure where tmux's own state is left uncertain.
+Every other code means tmux already answered or this server's own guard
+refused before asking, so a verbatim retry repeats the same answer. Both live
+in `_meta` rather than `structuredContent`, because a tool that declares an
+`outputSchema` describes its success shape there, and an error does not
+match it.
+
 ## Further reading
 
 - [`libtmux-mcp` README](../../libtmux-mcp/README.md) — running it, and the tool list
 - [Filtering](filtering.md) — the expression model Java applications can use
   outside MCP
 - [Watching output as it happens](streaming.md) — the control client directly
-- [Control-mode subscriptions](../spikes/23-control-subscriptions.md) — what was measured
+- [Control-mode subscriptions](../decisions/0014-watch-a-server-with-refresh-client.md) — what was measured

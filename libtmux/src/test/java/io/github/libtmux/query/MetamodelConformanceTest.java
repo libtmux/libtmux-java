@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 final class MetamodelConformanceTest {
 
     @Test
-    void theHandWrittenMetamodelsConform() {
+    void theGeneratedMetamodelsConform() {
         MetamodelConformance.assertConformant(Model.Pane_.class, Set.of("command", "index", "active"), false);
         MetamodelConformance.assertConformant(Model.Window_.class, Set.of("name"), false);
         MetamodelConformance.assertConformant(
@@ -29,14 +29,26 @@ final class MetamodelConformanceTest {
                         "pane_width",
                         "pane_height",
                         "pane_left",
-                        "pane_top"),
+                        "pane_top",
+                        "pane_at_top",
+                        "pane_at_bottom",
+                        "pane_at_left",
+                        "pane_at_right"),
                 false);
         MetamodelConformance.assertConformant(
                 Window_.class,
-                Set.of("window_id", "window_name", "window_index", "window_active", "window_linked"),
+                Set.of(
+                        "window_id",
+                        "window_name",
+                        "window_index",
+                        "window_active",
+                        "window_linked",
+                        "window_width",
+                        "window_height",
+                        "window_panes"),
                 false);
         MetamodelConformance.assertConformant(
-                Session_.class, Set.of("session_id", "session_name", "session_attached"), false);
+                Session_.class, Set.of("session_id", "session_name", "session_attached", "session_windows"), false);
         MetamodelConformance.assertConformant(Client_.class, Set.of("client_name"), false);
     }
 

@@ -1,6 +1,7 @@
 package io.github.libtmux.transport;
 
 import java.util.List;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * One completed invocation.
@@ -12,7 +13,10 @@ import java.util.List;
  * @param stdout stdout split at LF, preserving carriage returns and interior blanks
  * @param stderr stderr split into lines, with blanks dropped
  */
-public record CommandResult(int exitCode, List<String> stdout, List<String> stderr) {
+public record CommandResult(
+        int exitCode,
+        @ReadOnly List<String> stdout,
+        @ReadOnly List<String> stderr) {
 
     public CommandResult {
         stdout = List.copyOf(stdout);

@@ -8,8 +8,7 @@ plugins {
 
 // Aggregate entry points, so the gate is one command whatever the module layout becomes.
 
-// The BOM covers Gradle publications. Scala artifacts release independently, and
-// their shared sbt build verifies the cross-published coordinate manifest.
+// Every publication, the Scala artifacts included, is one the BOM manages.
 val platformCoversEveryPublishedModule =
     tasks.register("platformCoversEveryPublishedModule") {
         group = "verification"
@@ -29,11 +28,23 @@ val platformCoversEveryPublishedModule =
                 }
                 .toSortedSet()
         }
+        // A constraint names a project; what the platform's POM manages is that project's published
+        // artifact, whose id can differ from the project name (a Scala artifact's _3 suffix).
         val managed = provider {
             platform.configurations
                 .getByName("api")
                 .dependencyConstraints
-                .map { "${it.group}:${it.name}:${it.version}" }
+                .map { constraint ->
+                    val artifactId = rootProject.findProject(":${constraint.name}")
+                        ?.extensions
+                        ?.findByType(PublishingExtension::class.java)
+                        ?.publications
+                        ?.withType(MavenPublication::class.java)
+                        ?.firstOrNull()
+                        ?.artifactId
+                        ?: constraint.name
+                    "${constraint.group}:$artifactId:${constraint.version}"
+                }
                 .toSortedSet()
         }
 
@@ -91,4 +102,8 @@ tasks.register("check") {
     description = "Every gate that must hold before publication."
     dependsOn(subprojects.filter { it.buildFile.exists() }.map { "${it.path}:check" })
     dependsOn(platformCoversEveryPublishedModule, kotlinStaysDownstream)
+    // An included build's tasks are not this build's subprojects, so its tests would otherwise
+    // never run in the gate: the generators every facade compiles against, the conventions' own
+    // helpers, and the Doclet's lint.
+    dependsOn(listOf("codegen", "conventions", "catalog-doclet").map { gradle.includedBuild("build-logic").task(":$it:check") })
 }

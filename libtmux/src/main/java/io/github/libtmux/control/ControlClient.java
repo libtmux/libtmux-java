@@ -1,43 +1,58 @@
 package io.github.libtmux.control;
 
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.batch.OperationOutcome;
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
+import io.github.libtmux.exception.CommandRejectedException;
+import io.github.libtmux.exception.ControlEndedException;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.internal.ErrorText;
 import io.github.libtmux.internal.ProcessTree;
 import io.github.libtmux.internal.Utf8;
+import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.DispatchOutcome;
-import io.github.libtmux.transport.TmuxTimeoutException;
-import io.github.libtmux.transport.TmuxTransportException;
+import io.github.libtmux.transport.OperationObserver;
+import io.github.libtmux.transport.OperationReport;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.OptionalInt;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * A tmux client that stays attached and answers one command at a time.
  *
  * <p>This is what a semicolon group cannot be. tmux discards a group after its first failure, so a
- * client has to infer which command failed; here each request is independent and each reply carries
- * the request number that produced it, so a failure discards nothing behind it and attribution is
- * tmux's own.
+ * client has to infer which command failed; here each request is independent, so a failure
+ * discards nothing behind it.
  *
  * <p>Replies arrive in request order, so the writer sends one request at a time and matches its
- * reply by position. A deadline before the writer picks a request writes nothing; a deadline after
- * that point ends the client because the next reply could no longer be attributed safely.
+ * reply by position. A reply is the first block tmux writes for the request: an acknowledgement,
+ * which work the command deferred may outlive. What that command queued, as {@code if-shell}
+ * queues its branch, and what a hook ran, arrive as blocks of their own, and none of them is taken
+ * for the next request's reply. A deadline before the writer picks a request writes nothing; a
+ * deadline after that point ends the client because the next reply could no longer be attributed
+ * safely.
  *
  * <p>The reader and writer are platform threads. A library does not own the virtual-thread
- * scheduler, and either one unable to run stops the client from making progress. The reader only
+ * scheduler: a caller's CPU-bound task that never blocks keeps its carrier, and either thread
+ * unable to run stops the client from making progress. The reader only
  * resolves replies and fills bounded subscription buffers; subscriber code runs on the thread that
  * pulls a value.
  *
@@ -55,6 +70,8 @@ public final class ControlClient implements AutoCloseable {
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
 
+    private static final ControlCarrier LOCAL = command -> new ProcessBuilder(command).start();
+
     /** The same seam as the process transport's, since this client starts its own process. */
     private static final System.Logger LOG = System.getLogger(ControlClient.class.getName());
 
@@ -69,13 +86,26 @@ public final class ControlClient implements AutoCloseable {
     private final Thread errorReader;
     private final ControlProtocol protocol = new ControlProtocol();
     private final List<EventSubscription<PaneOutput>> outputSubscriptions = new CopyOnWriteArrayList<>();
+    // Each pane's output decoded as one stream. Touched only by the reader thread.
+    private final java.util.Map<PaneId, Utf8.Stream> paneText = new java.util.HashMap<>();
     private final List<EventSubscription<ControlEvent>> eventSubscriptions = new CopyOnWriteArrayList<>();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final OperationObserver observer;
+    private final AtomicLong ids = new AtomicLong();
     private volatile boolean failed;
-    private volatile boolean subscriptionsClosed;
 
-    private ControlClient(Process process) {
+    /** Set before subscribers hear of the end, so none of them can find this client alive after it. */
+    private volatile boolean readerEnded;
+
+    private volatile boolean subscriptionsClosed;
+    private static final int STDERR_LIMIT = 4096;
+    private final byte[] stderrBytes = new byte[STDERR_LIMIT];
+    private int stderrLength;
+    private boolean stderrTruncated;
+
+    private ControlClient(Process process, OperationObserver observer) {
         this.process = process;
+        this.observer = observer;
         this.processTree = new ProcessTree(process);
         this.standardOutput = process.getInputStream();
         this.standardError = process.getErrorStream();
@@ -96,26 +126,89 @@ public final class ControlClient implements AutoCloseable {
     }
 
     /**
-     * Attaches a control client to an existing session.
+     * Attaches a control client to whatever server now answers this endpoint.
      *
      * <p>Attaching is what makes tmux push {@code %output}: a control client that never attaches is
      * told about command replies and nothing else.
      *
+     * <p>This does not check which tmux process answered. A socket can be taken over by a new
+     * server that reuses the same session id. {@link io.github.libtmux.Server#control} attaches to
+     * the process a capture already named; prefer it.
+     *
      * @param config which tmux and which server
      * @param session the session to attach to
      */
-    public static ControlClient attach(ServerConfig config, SessionId session) {
-        return attach(config, session, DEFAULT_TIMEOUT);
+    @Operation(Kind.LIFECYCLE)
+    public static ControlClient attachUnfenced(ServerConfig config, SessionId session) {
+        return attachUnfenced(config, session, DEFAULT_TIMEOUT);
     }
 
     /**
-     * Attaches a control client and waits up to the supplied deadline for its opening reply.
+     * As {@link #attachUnfenced(ServerConfig, SessionId)}, waiting up to the supplied deadline for
+     * the client's opening reply.
      *
      * @param config which tmux and which server
      * @param session the session to attach to
      * @param timeout how long to wait for the client to become ready
      */
-    public static ControlClient attach(ServerConfig config, SessionId session, Duration timeout) {
+    @Operation(Kind.LIFECYCLE)
+    public static ControlClient attachUnfenced(ServerConfig config, SessionId session, Duration timeout) {
+        ControlClient client = connect(LOCAL, config, session, timeout);
+        client.finishAttach(session);
+        return client;
+    }
+
+    /**
+     * Attaches, then leaves unless the live server is still the process that was captured.
+     *
+     * <p>A pid can be reused, so the version tmux reports is part of the check. A mismatch detaches
+     * before this client changes the server: layout refresh runs only after the check passes.
+     *
+     * @param serverPid the tmux process a capture recorded
+     * @param serverVersion the version text that process reported, compared as text
+     */
+    @Operation(Kind.LIFECYCLE)
+    public static ControlClient attach(
+            ServerConfig config, SessionId session, long serverPid, String serverVersion, Duration timeout) {
+        return attach(LOCAL, config, session, serverPid, java.util.OptionalLong.empty(), serverVersion, timeout);
+    }
+
+    /**
+     * As {@link #attach(ServerConfig, SessionId, long, String, Duration)}, started by the carrier
+     * that also starts this realm's commands, and checking the start time a capture recorded too.
+     *
+     * @param serverStartTime when the captured process started, as {@code #{start_time}} reported it;
+     *     compared when present, since a restarted tmux can be given the same pid and version
+     */
+    @Operation(Kind.LIFECYCLE)
+    public static ControlClient attach(
+            ControlCarrier carrier,
+            ServerConfig config,
+            SessionId session,
+            long serverPid,
+            java.util.OptionalLong serverStartTime,
+            String serverVersion,
+            Duration timeout) {
+        Objects.requireNonNull(serverVersion, "serverVersion");
+        if (serverPid < 1) {
+            throw new IllegalArgumentException("serverPid is not positive: " + serverPid);
+        }
+        ControlClient client = connect(carrier, config, session, timeout);
+        try {
+            client.confirmIncarnation(serverPid, serverStartTime, serverVersion);
+        } catch (RuntimeException failure) {
+            client.closeAfterFailure(failure);
+            throw failure;
+        }
+        client.finishAttach(session);
+        return client;
+    }
+
+    private static ControlClient connect(
+            ControlCarrier carrier, ServerConfig config, SessionId session, Duration timeout) {
+        Objects.requireNonNull(carrier, "carrier");
+        Objects.requireNonNull(config, "config");
+        Objects.requireNonNull(session, "session");
         Objects.requireNonNull(timeout, "timeout");
         if (timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException("timeout is not positive");
@@ -128,11 +221,11 @@ public final class ControlClient implements AutoCloseable {
         Utf8.requireEncodableArguments(command);
         Process process;
         try {
-            process = new ProcessBuilder(command).start();
+            process = carrier.start(command);
         } catch (IOException e) {
-            throw new LibTmuxException("could not start a control client", e);
+            throw new DispatchException.Failed("could not start a control client", DispatchOutcome.NOT_DISPATCHED, e);
         }
-        ControlClient client = new ControlClient(process);
+        ControlClient client = new ControlClient(process, config.observer());
         // Attaching produces a reply of its own. It is awaited like any other, which is also what
         // proves the client is up before the first command is written.
         ControlWriter.Request attached = client.writer.expectInitial(timeout);
@@ -140,23 +233,54 @@ public final class ControlClient implements AutoCloseable {
         ControlReply reply;
         try {
             reply = client.writer.await(attached);
-        } catch (TmuxTimeoutException e) {
+        } catch (DispatchException e) {
             client.closeAfterFailure(e);
             throw e;
-        } catch (TmuxTransportException e) {
-            client.closeAfterFailure(e);
-            throw new LibTmuxException("could not attach the control client", e);
         }
         if (reply.outcome() != OperationOutcome.COMPLETE) {
-            LibTmuxException failure =
-                    new LibTmuxException("the control client did not become ready: " + reply.lines());
+            LibTmuxException failure = new CommandRejectedException(
+                    "the control client did not become ready" + ErrorText.suffix(reply.lines()),
+                    "attach-session",
+                    -1,
+                    reply.lines());
             client.closeAfterFailure(failure);
             throw failure;
         }
         client.writer.start();
-        client.requestJsonLayouts();
-        LOG.log(System.Logger.Level.DEBUG, "tmux control client attached to session {0}", session.value());
         return client;
+    }
+
+    /** Reads the live server and detaches, via the caller, when it is not the one that was named. */
+    private void confirmIncarnation(long expectedPid, java.util.OptionalLong expectedStart, String expectedVersion) {
+        // The start time leads: it is a number, and the version, compared as text, may hold a space.
+        ControlReply reply = send("display-message", "-p", "#{start_time} #{pid} #{version}");
+        if (!reply.succeeded() || reply.lines().size() != 1) {
+            throw new CommandRejectedException(
+                    "could not read the control client's server" + ErrorText.suffix(reply.lines()),
+                    "display-message",
+                    -1,
+                    reply.lines());
+        }
+        String[] reported = reply.lines().get(0).split(" ", 3);
+        long started;
+        long pid;
+        try {
+            started = Long.parseLong(reported[0]);
+            pid = Long.parseLong(reported.length > 1 ? reported[1] : "");
+        } catch (NumberFormatException e) {
+            throw new MalformedResponseException("tmux reported a malformed server identity");
+        }
+        String version = reported.length > 2 ? reported[2] : "";
+        if (pid != expectedPid
+                || !version.equals(expectedVersion)
+                || (expectedStart.isPresent() && started != expectedStart.getAsLong())) {
+            throw new TargetGoneException("the tmux server this handle belonged to has ended");
+        }
+    }
+
+    private void finishAttach(SessionId session) {
+        requestJsonLayouts();
+        LOG.log(System.Logger.Level.DEBUG, "tmux control client attached to session {0}", session.value());
     }
 
     /**
@@ -173,19 +297,24 @@ public final class ControlClient implements AutoCloseable {
     private void requestJsonLayouts() {
         ControlReply reply = send("refresh-client", "-f", "new-layouts");
         if (reply.outcome() != OperationOutcome.COMPLETE) {
-            LibTmuxException failure =
-                    new LibTmuxException("could not request JSON layouts on attach: " + reply.lines());
+            LibTmuxException failure = new CommandRejectedException(
+                    "could not request JSON layouts on attach" + ErrorText.suffix(reply.lines()),
+                    "refresh-client",
+                    -1,
+                    reply.lines());
             closeAfterFailure(failure);
             throw failure;
         }
     }
 
     /** Runs one command and waits for its reply. */
+    @Operation(Kind.MUTATION)
     public ControlReply send(String... argv) {
         return send(List.of(argv), DEFAULT_TIMEOUT);
     }
 
     /** Runs one command and waits for its reply. */
+    @Operation(Kind.MUTATION)
     public ControlReply send(List<String> argv) {
         return send(argv, DEFAULT_TIMEOUT);
     }
@@ -196,10 +325,11 @@ public final class ControlClient implements AutoCloseable {
      * @param argv the command, its arguments already separate elements
      * @param timeout how long to wait for tmux to answer
      * @return tmux's reply
-     * @throws TmuxTransportException if the request cannot complete; its {@link
-     *     TmuxTransportException#outcome() outcome} is {@link DispatchOutcome#NOT_DISPATCHED} until
+     * @throws DispatchException if the request cannot complete; its {@link
+     *     DispatchException#outcome() outcome} is {@link DispatchOutcome#NOT_DISPATCHED} until
      *     the writer picks the request and {@link DispatchOutcome#UNKNOWN} afterwards
      */
+    @Operation(Kind.MUTATION)
     public ControlReply send(List<String> argv, Duration timeout) {
         if (argv.isEmpty()) {
             throw new IllegalArgumentException("a command has no words");
@@ -212,18 +342,60 @@ public final class ControlClient implements AutoCloseable {
             throw new IllegalStateException("control client is not usable");
         }
         long started = System.nanoTime();
-        ControlReply reply = writer.exchange(line(argv), timeout);
-        // The verb and never its arguments, for the reason the process transport gives: an argument
-        // carries what a caller typed, and a log a library opens is no place for it.
-        if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
-            LOG.log(
-                    System.Logger.Level.DEBUG,
-                    "tmux control {0} {1} in {2} ms",
-                    argv.get(0),
-                    reply.outcome().name().toLowerCase(java.util.Locale.ROOT).replace('_', ' '),
-                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+        try {
+            ControlReply reply = writer.exchange(line(argv), timeout);
+            long[] timing = writer.takeTiming(System.nanoTime() - started);
+            report(argv.get(0), reply, timing);
+            if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
+                LOG.log(
+                        System.Logger.Level.DEBUG,
+                        "tmux control {0} {1} in {2} ms",
+                        argv.get(0),
+                        reply.outcome()
+                                .name()
+                                .toLowerCase(java.util.Locale.ROOT)
+                                .replace('_', ' '),
+                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+            }
+            return reply;
+        } catch (RuntimeException failure) {
+            long[] timing = writer.takeTiming(System.nanoTime() - started);
+            DispatchOutcome certainty =
+                    failure instanceof DispatchException transport ? transport.outcome() : DispatchOutcome.UNKNOWN;
+            try {
+                observer.accept(new OperationReport(
+                        ids.incrementAndGet(),
+                        List.of(argv.get(0)),
+                        certainty,
+                        OptionalInt.empty(),
+                        0,
+                        0,
+                        "",
+                        Duration.ofNanos(timing[0]),
+                        Duration.ofNanos(timing[1])));
+            } catch (RuntimeException observerFailure) {
+                LOG.log(System.Logger.Level.WARNING, "operation observer failed", observerFailure);
+            }
+            throw failure;
         }
-        return reply;
+    }
+
+    private void report(String verb, ControlReply reply, long[] timing) {
+        int exit = reply.succeeded() ? 0 : 1;
+        try {
+            observer.accept(new OperationReport(
+                    ids.incrementAndGet(),
+                    List.of(verb),
+                    DispatchOutcome.COMPLETE,
+                    OptionalInt.of(exit),
+                    reply.lines().size(),
+                    0,
+                    "",
+                    Duration.ofNanos(timing[0]),
+                    Duration.ofNanos(timing[1])));
+        } catch (RuntimeException failure) {
+            LOG.log(System.Logger.Level.WARNING, "operation observer failed", failure);
+        }
     }
 
     /**
@@ -233,8 +405,9 @@ public final class ControlClient implements AutoCloseable {
      * A carrier holding one needs to tell "this command failed" from "there is no longer anything
      * to send commands to", which are the same exception until this is asked.
      */
+    @Operation(Kind.CAPTURED)
     public boolean isAlive() {
-        return !closed.get() && !failed && process.isAlive();
+        return !closed.get() && !failed && !readerEnded && process.isAlive();
     }
 
     /**
@@ -245,6 +418,7 @@ public final class ControlClient implements AutoCloseable {
      * @throws IllegalArgumentException if {@code capacity} is not positive
      * @throws IllegalStateException if the client has ended
      */
+    @Operation(Kind.STREAM)
     public EventSubscription<PaneOutput> subscribeOutput(int capacity) {
         return subscribe(outputSubscriptions, capacity);
     }
@@ -257,6 +431,7 @@ public final class ControlClient implements AutoCloseable {
      * @throws IllegalArgumentException if {@code capacity} is not positive
      * @throws IllegalStateException if the client has ended
      */
+    @Operation(Kind.STREAM)
     public EventSubscription<ControlEvent> subscribeEvents(int capacity) {
         return subscribe(eventSubscriptions, capacity);
     }
@@ -274,6 +449,7 @@ public final class ControlClient implements AutoCloseable {
      *     {@code @id}, or the attached session (pass {@code ""} - see below)
      * @param format a tmux format, such as {@code #{pane_current_command}}
      */
+    @Operation(Kind.MUTATION)
     public ControlReply watch(String name, String target, String format) {
         return send("refresh-client", "-B", name + ":" + sessionScopeNormalized(target) + ":" + format);
     }
@@ -292,18 +468,20 @@ public final class ControlClient implements AutoCloseable {
     }
 
     /** Stops a watch. tmux reads a name with no colon in it as one to remove. */
+    @Operation(Kind.MUTATION)
     public ControlReply unwatch(String name) {
         return send("refresh-client", "-B", name);
     }
 
     /** Ends the client, rejecting queued requests and resolving picked requests as uncertain. */
+    @Operation(Kind.LIFECYCLE)
     @Override
     public void close() {
         boolean closeOwner = closed.compareAndSet(false, true);
         if (closeOwner) {
             processTree.captureDescendants();
             writer.close();
-            closeSubscriptions();
+            closeSubscriptions(null);
         }
         boolean reclaimed = processTree.terminate();
         if (!closeOwner) {
@@ -348,34 +526,79 @@ public final class ControlClient implements AutoCloseable {
     }
 
     private void read() {
+        Throwable readerFailure = null;
         try (var lines = new ControlLineReader(standardOutput, ControlProtocol.DEFAULT_MAX_REPLY_BYTES)) {
             ControlLineReader.Line line;
             while ((line = lines.readLine()) != null) {
                 ControlProtocol.Result result = protocol.accept(line.text(), line.encodedBytes());
                 if (result instanceof ControlProtocol.Reply reply) {
-                    complete(reply.outcome(), reply.lines());
+                    complete(reply.outcome(), reply.lines(), reply.requested());
                 } else if (result instanceof ControlProtocol.Notification notification) {
-                    handleNotification(notification.line());
+                    handleNotification(notification.line(), line.bytes());
                 }
             }
         } catch (IOException | ControlProtocol.LimitExceeded e) {
-            // The client ended. Everything still waiting is resolved below.
+            readerFailure = e;
         } finally {
+            readerEnded = true;
+            closeSubscriptions(
+                    readerFailure == null && closed.get()
+                            ? null
+                            : new ControlEndedException(standardError(), stderrTruncated, readerFailure));
             writer.readerEnded();
         }
     }
 
     private void drainErrors() {
         try (standardError) {
-            standardError.transferTo(OutputStream.nullOutputStream());
+            byte[] buffer = new byte[512];
+            int read;
+            while ((read = standardError.read(buffer)) >= 0) {
+                synchronized (stderrBytes) {
+                    int room = stderrBytes.length - stderrLength;
+                    int take = Math.min(room, read);
+                    if (take > 0) {
+                        System.arraycopy(buffer, 0, stderrBytes, stderrLength, take);
+                        stderrLength += take;
+                    }
+                    if (take < read) {
+                        stderrTruncated = true;
+                    }
+                }
+            }
         } catch (IOException e) {
             // Closing or ending the client closes this channel too.
         }
     }
 
-    private void handleNotification(String line) {
+    /**
+     * The error text captured from this control process, at most 4096 bytes.
+     *
+     * <p>Empty when the process wrote none. {@link #standardErrorTruncated()} says the stream
+     * continued past that bound. The text is whatever had been read when this is called.
+     */
+    @Operation(Kind.CAPTURED)
+    public String standardError() {
+        synchronized (stderrBytes) {
+            return new String(stderrBytes, 0, stderrLength, StandardCharsets.UTF_8);
+        }
+    }
+
+    /** Whether {@link #standardError()} stopped before the process finished writing it. */
+    @Operation(Kind.CAPTURED)
+    public boolean standardErrorTruncated() {
+        synchronized (stderrBytes) {
+            return stderrTruncated;
+        }
+    }
+
+    private void handleNotification(String line, byte[] bytes) {
         if (line.startsWith("%output ")) {
-            publish(line);
+            publish(bytes, "%output ".length());
+        } else if (line.startsWith("%extended-output ")) {
+            // What %output becomes once this client turns on tmux's flow control, pause-after:
+            // the pane, how long the output waited, then the same escaped bytes after " : ".
+            publish(bytes, "%extended-output ".length());
         } else if (line.startsWith("%")) {
             // Everything else tmux volunteers about its own state. A snapshot is still how state
             // is read; this only says when reading it again would be worth the trouble.
@@ -383,26 +606,46 @@ public final class ControlClient implements AutoCloseable {
         }
     }
 
-    private void complete(OperationOutcome outcome, List<String> block) {
-        writer.complete(outcome, block);
+    private void complete(OperationOutcome outcome, List<String> block, boolean requested) {
+        writer.complete(outcome, block, requested);
     }
 
-    private void terminate(TmuxTransportException failure) {
+    private void terminate(DispatchException failure) {
         failed = true;
-        closeSubscriptions();
+        closeSubscriptions(failure);
         if (!processTree.terminate()) {
             failure.addSuppressed(new IllegalStateException("control process tree was not reclaimed"));
         }
     }
 
-    private void publish(String line) {
-        int paneEnd = line.indexOf(' ', "%output ".length());
-        if (paneEnd < 0) {
+    /**
+     * One piece of a pane's output. tmux cuts pieces by byte count, so each pane's text is decoded
+     * as one stream, and a character cut between two pieces arrives whole with the later one.
+     */
+    private void publish(byte[] line, int start) {
+        int paneEnd = start;
+        while (paneEnd < line.length && line[paneEnd] != ' ') {
+            paneEnd++;
+        }
+        int data = start == "%output ".length() ? paneEnd + 1 : separatorEnd(line, paneEnd);
+        if (paneEnd == line.length || data > line.length) {
             return;
         }
-        PaneOutput output = new PaneOutput(
-                new PaneId(line.substring("%output ".length(), paneEnd)), unescape(line.substring(paneEnd + 1)));
-        offer(outputSubscriptions, output);
+        PaneId pane = new PaneId(new String(line, start, paneEnd - start, StandardCharsets.US_ASCII));
+        byte[] piece = unescape(line, data);
+        String text =
+                paneText.computeIfAbsent(pane, ignored -> new Utf8.Stream()).decode(piece);
+        offer(outputSubscriptions, new PaneOutput(pane, text, ByteBuffer.wrap(piece)));
+    }
+
+    /** Where the bytes after the first {@code " : "} from {@code from} begin, or past the end. */
+    private static int separatorEnd(byte[] line, int from) {
+        for (int index = from; index + 2 < line.length; index++) {
+            if (line[index] == ' ' && line[index + 1] == ':' && line[index + 2] == ' ') {
+                return index + 3;
+            }
+        }
+        return line.length + 1;
     }
 
     private <T> EventSubscription<T> subscribe(List<EventSubscription<T>> subscriptions, int capacity) {
@@ -424,13 +667,16 @@ public final class ControlClient implements AutoCloseable {
         }
     }
 
-    private void closeSubscriptions() {
+    private synchronized void closeSubscriptions(@org.jspecify.annotations.Nullable Throwable cause) {
+        if (subscriptionsClosed) {
+            return;
+        }
         subscriptionsClosed = true;
         for (EventSubscription<PaneOutput> subscription : outputSubscriptions) {
-            subscription.close();
+            subscription.end(cause);
         }
         for (EventSubscription<ControlEvent> subscription : eventSubscriptions) {
-            subscription.close();
+            subscription.end(cause);
         }
     }
 
@@ -471,25 +717,26 @@ public final class ControlClient implements AutoCloseable {
         }
     }
 
-    /** tmux writes a byte it cannot print as a three-digit octal escape. */
-    static String unescape(String data) {
-        if (data.indexOf('\\') < 0) {
-            return data;
-        }
-        StringBuilder text = new StringBuilder(data.length());
-        for (int index = 0; index < data.length(); index++) {
-            char character = data.charAt(index);
-            if (character == '\\' && index + 3 < data.length()) {
-                try {
-                    text.append((char) Integer.parseInt(data.substring(index + 1, index + 4), 8));
-                    index += 3;
-                    continue;
-                } catch (NumberFormatException e) {
-                    // Not an escape after all; the backslash is literal.
-                }
+    /** tmux writes a control byte or a backslash as a three-digit octal escape, and the rest raw. */
+    static byte[] unescape(byte[] line, int from) {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream(line.length - from);
+        for (int index = from; index < line.length; index++) {
+            if (line[index] == '\\' && index + 3 < line.length && octal(line, index + 1)) {
+                bytes.write(((line[index + 1] - '0') << 6) | ((line[index + 2] - '0') << 3) | (line[index + 3] - '0'));
+                index += 3;
+            } else {
+                bytes.write(line[index]);
             }
-            text.append(character);
         }
-        return text.toString();
+        return bytes.toByteArray();
+    }
+
+    private static boolean octal(byte[] line, int from) {
+        for (int index = from; index < from + 3; index++) {
+            if (line[index] < '0' || line[index] > '7') {
+                return false;
+            }
+        }
+        return true;
     }
 }

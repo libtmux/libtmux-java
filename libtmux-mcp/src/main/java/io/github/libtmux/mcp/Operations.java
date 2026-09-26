@@ -1,7 +1,6 @@
 package io.github.libtmux.mcp;
 
 import io.github.libtmux.Dimensions;
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
@@ -9,8 +8,9 @@ import io.github.libtmux.SessionSpec;
 import io.github.libtmux.SplitSpec;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowSpec;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.snapshot.ServerSnapshot;
-import io.github.libtmux.transport.TmuxTransportException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
@@ -29,7 +30,7 @@ final class Operations {
     /**
      * One capture decides and answers every field, so a daemon dying mid-call cannot split them.
      *
-     * <p>{@link TmuxTransportException} still throws: it means the transport could not even run the
+     * <p>{@link DispatchException} still throws: it means the transport could not even run the
      * probe, which {@code isAlive()} never absorbed into {@code running: false} either.
      */
     static Object serverInfo(Call call) {
@@ -45,7 +46,7 @@ final class Operations {
                     snapshot.serverVersion().orElseThrow().toString(),
                     "sessions",
                     snapshot.sessions().size());
-        } catch (TmuxTransportException transportFailure) {
+        } catch (DispatchException transportFailure) {
             throw transportFailure;
         } catch (LibTmuxException captureFailed) {
             return values(
@@ -181,9 +182,9 @@ final class Operations {
                 operation.tool().validateOutput(answer);
                 envelope = Answers.ok(answer);
             } catch (RuntimeException failure) {
-                String message = String.valueOf(failure.getMessage());
-                error = message;
-                envelope = Answers.failure(message);
+                envelope = Answers.failure(failure, operation.name());
+                error = Objects.requireNonNull(
+                        Objects.requireNonNull(envelope.meta(), "meta").get("message"), "message");
             }
             boolean success = !Boolean.TRUE.equals(envelope.isError());
             results.add(values(
@@ -287,7 +288,7 @@ final class Operations {
 
     static Object setMouseEnabled(Call call) {
         boolean enabled = call.flag("enabled", false);
-        call.server().setMouseEnabled(enabled);
+        call.server().globalOptions().set("mouse", enabled ? "on" : "off");
         return values("enabled", enabled);
     }
 
@@ -381,6 +382,7 @@ final class Operations {
                 results.add(values(
                         "index", index, "pane_id", paneId, "resolved_pane_ids", resolvedPaneIds, "success", true));
             } catch (RuntimeException failure) {
+                Answers.Classified classified = Answers.classify(failure, "send_keys_batch");
                 results.add(values(
                         "index",
                         index,
@@ -391,7 +393,11 @@ final class Operations {
                         "success",
                         false,
                         "error",
-                        String.valueOf(failure.getMessage())));
+                        classified.message(),
+                        "error_code",
+                        classified.errorCode(),
+                        "retryable",
+                        classified.retryable()));
                 if (!keepGoing) {
                     break;
                 }

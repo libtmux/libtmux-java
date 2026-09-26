@@ -5,11 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
-import io.github.libtmux.ServerNotRunningException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.ServerUnavailableException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -66,39 +66,42 @@ final class FailedReadIntegrationTest {
     @Test
     void anAbsentDaemonIsItsOwnAnswer(@TempDir Path scratch) {
         try (Server server = at(scratch.resolve("nobody-home"), "tmux")) {
-            assertThrows(ServerNotRunningException.class, () -> server.hasSession("build"));
-            assertThrows(ServerNotRunningException.class, () -> server.keys().list());
-            assertThrows(ServerNotRunningException.class, server::listCommands);
+            assertThrows(ServerUnavailableException.class, () -> server.hasSession("build"));
+            assertThrows(ServerUnavailableException.class, () -> server.keys().list());
             assertThrows(
-                    ServerNotRunningException.class,
+                    ServerUnavailableException.class, () -> server.commands().list());
+            assertThrows(
+                    ServerUnavailableException.class,
                     () -> server.globalOptions().get("history-limit"));
-            assertThrows(ServerNotRunningException.class, server::requireAlive);
+            assertThrows(ServerUnavailableException.class, server::requireAlive);
         }
     }
 
     /**
-     * Every method, not the handful that remembered to check. The classification used to live at each
-     * site that cared, so seven reads and every mutation reported a missing daemon as an ordinary
-     * failure carrying tmux's own wording — the one thing the migration notes tell a caller it can
-     * catch instead of matching on a message.
+     * Every method, not a handful: a missing daemon is {@code ServerUnavailableException} whichever
+     * method meets it, the one failure the migration notes tell a caller it can catch instead of
+     * matching on tmux's wording.
      */
     @Test
     void aMutationOnAnAbsentDaemonSaysSoToo(@TempDir Path scratch) {
         try (Server server = at(scratch.resolve("nobody-home"), "tmux")) {
-            assertThrows(ServerNotRunningException.class, () -> server.killSession("build"));
+            assertThrows(ServerUnavailableException.class, () -> server.killSession("build"));
             assertThrows(
-                    ServerNotRunningException.class,
+                    ServerUnavailableException.class,
                     () -> server.globalOptions().set("@x", "1"));
             assertThrows(
-                    ServerNotRunningException.class, () -> server.environment().set("K", "v"));
-            assertThrows(ServerNotRunningException.class, () -> server.buffers().set("b", "v"));
+                    ServerUnavailableException.class, () -> server.environment().set("K", "v"));
             assertThrows(
-                    ServerNotRunningException.class, () -> server.keys().bind("F12", List.of("display-message", "x")));
-            assertThrows(ServerNotRunningException.class, server::messages);
-            assertThrows(ServerNotRunningException.class, () -> server.hooks().all());
-            assertThrows(ServerNotRunningException.class, () -> server.buffers().list());
+                    ServerUnavailableException.class, () -> server.buffers().set("b", "v"));
             assertThrows(
-                    ServerNotRunningException.class, () -> server.environment().all());
+                    ServerUnavailableException.class, () -> server.keys().bind("F12", List.of("display-message", "x")));
+            assertThrows(
+                    ServerUnavailableException.class, () -> server.messageLog().lines());
+            assertThrows(ServerUnavailableException.class, () -> server.hooks().all());
+            assertThrows(
+                    ServerUnavailableException.class, () -> server.buffers().list());
+            assertThrows(
+                    ServerUnavailableException.class, () -> server.environment().all());
         }
     }
 
@@ -112,7 +115,7 @@ final class FailedReadIntegrationTest {
     @Test
     void tmuxStillWordsAnAbsentDaemonTheWayThisLibraryReadsIt(@TempDir Path scratch) {
         try (Server server = at(scratch.resolve("nobody-home"), "tmux")) {
-            assertThrows(ServerNotRunningException.class, () -> server.hasSession("build"));
+            assertThrows(ServerUnavailableException.class, () -> server.hasSession("build"));
 
             String said =
                     String.join("\n", server.cmd("has-session", "-t", "=build").stderr());
@@ -127,7 +130,7 @@ final class FailedReadIntegrationTest {
         Path socket = scratch.resolve("untouched");
 
         try (Server server = at(socket, "tmux")) {
-            assertThrows(ServerNotRunningException.class, () -> server.keys().list());
+            assertThrows(ServerUnavailableException.class, () -> server.keys().list());
         }
 
         assertFalse(
@@ -183,7 +186,7 @@ final class FailedReadIntegrationTest {
     private static void assertReadsFailRatherThanAnswer(Server server) {
         assertFailedRead("hasSession", () -> server.hasSession("build"));
         assertFailedRead("listKeys", () -> server.keys().list());
-        assertFailedRead("listCommands", server::listCommands);
+        assertFailedRead("listCommands", () -> server.commands().list());
         assertFailedRead("options.get", () -> server.globalOptions().get("history-limit"));
         assertFailedRead("requireAlive", server::requireAlive);
         assertFailedRead("sessions", server::sessions);
@@ -192,7 +195,7 @@ final class FailedReadIntegrationTest {
     private static void assertFailedRead(String what, org.junit.jupiter.api.function.Executable read) {
         LibTmuxException raised = assertThrows(LibTmuxException.class, read, what + " answered instead of raising");
         assertFalse(
-                raised instanceof ServerNotRunningException,
+                raised instanceof ServerUnavailableException,
                 what + " reported a server it could not reach as one that is not running: " + raised.getMessage());
     }
 }

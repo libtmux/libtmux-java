@@ -28,6 +28,43 @@ Field ids are tmux's own format names — `pane_current_command`, `window_name` 
 which is what keeps an expression meaningful to something that is not this
 library.
 
+Every field and relation these four classes expose, generated from
+[`field-catalog.tsv`](../../libtmux/src/main/resources/META-INF/io.github.libtmux/field-catalog.tsv):
+
+| Owner | Field | Kind | tmux format |
+| --- | --- | --- | --- |
+| Pane | `id` | TEXT | `pane_id` |
+| Pane | `command` | TEXT | `pane_current_command` |
+| Pane | `index` | NUMBER | `pane_index` |
+| Pane | `active` | FLAG | `pane_active` |
+| Pane | `title` | TEXT | `pane_title` |
+| Pane | `path` | TEXT | `pane_current_path` |
+| Pane | `width` | NUMBER | `pane_width` |
+| Pane | `height` | NUMBER | `pane_height` |
+| Pane | `left` | NUMBER | `pane_left` |
+| Pane | `top` | NUMBER | `pane_top` |
+| Pane | `atTop` | FLAG | `pane_at_top` |
+| Pane | `atBottom` | FLAG | `pane_at_bottom` |
+| Pane | `atLeft` | FLAG | `pane_at_left` |
+| Pane | `atRight` | FLAG | `pane_at_right` |
+| Session | `id` | TEXT | `session_id` |
+| Session | `name` | TEXT | `session_name` |
+| Session | `attached` | FLAG | `session_attached` |
+| Session | `windowCount` | NUMBER | `session_windows` |
+| Session | `windows` | to-many:Window | — |
+| Window | `id` | TEXT | `window_id` |
+| Window | `name` | TEXT | `window_name` |
+| Window | `index` | NUMBER | `window_index` |
+| Window | `active` | FLAG | `window_active` |
+| Window | `linked` | FLAG | `window_linked` |
+| Window | `width` | NUMBER | `window_width` |
+| Window | `height` | NUMBER | `window_height` |
+| Window | `paneCount` | NUMBER | `window_panes` |
+| Window | `panes` | to-many:Pane | — |
+| Window | `session` | to-one:Session | — |
+| Client | `name` | TEXT | `client_name` |
+| Client | `session` | to-one:Session | — |
+
 ## Composition and relations
 
 `and`, `or` and `negate` compose expressions. Relations quantify:
@@ -64,15 +101,24 @@ An expression evaluates locally over a capture you already hold. Filtering issue
 no commands, so a stream pipeline costs nothing and cannot observe a
 half-changed server.
 
-Expressions retain enough structure for a future compiler to lower them to tmux's
-own `-f` predicate, but no release does that today, and no such compiler would
-change what snapshot filtering means.
+Expressions retain enough structure to lower a safe subset to tmux's own `-f`
+predicate. `TmuxFilters.format` does that lowering. A relation, or an operand
+containing `,`, `#`, `{`, `}`, or `:`, stays empty, and the caller filters the
+capture it already holds. `Server.session(String)` and `Server.pane(PaneId)`
+use a targeted listing when the name or id is safe to put in a format, and a
+whole-server capture otherwise. `sessions(FilterExpr)`, `windows(FilterExpr)`,
+and `panes(FilterExpr)` send a safe expression as `list-sessions -f`,
+`list-windows -f`, or `list-panes -f`, and still apply the expression to what
+comes back. Each costs two tmux commands, as a snapshot does, and reads only the
+sessions it keeps. A relation, or an expression tmux cannot apply, reads the
+whole server.
+Filtering a list already in hand still issues no commands.
 
 ## Writing an expression down
 
 The optional `libtmux-jackson` module gives an expression a versioned wire form.
-This snippet is exercised by `FilterJsonTest` rather than `ExamplesTest`, since
-the core suite does not depend on Jackson:
+This snippet is exercised by `FilterJsonTest` rather than
+`DocumentationSnippetsTest`, since the core suite does not depend on Jackson:
 
 ```java
 String json = FilterJson.writeString(

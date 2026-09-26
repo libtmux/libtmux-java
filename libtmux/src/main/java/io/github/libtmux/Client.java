@@ -1,6 +1,10 @@
 package io.github.libtmux;
 
 import com.google.errorprone.annotations.CheckReturnValue;
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.snapshot.ClientState;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import java.util.List;
@@ -12,6 +16,9 @@ import java.util.Optional;
  *
  * <p>Identity is the server and the client name, which is how tmux addresses it. What it is
  * attached to is state: a client can switch sessions without becoming a different client.
+ *
+ * <p>{@link #name()}, {@link #session()}, and {@link #attachment()} return what the capture holds
+ * and do no I/O; {@link #refresh()} reads again. Every other method asks tmux now.
  */
 public final class Client {
 
@@ -26,6 +33,7 @@ public final class Client {
     }
 
     /** The client's terminal name, which is how tmux addresses it. */
+    @Operation(Kind.CAPTURED)
     public String name() {
         return state.name();
     }
@@ -35,11 +43,13 @@ public final class Client {
      *
      * <p>Detaching is not killing: the session outlives the client, which is the reason tmux exists.
      */
+    @Operation(Kind.MUTATION)
     public void detach() {
         server.run(snapshot, List.of("detach-client", "-t", state.name()));
     }
 
     /** Detaches every other client, leaving this one attached. */
+    @Operation(Kind.MUTATION)
     public void detachOthers() {
         server.run(snapshot, List.of("detach-client", "-a", "-t", state.name()));
     }
@@ -50,6 +60,7 @@ public final class Client {
      * <p>The client keeps its identity: switching is a change of what it is looking at, not a
      * detach and a fresh attach.
      */
+    @Operation(Kind.MUTATION)
     public void switchTo(Session session) {
         Objects.requireNonNull(session, "session");
         server.requireSameIncarnation(snapshot, session.server(), session.snapshot());
@@ -64,11 +75,13 @@ public final class Client {
      * <p>Not {@link #refresh()}, which takes a new capture of what tmux knows. This one is tmux's
      * {@code refresh-client}, and it changes the terminal rather than this handle.
      */
+    @Operation(Kind.MUTATION)
     public void redraw() {
         server.run(snapshot, List.of("refresh-client", "-t", state.name()));
     }
 
     /** The server this client is connected to. */
+    @Operation(Kind.CAPTURED)
     public Server server() {
         return server;
     }
@@ -78,6 +91,7 @@ public final class Client {
     }
 
     /** The session this client was attached to when captured. A pure read of the capture. */
+    @Operation(Kind.CAPTURED)
     public Optional<Session> session() {
         return state.session().flatMap(snapshot::session).map(session -> new Session(server, snapshot, session));
     }
@@ -88,6 +102,7 @@ public final class Client {
      * <p>Empty when the capture shows the client attached to nothing, or shows a session whose
      * active window or pane the capture did not include.
      */
+    @Operation(Kind.CAPTURED)
     public Optional<ClientAttachment> attachment() {
         return session()
                 .flatMap(session -> session.activeWindow()
@@ -99,27 +114,32 @@ public final class Client {
      * Takes a new capture and returns what this client is looking at now.
      *
      * <p>Named to say it dispatches, unlike {@link #attachment()}. Every call is one live capture.
+     *
+     * @throws TargetGoneException if this client has detached
      */
+    @Operation(Kind.READ)
     public Optional<ClientAttachment> fetchAttachment() {
-        return refresh().flatMap(Client::attachment);
+        return refresh().attachment();
     }
 
     /**
-     * Takes a new capture and returns this client as it is now, or empty if it has gone.
+     * Takes a new capture and returns this client as it is now.
      *
-     * <p>This handle remains unchanged. Empty means this client detached while the same daemon
-     * remained reachable; failed capture still throws.
+     * <p>This handle remains unchanged, as every handle's does.
      *
-     * @throws ObjectDoesNotExistException if a different daemon answers on the endpoint
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws TargetGoneException if this client has detached, or a different daemon answers on the
+     *     endpoint
+     * @throws ServerUnavailableException if no daemon is running
      */
     @CheckReturnValue
-    public Optional<Client> refresh() {
+    @Operation(Kind.READ)
+    public Client refresh() {
         ServerSnapshot fresh = server.refresh(snapshot);
         return fresh.clients().stream()
                 .filter(client -> client.name().equals(state.name()))
                 .findFirst()
-                .map(client -> new Client(server, fresh, client));
+                .map(client -> new Client(server, fresh, client))
+                .orElseThrow(() -> new TargetGoneException("client " + state.name() + " has detached"));
     }
 
     @Override

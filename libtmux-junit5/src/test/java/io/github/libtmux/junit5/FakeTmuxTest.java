@@ -5,12 +5,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.ObjectDoesNotExistException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneId;
+import io.github.libtmux.Pane_;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
+import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.ControlReply;
+import io.github.libtmux.control.Delivery;
+import io.github.libtmux.control.EventSubscription;
+import io.github.libtmux.control.PaneOutput;
+import io.github.libtmux.exception.TargetGoneException;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -86,6 +93,68 @@ final class FakeTmuxTest {
             assertEquals(
                     List.of("$ make", "make: Nothing to be done."),
                     server.pane(id).orElseThrow().capture());
+        }
+    }
+
+    /**
+     * A pane lookup and a pushed pane filter both loop each session's windows and panes inside tmux.
+     * The fake has to evaluate those loops, or it answers with no session and the library falls back
+     * to a whole-server read the test never meant to exercise.
+     */
+    @Test
+    void aPaneInALaterSessionIsFoundByTheReadTmuxWouldAnswer() {
+        FakeTmux tmux = new FakeTmux();
+        tmux.addSession("first");
+        PaneId second = tmux.addSession("second");
+
+        try (Server server = tmux.server()) {
+            assertEquals(second, server.pane(second).orElseThrow().id());
+            assertTrue(server.pane(new PaneId("%999")).isEmpty());
+            assertEquals(
+                    1,
+                    server.panes(Pane_.index().is(0).and(Pane_.command().isNot("x"))).stream()
+                            .filter(pane -> pane.id().equals(second))
+                            .count());
+        }
+
+        assertFalse(
+                tmux.sent().stream().anyMatch(argv -> argv.getFirst().equals("list-clients")),
+                "a whole-server read answered instead: " + tmux.sent());
+    }
+
+    /** A control client of the fake is answered by it, and hears what a test says a pane wrote. */
+    @Test
+    void aControlClientIsAnsweredAndHearsWhatAPaneWrote() throws Exception {
+        FakeTmux tmux = new FakeTmux();
+        PaneId pane = tmux.addSession("work");
+
+        try (Server server = tmux.server();
+                ControlClient client = server.control(server.sessions().getFirst());
+                EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
+            ControlReply reply = client.send("display-message", "-p", "#{session_name}");
+            tmux.output(pane, "built\r\n\\ok");
+
+            assertEquals(List.of("work"), reply.lines());
+            PaneOutput heard = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
+            assertEquals(pane, heard.pane());
+            assertEquals("built\r\n\\ok", heard.data());
+        }
+    }
+
+    /** A restart ends an attached control client, as a server that went away does. */
+    @Test
+    void aRestartEndsAnAttachedControlClient() throws Exception {
+        FakeTmux tmux = new FakeTmux();
+        tmux.addSession("work");
+
+        try (Server server = tmux.server();
+                ControlClient client = server.control(server.sessions().getFirst());
+                EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
+            tmux.restart();
+
+            assertEquals(Optional.empty(), output.next(Duration.ofSeconds(5)));
+            assertTrue(output.cause().isPresent(), "a client the server ended reports why");
+            assertFalse(client.isAlive());
         }
     }
 
@@ -173,7 +242,7 @@ final class FakeTmuxTest {
             tmux.restart();
             tmux.addSession("work");
 
-            assertThrows(ObjectDoesNotExistException.class, () -> before.rename("hijacked"));
+            assertThrows(TargetGoneException.class, () -> before.rename("hijacked"));
             assertEquals("work", server.sessions().get(0).name(), "and the new session was left alone");
         }
     }

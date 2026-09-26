@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /** Frames control-mode replies and encodes requests for tmux's command parser. */
@@ -39,7 +40,11 @@ final class ControlProtocol {
 
     record Notification(String line) implements Result {}
 
-    record Reply(OperationOutcome outcome, List<String> lines) implements Result {
+    /**
+     * One reply block. {@code requested} is tmux's guard flag: set for a command this client wrote,
+     * and for any that command queued, and clear for what a hook ran.
+     */
+    record Reply(OperationOutcome outcome, @ReadOnly List<String> lines, boolean requested) implements Result {
 
         Reply {
             lines = List.copyOf(lines);
@@ -73,7 +78,7 @@ final class ControlProtocol {
                         default -> null;
                     };
             if (outcome != null) {
-                Reply reply = new Reply(outcome, lines);
+                Reply reply = new Reply(outcome, lines, !opening.flags().equals("0"));
                 opening = null;
                 lines = List.of();
                 replyBytes = 0;

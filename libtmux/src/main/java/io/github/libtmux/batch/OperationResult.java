@@ -1,6 +1,7 @@
 package io.github.libtmux.batch;
 
 import java.util.List;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * One operation's own result within a batch.
@@ -11,7 +12,11 @@ import java.util.List;
  * @param stderr the error text, which tmux emits without saying which operation produced it, so it
  *     is attached to the one that failed
  */
-public record OperationResult(List<String> argv, OperationOutcome outcome, List<String> stdout, List<String> stderr) {
+public record OperationResult(
+        @ReadOnly List<String> argv,
+        OperationOutcome outcome,
+        @ReadOnly List<String> stdout,
+        @ReadOnly List<String> stderr) {
 
     public OperationResult {
         argv = List.copyOf(argv);

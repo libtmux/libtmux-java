@@ -11,8 +11,8 @@ import java.util.Objects;
  * caller's {@code #} stays a {@code #}.
  *
  * <p>It cannot do that for an argument the caller composes: {@link Pane#pipeTo},
- * {@link Window#displayPopup}, {@link Server#runShell}, {@link Server#runShellCapturing} and
- * {@link Server#ifShell} all take a whole shell command, where format expansion is a documented
+ * {@link Window#displayPopup}, {@link Shell#run}, {@link Shell#capturing} and {@link Shell#choose}
+ * all take a whole shell command, where format expansion is a documented
  * tmux feature a caller may want — {@code #{pane_id}} in a filename, for instance. A caller
  * interpolating an untrusted value into one of those needs {@link #literal} on that value, which is
  * why this is public.
@@ -36,5 +36,94 @@ public final class TmuxFormats {
      */
     public static String literal(String value) {
         return Objects.requireNonNull(value, "value").replace("#", "##");
+    }
+
+    private static final TmuxVersion DOLLAR_ESCAPED = new TmuxVersion(3, 4, "");
+
+    private static final java.util.regex.Pattern ESCAPED_DOLLAR =
+            java.util.regex.Pattern.compile("\\\\(?=\\$[A-Za-z_{])");
+
+    /**
+     * Text as tmux held it, from a line it printed.
+     *
+     * <p>tmux 3.4 alone puts a backslash before every {@code $} that an ASCII letter, {@code _}, or
+     * <code>{</code> follows, in everything it prints: formats, listings, and {@code show-options
+     * -v}. 3.5 stopped ({@code 692ce59b}). Each escape is exactly one backslash in that position, so
+     * removing it restores the text on 3.4 and changes nothing elsewhere.
+     *
+     * <p>3.4 through 3.5a also print a control character as a C escape or three octal digits,
+     * {@code \033} for ESC, and leave a backslash as it is. That is not undone: {@code \033} could as well be those
+     * four characters, which a {@code terminal-overrides} entry often holds, so the text is left as
+     * tmux printed it.
+     */
+    static String printed(String line, TmuxVersion version) {
+        return version.equals(DOLLAR_ESCAPED) ? ESCAPED_DOLLAR.matcher(line).replaceAll("") : line;
+    }
+
+    /** As {@link #printed(String, TmuxVersion)}, for every line. */
+    static java.util.List<String> printed(java.util.List<String> lines, TmuxVersion version) {
+        return version.equals(DOLLAR_ESCAPED)
+                ? lines.stream().map(line -> printed(line, version)).toList()
+                : lines;
+    }
+
+    /** 3.7 refuses {@code .} and {@code :} in a name, 3.7a keeps them, and earlier releases store {@code _}. */
+    private static final TmuxVersion DELIMITERS_KEPT_SINCE = new TmuxVersion(3, 7, "");
+
+    /**
+     * The names to look for when a caller names a session: the one this release stores for it, then
+     * the name exactly as given, which is what {@link Session#name} already reports.
+     *
+     * <p>tmux doubles each backslash; 3.2a through 3.4 put a backslash before a {@code $} that a
+     * letter, {@code _}, or <code>{</code> follows; 3.2a through 3.6 store {@code .} and {@code :}
+     * as {@code _} and a control character as a C escape or three octal digits. 3.7 and later refuse
+     * control characters. The stored form is an escaping, so it names at most one session; only a
+     * name that is itself some other name's stored form is ambiguous, and the stored form wins.
+     */
+    static java.util.List<String> storedNames(String name, TmuxVersion version) {
+        String mapped = version.atLeast(DELIMITERS_KEPT_SINCE)
+                ? name
+                : name.replace('.', '_').replace(':', '_');
+        java.util.LinkedHashSet<String> forms = new java.util.LinkedHashSet<>();
+        String stored = vis(mapped);
+        // Before 3.5 the same escaping also put a backslash before a $ that a letter, _, or {
+        // follows; 692ce59b limited that to double-quoted output.
+        forms.add(
+                version.atLeast(DOLLAR_KEPT_SINCE)
+                        ? stored
+                        : ESCAPABLE_DOLLAR.matcher(stored).replaceAll("\\\\\\$"));
+        forms.add(name);
+        return java.util.List.copyOf(forms);
+    }
+
+    private static final TmuxVersion DOLLAR_KEPT_SINCE = new TmuxVersion(3, 5, "");
+
+    private static final java.util.regex.Pattern ESCAPABLE_DOLLAR =
+            java.util.regex.Pattern.compile("\\$(?=[A-Za-z_{])");
+
+    /** tmux's {@code vis(3)} with {@code VIS_CSTYLE | VIS_OCTAL | VIS_TAB | VIS_NL}. */
+    private static String vis(String name) {
+        StringBuilder out = new StringBuilder(name.length());
+        for (int index = 0; index < name.length(); index++) {
+            char character = name.charAt(index);
+            switch (character) {
+                case '\\' -> out.append("\\\\");
+                case '\n' -> out.append("\\n");
+                case '\t' -> out.append("\\t");
+                case '\r' -> out.append("\\r");
+                case '\b' -> out.append("\\b");
+                case '\f' -> out.append("\\f");
+                case 0x07 -> out.append("\\a");
+                case 0x0b -> out.append("\\v");
+                default -> {
+                    if (character < 0x20 || character == 0x7f) {
+                        out.append('\\').append(String.format(java.util.Locale.ROOT, "%03o", (int) character));
+                    } else {
+                        out.append(character);
+                    }
+                }
+            }
+        }
+        return out.toString();
     }
 }

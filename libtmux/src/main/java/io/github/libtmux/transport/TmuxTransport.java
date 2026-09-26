@@ -1,11 +1,15 @@
 package io.github.libtmux.transport;
 
+import io.github.libtmux.exception.DispatchException;
+import java.util.Optional;
+
 /**
  * Runs one tmux command and blocks until it has an answer.
  *
  * <p>Implementations are thread-safe and {@link #close()} is idempotent. A call begun before close
  * either completes under the documented contract or fails with its dispatch certainty intact; a
- * call begun after close fails with {@link IllegalStateException}.
+ * call begun after close fails with {@link io.github.libtmux.exception.ServerClosedException}, an
+ * {@link IllegalStateException}.
  */
 public interface TmuxTransport extends AutoCloseable {
 
@@ -18,7 +22,7 @@ public interface TmuxTransport extends AutoCloseable {
      *
      * @param request what to run, what it reads, and how long to wait
      * @return the exit status and both channels; a nonzero exit is a result, not a failure
-     * @throws TmuxTransportException if the command could not be run to completion, carrying how
+     * @throws DispatchException if the command could not be run to completion, carrying how
      *     certain it is that tmux applied it
      * @throws IllegalStateException if this transport is closed
      */
@@ -46,6 +50,34 @@ public interface TmuxTransport extends AutoCloseable {
      */
     default String realm() {
         return "local";
+    }
+
+    /**
+     * How this transport starts a process that stays attached.
+     *
+     * <p>Empty when the transport cannot. A command-only fake is in that set, and so is any realm
+     * that has not said how its processes are born. Callers that need a control client then fail
+     * instead of starting one on the local machine.
+     */
+    default Optional<ControlCarrier> controlCarrier() {
+        return Optional.empty();
+    }
+
+    /**
+     * Receives a report after each command this transport runs.
+     *
+     * <p>The default ignores it. A transport that cannot see its own commands leaves the observer
+     * unset rather than inventing timings.
+     */
+    default void observe(OperationObserver observer) {}
+
+    /**
+     * How many requests this transport runs at once; the rest wait for a turn.
+     *
+     * @return the bound, or {@link Integer#MAX_VALUE} for a transport that sets none
+     */
+    default int admissionBound() {
+        return Integer.MAX_VALUE;
     }
 
     /** Releases every resource and destroys every child still running. Idempotent. */

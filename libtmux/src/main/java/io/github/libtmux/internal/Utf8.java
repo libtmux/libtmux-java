@@ -1,6 +1,6 @@
 package io.github.libtmux.internal;
 
-import io.github.libtmux.UnencodableTextException;
+import io.github.libtmux.exception.UnencodableTextException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
@@ -107,6 +107,47 @@ public final class Utf8 {
         decoder.flush(out);
         drainInto(out, text);
         return text.toString();
+    }
+
+    /**
+     * Decodes one byte stream that arrives in pieces cut anywhere, as {@link #backslashReplace}
+     * decodes a whole one. A character cut between two pieces is held back and returned whole with
+     * the later piece. One per stream, on one thread.
+     */
+    public static final class Stream {
+
+        private final CharsetDecoder decoder = StandardCharsets.UTF_8
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        private byte[] held = new byte[0];
+
+        /** The text this piece completes, leaving a character it only starts for the next. */
+        public String decode(byte[] piece) {
+            byte[] bytes = piece;
+            if (held.length > 0) {
+                bytes = java.util.Arrays.copyOf(held, held.length + piece.length);
+                System.arraycopy(piece, 0, bytes, held.length, piece.length);
+            }
+            ByteBuffer in = ByteBuffer.wrap(bytes);
+            CharBuffer out = CharBuffer.allocate(bytes.length);
+            StringBuilder text = new StringBuilder(bytes.length);
+            decoder.reset();
+            while (true) {
+                // Not the end of input: an incomplete character at the end stays in the buffer.
+                CoderResult result = decoder.decode(in, out, false);
+                drainInto(out, text);
+                if (result.isUnderflow()) {
+                    break;
+                }
+                for (int offset = 0; offset < result.length(); offset++) {
+                    escape(text, in.get(in.position() + offset));
+                }
+                in.position(in.position() + result.length());
+            }
+            held = java.util.Arrays.copyOfRange(bytes, in.position(), bytes.length);
+            return text.toString();
+        }
     }
 
     private static void escape(StringBuilder text, byte value) {

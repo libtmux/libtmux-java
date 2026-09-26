@@ -55,9 +55,31 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
      * The directory a fixture is made in names the JVM that made it, which is the only durable record
      * of who owns the server inside. A registry cannot serve: the run that most needs reaping is the
      * one that was killed before it could write anything down.
+     *
+     * <p>The pid alone is not a stable owner: the OS recycles pids, and a fixture directory left by a
+     * killed JVM can end up named for a pid a later, unrelated process now holds. The owning JVM's
+     * start rules that out, so it rides along whenever the platform reports one.
      */
-    private static final String PREFIX = "libtmux-" + ProcessHandle.current().pid() + "-";
+    private static final String PREFIX = prefix();
 
+    private static String prefix() {
+        ProcessHandle current = ProcessHandle.current();
+        return "libtmux-" + current.pid()
+                + startOf(current.pid()).map(start -> "-" + start).orElse("") + "-";
+    }
+
+    /** pid and start, the current naming: {@code k} and ticks since boot on Linux, epoch millis elsewhere. */
+    private static final Pattern OWNER_WITH_START = Pattern.compile("libtmux-(\\d+)-(k?\\d+)-.*");
+
+    /**
+     * How far two JVMs' readings of one process's start instant may differ. Linux reports a start as
+     * ticks since boot; the JDK adds the boot time it read once when it started, and that boot time
+     * moves whenever the wall clock is stepped, by seconds under WSL2 in a few minutes. Only a
+     * directory written before starts were recorded as ticks is compared this way.
+     */
+    private static final long START_SLACK_MILLIS = Duration.ofMinutes(1).toMillis();
+
+    /** pid alone, written by a version of this extension that predates {@link #OWNER_WITH_START}. */
     private static final Pattern OWNER = Pattern.compile("libtmux-(\\d+)-.*");
 
     /** Every fixture this JVM currently holds a server for, so the shutdown hook knows what to end. */
@@ -73,8 +95,9 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
 
     static {
         // Covers the exits a lifecycle callback does not: a cancelled build, a SIGTERM, a
-        // System.exit from something else in the JVM. Measured in docs/spikes/22: the hook runs on
-        // termination and normal exit, and does not run on SIGKILL — which is what the sweep is for.
+        // System.exit from something else in the JVM. The hook runs on termination and normal exit,
+        // and does not run on SIGKILL — which is what the sweep is for. See
+        // docs/decisions/0006-real-tmux-junit5-fixture-lifecycle.md.
         Runtime.getRuntime().addShutdownHook(new Thread(TmuxExtension::releaseAll, "libtmux-fixture-shutdown"));
     }
 
@@ -155,18 +178,76 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
 
     private static final String[] NO_ARGUMENTS = {};
 
-    /** A reused pid can only spare an abandoned server, never condemn a live one. */
+    /** A reused pid, or one whose live process started at a different instant, cannot spare this directory. */
     private static Optional<Path> abandonedDirectory(Path socket, Path root) {
         Path directory = socket.getParent();
         if (directory == null || !socket.startsWith(root)) {
             return Optional.empty();
         }
-        Matcher named = OWNER.matcher(directory.getFileName().toString());
+        String name = directory.getFileName().toString();
+        Matcher withStart = OWNER_WITH_START.matcher(name);
+        if (withStart.matches()) {
+            long pid = Long.parseLong(withStart.group(1));
+            return ownerChanged(pid, withStart.group(2)) ? Optional.of(directory) : Optional.empty();
+        }
+        Matcher named = OWNER.matcher(name);
         if (!named.matches()) {
             // Something else's socket, or one from before this scheme. Not this sweep's to judge.
             return Optional.empty();
         }
         return ProcessHandle.of(Long.parseLong(named.group(1))).isEmpty() ? Optional.of(directory) : Optional.empty();
+    }
+
+    /**
+     * True when the pid is free, or a live process holds it but did not start when this directory
+     * recorded. A live process whose start cannot be read is trusted rather than reaped: this
+     * platform cannot tell a reused pid from the one that made the directory.
+     */
+    private static boolean ownerChanged(long pid, String recordedStart) {
+        Optional<ProcessHandle> live = ProcessHandle.of(pid);
+        if (live.isEmpty()) {
+            return true;
+        }
+        if (recordedStart.startsWith("k")) {
+            return linuxStartTicks(pid)
+                    .map(ticks -> !recordedStart.equals("k" + ticks))
+                    .orElse(false);
+        }
+        long recordedMillis = Long.parseLong(recordedStart);
+        return live.get()
+                .info()
+                .startInstant()
+                .map(instant -> Math.abs(instant.toEpochMilli() - recordedMillis) > START_SLACK_MILLIS)
+                .orElse(false);
+    }
+
+    /**
+     * When a process started, in a form every JVM on this machine reads the same way: the kernel's
+     * own ticks since boot on Linux, and the platform's start instant elsewhere.
+     */
+    static Optional<String> startOf(long pid) {
+        Optional<Long> ticks = linuxStartTicks(pid);
+        if (ticks.isPresent()) {
+            return Optional.of("k" + ticks.get());
+        }
+        return ProcessHandle.of(pid)
+                .flatMap(process -> process.info().startInstant())
+                .map(instant -> Long.toString(instant.toEpochMilli()));
+    }
+
+    /**
+     * Field 22 of {@code /proc/<pid>/stat}. Counted after the command name's closing parenthesis,
+     * since the name itself may hold spaces and parentheses.
+     */
+    private static Optional<Long> linuxStartTicks(long pid) {
+        Path stat = Path.of("/proc", Long.toString(pid), "stat");
+        try {
+            String text = Files.readString(stat);
+            String[] fields = text.substring(text.lastIndexOf(')') + 2).split(" ", -1);
+            return Optional.of(Long.parseLong(fields[19]));
+        } catch (IOException | RuntimeException unreadable) {
+            return Optional.empty();
+        }
     }
 
     private record AbandonedServer(ProcessHandle process, Path directory) {}

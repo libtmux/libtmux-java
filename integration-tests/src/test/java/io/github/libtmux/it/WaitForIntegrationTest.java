@@ -141,7 +141,7 @@ final class WaitForIntegrationTest {
     @Test
     void aPaneWaitReadsFreshStateRatherThanTheCaptureItStartedFrom(Server server) throws InterruptedException {
         Pane stale = server.sessions().getFirst().windows().getFirst().panes().getFirst();
-        var unused = stale.retitle("waited-for-title");
+        var _ = stale.retitle("waited-for-title");
 
         assertEquals(WakeReason.SIGNALLED, stale.await(fresh -> fresh.title().equals("waited-for-title"), SHORT));
     }

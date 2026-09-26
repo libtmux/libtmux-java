@@ -22,7 +22,10 @@ dependencies {
         api(project(":libtmux-junit5"))
         api(project(":libtmux-mcp"))
         api(project(":libtmux-workspace"))
-        // Scala artifacts release after their Java prerequisite and can use a
-        // different version. Their POMs pin that prerequisite directly.
+        api(project(":libtmux-workspace-cli"))
+        // The Scala facades release with the Java artifacts, at the same version.
+        api(project(":libtmux-scala"))
+        api(project(":libtmux-scala-cats"))
+        api(project(":libtmux-scala-ox"))
     }
 }

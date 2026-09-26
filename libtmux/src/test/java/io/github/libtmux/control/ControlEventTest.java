@@ -9,13 +9,14 @@ import io.github.libtmux.WindowId;
 import io.github.libtmux.WindowLayout;
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
  * Reading what tmux volunteers.
  *
  * <p>The shapes here are tmux's own, taken from {@code control-notify.c} and {@code control.c} and
- * confirmed against a running 3.7 server in {@code docs/spikes/23-control-subscriptions.md}.
+ * documented in {@code docs/decisions/0014-watch-a-server-with-refresh-client.md}.
  */
 final class ControlEventTest {
 
@@ -101,6 +102,12 @@ final class ControlEventTest {
         assertEquals(new Notification.PasteBufferChanged("buffer0"), typed("%paste-buffer-changed buffer0"));
         assertEquals(new Notification.Exit(Optional.empty()), typed("%exit"));
         assertEquals(new Notification.Exit(Optional.of("server exited")), typed("%exit server exited"));
+        assertEquals(new Notification.Pause(new PaneId("%3")), typed("%pause %3"));
+        assertEquals(new Notification.Continue(new PaneId("%3")), typed("%continue %3"));
+        assertEquals(new Notification.Message("build  done"), typed("%message build  done"));
+        assertEquals(
+                new Notification.ConfigError("/etc/tmux.conf:3: unknown command: sett"),
+                typed("%config-error /etc/tmux.conf:3: unknown command: sett"));
     }
 
     /** A name is everything after the id, spaces and all, as tmux wrote it. */
@@ -115,6 +122,22 @@ final class ControlEventTest {
         assertEquals(
                 new Notification.ClientSessionChanged("/dev/pts/1", new SessionId("$0"), "a b"),
                 typed("%client-session-changed /dev/pts/1 $0 a b"));
+    }
+
+    /** Only a subscription separates a value with {@code " : "}; a name may hold one. */
+    @Test
+    void aNameHoldingTheSubscriptionSeparatorIsReadWhole() {
+        assertEquals(
+                new Notification.WindowRenamed(new WindowId("@1"), "left : right", true),
+                typed("%window-renamed @1 left : right"));
+        assertEquals(
+                new Notification.SessionRenamed(new SessionId("$2"), "a : b : c"),
+                typed("%session-renamed $2 a : b : c"));
+        assertEquals(
+                Optional.empty(),
+                ControlEvent.parse("%window-renamed @1 left : right")
+                        .orElseThrow()
+                        .value());
     }
 
     @Test
@@ -152,6 +175,45 @@ final class ControlEventTest {
 
         assertEquals(Optional.of(new WindowId("@1")), event.windowId());
         assertEquals(Optional.of(new PaneId("%7")), event.paneId());
+    }
+
+    /** The value is everything after the first separator, including another one. */
+    @Test
+    void aSubscriptionValueKeepsALaterSeparator() {
+        ControlEvent event = ControlEvent.parse("%subscription-changed title $0 @1 0 %2 : hello : world")
+                .orElseThrow();
+
+        assertEquals(Optional.of("hello : world"), event.value());
+    }
+
+    /** Garbage is either not an event or a readable one. It is never a thrown parse. */
+    @Test
+    void randomLinesEitherAreNotEventsOrNameOneWord() {
+        Random random = new Random(23);
+        for (int sample = 0; sample < 200; sample++) {
+            String line = randomLine(random);
+            ControlEvent.parse(line).ifPresent(event -> {
+                assertTrue(event.kind().chars().noneMatch(Character::isWhitespace), line);
+                event.fields().forEach(field -> assertTrue(!field.isBlank(), line));
+            });
+        }
+    }
+
+    private static String randomLine(Random random) {
+        int length = random.nextInt(48);
+        StringBuilder line = new StringBuilder(length);
+        for (int index = 0; index < length; index++) {
+            line.append(
+                    switch (random.nextInt(6)) {
+                        case 0 -> "%";
+                        case 1 -> " ";
+                        case 2 -> ":";
+                        case 3 -> "@$";
+                        case 4 -> " : ";
+                        default -> String.valueOf((char) ('a' + random.nextInt(26)));
+                    });
+        }
+        return line.toString();
     }
 
     private static Notification typed(String line) {

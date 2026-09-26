@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -21,13 +22,6 @@ import org.jspecify.annotations.Nullable;
  * }</pre>
  */
 public final class WindowSpec {
-
-    /**
-     * Before this, tmux hands a relative {@code -c} straight to the child's {@code chdir}, so it
-     * resolves against the server's own working directory instead of the caller's and silently
-     * falls back to the home directory when that misses. See {@code docs/spikes/14}.
-     */
-    private static final TmuxVersion RELATIVE_DIRECTORY_SINCE = new TmuxVersion(3, 3, "a");
 
     private final @Nullable String name;
     private final @Nullable Path directory;
@@ -67,6 +61,7 @@ public final class WindowSpec {
     }
 
     /** Variables set for the new window, in the order they were given. */
+    @ReadOnly
     public Map<String, String> environment() {
         return environment;
     }
@@ -106,6 +101,7 @@ public final class WindowSpec {
     }
 
     /** What the window's first pane runs, empty for the session's shell. */
+    @ReadOnly
     public List<String> command() {
         return command;
     }
@@ -115,13 +111,8 @@ public final class WindowSpec {
      *
      * @param target the session, or the index, to create in
      * @param format the row format the caller will read the result back with
-     * @param running the version of the server about to run this
-     * @throws UnsupportedTmuxVersionException if the spec asks for something {@code running} does not have
      */
-    List<String> argv(String target, String format, TmuxVersion running) {
-        if (directory != null && !directory.isAbsolute() && !running.atLeast(RELATIVE_DIRECTORY_SINCE)) {
-            throw new UnsupportedTmuxVersionException("a relative start directory", RELATIVE_DIRECTORY_SINCE, running);
-        }
+    List<String> argv(String target, String format) {
         List<String> argv = new ArrayList<>(20);
         argv.add("new-window");
         if (detached) {
@@ -142,7 +133,7 @@ public final class WindowSpec {
         }
         if (directory != null) {
             argv.add("-c");
-            argv.add(TmuxFormats.literal(directory.toString()));
+            argv.add(TmuxFormats.literal(directory.toAbsolutePath().toString()));
         }
         for (Map.Entry<String, String> variable : environment.entrySet()) {
             argv.add("-e");
@@ -211,7 +202,10 @@ public final class WindowSpec {
             return this;
         }
 
-        /** Starts the window in this directory. A relative one requires tmux 3.3a. */
+        /**
+         * Starts the window in this directory. A relative one resolves against this process's working
+         * directory, on every release: tmux 3.2a would resolve it against the server's.
+         */
         public Builder in(Path directory) {
             this.directory = Objects.requireNonNull(directory, "directory");
             return this;

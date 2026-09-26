@@ -5,12 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
 import io.github.libtmux.TmuxFormats;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -68,9 +68,9 @@ final class ServerScriptingIntegrationTest {
     @Test
     void aDashPrefixedShellCommandIsNotAnOption(Server server) {
         server.globalOptions().set("default-shell", "/bin/sh");
-        assertThrows(LibTmuxException.class, () -> server.runShell("-b"));
+        assertThrows(LibTmuxException.class, () -> server.shell().run("-b"));
         if (!losesShellOutput(server)) {
-            assertThrows(LibTmuxException.class, () -> server.runShellCapturing("-b"));
+            assertThrows(LibTmuxException.class, () -> server.shell().capturing("-b"));
         }
     }
 
@@ -79,7 +79,7 @@ final class ServerScriptingIntegrationTest {
     void aShellCommandRunsForItsEffectOnEveryRelease(Server server, @TempDir Path directory) throws Exception {
         Path touched = directory.resolve("ran");
 
-        server.runShell("touch " + touched);
+        server.shell().run("touch " + touched);
 
         assertTrue(Await.until(() -> Files.exists(touched)), "the command never ran");
     }
@@ -106,8 +106,7 @@ final class ServerScriptingIntegrationTest {
 
         // tmux cancels a client's asynchronous format jobs when that client disconnects.
         // Keep the client alive through observation; a short-lived command races job cleanup.
-        try (ControlClient client =
-                ControlClient.attach(server.config(), server.sessions().get(0).id())) {
+        try (ControlClient client = server.control(server.sessions().get(0))) {
             assertTrue(client.send("run-shell", TmuxFormats.literal("echo '#(touch " + literal + ")' > /dev/null"))
                     .succeeded());
             assertTrue(client.send("run-shell", "echo '#(touch " + expanded + ")' > /dev/null")
@@ -121,14 +120,14 @@ final class ServerScriptingIntegrationTest {
     @Test
     void readingWhatTheCommandPrintedWorksOrRefuses(Server server) {
         if (losesShellOutput(server)) {
-            UnsupportedTmuxVersionException refused = assertThrows(
-                    UnsupportedTmuxVersionException.class, () -> server.runShellCapturing("echo captured-me"));
+            UnsupportedFeatureException refused = assertThrows(
+                    UnsupportedFeatureException.class, () -> server.shell().capturing("echo captured-me"));
 
             assertTrue(
                     String.valueOf(refused.getMessage()).contains("run-shell"),
                     "the refusal says what is missing: " + refused.getMessage());
         } else {
-            List<String> printed = server.runShellCapturing("echo captured-me");
+            List<String> printed = server.shell().capturing("echo captured-me");
 
             assertTrue(printed.contains("captured-me"), "what came back: " + printed);
         }
@@ -154,7 +153,7 @@ final class ServerScriptingIntegrationTest {
 
     @Test
     void theServerListsTheCommandsItKnows(Server server) {
-        List<String> commands = server.listCommands();
+        List<String> commands = server.commands().list();
 
         assertTrue(commands.size() > 50, "a tmux knows many commands, not " + commands.size());
         assertTrue(commands.stream().anyMatch(line -> line.startsWith("new-session")), "new-session is not among them");

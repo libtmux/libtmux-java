@@ -2,6 +2,7 @@ package io.github.libtmux;
 
 import java.util.List;
 import java.util.OptionalInt;
+import kotlin.annotations.jvm.ReadOnly;
 
 /**
  * How a command run in a pane with {@link Pane#run} ended, and what it printed.
@@ -14,7 +15,8 @@ import java.util.OptionalInt;
  *     and nothing else. False when the output outgrew the pane's history or the command cleared the
  *     screen, or when the command had not finished by the deadline
  */
-public record PaneRun(Outcome outcome, OptionalInt exitStatus, List<String> output, boolean exact) {
+public record PaneRun(
+        Outcome outcome, OptionalInt exitStatus, @ReadOnly List<String> output, boolean exact) {
 
     public PaneRun {
         output = List.copyOf(output);

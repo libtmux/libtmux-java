@@ -1,0 +1,6 @@
+# actionlint 1.7 predates concurrency.queue, which GitHub accepts: docs.yml has deployed with it
+# on every push to master.
+paths:
+  .github/workflows/docs.yml:
+    ignore:
+      - 'unexpected key "queue" for "concurrency" section'

@@ -2,6 +2,8 @@ package io.github.libtmux;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.ServerUnavailableException;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.TmuxTransport;
@@ -17,7 +19,7 @@ import org.junit.jupiter.api.Test;
 /**
  * Nothing answering the socket is one answer, whichever method asked.
  *
- * <p>{@code MIGRATION.md} tells a caller to catch {@link ServerNotRunningException} rather than match
+ * <p>{@code MIGRATION.md} tells a caller to catch {@link ServerUnavailableException} rather than match
  * on a message, which only works if every method raises it. Seven reads and every mutation used to
  * raise a plain {@link LibTmuxException} carrying tmux's own wording, because the check lived at the
  * call sites that remembered it rather than at the one place a failure is built.
@@ -40,8 +42,8 @@ final class AbsentDaemonTest {
         sites.put("version", Server::version);
         sites.put("requireAlive", Server::requireAlive);
         sites.put("keys.list", server -> server.keys().list());
-        sites.put("listCommands", Server::listCommands);
-        sites.put("messages", Server::messages);
+        sites.put("commands.list", server -> server.commands().list());
+        sites.put("messageLog.lines", server -> server.messageLog().lines());
         sites.put("expand", server -> server.expand("#{pid}"));
         sites.put("options.get", server -> server.globalOptions().get("status"));
         sites.put("options.all", server -> server.globalOptions().all());
@@ -59,9 +61,9 @@ final class AbsentDaemonTest {
         sites.put("hooks.set", server -> server.hooks().set("after-new-window", "display-message hi"));
         sites.put("keys.bind", server -> server.keys().bind("F12", List.of("display-message", "hi")));
         sites.put("sourceFile", server -> server.sourceFile(Path.of("/tmp/nothing.conf")));
-        sites.put("runShell", server -> server.runShell("true"));
+        sites.put("shell.run", server -> server.shell().run("true"));
         sites.put("newSession", server -> {
-            var unused = server.newSession("s");
+            var _ = server.newSession("s");
         });
 
         List<String> wrong = new ArrayList<>();
@@ -69,7 +71,7 @@ final class AbsentDaemonTest {
             try (Server server = absent()) {
                 call.accept(server);
                 wrong.add(name + " did not raise at all");
-            } catch (ServerNotRunningException expected) {
+            } catch (ServerUnavailableException expected) {
                 // What every one of them has to say.
             } catch (RuntimeException other) {
                 wrong.add(name + " raised " + other.getClass().getSimpleName() + ": " + other.getMessage());

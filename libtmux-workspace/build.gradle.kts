@@ -1,5 +1,6 @@
 plugins {
     id("libtmux.published-library")
+    id("libtmux.api-diff")
     id("libtmux.tmux-matrix")
 }
 

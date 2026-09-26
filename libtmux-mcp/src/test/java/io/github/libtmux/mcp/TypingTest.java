@@ -7,13 +7,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.SplitSpec;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.TypedText;
+import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
@@ -716,6 +716,12 @@ final class TypingTest {
                 sorted(second.id().value(), modal.id().value()), rows.get(1).get("resolved_pane_ids"));
         assertEquals(false, rows.get(2).get("success"));
         assertEquals(List.of(), rows.get(2).get("resolved_pane_ids"));
+        // A human-owned mode is a pre-dispatch refusal; a vanished pane id is a gone target. Two
+        // different rows fail for two different reasons, and error_code says which.
+        assertEquals("REFUSED", rows.get(1).get("error_code"));
+        assertEquals(false, rows.get(1).get("retryable"));
+        assertEquals("TARGET_GONE", rows.get(2).get("error_code"));
+        assertEquals(false, rows.get(2).get("retryable"));
         assertTrue(await(() -> captureOf(server, first.id().value()).contains("batch-first-marker")));
         assertTrue(await(() -> captureOf(server, firstPeer.id().value()).contains("batch-first-marker")));
         assertFalse(captureOf(server, second.id().value()).contains("batch-modal-marker"));
@@ -746,6 +752,10 @@ final class TypingTest {
                         "continue"))));
                 assertEquals(false, failed.getFirst().get("success"));
                 assertTrue(String.valueOf(failed.getFirst().get("error")).contains("dispatch refused by fixture"));
+                // The fixture throws directly from the transport, outside the sealed exception tree;
+                // classify() still names it rather than leaving error_code absent.
+                assertEquals("REFUSED", failed.getFirst().get("error_code"));
+                assertEquals(false, failed.getFirst().get("retryable"));
                 assertEquals(
                         sorted(first.id().value(), firstPeer.id().value()),
                         failed.getFirst().get("resolved_pane_ids"));
