@@ -1,9 +1,7 @@
 package io.github.libtmux.kotlin
 
-import io.github.libtmux.Server
 import io.github.libtmux.ServerConfig
 import io.github.libtmux.ServerEndpoint
-import io.github.libtmux.Session
 import io.github.libtmux.WakeReason
 import io.github.libtmux.junit5.TmuxExtension
 import io.github.libtmux.junit5.TmuxSocketPath
@@ -29,13 +27,21 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import io.github.libtmux.Server as JavaServer
+import io.github.libtmux.Session as JavaSession
 
+/**
+ * The Channel tests here exercise the reused Java [io.github.libtmux.Channel] extensions in
+ * `Waits.kt`. The rest exercise wrapper-class WAIT operations — `Pane.run`, `Server.control` — which
+ * are hand-written members, not catalog-generated, so a cancelled coroutine's interrupt reaches a
+ * real, stalled tmux process rather than a mock.
+ */
 @ExtendWith(TmuxExtension::class)
 class WaitsTest {
 
     @Test
-    fun `a signal ends the wait`(server: Server) {
-        val channel = server.channel("kotlin-signal")
+    fun `a signal ends the wait`(javaServer: JavaServer) {
+        val channel = javaServer.channel("kotlin-signal")
         channel.drain()
 
         val outcome =
@@ -51,8 +57,8 @@ class WaitsTest {
     }
 
     @Test
-    fun `cancelling a wait is not a timeout`(server: Server, socket: TmuxSocketPath) {
-        val channel = server.channel("kotlin-cancel")
+    fun `cancelling a wait is not a timeout`(javaServer: JavaServer, socket: TmuxSocketPath) {
+        val channel = javaServer.channel("kotlin-cancel")
         channel.drain()
         val needle = socket.path().toString()
 
@@ -70,8 +76,8 @@ class WaitsTest {
     }
 
     @Test
-    fun `a wait runs on the dispatcher it is given`(server: Server) {
-        val channel = server.channel("kotlin-dispatcher")
+    fun `a wait runs on the dispatcher it is given`(javaServer: JavaServer) {
+        val channel = javaServer.channel("kotlin-dispatcher")
         channel.drain()
         val recording = RecordingDispatcher()
 
@@ -88,8 +94,8 @@ class WaitsTest {
     }
 
     @Test
-    fun `a negative channel wait is rejected`(server: Server) {
-        val channel = server.channel("kotlin-negative")
+    fun `a negative channel wait is rejected`(javaServer: JavaServer) {
+        val channel = javaServer.channel("kotlin-negative")
 
         assertFailsWith<IllegalArgumentException> {
             runBlocking { channel.await((-1).milliseconds) }
@@ -97,42 +103,43 @@ class WaitsTest {
     }
 
     @Test
-    fun `run returns the command's status against a real pane`(server: Server) {
-        val pane = server.sessions()[0].windows()[0].panes()[0]
+    fun `run returns the command's status against a real pane`(javaServer: JavaServer) = runBlocking {
+        val server = Server.open(javaServer.config())
+        val pane = server.sessions().first().windows.first().panes.first()
 
-        val result = runBlocking { pane.run("true", 10.seconds) }
+        val result = pane.run("true", 10.seconds)
 
         assertTrue(result.succeeded())
     }
 
     @Test
-    fun `cancelling run ends the wait promptly`(server: Server, socket: TmuxSocketPath) {
-        val pane = server.sessions()[0].windows()[0].panes()[0]
+    fun `cancelling run ends the wait promptly`(javaServer: JavaServer, socket: TmuxSocketPath) = runBlocking {
+        val server = Server.open(javaServer.config())
+        val pane = server.sessions().first().windows.first().panes.first()
         val needle = socket.path().toString()
 
-        runBlocking {
-            val running = async { pane.run("sleep 30", 30.seconds) }
-            val deadline = System.nanoTime() + 5.seconds.inWholeNanoseconds
-            while (!waiterPresent(needle) && System.nanoTime() < deadline) {
-                delay(20.milliseconds)
-            }
-            assertTrue(waiterPresent(needle), "run's wait never reached tmux")
-            running.cancel()
-            val failure = runCatching { withTimeout(1.seconds) { running.await() } }.exceptionOrNull()
-            assertTrue(failure is CancellationException && failure !is TimeoutCancellationException)
+        val running = async { pane.run("sleep 30", 30.seconds) }
+        val deadline = System.nanoTime() + 5.seconds.inWholeNanoseconds
+        while (!waiterPresent(needle) && System.nanoTime() < deadline) {
+            delay(20.milliseconds)
         }
+        assertTrue(waiterPresent(needle), "run's wait never reached tmux")
+        running.cancel()
+        val failure = runCatching { withTimeout(1.seconds) { running.await() } }.exceptionOrNull()
+        assertTrue(failure is CancellationException && failure !is TimeoutCancellationException)
     }
 
     @Test
-    fun `control attaches a working client against real tmux`(server: Server) {
-        val session = server.sessions()[0]
+    fun `control attaches a working client against real tmux`(javaServer: JavaServer) = runBlocking {
+        val server = Server.open(javaServer.config())
+        val session = server.sessions().first()
 
-        val client = runBlocking { server.control(session, 5.seconds) }
+        val client = server.control(session, 5.seconds)
 
         try {
-            assertTrue(client.isAlive())
+            assertTrue(client.isAlive)
             assertEquals(
-                session.id().value(),
+                session.id.value(),
                 client.send("display-message", "-p", "#{session_id}").lines()[0],
             )
         } finally {
@@ -152,7 +159,9 @@ class WaitsTest {
         val stall = StalledControlFixture.start()
         try {
             runBlocking {
-                val attaching = async(Dispatchers.IO) { stall.server.control(stall.session, 30.seconds) }
+                val server = Server.open(stall.javaServer.config())
+                val session = Session(stall.javaSession, server)
+                val attaching = async(Dispatchers.IO) { server.control(session, 30.seconds) }
 
                 val pid = awaitControlClientPid(stall.socket, 5.seconds)
                 assertNotNull(pid, "the wrapped control client never started")
@@ -180,20 +189,20 @@ class WaitsTest {
  * A server whose binary blocks a `-C` attach on a FIFO nothing writes to, so the reply
  * [Server.control] waits for never arrives. Every other invocation — session creation, the
  * identity check `control` runs before attaching — has no `-C` and passes straight through to the
- * real tmux.
+ * real tmux. Holds the Java handles: only the one `control()` call under test needs the wrapper.
  */
 private class StalledControlFixture private constructor(
     private val root: Path,
-    val server: Server,
-    val session: Session,
+    val javaServer: JavaServer,
+    val javaSession: JavaSession,
 ) {
     val socket: String = root.resolve("s").toString()
 
     fun close() {
         try {
-            server.killServer()
+            javaServer.killServer()
         } finally {
-            server.close()
+            javaServer.close()
             root.toFile().deleteRecursively()
         }
     }
@@ -224,7 +233,7 @@ private class StalledControlFixture private constructor(
             val socket = root.resolve("s")
 
             val server =
-                Server.open(
+                JavaServer.open(
                     ServerConfig.builder()
                         .binary(wrapper.toString())
                         .endpoint(ServerEndpoint.socketPath(socket))

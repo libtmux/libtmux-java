@@ -1,9 +1,21 @@
 package io.github.libtmux.kotlin
 
+import io.github.libtmux.Buffers
+import io.github.libtmux.Channel
+import io.github.libtmux.CommandChain
+import io.github.libtmux.Commands
+import io.github.libtmux.Environment
+import io.github.libtmux.Hooks
+import io.github.libtmux.Keys
+import io.github.libtmux.MessageLog
+import io.github.libtmux.Options
+import io.github.libtmux.Prompt
 import io.github.libtmux.ServerConfig
 import io.github.libtmux.ServerIdentity
-import io.github.libtmux.WindowId
+import io.github.libtmux.Shell
+import io.github.libtmux.batch.Batch
 import io.github.libtmux.exception.CardinalityException
+import io.github.libtmux.exception.DispatchException
 import io.github.libtmux.query.FilterExpr
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
@@ -37,6 +49,45 @@ public class Server private constructor(
 
     /** How many tmux commands this server's transport runs at once, from [ExecutionPolicy.default]. */
     public val admissionBound: Int get() = java.admissionBound()
+
+    /** Collects several commands to run in one tmux invocation. */
+    public fun batch(): Batch = java.batch()
+
+    /** Starts a chain of commands where each one acts on what the last one made. */
+    public fun chain(): CommandChain = java.chain()
+
+    /** Shell commands run by tmux, and tmux commands chosen by a shell exit status. */
+    public fun shell(): Shell = java.shell()
+
+    /** The commands this tmux knows. */
+    public fun commands(): Commands = java.commands()
+
+    /** The server's message log. */
+    public fun messageLog(): MessageLog = java.messageLog()
+
+    /** The command prompt's history. */
+    public fun prompt(): Prompt = java.prompt()
+
+    /** One of this server's wait-for channels, which is where a signal is sent and waited for. */
+    public fun channel(name: String): Channel = java.channel(name)
+
+    /** The server's key bindings: `prefix` when binding, every table when listing. */
+    public fun keys(): Keys = java.keys()
+
+    /** The server's paste buffers, which every session shares. */
+    public fun buffers(): Buffers = java.buffers()
+
+    /** The server-wide options, the ones tmux keeps once per server. */
+    public fun options(): Options = java.options()
+
+    /** The global session options every session inherits unless it sets its own. */
+    public fun globalOptions(): Options = java.globalOptions()
+
+    /** The server's environment, which every session inherits and every new process is given. */
+    public fun environment(): Environment = java.environment()
+
+    /** The global hooks every session inherits. */
+    public fun hooks(): Hooks = java.hooks()
 
     /**
      * The one session this expression matches, captured now.
@@ -85,10 +136,6 @@ public class Server private constructor(
             java.pane(expression).map { Pane(it, this) }.orElse(null)
         }
 
-    /** Every winlink of the window with this id, captured now. */
-    public suspend fun windows(id: WindowId): List<Window> =
-        runInterruptible(policy.commands) { java.windows(id).map { Window(it, this) } }
-
     /**
      * Attaches a control client to this session's server, and only to the process this capture
      * named.
@@ -100,7 +147,17 @@ public class Server private constructor(
         timeout: Duration = config.defaultTimeout().toKotlinDuration(),
     ): ControlClient =
         runInterruptible(policy.commands) {
-            ControlClient(java.control(session.java, timeout.toJavaDuration()), this)
+            try {
+                ControlClient(java.control(session.java, timeout.toJavaDuration()), this)
+            } catch (failed: DispatchException.Failed) {
+                // ControlWriter.await catches its own InterruptedException and reports it as a
+                // checked DispatchException.Failed — the right call for a caller with no coroutine
+                // concept, but it swallows the raw InterruptedException runInterruptible (above)
+                // needs to translate a cancelling interrupt into a CancellationException. Nothing
+                // else interrupts this thread, so an interrupted cause here always means this call
+                // was cancelled, never a genuine dispatch failure; reinstate it.
+                throw failed.cause as? InterruptedException ?: failed
+            }
         }
 
     /** Releases an owned transport. Idempotent, and never kills tmux. */
