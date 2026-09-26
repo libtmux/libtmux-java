@@ -87,7 +87,8 @@ window.refresh().panes().size();           // → 2
 ```
 
 **Every Java snippet in this file, in every package README, and in every guide is
-compiled, and run against a real tmux** by [`docs-tests`](docs-tests/), unless a
+compiled, and run against a real tmux** by
+[the documentation suite](docs/README.md#how-these-pages-are-tested), unless a
 directive above it says `compile-only` or `skip` and why. A snippet that stopped
 working fails the build; one that claims the compiler rejects it must actually be
 rejected.
@@ -95,7 +96,7 @@ rejected.
 A fence's first line, `// Given: Server server` and the like, names what the
 snippet *reads* rather than builds — real code still needs its own imports and,
 for `Server`, a call such as the `Server.open(ServerConfig...)` shown above.
-`docs-tests` also hands every snippet a `Server` that already holds one session,
+The suite also hands every snippet a `Server` that already holds one session,
 so `server.sessions().get(0)` finds something without the snippet creating it
 first; a snippet that opens its own session instead — as several below do —
 depends on nothing already being there.
@@ -354,8 +355,8 @@ release that includes them.
 
 Not published, and part of how the library is built:
 [`examples/`](examples/) · [`integration-tests/`](integration-tests/) ·
-[`docs-tests/`](docs-tests/) ·
-[`scripts/`](scripts/) · `build-logic/`
+[`module-tests/`](module-tests/) · [`benchmarks/`](benchmarks/) ·
+[`docs/`](docs/) · [`scripts/`](scripts/) · [`tools/`](tools/) · `build-logic/`
 
 `platformCoversEveryPublishedModule` fails the build when the published artifacts
 stop matching the BOM.
