@@ -17,6 +17,9 @@ public class ControlClient internal constructor(
     public val server: Server,
 ) : AutoCloseable {
 
+    /** The Java control client this wraps: the same object, for a Java API that takes one. */
+    public val asJava: JavaControlClient get() = java
+
     /** Whether the client is still running. */
     public val isAlive: Boolean get() = java.isAlive
 

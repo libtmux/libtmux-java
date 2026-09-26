@@ -49,7 +49,9 @@ api-break: ControlClient
 
 `io.github.libtmux.kotlin.Server`/`Session`/`Window`/`Pane`/`Client`/
 `ControlClient` are new Kotlin classes, distinct from the Java types of the
-same simple name. Every operation that reaches tmux is `suspend`; captured
+same simple name. Code that already holds a Java `Server` wraps it with
+`Server.fromJava(server)`, and every wrapper answers its Java handle as
+`asJava`. Every operation that reaches tmux is `suspend`; captured
 state is a property. `Optional` is already unwrapped to a nullable return, so
 the old `activeWindowOrNull`/`activePaneOrNull`/`floatingOrNull`/`modeOrNull`/
 `sessionOrNull`/`paneOrNull`/`windowOrNull`/`getOrNull` extension functions are

@@ -15,6 +15,9 @@ import io.github.libtmux.Session as JavaSession
  */
 public class Session internal constructor(internal val java: JavaSession, public val server: Server) {
 
+    /** The Java session this wraps: the same object, for a Java API that takes one. */
+    public val asJava: JavaSession get() = java
+
     /** The session's stable id. */
     public val id: SessionId get() = java.id()
 

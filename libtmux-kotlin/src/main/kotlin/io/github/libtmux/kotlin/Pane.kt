@@ -28,6 +28,9 @@ import io.github.libtmux.Pane as JavaPane
  */
 public class Pane internal constructor(internal val java: JavaPane, public val server: Server) {
 
+    /** The Java pane this wraps: the same object, for a Java API that takes one. */
+    public val asJava: JavaPane get() = java
+
     /** The pane's stable id. */
     public val id: PaneId get() = java.id()
 
