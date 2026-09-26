@@ -12,6 +12,8 @@ production.
 
 ## Unreleased
 
+## 0.0.1-alpha.15 — 2026-09-26
+
 ### Added
 
 - **`ServerMirror` keeps a live copy of a server.** It listens through a
