@@ -173,6 +173,45 @@ final class DocumentationFactsTest {
     }
 
     /**
+     * Every sbt install line the documentation shows is one the sbt consumer build resolves.
+     *
+     * <p>That build fetches each artifact from the staged repository exactly as a reader's would, so a
+     * documented line it does not carry is a line nothing has shown to work. Versions are compared
+     * as a placeholder: the documents say {@code "<version>"} or the release, the build says
+     * {@code libtmuxVersion}.
+     */
+    @Test
+    void everyDocumentedSbtLineIsOneTheSbtConsumerResolves() {
+        Pattern fence = Pattern.compile(
+                "<!--\\s*snippet:\\s*scala-build:\\s*([a-z0-9-]+)\\s*-->\\s*\\n```sbt\\n(.*?)^```",
+                Pattern.MULTILINE | Pattern.DOTALL);
+        Set<String> consumer = sbtLines(read("module-tests/sbt/build.sbt"));
+        List<String> unresolved = new ArrayList<>();
+        for (String document : readerFacing()) {
+            Matcher found = fence.matcher(read(document));
+            while (found.find()) {
+                for (String line : sbtLines(found.group(2))) {
+                    if (!consumer.contains(line)) {
+                        unresolved.add(document + " (" + found.group(1) + "): " + line);
+                    }
+                }
+            }
+        }
+        assertEquals(List.of(), unresolved, "documented sbt lines the sbt consumer does not resolve");
+    }
+
+    /** The {@code libraryDependencies} lines of an sbt fragment, with the version normalized away. */
+    private static Set<String> sbtLines(String sbt) {
+        return Pattern.compile("libraryDependencies\\s*\\+=[^\\n]*")
+                .matcher(sbt)
+                .results()
+                .map(found -> found.group()
+                        .replaceAll("%\\s*(\"[^\"]*\"|libtmuxVersion)\\s*$", "% VERSION")
+                        .replaceAll("\\s+", " "))
+                .collect(Collectors.toCollection(TreeSet::new));
+    }
+
+    /**
      * Every coordinate a document tells someone to paste names the version this build would publish.
      *
      * <p>An install block is the first thing copied and the last thing updated.
