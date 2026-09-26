@@ -23,12 +23,14 @@ public final class io/github/libtmux/kotlin/ClientOperationsKt {
 
 public final class io/github/libtmux/kotlin/ControlClient : java/lang/AutoCloseable {
 	public fun close ()V
-	public final fun events (I)Lkotlinx/coroutines/flow/Flow;
+	public final fun events (ILkotlin/jvm/functions/Function1;)Lkotlinx/coroutines/flow/Flow;
+	public static synthetic fun events$default (Lio/github/libtmux/kotlin/ControlClient;ILkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
 	public final fun getServer ()Lio/github/libtmux/kotlin/Server;
 	public final fun getStandardError ()Ljava/lang/String;
 	public final fun getStandardErrorTruncated ()Z
 	public final fun isAlive ()Z
-	public final fun output (I)Lkotlinx/coroutines/flow/Flow;
+	public final fun output (ILkotlin/jvm/functions/Function1;)Lkotlinx/coroutines/flow/Flow;
+	public static synthetic fun output$default (Lio/github/libtmux/kotlin/ControlClient;ILkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
 }
 
 public final class io/github/libtmux/kotlin/ControlClientOperationsKt {

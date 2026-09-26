@@ -43,13 +43,15 @@ suspend fun watchWithFlow(socket: Path, deadline: Duration): String {
         val session = server.sessions().first()
         withControl(server, session) { control ->
             // control.output(...) is a cold Flow: the subscription it opens on first collection
-            // closes when collection ends, is cancelled, or throws — nothing to close by hand.
-            control.send("send-keys", "-t", session.name, "echo flowed", "Enter")
-
+            // closes when collection ends, is cancelled, or throws — nothing to close by hand. The
+            // command goes in onSubscribed: sent before collecting, its output could arrive before
+            // there was a subscription to hold it.
             val seen = StringBuilder()
             val echoed =
                 withTimeoutOrNull(deadline) {
-                    control.output(capacity = 32).map { Delivery.kept(it).data }.first { chunk ->
+                    control.output(capacity = 32) {
+                        control.send("send-keys", "-t", session.name, "echo flowed", "Enter")
+                    }.map { Delivery.kept(it).data }.first { chunk ->
                         seen.append(chunk)
                         WatchPaneOutput.printedLine(seen.toString(), "flowed")
                     }
