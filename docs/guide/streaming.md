@@ -15,7 +15,7 @@ tmux process covers the whole wait however long it takes. The `;` fires the
 signal whether the command succeeded or failed, so the wait cannot deadlock on
 failure.
 
-<!-- snippet: compile-only: the signal comes from a shell inside a pane, whose readiness this fixture cannot establish; it timed out on the 3.6 through 3.7c matrix lanes and passed on the rest -->
+<!-- snippet: compile-only: the signal comes from a shell inside a pane, whose readiness this fixture cannot establish -->
 ```java
 // Given: Server server, Pane pane, Path socket
 Channel done = server.channel("build-finished");

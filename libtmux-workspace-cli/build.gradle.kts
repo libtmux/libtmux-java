@@ -18,9 +18,8 @@ distributions.main { contents { from("README.md") } }
 tasks.jar { manifest { attributes("Automatic-Module-Name" to "io.github.libtmux.workspace.cli") } }
 
 dependencies {
-    // The core, named directly. It used to arrive through :libtmux-workspace, whose own classes no
-    // source here imports: the two are separate implementations with different document languages,
-    // and shipping that jar in the distribution only claimed otherwise.
+    // The core, named directly: no source here imports :libtmux-workspace, since
+    // the two are separate implementations with different document languages.
     implementation(project(":libtmux"))
     implementation(libs.jackson.databind)
     implementation(libs.jackson.yaml)

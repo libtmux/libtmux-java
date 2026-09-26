@@ -22,11 +22,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 /**
  * Deciding inside tmux, locking, and reading what the server has been told.
  *
- * <p>{@code if-shell}, {@code lock-server} and {@code show-messages} declare the same flags from
- * 3.2a to 3.7b. The prompt-history commands do not exist at all before 3.3, which is a floor rather
- * than a flag, so both branches assert. The matrix has no plain-3.3 lane, so 3.2a and 3.3a are the
- * two lanes this floor is actually observed on; both take the same branch before and after 3.3 as
- * they did before, since neither is below the real floor.
+ * <p>{@code if-shell}, {@code lock-server} and {@code show-messages} declare the same flags on every
+ * supported release. The prompt-history commands do not exist at all before 3.3, which is a floor rather
+ * than a flag, so both branches assert: 3.2a takes the refusing one and every later release the
+ * working one.
  */
 @ExtendWith(TmuxExtension.class)
 final class ServerControlIntegrationTest {

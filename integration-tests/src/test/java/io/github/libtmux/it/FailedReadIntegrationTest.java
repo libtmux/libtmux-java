@@ -78,10 +78,9 @@ final class FailedReadIntegrationTest {
     }
 
     /**
-     * Every method, not the handful that remembered to check. The classification used to live at each
-     * site that cared, so seven reads and every mutation reported a missing daemon as an ordinary
-     * failure carrying tmux's own wording — the one thing the migration notes tell a caller it can
-     * catch instead of matching on a message.
+     * Every method, not a handful: a missing daemon is {@code ServerUnavailableException} whichever
+     * method meets it, the one failure the migration notes tell a caller it can catch instead of
+     * matching on tmux's wording.
      */
     @Test
     void aMutationOnAnAbsentDaemonSaysSoToo(@TempDir Path scratch) {
