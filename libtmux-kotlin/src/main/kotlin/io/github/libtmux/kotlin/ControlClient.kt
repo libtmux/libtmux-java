@@ -33,11 +33,18 @@ public class ControlClient internal constructor(
      * collection ends, cancels, or throws — fan-out means collecting twice, each with its own gap
      * accounting. Not `suspend`: opening the subscription is local and does no tmux round trip: only
      * collecting it reads.
+     *
+     * Output tmux sends before the subscription opens is not delivered, and a cold flow opens it
+     * only when collection starts. So a command whose output is wanted belongs in [onSubscribed],
+     * which runs once the subscription exists and before the first read, rather than before
+     * `collect`: `control.output(32) { control.send("send-keys", ...) }`.
      */
-    public fun output(capacity: Int): Flow<Delivery<PaneOutput>> = coldFlowFrom { java.subscribeOutput(capacity) }
+    public fun output(capacity: Int, onSubscribed: suspend () -> Unit = {}): Flow<Delivery<PaneOutput>> =
+        coldFlowFrom({ java.subscribeOutput(capacity) }, onSubscribed)
 
-    /** State changes tmux volunteers, as a cold [Flow]. Reads as [output] does. */
-    public fun events(capacity: Int): Flow<Delivery<ControlEvent>> = coldFlowFrom { java.subscribeEvents(capacity) }
+    /** State changes tmux volunteers, as a cold [Flow]. Reads, and takes [onSubscribed], as [output] does. */
+    public fun events(capacity: Int, onSubscribed: suspend () -> Unit = {}): Flow<Delivery<ControlEvent>> =
+        coldFlowFrom({ java.subscribeEvents(capacity) }, onSubscribed)
 
     /** Ends the client, rejecting queued requests and resolving picked requests as uncertain. */
     override fun close() {

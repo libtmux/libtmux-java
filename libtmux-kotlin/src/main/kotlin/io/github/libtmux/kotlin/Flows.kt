@@ -24,8 +24,14 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * `trySend` failing on a full channel silently discarded the polled item. This bridge cannot lose
  * that way, because nothing but the collector itself ever calls `poll()`.
  */
-internal fun <T : Any> coldFlowFrom(open: () -> EventSubscription<T>): Flow<Delivery<T>> = flow {
+internal fun <T : Any> coldFlowFrom(
+    open: () -> EventSubscription<T>,
+    onSubscribed: suspend () -> Unit = {},
+): Flow<Delivery<T>> = flow {
     open().use { subscription ->
+        // After the subscription exists and before the first read: whatever this triggers lands in
+        // the buffer rather than before it.
+        onSubscribed()
         while (true) {
             val next = subscription.poll()
             when {

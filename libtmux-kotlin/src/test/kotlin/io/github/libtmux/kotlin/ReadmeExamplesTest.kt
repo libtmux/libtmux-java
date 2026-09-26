@@ -134,9 +134,9 @@ class ReadmeExamplesTest {
         withServer(javaServer.config()) { server ->
             val session = server.newSession("flow-demo")
             withControl(server, session) { control ->
-                control.send("display-message")
-
-                val step = control.output(capacity = 64).first()
+                val step = control.output(capacity = 64) {
+                    control.send("send-keys", "-t", session.name, "echo flowed", "Enter")
+                }.first()
                 val outcome = when (step) {
                     is io.github.libtmux.control.Delivery.Event -> "kept"
                     is io.github.libtmux.control.Delivery.Gap -> "lost ${step.missed}"
