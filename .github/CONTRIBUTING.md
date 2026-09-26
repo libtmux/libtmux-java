@@ -149,6 +149,20 @@ question that would have.
 The tmux matrix is not part of `check`, and a green `check` has not predicted
 it. Run the matrix before a release.
 
+Nor is the published coordinate. `consumers/java` is a build of its own that
+resolves `io.github.libtmux:libtmux` only from what the root build staged,
+requires it as a named module, checks the module version, and runs a command
+through tmux. CI runs it after `check`; locally, stage and run it:
+
+```console
+$ ./gradlew publishAllPublicationsToStagingRepository
+```
+
+```console
+$ ./gradlew -p consumers/java run \
+    -PlibtmuxVersion="$(sed -n 's/^libtmuxVersion=//p' gradle.properties)"
+```
+
 ## Pull requests
 
 One subject per pull request. Unrelated cleanup found along the way belongs in
