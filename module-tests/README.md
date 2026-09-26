@@ -15,6 +15,8 @@ class, or a module descriptor that does not load fails here, not for a user.
   real tmux; the core facade alone brings no Cats, FS2 or Ox.
 - **[`sbt/`](sbt/)** — sbt resolves each artifact with the install line the
   documentation shows.
+- **[`cli/`](cli/)** — `tmux-workspace` runs from its coordinates alone,
+  reports the staged version, and loads and freezes a workspace on a real tmux.
 
 ## Run them
 
@@ -38,6 +40,10 @@ $ ./gradlew -p module-tests/scala run -PlibtmuxVersion=0.0.1-alpha.15-SNAPSHOT
 $ module-tests/sbt/sbtw -Dlibtmux.version=0.0.1-alpha.15-SNAPSHOT core/run cats/run ox/run direct/run
 ```
 
+```console
+$ ./gradlew -p module-tests/cli run -PlibtmuxVersion=0.0.1-alpha.15-SNAPSHOT
+```
+
 `sbtw` downloads the pinned sbt launcher once and checks its checksum before
-running it. CI runs all four on every pull request, in its release rehearsal:
+running it. CI runs all five on every pull request, in its release rehearsal:
 against a staging signed at the version a tag would publish.

@@ -139,6 +139,7 @@ jobs:
             libtmux-kotlin/build/libs/*.jar
             libtmux-mcp/build/libs/*.jar
             libtmux-workspace/build/libs/*.jar
+            libtmux-workspace-cli/build/libs/*.jar
             libtmux-scala/build/libs/*.jar
             libtmux-scala-cats/build/libs/*.jar
             libtmux-scala-ox/build/libs/*.jar

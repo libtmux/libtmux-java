@@ -1,74 +1,26 @@
-# tmux-workspace
+# libtmux-workspace-cli
 
-Load and capture tmux workspaces with native Java services. The command names
-and flags follow tmuxp 1.74.0, with JSON/NDJSON output across every command.
-The CLI requires JDK 25 or newer and targets tmux 3.2a or newer.
+**`tmux-workspace` loads, captures, converts and imports tmux workspaces.**
 
-`load -2` forces 256-color support for native tmux clients, including attachment.
-Without it, tmux detects terminal capabilities. The legacy `-8` flag fails before
-workspace lookup because supported tmux versions removed 88-color mode.
+Command names and flags follow [tmuxp](https://tmuxp.git-pull.com/) 1.74.0, and
+every command answers in JSON or NDJSON on request. Loading, capture,
+conversion, imports, discovery and search run on the JVM alone; only the
+Python shell, tmuxp plugins and custom builders need Python. JDK 25 or newer, tmux 3.2a or newer.
 
-This branch is an implementation checkpoint. Native loading, capture,
-conversion, imports, discovery, search, editor execution and Python shell
-execution are available. Python plugins and custom builders use an explicit
-tmuxp bridge; their effects remain outside the native builder's guarantees.
-Native loading rejects unsupported configuration keys before contacting tmux.
-A key starting with `x-`, at any level, is the exception: it is accepted,
-ignored, and preserved by `convert`, for a vendor extension a workspace may
-carry without failing native loading.
-YAML anchors and merge keys expand into ordinary workspace values. Date-like
-scalars remain text. Documents must contain one mapping; duplicate keys,
-cyclic aliases, nonfinite numbers and nonstring mapping keys are rejected.
-Files ending in `.json` require JSON syntax. YAML expansion is limited to
-100 levels and 100,000 values.
+`io.github.libtmux:libtmux-workspace-cli` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace-cli).
 
-## Imports
+> **Alpha.** Commands, flags and output records will change without notice.
 
-`import tmuxinator` and `import teamocil` translate supported source shapes and
-validate the resulting native workspace before writing stdout or a destination.
-`convert` remains lossless document conversion and does not validate loading.
+## Install
 
-Tmuxinator window command arrays stay sequential commands in one pane; explicit
-`panes` create separate panes. Project `pre_window` arrays form one `; `-joined
-command, and window `pre` arrays form one ` && `-joined command before each
-explicit pane. `pre_tab` is accepted as an alias for `pre_window`.
-Teamocil `commands` arrays form one `; `-joined command; legacy `cmd` and `splits`
-are accepted. Window options and the first requested window/pane focus are
-preserved; absent focus selects the first item. Layouts and source order remain
-part of the translated workspace.
-
-Imports record an absolute project directory from the invocation directory,
-including when `root` is omitted. Window roots resolve against that project
-directory, so moving the saved file does not change its working directories.
-Directories need not exist during import; native loading still checks them.
-Missing session names use the source filename without its extension. Conflicting
-non-null aliases and malformed scalar or command shapes are rejected.
-
-Lifecycle hooks, project `pre`/`post`, endpoint/runtime overrides, named pane
-titles, Teamocil `clear`/filters and other unsupported fields are rejected
-before output. Tmuxinator expands ERB templates through Ruby before parsing,
-so unexpanded `<%` markup is refused before output or overwrite; Teamocil
-evaluates no templates, so the same markup in a Teamocil source is ordinary
-text and is preserved. Java creates all panes before sending commands, so
-before-command synchronization cannot preserve the source delivery order and is
-rejected. Tmuxinator `synchronize: after` uses native `options_after` instead.
-Window `pre` requires explicit nonempty panes; otherwise Tmuxinator would omit
-that command. Move unsupported behavior into an explicit native workspace or
-keep using its source tool.
-
-## Installation
-
-Build the local distribution from the repository root:
+Build the launcher from the repository root:
 
 ```console
-$ ./gradlew :libtmux-workspace-cli:installDist \
-    --max-workers=2 \
-    --no-parallel
+$ ./gradlew :libtmux-workspace-cli:installDist
 ```
 
-The launcher is `libtmux-workspace-cli/build/install/tmux-workspace/bin/tmux-workspace`.
-Add that directory to `PATH`, or use the full relative launcher path. This
-application distribution is separate from the published library artifacts.
+That writes `libtmux-workspace-cli/build/install/tmux-workspace/bin/tmux-workspace`.
+Put its directory on `PATH`.
 
 ## Workspace commands
 
@@ -176,6 +128,54 @@ workspace commands. Explicit file saves protect existing files unless `--force`
 is supplied. `convert` asks for confirmation before writing unless `--yes` is
 given; `freeze --save-to` names its own destination and needs neither `--yes`
 nor a terminal to write it.
+
+### Documents
+
+Native loading rejects a key it does not implement before contacting tmux. A
+key starting with `x-`, at any level, is the exception: a vendor extension,
+accepted, ignored, and preserved by `convert`. YAML anchors and merge keys
+expand into ordinary values, and date-like scalars stay text. A document holds
+one mapping; duplicate keys, cyclic aliases, nonfinite numbers and nonstring
+mapping keys are rejected. A file ending in `.json` must be JSON. YAML expansion
+stops at 100 levels and 100,000 values.
+
+`load -2` forces 256-color support for tmux clients, attachment included.
+Without it, tmux detects the terminal's capabilities. `-8` fails before
+workspace lookup: supported tmux releases removed 88-color mode.
+
+## Imports
+
+`import tmuxinator` and `import teamocil` translate supported source shapes and
+validate the resulting native workspace before writing stdout or a destination.
+`convert` remains lossless document conversion and does not validate loading.
+
+Tmuxinator window command arrays stay sequential commands in one pane; explicit
+`panes` create separate panes. Project `pre_window` arrays form one `; `-joined
+command, and window `pre` arrays form one ` && `-joined command before each
+explicit pane. `pre_tab` is accepted as an alias for `pre_window`.
+Teamocil `commands` arrays form one `; `-joined command; legacy `cmd` and `splits`
+are accepted. Window options and the first requested window/pane focus are
+preserved; absent focus selects the first item. Layouts and source order remain
+part of the translated workspace.
+
+Imports record an absolute project directory from the invocation directory,
+including when `root` is omitted. Window roots resolve against that project
+directory, so moving the saved file does not change its working directories.
+Directories need not exist during import; native loading still checks them.
+Missing session names use the source filename without its extension. Conflicting
+non-null aliases and malformed scalar or command shapes are rejected.
+
+Lifecycle hooks, project `pre`/`post`, endpoint/runtime overrides, named pane
+titles, Teamocil `clear`/filters and other unsupported fields are rejected
+before output. Tmuxinator expands ERB templates through Ruby before parsing,
+so unexpanded `<%` markup is refused before output or overwrite; Teamocil
+evaluates no templates, so the same markup in a Teamocil source is ordinary
+text and is preserved. Java creates all panes before sending commands, so
+before-command synchronization cannot preserve the source delivery order and is
+rejected. Tmuxinator `synchronize: after` uses native `options_after` instead.
+Window `pre` requires explicit nonempty panes; otherwise Tmuxinator would omit
+that command. Move unsupported behavior into an explicit native workspace or
+keep using its source tool.
 
 ## Inspect a workspace through MCP
 

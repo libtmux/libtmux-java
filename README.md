@@ -353,25 +353,20 @@ release that includes them.
 - **[`libtmux-workspace`](libtmux-workspace/)** — build a session from a
   tmuxp-shaped YAML file.
 
+- **[`libtmux-workspace-cli`](libtmux-workspace-cli/)** — the `tmux-workspace`
+  command: load, capture, convert and import workspaces, with tmuxp's command
+  names and JSON or NDJSON output. A separate implementation from
+  `libtmux-workspace`, whose package documentation states how their document
+  shapes and building behaviour diverge.
+
 Not published, and part of how the library is built:
 [`examples/`](examples/) · [`integration-tests/`](integration-tests/) ·
 [`module-tests/`](module-tests/) · [`benchmarks/`](benchmarks/) ·
 [`docs/`](docs/) · [`tools/`](tools/) · `build-logic/`
 
-`platformCoversEveryPublishedModule` fails the build when the published artifacts
-stop matching the BOM.
-
-The local [`libtmux-workspace-cli`](libtmux-workspace-cli/) application provides the
-`tmux-workspace` launcher over native workspace services. It is built as a
-distribution and is not a Maven publication.
-
-`libtmux-workspace-cli` and `libtmux-workspace` are two implementations, and the CLI
-does not call the library. `libtmux-workspace`'s package documentation states
-how their document shapes and building behaviour diverge. Code the CLI's
-behaviour against the CLI.
-
-A directory is a published artifact exactly when it appears above, and
-`platformCoversEveryPublishedModule` fails the build if that stops being true.
+A directory is a published artifact exactly when it appears in the list above,
+and `platformCoversEveryPublishedModule` fails the build when the published
+artifacts stop matching the BOM.
 
 ## Installation
 
