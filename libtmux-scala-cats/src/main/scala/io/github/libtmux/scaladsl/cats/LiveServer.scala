@@ -9,13 +9,13 @@ import java.time.Duration
 import scala.jdk.OptionConverters._
 
 /** A live view of one tmux server, wrapping Java's own
-  * [[JavaServerMirror ServerMirror]] with a `Signal` whose background poll
-  * fiber's outcome is observed and surfaced, rather than discarded: a
-  * `.background`ed poll loop whose returned `F[Outcome[...]]` is never read
-  * leaves a dead poller silently stale, with the signal simply going quiet.
-  * Here the loop's own success, error or cancellation completes a `Deferred` —
-  * via `guaranteeCase`, before `.background` detaches the fiber — so
-  * [[failure]] can be asked at any time.
+  * [[io.github.libtmux.snapshot.ServerMirror ServerMirror]] with a `Signal`
+  * whose background poll fiber's outcome is observed and surfaced, rather than
+  * discarded: a `.background`ed poll loop whose returned `F[Outcome[...]]` is
+  * never read leaves a dead poller silently stale, with the signal simply going
+  * quiet. Here the loop's own success, error or cancellation completes a
+  * `Deferred` — via `guaranteeCase`, before `.background` detaches the fiber —
+  * so [[failure]] can be asked at any time.
   */
 final class LiveServer[F[_]] private (
     val signal: Signal[F, JavaServerMirror.View],
