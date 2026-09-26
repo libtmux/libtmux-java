@@ -771,6 +771,13 @@ final class OperationBenchmark {
                 .append("time, so concurrent callers serialize behind it, where the process transport ")
                 .append("runs them at once. An untargeted command sent over control resolves against the ")
                 .append("attached session, not whichever session a caller meant.\n");
+        out.append("\nA persistent, general-purpose control-backed transport was investigated and not ")
+                .append("built: `if-shell`'s guarded branch, and each command inside a semicolon-joined ")
+                .append("batch, answer as their own separate reply blocks rather than folding into one, so ")
+                .append("a transport forwarding this library's existing fenced and batched commands to a ")
+                .append("persistent control client would return truncated or empty results for nearly ")
+                .append("every typed operation, `Server.snapshot()` included. ")
+                .append("`docs/spikes/32-control-backed-transport.md` has the measurements.\n");
 
         out.append("\n## What this does not measure\n\n")
                 .append("Not measured here: MCP tool call overhead, and FS2 stream throughput through the ")
