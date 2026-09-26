@@ -46,10 +46,14 @@ can be sized to it rather than guessing. A call beyond the bound waits for a
 place within its own deadline. One that never gets one fails with
 `DispatchOutcome.NOT_DISPATCHED`: tmux never saw it, so sending it again is safe.
 
-The caller may be a virtual thread. The threads that drain tmux's output are not:
-a library does not own the virtual-thread scheduler, and unrelated code holding a
-carrier inside a `synchronized` block would otherwise stop a drain, fill the
-pipe, and hang tmux.
+The caller may be a virtual thread. The threads that drain tmux's output are not,
+though on JDK 25 a virtual thread blocked in `synchronized` no longer holds its
+carrier, and a blocked pipe read does not either. Two reasons remain. A virtual
+thread is always a daemon, and a drain must finish the reply it is reading
+rather than be dropped halfway when the program exits. And the virtual-thread
+scheduler is shared with the caller's own code: a CPU-bound task that never
+blocks keeps its carrier, and a drain waiting behind it lets the pipe fill and
+tmux stall.
 
 What the library itself holds, counted:
 

@@ -52,11 +52,12 @@ import org.jspecify.annotations.Nullable;
  * increasing the total process or pump bound. An additional waiter is refused before dispatch, so
  * its caller knows it was never registered.
  *
- * <p>The caller itself may be a virtual thread: on JDK 21 {@code Process.waitFor} takes a
- * {@link ReentrantLock}, so blocking there releases the carrier. The drains may not be, for two
- * independent reasons. A process pipe read is monitor-locked, and — more decisively — a library
- * does not own the scheduler. Any unrelated code blocking inside a monitor holds a carrier, and
- * drains that need a virtual thread to run would then never run at all.
+ * <p>The caller itself may be a virtual thread: {@code Process.waitFor} releases its carrier. The
+ * drains stay platform threads, although on JDK 25 neither a monitor nor a pipe read pins a virtual
+ * thread any more. A virtual thread is always a daemon, and a drain has to finish the reply it is
+ * reading rather than be dropped at exit; and a library does not own the scheduler, where a
+ * caller's CPU-bound task that never blocks keeps its carrier and a drain waiting behind it lets
+ * the pipe fill.
  *
  * <p>Launching and closing are ordered by an explicit gate rather than a flag, because checking a
  * flag and then acting on it lets a caller start a child after {@code close()} has already decided

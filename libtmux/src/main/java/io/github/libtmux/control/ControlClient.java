@@ -51,7 +51,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * safely.
  *
  * <p>The reader and writer are platform threads. A library does not own the virtual-thread
- * scheduler, and either one unable to run stops the client from making progress. The reader only
+ * scheduler: a caller's CPU-bound task that never blocks keeps its carrier, and either thread
+ * unable to run stops the client from making progress. The reader only
  * resolves replies and fills bounded subscription buffers; subscriber code runs on the thread that
  * pulls a value.
  *
