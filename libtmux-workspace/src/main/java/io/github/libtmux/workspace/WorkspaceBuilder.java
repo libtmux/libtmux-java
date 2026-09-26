@@ -15,6 +15,10 @@ import java.nio.file.Path;
  *
  * <p>Reading and building are separate. A file that describes something tmux would refuse is
  * rejected while it is still text, before any session exists to leave half-built.
+ *
+ * <p>The {@code tmux-workspace} command is a separate implementation with a wider document
+ * language and its own behaviour around building; see this package's documentation for what
+ * differs. Code against this class for what this class does.
  */
 public final class WorkspaceBuilder {
 

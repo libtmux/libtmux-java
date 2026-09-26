@@ -160,6 +160,21 @@ final class ClientOperationsIntegrationTest {
         assertThrows(LibTmuxException.class, () -> server.killSession("never-existed"));
     }
 
+    /**
+     * The dangerous case a bare {@code -t} prefix match makes possible: the exact name asked for was
+     * never created, but a real session's name starts with it. A prefix match would silently end that
+     * other session instead of refusing, which is worse than doing nothing when the caller mistyped a
+     * name -- and if it were the last session, the server would go down with it.
+     */
+    @Test
+    void killingANameThatIsOnlyAPrefixOfARealSessionRefusesAndLeavesItRunning(Server server) {
+        server.newSession(s -> s.named("doomsday"));
+
+        assertThrows(LibTmuxException.class, () -> server.killSession("doom"));
+
+        assertTrue(server.hasSession("doomsday"), "a prefix match would have ended this session instead");
+    }
+
     /** The client that attached after the named ones were already there. */
     private static Optional<Client> appeared(Server server, Set<String> before) {
         return server.clients().stream()

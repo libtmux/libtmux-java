@@ -107,12 +107,14 @@ final class JavaBoundarySuite extends FunSuite {
     }
   }
 
-  test("buffer text normalizes newlines and transport captures retain shapes") {
+  test(
+    "buffer text preserves carriage returns and transport captures retain shapes"
+  ) {
     OwnedTmux.use { fixture =>
       val server = fixture.server
       val contents = "first\r\n\r\nlast\n\n"
       server.buffers().set("text", contents)
-      assertEquals(server.buffers().show("text"), "first\n\nlast")
+      assertEquals(server.buffers().show("text"), "first\r\n\r\nlast")
       assertEquals(server.buffers().list().get(0).size(), contents.length)
 
       val pane = server.panes().get(0)

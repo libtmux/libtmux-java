@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.libtmux.Layout;
+import io.github.libtmux.Layouts;
 import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Server;
 import io.github.libtmux.TmuxVersion;
@@ -16,6 +17,7 @@ import io.github.libtmux.UnsupportedTmuxVersionException;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowLayout;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.util.StringJoiner;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -130,6 +132,71 @@ final class LayoutIntegrationTest {
 
         assertEquals(wanted, window.refresh().layout(), "the arrangement did not come back");
         assertTrue(server.isAlive());
+    }
+
+    @Test
+    void workspacePreflightAcceptsCapturedJsonAndRefusesTooFewCells(Server server) {
+        String leaf = "{\"V\":2,\"L\":{\"t\":\"p\",\"w\":80,\"h\":24,\"x\":0,\"y\":0,\"i\":0}}";
+        if (!server.version().atLeast(new TmuxVersion(3, 8, ""))) {
+            assertThrows(UnsupportedTmuxVersionException.class, () -> Layouts.require(leaf, server, 1));
+            return;
+        }
+        Window window = split(server);
+        String captured = window.refresh().layout().value();
+        var panes = window.refresh().panes().stream()
+                .map(io.github.libtmux.Pane::id)
+                .toList();
+        assertEquals(captured, Layouts.require(captured, server, 2));
+        window.selectLayout(Layout.TILED);
+        window.applyLayout(captured);
+        assertEquals(captured, window.refresh().layout().value());
+        assertThrows(IllegalArgumentException.class, () -> Layouts.require(leaf, server, 2));
+        for (String invalid :
+                java.util.List.of(leaf.replace("\"V\":2", "\"V\":2e0"), leaf.replace("\"V\":2", "\"V\":2,\"V\":2"))) {
+            assertThrows(IllegalArgumentException.class, () -> Layouts.require(invalid, server, 1));
+            assertTrue(!server.cmd("select-layout", "-t", window.id().value(), invalid)
+                    .succeeded());
+        }
+        assertEquals(
+                panes,
+                window.refresh().panes().stream()
+                        .map(io.github.libtmux.Pane::id)
+                        .toList());
+    }
+
+    @Test
+    void javaValidationRefusesGeometryThatTmuxWouldRepair(Server server) {
+        Window window = server.windows().getFirst();
+        for (String layout : java.util.List.of(
+                "8a08,1x1,0,0{39x24,0,0,0,40x24,40,0,1}", "79f5,80x24,0,0{39x23,0,0,0,40x24,40,0,1}")) {
+            assertThrows(IllegalArgumentException.class, () -> Layouts.require(layout, server, 1));
+            assertTrue(server.cmd("select-layout", "-t", window.id().value(), layout)
+                    .succeeded());
+        }
+        assertEquals(1, window.refresh().panes().size());
+    }
+
+    @Test
+    void savedLayoutInputCanExceedTheDumpBuffer(Server server) {
+        Window window = server.windows().getFirst();
+        var keeper = server.newSession("keeper");
+        long pid = server.snapshot().serverPid().orElseThrow();
+        var keeperLayout = keeper.windows().getFirst().layout();
+        var body = new StringJoiner(",", "1199x24,0,0{", "}");
+        for (int pane = 0; pane < 600; pane++) body.add("1x24," + (2 * pane) + ",0," + pane);
+        int checksum = 0;
+        for (char value : body.toString().toCharArray())
+            checksum = ((checksum >> 1) + ((checksum & 1) << 15) + value) & 0xffff;
+        String layout = "%04x,%s".formatted(checksum, body);
+        assertTrue(body.length() > 8192, "the input must exceed tmux's layout_dump buffer");
+
+        window.applyLayout(layout);
+
+        assertEquals(pid, server.snapshot().serverPid().orElseThrow());
+        assertEquals(2, server.sessions().size());
+        assertEquals(1, window.refresh().panes().size(), "tmux prunes the extra cells");
+        assertEquals(1199, window.refresh().panes().getFirst().size().width());
+        assertEquals(keeperLayout, keeper.refresh().windows().getFirst().layout());
     }
 
     /**

@@ -38,6 +38,53 @@ import org.junit.jupiter.api.io.TempDir;
  */
 final class ServerTest {
 
+    @Test
+    void optionReadsUseDaemonEncodingAndPreserveMetadataFailures(@TempDir Path directory) throws IOException {
+        var version =
+                new java.util.concurrent.atomic.AtomicReference<>(new CommandResult(0, List.of("3.4"), List.of()));
+        var value = new java.util.concurrent.atomic.AtomicReference<>(
+                new CommandResult(0, List.of("@value a\\rb"), List.of()));
+        List<CommandRequest> requests = new CopyOnWriteArrayList<>();
+        TmuxTransport transport = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                requests.add(request);
+                return switch (request.commands().getFirst().getFirst()) {
+                    case "display-message" -> version.get();
+                    case "show-options" -> value.get();
+                    default -> throw new AssertionError("option read selected another transport command");
+                };
+            }
+
+            @Override
+            public void close() {}
+        };
+        try (Server server = Server.using(config(directory), transport)) {
+            assertEquals(java.util.Optional.of("a\rb"), server.globalOptions().get("@value"));
+            assertEquals(
+                    List.of("show-options", "-g", "-A", "--", "@value"),
+                    requests.getLast().commands().getFirst());
+            value.set(new CommandResult(0, List.of("@value a\\377\\376é"), List.of()));
+            assertEquals(
+                    java.util.Optional.of("a\\xff\\xfeé"),
+                    server.globalOptions().get("@value"));
+            value.set(new CommandResult(1, List.of(), List.of("invalid option")));
+            assertTrue(server.globalOptions().get("@missing").isEmpty());
+            value.set(new CommandResult(0, List.of("@value unknown\\e"), List.of()));
+            assertThrows(LibTmuxException.class, () -> server.globalOptions().get("@value"));
+            version.set(new CommandResult(0, List.of("unknown"), List.of()));
+            assertThrows(LibTmuxException.class, () -> server.globalOptions().get("@value"));
+            version.set(new CommandResult(1, List.of(), List.of("server exited unexpectedly")));
+            value.set(new CommandResult(1, List.of(), List.of("server exited unexpectedly")));
+            assertThrows(
+                    ServerNotRunningException.class,
+                    () -> server.globalOptions().get("@value"));
+            assertEquals(
+                    List.of("show-options", "-g", "-A", "-v", "--", "@value"),
+                    requests.getLast().commands().getFirst());
+        }
+    }
+
     private static ServerConfig config(Path directory) throws IOException {
         Path config = directory.resolve("empty.conf");
         Files.writeString(config, "");

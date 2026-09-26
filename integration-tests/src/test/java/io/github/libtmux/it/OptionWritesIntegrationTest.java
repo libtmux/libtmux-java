@@ -104,7 +104,9 @@ final class OptionWritesIntegrationTest {
     @Test
     void unsettingReturnsTheOptionToWhatItInherits(Server server) {
         Options options = session(server).options();
-        String inherited = options.effective().get("status-left");
+        String inherited = "parent's\r\nvalue\n";
+        server.globalOptions().set("status-left", inherited);
+        assertEquals(inherited, options.effective().get("status-left"));
         options.set("status-left", "mine");
 
         options.unset("status-left");

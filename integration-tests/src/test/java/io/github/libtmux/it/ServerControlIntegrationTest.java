@@ -60,12 +60,12 @@ final class ServerControlIntegrationTest {
     }
 
     @Test
-    void aFalseConditionWithNoOtherCommandDoesNothing(Server server) throws Exception {
+    void aFalseConditionWithNoOtherCommandDoesNothing(Server server) {
         Session session = server.sessions().get(0);
-        String before = session.windows().get(0).rename("before").name();
+        // An explicit name prevents shell startup from automatically renaming the window.
+        String before = session.windows().get(0).rename("before-condition").name();
 
         server.ifShell("false", "rename-window should-not-run");
-        Thread.sleep(400);
 
         assertEquals(before, session.refresh().windows().get(0).name(), "something ran that should not have");
     }

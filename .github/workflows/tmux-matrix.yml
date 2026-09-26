@@ -126,6 +126,14 @@ jobs:
         with:
           validate-wrappers: true
 
+      # A venv keeps tmuxp off HOME: `pip install --user` lands there, and the
+      # tests that need it replace HOME.
+      - name: Install the optional workspace Python test runtime
+        run: |
+          python3 -m venv "$RUNNER_TEMP/workspace-python"
+          "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
+          echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+
       # One lane rather than testTmuxMatrix: each version builds and runs on its own runner, so the
       # lanes take the time of the slowest instead of the sum.
       - name: Run the real-tmux suite

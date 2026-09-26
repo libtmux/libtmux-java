@@ -9,7 +9,7 @@ import java.util.List;
  * reports a real problem, so only a higher-level method knows which one should raise.
  *
  * @param exitCode the process exit status
- * @param stdout stdout split into lines, keeping interior blanks
+ * @param stdout stdout split at LF, preserving carriage returns and interior blanks
  * @param stderr stderr split into lines, with blanks dropped
  */
 public record CommandResult(int exitCode, List<String> stdout, List<String> stderr) {

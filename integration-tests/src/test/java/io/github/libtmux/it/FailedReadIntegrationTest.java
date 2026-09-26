@@ -112,14 +112,12 @@ final class FailedReadIntegrationTest {
     @Test
     void tmuxStillWordsAnAbsentDaemonTheWayThisLibraryReadsIt(@TempDir Path scratch) {
         try (Server server = at(scratch.resolve("nobody-home"), "tmux")) {
-            ServerNotRunningException absent =
-                    assertThrows(ServerNotRunningException.class, () -> server.hasSession("build"));
+            assertThrows(ServerNotRunningException.class, () -> server.hasSession("build"));
 
-            String said = String.valueOf(absent.getMessage());
+            String said =
+                    String.join("\n", server.cmd("has-session", "-t", "=build").stderr());
             assertTrue(
-                    said.contains("no server running")
-                            || said.contains("server exited unexpectedly")
-                            || said.contains("(No such file or directory)"),
+                    said.contains("no server running") || said.contains("(No such file or directory)"),
                     "this tmux words an absent daemon in a way the library no longer recognises: " + said);
         }
     }

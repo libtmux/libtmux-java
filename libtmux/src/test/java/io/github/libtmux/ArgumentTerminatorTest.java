@@ -41,8 +41,6 @@ final class ArgumentTerminatorTest {
         sites.put("Keys.bind", server -> server.keys().bind(DASHED, List.of("display-message", "hi")));
         sites.put("Keys.unbind", server -> server.keys().unbind(DASHED));
         sites.put("Server.sourceFile", server -> server.sourceFile(Path.of(DASHED)));
-        sites.put("Server.killSession", server -> server.killSession(DASHED));
-        sites.put("Server.hasSession", server -> server.hasSession(DASHED));
         sites.put("Channel.signal", server -> server.channel(DASHED).signal());
         sites.put("Options.set", server -> server.globalOptions().set("@x", DASHED));
         sites.put("Options.setExpanded", server -> server.globalOptions().setExpanded("@x", DASHED));
@@ -88,6 +86,17 @@ final class ArgumentTerminatorTest {
         });
 
         assertTrue(unguarded.isEmpty(), "tmux would read these caller values as flags: " + unguarded);
+    }
+
+    @Test
+    void sessionNamesAreResolvedLocallyAndNeverBecomeArguments() {
+        RecordingTmux tmux = new RecordingTmux();
+        try (Server server = tmux.server()) {
+            assertTrue(server.hasSession(DASHED));
+            server.killSession(DASHED);
+        }
+        assertTrue(tmux.carrying(DASHED).isEmpty());
+        assertTrue(tmux.seen.contains(List.of("kill-session", "-t", "$0")));
     }
 
     @Test
@@ -163,8 +172,9 @@ final class ArgumentTerminatorTest {
 
         private CommandResult answer(List<String> argv) {
             return switch (argv.get(0)) {
-                case "display-message" -> new CommandResult(0, List.of(row("4242", "3.6")), List.of());
-                case "list-sessions" -> new CommandResult(0, List.of(row("$0", "alpha", "1", "1")), List.of());
+                case "display-message" ->
+                    new CommandResult(0, List.of(argv.contains("#{version}") ? "3.6" : row("4242", "3.6")), List.of());
+                case "list-sessions" -> new CommandResult(0, List.of(row("$0", DASHED, "1", "1")), List.of());
                 case "list-windows" ->
                     new CommandResult(
                             0, List.of(row("$0", "@7", "0", "editor", "1", "1", "1", "80", "24", "layout")), List.of());

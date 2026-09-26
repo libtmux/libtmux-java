@@ -93,8 +93,9 @@ public final class Server implements AutoCloseable {
      *
      * <p>Keep {@code :} and {@code .} out of the name. tmux decides what to do with them and changes
      * its mind across the supported range: 3.2a through 3.6 rewrite each one to {@code _}, 3.7
-     * refuses the name, and 3.7a onwards keeps it — where it then cannot address the session,
-     * because a target splits on both. {@link Session#name()} reports what tmux settled on.
+     * refuses the name, and 3.7a onwards keeps it — where a bare {@code -t} target still misreads the
+     * delimiter, so {@link #hasSession} and {@link #killSession} resolve the id by comparing names
+     * instead of building one. {@link Session#name()} reports what tmux settled on.
      */
     public Session newSession(String name) {
         return newSession(SessionSpec.builder().named(name).build());
@@ -155,18 +156,7 @@ public final class Server implements AutoCloseable {
      * @throws ServerNotRunningException if no daemon is running
      */
     public boolean hasSession(String name) {
-        CommandResult result = cmd("has-session", "-t", "=" + name);
-        if (result.succeeded()) {
-            return true;
-        }
-        // "no" is the answer to "is there a session called this", and tmux says so in those words
-        // on every supported release. Anything else it reports — a socket this user cannot open, a
-        // binary that is not tmux — is not an answer to the question, and reporting it as one is
-        // how a misconfigured endpoint reads as an empty server.
-        if (result.stderr().stream().anyMatch(line -> line.contains("can't find session"))) {
-            return false;
-        }
-        throw failed("has-session", result);
+        return sessionNamed(name).isPresent();
     }
 
     /**
@@ -179,7 +169,21 @@ public final class Server implements AutoCloseable {
      */
     public void killSession(String name) {
         Objects.requireNonNull(name, "name");
-        run(List.of("kill-session", "-t", "=" + name));
+        Session session =
+                sessionNamed(name).orElseThrow(() -> new ObjectDoesNotExistException("no session is named " + name));
+        run(List.of("kill-session", "-t", session.id().value()));
+    }
+
+    /**
+     * The session whose name matches exactly, found by listing and comparing in this process rather
+     * than through {@code -t}: tmux's own exact-match prefix is applied to the string after a target
+     * is split on {@code :} and {@code .}, so a name holding either defeats it, and {@link #newSession}
+     * already resolves this same way for the session it just made.
+     */
+    private Optional<Session> sessionNamed(String name) {
+        return sessions().stream()
+                .filter(session -> session.name().equals(name))
+                .findFirst();
     }
 
     /**
@@ -729,7 +733,7 @@ public final class Server implements AutoCloseable {
      * configured binary's own version as though it were the daemon's — exactly the guarantee this
      * method exists to keep.
      */
-    private TmuxVersion versionForCreation() {
+    TmuxVersion versionForCreation() {
         return capture.processForCreation()
                 .map(SnapshotCapture.ServerProcess::version)
                 .orElseGet(this::binaryVersion);
@@ -1220,6 +1224,12 @@ public final class Server implements AutoCloseable {
         /** Sets the deadline a request gets when the caller does not supply one. */
         public Builder defaultTimeout(Duration defaultTimeout) {
             config.defaultTimeout(defaultTimeout);
+            return this;
+        }
+
+        /** Forces 256-color client support; false preserves terminal detection. */
+        public Builder force256Colors(boolean force256Colors) {
+            config.force256Colors(force256Colors);
             return this;
         }
 

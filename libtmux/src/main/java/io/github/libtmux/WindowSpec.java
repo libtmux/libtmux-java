@@ -23,12 +23,11 @@ import org.jspecify.annotations.Nullable;
 public final class WindowSpec {
 
     /**
-     * 3.2a accepts {@code -c} on new-window and then ignores it. The floor is 3.3: {@code
-     * git log 3.3..3.3a} in tmux's own history touches nothing under {@code spawn.c} or {@code
-     * cmd-new-window.c}, and the behaviour already works on the 3.3a lane this matrix runs, so
-     * nothing later than 3.3 can be the fix.
+     * Before this, tmux hands a relative {@code -c} straight to the child's {@code chdir}, so it
+     * resolves against the server's own working directory instead of the caller's and silently
+     * falls back to the home directory when that misses. See {@code docs/spikes/14}.
      */
-    private static final TmuxVersion START_DIRECTORY_SINCE = new TmuxVersion(3, 3, "");
+    private static final TmuxVersion RELATIVE_DIRECTORY_SINCE = new TmuxVersion(3, 3, "a");
 
     private final @Nullable String name;
     private final @Nullable Path directory;
@@ -120,10 +119,8 @@ public final class WindowSpec {
      * @throws UnsupportedTmuxVersionException if the spec asks for something {@code running} does not have
      */
     List<String> argv(String target, String format, TmuxVersion running) {
-        if (directory != null && !running.atLeast(START_DIRECTORY_SINCE)) {
-            // 3.2a takes -c on new-window and drops it, unlike -c on split-window, which it honours.
-            throw new UnsupportedTmuxVersionException(
-                    "a start directory for a new window", START_DIRECTORY_SINCE, running);
+        if (directory != null && !directory.isAbsolute() && !running.atLeast(RELATIVE_DIRECTORY_SINCE)) {
+            throw new UnsupportedTmuxVersionException("a relative start directory", RELATIVE_DIRECTORY_SINCE, running);
         }
         List<String> argv = new ArrayList<>(20);
         argv.add("new-window");
@@ -214,7 +211,7 @@ public final class WindowSpec {
             return this;
         }
 
-        /** Starts the window in this directory. Requires tmux 3.3. */
+        /** Starts the window in this directory. A relative one requires tmux 3.3a. */
         public Builder in(Path directory) {
             this.directory = Objects.requireNonNull(directory, "directory");
             return this;

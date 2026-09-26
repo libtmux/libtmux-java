@@ -30,7 +30,11 @@ answerable for how the whole library is tested.
 ## Building
 
 You need JDK 21 or newer and tmux on `PATH`. Nothing else — Gradle provisions
-the toolchain, and the library has no runtime dependencies.
+the toolchain, and the library has no runtime dependencies. The workspace CLI
+adds its own runtime dependencies; its terminal regression tests also require
+Python 3 for the standard-library PTY driver and Bash on `PATH` for interactive
+completion tests. On macOS, install Bash with Homebrew; the system Bash lacks
+the completion test's Readline hooks.
 
 `./gradlew` is the only supported entry point. A locally installed `gradle` is
 not: the wrapper pins the version the build was written against, and
@@ -109,11 +113,15 @@ actually runs.
 One command has to pass before anything is proposed:
 
 ```console
-$ ./gradlew check
+$ ./gradlew :libtmux-mcp:test check
 ```
 
 It runs formatting, Error Prone, NullAway in JSpecify mode, and every test
 including the ones that start real tmux servers.
+
+Independent projects run with at most two Gradle workers. Test tasks isolate
+their tmux sockets by checkout and task; fixtures also track the owning JVM.
+Requesting the longest test suite first lets it overlap the remaining checks.
 
 The Java in the documentation is compiled and run as part of that, and the
 claims around it — the version in every install block, what the platform says it
@@ -132,7 +140,7 @@ A green `check` that reported `UP-TO-DATE` for every task verified nothing.
 Force it when that matters:
 
 ```console
-$ ./gradlew check --rerun-tasks
+$ ./gradlew :libtmux-mcp:test check --rerun-tasks
 ```
 
 Check the exit status rather than the last lines of output. Piping to `tail`

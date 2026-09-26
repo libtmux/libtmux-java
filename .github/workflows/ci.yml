@@ -49,8 +49,15 @@ jobs:
           # the ones Gradle published rather than trusted because it is committed here.
           validate-wrappers: true
 
-      # Runs every check task instead of stopping at the first failure, so one run names them all.
-      - run: ./gradlew check --stacktrace --continue
+      # A venv keeps tmuxp off HOME: `pip install --user` lands there, and the
+      # tests that need it replace HOME.
+      - name: Install the optional workspace Python test runtime
+        run: |
+          python3 -m venv "$RUNNER_TEMP/workspace-python"
+          "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
+          echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+
+      - run: ./gradlew :libtmux-mcp:test check --stacktrace --continue
 
       # A real-tmux suite that leaves servers running would be invisible here and expensive on a
       # developer's machine. The runner is discarded either way, so this is the only place the
@@ -58,11 +65,13 @@ jobs:
       - name: No tmux server outlived the suite
         if: always()
         run: |
-          left="$(pgrep -c tmux || true)"
-          if [ "${left:-0}" -ne 0 ]; then
-            echo "::error::$left tmux server(s) survived the suite"
-            for p in $(pgrep tmux); do tr '\0' ' ' < "/proc/$p/cmdline"; echo; done
+          if pids="$(pgrep tmux)"; then
+            echo "::error::tmux processes survived the suite"
+            for pid in $pids; do ps -o command= -p "$pid" || true; done
             exit 1
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then exit "$status"; fi
           fi
           echo "no tmux server survived the suite"
 
@@ -83,9 +92,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install tmux
+      - name: Install tmux and Bash
         run: |
-          brew install tmux
+          brew install tmux bash
+          echo "$(brew --prefix bash)/bin" >> "$GITHUB_PATH"
           tmux -V
 
       - uses: actions/setup-java@v6
@@ -98,17 +108,18 @@ jobs:
           validate-wrappers: true
 
       # Runs every check task instead of stopping at the first failure, so one run names them all.
-      - run: ./gradlew check --stacktrace --continue
+      - run: ./gradlew :libtmux-mcp:test check --stacktrace --continue
 
-      # No /proc on macOS, so a server's own command line comes from ps rather than cmdline.
       - name: No tmux server outlived the suite
         if: always()
         run: |
-          left="$(pgrep -c tmux || true)"
-          if [ "${left:-0}" -ne 0 ]; then
-            echo "::error::$left tmux server(s) survived the suite"
-            for p in $(pgrep tmux); do ps -o command= -p "$p"; done
+          if pids="$(pgrep tmux)"; then
+            echo "::error::tmux processes survived the suite"
+            for pid in $pids; do ps -o command= -p "$pid" || true; done
             exit 1
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then exit "$status"; fi
           fi
           echo "no tmux server survived the suite"
 

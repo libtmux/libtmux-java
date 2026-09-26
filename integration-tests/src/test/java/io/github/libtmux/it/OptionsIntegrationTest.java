@@ -3,8 +3,10 @@ package io.github.libtmux.it;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.LibTmuxException;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
@@ -141,6 +143,31 @@ final class OptionsIntegrationTest {
                 "an array option keeps the subscript that addresses it");
     }
 
+    @Test
+    void customOptionNamesKeepTheirTrailingStars(Server server) {
+        Session session = server.sessions().getFirst();
+        Window window = session.windows().getFirst();
+        server.globalOptions().set("base-index", "4");
+        Map<String, String> written = Map.of("@name", "plain", "@name*", "one star", "@name**", "two stars");
+        for (var options : List.of(
+                server.options(),
+                server.globalOptions(),
+                session.options(),
+                window.options(),
+                window.panes().getFirst().options())) {
+            written.forEach(options::set);
+            var local = options.all();
+            var effective = options.effective();
+            written.forEach((name, value) -> {
+                assertEquals(value, local.get(name), name + " local");
+                assertEquals(value, effective.get(name), name + " effective");
+            });
+        }
+        assertFalse(session.options().all().containsKey("base-index"));
+        assertTrue(session.options().effective().containsKey("base-index"));
+        assertFalse(session.options().effective().containsKey("base-index*"));
+    }
+
     /**
      * tmux escapes a listed value with {@code vis(3)} and changes its mind about which characters
      * that reaches across the supported range, so a listing reports the value itself rather than
@@ -152,6 +179,17 @@ final class OptionsIntegrationTest {
         written.put("@spaces", "[#S] and a space");
         written.put("@backslash", "back\\slash");
         written.put("@newline", "first\nsecond");
+        written.put("@carriage-return", "first\rsecond");
+        written.put("@crlf", "first\r\nsecond\r");
+        written.put("@carriage-only", "\r");
+        written.put("@literal-carriage", "first\\rsecond");
+        written.put("@literal-octal", "\\377\\033");
+        written.put("@dollars", "$name ${name} \\$name \\\\$name");
+        written.put("@single-quote", "has 'quotes'");
+        written.put("@double-quote-only", "\"");
+        written.put("@quoted-controls", "~ $name ' \" \r\n\t end");
+        written.put("@unicode", "a λ 窗口\r🙂");
+        written.put("@escapes", "\u0001\u0007\b\u000b\f\u001b\u007f");
         written.put("@tab", "a\tb");
         written.put("@dquote", "has \"quotes\"");
         written.put("@empty", "");
@@ -164,6 +202,22 @@ final class OptionsIntegrationTest {
             assertEquals(Optional.of(value), server.globalOptions().get(name), name);
             assertEquals(value, listed.get(name), name + " listed");
         });
+    }
+
+    @Test
+    void aHookReadThroughOptionsRetainsItsCommandSyntax(Server server) {
+        Session session = server.sessions().getFirst();
+        session.hooks().set("after-new-window", "display-message 'a\\rb $name'");
+        String command = java.util.Objects.requireNonNull(session.hooks().all().get("after-new-window"))
+                .getFirst();
+        assertEquals(Optional.of(command), session.options().get("after-new-window[0]"));
+        for (String spelling : List.of("display-message", "'display-message'", "\"display-message\"")) {
+            session.hooks().set("after-new-window", spelling);
+            assertEquals(Optional.of("display-message"), session.options().get("after-new-window[0]"));
+        }
+        for (String invalid : List.of("display-message\\r", "display-message\r")) {
+            assertThrows(LibTmuxException.class, () -> session.hooks().set("after-new-window", invalid));
+        }
     }
 
     /**

@@ -314,6 +314,18 @@ The Gradle modules and shared Scala build declare the listed artifacts.
 `platformCoversEveryPublishedModule` validates Gradle publications against the
 BOM; the shared sbt build validates the separately released Scala coordinates.
 
+The local [`workspace-cli`](workspace-cli/) application provides the
+`tmux-workspace` launcher over native workspace services. It is built as a
+distribution and is not a Maven publication.
+
+`workspace-cli` and `libtmux-workspace` are two implementations, and the CLI
+does not call the library. `libtmux-workspace`'s package documentation states
+how their document shapes and building behaviour diverge. Code the CLI's
+behaviour against the CLI.
+
+A directory is a published artifact exactly when it appears above, and
+`platformCoversEveryPublishedModule` fails the build if that stops being true.
+
 ## Installation
 
 Name one BOM version through the platform, and every BOM-managed coordinate
@@ -408,6 +420,7 @@ See the [migration notes](MIGRATION.md) when upgrading.
 - [Streaming](docs/guide/streaming.md)
 - [Driving tmux from a model](docs/guide/mcp.md)
 - [Testing with real tmux](docs/guide/testing.md)
+- [Workspace commands](workspace-cli/README.md)
 - [Kotlin](docs/guide/kotlin.md) and [Scala](docs/guide/scala.md)
 - [Releasing](RELEASING.md)
 

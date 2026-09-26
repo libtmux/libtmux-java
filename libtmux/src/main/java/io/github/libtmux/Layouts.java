@@ -25,7 +25,6 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Layouts {
 
-    private static final int MAX_SERIALIZED_LENGTH = 8_191;
     private static final int MAX_DEPTH = 256;
     private static final List<String> NAMED =
             Arrays.stream(Layout.values()).map(Layout::tmuxName).toList();
@@ -122,6 +121,78 @@ public final class Layouts {
         return candidates.size() == 1 ? Optional.of(candidates.getFirst()) : Optional.empty();
     }
 
+    /**
+     * Validates a layout for a window and resolves a built-in abbreviation to its full name.
+     *
+     * <p>Version-sensitive names use the running daemon, or the selected client only when no
+     * daemon is listening. Classic geometry and JSON cell structure are checked along with pane
+     * counts. JSON layouts require tmux 3.8 and are limited to 200 nested objects, as in tmux.
+     * Call this before creating windows or running setup scripts.
+     *
+     * @param layout a built-in name, unique abbreviation or serialized tree
+     * @param server the endpoint which will apply the layout
+     * @param paneCount the number of panes which the layout must accommodate
+     * @return a full built-in name or the unchanged serialized layout
+     * @throws IllegalArgumentException if the layout is invalid or has too few pane cells
+     * @throws UnsupportedTmuxVersionException if an exact built-in name requires a newer daemon
+     * @throws LibTmuxException if the daemon or client version cannot be read
+     */
+    public static String require(String layout, Server server, int paneCount) {
+        if (paneCount < 1) throw new IllegalArgumentException("pane count must be positive");
+        if (!isJsonShaped(layout) && named(layout, new TmuxVersion(3, 4, "")).isEmpty()) require(layout);
+        if (isJsonShaped(layout)) {
+            require(layout, version(server));
+            if (JsonLayout.leaves(layout) < paneCount) {
+                throw new IllegalArgumentException("layout has fewer cells than panes: " + layout);
+            }
+            return layout;
+        }
+        int cells = leaves(layout);
+        if (cells > 0) {
+            if (cells < paneCount) throw new IllegalArgumentException("layout has fewer cells than panes: " + layout);
+            return layout;
+        }
+        Optional<Layout> before = named(layout, new TmuxVersion(3, 4, ""));
+        Optional<Layout> after = named(layout, new TmuxVersion(3, 5, ""));
+        if (before.equals(after)) return before.orElseThrow().tmuxName();
+        TmuxVersion running = version(server);
+        for (Layout candidate : Layout.values()) {
+            if (candidate.tmuxName().equals(layout)) candidate.requireSupported(running);
+        }
+        return named(layout, running)
+                .orElseThrow(() -> ambiguous(layout, running))
+                .tmuxName();
+    }
+
+    private static Optional<Layout> named(String value, TmuxVersion version) {
+        return builtIn(value, version).filter(layout -> version.atLeast(layout.since()));
+    }
+
+    /**
+     * An abbreviation that used to resolve on its own and now matches more than one name, because a
+     * later release added a layout that shares its prefix. Names every candidate and the release
+     * that introduced the collision, rather than only saying the name did not resolve.
+     */
+    private static IllegalArgumentException ambiguous(String layout, TmuxVersion running) {
+        List<Layout> matches = prefixed(layout, supported(running));
+        if (matches.size() < 2) {
+            return new IllegalArgumentException("not a unique layout for tmux " + running + ": " + layout);
+        }
+        String names = matches.stream().map(Layout::tmuxName).collect(java.util.stream.Collectors.joining(", "));
+        TmuxVersion introduced =
+                matches.stream().map(Layout::since).max(TmuxVersion::compareTo).orElseThrow();
+        return new IllegalArgumentException("not a unique layout for tmux " + running + ": " + layout + "; matches "
+                + names + ", ambiguous since tmux " + introduced + "; use the full name");
+    }
+
+    private static TmuxVersion version(Server server) {
+        try {
+            return server.versionForCreation();
+        } catch (IllegalArgumentException invalid) {
+            throw new LibTmuxException("could not read tmux version", invalid);
+        }
+    }
+
     private static List<Layout> supported(TmuxVersion running) {
         return Arrays.stream(Layout.values())
                 .filter(candidate -> running.atLeast(candidate.since()))
@@ -201,20 +272,24 @@ public final class Layouts {
     }
 
     private static boolean isSerialized(String layout) {
+        return leaves(layout) > 0;
+    }
+
+    private static int leaves(String layout) {
         if (layout.length() < 6 || layout.charAt(4) != ',') {
-            return false;
+            return -1;
         }
         for (int index = 0; index < 4; index++) {
             char digit = layout.charAt(index);
             if (!((digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f') || (digit >= 'A' && digit <= 'F'))) {
-                return false;
+                return -1;
             }
         }
         int declared;
         try {
             declared = Integer.parseInt(layout.substring(0, 4), 16);
         } catch (NumberFormatException notHex) {
-            return false;
+            return -1;
         }
         int checksum = 0;
         for (int index = 5; index < layout.length(); index++) {
@@ -222,7 +297,9 @@ public final class Layouts {
             checksum = (checksum + layout.charAt(index)) & 0xffff;
         }
         String body = layout.substring(5);
-        return checksum == declared && body.length() <= MAX_SERIALIZED_LENGTH && new Serialized(body).valid();
+        if (checksum != declared) return -1;
+        Serialized parser = new Serialized(body);
+        return parser.valid() ? parser.leaves : -1;
     }
 
     /** The subset parsed by tmux's layout_construct, with layout_check's size invariants. */
@@ -230,6 +307,7 @@ public final class Layouts {
 
         private final String value;
         private int at;
+        private int leaves;
 
         Serialized(String value) {
             this.value = value;
@@ -252,6 +330,7 @@ public final class Layouts {
             }
             skipPaneId();
             if (at == value.length() || delimiter(value.charAt(at))) {
+                leaves++;
                 return new Cell(width, height);
             }
 

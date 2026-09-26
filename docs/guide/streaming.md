@@ -48,10 +48,13 @@ screen is the right answer, and it is a heuristic:
 
 ```java
 // Given: Pane pane
-// A daemon takes a moment to come up; an instant echo could beat the wait's first look.
-pane.sendLine("sleep 1; echo listening on 8080");
+// Start the producer directly and keep its pane open after it prints.
+pane.respawn("sh", "-c", "printf 'listening on 8080\\n'; exec cat");
 
-pane.awaitText("listening on", Duration.ofSeconds(10));   // → APPEARED
+TextOutcome seen = pane.awaitText("listening on", Duration.ofSeconds(10));
+boolean ready = seen == TextOutcome.APPEARED
+        || seen == TextOutcome.PRESENT_AT_ENTRY;
+ready;   // → true
 ```
 
 The echo of that command is not an answer to it, so a wait for text the command

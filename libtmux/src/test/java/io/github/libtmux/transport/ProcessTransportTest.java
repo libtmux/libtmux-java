@@ -131,11 +131,11 @@ final class ProcessTransportTest {
                     transport.execute(shell("printf 'a\\377'", GENEROUS)).stdout(),
                     "a byte that is not UTF-8 stays recoverable");
             assertEquals(
-                    List.of("a", "b"),
+                    List.of("a\r", "b\r"),
                     transport
                             .execute(shell("printf 'a\\r\\nb\\r\\n'", GENEROUS))
                             .stdout(),
-                    "universal newlines");
+                    "LF separates records while carriage returns remain data");
             assertEquals(
                     List.of("alpha", "", "beta"),
                     transport

@@ -456,11 +456,13 @@ final class RunningCommandsTest {
      * far is worth having, and the note has to say what to do next.
      */
     @Test
-    void aCommandStillRunningAtTheDeadlineSaysSoAndHandsBackWhatItHas(Server server) {
-        String pane = shellPane(server, "timed-output", "/bin/dash").id().value();
+    void aCommandStillRunningAtTheDeadlineSaysSoAndHandsBackWhatItHas(Server server, @TempDir Path temporary)
+            throws Exception {
+        Pane pane = shellPane(server, "timed-output", "/bin/dash");
+        ready(pane, temporary.resolve("timed-output"), ":");
 
         RunningCommands.Ran ran = RunningCommands.run(
-                TestCalls.on(server, "pane_id", pane, "command", "echo started; sleep 30", "timeout", 6));
+                TestCalls.on(server, "pane_id", pane.id().value(), "command", "echo started; sleep 30", "timeout", 6));
 
         assertEquals("TIMED_OUT", ran.outcome());
         assertNull(ran.exitStatus(), "a command that has not finished has no status");
