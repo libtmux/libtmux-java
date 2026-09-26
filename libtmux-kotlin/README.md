@@ -161,9 +161,9 @@ import kotlinx.coroutines.flow.first
 withServer(config) { server ->
     val session = server.newSession("flow-demo")
     withControl(server, session) { control ->
-        control.send("display-message")
-
-        val step = control.output(capacity = 64).first()
+        val step = control.output(capacity = 64) {
+            control.send("send-keys", "-t", session.name, "echo flowed", "Enter")
+        }.first()
         val outcome = when (step) {            // exhaustive, no else
             is Delivery.Event -> "kept"
             is Delivery.Gap -> "lost ${step.missed}"
@@ -175,7 +175,10 @@ withServer(config) { server ->
 
 `output`/`events` open a *fresh* Java subscription per `collect()` — over
 `EventSubscription.poll`/`onReady`, never a parked thread — and close it when
-collection ends, is cancelled, or throws. A `Delivery.Gap` is an element like
+collection ends, is cancelled, or throws. Output tmux sends before that
+subscription opens is not delivered, so the command whose output you want goes
+in the trailing `onSubscribed` block, which runs once the subscription exists
+and before the first read. A `Delivery.Gap` is an element like
 any other, ahead of the events that survived a full buffer; nothing is
 silently dropped. `FlowBridgeStressTest` runs 300,000 events through a bursty
 producer against a slow collector and accounts for every one, as delivered or
