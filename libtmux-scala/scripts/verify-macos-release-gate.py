@@ -8,20 +8,19 @@ import re
 
 ROOT = Path(__file__).resolve().parents[2]
 EXPECTED = {
-    "P08": ("27", "3.3.8"),
+    "P08": ("25", "3.9.0"),
+    "P09": ("27", "3.9.0"),
 }
 CONSUMER_CELLS = {
-    "C03": ("25", "3.3.8"),
     "C04": ("25", "3.9.0"),
-    "C06": ("27", "3.3.8"),
     "C07": ("27", "3.9.0"),
 }
-# Installed consumers on every routine run, the release version and the
-# oldest supported compiler: the Scala release requires this workflow's run
-# on its commit.
+# Installed consumers on every routine run, the release version: the Scala
+# release requires this workflow's run on its commit. A 3.3.8 compiler cannot
+# read this build's own 3.9 TASTy, so there is no second, older-compiler cell
+# to keep here.
 ROUTINE_CONSUMER_CELLS = {
     "C01": "3.9.0",
-    "C08": "3.3.8",
 }
 TASKS = (
     "scalafmtSbtCheck",
@@ -109,7 +108,7 @@ def verify(path):
         "if: github.event_name != 'workflow_dispatch' || "
         "(!inputs.include_macos_release && !inputs.include_macos_consumers)"
     )
-    for job in ("producer-runtime", "installed-consumers"):
+    for job in ("installed-consumers",):
         require(
             re.search(
                 r"^  " + job + r":\n    " + re.escape(smoke_condition) + r"\n",
