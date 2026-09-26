@@ -11,7 +11,8 @@ Scala 3.9 only and publish `_3` artifacts with the Java ones. Start with
 Runnable programs for both facades live in
 [`examples/`](../../examples/): blocking workspace
 operations, bounded concurrent capture, notification loss and reconciliation,
-and Cats Effect resource ownership and cancellation.
+Cats Effect resource ownership and cancellation, and an Ox flow in a supervised
+fork.
 
 ## Direct Java dependency
 

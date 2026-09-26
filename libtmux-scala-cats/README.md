@@ -13,7 +13,7 @@ libraryDependencies += "io.github.libtmux" %% "libtmux-scala-cats" % "<version>"
 ```
 
 From Gradle or Maven the coordinate is `io.github.libtmux:libtmux-scala-cats_3`.
-None is on Maven Central yet; the Scala artifacts publish with the Java ones.
+It is on Maven Central and releases with the Java artifacts.
 
 Every Scala block on this page is compiled for Scala 3.9 and run against a
 real tmux server by the documentation suite.
