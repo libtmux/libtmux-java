@@ -11,6 +11,15 @@ import scala.jdk.OptionConverters._
   * buffer yields a `Delivery.Gap` in this stream before the events that remain.
   * FS2 demand does not provide tmux backpressure. A subscription does not
   * reconnect: attach again and read a snapshot.
+  *
+  * The stream itself suspends the *fiber*, not a platform thread, while idle:
+  * [[EventSubscription]] is already single-consumer by construction at the Java
+  * layer, with a non-blocking [[EventSubscription#poll poll]] plus a one-shot
+  * [[EventSubscription#onReady onReady]] wakeup. Each wait polls first — if
+  * something is already buffered, nothing suspends at all — and only then arms
+  * `onReady`, disarming it with [[EventSubscription#clearReady clearReady]] if
+  * the fiber is cancelled first. No `ExecutionContext` sized for blocking
+  * stream reads is needed, because no read here ever blocks a thread.
   */
 final class Observation[F[_], A] private[cats] (
     private[scaladsl] val underlying: EventSubscription[A],
@@ -19,34 +28,45 @@ final class Observation[F[_], A] private[cats] (
   private val closed = new AtomicBoolean(false)
   private val reading = new AtomicBoolean(false)
 
-  /** Reads on an interruptible blocking worker. Canceling the stream releases
-    * its consumer slot; releasing the observation discards its buffered events.
-    * Deliberate closure ends the stream. A client that ended the subscription
-    * fails it with that cause.
+  /** Waits for the fiber that owns [[stream]] to be woken, without blocking any
+    * thread while idle. A cancelled wait disarms its own registration, so it
+    * never fires after the fiber that was waiting on it is gone.
     */
-  def stream: Stream[F, Delivery[A]] = Stream
-    .bracket(F.delay {
-      if (!reading.compareAndSet(false, true))
-        throw new IllegalStateException(
-          "an observation already has an active consumer"
-        )
-    })(_ => F.delay(reading.set(false)))
-    .flatMap { _ =>
-      Stream
-        .repeatEval(F.interruptible {
-          underlying.next().toScala match {
-            case None if !closed.get() && !ownerClosed.get() =>
-              underlying.cause().toScala match {
-                case Some(cause) => throw cause
-                case None        => throw new Observation.UnknownCause()
-              }
-            case value => value
-          }
-        })
-        .unNoneTerminate
+  private val ready: F[Unit] = F.async[Unit] { wake =>
+    F.delay {
+      underlying.onReady(() => wake(Right(())))
+      Some(F.delay(underlying.clearReady()))
+    }
+  }
+
+  private def pull: F[Option[Delivery[A]]] =
+    F.delay(underlying.poll()).flatMap { next =>
+      if (next.isPresent) F.pure(Some(next.get))
+      else if (!underlying.isClosed) ready >> pull
+      else
+        underlying.cause().toScala match {
+          case Some(cause)                               => F.raiseError(cause)
+          case None if closed.get() || ownerClosed.get() => F.pure(None)
+          case None => F.raiseError(new Observation.UnknownCause())
+        }
     }
 
-  /** The cumulative overflow count. A `Delivery.Gap` in [[#stream]] says where
+  /** Reads on `F`'s own fiber scheduler. Cancelling the stream releases its
+    * consumer slot and disarms any pending wakeup; releasing the observation
+    * discards its buffered events. Deliberate closure ends the stream. A client
+    * that ended the subscription fails it with that cause.
+    */
+  def stream: Stream[F, Delivery[A]] =
+    Stream
+      .bracket(F.delay {
+        if (!reading.compareAndSet(false, true))
+          throw new IllegalStateException(
+            "an observation already has an active consumer"
+          )
+      })(_ => F.delay(reading.set(false)))
+      .flatMap(_ => Stream.repeatEval(pull).unNoneTerminate)
+
+  /** The cumulative overflow count. A `Delivery.Gap` in [[stream]] says where
     * it sits.
     */
   def droppedCount: F[Long] = F.delay(underlying.droppedCount())
@@ -55,21 +75,21 @@ final class Observation[F[_], A] private[cats] (
   def isClosed: F[Boolean] = F.delay(underlying.isClosed())
 
   private[cats] def close: F[Unit] =
-    F.delay(closed.set(true)) *> F.blocking(underlying.close())
+    F.delay(closed.set(true)) *> F.interruptible(underlying.close())
 }
 
 object Observation {
 
   /** The value inside an event delivery, and none for a gap. */
   def value[A](delivery: Delivery[A]): Option[A] = delivery match {
-    case item: Delivery.Event[_] => Some(item.value().asInstanceOf[A])
-    case _: Delivery.Gap[_]      => None
+    case item: Delivery.Event[?] => Some(item.value().asInstanceOf[A])
+    case _: Delivery.Gap[?]      => None
   }
 
   /** The event a strict reader kept. A gap fails the read. */
   def kept[A](delivery: Delivery[A]): A = delivery match {
-    case item: Delivery.Event[_] => item.value().asInstanceOf[A]
-    case gap: Delivery.Gap[_]    =>
+    case item: Delivery.Event[?] => item.value().asInstanceOf[A]
+    case gap: Delivery.Gap[?]    =>
       throw new IllegalStateException("lost " + gap.missed())
   }
 
