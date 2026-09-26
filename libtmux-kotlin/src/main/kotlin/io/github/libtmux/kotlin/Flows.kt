@@ -12,17 +12,13 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * [EventSubscription.poll]/[EventSubscription.onReady] path: no thread is parked per subscription.
  *
  * `open()` runs once per [kotlinx.coroutines.flow.Flow.collect], so two concurrent collections each
- * get their own subscription with their own buffer and gap accounting — ruling 5's "fan-out means
- * subscribing twice."
+ * get their own subscription with their own buffer and gap accounting: fanning out means
+ * subscribing twice.
  *
  * This is a plain `flow {}`, deliberately not `callbackFlow`. Every [EventSubscription.poll] runs on
  * the collector's own thread, so delivery order is the subscription's order, and `emit` suspends
  * while the collector is busy: overflow lands in the subscription's own drop-oldest buffer and
- * surfaces as a [Delivery.Gap], never as silent loss in an intermediate channel. A `callbackFlow`
- * built the same way — the readiness callback draining `poll()` straight into the channel — lost
- * 240,892 of 300,000 events with no `Gap` recorded in a stress probe (`FlowBridgeStressTest`):
- * `trySend` failing on a full channel silently discarded the polled item. This bridge cannot lose
- * that way, because nothing but the collector itself ever calls `poll()`.
+ * surfaces as a [Delivery.Gap], never as silent loss in an intermediate channel.
  */
 internal fun <T : Any> coldFlowFrom(
     open: () -> EventSubscription<T>,

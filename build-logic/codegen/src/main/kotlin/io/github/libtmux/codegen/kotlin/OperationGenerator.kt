@@ -34,13 +34,13 @@ private val GENERATED_KINDS = setOf("READ", "MUTATION")
 
 /**
  * Catalogued operations a handwritten member already covers under a different contract, so the
- * generator must never emit them (ruling 4's collision rule: `allWarningsAsErrors` would otherwise
- * fail the build the moment it did). `owner#name(erasedParamType,...)`, matching the stable id
+ * generator must never emit them: a generated extension would be shadowed by the member, which the
+ * module's `allWarningsAsErrors` turns into a build failure. `owner#name(erasedParamType,...)`, matching the stable id
  * `operation-catalog-schema.md` names.
  *
  * `Server#session(FilterExpr)`/`window(FilterExpr)`/`pane(FilterExpr)` return `Optional` in Java;
- * the handwritten [io.github.libtmux.kotlin.Server.session] throws on no match instead, per ruling 9,
- * and [io.github.libtmux.kotlin.Server.sessionOrNull] is its generator-can-never-emit sibling.
+ * the handwritten [io.github.libtmux.kotlin.Server.session] throws on no match instead, as Kotlin's
+ * `single()` does, and [io.github.libtmux.kotlin.Server.sessionOrNull] is its generator-can-never-emit sibling.
  */
 private val HANDWRITTEN_OVERRIDES = setOf(
     "io.github.libtmux.Server#session(io.github.libtmux.query.FilterExpr)",
@@ -109,8 +109,7 @@ public fun isGeneratable(operation: CatalogOperation): Boolean {
 
 /**
  * Builds one `FileSpec` per owner, each holding every [isGeneratable] operation for that owner as a
- * `suspend` extension function on the matching wrapper class. Ruling 4's collision rule is what makes
- * this safe to regenerate: these are always extensions, never members, so a hand-written member of
+ * `suspend` extension function on the matching wrapper class. What makes this safe to regenerate: these are always extensions, never members, so a hand-written member of
  * the same name silently wins were one to collide, and the module's `allWarningsAsErrors` build turns
  * that silence into a build failure instead.
  */

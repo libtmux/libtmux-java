@@ -11,9 +11,8 @@ import scala.jdk.CollectionConverters._
 import scala.jdk.OptionConverters._
 
 /** `batch.BatchResult`/`OperationResult` are Java's own records, used directly
-  * (item 27's own scope note: `Batch`/`BatchResult` remain unwrapped), so this
-  * pins the same raw attribution and failure-lookup behavior the deleted
-  * `BatchResult` wrapper pinned, against the real types.
+  * rather than wrapped, so this pins their attribution and failure lookup as a
+  * Scala caller meets them.
   */
 final class BatchResultSuite extends FunSuite {
   test("native rows retain raw attribution and do not invent a failure index") {
