@@ -149,6 +149,8 @@ Existing callers from earlier alpha releases must also migrate tool names:
   `tmux_select` becomes `select_window` or `select_pane`; `tmux_kill` becomes
   `kill_session`, `kill_window`, or `kill_pane`. Server termination is not
   exposed.
+- `list_windows` and `show_environment` take `session_id`, such as `$1`, or
+  `session_name`, in place of `session`.
 - `tmux_set_option` has no generic equivalent. Migrate supported uses to
   `set_mouse_enabled`, `set_history_limit`, `set_synchronize_panes`, or
   `set_pane_title`.

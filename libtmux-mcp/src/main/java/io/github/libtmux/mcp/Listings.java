@@ -3,7 +3,6 @@ package io.github.libtmux.mcp;
 import io.github.libtmux.Dimensions;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
-import io.github.libtmux.Session;
 import io.github.libtmux.SessionId;
 import io.github.libtmux.Window;
 import io.github.libtmux.snapshot.ServerSnapshot;
@@ -87,12 +86,9 @@ final class Listings {
 
     static Windows windows(Call call) {
         Server server = call.server();
-        Stream<Window> windows = server.windows().stream();
-        String session = call.maybe("session").orElse(null);
-        if (session != null) {
-            Session wanted = Targets.sessionNamed(server, session);
-            windows = wanted.windows().stream();
-        }
+        Stream<Window> windows = Targets.session(call)
+                .map(wanted -> wanted.windows().stream())
+                .orElseGet(() -> server.windows().stream());
         List<WindowSummary> summaries = windows.map(window -> new WindowSummary(
                         window.id().value(),
                         window.index().value(),

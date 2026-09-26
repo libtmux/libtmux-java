@@ -53,15 +53,17 @@ final class InspectTools {
         tools.add(Catalog.tool(
                 "list_windows",
                 "List windows",
-                "Lists windows, optionally only those in one named session.",
+                "Lists windows, optionally only those in one session, named by ID or by name.",
                 INSPECT,
                 NONE,
                 Catalog.effects(OBSERVE),
                 Catalog.outputs(TMUX_METADATA),
                 true,
                 true,
-                List.of(optional("session", "Only windows in this session name.")),
-                Catalog.sinks(Catalog.input("session", TMUX_LOOKUP)),
+                List.of(
+                        optional("session_id", "Only windows in this session, such as $1."),
+                        optional("session_name", "Only windows in the session with this exact name.")),
+                Catalog.sinks(Catalog.input("session_id", TMUX_LOOKUP), Catalog.input("session_name", TMUX_LOOKUP)),
                 Catalog.record(Listings.Windows.class, "note"),
                 Listings::windows));
         tools.add(Catalog.tool(
@@ -293,7 +295,10 @@ final class InspectTools {
         List<Argument> option = List.of(
                 required("name", "The exact option name."),
                 optional("scope", "global, server, session, window or pane."),
-                optional("target", "The target required by session, window and pane scopes."),
+                optional(
+                        "target",
+                        "Required for session scope (an ID such as $1, or a name), window scope (@1) and pane"
+                                + " scope (%1)."),
                 flag("effective", "Include an inherited value.", true));
         tools.add(Catalog.tool(
                 "show_option",
@@ -327,14 +332,19 @@ final class InspectTools {
                 Catalog.outputs(PROCESS_ENVIRONMENT),
                 true,
                 true,
-                List.of(optional("session", "A session name; omit for the global environment.")),
-                Catalog.sinks(Catalog.input("session", TMUX_LOOKUP)),
+                List.of(
+                        optional("session_id", "A session, such as $1; omit both for the global environment."),
+                        optional("session_name", "A session's exact name, in place of session_id.")),
+                Catalog.sinks(Catalog.input("session_id", TMUX_LOOKUP), Catalog.input("session_name", TMUX_LOOKUP)),
                 Catalog.record(Settings.Environment.class),
                 Settings::environment));
 
         List<Argument> hooks = List.of(
                 optional("scope", "global, server, session, window or pane."),
-                optional("target", "The target required by session, window and pane scopes."),
+                optional(
+                        "target",
+                        "Required for session scope (an ID such as $1, or a name), window scope (@1) and pane"
+                                + " scope (%1)."),
                 optional("name", "One hook name; omit to read all hooks in the scope."));
         tools.add(Catalog.tool(
                 "show_hooks",
