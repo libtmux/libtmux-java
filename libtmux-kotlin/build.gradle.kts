@@ -32,8 +32,7 @@ kotlin {
         // a mismatch against a @NullMarked type into an error here, so this module compiling is
         // itself evidence that the annotations downstairs are correct.
         freeCompilerArgs.addAll("-Xjspecify-annotations=strict")
-        // Ruling 4's collision rule: a hand-written member of the same name as a catalog-generated
-        // extension silently wins (EXTENSION_SHADOWED_BY_MEMBER), so that warning has to fail the
+        // A hand-written member of the same name as a catalog-generated extension silently wins (EXTENSION_SHADOWED_BY_MEMBER), so that warning has to fail the
         // build rather than ship a dead generated function no caller can ever reach.
         allWarningsAsErrors.set(true)
     }
