@@ -29,7 +29,7 @@ Say otherwise with an HTML comment directly above the fence:
 | --- | --- |
 | *(none)* | compiles, and runs against live tmux |
 | `<!-- snippet: throws: IllegalArgumentException -->` | runs, and must fail with exactly that |
-| `<!-- snippet: does-not-compile -->` | the compiler must reject it |
+| `<!-- snippet: does-not-compile: cannot find symbol -->` | the compiler must reject it, with a diagnostic containing that phrase |
 | `<!-- snippet: compile-only: <reason> -->` | compiles; not run, for the stated reason |
 | `<!-- snippet: skip: <reason> -->` | not checked, for the stated reason |
 
@@ -50,7 +50,12 @@ stands and never sees one.
 
 `does-not-compile` earns its keep: it is what keeps
 `Pane_.index().startsWith("2")` an error. A README claiming the compiler rejects
-something would otherwise survive the day it stopped being true.
+something would otherwise survive the day it stopped being true. The phrase is
+what makes the rejection the documented one: without it, a typo elsewhere in
+the block would pass for the error the prose describes.
+
+Every snippet that runs has 15 seconds. A snippet that hangs fails on its own
+line instead of hanging the build.
 
 ## Showing what a call returns
 

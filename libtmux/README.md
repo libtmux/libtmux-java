@@ -46,7 +46,6 @@ Needs JDK 25 and a tmux between 3.2a and 3.7c.
 
 ## Thirty seconds
 
-<!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
 // Given: Path socket
 ServerConfig config = ServerConfig.builder()
@@ -119,7 +118,7 @@ logs.get(0).name();                  // → logs
 
 Typed fields fail at **compile** time, not at runtime:
 
-<!-- snippet: does-not-compile -->
+<!-- snippet: does-not-compile: method startsWith -->
 ```java
 Pane_.index().startsWith("2");   // index is a number
 Pane_.active().contains("yes");  // active is a flag

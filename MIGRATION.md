@@ -288,8 +288,10 @@ or catch it and restore the flag.
 
 ```java
 // Given: Server server
+Channel ready = server.channel("ready");
+ready.signal(); // tmux keeps a signal nobody was waiting for, so this wait returns at once
 try {
-    server.channel("ready").await(java.time.Duration.ofSeconds(30));
+    ready.await(java.time.Duration.ofSeconds(30));
 } catch (InterruptedException cancelled) {
     Thread.currentThread().interrupt();
 }
