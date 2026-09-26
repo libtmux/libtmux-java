@@ -148,18 +148,20 @@ question that would have.
 The tmux matrix is not part of `check`, and a green `check` has not predicted
 it. Run the matrix before a release.
 
-Nor is the published coordinate. `consumers/java` is a build of its own that
-resolves `io.github.libtmux:libtmux` only from what the root build staged,
-requires it as a named module, checks the module version, and runs a command
-through tmux. `consumers/kotlin` does the same for `libtmux-kotlin`, through
-the staged BOM. CI runs both after `check`; locally, stage and run one:
+Nor is the published coordinate. The builds in
+[`module-tests/`](../module-tests/) are builds of their own that resolve only
+what the root build staged: `java/` requires `io.github.libtmux` as a named
+module at the staged version, `kotlin/` and `scala/` resolve through the staged
+BOM, and all three run commands through tmux; `sbt/` resolves each artifact with
+the install line the documentation shows. CI runs them after `check`; locally,
+stage and run one:
 
 ```console
 $ ./gradlew publishAllPublicationsToStagingRepository
 ```
 
 ```console
-$ ./gradlew -p consumers/java run \
+$ ./gradlew -p module-tests/java run \
     -PlibtmuxVersion="$(sed -n 's/^libtmuxVersion=//p' gradle.properties)"
 ```
 

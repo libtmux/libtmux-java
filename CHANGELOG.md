@@ -212,11 +212,12 @@ production.
 
 - **The Scala facades are Scala 3.9 only, over opaque handles.**
   `io.github.libtmux.scaladsl.Server`, `Session`, `Window`, `Pane` and
-  `Client` are the Java handles under opaque types, with `.asJava` as the way
-  out. Each Cats call runs through `Execution` under `F.interruptible`,
-  including `Batch`, `CommandChain` and `Channel`; a canceled call ends in
-  `Outcome.Canceled`; and fs2 streams wait without a blocking pool. There is
-  no `_2.13` build. (#23)
+  `Client` are the Java handles under opaque types, and every handle of both
+  facades, Cats included, answers its Java handle through `.asJava`. Each Cats
+  call runs through `Execution` under `F.interruptible`, including `Batch`,
+  `CommandChain` and `Channel`; a canceled call ends in `Outcome.Canceled`; and
+  fs2 streams wait without a blocking pool. There is no `_2.13` build. (#23,
+  #24)
 
 ### Fixed
 

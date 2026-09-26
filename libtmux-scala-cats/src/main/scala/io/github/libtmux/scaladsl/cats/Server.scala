@@ -17,7 +17,8 @@ final class Server[F[_]] private[cats] (
     private[cats] val execution: Execution[F]
 )(implicit F: Async[F]) {
 
-  private[scaladsl] val asJava: JavaServer = underlying.asJava
+  /** The Java client this wraps: the one escape hatch, as on every handle. */
+  val asJava: JavaServer = underlying.asJava
 
   private[cats] def session(value: direct.Session): Session[F] =
     new Session(value, this)
