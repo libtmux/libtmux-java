@@ -173,6 +173,12 @@ final class McpLauncherTest {
                             && instructions.contains("a terminal client is currently displaying"),
                     "'attended' must be defined where a model reads it before meeting it "
                             + "in a tool description or refusal: " + instructions);
+            assertTrue(
+                    instructions.contains("ABSENT ON PURPOSE")
+                            && instructions.contains("No hook writing")
+                            && instructions.contains("No buffer reading by default"),
+                    "a deliberately absent tool family must read as a choice, not a gap a model "
+                            + "should keep searching for: " + instructions);
         }
     }
 
