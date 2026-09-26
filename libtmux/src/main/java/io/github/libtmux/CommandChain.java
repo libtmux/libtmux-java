@@ -2,6 +2,8 @@ package io.github.libtmux;
 
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.batch.BatchResult;
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.util.List;
 import java.util.Objects;
@@ -29,11 +31,13 @@ public final class CommandChain {
     }
 
     /** Creates a window and makes it the one following steps act on. */
+    @Operation(Kind.MUTATION)
     public CommandChain newWindow(String name) {
         return then("new-window", "-n", name);
     }
 
     /** Renames the current window. */
+    @Operation(Kind.MUTATION)
     public CommandChain renameWindow(String name) {
         return then("rename-window", "--", name);
     }
@@ -44,16 +48,19 @@ public final class CommandChain {
      * <p>Named for what it produces rather than for tmux's {@code -h}, which reads as though it
      * described the divider.
      */
+    @Operation(Kind.MUTATION)
     public CommandChain splitLeftRight() {
         return then("split-window", "-h");
     }
 
     /** Splits the current pane into a top and a bottom one. */
+    @Operation(Kind.MUTATION)
     public CommandChain splitTopBottom() {
         return then("split-window", "-v");
     }
 
     /** Types a line into the current pane and presses Enter, which is how a command gets run. */
+    @Operation(Kind.MUTATION)
     public CommandChain sendLine(String command) {
         return then("send-keys", "-l", "--", Objects.requireNonNull(command, "command") + "\r");
     }
@@ -66,23 +73,27 @@ public final class CommandChain {
      * @throws UnsupportedFeatureException if the layout name arrived after this release, which
      *     tmux cannot tell from any other name it does not know
      */
+    @Operation(Kind.MUTATION)
     public CommandChain arrange(String layout) {
         return then("select-layout", Layouts.require(layout, running.get()));
     }
 
     /** Adds any tmux command, for whatever this class does not name. */
+    @Operation(Kind.MUTATION)
     public CommandChain then(String... argv) {
         batch.add(argv);
         return this;
     }
 
     /** Adds any tmux command. */
+    @Operation(Kind.MUTATION)
     public CommandChain then(List<String> argv) {
         batch.add(argv);
         return this;
     }
 
     /** Runs the whole chain in one tmux invocation, attributing each step. */
+    @Operation(Kind.MUTATION)
     public BatchResult run() {
         return batch.run();
     }

@@ -3,6 +3,8 @@ package io.github.libtmux;
 import io.github.libtmux.batch.Batch;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.batch.OperationResult;
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.exception.CommandRejectedException;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.exception.MalformedResponseException;
@@ -84,6 +86,7 @@ public final class Options {
      *     option names may be abbreviated, and a prefix matching several is a question tmux
      *     declined to answer rather than an option it does not have
      */
+    @Operation(Kind.READ)
     public Optional<String> get(String name) {
         TmuxVersion version = listingVersion();
         var result = version == null
@@ -113,12 +116,14 @@ public final class Options {
      * @throws LibTmuxException if tmux reports a value the key's type cannot hold, which means the
      *     key was declared with the wrong type
      */
+    @Operation(Kind.READ)
     public <T> Optional<T> get(OptionKey<T> key) {
         Objects.requireNonNull(key, "key");
         return get(key.name()).map(key::read);
     }
 
     /** As {@link #set(String, String)}, written the way tmux reads the key's type. */
+    @Operation(Kind.MUTATION)
     public <T> void set(OptionKey<T> key, T value) {
         Objects.requireNonNull(key, "key");
         set(key.name(), key.write(value));
@@ -126,6 +131,7 @@ public final class Options {
 
     /** Every option set at this scope, in tmux's order. Inherited values are not listed. */
     @ReadOnly
+    @Operation(Kind.READ)
     public Map<String, String> all() {
         return read(List.of());
     }
@@ -282,11 +288,13 @@ public final class Options {
      * effective values by name.
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public Map<String, String> effective() {
         return read(List.of("-A"));
     }
 
     /** Sets one option at this scope. */
+    @Operation(Kind.MUTATION)
     public void set(String name, String value) {
         run(argv("set-option", List.of("--", name, value)));
     }
@@ -299,6 +307,7 @@ public final class Options {
      *
      * @return whether the value was taken, false when this scope already set the option
      */
+    @Operation(Kind.MUTATION)
     public boolean setIfAbsent(String name, String value) {
         return cmd(argv("set-option", List.of("-o", "--", name, value))).succeeded();
     }
@@ -309,6 +318,7 @@ public final class Options {
      * <p>Appending to an option this scope has not set simply sets it, which is what tmux does and
      * what a caller building a value up piece by piece wants.
      */
+    @Operation(Kind.MUTATION)
     public void append(String name, String suffix) {
         run(argv("set-option", List.of("-a", "--", name, suffix)));
     }
@@ -323,11 +333,13 @@ public final class Options {
      * at that moment. Pass any interpolated value through {@link TmuxFormats#literal} unless you mean
      * it to be expanded.
      */
+    @Operation(Kind.MUTATION)
     public void setExpanded(String name, String format) {
         run(argv("set-option", List.of("-F", "--", name, format)));
     }
 
     /** Removes one option at this scope, so it falls back to whatever it inherits. */
+    @Operation(Kind.MUTATION)
     public void unset(String name) {
         run(argv("set-option", List.of("-u", "--", name)));
     }

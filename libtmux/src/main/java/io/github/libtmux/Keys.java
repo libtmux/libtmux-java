@@ -1,5 +1,7 @@
 package io.github.libtmux;
 
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.exception.ServerUnavailableException;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +33,7 @@ public final class Keys {
     }
 
     /** The same bindings, in one named table. */
+    @Operation(Kind.CAPTURED)
     public Keys in(String table) {
         Objects.requireNonNull(table, "table");
         if (table.isEmpty()) {
@@ -45,6 +48,7 @@ public final class Keys {
      * <p>Each word reaches tmux as itself: the command is passed as arguments, never as a line for
      * tmux to split.
      */
+    @Operation(Kind.MUTATION)
     public void bind(String key, List<String> command) {
         Objects.requireNonNull(key, "key");
         if (command.isEmpty()) {
@@ -59,6 +63,7 @@ public final class Keys {
     }
 
     /** Removes a key's binding. */
+    @Operation(Kind.MUTATION)
     public void unbind(String key) {
         Objects.requireNonNull(key, "key");
         List<String> argv = new ArrayList<>(List.of("unbind-key"));
@@ -78,6 +83,7 @@ public final class Keys {
      * @throws ServerUnavailableException if no daemon is running
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public List<String> list() {
         List<String> argv = new ArrayList<>(List.of("list-keys"));
         argv.addAll(scope());

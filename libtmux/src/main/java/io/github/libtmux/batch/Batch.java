@@ -1,5 +1,7 @@
 package io.github.libtmux.batch;
 
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.format.Tokens;
 import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.transport.CommandResult;
@@ -36,11 +38,13 @@ public final class Batch {
     }
 
     /** Adds one tmux command, its arguments already separate elements. */
+    @Operation(Kind.MUTATION)
     public Batch add(String... argv) {
         return add(List.of(argv));
     }
 
     /** Adds one tmux command. */
+    @Operation(Kind.MUTATION)
     public Batch add(List<String> argv) {
         if (argv.isEmpty()) {
             throw new IllegalArgumentException("an operation has no command");
@@ -50,6 +54,7 @@ public final class Batch {
     }
 
     /** How many operations have been collected. */
+    @Operation(Kind.CAPTURED)
     public int size() {
         return operations.size();
     }
@@ -62,6 +67,7 @@ public final class Batch {
      * travels as this one string plus the guard that fences it, so it costs this and a little more.
      * One dispatched as separate arguments costs less, since nothing there is quoted.
      */
+    @Operation(Kind.CAPTURED)
     public int length() {
         return CommandStrings.group(assemble()).getBytes(StandardCharsets.UTF_8).length;
     }
@@ -71,6 +77,7 @@ public final class Batch {
      *
      * @return one result per operation, in submission order
      */
+    @Operation(Kind.MUTATION)
     public BatchResult run() {
         if (operations.isEmpty()) {
             return new BatchResult(List.of());

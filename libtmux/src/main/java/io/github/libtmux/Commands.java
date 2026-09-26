@@ -1,5 +1,7 @@
 package io.github.libtmux;
 
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import java.util.List;
 import kotlin.annotations.jvm.ReadOnly;
 
@@ -14,6 +16,7 @@ public final class Commands {
 
     /** Every command, as tmux prints it. */
     @ReadOnly
+    @Operation(Kind.READ)
     public List<String> list() {
         return server.withoutStartingServer(List.of("list-commands")).stdout();
     }

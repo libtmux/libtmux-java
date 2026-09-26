@@ -1,5 +1,7 @@
 package io.github.libtmux;
 
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.transport.CommandResult;
@@ -59,6 +61,7 @@ public final class Hooks {
      * <p>Replacing, not adding: tmux discards the whole array. {@link #append} is how a second
      * command joins the first.
      */
+    @Operation(Kind.MUTATION)
     public void set(String event, String command) {
         run(argv("set-hook", List.of("--", event, command)));
     }
@@ -70,11 +73,13 @@ public final class Hooks {
      * to: {@code set("after-new-window", List.of("display-message", "it's #{window_name}"))} binds
      * exactly that message.
      */
+    @Operation(Kind.MUTATION)
     public void set(String event, List<String> command) {
         set(event, words(command));
     }
 
     /** As {@link #append(String, String)}, with the command as words. */
+    @Operation(Kind.MUTATION)
     public void append(String event, List<String> command) {
         append(event, words(command));
     }
@@ -87,11 +92,13 @@ public final class Hooks {
     }
 
     /** Binds another command to an event, after whatever is already bound to it. */
+    @Operation(Kind.MUTATION)
     public void append(String event, String command) {
         run(argv("set-hook", List.of("-a", "--", event, command)));
     }
 
     /** Removes everything bound to an event at this scope. */
+    @Operation(Kind.MUTATION)
     public void unset(String event) {
         run(argv("set-hook", List.of("-u", "--", event)));
     }
@@ -102,6 +109,7 @@ public final class Hooks {
      * <p>tmux spells this {@code set-hook -R}, which reads as setting something. It runs the hook
      * and binds nothing.
      */
+    @Operation(Kind.MUTATION)
     public void run(String event) {
         run(argv("set-hook", List.of("-R", "--", event)));
     }
@@ -114,6 +122,7 @@ public final class Hooks {
      * key stays the event a caller would look up.
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public Map<String, List<String>> all() {
         Map<String, List<String>> hooks = new LinkedHashMap<>();
         for (String line : run(argv("show-hooks", List.of())).stdout()) {

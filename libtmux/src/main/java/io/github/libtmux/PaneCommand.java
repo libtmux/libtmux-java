@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.catalog.Advanced;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.HexFormat;
@@ -29,6 +30,7 @@ import kotlin.annotations.jvm.ReadOnly;
  * around orchestration of its own — the MCP server holds a pane for other clients while a run is
  * uncertain, which the library has no reason to.
  */
+@Advanced
 public final class PaneCommand {
 
     private static final SecureRandom RANDOM = new SecureRandom();

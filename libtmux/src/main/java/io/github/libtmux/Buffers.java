@@ -1,5 +1,7 @@
 package io.github.libtmux;
 
+import io.github.libtmux.catalog.Kind;
+import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.exception.ServerUnavailableException;
 import io.github.libtmux.exception.TargetGoneException;
@@ -46,6 +48,7 @@ public final class Buffers {
      * @throws LibTmuxException if the listing fails, including when no daemon is running
      */
     @ReadOnly
+    @Operation(Kind.READ)
     public List<BufferInfo> list() {
         List<BufferInfo> buffers = new ArrayList<>();
         var result = server.run(List.of("list-buffers", "-F", LISTING.template()));
@@ -63,6 +66,7 @@ public final class Buffers {
      * read as flags: {@code set("clip", "-nfoo")} used to rename the buffer to {@code foo} and write
      * nothing, and report success.
      */
+    @Operation(Kind.MUTATION)
     public void set(String name, String contents) {
         server.run(List.of("set-buffer", "-b", name, "--", contents));
     }
@@ -78,6 +82,7 @@ public final class Buffers {
      * @throws TargetGoneException if the server has no buffer by that name
      * @throws ServerUnavailableException if no daemon is running
      */
+    @Operation(Kind.READ)
     public String show(String name) {
         CommandResult result = server.cmd(List.of("show-buffer", "-b", name));
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.equals("no buffer " + name))) {
@@ -97,6 +102,7 @@ public final class Buffers {
      * @throws UnsupportedFeatureException before tmux 3.4, whose named deletion silently removes the top
      *     buffer when the name is absent
      */
+    @Operation(Kind.MUTATION)
     public void delete(String name) {
         TmuxVersion running = server.version();
         if (!running.atLeast(EXACT_NAMED_DELETE)) {
@@ -112,11 +118,13 @@ public final class Buffers {
     }
 
     /** Writes a buffer's contents to a file. */
+    @Operation(Kind.MUTATION)
     public void save(String name, Path file) {
         server.run(List.of("save-buffer", "-b", name, "--", file.toString()));
     }
 
     /** Reads a file into a named buffer. */
+    @Operation(Kind.MUTATION)
     public void load(String name, Path file) {
         server.run(List.of("load-buffer", "-b", name, "--", file.toString()));
     }
