@@ -10,6 +10,7 @@ import io.github.libtmux.Window;
 import io.github.libtmux.WindowId;
 import io.github.libtmux.exception.TargetGoneException;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Finds the thing a model asked for, or says what to do about not finding it.
@@ -64,6 +65,22 @@ final class Targets {
                 .findFirst()
                 .orElseThrow(() -> new TargetGoneException("no session named '" + name + "'; this server has "
                         + sessions.stream().map(Session::name).toList()));
+    }
+
+    /** The session a call names by {@code session_id} or by {@code session_name}, or empty for neither. */
+    static Optional<Session> session(Call call) {
+        Optional<String> id = call.maybe("session_id");
+        Optional<String> name = call.maybe("session_name");
+        if (id.isPresent() && name.isPresent()) {
+            throw new IllegalArgumentException("pass session_id or session_name, not both");
+        }
+        return id.map(value -> sessionById(call.server(), value))
+                .or(() -> name.map(value -> sessionNamed(call.server(), value)));
+    }
+
+    /** A session scope's target: an ID such as {@code $1}, as tmux reads one, or else an exact name. */
+    static Session sessionByIdOrName(Server server, String target) {
+        return target.matches("\\$[0-9]+") ? sessionById(server, target) : sessionNamed(server, target);
     }
 
     static Session sessionById(Server server, String id) {

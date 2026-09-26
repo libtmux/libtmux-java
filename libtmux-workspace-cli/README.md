@@ -196,7 +196,7 @@ above. Use `--socket-name` when loading with `-L`; the endpoint is selected once
 at MCP startup.
 
 Discover tools with `tools/list`, then call `list_sessions`, `list_windows`
-with `session: dev`, and `list_panes`. Use returned pane IDs with
+with `session_name: dev`, and `list_panes`. Use returned pane IDs with
 `capture_pane` or `wait_for_text`; bound `max_lines` and the wait's `timeout`
 in seconds. A pending text wait allows other inspection calls on the same
 connection. The `tmux://capabilities` resource reports the selected endpoint

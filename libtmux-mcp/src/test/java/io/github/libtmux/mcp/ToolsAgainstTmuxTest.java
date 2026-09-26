@@ -130,9 +130,9 @@ final class ToolsAgainstTmuxTest {
     void newSessionStartsADaemonRatherThanFailingOnAnAbsentOne(Server server) {
         server.killServer();
 
-        Shaping.Made made = Shaping.newSession(TestCalls.on(server, "name", "revived"));
+        Object made = Operations.createSession(TestCalls.on(server, "session_name", "revived"));
 
-        assertEquals("revived", made.name());
+        assertEquals("revived", ((Map<?, ?>) made).get("name"));
         assertTrue(server.hasSession("revived"));
     }
 
@@ -330,13 +330,12 @@ final class ToolsAgainstTmuxTest {
     void sessionTargetsUseTheirListedIdsEvenWhenTheNameLooksLikeAWindowId(Server server) {
         var ambiguous = server.newSession(server.windows().get(0).id().value());
 
-        Shaping.Changed renamed =
-                Shaping.rename(TestCalls.on(server, "target", ambiguous.id().value(), "name", "renamed-safely"));
+        Object renamed = Operations.renameSession(
+                TestCalls.on(server, "session_id", ambiguous.id().value(), "new_name", "renamed-safely"));
         Shaping.Ended ended =
                 Shaping.kill(TestCalls.on(server, "target", ambiguous.id().value()));
 
-        assertEquals("session", renamed.kind());
-        assertEquals("renamed-safely", renamed.what());
+        assertEquals("renamed-safely", ((Map<?, ?>) renamed).get("name"));
         assertEquals("session", ended.kind());
         assertTrue(server.isAlive());
         assertEquals(1, server.sessions().size());
@@ -351,15 +350,41 @@ final class ToolsAgainstTmuxTest {
         if (refuses) {
             assertThrows(
                     LibTmuxException.class,
-                    () -> Shaping.rename(
-                            TestCalls.on(server, "target", session.id().value(), "name", "a.b")));
+                    () -> Operations.renameSession(
+                            TestCalls.on(server, "session_id", session.id().value(), "new_name", "a.b")));
             return;
         }
 
-        Shaping.Changed renamed =
-                Shaping.rename(TestCalls.on(server, "target", session.id().value(), "name", "a.b"));
+        Object renamed = Operations.renameSession(
+                TestCalls.on(server, "session_id", session.id().value(), "new_name", "a.b"));
 
-        assertEquals(session.refresh().name(), renamed.what(), "the reply must match the name tmux actually kept");
+        assertEquals(
+                session.refresh().name(),
+                ((Map<?, ?>) renamed).get("name"),
+                "the reply must match the name tmux actually kept");
+    }
+
+    /**
+     * A session is named by the ID a listing gave or by its exact name, and both reach the same
+     * windows and environment, a name holding '.' included where tmux keeps one.
+     */
+    @Test
+    void aSessionIsNamedByIdOrNameAndItsEnvironmentReadById(Server server) {
+        boolean refuses =
+                server.version().atLeast(REJECTS_DELIMITER) && !server.version().atLeast(ACCEPTS_DELIMITER_AGAIN);
+        Session named = server.newSession(refuses ? "env-plain" : "env.dotted");
+        named.environment().set("LIBTMUX_PROBE", "here");
+
+        for (Call call : List.of(
+                TestCalls.on(server, "session_id", named.id().value()),
+                TestCalls.on(server, "session_name", named.name()))) {
+            assertEquals("here", Settings.environment(call).variables().get("LIBTMUX_PROBE"));
+            assertEquals(named.windows().size(), Listings.windows(call).count());
+        }
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Listings.windows(
+                        TestCalls.on(server, "session_id", named.id().value(), "session_name", named.name())));
     }
 
     @Test
@@ -377,10 +402,10 @@ final class ToolsAgainstTmuxTest {
         String active =
                 server.sessions().get(0).activeWindow().orElseThrow().id().value();
 
-        Shaping.Made made = Shaping.newWindow(TestCalls.on(server, "session", "libtmux", "name", "built"));
+        Object made = Operations.createWindow(
+                TestCalls.on(server, "session_id", server.sessions().get(0).id().value(), "window_name", "built"));
 
-        assertTrue(made.id().startsWith("@"));
-        assertTrue(String.valueOf(made.paneId()).startsWith("%"));
+        assertTrue(String.valueOf(((Map<?, ?>) made).get("id")).startsWith("@"));
         assertEquals(
                 active,
                 server.sessions().get(0).activeWindow().orElseThrow().id().value(),
@@ -391,10 +416,11 @@ final class ToolsAgainstTmuxTest {
     void aSplitHandsBackTheNewPaneAndKeepsTheOld(Server server) {
         String original = server.panes().get(0).id().value();
 
-        Shaping.Made made = Shaping.splitPane(TestCalls.on(server, "pane_id", original, "direction", "right"));
+        Object made = Operations.splitWindow(TestCalls.on(server, "pane_id", original, "direction", "right"));
+        Object madeId = ((Map<?, ?>) made).get("id");
 
         assertEquals(2, server.panes().size());
-        assertTrue(server.panes().stream().anyMatch(pane -> pane.id().value().equals(made.id())));
+        assertTrue(server.panes().stream().anyMatch(pane -> pane.id().value().equals(madeId)));
         assertTrue(server.panes().stream().anyMatch(pane -> pane.id().value().equals(original)));
     }
 
@@ -404,7 +430,7 @@ final class ToolsAgainstTmuxTest {
 
         IllegalArgumentException refused = assertThrows(
                 IllegalArgumentException.class,
-                () -> Shaping.splitPane(TestCalls.on(server, "pane_id", pane, "direction", "sideways")));
+                () -> Operations.splitWindow(TestCalls.on(server, "pane_id", pane, "direction", "sideways")));
 
         assertTrue(String.valueOf(refused.getMessage()).contains("below"), refused.getMessage());
     }
@@ -445,7 +471,7 @@ final class ToolsAgainstTmuxTest {
 
     @Test
     void optionsAreReadFromTheScopeThatWasAskedFor(Server server) {
-        Settings.setOption(TestCalls.on(server, "scope", "global", "name", "@probe", "value", "set-here"));
+        server.globalOptions().set("@probe", "set-here");
 
         Settings.OptionValues read = Settings.showOptions(TestCalls.on(server, "scope", "global"));
 

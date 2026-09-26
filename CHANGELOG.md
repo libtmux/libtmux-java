@@ -48,6 +48,12 @@ production.
 
 ### Changed
 
+- **MCP `list_windows` and `show_environment` take `session_id` or
+  `session_name` in place of `session`.** A model passing the `$1` that
+  `list_sessions` just gave it was told no session had that name. For
+  `show_option` and `show_hooks`, a session-scope `target` is now an ID or a
+  name. (#23)
+
 - **`CommandResult.stdout()` keeps carriage returns.** It splits at LF alone,
   so `Buffers.show`, pane captures and option reads return `\r` and `\r\n` as
   tmux sent them. Strip `\r` yourself where a line ending must be bare.
