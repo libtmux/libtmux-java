@@ -33,7 +33,8 @@ jobs:
     # themselves if that condition is ever wrong.
     environment: release
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # check alone takes about twelve minutes on a hosted runner; the upload follows it.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
