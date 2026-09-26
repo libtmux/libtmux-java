@@ -49,10 +49,16 @@ class LiveStateTest {
             server.withLiveState(session) { live ->
                 val startEpoch = live.value.epoch()
 
-                // A bursty producer: windows created back to back, far faster than ServerMirror's own
-                // rebuild can keep up with one-for-one — exactly what its own conflation exists for
-                // ("while a snapshot is in flight, further notifications collapse into one rebuild").
-                repeat(windowCount) { index -> session.newWindow("stress-$index") }
+                // A burst: every window in one tmux invocation, so all the announcements land within
+                // milliseconds and conflation, not the machine's speed, decides how many rebuilds
+                // follow. Created one call at a time, a slow runner rebuilt after each and published
+                // one view per window ("while a snapshot is in flight, further notifications
+                // collapse into one rebuild" needs them to arrive while one is in flight).
+                val burst = javaServer.batch()
+                repeat(windowCount) { index ->
+                    burst.add("new-window", "-d", "-t", "${sessionId.value()}:", "-n", "stress-$index")
+                }
+                check(burst.run().succeeded()) { "the burst was refused" }
 
                 val finalView = withTimeout(30.seconds) {
                     live.first { view -> windowCountOf(view, sessionId) >= expectedTotal }
@@ -61,9 +67,9 @@ class LiveStateTest {
                 assertEquals(expectedTotal, windowCountOf(finalView, sessionId))
                 assertTrue(finalView.epoch() > startEpoch, "epoch must have advanced")
                 assertTrue(
-                    finalView.epoch() < expectedTotal,
-                    "conflation should have folded some of the $windowCount rapid changes into fewer " +
-                        "rebuilds than one per change (epoch went from $startEpoch to ${finalView.epoch()})",
+                    finalView.epoch() - startEpoch < windowCount,
+                    "conflation should have folded the $windowCount changes into fewer views than one " +
+                        "per change (epoch went from $startEpoch to ${finalView.epoch()})",
                 )
             }
         }
