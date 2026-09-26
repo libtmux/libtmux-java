@@ -24,6 +24,7 @@ include("libtmux-mcp")
 
 // Internal: exercised by the build, never released.
 include("benchmarks")
+include("catalog-doclet")
 include("docs-tests")
 include("examples")
 include("integration-tests")

@@ -5,22 +5,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Server;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Stream;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 /**
  * Scans every public type the library exports and fails when one that classifies at least one
- * method with {@link Operation} leaves another public method unclassified.
+ * method with {@link Operation} leaves another public method unclassified; separately checks that
+ * {@code operation-catalog.json}, the Doclet's build-time extraction of the same annotations, agrees
+ * with what is loaded at runtime.
  *
  * <p>A type is examined only once it carries at least one {@link Operation} method; a pure value
  * type, a spec, or a builder that never touches tmux declares none and is never examined. Once a
@@ -47,10 +55,99 @@ final class OperationCatalogTest {
 
     @Test
     void everyOperationTypeClassifiesEveryPublicMethod() throws IOException, URISyntaxException {
-        Path classes = Path.of(
-                Server.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         List<String> violations = new ArrayList<>();
         Set<String> qualifying = new HashSet<>();
+
+        for (Class<?> type : publicTypes()) {
+            scan(type, violations, qualifying);
+        }
+
+        assertEquals(List.of(), violations, "public methods without @Operation");
+        for (String required : REQUIRED_HANDLES) {
+            assertTrue(qualifying.contains(required), required + " was never found classified");
+        }
+    }
+
+    /**
+     * Fails when {@code operation-catalog.json} (the Doclet's source-level extraction, packaged at
+     * {@code META-INF/io.github.libtmux/operation-catalog.json}) and the {@link Operation}
+     * annotations loaded by reflection disagree: a method missing on either side, or present on
+     * both with a different {@link Operation#value()} or {@link Operation#tmuxSince()}, fails this.
+     *
+     * <p>The comparison key is the owner, method name, parameter count and varargs-ness — not the
+     * parameter types themselves, since a declared type erases under reflection but not in the
+     * Doclet's source-level, generic-aware spelling. Two overloads that collide on this key still
+     * catch a real disagreement: any swap changes which key holds which {@code kind}/{@code
+     * tmuxSince}, and the two multisets compared below stop matching.
+     */
+    @Test
+    void jsonCatalogMatchesRuntimeAnnotations() throws IOException, URISyntaxException {
+        Map<String, Integer> fromReflection = new TreeMap<>();
+        for (Class<?> type : publicTypes()) {
+            for (Method method : type.getDeclaredMethods()) {
+                Operation operation = method.getAnnotation(Operation.class);
+                if (operation == null) {
+                    continue;
+                }
+                String key = key(
+                        type.getName(),
+                        method.getName(),
+                        method.getParameterCount(),
+                        method.isVarArgs(),
+                        operation.value().name(),
+                        operation.tmuxSince());
+                fromReflection.merge(key, 1, Integer::sum);
+            }
+        }
+
+        String json;
+        try (InputStream in =
+                OperationCatalogTest.class.getResourceAsStream("/META-INF/io.github.libtmux/operation-catalog.json")) {
+            if (in == null) {
+                throw new AssertionError("operation-catalog.json is not on the test classpath");
+            }
+            json = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        Map<String, Integer> fromJson = new TreeMap<>();
+        Map<?, ?> root = (Map<?, ?>) MinimalJson.parse(json);
+        for (Object entry : listField(root, "operations")) {
+            Map<?, ?> operation = (Map<?, ?>) entry;
+            String key = key(
+                    stringField(operation, "owner"),
+                    stringField(operation, "name"),
+                    listField(operation, "parameters").size(),
+                    booleanField(operation, "varargs"),
+                    stringField(operation, "kind"),
+                    stringField(operation, "tmuxSince"));
+            fromJson.merge(key, 1, Integer::sum);
+        }
+
+        assertEquals(fromReflection, fromJson);
+    }
+
+    private static String key(
+            String owner, String name, int parameterCount, boolean varargs, String kind, String tmuxSince) {
+        return owner + '#' + name + '/' + parameterCount + (varargs ? "..." : "") + " -> " + kind + '@' + tmuxSince;
+    }
+
+    private static String stringField(Map<?, ?> record, String field) {
+        return (String) Objects.requireNonNull(record.get(field), field);
+    }
+
+    private static List<?> listField(Map<?, ?> record, String field) {
+        return (List<?>) Objects.requireNonNull(record.get(field), field);
+    }
+
+    private static boolean booleanField(Map<?, ?> record, String field) {
+        return (Boolean) Objects.requireNonNull(record.get(field), field);
+    }
+
+    /** Every public type under {@link Server}'s classpath root, excluding {@code internal}, anonymous, and local types. */
+    private static List<Class<?>> publicTypes() throws IOException, URISyntaxException {
+        Path classes = Path.of(
+                Server.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        List<Class<?>> types = new ArrayList<>();
 
         try (Stream<Path> files = Files.walk(classes)) {
             for (Path file : files.filter(path -> path.toString().endsWith(".class"))
@@ -67,17 +164,12 @@ final class OperationCatalogTest {
                 } catch (ClassNotFoundException | LinkageError unreachable) {
                     continue;
                 }
-                if (!Modifier.isPublic(type.getModifiers()) || type.isAnonymousClass() || type.isLocalClass()) {
-                    continue;
+                if (Modifier.isPublic(type.getModifiers()) && !type.isAnonymousClass() && !type.isLocalClass()) {
+                    types.add(type);
                 }
-                scan(type, violations, qualifying);
             }
         }
-
-        assertEquals(List.of(), violations, "public methods without @Operation");
-        for (String required : REQUIRED_HANDLES) {
-            assertTrue(qualifying.contains(required), required + " was never found classified");
-        }
+        return types;
     }
 
     /** Checks one loaded type, recording either a violation per unclassified method or its name once it qualifies. */
@@ -137,5 +229,135 @@ final class OperationCatalogTest {
             return null; // anonymous or local class
         }
         return relative;
+    }
+
+    /**
+     * Parses the tiny, well-formed subset of JSON the catalog Doclet writes: this test's own
+     * output, never third-party input, so a null literal or a non-finite number is unsupported
+     * rather than handled.
+     */
+    private static final class MinimalJson {
+
+        private final String text;
+        private int pos;
+
+        private MinimalJson(String text) {
+            this.text = text;
+        }
+
+        static Object parse(String text) {
+            MinimalJson parser = new MinimalJson(text);
+            Object value = parser.readValue();
+            parser.skipWhitespace();
+            if (parser.pos != text.length()) {
+                throw new IllegalArgumentException("trailing content at " + parser.pos);
+            }
+            return value;
+        }
+
+        private Object readValue() {
+            skipWhitespace();
+            char c = text.charAt(pos);
+            return switch (c) {
+                case '{' -> readObject();
+                case '[' -> readArray();
+                case '"' -> readString();
+                case 't' -> {
+                    pos += "true".length();
+                    yield true;
+                }
+                case 'f' -> {
+                    pos += "false".length();
+                    yield false;
+                }
+                default -> readNumber();
+            };
+        }
+
+        private Map<String, Object> readObject() {
+            Map<String, Object> map = new LinkedHashMap<>();
+            pos++; // {
+            skipWhitespace();
+            if (text.charAt(pos) == '}') {
+                pos++;
+                return map;
+            }
+            while (true) {
+                skipWhitespace();
+                String key = readString();
+                skipWhitespace();
+                pos++; // :
+                map.put(key, readValue());
+                skipWhitespace();
+                if (text.charAt(pos++) == '}') {
+                    break;
+                }
+            }
+            return map;
+        }
+
+        private List<Object> readArray() {
+            List<Object> list = new ArrayList<>();
+            pos++; // [
+            skipWhitespace();
+            if (text.charAt(pos) == ']') {
+                pos++;
+                return list;
+            }
+            while (true) {
+                list.add(readValue());
+                skipWhitespace();
+                if (text.charAt(pos++) == ']') {
+                    break;
+                }
+            }
+            return list;
+        }
+
+        private String readString() {
+            pos++; // opening quote
+            StringBuilder value = new StringBuilder();
+            while (true) {
+                char c = text.charAt(pos++);
+                if (c == '"') {
+                    break;
+                }
+                if (c != '\\') {
+                    value.append(c);
+                    continue;
+                }
+                char escape = text.charAt(pos++);
+                switch (escape) {
+                    case '"' -> value.append('"');
+                    case '\\' -> value.append('\\');
+                    case '/' -> value.append('/');
+                    case 'n' -> value.append('\n');
+                    case 'r' -> value.append('\r');
+                    case 't' -> value.append('\t');
+                    case 'b' -> value.append('\b');
+                    case 'f' -> value.append('\f');
+                    case 'u' -> {
+                        value.append((char) Integer.parseInt(text.substring(pos, pos + 4), 16));
+                        pos += 4;
+                    }
+                    default -> throw new IllegalArgumentException("unsupported escape \\" + escape);
+                }
+            }
+            return value.toString();
+        }
+
+        private Long readNumber() {
+            int start = pos;
+            while (pos < text.length() && "-+0123456789".indexOf(text.charAt(pos)) >= 0) {
+                pos++;
+            }
+            return Long.parseLong(text.substring(start, pos));
+        }
+
+        private void skipWhitespace() {
+            while (pos < text.length() && Character.isWhitespace(text.charAt(pos))) {
+                pos++;
+            }
+        }
     }
 }
