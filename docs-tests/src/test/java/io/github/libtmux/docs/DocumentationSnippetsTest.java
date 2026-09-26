@@ -13,13 +13,18 @@ import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.junit5.TmuxSocketPath;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -70,8 +75,32 @@ final class DocumentationSnippetsTest {
                 "nothing is being run, so nothing is really being checked");
     }
 
+    /**
+     * A fence the extractor does not recognise — indented under a list item, or spelled {@code Java}
+     * — is a snippet nobody checks, and nothing else would notice. So every line that opens
+     * something like a Java fence has to be one the extractor took.
+     */
+    @Test
+    void everyJavaFenceIsOneTheExtractorTakes() throws IOException {
+        Pattern opening = Pattern.compile("^[ \\t>]*```[ \\t]*java\\b", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
+        for (Path document : Documentation.readable(ROOT)) {
+            long fences = opening.matcher(Files.readString(document)).results().count();
+            int taken = Documentation.snippetsIn(ROOT, document).size();
+            assertEquals(
+                    fences,
+                    taken,
+                    ROOT.relativize(document) + " opens " + fences + " Java fences, and " + taken
+                            + " are checked; write each as a bare ```java at the start of a line");
+        }
+    }
+
+    /**
+     * A snippet that hangs would otherwise hang the build. Generous next to the slowest snippet,
+     * about 2 seconds, since a slow runner still has to pass.
+     */
     @ParameterizedTest(name = "{0}")
     @MethodSource("snippets")
+    @Timeout(value = 15, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void theSnippetIsWhatItClaimsToBe(Snippet snippet, Server server, TmuxSocketPath socket) throws Throwable {
         if (snippet.expectation() == Snippet.Expectation.SKIPPED) {
             return;
@@ -83,6 +112,11 @@ final class DocumentationSnippetsTest {
                 assertFalse(
                         compiled.succeeded(),
                         snippet.where() + " compiles, but the documentation says the compiler rejects it");
+                // Any error would do otherwise, including a typo that has nothing to do with the claim.
+                assertTrue(
+                        compiled.errors().stream().anyMatch(error -> error.contains(snippet.detail())),
+                        snippet.where() + " is rejected, but not with '" + snippet.detail() + "': "
+                                + compiled.errors());
                 return;
             }
             if (!compiled.succeeded()) {

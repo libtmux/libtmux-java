@@ -12,7 +12,6 @@ runs, and every value shown after a `→` is asserted.
 A `Server` is a client, not the tmux process. Closing one closes your connection;
 it never ends anybody's sessions.
 
-<!-- snippet: compile-only: opens a second client to the suite's own server, which races it; the behaviour below is what runs -->
 ```java
 // Given: Path socket
 ServerConfig config = ServerConfig.builder()
@@ -245,14 +244,17 @@ can predict. Pin one:
 
 ```java
 // Given: Path directory
-Path tmuxConf = Files.writeString(directory.resolve("tmux.conf"), "");
+Path tmuxConf = Files.writeString(directory.resolve("tmux.conf"), "set -g base-index 5\n");
 
 ServerConfig pinned = ServerConfig.builder()
-        .endpoint(ServerEndpoint.socketPath(directory.resolve("s")))
+        .endpoint(ServerEndpoint.socketPath(directory.resolve("pinned")))
         .configFile(tmuxConf)
         .build();
 
-pinned.configFile().isPresent();           // → true
+try (Server server = Server.open(pinned)) {
+    server.newSession("configured").windows().get(0).index().value();   // → 5
+    server.killServer();
+}
 ```
 
 ## Where to next
