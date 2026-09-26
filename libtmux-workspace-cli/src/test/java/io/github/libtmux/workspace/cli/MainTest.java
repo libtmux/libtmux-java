@@ -289,6 +289,17 @@ final class MainTest {
         }
     }
 
+    /** freeze never asks, so its -y, kept because tmuxp's freeze takes one, must not claim to answer. */
+    @Test
+    void yesPromisesAnAnswerOnlyWhereACommandAsks() {
+        Result freeze = invoke("freeze", "--help");
+        Result convert = invoke("convert", "--help");
+
+        assertTrue(freeze.out().contains("never asks"), freeze.out());
+        assertFalse(freeze.out().contains("Answer yes"), freeze.out());
+        assertTrue(convert.out().contains("Answer yes to confirmation prompts."), convert.out());
+    }
+
     @Test
     void schemaGenerationRetainsItsMetadataDocument() {
         Result plain = invoke("--generate", "schema");

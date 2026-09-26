@@ -74,19 +74,19 @@ final class Arguments {
                 command("freeze", "Capture recoverable session topology; original command history is unavailable.");
         freeze.addPositional(positional("session", "0", "0..1", String.class));
         sockets(freeze);
-        save(freeze, true);
+        save(freeze, true, false);
         freeze.addOption(flag("Suppress status text, preserving prompts.", "-q", "--quiet"));
         root.addSubcommand("freeze", freeze);
 
         CommandSpec convert = command("convert", "Convert the complete workspace document between YAML and JSON.");
         convert.addPositional(positional("workspace-file", "0", "1", String.class));
-        save(convert, false);
+        save(convert, false, true);
         root.addSubcommand("convert", convert);
         CommandSpec imports = command("import", "Import a Teamocil or Tmuxinator document.");
         for (String name : List.of("teamocil", "tmuxinator")) {
             CommandSpec importer = command(name, "Import " + name + " YAML without executing source code.");
             importer.addPositional(positional("workspace-file", "0", "1", String.class));
-            save(importer, false);
+            save(importer, false, true);
             imports.addSubcommand(name, importer);
         }
         root.addSubcommand("import", imports);
@@ -187,7 +187,8 @@ final class Arguments {
         command.addOption(value("Named tmux socket.", "-L"));
     }
 
-    private static void save(CommandSpec command, boolean aliases) {
+    /** @param asks whether the command confirms before writing; one that never asks takes -y for tmuxp's sake */
+    private static void save(CommandSpec command, boolean aliases, boolean asks) {
         command.addOption(choice(
                 "Workspace file encoding; machine stdout remains JSON. Default: YAML, or opposite source encoding for convert.",
                 List.of("yaml", "json"),
@@ -196,6 +197,9 @@ final class Arguments {
                 "Save to this file; machine mode otherwise returns the document.",
                 aliases ? new String[] {"-o", "--save-to"} : new String[] {"--save-to"}));
         command.addOption(flag("Replace an existing destination.", "--force"));
-        command.addOption(flag("Answer yes to confirmation prompts.", "-y", "--yes"));
+        command.addOption(flag(
+                asks ? "Answer yes to confirmation prompts." : "Accepted as tmuxp accepts it; this command never asks.",
+                "-y",
+                "--yes"));
     }
 }
