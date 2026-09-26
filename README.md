@@ -361,11 +361,11 @@ Not published, and part of how the library is built:
 `platformCoversEveryPublishedModule` fails the build when the published artifacts
 stop matching the BOM.
 
-The local [`workspace-cli`](workspace-cli/) application provides the
+The local [`libtmux-workspace-cli`](libtmux-workspace-cli/) application provides the
 `tmux-workspace` launcher over native workspace services. It is built as a
 distribution and is not a Maven publication.
 
-`workspace-cli` and `libtmux-workspace` are two implementations, and the CLI
+`libtmux-workspace-cli` and `libtmux-workspace` are two implementations, and the CLI
 does not call the library. `libtmux-workspace`'s package documentation states
 how their document shapes and building behaviour diverge. Code the CLI's
 behaviour against the CLI.
@@ -475,7 +475,7 @@ and decision record, one line each.
 - [Threads, cancellation, and what runs at once](docs/guide/concurrency.md)
 - [Driving tmux from a model](docs/guide/mcp.md)
 - [Testing with real tmux](docs/guide/testing.md)
-- [Workspace commands](workspace-cli/README.md)
+- [Workspace commands](libtmux-workspace-cli/README.md)
 - [Kotlin](docs/guide/kotlin.md) and [Scala](docs/guide/scala.md)
 - [Releasing](RELEASING.md)
 
