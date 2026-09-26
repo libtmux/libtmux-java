@@ -62,6 +62,10 @@ final class Instructions {
                 One pane's metadata and content together: snapshot_pane. list_panes plus \
                 capture_pane is two calls for what that one returns.
 
+                ABSENT ON PURPOSE
+                No hook writing: a hook outlives this conversation — put it in your tmux config. No \
+                buffer reading by default: buffers hold what a user copied.
+
                 CAPABILITY DISCLOSURE
                 tmux://capabilities reports this process's frozen effective tool surface and selected \
                 socket. It is the only MCP resource exposed by this server.
