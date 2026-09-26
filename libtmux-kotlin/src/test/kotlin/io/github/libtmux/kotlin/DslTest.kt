@@ -56,6 +56,56 @@ class DslTest {
     }
 
     /**
+     * tmux sets a new session's first window through `new-session` itself, so the first `window { }`
+     * block's directory has to reach that command: a rename afterwards cannot move a running shell.
+     */
+    @Test
+    fun `the first window block's directory is the first window's`(javaServer: JavaServer) = runBlocking {
+        val server = Server.open(javaServer.config())
+        val chosen = java.nio.file.Files.createTempDirectory("libtmux-kotlin-dsl-first-").toRealPath()
+
+        val session = server.newSession {
+            name = "dsl-first-directory"
+            window { directory = chosen }
+        }
+
+        assertEquals(
+            chosen.fileName.toString(),
+            session.windows[0].panes[0].currentPath.fileName.toString(),
+        )
+    }
+
+    @Test
+    fun `a command runs in the first window, and in a later one`(javaServer: JavaServer) = runBlocking {
+        val server = Server.open(javaServer.config())
+
+        val session = server.newSession {
+            name = "dsl-running"
+            window { running("sleep", "300") }
+            window { running("sleep", "301") }
+        }
+
+        assertEquals(listOf("sleep", "sleep"), session.windows.map { settledCommand(it.panes[0]) })
+    }
+
+    @Test
+    fun `a directory set on both the session and its first window is refused`(javaServer: JavaServer) =
+        runBlocking {
+            val server = Server.open(javaServer.config())
+            val one = java.nio.file.Files.createTempDirectory("libtmux-kotlin-dsl-one-")
+            val two = java.nio.file.Files.createTempDirectory("libtmux-kotlin-dsl-two-")
+
+            val refused = kotlin.runCatching {
+                server.newSession {
+                    directory = one
+                    window { directory = two }
+                }
+            }
+
+            assertTrue(refused.exceptionOrNull() is IllegalArgumentException, "got $refused")
+        }
+
+    /**
      * `@DslMarker` blocks an inner block from reaching an outer one's receiver by accident:
      * `SessionBuilder.window` is not visible, unqualified, from inside a nested `split { }`, because
      * both builders carry the same `@LibTmuxDsl` marker. Without `@DslMarker` this would compile —
@@ -117,5 +167,16 @@ class DslTest {
         val result = KotlincHarness.compile(fixture)
 
         assertTrue(result.succeeded, "expected the qualified form to compile:\n${result.diagnostics}")
+    }
+
+    /** A pane's command once it has started: a new pane is briefly the forked tmux before it execs. */
+    private suspend fun settledCommand(pane: Pane): String {
+        val deadline = System.nanoTime() + 10_000_000_000L
+        var current = pane.refresh()
+        while (current.currentCommand == "tmux" && System.nanoTime() < deadline) {
+            kotlinx.coroutines.delay(20)
+            current = current.refresh()
+        }
+        return current.currentCommand
     }
 }

@@ -18,19 +18,22 @@ public annotation class LibTmuxDsl
  * Declares a session's shape, then creates it: one session, its windows, and each window's splits,
  * as a single call lowering to the right sequence of suspend operations.
  *
- * tmux always gives a new session one window; the first [window] block configures that one (by
- * [Window.rename], since a `new-session` cannot be told the first window's directory separately from
- * the session's own), and each later block is a genuine [Session.newWindow] — so `window { }` twice
- * means exactly two windows, not three.
+ * tmux always gives a new session one window, and `new-session` itself names it, gives it its
+ * directory and starts its command. So the first [window] block goes into that one command rather
+ * than a rename afterwards, which could not move a shell already running; each later block is a
+ * genuine [Session.newWindow], and `window { }` twice means exactly two windows, not three.
+ *
+ * @throws IllegalArgumentException if the session and its first window block both set a
+ *     directory, or both set a command: tmux has one of each for that window
  */
 public suspend fun Server.newSession(configure: SessionBuilder.() -> Unit): Session {
     val builder = SessionBuilder().apply(configure)
-    var session = newSession(builder.build())
     val windowBlocks = builder.windows.iterator()
-    if (windowBlocks.hasNext()) {
-        val first = WindowBuilder().apply(windowBlocks.next())
+    val first = if (windowBlocks.hasNext()) WindowBuilder().apply(windowBlocks.next()) else null
+    var session = newSession(builder.build(first))
+    if (first != null) {
         val firstWindow = session.activeWindow ?: error("the session just created has no active window")
-        applySplits(if (first.name != null) firstWindow.rename(first.name!!) else firstWindow, first)
+        applySplits(firstWindow, first)
     }
     for (windowBlock in windowBlocks) {
         val windowBuilder = WindowBuilder().apply(windowBlock)
@@ -55,60 +58,74 @@ private suspend fun applySplits(window: Window, builder: WindowBuilder) {
 
 @LibTmuxDsl
 public class SessionBuilder internal constructor() {
-    private val java: SessionSpec.Builder = SessionSpec.builder()
     internal val windows: MutableList<WindowBuilder.() -> Unit> = mutableListOf()
+    private var command: List<String>? = null
 
-    public var name: String?
-        get() = null
-        set(value) {
-            value?.let { java.named(it) }
-        }
+    public var name: String? = null
 
-    public var directory: Path?
-        get() = null
-        set(value) {
-            value?.let { java.`in`(it) }
-        }
+    /** The session's working directory, which its first window starts in too. */
+    public var directory: Path? = null
+
+    /** Runs [argv] in the first window instead of the default shell. */
+    public fun running(vararg argv: String) {
+        command = argv.toList()
+    }
 
     public fun window(configure: WindowBuilder.() -> Unit) {
         windows += configure
     }
 
-    internal fun build(): SessionSpec = java.build()
+    internal fun build(first: WindowBuilder?): SessionSpec {
+        val spec = SessionSpec.builder()
+        name?.let { spec.named(it) }
+        first?.name?.let { spec.firstWindowNamed(it) }
+        require(directory == null || first?.directory == null || directory == first.directory) {
+            "the session and its first window block both set a directory; tmux starts that window in one"
+        }
+        (first?.directory ?: directory)?.let { spec.`in`(it) }
+        require(command == null || first?.command == null) {
+            "the session and its first window block both set a command; that window runs one"
+        }
+        (first?.command ?: command)?.let { spec.running(*it.toTypedArray()) }
+        return spec.build()
+    }
 }
 
 @LibTmuxDsl
 public class WindowBuilder internal constructor() {
-    private val java: WindowSpec.Builder = WindowSpec.builder()
     internal val splits: MutableList<SplitBuilder.() -> Unit> = mutableListOf()
+    internal var command: List<String>? = null
+        private set
 
-    /** Read back (unlike the other builders' write-only properties) so the first window can rename. */
     public var name: String? = null
-        set(value) {
-            field = value
-            value?.let { java.named(it) }
-        }
 
-    public var directory: Path?
-        get() = null
-        set(value) {
-            value?.let { java.`in`(it) }
-        }
+    public var directory: Path? = null
+
+    /** Runs [argv] in this window instead of the default shell. */
+    public fun running(vararg argv: String) {
+        command = argv.toList()
+    }
 
     public fun split(configure: SplitBuilder.() -> Unit = {}) {
         splits += configure
     }
 
-    internal fun build(): WindowSpec = java.build()
+    internal fun build(): WindowSpec {
+        val spec = WindowSpec.builder()
+        name?.let { spec.named(it) }
+        directory?.let { spec.`in`(it) }
+        command?.let { spec.running(*it.toTypedArray()) }
+        return spec.build()
+    }
 }
 
 @LibTmuxDsl
 public class SplitBuilder internal constructor() {
     private val java: SplitSpec.Builder = SplitSpec.builder()
 
-    public var directory: Path?
-        get() = null
+    public var directory: Path? = null
         set(value) {
+            field = value
             value?.let { java.`in`(it) }
         }
 
