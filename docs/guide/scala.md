@@ -19,7 +19,7 @@ The Java artifact has no Scala binary-version suffix. Use a single `%`:
 
 <!-- snippet: scala-build: install-direct-java -->
 ```sbt
-libraryDependencies += "io.github.libtmux" % "libtmux" % "0.0.1-alpha.14"
+libraryDependencies += "io.github.libtmux" % "libtmux" % "0.0.1-alpha.15"
 ```
 
 Use `%%` for the Scala artifacts (`libtmux-scala`, `libtmux-scala-cats`,
