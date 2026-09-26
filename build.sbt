@@ -25,6 +25,14 @@ lazy val generateOperationSources =
   taskKey[Seq[File]](
     "Generate direct-style extensions or Cats forwards from operationCatalog."
   )
+lazy val fieldCatalogFile =
+  taskKey[File](
+    "The real field-catalog.tsv, extracted from the staged libtmux jar."
+  )
+lazy val generateFieldSources =
+  taskKey[Seq[File]](
+    "Generate PaneFields/SessionFields/WindowFields/ClientFields from fieldCatalogFile."
+  )
 lazy val codegenSelfTest =
   taskKey[Unit](
     "Prove ScalaCodegen's mapping is correct, and that a bad catalog fails it."
@@ -203,6 +211,34 @@ def generatedOperations(who: OperationCatalog.Catalog => String) = Seq(
   Compile / sourceGenerators += generateOperationSources.taskValue
 )
 
+/** `core`-only: the query DSL's field companions (`Pane.id`, ...) belong to the
+  * direct-style facade alone, generated from the same staged jar's
+  * field-catalog.tsv the Java `Pane_`/`Session_`/`Window_`/`Client_` classes
+  * come from, so the 31 fields cannot drift from Java's own list.
+  */
+lazy val generatedFields = Seq(
+  fieldCatalogFile := {
+    val tsv = readStagedJarEntry(
+      (ThisBuild / javaRepository).value,
+      (ThisBuild / javaArtifactVersion).value,
+      "libtmux",
+      "META-INF/io.github.libtmux/field-catalog.tsv"
+    )
+    val file = (Compile / target).value / "field-catalog.tsv"
+    IO.write(file, tsv)
+    file
+  },
+  generateFieldSources := {
+    val rows = FieldCatalog.parse(IO.read(fieldCatalogFile.value))
+    val outputDir = (Compile / sourceManaged).value / "fields"
+    IO.createDirectory(outputDir)
+    val file = outputDir / "GeneratedFields.scala"
+    IO.write(file, ScalaFieldCodegen.combinedFields(rows))
+    Seq(file)
+  },
+  Compile / sourceGenerators += generateFieldSources.taskValue
+)
+
 /** The small, hand-authored catalog `codegenSelfTest` proves `ScalaCodegen`'s
   * mapping against — see `libtmux-scala/project/fixtures/README.md`. Kept
   * separate from `operationCatalog`, which reads the real, Doclet-produced
@@ -233,6 +269,7 @@ lazy val core = project
   .settings(common)
   .settings(sourceDocumentation)
   .settings(generatedOperations(ScalaCodegen.combinedDirectStyle))
+  .settings(generatedFields)
   .settings(
     name := "libtmux-scala",
     description := "Scala collections and blocking operations over libtmux for Java.",

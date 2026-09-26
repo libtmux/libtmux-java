@@ -1,11 +1,7 @@
 package io.github.libtmux.scaladsl
 
-import io.github.libtmux.{
-  Session => JavaSession,
-  Session_,
-  Window => JavaWindow
-}
-import io.github.libtmux.scaladsl.query.{Expr, Fields}
+import io.github.libtmux.{Session => JavaSession}
+import io.github.libtmux.scaladsl.query.Expr
 
 /** A captured session, opaque over the Java handle; every operation beyond
   * equality is an extension, generated from the operation catalog or
@@ -19,15 +15,9 @@ object Session {
 
   given CanEqual[Session, Session] = CanEqual.derived
 
-  def id: Fields.TextField[JavaSession] = new Fields.TextField(Session_.id())
-  def name: Fields.TextField[JavaSession] =
-    new Fields.TextField(Session_.name())
-  def attached: Fields.FlagField[JavaSession] =
-    new Fields.FlagField(Session_.attached())
-  def windowCount: Fields.NumberField[JavaSession] =
-    new Fields.NumberField(Session_.windowCount())
-  def windows: Fields.ToManyRef[JavaSession, JavaWindow] =
-    new Fields.ToManyRef(Session_.windows())
+  // Generated from field-catalog.tsv: see Pane.scala's own export for why this is a re-export of
+  // a separate generated object rather than a same-file companion.
+  export io.github.libtmux.scaladsl.generated.SessionFields.*
 
   // Nested, not top-level: see Pane.scala's own asJava for why.
   extension (self: Session) {

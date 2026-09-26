@@ -1,13 +1,7 @@
 package io.github.libtmux.scaladsl
 
-import io.github.libtmux.{
-  Pane => JavaPane,
-  PaneRun,
-  Pane_,
-  TextOutcome,
-  WakeReason
-}
-import io.github.libtmux.scaladsl.query.{Expr, Fields}
+import io.github.libtmux.{Pane => JavaPane, PaneRun, TextOutcome, WakeReason}
+import io.github.libtmux.scaladsl.query.Expr
 import scala.concurrent.duration.FiniteDuration
 import scala.jdk.DurationConverters._
 
@@ -24,26 +18,12 @@ object Pane {
 
   given CanEqual[Pane, Pane] = CanEqual.derived
 
-  def id: Fields.TextField[JavaPane] = new Fields.TextField(Pane_.id())
-  def command: Fields.TextField[JavaPane] =
-    new Fields.TextField(Pane_.command())
-  def index: Fields.NumberField[JavaPane] =
-    new Fields.NumberField(Pane_.index())
-  def active: Fields.FlagField[JavaPane] = new Fields.FlagField(Pane_.active())
-  def title: Fields.TextField[JavaPane] = new Fields.TextField(Pane_.title())
-  def path: Fields.TextField[JavaPane] = new Fields.TextField(Pane_.path())
-  def width: Fields.NumberField[JavaPane] =
-    new Fields.NumberField(Pane_.width())
-  def height: Fields.NumberField[JavaPane] =
-    new Fields.NumberField(Pane_.height())
-  def left: Fields.NumberField[JavaPane] = new Fields.NumberField(Pane_.left())
-  def top: Fields.NumberField[JavaPane] = new Fields.NumberField(Pane_.top())
-  def atTop: Fields.FlagField[JavaPane] = new Fields.FlagField(Pane_.atTop())
-  def atBottom: Fields.FlagField[JavaPane] =
-    new Fields.FlagField(Pane_.atBottom())
-  def atLeft: Fields.FlagField[JavaPane] = new Fields.FlagField(Pane_.atLeft())
-  def atRight: Fields.FlagField[JavaPane] =
-    new Fields.FlagField(Pane_.atRight())
+  // Generated from field-catalog.tsv (project/ScalaFieldCodegen.scala), in its own object and
+  // package so it can live in a separate generated file: a class and object of the same name are
+  // companions, sharing private access, only when they share one file, so a generated `object
+  // Pane` here would either fail to compile alongside this one or silently stop being this type's
+  // companion. Re-exporting is the one-line bridge back.
+  export io.github.libtmux.scaladsl.generated.PaneFields.*
 
   // Nested, not top-level: a top-level `extension (self: Pane) def asJava` in this file would share
   // a name with Server/Session/Window/Client's own top-level `asJava`, and Scala 3 requires
