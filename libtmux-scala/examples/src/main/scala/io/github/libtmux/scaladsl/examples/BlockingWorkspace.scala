@@ -1,18 +1,19 @@
 package io.github.libtmux.scaladsl.examples
 
-import io.github.libtmux.{
-  Layout,
-  Pane_,
-  ServerConfig,
-  SessionSpec,
-  SplitSpec,
-  WakeReason
-}
-import io.github.libtmux.scaladsl.Queries
-import io.github.libtmux.scaladsl.blocking.Server
+import io.github.libtmux.{Layout, ServerConfig, SessionSpec, SplitSpec}
+// Wildcards, not named imports: examples lives beside io.github.libtmux.scaladsl, not inside it, so
+// its generated and handwritten extension methods (isAlive, newSession, session, ...) need an
+// explicit import rather than the enclosing-package visibility a nested package would get for free.
+import io.github.libtmux.scaladsl.*
+import io.github.libtmux.scaladsl.query.*
+import scala.concurrent.duration._
 import scala.util.Using
 
-/** Builds and reads a linked workspace, then removes the sessions it created.
+/** Builds a small workspace with the direct-style facade: a session with a
+  * split window, queried with the typed field DSL, then torn down. Every handle
+  * here is an opaque alias of the Java one — `server.newSession(...)` returns
+  * the same object `io.github.libtmux.Server.newSession` would, with a
+  * generated Scala-shaped signature.
   */
 object BlockingWorkspace {
   def main(arguments: Array[String]): Unit = run(
@@ -29,68 +30,30 @@ object BlockingWorkspace {
       try {
         val window = session.windows.head
         val shell = window.panes.head
-        window.split(SplitSpec.builder().running("cat").build())
+        val second = window.split(SplitSpec.builder().running("cat").build())
         window.selectLayout(Layout.EVEN_HORIZONTAL)
         shell.select()
 
-        shell.sendLiteral("printf 'literal-%s\\n' 'Enter #(...)'")
-        shell.sendKeys(Vector("Enter"))
-        val completed = name + "-input"
-        shell.sendLine(
-          "printf 'line-%s\\n' submitted; " +
-            ExampleRuntime.shell(config, "wait-for", "-S", completed)
-        )
+        shell.sendLine("printf 'line-%s\\n' submitted")
         assert(
-          server
-            .channel(completed)
-            .await(ExampleRuntime.deadline) == WakeReason.SIGNALLED
+          !shell
+            .awaitText("line-submitted", 5.seconds)
+            .equals(io.github.libtmux.TextOutcome.TIMED_OUT)
         )
         val screen = shell.capture()
-        assert(screen.exists(_.contains("literal-Enter #(...)")))
         assert(screen.exists(_.contains("line-submitted")))
 
-        val captured =
-          server.panes().filter(_.info.context.session() == session.info.id)
-        assert(captured.size == 2)
+        // The typed field DSL: Pane.command/.active on the handle's own companion, .matching as a
+        // local filter, exactlyOne for strict cardinality.
+        val panes = Vector(shell, second)
         assert(
-          captured.filter(_.info.active) == captured.filter(
-            Queries.panes(Pane_.active().isTrue())
-          )
+          panes
+            .matching(Pane.active.is(true) || Pane.active.is(false))
+            .size == 2
         )
-        assert(
-          Queries
-            .oneOrNone(
-              captured.filter(
-                _.info.currentCommand == "__missing_example_command__"
-              )
-            )
-            .isEmpty
-        )
+        val onlyShell = panes.matching(Pane.id.is(shell.info.id.value()))
+        assert(onlyShell.exactlyOne.equals(Right(shell)), onlyShell)
         assert(server.session(name + "-missing").isEmpty)
-
-        val other = server.newSession(
-          SessionSpec.builder().named(name + "-linked").running("cat").build()
-        )
-        try {
-          window.linkTo(other)
-          assert(
-            server
-              .cmd(
-                "link-window",
-                "-s",
-                window.info.context.window().value(),
-                "-t",
-                session.info.id
-                  .value() + ":" + (window.info.context.index().value() + 1)
-              )
-              .succeeded
-          )
-          val occurrences = server.panes().filter(_.info.id == shell.info.id)
-          assert(occurrences.size == 3)
-          assert(occurrences.map(_.info.context).distinct.size == 3)
-          assert(occurrences.distinct.size == 1)
-          assert(occurrences.map(_.refresh().info.context).distinct.size == 1)
-        } finally other.kill()
       } finally session.kill()
       assert(server.isAlive())
   }

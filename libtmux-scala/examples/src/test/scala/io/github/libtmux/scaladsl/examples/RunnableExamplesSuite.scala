@@ -170,7 +170,7 @@ object RunnableExamplesSuite {
           name,
           () => {
             val code = app.run(arguments.toList).unsafeRunSync()
-            if (code != ExitCode.Success)
+            if (!code.equals(ExitCode.Success))
               throw new AssertionError(s"$name exited with $code")
           },
           deadlineMillis
