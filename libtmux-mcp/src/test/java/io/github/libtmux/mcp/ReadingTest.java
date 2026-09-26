@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
+import io.github.libtmux.WakeReason;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
@@ -15,9 +16,11 @@ import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -215,10 +218,10 @@ final class ReadingTest {
     }
 
     @Test
-    void historyCompactionKeepsAReachableCursorContinuous(Server server) {
+    void historyCompactionKeepsAReachableCursorContinuous(Server server) throws InterruptedException {
         server.globalOptions().set("history-limit", "40");
         var window = server.sessions().get(0).newWindow("rolling-history");
-        String pane = window.panes().get(0).id().value();
+        String pane = shellReady(window.panes().get(0));
         server.cmd("resize-window", "-t", window.id().value(), "-x", "80", "-y", "5");
         run(server, pane, "for i in $(seq 1 30); do printf 'before-%03d\\n' $i; done");
         String cursor = settled(server, pane);
@@ -329,6 +332,17 @@ final class ReadingTest {
         Reading.Found literal = Reading.search(TestCalls.on(server, "pattern", "[FAILED]"));
 
         assertTrue(literal.count() >= 1, "plain text matched the brackets themselves");
+    }
+
+    /**
+     * The pane's id once its shell is what it runs. A window just made runs whatever the shell's
+     * startup files do first, and run_shell_command rightly refuses a pane that is not at a shell.
+     */
+    private static String shellReady(Pane pane) throws InterruptedException {
+        Set<String> shells = Set.of("sh", "bash", "dash", "ksh", "zsh");
+        WakeReason reason = pane.await(fresh -> shells.contains(fresh.currentCommand()), Duration.ofSeconds(10));
+        assertEquals(WakeReason.SIGNALLED, reason, "the new window's shell never settled");
+        return pane.id().value();
     }
 
     private static void run(Server server, String pane, String command) {
