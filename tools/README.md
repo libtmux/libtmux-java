@@ -6,6 +6,7 @@
 | --- | --- |
 | [`tmux-matrix.sh`](tmux-matrix.sh) | builds every supported tmux release into a tree the version matrix can use |
 | [`reap-stale-servers.sh`](reap-stale-servers.sh) | reports and optionally ends tmux servers this port abandoned |
+| [`verify-staged-release.sh`](verify-staged-release.sh) | checks a staged release against what the Central Portal refuses |
 | [`mcp-swap/`](mcp-swap/README.md) | points every installed agent CLI at this build of `libtmux-mcp`, and back |
 
 ## Build the tmux matrix
@@ -38,6 +39,20 @@ since removed, which is then addressable only by its own argv.
 **It only ever touches sockets under this port's roots** — `/tmp/libtmux-java-test`
 and `/tmp/libtmux-java-dev`. Servers under the other `/tmp/libtmux-*` roots, which
 other libtmux ports use, are counted and reported, never killed. [`CONTRIBUTING.md`](../.github/CONTRIBUTING.md) explains why.
+
+## Check a staged release
+
+CI's release rehearsal stages the version a tag would publish, signed by a key
+made for the run, and runs this over it:
+
+```console
+$ ./tools/verify-staged-release.sh 0.0.1-alpha.15
+```
+
+It names each artifact the Central Portal would refuse: one the BOM manages
+that was not staged, a missing jar, sources or javadoc jar, a signature or
+checksum that does not match, or a POM without the metadata Central requires.
+The signing key's public half has to be in the keyring.
 
 ## Try the MCP server in a real agent
 
