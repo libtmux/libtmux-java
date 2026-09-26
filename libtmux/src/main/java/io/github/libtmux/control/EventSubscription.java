@@ -645,6 +645,13 @@ public final class EventSubscription<T> implements AutoCloseable {
         }
 
         private void signalEnd() {
+            // A bad request closes the subscription to release it, so a drain can see that end
+            // before it sees the request. Rule 3.9 still wants the error.
+            Throwable refused = protocolError;
+            if (refused != null) {
+                signalError(refused);
+                return;
+            }
             Optional<Throwable> failure = EventSubscription.this.cause();
             if (failure.isPresent()) {
                 signalError(failure.get());

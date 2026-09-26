@@ -77,6 +77,29 @@ final class EventSubscriptionPublisherTest {
         }
     }
 
+    /**
+     * Rule 3.9 whatever the timing. Closing the subscription for a bad request also ends it, and a
+     * drain that sees the end before the error has to report the error, not a completion.
+     */
+    @Test
+    void aBadRequestIsAnErrorEvenWhenTheDrainSeesTheEndFirst() throws Exception {
+        int completions = 0;
+        for (int round = 0; round < 2_000; round++) {
+            try (var subscription = new EventSubscription<String>(4, ignored -> {})) {
+                RecordingSubscriber<String> subscriber = new RecordingSubscriber<>();
+                subscription.publisher().subscribe(subscriber);
+                subscriber.awaitOnSubscribe();
+
+                subscriber.subscription.request(0);
+
+                if (subscriber.awaitSignal().completed()) {
+                    completions++;
+                }
+            }
+        }
+        assertEquals(0, completions, "a bad request completed instead of failing");
+    }
+
     @Test
     void aNegativeRequestIsRefusedTheSameWay() throws Exception {
         try (var subscription = new EventSubscription<String>(4, ignored -> {})) {
