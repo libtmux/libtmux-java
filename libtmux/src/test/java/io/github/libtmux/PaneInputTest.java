@@ -1,11 +1,14 @@
 package io.github.libtmux;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -146,6 +149,34 @@ class PaneInputTest {
         release.countDown();
         owner.join(5_000);
         assertNull(failure.get());
+    }
+
+    @Test
+    void heldListsAnActiveLeaseWithItsInstant() {
+        ServerIdentity identity =
+                ServerIdentity.of("local", ServerEndpoint.socketPath(Path.of("/tmp/lease-diagnostics")));
+        PaneId pane = new PaneId("%42");
+        assertTrue(PaneInput.heldSince(identity, pane).isEmpty());
+        assertTrue(PaneInput.held().stream().noneMatch(held -> held.pane().equals(pane)));
+
+        Instant before = Instant.now();
+        try (PaneInput.Lease lease = PaneInput.hold(identity, pane)) {
+            assertTrue(lease != null);
+            Instant since = PaneInput.heldSince(identity, pane).orElseThrow();
+            assertFalse(since.isBefore(before));
+            assertFalse(since.isAfter(Instant.now()));
+
+            PaneInput.Held listed = PaneInput.held().stream()
+                    .filter(held -> held.pane().equals(pane))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(identity, listed.server());
+            assertEquals(since, listed.since());
+            assertEquals(Thread.currentThread().getName(), listed.holdingThread());
+        }
+
+        assertTrue(PaneInput.heldSince(identity, pane).isEmpty());
+        assertTrue(PaneInput.held().stream().noneMatch(held -> held.pane().equals(pane)));
     }
 
     @Test
