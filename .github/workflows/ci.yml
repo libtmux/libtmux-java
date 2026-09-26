@@ -159,6 +159,7 @@ jobs:
           ./gradlew -p module-tests/kotlin run --stacktrace -PlibtmuxVersion="$VERSION"
           ./gradlew -p module-tests/scala run --stacktrace -PlibtmuxVersion="$VERSION"
           module-tests/sbt/sbtw -Dlibtmux.version="$VERSION" core/run cats/run ox/run direct/run
+          ./gradlew -p module-tests/cli run --stacktrace -PlibtmuxVersion="$VERSION"
 
   check-macos:
     name: check (macOS)

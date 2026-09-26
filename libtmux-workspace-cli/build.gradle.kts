@@ -1,7 +1,7 @@
 import net.ltgt.gradle.errorprone.errorprone
 
 plugins {
-    id("libtmux.java-library")
+    id("libtmux.published-library")
     id("libtmux.tmux-matrix")
     application
 }
@@ -14,6 +14,8 @@ application {
 }
 
 distributions.main { contents { from("README.md") } }
+
+tasks.jar { manifest { attributes("Automatic-Module-Name" to "io.github.libtmux.workspace.cli") } }
 
 dependencies {
     // The core, named directly. It used to arrive through :libtmux-workspace, whose own classes no

@@ -50,6 +50,7 @@ final class DocumentationFactsTest {
             "libtmux-kotlin",
             "libtmux-mcp",
             "libtmux-workspace",
+            "libtmux-workspace-cli",
             "libtmux-scala",
             "libtmux-scala-cats",
             "libtmux-scala-ox");
