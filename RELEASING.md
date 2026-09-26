@@ -254,7 +254,9 @@ Two behaviours worth knowing:
 8. Bump `libtmuxApiBaseline` in `gradle.properties` to the version just
    released. The core's API-diff gate compares every later change against that
    property, not against `libtmuxVersion`, so the next round of development
-   starts measured against what was actually shipped.
+   starts measured against what was actually shipped. Move the entries under
+   `MIGRATION.md`'s `## Next release` beneath a heading for the version they
+   shipped in, so the gate starts the next round from an empty section.
 
 ## Scala facade
 

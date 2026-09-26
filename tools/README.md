@@ -46,7 +46,7 @@ CI's release rehearsal stages the version a tag would publish, signed by a key
 made for the run, and runs this over it:
 
 ```console
-$ ./tools/verify-staged-release.sh 0.0.1-alpha.15
+$ ./tools/verify-staged-release.sh 0.0.1-alpha.16
 ```
 
 It names each artifact the Central Portal would refuse: one the BOM manages
