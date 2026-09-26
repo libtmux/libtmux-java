@@ -52,6 +52,18 @@ lines expire after ten seconds; a live wait retains those echoes it has
 observed until that wait ends. Tracking writes nothing to disk or logs and
 sends nothing elsewhere; the text exists only for comparison with pane reads.
 
+## What the build trusts
+
+Every artifact the Gradle build resolves, plugins included, is checked against
+the SHA-256 recorded for it in `gradle/verification-metadata.xml`, and a
+mismatch fails the build. The build does not verify PGP signatures. A signature
+proves an artifact came from whoever holds the signing key. Many artifacts on
+Maven Central are signed by keys nobody has cross-certified, and trusting such a
+key is only trust on first use again. The recorded checksum already detects an
+artifact changed after it was reviewed, so a signature adds a key to manage
+without a real gain in assurance. Adding or upgrading a dependency changes that
+file, so the change shows up in review.
+
 ## Supported versions
 
 Before 1.0, only the latest release is supported.
