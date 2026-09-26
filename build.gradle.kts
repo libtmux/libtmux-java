@@ -8,8 +8,7 @@ plugins {
 
 // Aggregate entry points, so the gate is one command whatever the module layout becomes.
 
-// The BOM covers Gradle publications. Scala artifacts release independently, and
-// their shared sbt build verifies the cross-published coordinate manifest.
+// Every publication, the Scala artifacts included, is one the BOM manages.
 val platformCoversEveryPublishedModule =
     tasks.register("platformCoversEveryPublishedModule") {
         group = "verification"

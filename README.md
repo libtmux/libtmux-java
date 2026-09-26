@@ -314,9 +314,8 @@ rather than collapsing both into one error.
 ## Modules
 
 Group `io.github.libtmux`. Each listed published directory is an artifact with
-its own README. They are [on Maven Central](https://central.sonatype.com/namespace/io.github.libtmux);
-the Scala artifacts, suffixed `_3`, publish with the rest starting with the first
-release that includes them.
+its own README. They are [on Maven Central](https://central.sonatype.com/namespace/io.github.libtmux),
+the Scala artifacts suffixed `_3`.
 
 - **[`libtmux`](libtmux/)** — the library itself. Transport, snapshots,
   entities, options, hooks, batching, control mode, query model.

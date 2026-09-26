@@ -217,22 +217,27 @@ result is one document; a `--ndjson` stream is one record per line, each with an
 stream lives beside the tests, so a record that gains, loses or renames a field
 is a diff rather than a surprise.
 
-A failure names one `code`. The table below is the whole set, shared with the other
+A failure names one `code`. This is the whole set, shared with the other
 ports of this tool, so the same condition answers with the same name whichever
 one a script calls:
 
-| Code | Condition |
-| --- | --- |
-| `workspace_not_found` | the named workspace is not where discovery looked |
-| `invalid_workspace` | the document parsed, and does not describe a workspace |
-| `unsupported_key` | the document uses a key native loading does not implement |
-| `session_not_found` | the session the command names is not on the server |
-| `session_mismatch` | the named session exists and is not what the document describes |
-| `tmux_unavailable` | tmux could not be found or run |
-| `tmux_failed` | tmux ran and refused, or the server changed under the command |
-| `script_failed` | a child program could not be run, or ended badly |
-| `destination_exists` | the destination a capture was told to write is taken |
-| `usage` | the command was invoked in a way that cannot be carried out |
+- **`workspace_not_found`** — the named workspace is not where discovery
+  looked
+- **`invalid_workspace`** — the document parsed, and does not describe a
+  workspace
+- **`unsupported_key`** — the document uses a key native loading does not
+  implement
+- **`session_not_found`** — the session the command names is not on the
+  server
+- **`session_mismatch`** — the named session exists and is not what the
+  document describes
+- **`tmux_unavailable`** — tmux could not be found or run
+- **`tmux_failed`** — tmux ran and refused, or the server changed under the
+  command
+- **`script_failed`** — a child program could not be run, or ended badly
+- **`destination_exists`** — the destination a capture was told to write is
+  taken
+- **`usage`** — the command was invoked in a way that cannot be carried out
 
 A layout name is `invalid_workspace` when no tmux accepts it, and `tmux_failed`
 when this daemon will not take one another would: `main-horizontal-mirrored`
@@ -257,22 +262,22 @@ is still there.
 
 An `--ndjson` stream carries these events:
 
-| Event | Says |
-| --- | --- |
-| `started` | the command's work began, with `inputs` |
-| `workspace-started` | one input began, with that input's `effects` so far |
-| `session-created` | a session this load owns now exists |
-| `window-created` | a window exists, with `pane_total` still to come |
-| `pane-created` | a pane exists; its commands have not been sent |
-| `pane-completed` | a pane has had its commands sent |
-| `window-completed` | a window and every pane in it are done |
-| `workspace-completed` | one input finished, with its `effects` |
-| `script-started` | a child program is about to run |
-| `script-output` | a fragment of a child's output, naming its `stream` |
-| `script-completed` | a child ended, with `child_status` and `truncated` |
-| `warning` | something asked for that will not happen, with its own `code` |
-| `completed` | the command finished, carrying its whole result |
-| `failed` | the command stopped, carrying the result up to the failure |
+- **`started`** — the command's work began, with `inputs`
+- **`workspace-started`** — one input began, with that input's `effects` so
+  far
+- **`session-created`** — a session this load owns now exists
+- **`window-created`** — a window exists, with `pane_total` still to come
+- **`pane-created`** — a pane exists; its commands have not been sent
+- **`pane-completed`** — a pane has had its commands sent
+- **`window-completed`** — a window and every pane in it are done
+- **`workspace-completed`** — one input finished, with its `effects`
+- **`script-started`** — a child program is about to run
+- **`script-output`** — a fragment of a child's output, naming its `stream`
+- **`script-completed`** — a child ended, with `child_status` and `truncated`
+- **`warning`** — something asked for that will not happen, with its own
+  `code`
+- **`completed`** — the command finished, carrying its whole result
+- **`failed`** — the command stopped, carrying the result up to the failure
 
 A load's `effects` record describes one input: `input`, `input_index`,
 `session_id`, `session_name`, `reused`, `owned_session`, `changed`,
@@ -363,9 +368,8 @@ version; the bridge does not alter tmux's naming behavior.
 
 Captured subprocesses retain bounded output and report truncation. Linux uses
 an owned `setsid` session to terminate descendants retaining captured output;
-other platforms currently use known process handles and need additional
-reparenting tests. Successfully detached services with closed output streams
-are retained. Full attachment, platform and reference-corpus gates remain open.
+other platforms use known process handles. Successfully detached services
+with closed output streams are retained.
 
 ## Generated reference and development
 
