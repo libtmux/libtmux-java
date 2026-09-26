@@ -101,6 +101,8 @@ The same read, `display-message -p "#{session_name}"`, sent 200 times after 50 u
 
 This justifies keeping the process transport the default and control opt-in; it does not justify making a persistent control transport the default, and it does not offset what control mode gives up to get there. A control reply is an acknowledgement, not a completion — a queued `run-shell` finishes later, off this measurement. Standard input has no per-command channel in control mode, so `Pane.paste` still needs a process. One control client answers one request at a time, so concurrent callers serialize behind it, where the process transport runs them at once. An untargeted command sent over control resolves against the attached session, not whichever session a caller meant.
 
+A persistent, general-purpose control-backed transport was investigated and not built: `if-shell`'s guarded branch, and each command inside a semicolon-joined batch, answer as their own separate reply blocks rather than folding into one, so a transport forwarding this library's existing fenced and batched commands to a persistent control client would return truncated or empty results for nearly every typed operation, `Server.snapshot()` included. `docs/spikes/32-control-backed-transport.md` has the measurements.
+
 ## What this does not measure
 
 Not measured here: MCP tool call overhead, and FS2 stream throughput through the Cats Effect facade. Neither has an existing harness to extend — this file times a `Server` against real tmux, not a running MCP session or a bounded stream — and building one is its own project rather than an addition to this one.
