@@ -15,6 +15,7 @@ import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.snapshot.ServerMirror;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -95,6 +96,7 @@ final class ServerMirrorIntegrationTest {
     /** An announcement that changed nothing costs a rebuild, and wakes no one. */
     @Test
     void aRebuildThatFindsNothingNewPublishesNothing(Server fixture) throws Exception {
+        holdWindowNames(fixture);
         AtomicInteger dispatches = new AtomicInteger();
         ServerConfig counted = fixture.config().toBuilder()
                 .observer(report -> dispatches.incrementAndGet())
@@ -133,12 +135,12 @@ final class ServerMirrorIntegrationTest {
      */
     @Test
     void aPeriodicRebuildSeesWhatTmuxDoesNotAnnounce(Server fixture) throws Exception {
+        holdWindowNames(fixture);
         AtomicInteger dispatches = new AtomicInteger();
         ServerConfig counted = fixture.config().toBuilder()
                 .observer(report -> dispatches.incrementAndGet())
                 .build();
-        // A named window running no shell: no prompt retitles it and automatic-rename is off, so
-        // nothing tmux announces follows the retitle.
+        // No shell, so no prompt retitles the pane before the test does.
         Session elsewhere = fixture.newSession(
                 s -> s.named("elsewhere").firstWindowNamed("quiet").running("sleep", "600"));
         String pane = elsewhere.windows().get(0).panes().get(0).id().value();
@@ -156,6 +158,15 @@ final class ServerMirrorIntegrationTest {
                             .anyMatch(state -> state.title().equals("retitled-quietly")));
             assertEquals(Optional.empty(), listening.awaitNewer(epoch, Duration.ofMillis(500)), "tmux announced it");
         }
+    }
+
+    /**
+     * Stops automatic-rename on every window. The fixture's shell can start after the mirrors
+     * settle, and the rename it causes is announced to every control client, so a mirror would
+     * rebuild for it.
+     */
+    private static void holdWindowNames(Server fixture) {
+        fixture.run(List.of("set-option", "-gw", "automatic-rename", "off"));
     }
 
     /** Waits until the mirror's own attach has stopped causing rebuilds. */
