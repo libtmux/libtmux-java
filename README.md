@@ -422,7 +422,8 @@ the facade, never to the Java artifact. See the
 
 ## Requirements
 
-JDK 25 or newer.
+JDK 25 or newer, on the module path or the classpath: `libtmux` is the named
+module `io.github.libtmux`. The jars carry no OSGi bundle headers.
 
 **Any locale.** A JVM encodes a child process's arguments with the platform's
 encoding, which the locale decides before `main` runs, so under `LANG=C` — the
