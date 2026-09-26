@@ -103,6 +103,15 @@ tmux still answers that request in order, and every other caller and
 subscription is unaffected. Cancelling one coroutine or fiber on a shared
 client is therefore safe.
 
+`ControlClient` sends one command and reads one reply; it does not back a
+general `TmuxTransport`. tmux answers a queued `if-shell` branch, and each
+command inside a semicolon-joined batch, as its own separate reply block
+rather than folding the output into the command that queued it, so a
+transport built to forward this library's existing fenced and batched
+commands to a persistent control client would return truncated or empty
+results for nearly every typed operation
+([the spike](../spikes/32-control-backed-transport.md) has the measurements).
+
 A subscription has one reader. Reads from different threads one after another
 are fine, as a coroutine or fiber moves between threads, but a read that
 overlaps another is refused with `IllegalStateException`: two readers would
