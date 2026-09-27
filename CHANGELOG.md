@@ -12,6 +12,13 @@ production.
 
 ## Unreleased
 
+### Documented
+
+- **`SplitSpec.Builder.running`, `WindowSpec.Builder.running` and
+  `SessionSpec.Builder.running` say that tmux reports the pane before the
+  command has started.** Wait for the pane's command with `Pane.await` rather
+  than reading it straight after creating the pane. (#35)
+
 ## 0.0.1-alpha.17 — 2026-09-26
 
 No user-visible behaviour changed since 0.0.1-alpha.16: this is the same code,
