@@ -221,7 +221,10 @@ public final class SessionSpec {
             return this;
         }
 
-        /** Runs a command instead of the default shell. */
+        /**
+         * Runs a command instead of the default shell. tmux reports the session before the command
+         * has started, so wait for its pane's command with {@link Pane#await(java.util.function.Predicate, java.time.Duration)} rather than reading it at once.
+         */
         public Builder running(String... argv) {
             List<String> given = List.of(argv);
             if (given.isEmpty()) {

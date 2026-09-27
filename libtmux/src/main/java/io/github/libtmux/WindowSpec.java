@@ -192,7 +192,10 @@ public final class WindowSpec {
             return this;
         }
 
-        /** Runs a command instead of the session's shell. */
+        /**
+         * Runs a command instead of the session's shell. tmux reports the window before the command
+         * has started, so wait for its pane's command with {@link Pane#await(java.util.function.Predicate, java.time.Duration)} rather than reading it at once.
+         */
         public Builder running(String... argv) {
             List<String> given = List.of(argv);
             if (given.isEmpty()) {

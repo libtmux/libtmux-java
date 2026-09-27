@@ -337,6 +337,9 @@ public final class SplitSpec {
          * destroy the pane before the second listing that confirms it runs, and the split then
          * throws {@code TargetGoneException} even though tmux made the pane and ran the
          * command in it. {@link #keepOnExit} removes the race by keeping the pane there to be read.
+         *
+         * <p>tmux also reports the pane before its process has become this command, so a read at once
+         * can still see the process about to exec it: wait for the command with {@link Pane#await(java.util.function.Predicate, java.time.Duration)}.
          */
         public Builder running(String... argv) {
             start = PaneStart.command(argv);

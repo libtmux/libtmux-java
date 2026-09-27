@@ -648,13 +648,7 @@ final class ExecutionTest {
                         .filter(session -> session.name().equals("launched"))
                         .findFirst()
                         .orElseThrow();
-                assertEquals(
-                        WakeReason.SIGNALLED,
-                        launched.windows()
-                                .getFirst()
-                                .panes()
-                                .getFirst()
-                                .await(pane -> "cat".equals(pane.currentCommand()), Duration.ofSeconds(10)));
+                awaitCommand(launched.windows().getFirst().panes().getFirst(), "cat");
             } finally {
                 if (server.isAlive()) server.killServer();
             }
@@ -2617,10 +2611,7 @@ final class ExecutionTest {
                                 .detached()
                                 .running("cat")
                                 .build());
-                // tmux reports the pane before its process has become cat, and freeze reads what runs.
-                assertEquals(
-                        WakeReason.SIGNALLED,
-                        cat.await(pane -> "cat".equals(pane.currentCommand()), Duration.ofSeconds(10)));
+                awaitCommand(cat, "cat");
                 Result result = invoke("freeze", "qa-freeze-shell", "-S", socket.toString(), "-y", "--json", "--quiet");
                 assertEquals(0, result.code(), result.err());
                 var panes = new ObjectMapper()
@@ -2698,5 +2689,17 @@ final class ExecutionTest {
         org.junit.jupiter.api.Assumptions.assumeTrue(
                 io.github.libtmux.TmuxVersion.parse(client).atLeast(io.github.libtmux.TmuxVersion.parse("3.3a")),
                 "detached session sizing needs tmux 3.3a");
+    }
+
+    /**
+     * Waits for a pane to run {@code command}. tmux reports a pane before its process has become the
+     * command it was given, so a read straight after creating one can still see what is about to exec.
+     */
+    private static void awaitCommand(Pane pane, String command) throws InterruptedException {
+        WakeReason woke = pane.await(fresh -> command.equals(fresh.currentCommand()), Duration.ofSeconds(10));
+        assertEquals(
+                WakeReason.SIGNALLED,
+                woke,
+                () -> "the pane still runs " + pane.refresh().currentCommand());
     }
 }
