@@ -24,7 +24,7 @@ final class CatsObservationStressSuite extends FunSuite {
 
   def produce(pane: io.github.libtmux.Pane): Unit =
     pane.sendLine(
-      s"for i in $$(seq 1 $Lines); do echo line-$$i; done; echo $Marker"
+      s"for i in $$(seq 1 $Lines); do echo line-$$i; done; printf '%s_%s\\n' STRESS DONE; sleep 60"
     )
 
   test(
@@ -34,6 +34,7 @@ final class CatsObservationStressSuite extends FunSuite {
       val events = new AtomicLong(0)
       val gaps = new AtomicLong(0)
       val gapMissed = new AtomicLong(0)
+      val tail = new java.util.concurrent.atomic.AtomicReference("")
       var dropped = 0L
       val program = Server.resource[IO](fixture.config).use { server =>
         for {
@@ -41,19 +42,23 @@ final class CatsObservationStressSuite extends FunSuite {
           // Session.windows/Window.panes are CAPTURED: pure, not wrapped in F.
           window = session.windows.head
           pane = window.panes.head
-          _ <- IO(produce(pane.underlying.asJava))
+          // The workload starts inside the subscription, never before it: see the direct-style suite.
           _ <- Control.attach(session).use { control =>
             control.output(BufferCapacity).use { obs =>
-              obs.stream
+              IO(produce(pane.underlying.asJava)) *> obs.stream
                 .evalMap { step =>
                   IO {
                     step match {
                       case event: Delivery.Event[PaneOutput @unchecked] =>
                         events.incrementAndGet()
-                        event.value().data().contains(Marker)
+                        // The marker can straddle two pushes; see the direct-style suite.
+                        val seen = tail.get() + event.value().data()
+                        tail.set(seen.takeRight(Marker.length - 1))
+                        seen.contains(Marker)
                       case gap: Delivery.Gap[PaneOutput @unchecked] =>
                         gaps.incrementAndGet()
                         gapMissed.addAndGet(gap.missed())
+                        tail.set("")
                         false
                     }
                   }
