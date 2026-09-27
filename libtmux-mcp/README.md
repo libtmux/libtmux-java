@@ -1,5 +1,14 @@
 # libtmux-mcp
 
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Java MCP">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 **A tmux server, exposed to a model over the Model Context Protocol.**
 
 Point Claude Code, Claude Desktop, Codex, or any MCP client at a tmux socket and

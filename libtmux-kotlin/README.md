@@ -1,5 +1,14 @@
 # libtmux-kotlin
 
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Kotlin">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 **Coroutine wrapper classes, a session/window/split DSL, and `Flow`/`StateFlow`
 bridges over the Java API.**
 

@@ -1,5 +1,14 @@
 # libtmux-scala-cats
 
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Scala">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 **Cats Effect resources and FS2 observations for `libtmux-scala`.**
 
 This optional module adds scoped blocking execution and loss-aware control

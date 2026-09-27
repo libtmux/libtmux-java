@@ -12,6 +12,15 @@
 // service that is gone.
 plugins { id("com.vanniktech.maven.publish") }
 
+// Ship each JVM package's artwork alongside its classes. The BOM has no JAR.
+plugins.withId("java") {
+    tasks.named<ProcessResources>("processResources") {
+        from(layout.projectDirectory.dir("assets")) {
+            into("META-INF/libtmux/${project.name}")
+        }
+    }
+}
+
 group = "io.github.libtmux"
 version = providers.gradleProperty("libtmuxVersion").getOrElse("0.0.1-alpha.1-SNAPSHOT")
 

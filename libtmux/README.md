@@ -1,5 +1,14 @@
 # libtmux
 
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Java">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 **Typed, blocking access to a tmux server. No runtime dependencies.**
 
 This is the whole library. Everything else in the repository is an adapter to

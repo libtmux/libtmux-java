@@ -1,5 +1,14 @@
 # libtmux-workspace
 
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Java workspace">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 **Builds a session from a tmuxp-shaped YAML description.**
 
 Enough of [tmuxp](https://tmuxp.git-pull.com/)'s format to describe a workspace

@@ -1,5 +1,14 @@
 # libtmux-jackson
 
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Java">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 **A filter expression, as a versioned JSON document.**
 
 The core has no dependencies and never will. This module is where Jackson lives,

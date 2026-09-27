@@ -1,5 +1,14 @@
 # libtmux-scala
 
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Scala">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 **Scala 3 collections and opaque handles over libtmux for Java.**
 
 Use Scala collections and explicit effects to inspect and operate tmux through
