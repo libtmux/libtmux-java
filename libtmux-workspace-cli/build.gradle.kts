@@ -13,7 +13,12 @@ application {
     applicationName = "tmux-workspace"
 }
 
-distributions.main { contents { from("README.md") } }
+distributions.main {
+    contents {
+        from("README.md")
+        from("assets") { into("assets") }
+    }
+}
 
 tasks.jar { manifest { attributes("Automatic-Module-Name" to "io.github.libtmux.workspace.cli") } }
 

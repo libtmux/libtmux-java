@@ -1,3 +1,12 @@
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Scala">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 # libtmux-scala-cats
 
 **Cats Effect resources and FS2 observations for `libtmux-scala`.**

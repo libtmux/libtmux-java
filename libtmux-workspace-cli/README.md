@@ -1,3 +1,12 @@
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Java workspace">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 # libtmux-workspace-cli
 
 **`tmux-workspace` loads, captures, converts and imports tmux workspaces.**

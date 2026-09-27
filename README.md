@@ -1,3 +1,12 @@
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Java">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 # libtmux for Java
 
 [![CI](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml)

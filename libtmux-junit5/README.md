@@ -1,3 +1,12 @@
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Java">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 # libtmux-junit5
 
 **A JUnit 5 extension that gives each test its own tmux server, and guarantees it
