@@ -364,7 +364,9 @@ final class ControlModeIntegrationTest {
         try (ControlClient client = attach(server);
                 EventSubscription<PaneOutput> output = client.subscribeOutput(256)) {
             assertTrue(client.send("refresh-client", "-f", "pause-after=30").succeeded());
-            client.send("send-keys", "-t", "libtmux", "echo flow-$((6*7))", "Enter");
+            // A fresh process that prints by itself: keys typed into the session's shell reach it
+            // only once that shell reads them, which a shell still starting may not do in time.
+            client.send("respawn-pane", "-k", "-t", "libtmux", "printf 'flow-%s\\n' 42; exec sleep 60");
 
             StringBuilder text = new StringBuilder();
             long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
@@ -376,7 +378,7 @@ final class ControlModeIntegrationTest {
                 text.append(Delivery.kept(next.orElseThrow()).data());
             }
 
-            assertTrue(text.indexOf("flow-42") >= 0, "no output arrived once tmux flow control was on");
+            assertTrue(text.indexOf("flow-42") >= 0, () -> "no output arrived once tmux flow control was on: " + text);
         }
     }
 

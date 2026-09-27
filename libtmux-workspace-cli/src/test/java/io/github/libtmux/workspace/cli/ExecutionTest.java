@@ -8,15 +8,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.SplitSpec;
+import io.github.libtmux.WakeReason;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.HashMap;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -645,8 +648,7 @@ final class ExecutionTest {
                         .filter(session -> session.name().equals("launched"))
                         .findFirst()
                         .orElseThrow();
-                assertEquals(
-                        "cat", launched.windows().getFirst().panes().getFirst().currentCommand());
+                awaitCommand(launched.windows().getFirst().panes().getFirst(), "cat");
             } finally {
                 if (server.isAlive()) server.killServer();
             }
@@ -2600,7 +2602,7 @@ final class ExecutionTest {
             try {
                 Session session =
                         server.newSession(s -> s.named("qa-freeze-shell").in(directory));
-                session.windows()
+                Pane cat = session.windows()
                         .getFirst()
                         .panes()
                         .getFirst()
@@ -2609,6 +2611,7 @@ final class ExecutionTest {
                                 .detached()
                                 .running("cat")
                                 .build());
+                awaitCommand(cat, "cat");
                 Result result = invoke("freeze", "qa-freeze-shell", "-S", socket.toString(), "-y", "--json", "--quiet");
                 assertEquals(0, result.code(), result.err());
                 var panes = new ObjectMapper()
@@ -2686,5 +2689,17 @@ final class ExecutionTest {
         org.junit.jupiter.api.Assumptions.assumeTrue(
                 io.github.libtmux.TmuxVersion.parse(client).atLeast(io.github.libtmux.TmuxVersion.parse("3.3a")),
                 "detached session sizing needs tmux 3.3a");
+    }
+
+    /**
+     * Waits for a pane to run {@code command}. tmux reports a pane before its process has become the
+     * command it was given, so a read straight after creating one can still see what is about to exec.
+     */
+    private static void awaitCommand(Pane pane, String command) throws InterruptedException {
+        WakeReason woke = pane.await(fresh -> command.equals(fresh.currentCommand()), Duration.ofSeconds(10));
+        assertEquals(
+                WakeReason.SIGNALLED,
+                woke,
+                () -> "the pane still runs " + pane.refresh().currentCommand());
     }
 }

@@ -23,9 +23,12 @@ final class ObservationStressSuite extends FunSuite {
   // small capacity needs to be this small to reliably force a real Delivery.Gap overflow.
   val Marker = "STRESS_DONE"
 
+  // The marker is printed from two halves, so the command line the shell echoes never holds it,
+  // and nothing follows it: a prompt redrawn after it would be one more push, and in a buffer this
+  // small that push could evict the marker's first half.
   def produce(pane: Pane): Unit =
     pane.sendLine(
-      s"for i in $$(seq 1 $Lines); do echo line-$$i; done; echo $Marker"
+      s"for i in $$(seq 1 $Lines); do echo line-$$i; done; printf '%s_%s\\n' STRESS DONE; sleep 60"
     )
 
   test(
@@ -35,25 +38,31 @@ final class ObservationStressSuite extends FunSuite {
       Using.resource(Server.open(fixture.config)) { server =>
         val session = server.newSession("stress-direct")
         val pane = session.windows.head.panes.head
-        produce(pane)
-
+        // Subscribed before the workload starts: output printed before the subscription exists
+        // is never delivered, and a fast shell finishes this loop, marker and all, in that gap.
         val control = server.control(session)
         val sub = control.subscribeOutput(BufferCapacity)
+        produce(pane)
         var events = 0L
         var gapMissed = 0L
         var gaps = 0L
         var sawMarker = false
-        DirectObservation(sub).read(java.time.Duration.ofSeconds(10)) { steps =>
+        // tmux cuts %output by byte count, so the marker can straddle two pushes.
+        var tail = ""
+        DirectObservation(sub).read(java.time.Duration.ofSeconds(25)) { steps =>
           steps.foreach {
             case event: Delivery.Event[PaneOutput @unchecked] =>
               events += 1
-              if (event.value().data().contains(Marker)) {
+              val seen = tail + event.value().data()
+              if (seen.contains(Marker)) {
                 sawMarker = true
                 sub.close()
               }
+              tail = seen.takeRight(Marker.length - 1)
             case gap: Delivery.Gap[PaneOutput @unchecked] =>
               gaps += 1
               gapMissed += gap.missed()
+              tail = ""
           }
         }
         val dropped = sub.droppedCount()

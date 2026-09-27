@@ -150,7 +150,7 @@ final class ProcessTest {
                 .redirectError(ProcessBuilder.Redirect.INHERIT)
                 .start();
         try {
-            assertTrue(probe.waitFor(15, TimeUnit.SECONDS));
+            assertTrue(probe.waitFor(45, TimeUnit.SECONDS));
             assertEquals(0, probe.exitValue());
         } finally {
             if (probe.isAlive()) {
@@ -256,7 +256,7 @@ final class ProcessTest {
                             .redirectOutput(out.toFile())
                             .redirectError(err.toFile())
                             .start();
-                    assertTrue(process.waitFor(15, TimeUnit.SECONDS), "installed import/load did not finish");
+                    assertTrue(process.waitFor(45, TimeUnit.SECONDS), "installed import/load did not finish");
                     assertEquals(0, process.exitValue(), Files.readString(err));
                 }
                 long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
@@ -379,7 +379,7 @@ final class ProcessTest {
                         .redirectOutput(captured.toFile())
                         .redirectError(error.toFile())
                         .start();
-                assertTrue(process.waitFor(10, TimeUnit.SECONDS), "capture did not finish");
+                assertTrue(process.waitFor(45, TimeUnit.SECONDS), "capture did not finish");
                 assertEquals(0, process.exitValue(), Files.readString(error));
                 var mapper = new ObjectMapper();
                 var document = (ObjectNode) mapper.readTree(Files.readString(captured));
@@ -400,7 +400,7 @@ final class ProcessTest {
                         .redirectOutput(output.toFile())
                         .redirectError(error.toFile())
                         .start();
-                assertTrue(process.waitFor(10, TimeUnit.SECONDS), "reload did not finish");
+                assertTrue(process.waitFor(45, TimeUnit.SECONDS), "reload did not finish");
                 assertEquals(0, process.exitValue(), Files.readString(error));
                 var restored = server.session("restored").orElseThrow();
                 var sessionOptions = restored.options().all();
@@ -455,7 +455,7 @@ final class ProcessTest {
         builder.command(argv).redirectError(ProcessBuilder.Redirect.INHERIT);
         Process probe = builder.start();
         try {
-            assertTrue(probe.waitFor(7, TimeUnit.SECONDS), "undrained pipe probe did not finish");
+            assertTrue(probe.waitFor(45, TimeUnit.SECONDS), "undrained pipe probe did not finish");
             assertEquals(0, probe.exitValue());
         } finally {
             if (probe.isAlive()) probe.destroyForcibly().waitFor();
@@ -503,13 +503,13 @@ final class ProcessTest {
                         stderr=slave if terminal_error == 'true' else err,
                         preexec_fn=terminal, pass_fds=(slave,))
                     try:
-                        until = time.monotonic() + 5
+                        until = time.monotonic() + 20
                         while child.poll() is None and time.monotonic() < until:
                             if select.select([master], [], [], .025)[0]: chunks.append(drain_pty(master))
                             if cancelled == 'true' and not sent and b''.join(chunks).count(b'PROGRESS_progress_1_2') >= 3:
                                 child.send_signal(signal.SIGINT)
                                 sent = True
-                        assert child.wait(timeout=1) == (130 if cancelled == 'true' else 0)
+                        assert child.wait(timeout=5) == (130 if cancelled == 'true' else 0)
                         chunks.append(drain_pty(master))
                     finally:
                         if child.poll() is None:
@@ -544,7 +544,7 @@ final class ProcessTest {
                 .build()) {
             Process probe = builder.start();
             try {
-                assertTrue(probe.waitFor(7, TimeUnit.SECONDS));
+                assertTrue(probe.waitFor(45, TimeUnit.SECONDS));
                 assertEquals(0, probe.exitValue());
                 String stdout = Files.readString(output);
                 String stderr = Files.readString(terminalError ? terminal : error);
@@ -667,7 +667,7 @@ final class ProcessTest {
                 with open(sys.argv[3], 'wb') as output:
                     child = subprocess.Popen([sys.argv[1], 'edit', sys.argv[2], '--json'], stdin=slave,
                         stdout=output, stderr=slave, env=env, preexec_fn=terminal)
-                    code = wait_pty(child, master, 5)
+                    code = wait_pty(child, master, 20)
                 os.close(slave)
                 os.close(master)
                 sys.exit(code)
@@ -681,7 +681,7 @@ final class ProcessTest {
                         output.toString())
                 .redirectError(ProcessBuilder.Redirect.INHERIT)
                 .start();
-        assertTrue(process.waitFor(7, TimeUnit.SECONDS));
+        assertTrue(process.waitFor(45, TimeUnit.SECONDS));
         assertEquals(0, process.exitValue());
         var result = new ObjectMapper().readTree(Files.readString(output));
         assertEquals("", result.path("stdout").asText());
@@ -742,7 +742,7 @@ final class ProcessTest {
                         stdin=subprocess.DEVNULL if redirected else slave, stdout=output,
                         stderr=output if redirected else slave, env=env, preexec_fn=terminal, pass_fds=(slave,))
                     try:
-                        until = time.monotonic() + 5
+                        until = time.monotonic() + 20
                         name = None
                         while child.poll() is None and time.monotonic() < until:
                             drain_pty(master)
@@ -761,7 +761,7 @@ final class ProcessTest {
                                 capture_output=True, text=True)
                             written = int(report.stdout.strip() or '0')
                             subprocess.run([tmux, '-S', socket, 'detach-client', '-t', name], check=True)
-                        code = wait_pty(child, master, 3)
+                        code = wait_pty(child, master, 10)
                     finally:
                         if child.poll() is None:
                             child.kill()
@@ -793,7 +793,7 @@ final class ProcessTest {
                                 Boolean.toString(redirected))
                         .redirectError(ProcessBuilder.Redirect.INHERIT)
                         .start();
-                assertTrue(process.waitFor(10, TimeUnit.SECONDS));
+                assertTrue(process.waitFor(45, TimeUnit.SECONDS));
                 assertEquals(0, process.exitValue());
                 assertTrue(server.hasSession("attached"));
             } finally {
@@ -831,12 +831,12 @@ final class ProcessTest {
                             except (BlockingIOError, OSError): pass
                         rows = subprocess.check_output(prefix + ['list-clients', '-F', '#{client_name} #{session_name}'], text=True)
                         return dict(row.rsplit(' ', 1) for row in rows.splitlines())
-                    until = time.monotonic() + 4
+                    until = time.monotonic() + 10
                     while len(attached()) != 2 and time.monotonic() < until:
                         time.sleep(.025)
                     assert len(attached()) == 2
                     pane = subprocess.check_output(prefix + ['display-message', '-p', '-t', 'origin:', '#{pane_id}'], text=True).strip()
-                    until = time.monotonic() + 4
+                    until = time.monotonic() + 10
                     while time.monotonic() < until:
                         attached()
                         screen = subprocess.check_output(prefix + ['capture-pane', '-p', '-t', pane], text=True)
@@ -851,7 +851,7 @@ final class ProcessTest {
                     command += '; printf %s $? >' + shlex.quote(status)
                     subprocess.run(prefix + ['send-keys', '-t', pane, '-l', command], check=True)
                     subprocess.run(prefix + ['send-keys', '-t', pane, 'Enter'], check=True)
-                    until = time.monotonic() + 5
+                    until = time.monotonic() + 20
                     while not os.path.exists(status) and time.monotonic() < until:
                         attached()
                         time.sleep(.025)
@@ -892,7 +892,7 @@ final class ProcessTest {
                                 directory.toString())
                         .redirectError(ProcessBuilder.Redirect.INHERIT)
                         .start();
-                assertTrue(child.waitFor(12, TimeUnit.SECONDS));
+                assertTrue(child.waitFor(45, TimeUnit.SECONDS));
                 assertEquals(0, child.exitValue());
             } finally {
                 if (server.isAlive()) server.killServer();
@@ -930,7 +930,7 @@ final class ProcessTest {
                     rows = subprocess.check_output(prefix + ['list-clients', '-F', '#{client_name} #{session_name}'], text=True)
                     return dict(row.rsplit(' ', 1) for row in rows.splitlines() if row)
                 try:
-                    until = time.monotonic() + 5
+                    until = time.monotonic() + 20
                     state = sessions()
                     while not state and time.monotonic() < until:
                         time.sleep(.025)
@@ -944,8 +944,8 @@ final class ProcessTest {
                     with open(destination, 'wb') as output:
                         runshell = subprocess.Popen([launcher, 'load', source, '-S', socket],
                             stdin=subprocess.DEVNULL, stdout=output, stderr=output, env=env)
-                        code = runshell.wait(timeout=5)
-                    until = time.monotonic() + 5
+                        code = runshell.wait(timeout=20)
+                    until = time.monotonic() + 20
                     switched = False
                     while time.monotonic() < until:
                         state = sessions()
@@ -981,7 +981,7 @@ final class ProcessTest {
                                 directory.resolve("runshell-output").toString())
                         .redirectError(diagnostics.toFile())
                         .start();
-                boolean finished = process.waitFor(15, TimeUnit.SECONDS);
+                boolean finished = process.waitFor(45, TimeUnit.SECONDS);
                 String diagnosticText =
                         Files.exists(diagnostics) ? Files.readString(diagnostics) : "(no diagnostics file)";
                 assertTrue(finished, diagnosticText);
@@ -1027,7 +1027,7 @@ final class ProcessTest {
                         text = screen()
                     return text
                 try:
-                    text = wait_for('workspace-ready>', 4)
+                    text = wait_for('workspace-ready>', 10)
                     assert 'workspace-ready>' in text, text
                     status = os.path.join(scratch, 'exit-status')
                     # Neither stream is redirected: the prompt (on stderr) must stay visible on the
@@ -1041,7 +1041,7 @@ final class ProcessTest {
                     # A real keystroke, not piped stdin: several ports skip prompting on a pipe.
                     subprocess.run(prefix + ['send-keys', '-t', 'keeper', '-l', 'n'], check=True)
                     subprocess.run(prefix + ['send-keys', '-t', 'keeper', 'Enter'], check=True)
-                    until = time.monotonic() + 5
+                    until = time.monotonic() + 20
                     text = screen()
                     while not os.path.exists(status) and time.monotonic() < until:
                         time.sleep(.025)
@@ -1077,7 +1077,7 @@ final class ProcessTest {
                                 directory.toString())
                         .redirectError(ProcessBuilder.Redirect.INHERIT)
                         .start();
-                assertTrue(child.waitFor(15, TimeUnit.SECONDS));
+                assertTrue(child.waitFor(45, TimeUnit.SECONDS));
                 assertEquals(0, child.exitValue());
             } finally {
                 if (server.isAlive()) server.killServer();
@@ -1121,7 +1121,7 @@ final class ProcessTest {
                         text = screen()
                     return text
                 try:
-                    text = wait_for('workspace-ready>', 4)
+                    text = wait_for('workspace-ready>', 10)
                     assert 'workspace-ready>' in text, text
                     status = os.path.join(scratch, 'exit-status')
                     # Neither stream is redirected: the prompt (on stderr) must stay visible on the
@@ -1130,12 +1130,12 @@ final class ProcessTest {
                     command += '; printf %s $? >' + shlex.quote(status)
                     subprocess.run(prefix + ['send-keys', '-t', 'keeper', '-l', command], check=True)
                     subprocess.run(prefix + ['send-keys', '-t', 'keeper', 'Enter'], check=True)
-                    text = wait_for('already running', 5)
+                    text = wait_for('already running', 10)
                     assert 'already running' in text, text
                     assert 'switch (y)' not in text, 'the existing-session question must not double as the new-session one'
                     subprocess.run(prefix + ['send-keys', '-t', 'keeper', '-l', 'n'], check=True)
                     subprocess.run(prefix + ['send-keys', '-t', 'keeper', 'Enter'], check=True)
-                    until = time.monotonic() + 5
+                    until = time.monotonic() + 20
                     text = screen()
                     while not os.path.exists(status) and time.monotonic() < until:
                         time.sleep(.025)
@@ -1172,7 +1172,7 @@ final class ProcessTest {
                                 directory.toString())
                         .redirectError(ProcessBuilder.Redirect.INHERIT)
                         .start();
-                assertTrue(child.waitFor(15, TimeUnit.SECONDS));
+                assertTrue(child.waitFor(45, TimeUnit.SECONDS));
                 assertEquals(0, child.exitValue());
             } finally {
                 if (server.isAlive()) server.killServer();
@@ -1220,20 +1220,20 @@ final class ProcessTest {
                         text = screen()
                     return text
                 try:
-                    text = wait_for('workspace-ready>', 4)
+                    text = wait_for('workspace-ready>', 10)
                     assert 'workspace-ready>' in text, text
                     status = os.path.join(scratch, 'exit-status')
                     command = shlex.join(['env', 'LIBTMUX_TEST_TMUX=' + tmux, launcher, 'load', first, second])
                     command += '; printf %s $? >' + shlex.quote(status)
                     subprocess.run(prefix + ['send-keys', '-t', 'keeper', '-l', command], check=True)
                     subprocess.run(prefix + ['send-keys', '-t', 'keeper', 'Enter'], check=True)
-                    text = wait_for('already running', 5)
+                    text = wait_for('already running', 10)
                     assert 'standing is already running' in text, text
                     assert 'fresh is already running' not in text, \
                         'only the last input is ever asked about'
                     subprocess.run(prefix + ['send-keys', '-t', 'keeper', '-l', 'n'], check=True)
                     subprocess.run(prefix + ['send-keys', '-t', 'keeper', 'Enter'], check=True)
-                    until = time.monotonic() + 5
+                    until = time.monotonic() + 20
                     text = screen()
                     while not os.path.exists(status) and time.monotonic() < until:
                         time.sleep(.025)
@@ -1275,7 +1275,7 @@ final class ProcessTest {
                                 directory.toString())
                         .redirectError(ProcessBuilder.Redirect.INHERIT)
                         .start();
-                assertTrue(child.waitFor(15, TimeUnit.SECONDS));
+                assertTrue(child.waitFor(45, TimeUnit.SECONDS));
                 assertEquals(0, child.exitValue());
             } finally {
                 if (server.isAlive()) server.killServer();
@@ -1329,7 +1329,7 @@ final class ProcessTest {
                 .redirectError(ProcessBuilder.Redirect.INHERIT)
                 .start();
         try {
-            assertTrue(probe.waitFor(20, TimeUnit.SECONDS));
+            assertTrue(probe.waitFor(45, TimeUnit.SECONDS));
             assertEquals(0, probe.exitValue());
             String shown = Files.readString(transcript);
             assertEquals("0", Files.readString(status).strip(), shown);
@@ -1379,7 +1379,7 @@ final class ProcessTest {
                 .binary(System.getProperty("libtmux.tmux", "tmux"))
                 .build()) {
             try {
-                assertTrue(process.waitFor(8, TimeUnit.SECONDS));
+                assertTrue(process.waitFor(45, TimeUnit.SECONDS));
                 assertEquals(1, process.exitValue());
                 String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
                 String error = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);

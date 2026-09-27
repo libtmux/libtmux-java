@@ -32,7 +32,7 @@ Server.resource[IO](config).use { server =>
             .collect { case value: Notification.SessionRenamed => value }
             .filter(_.name() == renamed.info.name())
             .take(1)
-            .compile.lastOrError.timeout(1.second)
+            .compile.lastOrError.timeout(5.seconds)
           drops <- observation.droppedCount
           _ <- IO {
             assert(event.session().value() == session.info.id().value())
