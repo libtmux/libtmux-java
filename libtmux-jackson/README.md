@@ -1,3 +1,5 @@
+# libtmux-jackson
+
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -6,8 +8,6 @@
   </picture>
 </p>
 <!-- /libtmux-logo -->
-
-# libtmux-jackson
 
 **A filter expression, as a versioned JSON document.**
 

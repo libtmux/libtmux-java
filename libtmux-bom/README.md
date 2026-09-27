@@ -1,3 +1,5 @@
+# libtmux-bom
+
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -6,8 +8,6 @@
   </picture>
 </p>
 <!-- /libtmux-logo -->
-
-# libtmux-bom
 
 **Name one BOM version. Every BOM-managed libtmux coordinate follows it.**
 

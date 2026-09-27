@@ -1,3 +1,5 @@
+# libtmux-workspace-cli
+
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -6,8 +8,6 @@
   </picture>
 </p>
 <!-- /libtmux-logo -->
-
-# libtmux-workspace-cli
 
 **`tmux-workspace` loads, captures, converts and imports tmux workspaces.**
 

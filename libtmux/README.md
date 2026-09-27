@@ -1,3 +1,5 @@
+# libtmux
+
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -6,8 +8,6 @@
   </picture>
 </p>
 <!-- /libtmux-logo -->
-
-# libtmux
 
 **Typed, blocking access to a tmux server. No runtime dependencies.**
 

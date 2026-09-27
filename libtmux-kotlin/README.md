@@ -1,3 +1,5 @@
+# libtmux-kotlin
+
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -6,8 +8,6 @@
   </picture>
 </p>
 <!-- /libtmux-logo -->
-
-# libtmux-kotlin
 
 **Coroutine wrapper classes, a session/window/split DSL, and `Flow`/`StateFlow`
 bridges over the Java API.**

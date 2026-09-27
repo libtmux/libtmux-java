@@ -1,3 +1,5 @@
+# libtmux-scala-ox
+
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -6,8 +8,6 @@
   </picture>
 </p>
 <!-- /libtmux-logo -->
-
-# libtmux-scala-ox
 
 **An Ox `Flow` over libtmux subscriptions and live views, for structured
 concurrency on virtual threads.**

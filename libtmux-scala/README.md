@@ -1,3 +1,5 @@
+# libtmux-scala
+
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -6,8 +8,6 @@
   </picture>
 </p>
 <!-- /libtmux-logo -->
-
-# libtmux-scala
 
 **Scala 3 collections and opaque handles over libtmux for Java.**
 

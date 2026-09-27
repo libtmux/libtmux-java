@@ -1,3 +1,5 @@
+# libtmux-scala-cats
+
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -6,8 +8,6 @@
   </picture>
 </p>
 <!-- /libtmux-logo -->
-
-# libtmux-scala-cats
 
 **Cats Effect resources and FS2 observations for `libtmux-scala`.**
 

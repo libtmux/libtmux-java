@@ -1,3 +1,5 @@
+# libtmux-workspace
+
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -6,8 +8,6 @@
   </picture>
 </p>
 <!-- /libtmux-logo -->
-
-# libtmux-workspace
 
 **Builds a session from a tmuxp-shaped YAML description.**
 

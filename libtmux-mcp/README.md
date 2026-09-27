@@ -1,3 +1,5 @@
+# libtmux-mcp
+
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -6,8 +8,6 @@
   </picture>
 </p>
 <!-- /libtmux-logo -->
-
-# libtmux-mcp
 
 **A tmux server, exposed to a model over the Model Context Protocol.**
 
