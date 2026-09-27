@@ -8,15 +8,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.SplitSpec;
+import io.github.libtmux.WakeReason;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.HashMap;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -646,7 +649,12 @@ final class ExecutionTest {
                         .findFirst()
                         .orElseThrow();
                 assertEquals(
-                        "cat", launched.windows().getFirst().panes().getFirst().currentCommand());
+                        WakeReason.SIGNALLED,
+                        launched.windows()
+                                .getFirst()
+                                .panes()
+                                .getFirst()
+                                .await(pane -> "cat".equals(pane.currentCommand()), Duration.ofSeconds(10)));
             } finally {
                 if (server.isAlive()) server.killServer();
             }
@@ -2600,7 +2608,7 @@ final class ExecutionTest {
             try {
                 Session session =
                         server.newSession(s -> s.named("qa-freeze-shell").in(directory));
-                session.windows()
+                Pane cat = session.windows()
                         .getFirst()
                         .panes()
                         .getFirst()
@@ -2609,6 +2617,10 @@ final class ExecutionTest {
                                 .detached()
                                 .running("cat")
                                 .build());
+                // tmux reports the pane before its process has become cat, and freeze reads what runs.
+                assertEquals(
+                        WakeReason.SIGNALLED,
+                        cat.await(pane -> "cat".equals(pane.currentCommand()), Duration.ofSeconds(10)));
                 Result result = invoke("freeze", "qa-freeze-shell", "-S", socket.toString(), "-y", "--json", "--quiet");
                 assertEquals(0, result.code(), result.err());
                 var panes = new ObjectMapper()
