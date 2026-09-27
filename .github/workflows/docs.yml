@@ -58,7 +58,7 @@ jobs:
   # A pull request builds `latest` without publishing; this port has no
   # preview role.
   build:
-    uses: libtmux/docs/.github/workflows/port-docs.yml@36c9452686a69c44d8be44757477985d499c6e51
+    uses: libtmux/docs/.github/workflows/port-docs.yml@f835cabedfaed5822a95bbeeee8512802833b3dc
     with:
       port: ${{ inputs.language && inputs.language != 'all' && inputs.language || 'java' }}
       include-wrappers: ${{ inputs.language == '' || inputs.language == 'all' }}
@@ -84,7 +84,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: libtmux/docs/.github/workflows/reusable-deploy.yml@36c9452686a69c44d8be44757477985d499c6e51
+    uses: libtmux/docs/.github/workflows/reusable-deploy.yml@f835cabedfaed5822a95bbeeee8512802833b3dc
     with:
       # Unprefixed by locale: reusable-deploy prepends <locale>/ itself when
       # `port` is set, so each language gets its own version tree.
