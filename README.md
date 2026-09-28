@@ -1,5 +1,3 @@
-# libtmux for Java
-
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -9,20 +7,26 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
+# libtmux for Java
+
+Typed, blocking access to [tmux](https://github.com/tmux/tmux) from the JVM.
+
+A sibling of the Python [libtmux](https://libtmux.git-pull.com/), targeting
+practical parity while reading as Java rather than as a translation.
+
 [![CI](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml)
 [![tmux matrix](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux.svg)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#status)
 
+</div>
+
 > **Alpha.** Releases carry an `-alpha` prerelease tag. The API is not
 > settled, and any release may change or remove exported identifiers without a
 > deprecation period. Pin an exact version. Not recommended for production.
-
-Typed, blocking access to [tmux](https://github.com/tmux/tmux) from the JVM.
-
-A sibling of the Python [libtmux](https://libtmux.git-pull.com/), targeting
-practical parity while reading as Java rather than as a translation.
 
 **JDK 25 or newer.** Add the library through
 [`libtmux-bom`](libtmux-bom/), which names one version for every BOM-managed

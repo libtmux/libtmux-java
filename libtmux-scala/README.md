@@ -1,5 +1,3 @@
-# libtmux-scala
-
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -9,7 +7,13 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
+# libtmux-scala
+
 **Scala 3 collections and opaque handles over libtmux for Java.**
+
+</div>
 
 Use Scala collections and explicit effects to inspect and operate tmux through
 libtmux for Java. The direct-style facade's handles are opaque aliases of the

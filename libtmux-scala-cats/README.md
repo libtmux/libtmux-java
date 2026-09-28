@@ -1,5 +1,3 @@
-# libtmux-scala-cats
-
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -9,7 +7,13 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
+# libtmux-scala-cats
+
 **Cats Effect resources and FS2 observations for `libtmux-scala`.**
+
+</div>
 
 This optional module adds scoped blocking execution and loss-aware control
 observations. `libtmux-scala` does not depend on Cats Effect or FS2; add this

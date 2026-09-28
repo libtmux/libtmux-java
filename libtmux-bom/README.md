@@ -1,5 +1,3 @@
-# libtmux-bom
-
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -9,7 +7,13 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
+# libtmux-bom
+
 **Name one BOM version. Every BOM-managed libtmux coordinate follows it.**
+
+</div>
 
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
