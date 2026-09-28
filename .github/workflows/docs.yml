@@ -1,8 +1,8 @@
 name: docs
 
-# Publishes this port's documentation to libtmux.org: trunk as
-# /en/java/latest/, and each `v*` release tag as its own version plus an
-# alias, `next` for a prerelease and `stable` (the default) for a release.
+# Publishes the library family to libtmux.org. Each language owns its
+# prefix, with trunk at latest and each release tag at its own version
+# plus next (prerelease) or stable (release).
 #
 # libtmux/docs builds and publishes the tree, through two reusable workflows
 # pinned to one commit: port-docs.yml decides which versions an event builds
@@ -16,6 +16,12 @@ on:
     tags: ['v*']
   workflow_dispatch:
     inputs:
+      language:
+        description: Library to publish; all includes the parent and wrappers
+        required: true
+        type: choice
+        options: [all, java, kotlin, scala]
+        default: all
       source-ref:
         description: Exact source ref to build
         required: true
@@ -52,9 +58,10 @@ jobs:
   # A pull request builds `latest` without publishing; this port has no
   # preview role.
   build:
-    uses: libtmux/docs/.github/workflows/port-docs.yml@216601c86d98505c46b00782ed8fd9269c621d7c
+    uses: libtmux/docs/.github/workflows/port-docs.yml@6f721f9010b5dac60ef92011f325572d9368ca4b
     with:
-      port: java
+      port: ${{ inputs.language && inputs.language != 'all' && inputs.language || 'java' }}
+      include-wrappers: ${{ inputs.language == '' || inputs.language == 'all' }}
       source-ref: ${{ inputs.source-ref }}
       version: ${{ inputs.version }}
       version-kind: ${{ inputs.version-kind }}
@@ -62,15 +69,14 @@ jobs:
       resolves-to: ${{ inputs.resolves-to }}
       publish: ${{ inputs.publish == true }}
 
-  # One publication to this port's prefixes at a time, a tag's two legs
-  # included: both rewrite manifest/java.json. Only publishing queues; a pull
-  # request's build never waits behind a deploy. `max`, so a queued tag is
-  # never dropped for a newer run.
+  # Serialize versions of one language because they share its manifest.
+  # Sibling languages have separate prefixes and may publish concurrently.
+  # Queue every publication so a newer run cannot drop a release tag.
   publish:
     needs: build
     if: needs.build.outputs.should-publish == 'true'
     concurrency:
-      group: docs-deploy-${{ github.repository }}
+      group: docs-deploy-${{ github.repository }}-${{ matrix.port }}
       queue: max
     strategy:
       fail-fast: false
@@ -78,14 +84,14 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: libtmux/docs/.github/workflows/reusable-deploy.yml@216601c86d98505c46b00782ed8fd9269c621d7c
+    uses: libtmux/docs/.github/workflows/reusable-deploy.yml@6f721f9010b5dac60ef92011f325572d9368ca4b
     with:
       # Unprefixed by locale: reusable-deploy prepends <locale>/ itself when
-      # `port` is set, so this becomes en/java/<version>.
-      path-prefix: java/${{ matrix.version }}
-      artifact: docs-java-${{ matrix.version }}
+      # `port` is set, so each language gets its own version tree.
+      path-prefix: ${{ matrix.port }}/${{ matrix.version }}
+      artifact: docs-${{ matrix.port }}-${{ matrix.version }}
       version-kind: ${{ matrix.kind }}
-      port: java
+      port: ${{ matrix.port }}
       version: ${{ matrix.version }}
       label: ${{ matrix.version }}
       is-default: ${{ matrix.isDefault }}
