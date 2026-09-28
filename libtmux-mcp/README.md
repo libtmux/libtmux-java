@@ -1,5 +1,3 @@
-# libtmux-mcp
-
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -9,7 +7,13 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
+# libtmux-mcp
+
 **A tmux server, exposed to a model over the Model Context Protocol.**
+
+</div>
 
 Point Claude Code, Claude Desktop, Codex, or any MCP client at a tmux socket and
 it can find its way around, read what a pane is showing, run a command and wait

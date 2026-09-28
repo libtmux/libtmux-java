@@ -1,5 +1,3 @@
-# libtmux-jackson
-
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -9,7 +7,13 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
+# libtmux-jackson
+
 **A filter expression, as a versioned JSON document.**
+
+</div>
 
 The core has no dependencies and never will. This module is where Jackson lives,
 so that a filter can be stored, sent over a wire, or written by something that is

@@ -1,5 +1,3 @@
-# libtmux-scala-ox
-
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -9,8 +7,14 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
+# libtmux-scala-ox
+
 **An Ox `Flow` over libtmux subscriptions and live views, for structured
 concurrency on virtual threads.**
+
+</div>
 
 This optional module adds no handle type: the direct-style facade's opaque
 handles work unchanged inside an Ox `supervised` scope and its `fork`s. What it

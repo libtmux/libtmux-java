@@ -1,5 +1,3 @@
-# libtmux-kotlin
-
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -9,8 +7,14 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
+# libtmux-kotlin
+
 **Coroutine wrapper classes, a session/window/split DSL, and `Flow`/`StateFlow`
 bridges over the Java API.**
+
+</div>
 
 `io.github.libtmux:libtmux-kotlin` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin).
 

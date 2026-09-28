@@ -1,5 +1,3 @@
-# libtmux-workspace-cli
-
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -9,7 +7,13 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
+# libtmux-workspace-cli
+
 **`tmux-workspace` loads, captures, converts and imports tmux workspaces.**
+
+</div>
 
 Command names and flags follow [tmuxp](https://tmuxp.git-pull.com/) 1.74.0, and
 every command answers in JSON or NDJSON on request. Loading, capture,

@@ -290,7 +290,11 @@ final class DocumentationFactsTest {
             assertTrue(Files.isRegularFile(readme), module + " has no README");
 
             String text = read(module + "/README.md");
-            assertTrue(text.startsWith("# " + module + "\n"), module + "'s README does not name it first");
+            String title = text.lines()
+                    .filter(line -> line.startsWith("# "))
+                    .findFirst()
+                    .orElse("");
+            assertEquals("# " + module, title, module + "'s README does not name it in the first heading");
             assertTrue(
                     text.contains("io.github.libtmux:" + module),
                     module + "'s README never states the coordinate to depend on");

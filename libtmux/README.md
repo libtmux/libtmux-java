@@ -1,5 +1,3 @@
-# libtmux
-
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -9,7 +7,13 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
+# libtmux
+
 **Typed, blocking access to a tmux server. No runtime dependencies.**
+
+</div>
 
 This is the whole library. Everything else in the repository is an adapter to
 something — Jackson, JUnit, Kotlin, MCP, tmuxp — and depends on this.

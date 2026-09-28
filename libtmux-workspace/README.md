@@ -1,5 +1,3 @@
-# libtmux-workspace
-
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -9,7 +7,13 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
+# libtmux-workspace
+
 **Builds a session from a tmuxp-shaped YAML description.**
+
+</div>
 
 Enough of [tmuxp](https://tmuxp.git-pull.com/)'s format to describe a workspace
 and build it. Not a runtime-compatible reimplementation.

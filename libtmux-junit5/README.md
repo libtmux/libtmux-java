@@ -1,5 +1,3 @@
-# libtmux-junit5
-
 <!-- libtmux-logo -->
 <p align="center">
   <picture>
@@ -9,8 +7,14 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
+# libtmux-junit5
+
 **A JUnit 5 extension that gives each test its own tmux server, and guarantees it
 is gone afterwards.**
+
+</div>
 
 For testing *your* code against real tmux — not for testing libtmux — or, with
 `FakeTmux`, without it.
