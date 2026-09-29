@@ -14,113 +14,102 @@ They are on Maven Central and release with the Java artifacts.
 - **`libtmux-scala-cats_3`** — Cats Effect resources and FS2 observations.
 - **`libtmux-scala-ox_3`** — an Ox `Flow` over subscriptions and live views.
 
+For a new sbt project, save this as `build.sbt`:
+
 <!-- snippet: scala-build: install-core -->
 ```sbt
-libraryDependencies += "io.github.libtmux" %% "libtmux-scala" % "<version>"
+scalaVersion := "3.9.0"
+scalacOptions += "-release:25"
+libraryDependencies += "io.github.libtmux" %% "libtmux-scala" % "0.0.1-alpha.17"
 ```
 
 For Cats Effect and FS2, or for Ox, add the matching module:
 
 <!-- snippet: scala-build: install-cats -->
 ```sbt
-libraryDependencies += "io.github.libtmux" %% "libtmux-scala-cats" % "<version>"
+libraryDependencies += "io.github.libtmux" %% "libtmux-scala-cats" % "0.0.1-alpha.17"
 ```
 
 <!-- snippet: scala-build: install-ox -->
 ```sbt
-libraryDependencies += "io.github.libtmux" %% "libtmux-scala-ox" % "<version>"
+libraryDependencies += "io.github.libtmux" %% "libtmux-scala-ox" % "0.0.1-alpha.17"
 ```
 
 From Gradle or Maven, name the suffixed artifact directly:
-`io.github.libtmux:libtmux-scala_3:<version>`. The core facade depends on
+`io.github.libtmux:libtmux-scala_3:0.0.1-alpha.17`. The core facade depends on
 `libtmux` and the Scala 3 library, and on nothing else.
 
 ## A first client
 
-The function below takes three caller-supplied values and constructs a Java
-`ServerConfig` before opening the Scala client:
+Save this complete program as `src/main/scala/Main.scala`. It selects a fresh
+socket under `/tmp/libtmux-java-dev/`, creates a session with two panes, checks
+the captured layout, and stops its private daemon before closing the client.
+It reads tmux from `PATH`; set `LIBTMUX_TMUX` to select another binary.
 
-| Parameter | Value to supply |
-| --- | --- |
-| `binary` | Absolute path to your tmux executable |
-| `socket` | An isolated socket you own under `/tmp/libtmux-java-dev/` |
-| `configFile` | Your tmux configuration file, or `/dev/null` for none |
-
-For example, choose `/tmp/libtmux-java-dev/scala-start/socket`; the function
-creates its parent directory. Opening the client does not create tmux;
-`newSession` does. The operation creates a session, splits its window, verifies
-the resulting panes and kills that session. Closing the client is separate
-from session cleanup. An existing server's other sessions remain running;
-tmux normally exits when its final session closes.
-
-Call `firstClient` with your three values from your application.
-The final call in this tested snippet takes those inputs from the owned test
-fixture's `config`; the function builds and uses its own configuration.
-
-<!-- snippet: scala-sync: getting-started-session -->
+<!-- snippet: scala-main: getting-started-session -->
 ```scala
 import io.github.libtmux.{
   Layout, ServerConfig, ServerEndpoint, SessionSpec, SplitSpec
 }
-import io.github.libtmux.scaladsl.{config => _, *}
+import io.github.libtmux.scaladsl.*
 import java.nio.file.{Files, Path}
-import java.time.Duration
 import scala.util.Using
 
-def firstClient(binary: String, socket: Path, configFile: Path): Unit = {
-  require(Path.of(binary).isAbsolute, "supply an absolute tmux executable")
-  val ownedSocket = socket.toAbsolutePath.normalize()
-  require(
-    ownedSocket.startsWith(Path.of("/tmp/libtmux-java-dev")) ||
-      ownedSocket.startsWith(Path.of("/tmp/libtmux-java-test")),
-    "choose a socket under an owned libtmux Java directory"
-  )
-  Files.createDirectories(ownedSocket.getParent)
-  val selected = ServerConfig.builder()
-    .binary(binary)
-    .endpoint(ServerEndpoint.socketPath(ownedSocket))
-    .configFile(configFile)
-    .defaultTimeout(Duration.ofMillis(800))
-    .build()
-
-  Using.resource(Server.open(selected)) { server =>
-    val session = server.newSession(
-      SessionSpec.builder().named("scala-start").running("cat", "-").build()
-    )
+object Main {
+  def main(args: Array[String]): Unit = {
+    val root = Files.createDirectories(Path.of("/tmp/libtmux-java-dev"))
+    val directory = Files.createTempDirectory(root, "scala-start-")
+    val socket = directory.resolve("s")
+    val config = ServerConfig.builder()
+      .binary(sys.env.getOrElse("LIBTMUX_TMUX", "tmux"))
+      .endpoint(ServerEndpoint.socketPath(socket))
+      .configFile(Path.of("/dev/null"))
+      .build()
     try {
-      val window = session.windows.head
-      val second = window.split(
-        SplitSpec.builder().running("cat", "-").build()
-      )
-      window.selectLayout(Layout.EVEN_HORIZONTAL)
-      second.select()
-      // window.panes is CAPTURED: it answers from window's own frozen capture, taken before the
-      // split, so this refreshes first rather than reading stale data.
-      val panes = window.refresh().panes
-      assert(panes.size == 2)
-      assert(panes.exists(_.info.id().value() == second.info.id().value()))
-    } finally session.kill()
+      Using.resource(Server.open(config)) { server =>
+        try {
+          val session = server.newSession(
+            SessionSpec.builder().named("scala-start").running("cat", "-").build()
+          )
+          val window = session.windows.head
+          val second = window.split(
+            SplitSpec.builder().running("cat", "-").build()
+          )
+          window.selectLayout(Layout.EVEN_HORIZONTAL)
+          second.select()
+          val panes = window.refresh().panes
+          assert(panes.size == 2)
+          assert(panes.exists(_.info.id().value() == second.info.id().value()))
+          println(s"created ${panes.size} panes")
+        } finally server.killServer()
+      }
+    } finally {
+      Files.deleteIfExists(socket)
+      Files.deleteIfExists(directory)
+    }
   }
 }
-
-config.endpoint() match {
-  case endpoint: ServerEndpoint.SocketPath =>
-    firstClient(
-      config.binaryPath(),
-      endpoint.path(),
-      config.configFile().orElse(Path.of("/dev/null"))
-    )
-  case _ => throw new IllegalArgumentException("an explicit socket is required")
-}
 ```
+
+Run it with sbt:
+
+```console
+$ sbt run
+```
+
+The output includes `created 2 panes`. `window.refresh()` captures the pane
+list after the split; the original window's captured list still has one pane.
+`Using.resource` closes the library client. The separate `killServer` call
+stops the daemon because this program created and owns it. When connecting to
+an existing daemon, leave its lifetime with its owner and remove only sessions
+your application created.
 
 Timeouts are `scala.concurrent.duration.FiniteDuration` at every public entry
 point, converted once at the boundary: `pane.awaitText("$", 5.seconds)`
 never surfaces `java.time.Duration` to the caller.
 
 Follow with [queries](query.md), [ownership](ownership.md), then
-[execution](execution.md). For immediate access without the facade, use the
-[direct Java guide](../scala.md).
+[execution](execution.md). The [API reference][server] documents the direct-style server.
 
 ## Build from source
 

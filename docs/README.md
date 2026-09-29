@@ -250,6 +250,15 @@ the task. Only one direction is checked: a Kotlin fence that uses a name it did
 not ask for fails to compile, but one that asks for a name it never reads is not
 caught, because the generated file suppresses unused-variable warnings.
 
+A complete Kotlin program uses `<!-- snippet: main -->`; the generated test
+compiles it as a separate file, without fixture imports, and calls its
+`main()` function. A complete Scala program uses
+`<!-- snippet: scala-main: unique-id -->` and defines `object Main` with
+`def main(args: Array[String]): Unit`. Its generated test invokes that entry
+point without supplying fixture variables. These programs supply their own
+configuration and must clean up their
+private tmux servers.
+
 ### Claims that are not code
 
 A snippet is executed, so it cannot lie. A version in an install block, or a
