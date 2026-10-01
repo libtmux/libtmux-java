@@ -3,7 +3,7 @@ package io.github.libtmux.kotlin
 import io.github.libtmux.Hooks as JavaHooks
 
 /**
- * The tmux hooks at one scope.
+ * Read and update hooks for the server, session, window, or pane that owns this handle.
  *
  * Holds the Java handle privately, so a member here always wins over a same-named catalog-generated
  * extension in `HooksOperations.kt`.

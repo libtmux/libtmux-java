@@ -5,7 +5,7 @@ import kotlinx.coroutines.runInterruptible
 import io.github.libtmux.Options as JavaOptions
 
 /**
- * The tmux options at one scope.
+ * Read and update options for the server, session, window, or pane that owns this handle.
  *
  * Holds the Java handle privately, so a member here always wins over a same-named catalog-generated
  * extension in `OptionsOperations.kt`. `get`/`set` are hand-written in both overloads: a Kotlin member

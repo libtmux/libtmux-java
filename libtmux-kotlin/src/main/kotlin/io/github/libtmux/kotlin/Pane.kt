@@ -17,7 +17,7 @@ import kotlinx.coroutines.runInterruptible
 import io.github.libtmux.Pane as JavaPane
 
 /**
- * One tmux pane, as one capture saw it.
+ * A tmux pane, with operations for input, output, and layout.
  *
  * Holds the Java handle privately, so a member here always wins over a same-named catalog-generated
  * extension in `PaneOperations.kt`. [Companion] hosts the generated query field namespace

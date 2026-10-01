@@ -4,13 +4,13 @@ import _root_.cats.effect.{Async, Resource}
 import io.github.libtmux.{Server => JavaServer, ServerConfig}
 import io.github.libtmux.scaladsl as direct
 
-/** Lazy operations scoped by a `Resource`. Cancellation interrupts local Java
-  * work; it does not prove that tmux rolled back a dispatched command. Every
-  * acquisition wraps its Java call in `F.interruptible` — including this
-  * class's own construction step, for consistency across every acquisition
-  * site, though nothing in `ProcessTransport`'s constructor actually blocks:
-  * the process-reclaim guarantee that makes cancellation safe applies to
-  * dispatching a command and to opening a control client, not to this step.
+/** A tmux server whose operations run in the effect type `F`.
+  *
+  * Acquire it with [[Server.resource]], or borrow a Java client with
+  * [[Server.fromJava]]. Releasing the `Resource` cancels this scope's
+  * operations and closes an owned client. Cancellation does not roll back
+  * commands already sent to tmux, and closing the client does not stop the tmux
+  * server.
   */
 final class Server[F[_]] private[cats] (
     private[cats] val underlying: direct.Server,

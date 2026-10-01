@@ -56,6 +56,7 @@ private suspend fun applySplits(window: Window, builder: WindowBuilder) {
     }
 }
 
+/** Configure a new session, its initial command, and its windows with [Server.newSession]. */
 @LibTmuxDsl
 public class SessionBuilder internal constructor() {
     internal val windows: MutableList<WindowBuilder.() -> Unit> = mutableListOf()
@@ -98,6 +99,7 @@ public class SessionBuilder internal constructor() {
     }
 }
 
+/** Configure a window and its pane splits inside a [SessionBuilder] block. */
 @LibTmuxDsl
 public class WindowBuilder internal constructor() {
     internal val splits: MutableList<SplitBuilder.() -> Unit> = mutableListOf()
@@ -133,6 +135,7 @@ public class WindowBuilder internal constructor() {
     }
 }
 
+/** Choose the position, size, and working directory of a new pane split. */
 @LibTmuxDsl
 public class SplitBuilder internal constructor() {
     private val java: SplitSpec.Builder = SplitSpec.builder()

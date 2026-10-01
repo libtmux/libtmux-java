@@ -3,14 +3,11 @@ package io.github.libtmux.scaladsl.cats
 import _root_.cats.effect.Async
 import io.github.libtmux.scaladsl as direct
 
-/** Small final classes carrying `(underlying, server)` — real per-scope state
-  * (`Execution[F]`, on `Server[F]`) an opaque alias cannot carry, so these are
-  * ordinary classes rather than opaque aliases of the direct-style handles they
-  * wrap. Every operation beyond equality is an extension, generated from the
-  * operation catalog or handwritten where the catalog marks it `WAIT`, `STREAM`
-  * or `LIFECYCLE` — never `export`ed, since `export` cannot forward an
-  * extension method and every accessor on a direct-style opaque handle is one
-  * by construction.
+/** A tmux session whose operations run in the effect type `F`.
+  *
+  * Use [[server]] for the connection that owns this handle and [[asJava]] for
+  * Java interoperability. Captured properties stay unchanged until an explicit
+  * refresh returns a new handle.
   */
 final class Session[F[_]] private[cats] (
     private[cats] val underlying: direct.Session,
@@ -29,6 +26,9 @@ final class Session[F[_]] private[cats] (
   def asJava: io.github.libtmux.Session = underlying.asJava
 }
 
+/** A tmux window at a specific session position, with operations in the effect
+  * type `F`.
+  */
 final class Window[F[_]] private[cats] (
     private[cats] val underlying: direct.Window,
     val server: Server[F]
@@ -46,6 +46,9 @@ final class Window[F[_]] private[cats] (
   def asJava: io.github.libtmux.Window = underlying.asJava
 }
 
+/** A tmux pane with input, output, and layout operations in the effect type
+  * `F`.
+  */
 final class Pane[F[_]] private[cats] (
     private[cats] val underlying: direct.Pane,
     val server: Server[F]
@@ -161,6 +164,7 @@ object Pane {
   }
 }
 
+/** An attached tmux client with operations in the effect type `F`. */
 final class Client[F[_]] private[cats] (
     private[cats] val underlying: direct.Client,
     val server: Server[F]

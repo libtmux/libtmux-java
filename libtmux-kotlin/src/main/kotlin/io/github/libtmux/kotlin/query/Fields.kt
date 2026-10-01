@@ -21,6 +21,7 @@ public value class TextField<T : Any> internal constructor(private val java: Fie
     public infix fun oneOf(values: Collection<String>): FilterExpr<T> = java.`in`(values)
 }
 
+/** Build numeric comparisons for a captured tmux field. */
 @JvmInline
 public value class NumberField<T : Any> internal constructor(private val java: Fields.NumberField<T>) {
     public infix fun eq(value: Int): FilterExpr<T> = java.`is`(value)
@@ -31,12 +32,14 @@ public value class NumberField<T : Any> internal constructor(private val java: F
     public infix fun atLeast(value: Int): FilterExpr<T> = java.atLeast(value)
 }
 
+/** Match a captured boolean field against true or false. */
 @JvmInline
 public value class FlagField<T : Any> internal constructor(private val java: Fields.FlagField<T>) {
     public fun isTrue(): FilterExpr<T> = java.isTrue()
     public fun isFalse(): FilterExpr<T> = java.isFalse()
 }
 
+/** Match an object by the captured children related to it. */
 @JvmInline
 public value class ToManyField<T : Any, R : Any> internal constructor(private val java: Fields.ToManyRef<T, R>) {
     public infix fun any(predicate: FilterExpr<R>): FilterExpr<T> = java.any(predicate)
@@ -44,6 +47,7 @@ public value class ToManyField<T : Any, R : Any> internal constructor(private va
     public infix fun none(predicate: FilterExpr<R>): FilterExpr<T> = java.none(predicate)
 }
 
+/** Match an object by one captured related object. */
 @JvmInline
 public value class ToOneField<T : Any, R : Any> internal constructor(private val java: Fields.ToOneRef<T, R>) {
     public infix fun matching(predicate: FilterExpr<R>): FilterExpr<T> = java.`is`(predicate)

@@ -6,7 +6,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 
 /**
- * Where a [Server]'s suspend surface runs, and how wide it is allowed to run.
+ * Controls the dispatchers and concurrency limits for a [Server]'s suspending operations.
  *
  * Two independently sized pools, not one: [commands] backs every `suspend` operation this module
  * generates or hand-writes, sized from the transport's own admission bound rather than a guess.
