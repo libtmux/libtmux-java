@@ -3,7 +3,7 @@ package io.github.libtmux.kotlin
 import io.github.libtmux.Environment as JavaEnvironment
 
 /**
- * The environment tmux gives to processes it starts, at one scope.
+ * Read and update environment variables used to start processes in tmux.
  *
  * Holds the Java handle privately, so a member here always wins over a same-named catalog-generated
  * extension in `EnvironmentOperations.kt`.

@@ -51,7 +51,8 @@ object ScalaFieldGenerator {
             val doc = if (row.javadoc.isEmpty()) "" else "  /** ${row.javadoc} */\n"
             "$doc  def ${row.name}: $type =\n    new $type($metamodel.${row.name}())"
         }
-        return "object ${owner.objectName} {\n$body\n}"
+        return "/** Typed fields for filtering captured ${owner.name.lowercase()} objects. */\n" +
+            "object ${owner.objectName} {\n$body\n}"
     }
 
     private fun wrapperType(row: FieldRow, javaOwner: String): String = when (row.kind) {

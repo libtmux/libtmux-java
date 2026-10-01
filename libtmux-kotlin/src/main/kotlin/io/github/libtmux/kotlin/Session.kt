@@ -4,7 +4,7 @@ import io.github.libtmux.SessionId
 import io.github.libtmux.Session as JavaSession
 
 /**
- * One tmux session, as one capture saw it.
+ * A tmux session and its captured windows and properties.
  *
  * Holds the Java handle privately, so a member here always wins over a same-named catalog-generated
  * extension in `SessionOperations.kt`. [Companion] hosts the generated query field namespace

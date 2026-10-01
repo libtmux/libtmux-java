@@ -2,13 +2,10 @@ package io.github.libtmux.scaladsl.cats
 
 import _root_.cats.effect.Async
 
-/** Small final classes wrapping one of the tmux subsystems (`Server.hooks()`,
-  * `Pane.options()`, ...): `(underlying, server)`, as `Handles.scala`'s classes
-  * are, but holding the raw Java handle directly rather than a `direct.X`
-  * opaque type. There is no direct-style counterpart to go through: direct
-  * style is blocking by design and stays on the Java handle these operations
-  * already reached. Every operation beyond equality is an extension, generated
-  * from the operation catalog.
+/** Read and update tmux hooks through the owning [[server]].
+  *
+  * Operations run in the effect type `F`. Use [[asJava]] to access the Java
+  * hook API directly.
   */
 final class Hooks[F[_]] private[cats] (
     private[cats] val underlying: io.github.libtmux.Hooks,
@@ -25,6 +22,9 @@ final class Hooks[F[_]] private[cats] (
   def asJava: io.github.libtmux.Hooks = underlying
 }
 
+/** Read and update options on the server, session, window, or pane that owns
+  * this handle.
+  */
 final class Options[F[_]] private[cats] (
     private[cats] val underlying: io.github.libtmux.Options,
     val server: Server[F]
@@ -79,6 +79,7 @@ object Options {
   }
 }
 
+/** Run shell commands through tmux in the effect type `F`. */
 final class Shell[F[_]] private[cats] (
     private[cats] val underlying: io.github.libtmux.Shell,
     val server: Server[F]
@@ -94,6 +95,7 @@ final class Shell[F[_]] private[cats] (
   def asJava: io.github.libtmux.Shell = underlying
 }
 
+/** Inspect the commands supported by the selected tmux executable. */
 final class Commands[F[_]] private[cats] (
     private[cats] val underlying: io.github.libtmux.Commands,
     val server: Server[F]
@@ -109,6 +111,7 @@ final class Commands[F[_]] private[cats] (
   def asJava: io.github.libtmux.Commands = underlying
 }
 
+/** Read, create, and remove the server's paste buffers. */
 final class Buffers[F[_]] private[cats] (
     private[cats] val underlying: io.github.libtmux.Buffers,
     val server: Server[F]
@@ -124,6 +127,7 @@ final class Buffers[F[_]] private[cats] (
   def asJava: io.github.libtmux.Buffers = underlying
 }
 
+/** Read and update environment variables for processes started by tmux. */
 final class Environment[F[_]] private[cats] (
     private[cats] val underlying: io.github.libtmux.Environment,
     val server: Server[F]
@@ -139,6 +143,7 @@ final class Environment[F[_]] private[cats] (
   def asJava: io.github.libtmux.Environment = underlying
 }
 
+/** Read messages recorded by the tmux server. */
 final class MessageLog[F[_]] private[cats] (
     private[cats] val underlying: io.github.libtmux.MessageLog,
     val server: Server[F]
@@ -154,6 +159,7 @@ final class MessageLog[F[_]] private[cats] (
   def asJava: io.github.libtmux.MessageLog = underlying
 }
 
+/** Read and clear the server's command-prompt history. */
 final class Prompt[F[_]] private[cats] (
     private[cats] val underlying: io.github.libtmux.Prompt,
     val server: Server[F]
@@ -169,6 +175,7 @@ final class Prompt[F[_]] private[cats] (
   def asJava: io.github.libtmux.Prompt = underlying
 }
 
+/** Read and update bindings in tmux key tables. */
 final class Keys[F[_]] private[cats] (
     private[cats] val underlying: io.github.libtmux.Keys,
     val server: Server[F]

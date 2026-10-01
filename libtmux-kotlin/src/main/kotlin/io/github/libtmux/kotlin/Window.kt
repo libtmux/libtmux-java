@@ -8,7 +8,7 @@ import io.github.libtmux.snapshot.WindowContext
 import io.github.libtmux.Window as JavaWindow
 
 /**
- * One tmux window at one of its positions, as one capture saw it.
+ * A tmux window at a specific position in a session.
  *
  * Holds the Java handle privately, so a member here always wins over a same-named catalog-generated
  * extension in `WindowOperations.kt`. [Companion] hosts the generated query field namespace.

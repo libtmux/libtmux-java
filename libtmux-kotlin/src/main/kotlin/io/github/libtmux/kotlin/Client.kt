@@ -4,7 +4,7 @@ import io.github.libtmux.ClientAttachment
 import io.github.libtmux.Client as JavaClient
 
 /**
- * One attached tmux client, as one capture saw it.
+ * An attached tmux client and its captured properties.
  *
  * Holds the Java handle privately, so a member here always wins over a same-named catalog-generated
  * extension in `ClientOperations.kt`. [Companion] hosts the generated query field namespace.
