@@ -16,14 +16,18 @@ import io.github.libtmux.Session as JavaSession
 import io.github.libtmux.Window as JavaWindow
 
 /**
- * One tmux server, reached over one transport.
+ * Manages sessions, windows, and panes on a tmux server.
  *
- * Holds the Java handle privately: this is a wrapper, not [JavaServer] itself, so a member here
- * always wins over a same-named catalog-generated extension (see `ServerOperations.kt`) and a query
- * field lives on [Companion] rather than colliding with an instance member.
+ * Use [open] with a [ServerConfig] to select a server by socket name or path. From this object,
+ * create sessions or query the server's existing sessions, windows, and panes. Each [Session]
+ * contains windows, and each [Window] contains panes.
  *
- * Every operation that may contact tmux is `suspend`, dispatched through [policy]. Close it once,
- * after the last call on any thread — the same threading contract [JavaServer] documents.
+ * Operations that contact tmux are `suspend` functions dispatched through [policy]. Call [close]
+ * after the last operation to release resources owned by this object. The tmux server and its
+ * sessions keep running.
+ *
+ * [asJava] exposes the underlying [JavaServer] for interoperability. Both objects share the same
+ * resources, so closing either closes both.
  */
 public class Server private constructor(
     internal val java: JavaServer,
