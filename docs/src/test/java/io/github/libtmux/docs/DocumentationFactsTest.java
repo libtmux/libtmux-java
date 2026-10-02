@@ -184,9 +184,8 @@ final class DocumentationFactsTest {
      * Every sbt install line the documentation shows is one the sbt consumer build resolves.
      *
      * <p>That build fetches each artifact from the staged repository exactly as a reader's would, so a
-     * documented line it does not carry is a line nothing has shown to work. Versions are compared
-     * as a placeholder: the documents say {@code "<version>"} or the release, the build says
-     * {@code libtmuxVersion}.
+     * documented line it does not carry is a line nothing has shown to work. Documents name the
+     * release; the consumer receives that version through {@code libtmuxVersion}.
      */
     @Test
     void everyDocumentedSbtLineIsOneTheSbtConsumerResolves() {
@@ -198,6 +197,7 @@ final class DocumentationFactsTest {
         for (String document : readerFacing()) {
             Matcher found = fence.matcher(read(document));
             while (found.find()) {
+                assertFalse(found.group(2).contains("\"<version>\""), document + " needs an installable version");
                 for (String line : sbtLines(found.group(2))) {
                     if (!consumer.contains(line)) {
                         unresolved.add(document + " (" + found.group(1) + "): " + line);

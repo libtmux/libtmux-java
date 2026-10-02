@@ -25,19 +25,95 @@ the 2.2 standard library, the level kotlinx-coroutines 1.11 is compiled for, and
 a Kotlin compiler reads metadata up to one minor version newer than itself.
 `ConsumerBaselineTest` fails if a build raises that level.
 
-Every Kotlin example below is executed against a real tmux server by
-[`ReadmeExamplesTest`](src/test/kotlin/io/github/libtmux/kotlin/ReadmeExamplesTest.kt),
-one test per section.
+The [documentation tests](../docs/README.md#kotlin-fences) compile and run
+the Kotlin examples against a real tmux server.
 
 ## Install
 
-<!-- snippet: skip: build configuration, not library code -->
+Use JDK 25 or newer, tmux 3.2a through 3.7c, and a Gradle Kotlin/JVM
+project with its Gradle wrapper. Name the project in `settings.gradle.kts`:
+
+<!-- snippet: skip: Gradle project settings -->
 ```kotlin
+rootProject.name = "tmux-demo"
+```
+
+Save this as `build.gradle.kts`:
+
+<!-- snippet: skip: Gradle build configuration, checked by the consumer build -->
+```kotlin
+plugins {
+    kotlin("jvm") version "2.4.10"
+    application
+}
+
+repositories { mavenCentral() }
+
+kotlin { jvmToolchain(25) }
+
 dependencies {
     implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.17"))
     implementation("io.github.libtmux:libtmux-kotlin")
 }
+
+application { mainClass = "MainKt" }
 ```
+
+## Create and clean up a private session
+
+Save this complete program as `src/main/kotlin/Main.kt`. It creates a fresh
+socket directory under `/tmp/libtmux-java-dev/`, starts its own tmux server,
+prints the created session's name, and removes that server before closing the
+client. It reads tmux from `PATH`; set `LIBTMUX_TMUX` to select another binary.
+
+<!-- snippet: main -->
+```kotlin
+import io.github.libtmux.ServerConfig
+import io.github.libtmux.ServerEndpoint
+import io.github.libtmux.kotlin.*
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlinx.coroutines.runBlocking
+
+fun main() = runBlocking {
+    val root = Files.createDirectories(Path.of("/tmp/libtmux-java-dev"))
+    val directory = Files.createTempDirectory(root, "kotlin-start-")
+    val socket = directory.resolve("s")
+    val config = ServerConfig.builder()
+        .binary(System.getenv("LIBTMUX_TMUX") ?: "tmux")
+        .endpoint(ServerEndpoint.socketPath(socket))
+        .configFile(Path.of("/dev/null"))
+        .build()
+    try {
+        withServer(config) { server ->
+            try {
+                val session = server.newSession("kotlin-start")
+                check(session.name == "kotlin-start")
+                println(session.name)
+            } finally {
+                server.killServer()
+            }
+        }
+    } finally {
+        Files.deleteIfExists(socket)
+        Files.deleteIfExists(directory)
+    }
+}
+```
+
+Run the application:
+
+```console
+$ ./gradlew run
+```
+
+The output includes `kotlin-start`. `withServer` closes the library client;
+it does not stop tmux. This program calls `killServer` because it owns the
+private daemon. When connecting to an existing daemon, leave its lifetime
+with its owner and remove only sessions your application created.
+
+Later examples declare the `config` they expect. Supply the configuration
+above and retain its private-server cleanup when trying those calls.
 
 ## Wrapper classes, not the Java types directly
 

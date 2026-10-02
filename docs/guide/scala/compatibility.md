@@ -41,8 +41,8 @@ operations are written by hand, for their cancellation or resource scoping:
 Both facades generate from the same catalog through the same owner-and-kind
 branching, and the [generator's tests][generator-tests] hold the two to it: a
 captured operation forwards purely on both, and a mutation is effect-wrapped on
-the Cats side only. Nothing Scala has shipped yet, so there is no earlier
-release for MiMa or `tasty-mima` to compare against.
+the Cats side only. These alpha artifacts have no binary compatibility
+guarantee; pin an exact version when adding them to an application.
 
 ## Inherited feature boundaries
 

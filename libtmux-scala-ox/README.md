@@ -23,7 +23,7 @@ client's subscription, and a live view of a server.
 
 <!-- snippet: scala-build: ox-readme-install -->
 ```sbt
-libraryDependencies += "io.github.libtmux" %% "libtmux-scala-ox" % "<version>"
+libraryDependencies += "io.github.libtmux" %% "libtmux-scala-ox" % "0.0.1-alpha.17"
 ```
 
 From Gradle or Maven the coordinate is `io.github.libtmux:libtmux-scala-ox_3`.

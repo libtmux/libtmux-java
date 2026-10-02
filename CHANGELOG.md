@@ -14,6 +14,11 @@ production.
 
 ### Documented
 
+- **Kotlin and Scala getting-started guides include complete programs.** Each
+  selects a private socket, creates tmux objects, and stops its owned daemon.
+  The documentation tests execute their entry points, and Scala installation
+  examples name an exact package version.
+
 - **`SplitSpec.Builder.running`, `WindowSpec.Builder.running` and
   `SessionSpec.Builder.running` say that tmux reports the pane before the
   command has started.** Wait for the pane's command with `Pane.await` rather
