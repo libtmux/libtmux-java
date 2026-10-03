@@ -26,6 +26,11 @@ they are the part of a project nobody compiles and everybody reads first.
 
 ## Run one
 
+The [common API programs](api/README.md) provide separate complete Java,
+Kotlin, Scala Direct, and Scala Cats examples for construction, listings,
+creation, queries, and pane input and capture. Their consumer build files and
+private-server launcher are included alongside the source-owned manifest.
+
 ```console
 $ ./gradlew :examples:test
 ```
