@@ -495,6 +495,19 @@ Decisions still in force are recorded as short ADRs under
 [`docs/decisions/`](docs/decisions/), each citing the tmux behaviour that
 forced it.
 
+## Attribution
+
+Please use the following BibTeX template to cite libtmux-java in scientific discourse:
+
+```bibtex
+@misc{libtmux-java,
+   author = {Tony Narlock},
+   year = {2026},
+   note = {https://libtmux.org/en/java/},
+   title = {libtmux-java: Java wrapper for tmux}
+}
+```
+
 ## Contributing
 
 [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) covers the gate, the tmux
