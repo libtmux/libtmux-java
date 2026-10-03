@@ -1,0 +1,544 @@
+{
+  "schemaVersion": 1,
+  "examples": [
+    {
+      "id": "java-Connect",
+      "variant": "java",
+      "language": "java",
+      "description": "Connect to a private tmux server.",
+      "sourceFile": "examples/src/main/java/io/github/libtmux/examples/api/java/Connect.java",
+      "mainClass": "io.github.libtmux.examples.api.java.Connect",
+      "targets": [
+        "io.github.libtmux.Server",
+        "io.github.libtmux.Server.open"
+      ],
+      "expectedOutput": "connected=true\n",
+      "path": "src/main/java/Connect.java"
+    },
+    {
+      "id": "java-ListSessions",
+      "variant": "java",
+      "language": "java",
+      "description": "List the sessions returned by a server read.",
+      "sourceFile": "examples/src/main/java/io/github/libtmux/examples/api/java/ListSessions.java",
+      "mainClass": "io.github.libtmux.examples.api.java.ListSessions",
+      "targets": [
+        "io.github.libtmux.Server.sessions"
+      ],
+      "expectedOutput": "sessions=work-one,work-two\n",
+      "path": "src/main/java/ListSessions.java"
+    },
+    {
+      "id": "java-ListWindows",
+      "variant": "java",
+      "language": "java",
+      "description": "List all windows, then the windows captured for one session.",
+      "sourceFile": "examples/src/main/java/io/github/libtmux/examples/api/java/ListWindows.java",
+      "mainClass": "io.github.libtmux.examples.api.java.ListWindows",
+      "targets": [
+        "io.github.libtmux.Server.windows",
+        "io.github.libtmux.Session.windows"
+      ],
+      "expectedOutput": "windows=editor,editor,logs\nsession-windows=editor,logs\n",
+      "path": "src/main/java/ListWindows.java"
+    },
+    {
+      "id": "java-ListPanes",
+      "variant": "java",
+      "language": "java",
+      "description": "List all panes, then the panes captured for one window.",
+      "sourceFile": "examples/src/main/java/io/github/libtmux/examples/api/java/ListPanes.java",
+      "mainClass": "io.github.libtmux.examples.api.java.ListPanes",
+      "targets": [
+        "io.github.libtmux.Server.panes",
+        "io.github.libtmux.Window.panes"
+      ],
+      "expectedOutput": "panes=4\nwindow-panes=2\n",
+      "path": "src/main/java/ListPanes.java"
+    },
+    {
+      "id": "java-NewSession",
+      "variant": "java",
+      "language": "java",
+      "description": "Create a session running cat.",
+      "sourceFile": "examples/src/main/java/io/github/libtmux/examples/api/java/NewSession.java",
+      "mainClass": "io.github.libtmux.examples.api.java.NewSession",
+      "targets": [
+        "io.github.libtmux.Server.newSession"
+      ],
+      "expectedOutput": "created=api-session\n",
+      "path": "src/main/java/NewSession.java"
+    },
+    {
+      "id": "java-NewWindow",
+      "variant": "java",
+      "language": "java",
+      "description": "Create a window and read the updated session.",
+      "sourceFile": "examples/src/main/java/io/github/libtmux/examples/api/java/NewWindow.java",
+      "mainClass": "io.github.libtmux.examples.api.java.NewWindow",
+      "targets": [
+        "io.github.libtmux.Session.newWindow"
+      ],
+      "expectedOutput": "created=api-window\nwindows=api-window,editor,logs\n",
+      "path": "src/main/java/NewWindow.java"
+    },
+    {
+      "id": "java-Query",
+      "variant": "java",
+      "language": "java",
+      "description": "Select sessions with a typed name filter.",
+      "sourceFile": "examples/src/main/java/io/github/libtmux/examples/api/java/Query.java",
+      "mainClass": "io.github.libtmux.examples.api.java.Query",
+      "targets": [
+        "io.github.libtmux.Server.sessions"
+      ],
+      "expectedOutput": "matches=work-one\n",
+      "path": "src/main/java/Query.java"
+    },
+    {
+      "id": "java-Capture",
+      "variant": "java",
+      "language": "java",
+      "description": "Send input and wait for output before capturing the pane.",
+      "sourceFile": "examples/src/main/java/io/github/libtmux/examples/api/java/Capture.java",
+      "mainClass": "io.github.libtmux.examples.api.java.Capture",
+      "targets": [
+        "io.github.libtmux.Pane.sendKeys",
+        "io.github.libtmux.Pane.sendLine",
+        "io.github.libtmux.Pane.awaitText",
+        "io.github.libtmux.Pane.capture"
+      ],
+      "expectedOutput": "api-keys\napi-line\n",
+      "path": "src/main/java/Capture.java"
+    },
+    {
+      "id": "kotlin-Connect",
+      "variant": "kotlin",
+      "language": "kotlin",
+      "description": "Connect to a private tmux server.",
+      "sourceFile": "examples/src/main/kotlin/io/github/libtmux/examples/api/kotlin/Connect.kt",
+      "mainClass": "io.github.libtmux.examples.api.kotlin.ConnectKt",
+      "targets": [
+        "io.github.libtmux.kotlin.Server",
+        "io.github.libtmux.kotlin.withServer",
+        "io.github.libtmux.kotlin.Server.Companion.open"
+      ],
+      "expectedOutput": "connected=true\n",
+      "path": "src/main/kotlin/Connect.kt"
+    },
+    {
+      "id": "kotlin-ListSessions",
+      "variant": "kotlin",
+      "language": "kotlin",
+      "description": "List the sessions returned by a server read.",
+      "sourceFile": "examples/src/main/kotlin/io/github/libtmux/examples/api/kotlin/ListSessions.kt",
+      "mainClass": "io.github.libtmux.examples.api.kotlin.ListSessionsKt",
+      "targets": [
+        "io.github.libtmux.kotlin.Server.sessions"
+      ],
+      "expectedOutput": "sessions=work-one,work-two\n",
+      "path": "src/main/kotlin/ListSessions.kt"
+    },
+    {
+      "id": "kotlin-ListWindows",
+      "variant": "kotlin",
+      "language": "kotlin",
+      "description": "List all windows, then the windows captured for one session.",
+      "sourceFile": "examples/src/main/kotlin/io/github/libtmux/examples/api/kotlin/ListWindows.kt",
+      "mainClass": "io.github.libtmux.examples.api.kotlin.ListWindowsKt",
+      "targets": [
+        "io.github.libtmux.kotlin.Server.windows",
+        "io.github.libtmux.kotlin.Session.windows"
+      ],
+      "expectedOutput": "windows=editor,editor,logs\nsession-windows=editor,logs\n",
+      "path": "src/main/kotlin/ListWindows.kt"
+    },
+    {
+      "id": "kotlin-ListPanes",
+      "variant": "kotlin",
+      "language": "kotlin",
+      "description": "List all panes, then the panes captured for one window.",
+      "sourceFile": "examples/src/main/kotlin/io/github/libtmux/examples/api/kotlin/ListPanes.kt",
+      "mainClass": "io.github.libtmux.examples.api.kotlin.ListPanesKt",
+      "targets": [
+        "io.github.libtmux.kotlin.Server.panes",
+        "io.github.libtmux.kotlin.Window.panes"
+      ],
+      "expectedOutput": "panes=4\nwindow-panes=2\n",
+      "path": "src/main/kotlin/ListPanes.kt"
+    },
+    {
+      "id": "kotlin-NewSession",
+      "variant": "kotlin",
+      "language": "kotlin",
+      "description": "Create a session running cat.",
+      "sourceFile": "examples/src/main/kotlin/io/github/libtmux/examples/api/kotlin/NewSession.kt",
+      "mainClass": "io.github.libtmux.examples.api.kotlin.NewSessionKt",
+      "targets": [
+        "io.github.libtmux.kotlin.Server.newSession"
+      ],
+      "expectedOutput": "created=api-session\n",
+      "path": "src/main/kotlin/NewSession.kt"
+    },
+    {
+      "id": "kotlin-NewWindow",
+      "variant": "kotlin",
+      "language": "kotlin",
+      "description": "Create a window and read the updated session.",
+      "sourceFile": "examples/src/main/kotlin/io/github/libtmux/examples/api/kotlin/NewWindow.kt",
+      "mainClass": "io.github.libtmux.examples.api.kotlin.NewWindowKt",
+      "targets": [
+        "io.github.libtmux.kotlin.Session.newWindow"
+      ],
+      "expectedOutput": "created=api-window\nwindows=api-window,editor,logs\n",
+      "path": "src/main/kotlin/NewWindow.kt"
+    },
+    {
+      "id": "kotlin-Query",
+      "variant": "kotlin",
+      "language": "kotlin",
+      "description": "Select sessions with a typed name filter.",
+      "sourceFile": "examples/src/main/kotlin/io/github/libtmux/examples/api/kotlin/Query.kt",
+      "mainClass": "io.github.libtmux.examples.api.kotlin.QueryKt",
+      "targets": [
+        "io.github.libtmux.kotlin.Server.sessions"
+      ],
+      "expectedOutput": "matches=work-one\n",
+      "path": "src/main/kotlin/Query.kt"
+    },
+    {
+      "id": "kotlin-Capture",
+      "variant": "kotlin",
+      "language": "kotlin",
+      "description": "Send input and wait for output before capturing the pane.",
+      "sourceFile": "examples/src/main/kotlin/io/github/libtmux/examples/api/kotlin/Capture.kt",
+      "mainClass": "io.github.libtmux.examples.api.kotlin.CaptureKt",
+      "targets": [
+        "io.github.libtmux.kotlin.Pane.sendKeys",
+        "io.github.libtmux.kotlin.Pane.sendLine",
+        "io.github.libtmux.kotlin.Pane.awaitText",
+        "io.github.libtmux.kotlin.Pane.capture"
+      ],
+      "expectedOutput": "api-keys\napi-line\n",
+      "path": "src/main/kotlin/Capture.kt"
+    },
+    {
+      "id": "scala-direct-Connect",
+      "variant": "scala-direct",
+      "language": "scala",
+      "description": "Connect to a private tmux server.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scaladirect/Connect.scala",
+      "mainClass": "io.github.libtmux.examples.api.scaladirect.Connect",
+      "targets": [
+        "io.github.libtmux.scaladsl.Server",
+        "io.github.libtmux.scaladsl.Server.open"
+      ],
+      "expectedOutput": "connected=true\n",
+      "path": "src/main/scala/Connect.scala"
+    },
+    {
+      "id": "scala-direct-ListSessions",
+      "variant": "scala-direct",
+      "language": "scala",
+      "description": "List the sessions returned by a server read.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scaladirect/ListSessions.scala",
+      "mainClass": "io.github.libtmux.examples.api.scaladirect.ListSessions",
+      "targets": [
+        "io.github.libtmux.scaladsl.Server.sessions"
+      ],
+      "expectedOutput": "sessions=work-one,work-two\n",
+      "path": "src/main/scala/ListSessions.scala"
+    },
+    {
+      "id": "scala-direct-ListWindows",
+      "variant": "scala-direct",
+      "language": "scala",
+      "description": "List all windows, then the windows captured for one session.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scaladirect/ListWindows.scala",
+      "mainClass": "io.github.libtmux.examples.api.scaladirect.ListWindows",
+      "targets": [
+        "io.github.libtmux.scaladsl.Server.windows",
+        "io.github.libtmux.scaladsl.Session.windows"
+      ],
+      "expectedOutput": "windows=editor,editor,logs\nsession-windows=editor,logs\n",
+      "path": "src/main/scala/ListWindows.scala"
+    },
+    {
+      "id": "scala-direct-ListPanes",
+      "variant": "scala-direct",
+      "language": "scala",
+      "description": "List all panes, then the panes captured for one window.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scaladirect/ListPanes.scala",
+      "mainClass": "io.github.libtmux.examples.api.scaladirect.ListPanes",
+      "targets": [
+        "io.github.libtmux.scaladsl.Server.panes",
+        "io.github.libtmux.scaladsl.Window.panes"
+      ],
+      "expectedOutput": "panes=4\nwindow-panes=2\n",
+      "path": "src/main/scala/ListPanes.scala"
+    },
+    {
+      "id": "scala-direct-NewSession",
+      "variant": "scala-direct",
+      "language": "scala",
+      "description": "Create a session running cat.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scaladirect/NewSession.scala",
+      "mainClass": "io.github.libtmux.examples.api.scaladirect.NewSession",
+      "targets": [
+        "io.github.libtmux.scaladsl.Server.newSession"
+      ],
+      "expectedOutput": "created=api-session\n",
+      "path": "src/main/scala/NewSession.scala"
+    },
+    {
+      "id": "scala-direct-NewWindow",
+      "variant": "scala-direct",
+      "language": "scala",
+      "description": "Create a window and read the updated session.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scaladirect/NewWindow.scala",
+      "mainClass": "io.github.libtmux.examples.api.scaladirect.NewWindow",
+      "targets": [
+        "io.github.libtmux.scaladsl.Session.newWindow"
+      ],
+      "expectedOutput": "created=api-window\nwindows=api-window,editor,logs\n",
+      "path": "src/main/scala/NewWindow.scala"
+    },
+    {
+      "id": "scala-direct-Query",
+      "variant": "scala-direct",
+      "language": "scala",
+      "description": "Select sessions with a typed name filter.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scaladirect/Query.scala",
+      "mainClass": "io.github.libtmux.examples.api.scaladirect.Query",
+      "targets": [
+        "io.github.libtmux.scaladsl.Server.sessions"
+      ],
+      "expectedOutput": "matches=work-one\n",
+      "path": "src/main/scala/Query.scala"
+    },
+    {
+      "id": "scala-direct-Capture",
+      "variant": "scala-direct",
+      "language": "scala",
+      "description": "Send input and wait for output before capturing the pane.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scaladirect/Capture.scala",
+      "mainClass": "io.github.libtmux.examples.api.scaladirect.Capture",
+      "targets": [
+        "io.github.libtmux.scaladsl.Pane.sendKeys",
+        "io.github.libtmux.scaladsl.Pane.sendLine",
+        "io.github.libtmux.scaladsl.Pane.awaitText",
+        "io.github.libtmux.scaladsl.Pane.capture"
+      ],
+      "expectedOutput": "api-keys\napi-line\n",
+      "path": "src/main/scala/Capture.scala"
+    },
+    {
+      "id": "scala-cats-Connect",
+      "variant": "scala-cats",
+      "language": "scala",
+      "description": "Connect to a private tmux server.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scalacats/Connect.scala",
+      "mainClass": "io.github.libtmux.examples.api.scalacats.Connect",
+      "targets": [
+        "io.github.libtmux.scaladsl.cats.Server",
+        "io.github.libtmux.scaladsl.cats.Server.resource"
+      ],
+      "expectedOutput": "connected=true\n",
+      "path": "src/main/scala/Connect.scala"
+    },
+    {
+      "id": "scala-cats-ListSessions",
+      "variant": "scala-cats",
+      "language": "scala",
+      "description": "List the sessions returned by a server read.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scalacats/ListSessions.scala",
+      "mainClass": "io.github.libtmux.examples.api.scalacats.ListSessions",
+      "targets": [
+        "io.github.libtmux.scaladsl.cats.Server.sessions"
+      ],
+      "expectedOutput": "sessions=work-one,work-two\n",
+      "path": "src/main/scala/ListSessions.scala"
+    },
+    {
+      "id": "scala-cats-ListWindows",
+      "variant": "scala-cats",
+      "language": "scala",
+      "description": "List all windows, then the windows captured for one session.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scalacats/ListWindows.scala",
+      "mainClass": "io.github.libtmux.examples.api.scalacats.ListWindows",
+      "targets": [
+        "io.github.libtmux.scaladsl.cats.Server.windows",
+        "io.github.libtmux.scaladsl.cats.Session.windows"
+      ],
+      "expectedOutput": "windows=editor,editor,logs\nsession-windows=editor,logs\n",
+      "path": "src/main/scala/ListWindows.scala"
+    },
+    {
+      "id": "scala-cats-ListPanes",
+      "variant": "scala-cats",
+      "language": "scala",
+      "description": "List all panes, then the panes captured for one window.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scalacats/ListPanes.scala",
+      "mainClass": "io.github.libtmux.examples.api.scalacats.ListPanes",
+      "targets": [
+        "io.github.libtmux.scaladsl.cats.Server.panes",
+        "io.github.libtmux.scaladsl.cats.Window.panes"
+      ],
+      "expectedOutput": "panes=4\nwindow-panes=2\n",
+      "path": "src/main/scala/ListPanes.scala"
+    },
+    {
+      "id": "scala-cats-NewSession",
+      "variant": "scala-cats",
+      "language": "scala",
+      "description": "Create a session running cat.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scalacats/NewSession.scala",
+      "mainClass": "io.github.libtmux.examples.api.scalacats.NewSession",
+      "targets": [
+        "io.github.libtmux.scaladsl.cats.Server.newSession"
+      ],
+      "expectedOutput": "created=api-session\n",
+      "path": "src/main/scala/NewSession.scala"
+    },
+    {
+      "id": "scala-cats-NewWindow",
+      "variant": "scala-cats",
+      "language": "scala",
+      "description": "Create a window and read the updated session.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scalacats/NewWindow.scala",
+      "mainClass": "io.github.libtmux.examples.api.scalacats.NewWindow",
+      "targets": [
+        "io.github.libtmux.scaladsl.cats.Session.newWindow"
+      ],
+      "expectedOutput": "created=api-window\nwindows=api-window,editor,logs\n",
+      "path": "src/main/scala/NewWindow.scala"
+    },
+    {
+      "id": "scala-cats-Query",
+      "variant": "scala-cats",
+      "language": "scala",
+      "description": "Select sessions with a typed name filter.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scalacats/Query.scala",
+      "mainClass": "io.github.libtmux.examples.api.scalacats.Query",
+      "targets": [
+        "io.github.libtmux.scaladsl.cats.Server.sessions"
+      ],
+      "expectedOutput": "matches=work-one\n",
+      "path": "src/main/scala/Query.scala"
+    },
+    {
+      "id": "scala-cats-Capture",
+      "variant": "scala-cats",
+      "language": "scala",
+      "description": "Send input and wait for output before capturing the pane.",
+      "sourceFile": "examples/src/main/scala/io/github/libtmux/examples/api/scalacats/Capture.scala",
+      "mainClass": "io.github.libtmux.examples.api.scalacats.Capture",
+      "targets": [
+        "io.github.libtmux.scaladsl.cats.Pane.sendKeys",
+        "io.github.libtmux.scaladsl.cats.Pane.sendLine",
+        "io.github.libtmux.scaladsl.cats.Pane.awaitText",
+        "io.github.libtmux.scaladsl.cats.Pane.capture"
+      ],
+      "expectedOutput": "api-keys\napi-line\n",
+      "path": "src/main/scala/Capture.scala"
+    }
+  ],
+  "variants": {
+    "java": {
+      "files": [
+        {
+          "sourceFile": "examples/api/java/settings.gradle.kts",
+          "path": "settings.gradle.kts",
+          "language": "kotlin"
+        },
+        {
+          "sourceFile": "examples/api/java/build.gradle.kts",
+          "path": "build.gradle.kts",
+          "language": "kotlin"
+        },
+        {
+          "sourceFile": "examples/api/gradle.properties",
+          "path": "gradle.properties",
+          "language": "properties"
+        },
+        {
+          "sourceFile": "examples/api/run.sh",
+          "path": "run.sh",
+          "language": "bash"
+        }
+      ]
+    },
+    "kotlin": {
+      "files": [
+        {
+          "sourceFile": "examples/api/kotlin/settings.gradle.kts",
+          "path": "settings.gradle.kts",
+          "language": "kotlin"
+        },
+        {
+          "sourceFile": "examples/api/kotlin/build.gradle.kts",
+          "path": "build.gradle.kts",
+          "language": "kotlin"
+        },
+        {
+          "sourceFile": "examples/api/gradle.properties",
+          "path": "gradle.properties",
+          "language": "properties"
+        },
+        {
+          "sourceFile": "examples/api/run.sh",
+          "path": "run.sh",
+          "language": "bash"
+        }
+      ]
+    },
+    "scala-direct": {
+      "files": [
+        {
+          "sourceFile": "examples/api/scala-direct/settings.gradle.kts",
+          "path": "settings.gradle.kts",
+          "language": "kotlin"
+        },
+        {
+          "sourceFile": "examples/api/scala-direct/build.gradle.kts",
+          "path": "build.gradle.kts",
+          "language": "kotlin"
+        },
+        {
+          "sourceFile": "examples/api/gradle.properties",
+          "path": "gradle.properties",
+          "language": "properties"
+        },
+        {
+          "sourceFile": "examples/api/run.sh",
+          "path": "run.sh",
+          "language": "bash"
+        }
+      ]
+    },
+    "scala-cats": {
+      "files": [
+        {
+          "sourceFile": "examples/api/scala-cats/settings.gradle.kts",
+          "path": "settings.gradle.kts",
+          "language": "kotlin"
+        },
+        {
+          "sourceFile": "examples/api/scala-cats/build.gradle.kts",
+          "path": "build.gradle.kts",
+          "language": "kotlin"
+        },
+        {
+          "sourceFile": "examples/api/gradle.properties",
+          "path": "gradle.properties",
+          "language": "properties"
+        },
+        {
+          "sourceFile": "examples/api/run.sh",
+          "path": "run.sh",
+          "language": "bash"
+        }
+      ]
+    }
+  }
+}

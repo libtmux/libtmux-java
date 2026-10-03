@@ -5,8 +5,7 @@
 // suite in this module runs every one of them against a real tmux, so an example cannot quietly stop
 // working — which is the failure mode that makes most projects' examples worthless.
 plugins {
-    // Java first; one program is Kotlin, to show the Flow and coroutine adapter end to end; four are
-    // Scala, for the direct and Cats facades. The Scala convention carries the Java one.
+    // The Scala convention includes Java; Kotlin adds the coroutine examples.
     id("libtmux.scala-library")
     alias(libs.plugins.kotlin.jvm)
 }
@@ -29,4 +28,8 @@ dependencies {
 
     testImplementation(project(":libtmux-junit5"))
     testImplementation(testFixtures(project(":integration-tests")))
+}
+
+tasks.withType<Test>().configureEach {
+    inputs.dir("api")
 }

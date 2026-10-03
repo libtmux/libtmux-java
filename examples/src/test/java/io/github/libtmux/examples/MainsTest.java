@@ -1,6 +1,7 @@
 package io.github.libtmux.examples;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -105,7 +106,8 @@ final class MainsTest {
 
     private static List<String> names(Path sources) throws IOException {
         try (Stream<Path> files = Files.list(sources)) {
-            return files.map(file -> file.getFileName().toString().replaceFirst("\\.(java|kt)$", ""))
+            return files.filter(Files::isRegularFile)
+                    .map(file -> file.getFileName().toString().replaceFirst("\\.(java|kt)$", ""))
                     .filter(name -> !name.equals("package-info"))
                     .toList();
         }
@@ -121,9 +123,25 @@ final class MainsTest {
         assertTrue(String.valueOf(failure.getMessage()).contains("did not exit"), failure.getMessage());
     }
 
+    @Test
+    void aTimedOutApiProgramStillCleansUpItsServer() {
+        AssertionError failure = assertThrows(
+                AssertionError.class,
+                () -> assertTimeoutPreemptively(
+                        Duration.ofSeconds(10), () -> launchApiProgram(Duration.ofSeconds(1), "MainsTest$Hangs")));
+        String output = String.valueOf(failure.getMessage());
+        assertTrue(output.contains("did not exit"), output);
+        String socket = output.lines()
+                .filter(line -> line.startsWith("/tmp/libtmux-java-dev/api.") && line.endsWith("/tmux.sock"))
+                .findFirst()
+                .orElseThrow();
+        assertFalse(Files.exists(Path.of(socket).getParent()), "the timed-out fixture must be removed");
+    }
+
     /** Never exits, and never closes its output. */
     static final class Hangs {
         public static void main(String[] args) throws InterruptedException {
+            if (args.length == 3) System.out.println(args[1]);
             Thread.sleep(Long.MAX_VALUE);
         }
     }
@@ -132,23 +150,49 @@ final class MainsTest {
         return launch(Duration.ofSeconds(60), program, args);
     }
 
+    static String launchApiProgram(String program) throws Exception {
+        return launchApiProgram(Duration.ofSeconds(60), program);
+    }
+
+    private static String launchApiProgram(Duration deadline, String program) throws Exception {
+        List<String> fixture =
+                List.of("env", "TMUX_BIN=" + System.getProperty("libtmux.tmux", "tmux"), "sh", "api/run.sh");
+        return launch(deadline, false, fixture, program);
+    }
+
     /** Runs the example's {@code main} in a fresh JVM and returns what it printed. */
     private static String launch(Duration deadline, String program, String... args) throws Exception {
-        List<String> command = new ArrayList<>(List.of(
+        return launch(deadline, true, List.of(), program, args);
+    }
+
+    private static String launch(
+            Duration deadline, boolean combineError, List<String> prefix, String program, String... args)
+            throws Exception {
+        List<String> command = new ArrayList<>(prefix);
+        command.addAll(List.of(
                 Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                 "-cp",
                 System.getProperty("java.class.path"),
-                "io.github.libtmux.examples." + program));
+                program.startsWith("io.github.") ? program : "io.github.libtmux.examples." + program));
         command.addAll(List.of(args));
-        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(combineError);
+        if (!combineError) builder.redirectError(ProcessBuilder.Redirect.INHERIT);
+        Process process = builder.start();
         process.getOutputStream().close();
         // Drained apart from the wait: a program that never exits never closes its output either.
         FutureTask<byte[]> printed =
                 new FutureTask<>(() -> process.getInputStream().readAllBytes());
         Thread.ofVirtual().start(printed);
         if (!process.waitFor(deadline.toMillis(), TimeUnit.MILLISECONDS)) {
-            process.descendants().forEach(ProcessHandle::destroyForcibly);
-            process.destroyForcibly().waitFor();
+            process.descendants().forEach(ProcessHandle::destroy);
+            if (prefix.isEmpty()) process.destroy();
+            if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                process.destroy();
+                if (!process.waitFor(1, TimeUnit.SECONDS)) {
+                    process.descendants().forEach(ProcessHandle::destroyForcibly);
+                    process.destroyForcibly().waitFor();
+                }
+            }
             fail(program + " did not exit within " + deadline + ", and printed:\n" + text(printed));
         }
         String out = text(printed);
