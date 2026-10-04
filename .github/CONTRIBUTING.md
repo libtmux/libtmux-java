@@ -138,6 +138,14 @@ How a fence says what it is — the directives, the `// →` assertions, the
 fixtures a snippet may assume — is in [`docs/README.md`](../docs/README.md#how-these-pages-are-tested), beside
 the code that reads them.
 
+Examples, whether programs, Javadoc blocks, or Markdown fences, stay within 80
+columns. Unlike the Gradle gates this one is a script, and it runs in CI before
+them:
+
+```console
+$ python3 tools/check_example_width.py
+```
+
 A green `check` that reported `UP-TO-DATE` for every task verified nothing.
 Force it when that matters:
 
