@@ -30,11 +30,11 @@ public final class Capture {
                         .build());
                 var pane = session.windows().getFirst().panes().getFirst();
                 pane.sendKeys(List.of("printf 'api-%s\\n' keys", "Enter"));
-                if (pane.awaitText("api-keys", Duration.ofSeconds(5)) == TextOutcome.TIMED_OUT) {
+                if (pane.awaitText("api-keys", Duration.ofSeconds(30)) == TextOutcome.TIMED_OUT) {
                     throw new IllegalStateException("timed out waiting for keys output");
                 }
                 pane.sendLine("printf 'api-%s\\n' line");
-                if (pane.awaitText("api-line", Duration.ofSeconds(5)) == TextOutcome.TIMED_OUT) {
+                if (pane.awaitText("api-line", Duration.ofSeconds(30)) == TextOutcome.TIMED_OUT) {
                     throw new IllegalStateException("timed out waiting for line output");
                 }
                 var lines = pane.capture();

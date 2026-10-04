@@ -35,12 +35,12 @@ object Capture extends IOApp {
           )
           pane = session.windows.head.panes.head
           _ <- pane.sendKeys(Vector("printf 'api-%s\\n' keys", "Enter"))
-          keys <- pane.awaitText("api-keys", 5.seconds)
+          keys <- pane.awaitText("api-keys", 30.seconds)
           _ <- IO.raiseWhen(keys.equals(TextOutcome.TIMED_OUT))(
             new IllegalStateException("timed out waiting for keys output")
           )
           _ <- pane.sendLine("printf 'api-%s\\n' line")
-          line <- pane.awaitText("api-line", 5.seconds)
+          line <- pane.awaitText("api-line", 30.seconds)
           _ <- IO.raiseWhen(line.equals(TextOutcome.TIMED_OUT))(
             new IllegalStateException("timed out waiting for line output")
           )

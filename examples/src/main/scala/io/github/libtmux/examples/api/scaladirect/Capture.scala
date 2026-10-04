@@ -30,12 +30,12 @@ object Capture {
         val pane = session.windows.head.panes.head
         pane.sendKeys(Vector("printf 'api-%s\\n' keys", "Enter"))
         require(
-          !pane.awaitText("api-keys", 5.seconds).equals(TextOutcome.TIMED_OUT),
+          !pane.awaitText("api-keys", 30.seconds).equals(TextOutcome.TIMED_OUT),
           "timed out waiting for keys output"
         )
         pane.sendLine("printf 'api-%s\\n' line")
         require(
-          !pane.awaitText("api-line", 5.seconds).equals(TextOutcome.TIMED_OUT),
+          !pane.awaitText("api-line", 30.seconds).equals(TextOutcome.TIMED_OUT),
           "timed out waiting for line output"
         )
         val lines = pane.capture()
