@@ -4,6 +4,7 @@ import _root_.cats.effect.IO
 import _root_.cats.effect.unsafe.implicits.global
 import io.github.libtmux.exception.DispatchException
 import io.github.libtmux.{Server => JavaServer, ServerConfig}
+import io.github.libtmux.testsupport.HangGuard
 import io.github.libtmux.transport.{
   CommandRequest,
   CommandResult,
@@ -66,6 +67,6 @@ final class SubsystemSuite extends FunSuite {
         _ <- IO(assert(outcome.isCanceled, outcome.toString))
       } yield ()
     }
-    program.timeout(2.seconds).unsafeToFuture()
+    program.timeout(HangGuard.SECONDS.seconds).unsafeToFuture()
   }
 }

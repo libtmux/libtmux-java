@@ -37,7 +37,7 @@ object BlockingWorkspace {
         shell.sendLine("printf 'line-%s\\n' submitted")
         assert(
           !shell
-            .awaitText("line-submitted", 5.seconds)
+            .awaitText("line-submitted", 30.seconds)
             .equals(io.github.libtmux.TextOutcome.TIMED_OUT)
         )
         val screen = shell.capture()

@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.ServerClosedException;
+import io.github.libtmux.testsupport.HangGuard;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -48,7 +49,7 @@ import org.junit.jupiter.api.io.TempDir;
  */
 final class ProcessTransportTest {
 
-    private static final Duration GENEROUS = Duration.ofSeconds(30);
+    private static final Duration GENEROUS = HangGuard.DURATION;
     private static final int FLOOD_BYTES = 262_144;
 
     private static CommandRequest shell(String script, Duration timeout) {
@@ -242,15 +243,14 @@ final class ProcessTransportTest {
         Thread caller = Thread.ofVirtual().start(request);
 
         try {
-            ExecutionException ended = assertThrows(ExecutionException.class, () -> request.get(5, TimeUnit.SECONDS));
+            ExecutionException ended =
+                    assertThrows(ExecutionException.class, () -> request.get(HangGuard.SECONDS, TimeUnit.SECONDS));
             DispatchException.TimedOut failure = assertInstanceOf(DispatchException.TimedOut.class, ended.getCause());
             assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
             assertFalse(child.get().isAlive(), "the child survived its input deadline");
             assertEquals(
                     List.of("reclaimed"),
-                    transport
-                            .execute(shell("echo reclaimed", Duration.ofSeconds(2)))
-                            .stdout(),
+                    transport.execute(shell("echo reclaimed", GENEROUS)).stdout(),
                     "blocked input permanently consumed the only permit");
         } finally {
             transport.close();
@@ -309,14 +309,13 @@ final class ProcessTransportTest {
 
             DispatchException failure = assertThrows(
                     DispatchException.class,
-                    () -> transport.execute(
-                            bash("trap '' TERM; while :; do printf 1234567890; done", Duration.ofSeconds(5))));
+                    () -> transport.execute(bash("trap '' TERM; while :; do printf 1234567890; done", GENEROUS)));
 
             assertFalse(
                     failure instanceof DispatchException.TimedOut, "the pump observed overflow before the deadline");
             assertTrue(String.valueOf(failure.getMessage()).contains("1024 byte channel limit"));
             assertTrue(
-                    Duration.ofNanos(System.nanoTime() - started).compareTo(Duration.ofSeconds(2)) < 0,
+                    Duration.ofNanos(System.nanoTime() - started).compareTo(GENEROUS) < 0,
                     "overflow was not acted on promptly");
         }
     }
@@ -411,13 +410,14 @@ final class ProcessTransportTest {
     }
 
     @Test
-    void anInterruptedCallerReportsUnknownAndKeepsItsInterrupt() throws InterruptedException {
+    void anInterruptedCallerReportsUnknownAndKeepsItsInterrupt(@TempDir Path directory) throws InterruptedException {
         try (ProcessTransport transport = new ProcessTransport()) {
+            Path running = directory.resolve("running");
             BlockingQueue<Object> outcome = new ArrayBlockingQueue<>(1);
             AtomicBoolean interruptRestored = new AtomicBoolean();
             Thread caller = new Thread(() -> {
                 try {
-                    outcome.add(transport.execute(shell("sleep 30", GENEROUS)));
+                    outcome.add(transport.execute(shell("touch \"" + running + "\"; sleep 30", GENEROUS)));
                 } catch (RuntimeException e) {
                     interruptRestored.set(Thread.currentThread().isInterrupted());
                     outcome.add(e);
@@ -425,7 +425,7 @@ final class ProcessTransportTest {
             });
 
             caller.start();
-            Thread.sleep(400);
+            assertTrue(awaitFile(running), "the child never started");
             caller.interrupt();
             caller.join(TimeUnit.SECONDS.toMillis(20));
 
@@ -461,19 +461,21 @@ final class ProcessTransportTest {
      * therefore impossible to act on.
      */
     @Test
-    void closeKillingARunningChildReportsUnknownRatherThanASignalExit() throws InterruptedException {
+    void closeKillingARunningChildReportsUnknownRatherThanASignalExit(@TempDir Path directory)
+            throws InterruptedException {
         ProcessTransport transport = new ProcessTransport();
+        Path running = directory.resolve("running");
         BlockingQueue<Object> outcome = new ArrayBlockingQueue<>(1);
         Thread caller = new Thread(() -> {
             try {
-                outcome.add(transport.execute(shell("sleep 30", GENEROUS)));
+                outcome.add(transport.execute(shell("touch \"" + running + "\"; sleep 30", GENEROUS)));
             } catch (RuntimeException e) {
                 outcome.add(e);
             }
         });
 
         caller.start();
-        Thread.sleep(400);
+        assertTrue(awaitFile(running), "the child never started");
         transport.close();
         caller.join(TimeUnit.SECONDS.toMillis(20));
 
@@ -645,7 +647,7 @@ final class ProcessTransportTest {
             FutureTask<CommandResult> first = new FutureTask<>(() -> transport.execute(occupying));
             Thread caller = Thread.ofVirtual().start(first);
             try {
-                long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+                long deadline = System.nanoTime() + GENEROUS.toNanos();
                 while (!Files.exists(started) && System.nanoTime() < deadline) {
                     Thread.sleep(10);
                 }
@@ -698,9 +700,7 @@ final class ProcessTransportTest {
             assertEquals(bound - 1, starts.get(), "a fourth waiting process crossed the reserved boundary");
             assertEquals(
                     List.of("ordinary"),
-                    transport
-                            .execute(shell("printf ordinary", Duration.ofSeconds(2)))
-                            .stdout(),
+                    transport.execute(shell("printf ordinary", GENEROUS)).stdout(),
                     "ordinary work could not use the reserved process");
         } finally {
             blocked.forEach(GatedInputStream::release);
@@ -807,9 +807,7 @@ final class ProcessTransportTest {
             assertThrows(ExecutionException.class, () -> first.get(10, TimeUnit.SECONDS));
             assertEquals(
                     List.of("reclaimed"),
-                    transport
-                            .execute(shell("echo reclaimed", Duration.ofSeconds(2)))
-                            .stdout(),
+                    transport.execute(shell("echo reclaimed", GENEROUS)).stdout(),
                     "the interrupted request permanently consumed the only permit");
         } finally {
             stdout.release();
@@ -897,7 +895,7 @@ final class ProcessTransportTest {
     }
 
     private static boolean awaitDead(long pid) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false) && System.nanoTime() < deadline) {
             Thread.sleep(10);
         }
@@ -905,7 +903,7 @@ final class ProcessTransportTest {
     }
 
     private static boolean awaitFile(Path file) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (!Files.exists(file) && System.nanoTime() < deadline) {
             Thread.sleep(10);
         }
@@ -913,7 +911,7 @@ final class ProcessTransportTest {
     }
 
     private static boolean awaitClosed(ProcessTransport transport) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (System.nanoTime() < deadline) {
             try {
                 transport.execute(shell("true", Duration.ofMillis(1)));
@@ -928,7 +926,7 @@ final class ProcessTransportTest {
     }
 
     private static boolean awaitReclamation(Future<?> request, Thread caller) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (System.nanoTime() < deadline) {
             if (request.isDone() || caller.getState() == Thread.State.TIMED_WAITING) {
                 return true;
@@ -939,7 +937,7 @@ final class ProcessTransportTest {
     }
 
     private static boolean awaitTimedWait(Future<?> request, Thread caller) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (!request.isDone() && System.nanoTime() < deadline) {
             if (caller.getState() == Thread.State.TIMED_WAITING) {
                 return true;

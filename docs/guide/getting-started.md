@@ -223,7 +223,7 @@ try (ControlClient client = server.control(session);
     // Output arrives in frames as tmux flushes it, so one line can span several.
     StringBuilder seen = new StringBuilder();
     while (seen.indexOf("streamed") < 0) {
-        seen.append(Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow()).data());
+        seen.append(Delivery.kept(output.next(Duration.ofSeconds(30)).orElseThrow()).data());
     }
     seen.indexOf("streamed") >= 0;  // → true
 }

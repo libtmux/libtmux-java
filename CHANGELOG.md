@@ -12,6 +12,13 @@ production.
 
 ## Unreleased
 
+### Fixed
+
+- **`tmux-workspace --ndjson` keeps each event on its own line when it is
+  interrupted.** An event is now written in one piece, so an interrupt that
+  cancels output while a child is still printing can no longer leave the
+  next event on the same line.
+
 ### Documented
 
 - **`SplitSpec.Builder.running`, `WindowSpec.Builder.running` and

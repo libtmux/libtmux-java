@@ -7,6 +7,7 @@ plugins { id("libtmux.published-scala-library") }
 mavenPublishing { pom { description = "Cats Effect resources and FS2 observations for libtmux." } }
 
 dependencies {
+    testImplementation(project(":test-support"))
     api(project(":libtmux-scala"))
     api(libs.cats.effect)
     api(libs.fs2.core)

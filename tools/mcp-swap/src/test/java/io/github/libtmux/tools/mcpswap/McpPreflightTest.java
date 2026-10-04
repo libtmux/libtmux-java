@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.testsupport.HangGuard;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,6 +12,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -33,7 +35,7 @@ final class McpPreflightTest {
         McpPreflight.run(
                 new ServerSpec(server.toString(), List.of(), Map.of("DESCENDANT_PID", descendant.toString())),
                 System.getenv(),
-                Duration.ofSeconds(3),
+                HangGuard.DURATION,
                 1024 * 1024);
 
         var pid = Long.parseLong(Files.readString(descendant, StandardCharsets.UTF_8));
@@ -60,7 +62,7 @@ final class McpPreflightTest {
                 """, StandardCharsets.UTF_8);
         assertTrue(server.toFile().setExecutable(true));
 
-        McpPreflight.run(new ServerSpec(server.toString(), List.of()), System.getenv(), Duration.ofSeconds(3), 1024);
+        McpPreflight.run(new ServerSpec(server.toString(), List.of()), System.getenv(), HangGuard.DURATION, 1024);
     }
 
     @Test
@@ -83,7 +85,7 @@ final class McpPreflightTest {
                             new ServerSpec(
                                     server.toString(), List.of(), Map.of("DESCENDANT_PID", descendant.toString())),
                             System.getenv(),
-                            Duration.ofSeconds(3),
+                            HangGuard.DURATION,
                             1024));
 
             assertTrue(String.valueOf(failure.getMessage()).contains("exceeded"), stream);
@@ -104,14 +106,11 @@ final class McpPreflightTest {
             assertThrows(
                     IOException.class,
                     () -> McpPreflight.run(
-                            new ServerSpec(server.toString(), List.of()),
-                            System.getenv(),
-                            Duration.ofSeconds(2),
-                            1024));
+                            new ServerSpec(server.toString(), List.of()), System.getenv(), HangGuard.DURATION, 1024));
         }
 
         var valid = responseServer("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\"}}");
-        McpPreflight.run(new ServerSpec(valid.toString(), List.of()), System.getenv(), Duration.ofSeconds(2), 1024);
+        McpPreflight.run(new ServerSpec(valid.toString(), List.of()), System.getenv(), HangGuard.DURATION, 1024);
     }
 
     @Test
@@ -122,7 +121,7 @@ final class McpPreflightTest {
         assertThrows(
                 IOException.class,
                 () -> McpPreflight.run(
-                        new ServerSpec(server.toString(), List.of()), System.getenv(), Duration.ofSeconds(2), 1024));
+                        new ServerSpec(server.toString(), List.of()), System.getenv(), HangGuard.DURATION, 1024));
     }
 
     @Test
@@ -136,8 +135,47 @@ final class McpPreflightTest {
         McpPreflight.run(
                 new ServerSpec(server.toString(), List.of(), Map.of("PREFLIGHT_VALUE", "expected")),
                 Map.of("PATH", System.getenv().getOrDefault("PATH", "")),
-                Duration.ofSeconds(2),
+                HangGuard.DURATION,
                 1024);
+    }
+
+    /** A killed process lingers until it is reaped: the check waits for that rather than sampling. */
+    @Test
+    void aKilledProcessStillBeingReapedCountsAsGoneOnceItIs() throws Exception {
+        var slowToReap = new Reaped(300);
+        var promptly = new Reaped(0);
+
+        assertTrue(McpPreflight.gone(List.of(promptly.handle(), slowToReap.handle()), Duration.ofSeconds(5)));
+        assertFalse(McpPreflight.gone(List.of(new Reaped(60_000).handle()), Duration.ofMillis(100)));
+    }
+
+    /** A process handle that reports itself alive until a delay after the test creates it. */
+    private record Reaped(long millis, long start) {
+        Reaped(long millis) {
+            this(millis, System.nanoTime());
+        }
+
+        boolean alive() {
+            return System.nanoTime() - start < millis * 1_000_000;
+        }
+
+        ProcessHandle handle() {
+            var self = new ProcessHandle[1];
+            self[0] = (ProcessHandle) java.lang.reflect.Proxy.newProxyInstance(
+                    ProcessHandle.class.getClassLoader(),
+                    new Class<?>[] {ProcessHandle.class},
+                    (proxy, method, args) -> switch (method.getName()) {
+                        case "isAlive" -> alive();
+                        case "onExit" ->
+                            new java.util.concurrent.CompletableFuture<ProcessHandle>()
+                                    .completeOnTimeout(
+                                            self[0],
+                                            Math.max(0, millis - (System.nanoTime() - start) / 1_000_000),
+                                            TimeUnit.MILLISECONDS);
+                        default -> throw new UnsupportedOperationException(method.getName());
+                    });
+            return self[0];
+        }
     }
 
     private Path responseServer(String response) throws IOException {
@@ -154,7 +192,7 @@ final class McpPreflightTest {
     }
 
     private static void assertEventuallyDead(long pid) throws InterruptedException {
-        for (var attempt = 0; attempt < 100; attempt++) {
+        for (var attempt = 0; attempt < HangGuard.SECONDS * 100; attempt++) {
             if (ProcessHandle.of(pid).isEmpty()
                     || !ProcessHandle.of(pid).orElseThrow().isAlive()) {
                 return;

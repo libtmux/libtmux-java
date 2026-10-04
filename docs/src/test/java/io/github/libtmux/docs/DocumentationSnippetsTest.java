@@ -13,10 +13,10 @@ import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.junit5.TmuxSocketPath;
+import io.github.libtmux.testsupport.HangGuard;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -96,11 +96,11 @@ final class DocumentationSnippetsTest {
 
     /**
      * A snippet that hangs would otherwise hang the build. Generous next to the slowest snippet,
-     * about 2 seconds, since a slow runner still has to pass.
+     * since a slow runner still has to pass.
      */
     @ParameterizedTest(name = "{0}")
     @MethodSource("snippets")
-    @Timeout(value = 15, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    @Timeout(value = 2 * HangGuard.SECONDS, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void theSnippetIsWhatItClaimsToBe(Snippet snippet, Server server, TmuxSocketPath socket) throws Throwable {
         if (snippet.expectation() == Snippet.Expectation.SKIPPED) {
             return;
@@ -165,7 +165,7 @@ final class DocumentationSnippetsTest {
         bindings.put("options", options);
         bindings.put("socket", socket.path());
         bindings.put("directory", socket.path().getParent());
-        bindings.put("timeout", Duration.ofSeconds(5));
+        bindings.put("timeout", HangGuard.DURATION);
         bindings.put("yamlString", "session_name: from-a-snippet\nwindows:\n  - window_name: one\n");
         return bindings;
     }

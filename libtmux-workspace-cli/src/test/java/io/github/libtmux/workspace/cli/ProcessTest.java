@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.testsupport.HangGuard;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -26,6 +27,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 /** Drives the installed launcher as a real process, which is why the whole class is tagged. */
 @org.junit.jupiter.api.Tag("distribution")
 final class ProcessTest {
+    private static final String GUARD = Integer.toString(HangGuard.SECONDS);
+
     private static final String PTY = """
             import errno, os, select, subprocess, time
             def drain_pty(fd):
@@ -61,6 +64,7 @@ final class ProcessTest {
         process.environment().remove("TMUX_PANE");
         process.environment().put("HOME", directory.toString());
         process.environment().put("LIBTMUX_TEST_TMUX", System.getProperty("libtmux.tmux", "tmux"));
+        process.environment().put("LIBTMUX_TEST_READY_TIMEOUT_MS", Long.toString(HangGuard.MILLIS));
         return process;
     }
 
@@ -72,7 +76,7 @@ final class ProcessTest {
                 .redirectError(ProcessBuilder.Redirect.INHERIT)
                 .start();
         try {
-            assertTrue(generator.waitFor(5, TimeUnit.SECONDS));
+            assertTrue(generator.waitFor(HangGuard.SECONDS, TimeUnit.SECONDS));
             assertEquals(0, generator.exitValue());
         } finally {
             if (generator.isAlive()) generator.destroyForcibly().waitFor();
@@ -108,7 +112,7 @@ final class ProcessTest {
                 joined = False
                 exit_status = None
                 def until(predicate):
-                    end = time.monotonic() + 4
+                    end = time.monotonic() + HANG_GUARD
                     while time.monotonic() < end:
                         if predicate(): return
                         if select.select([fd], [], [], .01)[0]:
@@ -145,7 +149,7 @@ final class ProcessTest {
                         os.waitpid(pid, 0)
                     os.close(fd)
                     with open(root + '/terminal.raw', 'wb') as stream: stream.write(trace)
-                """;
+                """.replace("HANG_GUARD", GUARD);
         Process probe = new ProcessBuilder("python3", "-c", script, directory.toString(), completion.toString())
                 .redirectError(ProcessBuilder.Redirect.INHERIT)
                 .start();
@@ -259,7 +263,7 @@ final class ProcessTest {
                     assertTrue(process.waitFor(45, TimeUnit.SECONDS), "installed import/load did not finish");
                     assertEquals(0, process.exitValue(), Files.readString(err));
                 }
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
                 while (System.nanoTime() < deadline) {
                     Path sequence = directory.resolve("sequence");
                     boolean complete =
@@ -326,7 +330,7 @@ final class ProcessTest {
                             .succeeded());
                     assertTrue(server.cmd("send-keys", "-t", effects.path(0).asText(), "Enter")
                             .succeeded());
-                    deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                    deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
                     while (System.nanoTime() < deadline
                             && (!Files.exists(synchronizedOutput) || Files.size(synchronizedOutput) < 3))
                         Thread.sleep(20);
@@ -430,7 +434,7 @@ final class ProcessTest {
                     stdin=subprocess.DEVNULL)
                 try:
                     size = array.array('i', [0])
-                    until = time.monotonic() + 4
+                    until = time.monotonic() + HANG_GUARD
                     while child.poll() is None and time.monotonic() < until:
                         fcntl.ioctl(reader, termios.FIONREAD, size, True)
                         if size[0] > 0 and not select.select([], [writer], [], 0)[1]: break
@@ -440,7 +444,7 @@ final class ProcessTest {
                     child.send_signal(signal.SIGINT)
                     # Main's own shutdown hook gives the interrupted run up to 3s to unwind before
                     # abandoning it; this margin must clear that, not just the common case.
-                    assert child.wait(timeout=4) == 130
+                    assert child.wait(timeout=HANG_GUARD) == 130
                 finally:
                     if child.poll() is None:
                         child.kill()
@@ -448,7 +452,7 @@ final class ProcessTest {
                     os.close(reader)
                     os.close(writer)
                     child.stderr.close()
-                """;
+                """.replace("HANG_GUARD", GUARD);
         var builder = command("ls", "--full", "--json");
         var argv = new ArrayList<>(List.of("python3", "-c", script));
         argv.addAll(builder.command());
@@ -509,7 +513,7 @@ final class ProcessTest {
                             if cancelled == 'true' and not sent and b''.join(chunks).count(b'PROGRESS_progress_1_2') >= 3:
                                 child.send_signal(signal.SIGINT)
                                 sent = True
-                        assert child.wait(timeout=5) == (130 if cancelled == 'true' else 0)
+                        assert child.wait(timeout=HANG_GUARD) == (130 if cancelled == 'true' else 0)
                         chunks.append(drain_pty(master))
                     finally:
                         if child.poll() is None:
@@ -518,7 +522,7 @@ final class ProcessTest {
                         os.close(slave)
                         os.close(master)
                 with open(capture, 'wb') as target: target.write(b''.join(chunks))
-                """;
+                """.replace("HANG_GUARD", GUARD);
         var builder = command();
         builder.command(
                 "python3",
@@ -598,7 +602,7 @@ final class ProcessTest {
                         new ProcessBuilder("kill", "-INT", Long.toString(process.pid()))
                                 .start()
                                 .waitFor());
-                assertTrue(process.waitFor(4, TimeUnit.SECONDS), "CLI did not stop after SIGINT");
+                assertTrue(process.waitFor(HangGuard.SECONDS, TimeUnit.SECONDS), "CLI did not stop after SIGINT");
                 output.append(reader.lines().collect(java.util.stream.Collectors.joining("\n")));
                 assertEquals(130, process.exitValue());
                 var last = new ObjectMapper()
@@ -641,7 +645,7 @@ final class ProcessTest {
             assertTrue(line != null, "missing editor output");
             var first = new ObjectMapper().readTree(line);
             descendant = Long.parseLong(first.path("text").asText());
-            assertTrue(process.waitFor(4, TimeUnit.SECONDS), "CLI is held open by an inherited pipe");
+            assertTrue(process.waitFor(HangGuard.SECONDS, TimeUnit.SECONDS), "CLI is held open by an inherited pipe");
             var status = new ProcessBuilder("ps", "-o", "stat=", "-p", Long.toString(descendant)).start();
             String state = new String(status.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
             status.waitFor();
@@ -697,7 +701,7 @@ final class ProcessTest {
         Process process = builder.start();
         long descendant = -1;
         try {
-            assertTrue(process.waitFor(4, TimeUnit.SECONDS));
+            assertTrue(process.waitFor(HangGuard.SECONDS, TimeUnit.SECONDS));
             assertEquals(0, process.exitValue());
             var result = new ObjectMapper().readTree(process.getInputStream());
             descendant = Long.parseLong(result.path("stdout").asText());
@@ -869,10 +873,10 @@ final class ProcessTest {
                 finally:
                     subprocess.run(prefix + ['kill-server'], capture_output=True)
                     for master, slave, tty, child in clients:
-                        if child.poll() is None: wait_pty(child, master, 2)
+                        if child.poll() is None: wait_pty(child, master, HANG_GUARD)
                         os.close(slave)
                         os.close(master)
-                """;
+                """.replace("HANG_GUARD", GUARD);
         try (Server server = Server.builder()
                 .endpoint(ServerEndpoint.socketPath(socket))
                 .binary(System.getProperty("libtmux.tmux", "tmux"))
@@ -959,10 +963,10 @@ final class ProcessTest {
                 finally:
                     subprocess.run(prefix + ['kill-server'], capture_output=True)
                     if client.poll() is None:
-                        wait_pty(client, master, 2)
+                        wait_pty(client, master, HANG_GUARD)
                     os.close(slave)
                     os.close(master)
-                """;
+                """.replace("HANG_GUARD", GUARD);
         Path diagnostics = directory.resolve("runshell-diagnostics.log");
         try (Server server = Server.builder()
                 .endpoint(ServerEndpoint.socketPath(socket))
@@ -1036,7 +1040,7 @@ final class ProcessTest {
                     command += '; printf %s $? >' + shlex.quote(status)
                     subprocess.run(prefix + ['send-keys', '-t', 'keeper', '-l', command], check=True)
                     subprocess.run(prefix + ['send-keys', '-t', 'keeper', 'Enter'], check=True)
-                    text = wait_for('switch (y)', 5)
+                    text = wait_for('switch (y)', HANG_GUARD)
                     assert 'switch (y)' in text, text
                     # A real keystroke, not piped stdin: several ports skip prompting on a pipe.
                     subprocess.run(prefix + ['send-keys', '-t', 'keeper', '-l', 'n'], check=True)
@@ -1055,10 +1059,10 @@ final class ProcessTest {
                 finally:
                     subprocess.run(prefix + ['kill-server'], capture_output=True)
                     if child.poll() is None:
-                        wait_pty(child, master, 2)
+                        wait_pty(child, master, HANG_GUARD)
                     os.close(slave)
                     os.close(master)
-                """;
+                """.replace("HANG_GUARD", GUARD);
         try (Server server = Server.builder()
                 .endpoint(ServerEndpoint.socketPath(socket))
                 .binary(System.getProperty("libtmux.tmux", "tmux"))
@@ -1149,10 +1153,10 @@ final class ProcessTest {
                 finally:
                     subprocess.run(prefix + ['kill-server'], capture_output=True)
                     if child.poll() is None:
-                        wait_pty(child, master, 2)
+                        wait_pty(child, master, HANG_GUARD)
                     os.close(slave)
                     os.close(master)
-                """;
+                """.replace("HANG_GUARD", GUARD);
         try (Server server = Server.builder()
                 .endpoint(ServerEndpoint.socketPath(socket))
                 .binary(System.getProperty("libtmux.tmux", "tmux"))
@@ -1251,10 +1255,10 @@ final class ProcessTest {
                 finally:
                     subprocess.run(prefix + ['kill-server'], capture_output=True)
                     if child.poll() is None:
-                        wait_pty(child, master, 2)
+                        wait_pty(child, master, HANG_GUARD)
                     os.close(slave)
                     os.close(master)
-                """;
+                """.replace("HANG_GUARD", GUARD);
         try (Server server = Server.builder()
                 .endpoint(ServerEndpoint.socketPath(socket))
                 .binary(System.getProperty("libtmux.tmux", "tmux"))

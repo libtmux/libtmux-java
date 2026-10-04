@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.exception.ControlEndedException;
+import io.github.libtmux.testsupport.HangGuard;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
@@ -281,7 +282,7 @@ final class EventSubscriptionTest {
         });
         Thread reader = Thread.ofVirtual().start(first);
         try {
-            assertTrue(reading.await(1, TimeUnit.SECONDS));
+            assertTrue(reading.await(HangGuard.SECONDS, TimeUnit.SECONDS));
             awaitWaiting(reader);
 
             IllegalStateException refused =

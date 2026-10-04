@@ -9,6 +9,7 @@ import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -73,7 +74,7 @@ final class PaneOperationsIntegrationTest {
     /** Polls until two consecutive readings agree, so the startup transient is over. */
     private static String awaitSettledCommand(Pane pane) throws InterruptedException {
         String previous = pane.refresh().currentCommand();
-        for (int attempt = 0; attempt < 100; attempt++) {
+        for (int attempt = 0; attempt < HangGuard.SECONDS * 20; attempt++) {
             Thread.sleep(50);
             String current = pane.refresh().currentCommand();
             if (current.equals(previous)) {

@@ -16,6 +16,7 @@ plugins {
 }
 
 dependencies {
+    testImplementation(project(":test-support"))
     testImplementation(project(":libtmux"))
     testImplementation(project(":libtmux-jackson"))
     testImplementation(project(":libtmux-junit5"))

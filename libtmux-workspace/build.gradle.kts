@@ -5,6 +5,7 @@ plugins {
 }
 
 dependencies {
+    testImplementation(project(":test-support"))
     api(project(":libtmux"))
     implementation(libs.jackson.yaml)
 

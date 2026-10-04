@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.testsupport.HangGuard;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -38,12 +39,13 @@ final class CarrierStarvationTest {
 
     private static final int FLOOD_BYTES = 262_144;
     private static final Duration DEADLINE = Duration.ofSeconds(5);
+    private static final Duration GUARD = HangGuard.DURATION;
 
     private static final String FLOOD = "head -c " + FLOOD_BYTES + " /dev/zero | tr '\\0' a &" + " head -c "
             + FLOOD_BYTES + " /dev/zero | tr '\\0' b >&2; wait";
 
-    private static CommandRequest flood() {
-        return CommandRequest.of(List.of("/bin/sh"), List.of("-c", FLOOD), DEADLINE);
+    private static CommandRequest flood(Duration deadline) {
+        return CommandRequest.of(List.of("/bin/sh"), List.of("-c", FLOOD), deadline);
     }
 
     @Test
@@ -62,7 +64,7 @@ final class CarrierStarvationTest {
                 ProcessTransport transport = new ProcessTransport(2)) {
             assertTrue(hog.isHolding(), "the fixture did not manage to pin the only carrier");
 
-            CommandResult result = transport.execute(flood());
+            CommandResult result = transport.execute(flood(GUARD));
 
             assertEquals(0, result.exitCode());
             assertEquals(FLOOD_BYTES, result.stdout().get(0).length());
@@ -82,7 +84,7 @@ final class CarrierStarvationTest {
                 VirtualDrainTransport transport = new VirtualDrainTransport()) {
             assertTrue(hog.isHolding(), "the fixture did not manage to pin the only carrier");
 
-            DispatchException failure = assertThrows(DispatchException.class, () -> transport.execute(flood()));
+            DispatchException failure = assertThrows(DispatchException.class, () -> transport.execute(flood(DEADLINE)));
 
             assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
         }
@@ -95,7 +97,7 @@ final class CarrierStarvationTest {
     @Test
     void theSameFloodSucceedsOnVirtualDrainsWithAnOrdinaryScheduler() throws Exception {
         try (VirtualDrainTransport transport = new VirtualDrainTransport()) {
-            CommandResult result = transport.execute(flood());
+            CommandResult result = transport.execute(flood(GUARD));
 
             assertEquals(
                     FLOOD_BYTES,

@@ -14,6 +14,7 @@ import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.SplitSpec;
 import io.github.libtmux.WakeReason;
+import io.github.libtmux.testsupport.HangGuard;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -48,6 +49,7 @@ final class ExecutionTest {
         environment.remove("TMUXP_DETECT_TERMINAL_SIZE");
         environment.put("HOME", directory.toString());
         environment.put("LIBTMUX_TEST_TMUX", System.getProperty("libtmux.tmux", "tmux"));
+        environment.put("LIBTMUX_TEST_READY_TIMEOUT_MS", Long.toString(HangGuard.MILLIS));
         environment.putAll(overrides);
         var out = new ByteArrayOutputStream();
         var err = new ByteArrayOutputStream();
@@ -302,8 +304,8 @@ final class ExecutionTest {
         try (Server server = server(socket)) {
             try {
                 owner.start();
-                long deadline =
-                        System.nanoTime() + java.time.Duration.ofSeconds(5).toNanos();
+                long deadline = System.nanoTime()
+                        + java.time.Duration.ofSeconds(HangGuard.SECONDS).toNanos();
                 while (!Files.exists(marker) && owner.isAlive() && System.nanoTime() < deadline) Thread.sleep(10);
                 assertTrue(Files.exists(marker), result.get().toString());
                 owner.interrupt();
@@ -558,8 +560,8 @@ final class ExecutionTest {
                 Result result =
                         invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--json");
                 assertEquals(0, result.code(), result.err());
-                long deadline =
-                        System.nanoTime() + java.time.Duration.ofSeconds(2).toNanos();
+                long deadline = System.nanoTime()
+                        + java.time.Duration.ofSeconds(HangGuard.SECONDS).toNanos();
                 while (!Files.exists(marker) && System.nanoTime() < deadline) Thread.sleep(10);
                 assertTrue(Files.exists(marker), "command was discarded before the consumer became ready");
                 assertEquals("received", Files.readString(marker));
@@ -956,8 +958,8 @@ final class ExecutionTest {
                 assertTrue(String.join("\n", pane.capture()).contains("printf executed"));
                 assertFalse(Files.exists(marker));
                 pane.sendKeys(java.util.List.of("Enter"));
-                long deadline =
-                        System.nanoTime() + java.time.Duration.ofSeconds(2).toNanos();
+                long deadline = System.nanoTime()
+                        + java.time.Duration.ofSeconds(HangGuard.SECONDS).toNanos();
                 while (!Files.exists(marker) && System.nanoTime() < deadline) Thread.sleep(10);
                 assertEquals("executed", Files.readString(marker));
             } finally {
@@ -1633,6 +1635,7 @@ final class ExecutionTest {
         environment.remove("TMUX_PANE");
         environment.put("HOME", directory.toString());
         environment.put("LIBTMUX_TEST_TMUX", System.getProperty("libtmux.tmux", "tmux"));
+        environment.put("LIBTMUX_TEST_READY_TIMEOUT_MS", Long.toString(HangGuard.MILLIS));
         Thread owner = Thread.ofPlatform()
                 .unstarted(() -> status.set(Main.run(
                         new String[] {
@@ -1655,7 +1658,7 @@ final class ExecutionTest {
         try (Server server = server(socket)) {
             try {
                 owner.start();
-                assertTrue(error.entered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+                assertTrue(error.entered.await(HangGuard.SECONDS, java.util.concurrent.TimeUnit.SECONDS));
                 owner.interrupt();
                 owner.join(1_000);
                 assertFalse(owner.isAlive(), "child drains retained the invocation");
@@ -1676,7 +1679,7 @@ final class ExecutionTest {
             } finally {
                 error.release.countDown();
                 owner.join(2_000);
-                assertTrue(error.finished.await(2, java.util.concurrent.TimeUnit.SECONDS));
+                assertTrue(error.finished.await(HangGuard.SECONDS, java.util.concurrent.TimeUnit.SECONDS));
                 if (Files.exists(pids)) {
                     for (String pid : Files.readAllLines(pids))
                         ProcessHandle.of(Long.parseLong(pid)).ifPresent(ProcessHandle::destroyForcibly);
@@ -1919,8 +1922,16 @@ final class ExecutionTest {
                 """);
         try (Server server = server(socket)) {
             try {
-                Result result =
-                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--ndjson");
+                Result result = invoke(
+                        java.util.Map.of("LIBTMUX_TEST_READY_TIMEOUT_MS", "100"),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--ndjson");
                 assertEquals(0, result.code(), result.err());
                 assertTrue(result.out().contains("pane_readiness_timeout"), result.out());
             } finally {
