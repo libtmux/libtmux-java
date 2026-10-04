@@ -1,9 +1,11 @@
 package io.github.libtmux.scaladsl.examples
 
 import io.github.libtmux.{Layout, ServerConfig, SessionSpec, SplitSpec}
-// Wildcards, not named imports: examples lives beside io.github.libtmux.scaladsl, not inside it, so
-// its generated and handwritten extension methods (isAlive, newSession, session, ...) need an
-// explicit import rather than the enclosing-package visibility a nested package would get for free.
+// Wildcards, not named imports: examples lives beside
+// io.github.libtmux.scaladsl, not inside it, so its generated and handwritten
+// extension methods (isAlive, newSession, session, ...) need an explicit import
+// rather than the enclosing-package visibility a nested package would get for
+// free.
 import io.github.libtmux.scaladsl.*
 import io.github.libtmux.scaladsl.query.*
 import scala.concurrent.duration._
@@ -43,8 +45,9 @@ object BlockingWorkspace {
         val screen = shell.capture()
         assert(screen.exists(_.contains("line-submitted")))
 
-        // The typed field DSL: Pane.command/.active on the handle's own companion, .matching as a
-        // local filter, exactlyOne for strict cardinality.
+        // The typed field DSL: Pane.command/.active on the handle's own
+        // companion, .matching as a local filter, exactlyOne for strict
+        // cardinality.
         val panes = Vector(shell, second)
         assert(
           panes
