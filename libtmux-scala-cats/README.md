@@ -81,7 +81,8 @@ Server.resource[IO](config).use { server =>
             .map(_.notification())
             .collect { case event: Notification.SessionRenamed => event }
             .filter(event =>
-              event.session().value() == session.info.id().value() && event.name() == name
+              event.session().value() == session.info.id().value() &&
+                event.name() == name
             )
             .take(1)
             .compile
