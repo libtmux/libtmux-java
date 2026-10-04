@@ -7,7 +7,8 @@ import java.util.UUID
 import scala.jdk.CollectionConverters._
 
 private[examples] object ExampleRuntime {
-  val deadline: Duration = Duration.ofMillis(800)
+  // A hang guard, not an expectation: a hosted macOS runner is slower than Linux.
+  val deadline: Duration = Duration.ofSeconds(10)
 
   def config(arguments: Array[String]): ServerConfig = {
     require(

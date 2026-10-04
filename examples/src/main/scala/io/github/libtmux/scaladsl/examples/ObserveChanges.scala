@@ -41,8 +41,16 @@ object ObserveChanges extends IOApp {
               for {
                 initial <- live.signal.get
                 _ <- window.rename("renamed")
+                // Wait for the view that holds the rename, not merely a newer one: tmux can
+                // change something else first, and that view would not hold it yet.
                 observed <- live.signal.discrete
-                  .filter(_.epoch() > initial.epoch())
+                  .filter(view =>
+                    view.epoch() > initial.epoch() && view
+                      .snapshot()
+                      .window(window.info.context())
+                      .toScala
+                      .exists(_.name() == "renamed")
+                  )
                   .take(1)
                   .compile
                   .lastOrError
