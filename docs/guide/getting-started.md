@@ -58,7 +58,8 @@ it with a lambda, or hand it a description you built earlier.
 
 ```java
 // Given: Server server
-Session build = server.newSession(s -> s.named("build").firstWindowNamed("editor"));
+Session build = server.newSession(
+        s -> s.named("build").firstWindowNamed("editor"));
 Window logs = build.newWindow(w -> w.named("logs").running("sleep", "30"));
 
 build.name();                              // → build
@@ -111,7 +112,9 @@ older server:
 ```java
 // Given: Server server, Pane pane
 if (!server.version().atLeast(new TmuxVersion(3, 7, ""))) {
-    assertThrows(UnsupportedFeatureException.class, () -> pane.split(s -> s.empty()));
+    assertThrows(
+            UnsupportedFeatureException.class,
+            () -> pane.split(s -> s.empty()));
 }
 ```
 
@@ -220,10 +223,12 @@ try (ControlClient client = server.control(session);
 
     client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
 
-    // Output arrives in frames as tmux flushes it, so one line can span several.
+    // Output arrives in frames as tmux flushes it, so one line can span
+    // several.
     StringBuilder seen = new StringBuilder();
     while (seen.indexOf("streamed") < 0) {
-        seen.append(Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow()).data());
+        var frame = output.next(Duration.ofSeconds(5)).orElseThrow();
+        seen.append(Delivery.kept(frame).data());
     }
     seen.indexOf("streamed") >= 0;  // → true
 }
@@ -244,7 +249,8 @@ can predict. Pin one:
 
 ```java
 // Given: Path directory
-Path tmuxConf = Files.writeString(directory.resolve("tmux.conf"), "set -g base-index 5\n");
+Path conf = directory.resolve("tmux.conf");
+Path tmuxConf = Files.writeString(conf, "set -g base-index 5\n");
 
 ServerConfig pinned = ServerConfig.builder()
         .endpoint(ServerEndpoint.socketPath(directory.resolve("pinned")))
