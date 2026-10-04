@@ -15,54 +15,66 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * Serves a tmux server over MCP and reports the tool surface an agent would see.
+ * Serves a tmux server over MCP and reports the tool surface an agent would
+ * see.
  *
  * <pre>{@code
  * java ServeTmuxOverMcp.java /tmp/libtmux-java-dev/demo/s
  * }</pre>
  *
- * <p>The surface is fixed: one catalog decides which tools exist, and {@code LIBTMUX_TOOLSETS} and
- * {@code LIBTMUX_TOOLS} decide which of them this process offers. Reading it back is how you check
- * what a given configuration actually exposes, without attaching an agent to find out.
+ * <p>The surface is fixed: one catalog decides which tools exist, and
+ * {@code LIBTMUX_TOOLSETS} and {@code LIBTMUX_TOOLS} decide which of them this
+ * process offers. Reading it back is how you check what a given configuration
+ * actually exposes, without attaching an agent to find out.
  *
- * <p>Expect fewer tools than the catalog holds when the socket already has a server on it: teardown
- * is enabled by default only for a minimal daemon this process started, so attaching to somebody
- * else's tmux does not hand an agent the tools that end it.
+ * <p>Expect fewer tools than the catalog holds when the socket already has a
+ * server on it: teardown is enabled by default only for a minimal daemon this
+ * process started, so attaching to somebody else's tmux does not hand an agent
+ * the tools that end it.
  */
 public final class ServeTmuxOverMcp {
+
+    private static final String DEMO = "/tmp/libtmux-java-dev/demo/s";
 
     private ServeTmuxOverMcp() {}
 
     public static void main(String[] args) {
-        Path socket = Path.of(args.length > 0 ? args[0] : "/tmp/libtmux-java-dev/demo/s");
+        Path socket = Path.of(args.length > 0 ? args[0] : DEMO);
         run(socket).forEach(System.out::println);
     }
 
-    /** Separated from {@code main} so the suite can run exactly what a reader runs. */
+    /**
+     * Separated from {@code main} so the suite can run exactly what a reader
+     * runs.
+     */
     public static List<String> run(Path socket) {
         ServerConfig config = ServerConfig.builder()
                 .endpoint(ServerEndpoint.socketPath(socket))
                 .build();
 
         try (Server server = Server.open(config)) {
-            // A real client speaks over this process's stdin and stdout, which TmuxMcpServer.overStdio
-            // wires up. Here the streams are empty and discarded: the point is the surface, not a
-            // conversation, and an example that wrote JSON-RPC to stdout could not also print.
-            StdioServerTransportProvider transport = new StdioServerTransportProvider(
-                    new JacksonMcpJsonMapper(new ObjectMapper()),
-                    InputStream.nullInputStream(),
-                    OutputStream.nullOutputStream());
+            return toolNames(server);
+        }
+    }
 
-            // Serving hands the transport over; closing the returned server closes it.
-            McpSyncServer mcp = TmuxMcpServer.serving(server, transport);
-            try {
-                return mcp.listTools().stream()
-                        .map(McpSchema.Tool::name)
-                        .sorted()
-                        .toList();
-            } finally {
-                mcp.close();
-            }
+    private static List<String> toolNames(Server server) {
+        // A real client speaks over this process's stdin and stdout, which
+        // TmuxMcpServer.overStdio wires up. Here the streams are empty and
+        // discarded: the point is the surface, not a conversation, and an
+        // example that wrote JSON-RPC to stdout could not also print.
+        var json = new JacksonMcpJsonMapper(new ObjectMapper());
+        InputStream in = InputStream.nullInputStream();
+        OutputStream out = OutputStream.nullOutputStream();
+        var transport = new StdioServerTransportProvider(json, in, out);
+
+        // Serving hands the transport over; closing the returned server closes
+        // it.
+        McpSyncServer mcp = TmuxMcpServer.serving(server, transport);
+        try {
+            var tools = mcp.listTools();
+            return tools.stream().map(McpSchema.Tool::name).sorted().toList();
+        } finally {
+            mcp.close();
         }
     }
 }
