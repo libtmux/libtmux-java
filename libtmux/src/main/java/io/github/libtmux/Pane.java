@@ -471,7 +471,8 @@ public final class Pane {
      * its deadline rules.
      *
      * <pre>{@code
-     * pane.await(fresh -> !fresh.currentCommand().equals("zsh"), Duration.ofSeconds(5));
+     * Duration limit = Duration.ofSeconds(5);
+     * pane.await(p -> !p.currentCommand().equals("zsh"), limit);
      * }</pre>
      *
      * @param settled receives this pane as it is now
