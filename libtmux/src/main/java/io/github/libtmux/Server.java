@@ -726,7 +726,8 @@ public final class Server implements AutoCloseable {
      * handle taken from it, gives tmux this long rather than the server's default:
      *
      * <pre>{@code
-     * List<String> screen = server.within(Duration.ofMillis(500)).panes().get(0).capture();
+     * Server quick = server.within(Duration.ofMillis(500));
+     * List<String> screen = quick.panes().get(0).capture();
      * }</pre>
      *
      * <p>Shares this server's transport, so it has the same identity and its handles compare equal
