@@ -10,20 +10,26 @@ import kotlinx.coroutines.runBlocking
 /** Connect to a private tmux server. */
 fun main(args: Array<String>) {
     try {
-        require(args.size == 3) { "expected: tmux-binary socket-path config-file" }
-        val config = ServerConfig.builder()
-            .binary(args[0])
-            .endpoint(ServerEndpoint.socketPath(Path.of(args[1])))
-            .configFile(Path.of(args[2]))
-            .build()
-        runBlocking {
-            withServer(config) { server ->
-                println("connected=${server.isAlive()}")
-            }
-        }
+        execute(args)
     } catch (error: Exception) {
-        if (error is InterruptedException) Thread.currentThread().interrupt()
+        if (error is InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
         System.err.println("Example failed: ${error.message}")
         exitProcess(1)
+    }
+}
+
+private fun execute(args: Array<String>) {
+    require(args.size == 3) { "expected: tmux-binary socket-path config-file" }
+    val config = ServerConfig.builder()
+        .binary(args[0])
+        .endpoint(ServerEndpoint.socketPath(Path.of(args[1])))
+        .configFile(Path.of(args[2]))
+        .build()
+    runBlocking {
+        withServer(config) { server ->
+            println("connected=${server.isAlive()}")
+        }
     }
 }
