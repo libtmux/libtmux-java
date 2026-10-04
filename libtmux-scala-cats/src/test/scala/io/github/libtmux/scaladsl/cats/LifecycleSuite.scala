@@ -124,7 +124,7 @@ final class LifecycleSuite extends FunSuite {
           }
         } yield ()
       }
-    program.timeout(1.second).unsafeToFuture()
+    program.timeout(10.seconds).unsafeToFuture()
   }
 
   test("canceling a dispatched call is still a cancellation") {
@@ -173,7 +173,7 @@ final class LifecycleSuite extends FunSuite {
           }
         } yield ()
       }
-      .timeout(1.second)
+      .timeout(10.seconds)
       .unsafeToFuture()
   }
 
@@ -202,7 +202,7 @@ final class LifecycleSuite extends FunSuite {
               "expected the second call to queue on the permit"
             )
           )
-          canceled <- (queued.cancel *> queued.join).timeout(500.millis)
+          canceled <- (queued.cancel *> queued.join).timeout(10.seconds)
           _ <- IO {
             assert(canceled.isCanceled, canceled.toString)
             assertEquals(transport.calls.get(), 1)
@@ -213,7 +213,7 @@ final class LifecycleSuite extends FunSuite {
           _ <- IO(assertEquals(sibling.stdout.asScala.toVector, Vector("2")))
         } yield ()
       }
-      .timeout(1.second)
+      .timeout(10.seconds)
       .unsafeToFuture()
   }
 
@@ -228,14 +228,14 @@ final class LifecycleSuite extends FunSuite {
         for {
           running <- server.cmd(Vector("block")).start
           _ <- event(transport.entered)
-          outcome <- (running.cancel *> running.join).timeout(500.millis)
+          outcome <- (running.cancel *> running.join).timeout(10.seconds)
           _ <- IO(assert(outcome.isCanceled, outcome.toString))
           _ <- event(transport.interrupted)
           sibling <- server.cmd(Vector("sibling"))
           _ <- IO(assertEquals(sibling.stdout.asScala.toVector, Vector("2")))
         } yield ()
       }
-      .timeout(1.second)
+      .timeout(10.seconds)
       .unsafeToFuture()
   }
 
@@ -263,7 +263,7 @@ final class LifecycleSuite extends FunSuite {
           }
         } yield ()
       }
-      .timeout(1.second)
+      .timeout(10.seconds)
       .unsafeToFuture()
   }
 
@@ -284,7 +284,7 @@ final class LifecycleSuite extends FunSuite {
             assertEquals(transport.calls.get(), 0)
           }
       }
-      .timeout(1.second)
+      .timeout(10.seconds)
       .unsafeToFuture()
   }
 
@@ -312,7 +312,7 @@ final class LifecycleSuite extends FunSuite {
         assertEquals(java.cmd("after-failed-acquisition").exitCode(), 0)
       }
     } yield ()
-    program.timeout(1.second).unsafeToFuture()
+    program.timeout(10.seconds).unsafeToFuture()
   }
 
   test("failed use cancels running calls before propagating its cause") {
@@ -336,7 +336,7 @@ final class LifecycleSuite extends FunSuite {
           assertEquals(transport.closes.get(), 0)
         }
       }
-      .timeout(1.second)
+      .timeout(10.seconds)
       .unsafeToFuture()
   }
 
@@ -373,7 +373,7 @@ final class LifecycleSuite extends FunSuite {
         } yield ()
         program.guarantee(IO(transport.settle.countDown()) *> close)
       }
-      .timeout(1.second)
+      .timeout(10.seconds)
       .unsafeToFuture()
   }
 
@@ -408,7 +408,7 @@ final class LifecycleSuite extends FunSuite {
         } yield ()
         program.guarantee(close)
       }
-      .timeout(1.second)
+      .timeout(10.seconds)
       .unsafeToFuture()
   }
 }

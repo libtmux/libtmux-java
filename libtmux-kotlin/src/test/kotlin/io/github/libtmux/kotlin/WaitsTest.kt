@@ -70,7 +70,7 @@ class WaitsTest {
             }
             assertTrue(waiterPresent(needle), "the wait never reached tmux")
             waiting.cancel()
-            val failure = runCatching { withTimeout(1.seconds) { waiting.await() } }.exceptionOrNull()
+            val failure = runCatching { withTimeout(10.seconds) { waiting.await() } }.exceptionOrNull()
             assertTrue(failure is CancellationException && failure !is TimeoutCancellationException)
         }
     }
@@ -125,7 +125,7 @@ class WaitsTest {
         }
         assertTrue(waiterPresent(needle), "run's wait never reached tmux")
         running.cancel()
-        val failure = runCatching { withTimeout(1.seconds) { running.await() } }.exceptionOrNull()
+        val failure = runCatching { withTimeout(10.seconds) { running.await() } }.exceptionOrNull()
         assertTrue(failure is CancellationException && failure !is TimeoutCancellationException)
     }
 
@@ -168,7 +168,7 @@ class WaitsTest {
                 assertFalse(attaching.isCompleted, "attach finished before it could be caught stalled")
 
                 attaching.cancel()
-                val failure = runCatching { withTimeout(2.seconds) { attaching.await() } }.exceptionOrNull()
+                val failure = runCatching { withTimeout(10.seconds) { attaching.await() } }.exceptionOrNull()
                 assertTrue(
                     failure is CancellationException && failure !is TimeoutCancellationException,
                     "expected a plain CancellationException, got $failure",

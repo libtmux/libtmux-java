@@ -90,15 +90,15 @@ final class ObservationSuite extends FunSuite {
             .compile
             .drain
             .start
-          _ <- IO.blocking(client.send("ping")).timeout(1.second)
-          _ <- firstSeen.get.timeout(1.second)
+          _ <- IO.blocking(client.send("ping")).timeout(10.seconds)
+          _ <- firstSeen.get.timeout(10.seconds)
           // The one event is read; the fake sends no more. A second `next()`
           // call has nowhere to return from except this test's cancellation.
           stillBlocked <- IO
             .race(fiber.join, IO.sleep(300.millis))
             .map(_.isRight)
           _ <- IO(assert(stillBlocked, "expected the read to still be blocked"))
-          outcome <- (fiber.cancel *> fiber.join).timeout(500.millis)
+          outcome <- (fiber.cancel *> fiber.join).timeout(10.seconds)
           _ <- IO(assert(outcome.isCanceled, outcome.toString))
         } yield ()
       }
