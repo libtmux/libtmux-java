@@ -1,0 +1,128 @@
+name: macOS stress
+
+# Repeats the real-tmux suites and counts each test's failures, on macOS and on Linux as the control.
+# A flake that passes most runs shows up here as a rate; a single CI run cannot tell it from luck.
+# Nothing here gates a change: the table in the run summary is the result.
+
+on:
+  schedule:
+    # Weekly, off the hour the other scheduled workflows use.
+    - cron: '30 7 * * 1'
+  workflow_dispatch:
+    inputs:
+      repeat:
+        description: Repetitions per operating system
+        default: '30'
+        type: string
+      scope:
+        description: targeted repeats the tests the flake fixes touch; full repeats every suite
+        default: targeted
+        type: choice
+        options: [targeted, full]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  stress:
+    name: stress (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    env:
+      # The weekly schedule runs every suite ten times. A manual run repeats only the tests
+      # the flake fixes touch, since the organisation shares a handful of macOS runners.
+      SCOPE: ${{ inputs.scope || (github.event_name == 'schedule' && 'full' || 'targeted') }}
+      REPEAT: ${{ inputs.repeat || (github.event_name == 'schedule' && '10' || '30') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install tmux and Bash (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install tmux bash
+          echo "$(brew --prefix bash)/bin" >> "$GITHUB_PATH"
+          tmux -V
+
+      - name: Install tmux (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y tmux
+          tmux -V
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          validate-wrappers: true
+
+      - name: Install the optional workspace Python test runtime
+        run: |
+          python3 -m venv "$RUNNER_TEMP/workspace-python"
+          "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
+          echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+
+      # One job loops rather than a matrix of repetitions: the organisation shares a small pool of
+      # macOS runners. The reports are folded into the counts after each repetition and deleted, so
+      # the next one reruns every test instead of finding its outputs up to date.
+      - name: Repeat the suites
+        run: |
+          mkdir -p "$RUNNER_TEMP/stress"
+          counts="$RUNNER_TEMP/stress/counts.json"
+          for i in $(seq 1 "$REPEAT"); do
+            echo "::group::repetition $i of $REPEAT"
+            status=0
+            if [ "$SCOPE" = full ]; then
+              ./gradlew :libtmux-mcp:test check --continue --no-build-cache --stacktrace || status=$?
+            else
+              ./gradlew --continue --no-build-cache --stacktrace \
+                :tools:mcp-swap:test --tests '*McpPreflightTest' \
+                :libtmux-workspace-cli:test --tests '*MainTest' \
+                :libtmux-workspace-cli:distributionTest --tests '*ProcessTest.interruption*' \
+                :examples:test --tests '*MainsTest.watchWithFlow' --tests '*RunnableExamplesSuite.runs*ObserveChanges' \
+                :integration-tests:test --tests '*ServerControlIntegrationTest' \
+                || status=$?
+            fi
+            echo "$i,gradle_exit=$status,tmux_left=$(pgrep -c tmux || true)" >> "$RUNNER_TEMP/stress/repetitions.csv"
+            python3 tools/stress-tally.py add "$counts" .
+            pkill tmux || true
+            find . -type d -path '*/build/test-results' -prune -exec rm -rf {} +
+            echo "::endgroup::"
+          done
+
+      - name: Report each test's failures
+        if: always()
+        run: |
+          python3 tools/stress-tally.py report "$RUNNER_TEMP/stress/counts.json" \
+            "$RUNNER_TEMP/stress/failures-${{ runner.os }}.csv" "$RUNNER_TEMP/stress/table.md"
+          {
+            echo "### ${{ runner.os }}, ${SCOPE} scope, ${REPEAT} repetitions"
+            echo
+            cat "$RUNNER_TEMP/stress/table.md"
+            echo
+            echo "Repetition, Gradle exit status, tmux processes left behind:"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/stress/repetitions.csv"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: stress-${{ runner.os }}
+          path: |
+            ${{ runner.temp }}/stress/failures-*.csv
+            ${{ runner.temp }}/stress/repetitions.csv
+          retention-days: 30
