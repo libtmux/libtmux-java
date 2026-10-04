@@ -87,11 +87,15 @@ jobs:
               ./gradlew :libtmux-mcp:test check --continue --no-build-cache --stacktrace || status=$?
             else
               ./gradlew --continue --no-build-cache --stacktrace \
+                :libtmux:test --tests '*ProcessTransportTest' --tests '*ControlClientTest' --tests '*ControlWriterTest' --tests '*CarrierStarvationTest' \
+                :libtmux-mcp:test --tests '*RunningCommandsTest' --tests '*ReadingTest' --tests '*EchoContractTest' --tests '*WaitingForTextTest' --tests '*TmuxMcpServerTest' \
+                :libtmux-kotlin:test --tests '*WaitsTest' \
+                :libtmux-scala-cats:test --tests '*ObservationSuite' \
                 :tools:mcp-swap:test --tests '*McpPreflightTest' \
-                :libtmux-workspace-cli:test --tests '*MainTest' \
+                :libtmux-workspace-cli:test --tests '*MainTest' --tests '*ExecutionTest' \
                 :libtmux-workspace-cli:distributionTest --tests '*ProcessTest.interruption*' \
-                :examples:test --tests '*MainsTest.watchWithFlow' --tests '*RunnableExamplesSuite.runs*ObserveChanges' \
-                :integration-tests:test --tests '*ServerControlIntegrationTest' \
+                :examples:test --tests '*MainsTest' --tests '*RunnableExamplesSuite.runs*ObserveChanges' \
+                :integration-tests:test --tests '*ServerControlIntegrationTest' --tests '*ControlModeIntegrationTest' --tests '*PaneRunIntegrationTest' --tests '*WindowMovementIntegrationTest' \
                 || status=$?
             fi
             echo "$i,gradle_exit=$status,tmux_left=$(pgrep -c tmux || true)" >> "$RUNNER_TEMP/stress/repetitions.csv"
