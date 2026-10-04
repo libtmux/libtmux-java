@@ -23,7 +23,8 @@ import org.jspecify.annotations.Nullable;
  * library usually runs.
  *
  * <pre>{@code
- * Session build = server.newSession(s -> s.named("build").sized(new Dimensions(120, 40)));
+ * Dimensions size = new Dimensions(120, 40);
+ * Session build = server.newSession(s -> s.named("build").sized(size));
  * }</pre>
  */
 public final class SessionSpec {
