@@ -84,10 +84,10 @@ of one rather than a special case:
 // Given: Session session
 Hooks hooks = session.hooks();
 
-hooks.set("after-new-window", "display-message one");
-hooks.append("after-new-window", "display-message two");
+hooks.set("after-new-window", "display-message a");
+hooks.append("after-new-window", "display-message b");
 
-hooks.all().get("after-new-window");              // → [display-message one, display-message two]
+hooks.all().get("after-new-window"); // → [display-message a, display-message b]
 ```
 
 `set` replaces the whole array; `append` adds to it. `run(event)` runs what is
@@ -100,8 +100,10 @@ silently discarded** — no error, on any supported release:
 
 ```java
 // Given: Window window
-window.hooks().set("pane-focus-in", "display-message belongs-here");   // a window hook
-window.hooks().set("alert-bell", "display-message does-not");          // a session hook
+// A window hook.
+window.hooks().set("pane-focus-in", "display-message belongs-here");
+// A session hook.
+window.hooks().set("alert-bell", "display-message does-not");
 
 window.hooks().all().containsKey("pane-focus-in");   // → true
 window.hooks().all().containsKey("alert-bell");      // → false
