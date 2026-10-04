@@ -63,7 +63,7 @@ final class ControlClientTest {
             Thread.ofVirtual().start(sentinel::countDown);
 
             assertTrue(
-                    sentinel.await(1, TimeUnit.SECONDS),
+                    sentinel.await(HangGuard.SECONDS, TimeUnit.SECONDS),
                     "the blocked pipe write occupied the only virtual-thread carrier");
             blocked.join(TimeUnit.SECONDS.toMillis(10));
         }
@@ -174,7 +174,7 @@ final class ControlClientTest {
 
             client.close();
 
-            assertEquals(Optional.empty(), waiting.get(1, TimeUnit.SECONDS));
+            assertEquals(Optional.empty(), waiting.get(HangGuard.SECONDS, TimeUnit.SECONDS));
         } finally {
             waiting.cancel(true);
             output.close();
@@ -428,8 +428,8 @@ final class ControlClientTest {
                 EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
             client.send("display-message");
 
-            PaneOutput first = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
-            PaneOutput second = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
+            PaneOutput first = Delivery.kept(output.next(HangGuard.DURATION).orElseThrow());
+            PaneOutput second = Delivery.kept(output.next(HangGuard.DURATION).orElseThrow());
 
             assertEquals("caf", first.data());
             assertEquals("é\\x!", second.data());
@@ -458,7 +458,7 @@ final class ControlClientTest {
                 EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
             client.send("display-message");
 
-            PaneOutput piece = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
+            PaneOutput piece = Delivery.kept(output.next(HangGuard.DURATION).orElseThrow());
 
             assertEquals(new PaneId("%2"), piece.pane());
             assertEquals("a : b\n", piece.data());

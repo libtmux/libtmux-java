@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.format.RowFormat;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
@@ -189,8 +190,7 @@ final class PaneWaitTest {
             tmux.screen = List.of();
             tmux.screenAfterReads(1, List.of("ready"));
             try (Server server = tmux.server()) {
-                assertEquals(
-                        TextOutcome.APPEARED, server.panes().get(0).awaitText("ready", Duration.ofSeconds(1), every));
+                assertEquals(TextOutcome.APPEARED, server.panes().get(0).awaitText("ready", HangGuard.DURATION, every));
             }
 
             assertEquals(2, started.size());
@@ -252,7 +252,7 @@ final class PaneWaitTest {
             pane.sendLine("make");
             tmux.screenAfterReads(2, List.of("$ make", "make: *** No targets specified.  Stop."));
 
-            assertEquals(TextOutcome.APPEARED, pane.awaitText("Stop.", Duration.ofMillis(600)));
+            assertEquals(TextOutcome.APPEARED, pane.awaitText("Stop.", HangGuard.DURATION));
         }
     }
 
@@ -304,7 +304,7 @@ final class PaneWaitTest {
                         seen.set(fresh.server());
                         return true;
                     },
-                    Duration.ofMillis(100));
+                    HangGuard.DURATION);
 
             assertEquals(WakeReason.SIGNALLED, reason);
             assertSame(server, seen.get());

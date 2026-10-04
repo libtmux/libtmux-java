@@ -43,7 +43,7 @@ final class ObservationSuite extends FunSuite {
       .attachUnfenced[IO](config, new SessionId("$0"))
       .use(control => control.output(1).use(_.stream.compile.drain))
     val ran =
-      try program.timeout(3.seconds).attempt.unsafeRunSync()
+      try program.timeout(HangGuard.SECONDS.seconds).attempt.unsafeRunSync()
       finally {
         Files.deleteIfExists(fake)
         Files.deleteIfExists(directory)
@@ -104,7 +104,7 @@ final class ObservationSuite extends FunSuite {
         } yield ()
       }
     val ran =
-      try program.timeout(3.seconds).attempt.unsafeRunSync()
+      try program.timeout(HangGuard.SECONDS.seconds).attempt.unsafeRunSync()
       finally {
         client.close()
         Files.deleteIfExists(fake)
@@ -162,7 +162,7 @@ final class ObservationSuite extends FunSuite {
       }
     val lines =
       try {
-        program.timeout(5.seconds).unsafeRunSync()
+        program.timeout(HangGuard.SECONDS.seconds).unsafeRunSync()
         Files.readString(seen).linesIterator.toVector
       } finally {
         Files.deleteIfExists(fake)
@@ -207,7 +207,7 @@ final class ObservationSuite extends FunSuite {
           }
         } yield ()
       }
-    try program.timeout(5.seconds).unsafeRunSync()
+    try program.timeout(HangGuard.SECONDS.seconds).unsafeRunSync()
     finally {
       Files.deleteIfExists(fake)
       Files.deleteIfExists(directory)

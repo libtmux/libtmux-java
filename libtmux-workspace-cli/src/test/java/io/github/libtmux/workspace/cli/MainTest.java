@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.libtmux.testsupport.HangGuard;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -368,7 +369,7 @@ final class MainTest {
             });
             try {
                 owner.start();
-                assertTrue(sink.entered.await(2, TimeUnit.SECONDS), arguments.toString());
+                assertTrue(sink.entered.await(HangGuard.SECONDS, TimeUnit.SECONDS), arguments.toString());
                 owner.interrupt();
                 owner.join(1_000);
                 assertFalse(owner.isAlive(), arguments.toString());
@@ -379,7 +380,7 @@ final class MainTest {
             } finally {
                 sink.release.countDown();
                 owner.join(2_000);
-                assertTrue(sink.finished.await(2, TimeUnit.SECONDS));
+                assertTrue(sink.finished.await(HangGuard.SECONDS, TimeUnit.SECONDS));
             }
         }
     }
@@ -471,7 +472,7 @@ final class MainTest {
             });
             try {
                 first.start();
-                assertTrue(sink.entered.await(2, TimeUnit.SECONDS));
+                assertTrue(sink.entered.await(HangGuard.SECONDS, TimeUnit.SECONDS));
                 first.interrupt();
                 first.join(1_000);
                 assertFalse(first.isAlive());
@@ -486,7 +487,7 @@ final class MainTest {
                 sink.release.countDown();
                 first.join(1_000);
                 if (second.getState() != Thread.State.NEW) second.join(1_000);
-                assertTrue(sink.finished.await(2, TimeUnit.SECONDS));
+                assertTrue(sink.finished.await(HangGuard.SECONDS, TimeUnit.SECONDS));
             }
         }
         assertFalse(sink.closed.get());

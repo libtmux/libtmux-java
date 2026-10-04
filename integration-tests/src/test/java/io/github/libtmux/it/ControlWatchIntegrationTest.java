@@ -157,7 +157,7 @@ final class ControlWatchIntegrationTest {
             window.split();
 
             Optional<ControlEvent> layoutChange =
-                    awaitMatchingEvent(events, event -> event.kind().equals("layout-change"), Duration.ofSeconds(10));
+                    awaitMatchingEvent(events, event -> event.kind().equals("layout-change"), HangGuard.DURATION);
             String jsonField =
                     layoutChange
                             .orElseThrow(() -> new AssertionError("no layout-change notification arrived"))
@@ -189,9 +189,7 @@ final class ControlWatchIntegrationTest {
             var _ = window.rename("build  logs");
 
             Optional<ControlEvent> renamed = awaitMatchingEvent(
-                    events,
-                    event -> event.notification() instanceof Notification.WindowRenamed,
-                    Duration.ofSeconds(10));
+                    events, event -> event.notification() instanceof Notification.WindowRenamed, HangGuard.DURATION);
 
             assertEquals(
                     new Notification.WindowRenamed(window.id(), "build  logs", true),

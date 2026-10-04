@@ -243,15 +243,14 @@ final class ProcessTransportTest {
         Thread caller = Thread.ofVirtual().start(request);
 
         try {
-            ExecutionException ended = assertThrows(ExecutionException.class, () -> request.get(5, TimeUnit.SECONDS));
+            ExecutionException ended =
+                    assertThrows(ExecutionException.class, () -> request.get(HangGuard.SECONDS, TimeUnit.SECONDS));
             DispatchException.TimedOut failure = assertInstanceOf(DispatchException.TimedOut.class, ended.getCause());
             assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
             assertFalse(child.get().isAlive(), "the child survived its input deadline");
             assertEquals(
                     List.of("reclaimed"),
-                    transport
-                            .execute(shell("echo reclaimed", Duration.ofSeconds(2)))
-                            .stdout(),
+                    transport.execute(shell("echo reclaimed", GENEROUS)).stdout(),
                     "blocked input permanently consumed the only permit");
         } finally {
             transport.close();
@@ -310,14 +309,13 @@ final class ProcessTransportTest {
 
             DispatchException failure = assertThrows(
                     DispatchException.class,
-                    () -> transport.execute(
-                            bash("trap '' TERM; while :; do printf 1234567890; done", Duration.ofSeconds(5))));
+                    () -> transport.execute(bash("trap '' TERM; while :; do printf 1234567890; done", GENEROUS)));
 
             assertFalse(
                     failure instanceof DispatchException.TimedOut, "the pump observed overflow before the deadline");
             assertTrue(String.valueOf(failure.getMessage()).contains("1024 byte channel limit"));
             assertTrue(
-                    Duration.ofNanos(System.nanoTime() - started).compareTo(Duration.ofSeconds(2)) < 0,
+                    Duration.ofNanos(System.nanoTime() - started).compareTo(GENEROUS) < 0,
                     "overflow was not acted on promptly");
         }
     }
@@ -649,7 +647,7 @@ final class ProcessTransportTest {
             FutureTask<CommandResult> first = new FutureTask<>(() -> transport.execute(occupying));
             Thread caller = Thread.ofVirtual().start(first);
             try {
-                long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+                long deadline = System.nanoTime() + GENEROUS.toNanos();
                 while (!Files.exists(started) && System.nanoTime() < deadline) {
                     Thread.sleep(10);
                 }
@@ -702,9 +700,7 @@ final class ProcessTransportTest {
             assertEquals(bound - 1, starts.get(), "a fourth waiting process crossed the reserved boundary");
             assertEquals(
                     List.of("ordinary"),
-                    transport
-                            .execute(shell("printf ordinary", Duration.ofSeconds(2)))
-                            .stdout(),
+                    transport.execute(shell("printf ordinary", GENEROUS)).stdout(),
                     "ordinary work could not use the reserved process");
         } finally {
             blocked.forEach(GatedInputStream::release);
@@ -811,9 +807,7 @@ final class ProcessTransportTest {
             assertThrows(ExecutionException.class, () -> first.get(10, TimeUnit.SECONDS));
             assertEquals(
                     List.of("reclaimed"),
-                    transport
-                            .execute(shell("echo reclaimed", Duration.ofSeconds(2)))
-                            .stdout(),
+                    transport.execute(shell("echo reclaimed", GENEROUS)).stdout(),
                     "the interrupted request permanently consumed the only permit");
         } finally {
             stdout.release();

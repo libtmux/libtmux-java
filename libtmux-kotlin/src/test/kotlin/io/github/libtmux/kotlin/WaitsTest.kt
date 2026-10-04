@@ -129,7 +129,7 @@ class WaitsTest {
         val server = Server.open(javaServer.config())
         val session = server.sessions().first()
 
-        val client = server.control(session, 5.seconds)
+        val client = server.control(session, guard)
 
         try {
             assertTrue(client.isAlive)
@@ -158,7 +158,7 @@ class WaitsTest {
                 val session = Session(stall.javaSession, server)
                 val attaching = async(Dispatchers.IO) { server.control(session, 30.seconds) }
 
-                val pid = awaitControlClientPid(stall.socket, 5.seconds)
+                val pid = awaitControlClientPid(stall.socket, guard)
                 assertNotNull(pid, "the wrapped control client never started")
                 assertFalse(attaching.isCompleted, "attach finished before it could be caught stalled")
 
@@ -170,7 +170,7 @@ class WaitsTest {
                 )
 
                 assertTrue(
-                    processGone(pid, 5.seconds),
+                    processGone(pid, guard),
                     "the stalled control client process outlived cancellation",
                 )
             }

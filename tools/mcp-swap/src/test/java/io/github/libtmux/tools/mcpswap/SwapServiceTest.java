@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.libtmux.testsupport.HangGuard;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -695,7 +696,7 @@ final class SwapServiceTest {
             }
         });
         try {
-            assertTrue(attempted.await(1, TimeUnit.SECONDS));
+            assertTrue(attempted.await(HangGuard.SECONDS, TimeUnit.SECONDS));
             Thread.sleep(100);
             assertTrue(contender.isAlive());
             first.verify();
@@ -703,7 +704,7 @@ final class SwapServiceTest {
         } finally {
             first.close();
         }
-        contender.join(TimeUnit.SECONDS.toMillis(3));
+        contender.join(TimeUnit.SECONDS.toMillis(HangGuard.SECONDS));
         assertFalse(contender.isAlive());
         assertTrue(failure.get() == null, String.valueOf(failure.get()));
         try (var second = Objects.requireNonNull(acquired.get())) {

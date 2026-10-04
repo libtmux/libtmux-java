@@ -14,6 +14,7 @@ import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -154,7 +155,7 @@ final class ServerControlIntegrationTest {
 
         assertThrows(
                 TargetGoneException.class,
-                () -> ControlClient.attach(server.config(), session.id(), 1, "0.0", Duration.ofSeconds(5)));
+                () -> ControlClient.attach(server.config(), session.id(), 1, "0.0", HangGuard.DURATION));
 
         assertTrue(
                 Await.until(() -> noClients(server)),
@@ -181,7 +182,7 @@ final class ServerControlIntegrationTest {
                         captured.serverPid().orElseThrow(),
                         java.util.OptionalLong.of(captured.serverStartTime().orElseThrow() - 1),
                         version,
-                        Duration.ofSeconds(5)));
+                        HangGuard.DURATION));
 
         assertTrue(
                 Await.until(() -> noClients(server)),

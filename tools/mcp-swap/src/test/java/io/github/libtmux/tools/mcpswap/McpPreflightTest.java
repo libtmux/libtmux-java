@@ -35,7 +35,7 @@ final class McpPreflightTest {
         McpPreflight.run(
                 new ServerSpec(server.toString(), List.of(), Map.of("DESCENDANT_PID", descendant.toString())),
                 System.getenv(),
-                Duration.ofSeconds(3),
+                HangGuard.DURATION,
                 1024 * 1024);
 
         var pid = Long.parseLong(Files.readString(descendant, StandardCharsets.UTF_8));
@@ -62,7 +62,7 @@ final class McpPreflightTest {
                 """, StandardCharsets.UTF_8);
         assertTrue(server.toFile().setExecutable(true));
 
-        McpPreflight.run(new ServerSpec(server.toString(), List.of()), System.getenv(), Duration.ofSeconds(3), 1024);
+        McpPreflight.run(new ServerSpec(server.toString(), List.of()), System.getenv(), HangGuard.DURATION, 1024);
     }
 
     @Test
@@ -85,7 +85,7 @@ final class McpPreflightTest {
                             new ServerSpec(
                                     server.toString(), List.of(), Map.of("DESCENDANT_PID", descendant.toString())),
                             System.getenv(),
-                            Duration.ofSeconds(3),
+                            HangGuard.DURATION,
                             1024));
 
             assertTrue(String.valueOf(failure.getMessage()).contains("exceeded"), stream);
@@ -106,14 +106,11 @@ final class McpPreflightTest {
             assertThrows(
                     IOException.class,
                     () -> McpPreflight.run(
-                            new ServerSpec(server.toString(), List.of()),
-                            System.getenv(),
-                            Duration.ofSeconds(2),
-                            1024));
+                            new ServerSpec(server.toString(), List.of()), System.getenv(), HangGuard.DURATION, 1024));
         }
 
         var valid = responseServer("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\"}}");
-        McpPreflight.run(new ServerSpec(valid.toString(), List.of()), System.getenv(), Duration.ofSeconds(2), 1024);
+        McpPreflight.run(new ServerSpec(valid.toString(), List.of()), System.getenv(), HangGuard.DURATION, 1024);
     }
 
     @Test
@@ -124,7 +121,7 @@ final class McpPreflightTest {
         assertThrows(
                 IOException.class,
                 () -> McpPreflight.run(
-                        new ServerSpec(server.toString(), List.of()), System.getenv(), Duration.ofSeconds(2), 1024));
+                        new ServerSpec(server.toString(), List.of()), System.getenv(), HangGuard.DURATION, 1024));
     }
 
     @Test
@@ -138,7 +135,7 @@ final class McpPreflightTest {
         McpPreflight.run(
                 new ServerSpec(server.toString(), List.of(), Map.of("PREFLIGHT_VALUE", "expected")),
                 Map.of("PATH", System.getenv().getOrDefault("PATH", "")),
-                Duration.ofSeconds(2),
+                HangGuard.DURATION,
                 1024);
     }
 

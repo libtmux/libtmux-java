@@ -154,7 +154,13 @@ final class RunningCommandsTest {
                 "frame_value=kept; frame_helper(){ test \"$frame_value\" = kept; }; " + shadow);
 
         RunningCommands.Ran ran = RunningCommands.run(TestCalls.on(
-                server, "pane_id", pane.id().value(), "command", "frame_helper || exit 91; exit 7", "timeout", 5));
+                server,
+                "pane_id",
+                pane.id().value(),
+                "command",
+                "frame_helper || exit 91; exit 7",
+                "timeout",
+                HangGuard.SECONDS));
 
         assertCompleted(ran, 7);
     }
@@ -196,7 +202,7 @@ final class RunningCommandsTest {
 
         String command = "false; : > " + Shell.quote(forbidden.toString());
         RunningCommands.Ran ran = RunningCommands.run(
-                TestCalls.on(server, "pane_id", pane.id().value(), "command", command, "timeout", 5));
+                TestCalls.on(server, "pane_id", pane.id().value(), "command", command, "timeout", HangGuard.SECONDS));
 
         assertCompleted(ran, 1);
         assertFalse(Files.exists(forbidden), "errexit did not stop the authored sequence");
@@ -231,8 +237,8 @@ final class RunningCommandsTest {
                         TestCalls.on(server, "pane_id", pane.id().value(), "command", inspect));
                 assertEquals(List.of("unset"), inspected.output(), "the frame leaked its status name");
 
-                RunningCommands.Ran collided = RunningCommands.run(
-                        TestCalls.on(measured, "pane_id", pane.id().value(), "command", "exit 6", "timeout", 5));
+                RunningCommands.Ran collided = RunningCommands.run(TestCalls.on(
+                        measured, "pane_id", pane.id().value(), "command", "exit 6", "timeout", HangGuard.SECONDS));
 
                 assertEquals(2, nonces.size(), "the collision nonce was not captured");
                 assertCompleted(collided, 6);
