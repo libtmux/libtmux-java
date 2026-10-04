@@ -12,26 +12,36 @@ import kotlinx.coroutines.runBlocking
 /** Create a window and read the updated session. */
 fun main(args: Array<String>) {
     try {
-        require(args.size == 3) { "expected: tmux-binary socket-path config-file" }
-        val config = ServerConfig.builder()
-            .binary(args[0])
-            .endpoint(ServerEndpoint.socketPath(Path.of(args[1])))
-            .configFile(Path.of(args[2]))
-            .build()
-        runBlocking {
-            withServer(config) { server ->
-                val session = server.session(Session.name eq "work-one")
-                val window = session.newWindow(
-                    WindowSpec.builder().named("api-window").running("/bin/cat").build()
-                )
-                println("created=${window.name}")
-                val refreshed = server.session(Session.name eq "work-one")
-                println("windows=" + refreshed.windows.map { it.name }.sorted().joinToString(","))
-            }
-        }
+        execute(args)
     } catch (error: Exception) {
-        if (error is InterruptedException) Thread.currentThread().interrupt()
+        if (error is InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
         System.err.println("Example failed: ${error.message}")
         exitProcess(1)
+    }
+}
+
+private fun execute(args: Array<String>) {
+    require(args.size == 3) { "expected: tmux-binary socket-path config-file" }
+    val config = ServerConfig.builder()
+        .binary(args[0])
+        .endpoint(ServerEndpoint.socketPath(Path.of(args[1])))
+        .configFile(Path.of(args[2]))
+        .build()
+    runBlocking {
+        withServer(config) { server ->
+            val session = server.session(Session.name eq "work-one")
+            val window = session.newWindow(
+                WindowSpec.builder()
+                    .named("api-window")
+                    .running("/bin/cat")
+                    .build()
+            )
+            println("created=${window.name}")
+            val refreshed = server.session(Session.name eq "work-one")
+            val names = refreshed.windows.map { it.name }.sorted()
+            println("windows=" + names.joinToString(","))
+        }
     }
 }
