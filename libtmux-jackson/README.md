@@ -52,7 +52,7 @@ String json = FilterJson.writeString(
 
 FilterExpr<Pane> restored = FilterJson.readString(json, LibTmuxModels.pane());
 
-restored.describe();                      // → pane_current_command starts-with nvim
+restored.describe(); // → pane_current_command starts-with nvim
 ```
 
 ## Use it like any other filter
@@ -62,8 +62,9 @@ hold — reading it from JSON changes nothing about how it is applied:
 
 ```java
 // Given: Server server
-String json = FilterJson.writeString(Pane_.active().isTrue(), LibTmuxModels.pane());
-FilterExpr<Pane> active = FilterJson.readString(json, LibTmuxModels.pane());
+var model = LibTmuxModels.pane();
+String json = FilterJson.writeString(Pane_.active().isTrue(), model);
+FilterExpr<Pane> active = FilterJson.readString(json, model);
 
 server.panes().stream().filter(active).toList().size();   // → 1
 ```
@@ -99,7 +100,8 @@ supplied model have wire identity:
 
 <!-- snippet: throws: SchemaException -->
 ```java
-FilterExpr<Session> mine = Fields.text("session_name", (Session s) -> s.name().toLowerCase())
+FilterExpr<Session> mine = Fields
+        .text("session_name", (Session s) -> s.name().toLowerCase())
         .is("demo");
 
 FilterJson.writeString(mine, LibTmuxModels.session());
