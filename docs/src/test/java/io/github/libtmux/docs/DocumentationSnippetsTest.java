@@ -96,11 +96,11 @@ final class DocumentationSnippetsTest {
 
     /**
      * A snippet that hangs would otherwise hang the build. Generous next to the slowest snippet,
-     * about 2 seconds, since a slow runner still has to pass.
+     * since a slow runner still has to pass.
      */
     @ParameterizedTest(name = "{0}")
     @MethodSource("snippets")
-    @Timeout(value = 15, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    @Timeout(value = 2 * HangGuard.SECONDS, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void theSnippetIsWhatItClaimsToBe(Snippet snippet, Server server, TmuxSocketPath socket) throws Throwable {
         if (snippet.expectation() == Snippet.Expectation.SKIPPED) {
             return;
