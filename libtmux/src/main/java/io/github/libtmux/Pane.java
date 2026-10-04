@@ -723,7 +723,8 @@ public final class Pane {
      *
      * <pre>{@code
      * String title = pane.expand("#{pane_title}");
-     * String where = pane.expand("#{session_name}:#{window_index}.#{pane_index}");
+     * String format = "#{session_name}:#{window_index}.#{pane_index}";
+     * String where = pane.expand(format);
      * }</pre>
      *
      * @param format a tmux format, usually of the shape {@code #{name}}
