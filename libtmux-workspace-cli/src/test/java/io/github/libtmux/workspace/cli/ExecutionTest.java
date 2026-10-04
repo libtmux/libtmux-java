@@ -1922,8 +1922,16 @@ final class ExecutionTest {
                 """);
         try (Server server = server(socket)) {
             try {
-                Result result =
-                        invoke("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null", "--ndjson");
+                Result result = invoke(
+                        java.util.Map.of("LIBTMUX_TEST_READY_TIMEOUT_MS", "100"),
+                        "load",
+                        source.toString(),
+                        "-d",
+                        "-S",
+                        socket.toString(),
+                        "-f",
+                        "/dev/null",
+                        "--ndjson");
                 assertEquals(0, result.code(), result.err());
                 assertTrue(result.out().contains("pane_readiness_timeout"), result.out());
             } finally {
