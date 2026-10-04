@@ -21,7 +21,7 @@ first:
 // Given: Server server
 CommandResult result = server.cmd("list-sessions", "-F", "#{session_name}");
 List<String> lines = result.stdout().stream()
-        .map(line -> line.endsWith("\r") ? line.substring(0, line.length() - 1) : line)
+        .map(line -> line.stripTrailing())
         .toList();
 ```
 
@@ -204,14 +204,19 @@ final class Recovery {
         return switch (failure) {
             case TargetGoneException gone -> "look the handle up again";
             case ServerUnavailableException down -> "start a server";
-            case CommandRejectedException refused -> "change the request: " + refused.errorLines();
-            case DispatchException failed -> failed.safeToRetry() ? "send it again" : "read tmux's state first";
-            case ControlEndedException ended -> "attach again and take a snapshot";
-            case UnsupportedFeatureException unsupported -> "do without it: " + unsupported.getMessage();
-            case UnencodableTextException unencodable -> "start the JVM in a UTF-8 locale";
-            case MalformedResponseException malformed -> "report it: " + malformed.getMessage();
+            case CommandRejectedException e ->
+                    "change the request: " + e.errorLines();
+            case DispatchException e ->
+                    e.safeToRetry() ? "send it again" : "read state first";
+            case ControlEndedException e -> "attach again and take a snapshot";
+            case UnsupportedFeatureException e ->
+                    "do without it: " + e.getMessage();
+            case UnencodableTextException e ->
+                    "start the JVM in a UTF-8 locale";
+            case MalformedResponseException e -> "report it: " + e.getMessage();
             case CardinalityException.NoMatch none -> "nothing matched";
-            case CardinalityException.MultipleMatches many -> many.atLeast() + " matched";
+            case CardinalityException.MultipleMatches m ->
+                    m.atLeast() + " matched";
         };
     }
 }
@@ -324,7 +329,10 @@ io.github.libtmux.snapshot.ServerSnapshot.of(
         java.time.Instant.now(),
         server.snapshot().serverPid().orElseThrow(),
         server.version(),
-        java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of());
+        java.util.List.of(),
+        java.util.List.of(),
+        java.util.List.of(),
+        java.util.List.of());
 ```
 
 ### Key bindings are a view: `server.keys()`
@@ -386,7 +394,9 @@ or catch it and restore the flag.
 ```java
 // Given: Server server
 Channel ready = server.channel("ready");
-ready.signal(); // tmux keeps a signal nobody was waiting for, so this wait returns at once
+// tmux keeps a signal nobody was waiting for, so the wait below returns
+// at once.
+ready.signal();
 try {
     ready.await(java.time.Duration.ofSeconds(30));
 } catch (InterruptedException cancelled) {
@@ -453,7 +463,8 @@ them.
 // Given: Pane pane
 pane.sendLine("./build --target release");
 
-// Answered by what the build prints, not by the echo of the line that started it.
+// Answered by what the build prints, not by the echo of the line that
+// started it.
 pane.awaitText("release", java.time.Duration.ofSeconds(60));
 ```
 
