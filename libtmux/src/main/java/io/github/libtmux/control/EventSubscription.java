@@ -356,7 +356,7 @@ public final class EventSubscription<T> implements AutoCloseable {
      *
      * <pre>{@code
      * try (Stream<Delivery<PaneOutput>> steps = subscription.stream()) {
-     *     steps.map(Delivery::kept).forEach(output -> System.out.print(output.data()));
+     *     steps.map(Delivery::kept).forEach(o -> System.out.print(o.data()));
      * }
      * }</pre>
      *
