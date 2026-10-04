@@ -33,11 +33,11 @@ import org.jspecify.annotations.Nullable;
  * <pre>{@code
  * FakeTmux tmux = new FakeTmux();
  * PaneId editor = tmux.addSession("work");
- * tmux.show(editor, "$ make", "make: Nothing to be done for 'all'.");
+ * tmux.show(editor, "$ make", "built");
  *
  * try (Server server = tmux.server()) {
  *     Pane pane = server.pane(editor).orElseThrow();
- *     pane.capture();                 // → [$ make, make: Nothing to be done for 'all'.]
+ *     pane.capture();                 // → [$ make, built]
  *     pane.sendLine("make test");
  * }
  *
