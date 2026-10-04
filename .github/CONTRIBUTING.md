@@ -79,7 +79,9 @@ Then find whose it is, since a socket path exists only in the process's own
 command line:
 
 ```console
-$ for p in $(pgrep tmux); do tr '\0' ' ' < /proc/$p/cmdline | rg -o '\-S [^ ]+'; done
+$ for p in $(pgrep tmux); do \
+    tr '\0' ' ' < /proc/$p/cmdline | rg -o '\-S [^ ]+'; \
+  done
 ```
 
 Kill only sockets under this port's roots. Another port's servers are not yours
