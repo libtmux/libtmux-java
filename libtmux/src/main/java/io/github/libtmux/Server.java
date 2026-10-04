@@ -133,7 +133,8 @@ public final class Server implements AutoCloseable {
      * Creates a session as described.
      *
      * <pre>{@code
-     * Session build = server.newSession(s -> s.named("build").sized(new Dimensions(120, 40)));
+     * Dimensions size = new Dimensions(120, 40);
+     * Session build = server.newSession(s -> s.named("build").sized(size));
      * }</pre>
      *
      * @param configure receives a builder holding tmux's defaults
