@@ -1,0 +1,23 @@
+width = 80
+shared_digest = "872d3f4cb1eb2b5cd9c5b7adc9cd140a153e4bbed3cb5bd0b7400a905e6dae4d"
+checker_digest = "91f275967fc1b77542a89b9b769b833c0bdcb967768e9a6a1e4127f68abfc1c4"
+markdown = ["**/*.md"]
+sources = [
+  "examples/src/**/*.java",
+  "examples/src/**/*.kt",
+  "examples/src/**/*.scala",
+  "examples/**/*.gradle.kts",
+  "examples/api/gradle.properties",
+  "examples/api/run.sh",
+]
+doc_comments = ["*/src/main/**/*.java", "*/src/main/**/*.kt", "*/src/main/**/*.scala"]
+allow_ceiling = 1
+
+[[allow]]
+path = ".github/WRITING.md"
+line = "        Path socket = Path.of(args.length > 0 ? args[0] : \"/tmp/libtmux-java-dev/demo/s\");"
+reason = "the Bad example in the port block; it shows the width problem the Good example fixes"
+
+[[exclude]]
+glob = "examples/api/manifest.json"
+reason = "machine-read index of example paths and expected output, which ApiProgramsTest checks against the sources; its long paths cannot be wrapped"
