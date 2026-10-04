@@ -23,6 +23,7 @@ import org.jspecify.annotations.Nullable;
  * library usually runs.
  *
  * <pre>{@code
+ * // Given: Server server
  * Dimensions size = new Dimensions(120, 40);
  * Session build = server.newSession(s -> s.named("build").sized(size));
  * }</pre>

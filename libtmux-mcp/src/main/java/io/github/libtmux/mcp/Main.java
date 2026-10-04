@@ -16,6 +16,7 @@ import java.util.concurrent.CountDownLatch;
  * <p>Which tmux server to expose is chosen the same way the library chooses it: a socket path, a
  * socket name, or tmux's own default.
  *
+ * <!-- snippet: skip: a shell command line, not Java -->
  * <pre>{@code
  * libtmux-mcp --socket /run/user/1000/tmux/default
  * libtmux-mcp --socket-name work --tmux /usr/local/bin/tmux

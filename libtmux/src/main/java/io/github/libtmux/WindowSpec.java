@@ -18,6 +18,7 @@ import org.jspecify.annotations.Nullable;
  * it can be named, reused, and applied wherever it fits.
  *
  * <pre>{@code
+ * // Given: Session session
  * Window logs = session.newWindow(w -> w.named("logs").running("top"));
  * }</pre>
  */

@@ -15,6 +15,7 @@ import java.util.Optional;
  * Lays out a session the way you would set one up by hand before starting
  * work.
  *
+ * <!-- snippet: skip: a shell command line, not Java -->
  * <pre>{@code
  * java BuildAWorkspace.java /tmp/libtmux-java-dev/demo/s
  * }</pre>

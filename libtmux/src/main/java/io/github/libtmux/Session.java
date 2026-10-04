@@ -192,6 +192,7 @@ public final class Session {
      * Creates a window in this session as described.
      *
      * <pre>{@code
+     * // Given: Session session
      * Window top = session.newWindow(w -> w.named("top").running("top"));
      * }</pre>
      *

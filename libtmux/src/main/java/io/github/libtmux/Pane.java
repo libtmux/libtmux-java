@@ -414,6 +414,7 @@ public final class Pane {
      * not the prompt — cut out between two markers the plumbing prints around it.
      *
      * <pre>{@code
+     * // Given: Pane pane
      * PaneRun built = pane.run("make test", Duration.ofMinutes(5));
      * if (!built.succeeded()) {
      *     System.err.println(String.join("\n", built.output()));
@@ -471,6 +472,7 @@ public final class Pane {
      * its deadline rules.
      *
      * <pre>{@code
+     * // Given: Pane pane
      * Duration limit = Duration.ofSeconds(5);
      * pane.await(p -> !p.currentCommand().equals("zsh"), limit);
      * }</pre>
@@ -508,6 +510,7 @@ public final class Pane {
      * Reads part of this pane, described by a lambda.
      *
      * <pre>{@code
+     * // Given: Pane pane
      * List<String> everything = pane.capture(c -> c.fromStartOfHistory());
      * List<String> lastTen = pane.capture(c -> c.from(-10));
      * }</pre>
@@ -722,6 +725,7 @@ public final class Pane {
      * everything else tmux knows, including fields added by a release this code has never heard of.
      *
      * <pre>{@code
+     * // Given: Pane pane
      * String title = pane.expand("#{pane_title}");
      * String format = "#{session_name}:#{window_index}.#{pane_index}";
      * String where = pane.expand(format);
@@ -862,7 +866,9 @@ public final class Pane {
     /**
      * Splits this pane as described.
      *
+     * <!-- snippet: compile-only: the harness binds no project directory -->
      * <pre>{@code
+     * // Given: Pane pane, Path project
      * Pane side = pane.split(s -> s.toRight().percent(30));
      * Pane app = pane.split(s -> s.running("htop").in(project));
      * }</pre>

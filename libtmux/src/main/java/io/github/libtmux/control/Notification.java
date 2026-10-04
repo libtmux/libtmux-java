@@ -9,6 +9,7 @@ import java.util.Optional;
 /**
  * What a control-mode notification says, typed, for matching on.
  *
+ * <!-- snippet: skip: calls relabel and refreshSessions, which the caller supplies -->
  * <pre>{@code
  * switch (event.notification()) {
  *     case Notification.WindowRenamed(WindowId id, String name, boolean on) ->

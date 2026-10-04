@@ -24,6 +24,7 @@ import java.util.stream.Stream;
 /**
  * Watches what a pane prints, as tmux pushes it, rather than polling for it.
  *
+ * <!-- snippet: skip: a shell command line, not Java -->
  * <pre>{@code
  * java WatchPaneOutput.java /tmp/libtmux-java-dev/demo/s
  * }</pre>

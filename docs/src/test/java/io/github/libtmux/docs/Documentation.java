@@ -30,7 +30,49 @@ final class Documentation {
                     + "(?:class|record|interface|enum)\\s+\\w",
             Pattern.MULTILINE);
 
+    /** A Javadoc code block in a library source, and the directive comment that may precede it. */
+    private static final Pattern JAVADOC_BLOCK = Pattern.compile(
+            "(?:<!--\\s*snippet:\\s*([^>]*?)\\s*-->[ \\t]*\\n[ \\t]*\\*[ \\t]*)?<pre>\\{@code[ \\t]*\\n(.*?)\\n[ \\t]*\\*[ \\t]*\\}</pre>",
+            Pattern.DOTALL);
+
     private Documentation() {}
+
+    /** Every library source whose Javadoc may carry code. */
+    static List<Path> javaSources(Path root) {
+        try (Stream<Path> walk = Files.walk(root)) {
+            return walk.filter(file -> file.toString().endsWith(".java"))
+                    .filter(file -> file.toString().contains("/src/main/java/"))
+                    .filter(file -> !file.toString().contains("/build/"))
+                    .sorted()
+                    .toList();
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not walk " + root, e);
+        }
+    }
+
+    /** Every Javadoc code block in one source file, comment asterisks removed. */
+    static List<Snippet> snippetsInJavadoc(Path root, Path file) {
+        String text;
+        try {
+            text = Files.readString(file);
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not read " + file, e);
+        }
+        List<Snippet> snippets = new ArrayList<>();
+        Matcher block = JAVADOC_BLOCK.matcher(text);
+        while (block.find()) {
+            String directive = block.group(1);
+            String code = block.group(2).replaceAll("(?m)^[ \\t]*\\* ?", "");
+            snippets.add(new Snippet(
+                    root.relativize(file),
+                    lineOf(text, block.start()),
+                    expectationOf(directive, file),
+                    detailOf(directive),
+                    DECLARES_A_TYPE.matcher(code).find() ? Snippet.Shape.TYPE : Snippet.Shape.STATEMENTS,
+                    code));
+        }
+        return List.copyOf(snippets);
+    }
 
     /** Every document whose code is meant to work today. */
     static List<Path> readable(Path root) {

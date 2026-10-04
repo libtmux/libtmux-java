@@ -133,6 +133,7 @@ public final class Server implements AutoCloseable {
      * Creates a session as described.
      *
      * <pre>{@code
+     * // Given: Server server
      * Dimensions size = new Dimensions(120, 40);
      * Session build = server.newSession(s -> s.named("build").sized(size));
      * }</pre>
@@ -519,6 +520,7 @@ public final class Server implements AutoCloseable {
      * same instant.
      *
      * <pre>{@code
+     * // Given: Server server
      * List<String> names = List.of("pane_tty", "pane_dead");
      * Map<PaneId, Map<String, String>> ttys = server.paneFields(names);
      * }</pre>
@@ -726,6 +728,7 @@ public final class Server implements AutoCloseable {
      * handle taken from it, gives tmux this long rather than the server's default:
      *
      * <pre>{@code
+     * // Given: Server server
      * Server quick = server.within(Duration.ofMillis(500));
      * List<String> screen = quick.panes().get(0).capture();
      * }</pre>

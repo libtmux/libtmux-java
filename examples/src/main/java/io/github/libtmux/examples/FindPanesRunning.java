@@ -12,6 +12,7 @@ import java.util.List;
  * Finds the panes running a given command, without asking tmux more than
  * once.
  *
+ * <!-- snippet: skip: a shell command line, not Java -->
  * <pre>{@code
  * java FindPanesRunning.java /tmp/libtmux-java-dev/demo/s vim
  * }</pre>
