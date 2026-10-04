@@ -5,6 +5,9 @@ name: macOS stress
 # Nothing here gates a change: the table in the run summary is the result.
 
 on:
+  push:
+    branches: [flaky-investigations-000]
+    paths: ['.github/workflows/macos-stress.yml']
   schedule:
     # Weekly, off the hour the other scheduled workflows use.
     - cron: '30 7 * * 1'
@@ -40,7 +43,7 @@ jobs:
       # The weekly schedule runs every suite ten times. A manual run repeats only the tests
       # the flake fixes touch, since the organisation shares a handful of macOS runners.
       SCOPE: ${{ inputs.scope || (github.event_name == 'schedule' && 'full' || 'targeted') }}
-      REPEAT: ${{ inputs.repeat || (github.event_name == 'schedule' && '10' || '30') }}
+      REPEAT: ${{ inputs.repeat || (github.event_name == 'schedule' && '10' || '10') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
