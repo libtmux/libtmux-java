@@ -91,7 +91,7 @@ jobs:
             else
               ./gradlew --continue --no-build-cache --stacktrace \
                 :libtmux:test --tests '*ProcessTransportTest' --tests '*ControlClientTest' --tests '*ControlWriterTest' --tests '*CarrierStarvationTest' \
-                :libtmux-mcp:test --tests '*RunningCommandsTest' --tests '*ReadingTest' --tests '*EchoContractTest' --tests '*WaitingForTextTest' --tests '*TmuxMcpServerTest' \
+                :libtmux-mcp:test --tests '*RunningCommandsTest' --tests '*ReadingTest' --tests '*EchoContractTest' --tests '*WaitingForTextTest' --tests '*TmuxMcpServerTest' --tests '*TypingTest' \
                 :libtmux-kotlin:test --tests '*WaitsTest' \
                 :libtmux-scala-cats:test --tests '*ObservationSuite' \
                 :tools:mcp-swap:test --tests '*McpPreflightTest' \
