@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -715,6 +716,47 @@ final class MainTest {
 
         assertEquals(written, Files.size(logFile));
         assertEquals(reported, err.toString(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * An interrupt cancels output writes from every thread but the owner's. A child still printing
+     * when that happens has an event mid-write; the event must leave in one write, or the cancelled
+     * second write drops its newline and the next event shares its line.
+     */
+    @Test
+    void anEventIsOneWriteSoACancelledWriteCannotLeaveItUnterminated() throws Exception {
+        var received = new ByteArrayOutputStream();
+        var writes = new java.util.concurrent.atomic.AtomicInteger();
+        OutputStream cancelledAfterTheFirstWrite = new OutputStream() {
+            @Override
+            public void write(int value) throws IOException {
+                write(new byte[] {(byte) value}, 0, 1);
+            }
+
+            @Override
+            public void write(byte[] bytes, int offset, int length) throws IOException {
+                if (writes.getAndIncrement() > 0) throw new java.io.InterruptedIOException("output interrupted");
+                received.write(bytes, offset, length);
+            }
+        };
+        var parsed = Arguments.create().parseArgs("load", "workspace.yaml", "-d", "--ndjson");
+        Main.Context context = new Main.Context(
+                Map.of("HOME", directory.toString()),
+                directory,
+                InputStream.nullInputStream(),
+                cancelledAfterTheFirstWrite,
+                OutputStream.nullOutputStream());
+
+        try (Reporter report = new Reporter(context, parsed)) {
+            try {
+                report.event(Machine.Event.STARTED, Documents.JSON.createObjectNode());
+            } catch (java.io.InterruptedIOException cancelled) {
+                // The cancellation is the condition under test; what reached the stream is the question.
+            }
+        }
+
+        String line = received.toString(StandardCharsets.UTF_8);
+        assertTrue(line.startsWith("{") && line.endsWith("}\n"), "an event is a whole line: " + line);
     }
 
     @Test
