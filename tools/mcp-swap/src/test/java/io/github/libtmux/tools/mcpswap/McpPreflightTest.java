@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -138,6 +139,45 @@ final class McpPreflightTest {
                 Map.of("PATH", System.getenv().getOrDefault("PATH", "")),
                 Duration.ofSeconds(2),
                 1024);
+    }
+
+    /** A killed process lingers until it is reaped: the check waits for that rather than sampling. */
+    @Test
+    void aKilledProcessStillBeingReapedCountsAsGoneOnceItIs() throws Exception {
+        var slowToReap = new Reaped(300);
+        var promptly = new Reaped(0);
+
+        assertTrue(McpPreflight.gone(List.of(promptly.handle(), slowToReap.handle()), Duration.ofSeconds(5)));
+        assertFalse(McpPreflight.gone(List.of(new Reaped(60_000).handle()), Duration.ofMillis(100)));
+    }
+
+    /** A process handle that reports itself alive until a delay after the test creates it. */
+    private record Reaped(long millis, long start) {
+        Reaped(long millis) {
+            this(millis, System.nanoTime());
+        }
+
+        boolean alive() {
+            return System.nanoTime() - start < millis * 1_000_000;
+        }
+
+        ProcessHandle handle() {
+            var self = new ProcessHandle[1];
+            self[0] = (ProcessHandle) java.lang.reflect.Proxy.newProxyInstance(
+                    ProcessHandle.class.getClassLoader(),
+                    new Class<?>[] {ProcessHandle.class},
+                    (proxy, method, args) -> switch (method.getName()) {
+                        case "isAlive" -> alive();
+                        case "onExit" ->
+                            new java.util.concurrent.CompletableFuture<ProcessHandle>()
+                                    .completeOnTimeout(
+                                            self[0],
+                                            Math.max(0, millis - (System.nanoTime() - start) / 1_000_000),
+                                            TimeUnit.MILLISECONDS);
+                        default -> throw new UnsupportedOperationException(method.getName());
+                    });
+            return self[0];
+        }
     }
 
     private Path responseServer(String response) throws IOException {
