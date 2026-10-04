@@ -9,7 +9,7 @@ import java.util.function.Function;
  *
  * <pre>{@code
  * session.options().set(OptionKey.HISTORY_LIMIT, 50_000);
- * int kept = session.options().get(OptionKey.HISTORY_LIMIT).orElseThrow();   // → 50000
+ * session.options().get(OptionKey.HISTORY_LIMIT).orElseThrow();   // → 50000
  *
  * OptionKey<Boolean> bell = OptionKey.flag("visual-bell");
  * }</pre>
