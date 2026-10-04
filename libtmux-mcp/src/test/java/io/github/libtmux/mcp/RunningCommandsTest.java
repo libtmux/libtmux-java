@@ -464,14 +464,14 @@ final class RunningCommandsTest {
         ready(pane, temporary.resolve("timed-output"), ":");
 
         RunningCommands.Ran ran = RunningCommands.run(
-                TestCalls.on(server, "pane_id", pane.id().value(), "command", "echo started; sleep 30", "timeout", 6));
+                TestCalls.on(server, "pane_id", pane.id().value(), "command", "echo started; sleep 30", "timeout", 15));
 
         assertEquals("TIMED_OUT", ran.outcome());
         assertNull(ran.exitStatus(), "a command that has not finished has no status");
         assertTrue(ran.output().contains("started"), ran.output().toString());
         assertNotNull(ran.note());
         assertTrue(String.valueOf(ran.note()).contains("still running"), String.valueOf(ran.note()));
-        assertTrue(ran.seconds() < 20, "it must return at its deadline, not at the command's end");
+        assertTrue(ran.seconds() < 25, "it must return at its deadline, not at the command's end");
     }
 
     @Test

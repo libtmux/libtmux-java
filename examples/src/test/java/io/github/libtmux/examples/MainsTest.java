@@ -10,13 +10,17 @@ import static org.junit.jupiter.api.Assertions.fail;
 import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.junit5.TmuxSocketPath;
+import io.github.libtmux.testsupport.HangGuard;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -118,7 +122,7 @@ final class MainsTest {
         AssertionError failure = assertThrows(
                 AssertionError.class,
                 () -> assertTimeoutPreemptively(
-                        Duration.ofSeconds(5), () -> launch(Duration.ofMillis(200), "MainsTest$Hangs")));
+                        HangGuard.DURATION, () -> launch(Duration.ofMillis(200), "MainsTest$Hangs")));
 
         assertTrue(String.valueOf(failure.getMessage()).contains("did not exit"), failure.getMessage());
     }
@@ -128,7 +132,7 @@ final class MainsTest {
         AssertionError failure = assertThrows(
                 AssertionError.class,
                 () -> assertTimeoutPreemptively(
-                        Duration.ofSeconds(10), () -> launchApiProgram(Duration.ofSeconds(1), "MainsTest$Hangs")));
+                        HangGuard.DURATION, () -> launchApiProgram(Duration.ofSeconds(1), "MainsTest$Hangs")));
         String output = String.valueOf(failure.getMessage());
         assertTrue(output.contains("did not exit"), output);
         String socket = output.lines()
@@ -157,16 +161,26 @@ final class MainsTest {
     private static String launchApiProgram(Duration deadline, String program) throws Exception {
         List<String> fixture =
                 List.of("env", "TMUX_BIN=" + System.getProperty("libtmux.tmux", "tmux"), "sh", "api/run.sh");
-        return launch(deadline, false, fixture, program);
+        return launch(deadline, false, true, fixture, program);
     }
 
     /** Runs the example's {@code main} in a fresh JVM and returns what it printed. */
     private static String launch(Duration deadline, String program, String... args) throws Exception {
-        return launch(deadline, true, List.of(), program, args);
+        return launch(deadline, true, false, List.of(), program, args);
     }
 
+    /**
+     * With {@code clockStartsAtFirstOutput} the deadline bounds how long the program runs once it has
+     * started, not how long tmux and the JVM take to come up: the API fixture prints the socket path
+     * from the program's own first line.
+     */
     private static String launch(
-            Duration deadline, boolean combineError, List<String> prefix, String program, String... args)
+            Duration deadline,
+            boolean combineError,
+            boolean clockStartsAtFirstOutput,
+            List<String> prefix,
+            String program,
+            String... args)
             throws Exception {
         List<String> command = new ArrayList<>(prefix);
         command.addAll(List.of(
@@ -180,9 +194,26 @@ final class MainsTest {
         Process process = builder.start();
         process.getOutputStream().close();
         // Drained apart from the wait: a program that never exits never closes its output either.
-        FutureTask<byte[]> printed =
-                new FutureTask<>(() -> process.getInputStream().readAllBytes());
+        CountDownLatch firstOutput = new CountDownLatch(1);
+        FutureTask<byte[]> printed = new FutureTask<>(() -> {
+            ByteArrayOutputStream collected = new ByteArrayOutputStream();
+            try (InputStream stream = process.getInputStream()) {
+                byte[] buffer = new byte[8192];
+                for (int read = stream.read(buffer); read >= 0; read = stream.read(buffer)) {
+                    collected.write(buffer, 0, read);
+                    firstOutput.countDown();
+                }
+            } finally {
+                firstOutput.countDown();
+            }
+            return collected.toByteArray();
+        });
         Thread.ofVirtual().start(printed);
+        if (clockStartsAtFirstOutput && !firstOutput.await(HangGuard.SECONDS, TimeUnit.SECONDS)) {
+            process.descendants().forEach(ProcessHandle::destroyForcibly);
+            process.destroyForcibly().waitFor();
+            fail(program + " printed nothing within " + HangGuard.DURATION);
+        }
         if (!process.waitFor(deadline.toMillis(), TimeUnit.MILLISECONDS)) {
             process.descendants().forEach(ProcessHandle::destroy);
             if (prefix.isEmpty()) process.destroy();

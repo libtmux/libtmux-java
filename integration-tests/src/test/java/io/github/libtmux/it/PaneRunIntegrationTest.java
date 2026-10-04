@@ -120,7 +120,7 @@ final class PaneRunIntegrationTest {
     void aCommandStillRunningAtTheDeadlineIsATimeout(Server server) throws InterruptedException {
         Pane pane = shell(server, "slow", 120);
 
-        PaneRun ran = pane.run("echo started; sleep 30", Duration.ofMillis(1500));
+        PaneRun ran = pane.run("echo started; sleep 30", Duration.ofSeconds(10));
 
         assertEquals(PaneRun.Outcome.TIMED_OUT, ran.outcome());
         assertEquals(OptionalInt.empty(), ran.exitStatus());

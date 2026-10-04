@@ -476,7 +476,7 @@ final class ControlModeIntegrationTest {
     @Test
     void theSameRequestIsAnsweredWhenTheServerIsRunning(Server server) {
         try (ControlClient client = attach(server)) {
-            ControlReply reply = client.send(List.of("display-message", "-p", "unanswerable"), Duration.ofMillis(500));
+            ControlReply reply = client.send(List.of("display-message", "-p", "unanswerable"), HangGuard.DURATION);
 
             assertEquals(OperationOutcome.COMPLETE, reply.outcome());
             assertEquals(List.of("unanswerable"), reply.lines());

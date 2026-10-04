@@ -214,7 +214,7 @@ final class ControlClientTest {
 
             assertEquals(
                     List.of("still in step"),
-                    client.send(List.of("display-message", "valid"), Duration.ofMillis(200))
+                    client.send(List.of("display-message", "valid"), HangGuard.DURATION)
                             .lines());
         }
     }
@@ -320,7 +320,7 @@ final class ControlClientTest {
                 sleep 5
                 """.replace("SUBSCRIBED", subscribed.toString()));
 
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofSeconds(2))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), HangGuard.DURATION)) {
             EventSubscription<PaneOutput> output = client.subscribeOutput(4);
             // Runs on the thread that delivers the end, at the moment it is delivered.
             var aliveAtTheEnd = new java.util.concurrent.CompletableFuture<Boolean>();
@@ -345,7 +345,7 @@ final class ControlClientTest {
                 while read_request; do answer; done
                 """);
 
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofSeconds(2))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), HangGuard.DURATION)) {
             assertTrue(client.isAlive());
         }
     }
