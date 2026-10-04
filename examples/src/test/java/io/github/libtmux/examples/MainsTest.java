@@ -11,6 +11,7 @@ import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.junit5.TmuxSocketPath;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,23 +23,29 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.function.Executable;
 
 /**
  * Every example's own {@code main}, in its own JVM, as a reader would run it.
  *
- * <p>{@link ExamplesRunTest} checks what each {@code run} returns. This checks what a reader sees:
- * the program starts from its class name, exits zero, and prints what it says it prints.
+ * <p>{@link ExamplesRunTest} checks what each {@code run} returns. This checks
+ * what a reader sees: the program starts from its class name, exits zero, and
+ * prints what it says it prints.
  */
 @ExtendWith(TmuxExtension.class)
 final class MainsTest {
+    private static final String PACKAGE = "io.github.libtmux.examples";
+    private static final String PACKAGE_DIR = PACKAGE.replace('.', '/');
+    private static final String HANGS = "MainsTest$Hangs";
+    private static final String FIXTURE_DIR = "/tmp/libtmux-java-dev/api.";
 
     @Test
     void everyExampleIsLaunched() throws IOException {
-        List<String> programs = Stream.concat(
-                        names(Path.of("src/main/java/io/github/libtmux/examples")).stream(),
-                        names(Path.of("src/main/kotlin/io/github/libtmux/examples")).stream())
-                .sorted()
-                .toList();
+        List<String> programs = new ArrayList<>();
+        for (String language : List.of("java", "kotlin")) {
+            programs.addAll(names(Path.of("src/main", language, PACKAGE_DIR)));
+        }
+        programs.sort(null);
 
         assertEquals(
                 List.of(
@@ -54,31 +61,34 @@ final class MainsTest {
     }
 
     @Test
-    void buildAWorkspace(Server server, TmuxSocketPath socket) throws Exception {
-        String out = launch("BuildAWorkspace", socket.path().toString());
+    void buildAWorkspace(Server tmux, TmuxSocketPath socket) throws Exception {
+        String path = socket.path().toString();
+        String out = launch("BuildAWorkspace", path);
 
         assertTrue(out.startsWith("session work has "), out);
-        assertTrue(server.hasSession("work"));
+        assertTrue(tmux.hasSession("work"));
     }
 
     @Test
     void findPanesRunning(TmuxSocketPath socket) throws Exception {
-        String out = launch("FindPanesRunning", socket.path().toString(), "no-such-command-anywhere");
+        String path = socket.path().toString();
+        String out = launch("FindPanesRunning", path, "no-such-command");
 
         assertEquals("", out);
     }
 
     @Test
     void runACommand(TmuxSocketPath socket) throws Exception {
-        String out = launch("RunACommand", socket.path().toString(), "printf 'built\\n'; exit 3");
+        String path = socket.path().toString();
+        String out = launch("RunACommand", path, "printf 'built\\n'; exit 3");
 
         assertEquals("exit 3, 1 line(s): built\n", out);
     }
 
     @Test
     void serveTmuxOverMcp(TmuxSocketPath socket) throws Exception {
-        List<String> tools =
-                launch("ServeTmuxOverMcp", socket.path().toString()).lines().toList();
+        String out = launch("ServeTmuxOverMcp", socket.path().toString());
+        List<String> tools = out.lines().toList();
 
         assertTrue(tools.contains("capture_pane"), tools.toString());
     }
@@ -107,7 +117,8 @@ final class MainsTest {
     private static List<String> names(Path sources) throws IOException {
         try (Stream<Path> files = Files.list(sources)) {
             return files.filter(Files::isRegularFile)
-                    .map(file -> file.getFileName().toString().replaceFirst("\\.(java|kt)$", ""))
+                    .map(file -> file.getFileName().toString())
+                    .map(name -> name.replaceFirst("\\.(java|kt)$", ""))
                     .filter(name -> !name.equals("package-info"))
                     .toList();
         }
@@ -115,27 +126,40 @@ final class MainsTest {
 
     @Test
     void aProgramStillRunningAtItsDeadlineFails() {
-        AssertionError failure = assertThrows(
-                AssertionError.class,
-                () -> assertTimeoutPreemptively(
-                        Duration.ofSeconds(5), () -> launch(Duration.ofMillis(200), "MainsTest$Hangs")));
+        Duration deadline = Duration.ofMillis(200);
+        String message = failureOf(() -> hangsWithin(deadline));
 
-        assertTrue(String.valueOf(failure.getMessage()).contains("did not exit"), failure.getMessage());
+        assertTrue(message.contains("did not exit"), message);
     }
 
     @Test
     void aTimedOutApiProgramStillCleansUpItsServer() {
-        AssertionError failure = assertThrows(
-                AssertionError.class,
-                () -> assertTimeoutPreemptively(
-                        Duration.ofSeconds(10), () -> launchApiProgram(Duration.ofSeconds(1), "MainsTest$Hangs")));
-        String output = String.valueOf(failure.getMessage());
-        assertTrue(output.contains("did not exit"), output);
-        String socket = output.lines()
-                .filter(line -> line.startsWith("/tmp/libtmux-java-dev/api.") && line.endsWith("/tmux.sock"))
-                .findFirst()
-                .orElseThrow();
-        assertFalse(Files.exists(Path.of(socket).getParent()), "the timed-out fixture must be removed");
+        Duration deadline = Duration.ofSeconds(1);
+        String message = failureOf(() -> hangsInFixture(deadline));
+
+        assertTrue(message.contains("did not exit"), message);
+        var lines = message.lines().filter(MainsTest::isFixtureSocket);
+        Path socket = Path.of(lines.findFirst().orElseThrow());
+        assertFalse(Files.exists(socket.getParent()), "fixture removed");
+    }
+
+    private static String failureOf(Executable run) {
+        AssertionError failure = assertThrows(AssertionError.class, run);
+        return String.valueOf(failure.getMessage());
+    }
+
+    private static boolean isFixtureSocket(String line) {
+        return line.startsWith(FIXTURE_DIR) && line.endsWith("/tmux.sock");
+    }
+
+    private static void hangsWithin(Duration deadline) {
+        Duration limit = Duration.ofSeconds(5);
+        assertTimeoutPreemptively(limit, () -> run(deadline, plain(HANGS)));
+    }
+
+    private static void hangsInFixture(Duration deadline) {
+        Duration limit = Duration.ofSeconds(10);
+        assertTimeoutPreemptively(limit, () -> api(deadline, HANGS));
     }
 
     /** Never exits, and never closes its output. */
@@ -146,61 +170,81 @@ final class MainsTest {
         }
     }
 
-    private static String launch(String program, String... args) throws Exception {
-        return launch(Duration.ofSeconds(60), program, args);
+    /**
+     * One JVM start. {@code wrap} is the fixture that runs it, or empty to run
+     * it directly with its error stream merged into its output.
+     */
+    private record Launch(List<String> wrap, String name, List<String> args) {
+        List<String> command() {
+            List<String> command = new ArrayList<>(wrap);
+            Path java = Path.of(System.getProperty("java.home"), "bin", "java");
+            String classpath = System.getProperty("java.class.path");
+            command.addAll(List.of(java.toString(), "-cp", classpath));
+            command.add(qualified());
+            command.addAll(args);
+            return command;
+        }
+
+        String qualified() {
+            return name.contains(".") ? name : PACKAGE + "." + name;
+        }
     }
 
-    static String launchApiProgram(String program) throws Exception {
-        return launchApiProgram(Duration.ofSeconds(60), program);
+    private static String launch(String name, String... args) throws Exception {
+        return run(Duration.ofSeconds(60), plain(name, args));
     }
 
-    private static String launchApiProgram(Duration deadline, String program) throws Exception {
-        List<String> fixture =
-                List.of("env", "TMUX_BIN=" + System.getProperty("libtmux.tmux", "tmux"), "sh", "api/run.sh");
-        return launch(deadline, false, fixture, program);
+    static String launchApiProgram(String name) throws Exception {
+        return api(Duration.ofSeconds(60), name);
     }
 
-    /** Runs the example's {@code main} in a fresh JVM and returns what it printed. */
-    private static String launch(Duration deadline, String program, String... args) throws Exception {
-        return launch(deadline, true, List.of(), program, args);
+    private static String api(Duration limit, String name) throws Exception {
+        String tmux = System.getProperty("libtmux.tmux", "tmux");
+        String bin = "TMUX_BIN=" + tmux;
+        List<String> wrap = List.of("env", bin, "sh", "api/run.sh");
+        return run(limit, new Launch(wrap, name, List.of()));
     }
 
-    private static String launch(
-            Duration deadline, boolean combineError, List<String> prefix, String program, String... args)
-            throws Exception {
-        List<String> command = new ArrayList<>(prefix);
-        command.addAll(List.of(
-                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-cp",
-                System.getProperty("java.class.path"),
-                program.startsWith("io.github.") ? program : "io.github.libtmux.examples." + program));
-        command.addAll(List.of(args));
-        ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(combineError);
-        if (!combineError) builder.redirectError(ProcessBuilder.Redirect.INHERIT);
+    /** The example's {@code main} in a fresh JVM, with no fixture around it. */
+    private static Launch plain(String name, String... args) {
+        return new Launch(List.of(), name, List.of(args));
+    }
+
+    private static String run(Duration limit, Launch launch) throws Exception {
+        boolean direct = launch.wrap().isEmpty();
+        var builder = new ProcessBuilder(launch.command());
+        builder.redirectErrorStream(direct);
+        if (!direct) builder.redirectError(ProcessBuilder.Redirect.INHERIT);
         Process process = builder.start();
         process.getOutputStream().close();
-        // Drained apart from the wait: a program that never exits never closes its output either.
-        FutureTask<byte[]> printed =
-                new FutureTask<>(() -> process.getInputStream().readAllBytes());
+        // Drained apart from the wait: a program that never exits never
+        // closes its output either.
+        InputStream stdout = process.getInputStream();
+        FutureTask<byte[]> printed = new FutureTask<>(stdout::readAllBytes);
         Thread.ofVirtual().start(printed);
-        if (!process.waitFor(deadline.toMillis(), TimeUnit.MILLISECONDS)) {
-            process.descendants().forEach(ProcessHandle::destroy);
-            if (prefix.isEmpty()) process.destroy();
-            if (!process.waitFor(5, TimeUnit.SECONDS)) {
-                process.destroy();
-                if (!process.waitFor(1, TimeUnit.SECONDS)) {
-                    process.descendants().forEach(ProcessHandle::destroyForcibly);
-                    process.destroyForcibly().waitFor();
-                }
-            }
-            fail(program + " did not exit within " + deadline + ", and printed:\n" + text(printed));
+        String program = launch.name();
+        if (!process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
+            stop(process, direct);
+            String why = program + " did not exit within " + limit + ":\n";
+            fail(why + text(printed));
         }
         String out = text(printed);
         assertEquals(0, process.exitValue(), program + " printed:\n" + out);
         return out;
     }
 
+    private static void stop(Process process, boolean direct) throws Exception {
+        process.descendants().forEach(ProcessHandle::destroy);
+        if (direct) process.destroy();
+        if (process.waitFor(5, TimeUnit.SECONDS)) return;
+        process.destroy();
+        if (process.waitFor(1, TimeUnit.SECONDS)) return;
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly().waitFor();
+    }
+
     private static String text(FutureTask<byte[]> printed) throws Exception {
-        return new String(printed.get(10, TimeUnit.SECONDS), StandardCharsets.UTF_8);
+        byte[] bytes = printed.get(10, TimeUnit.SECONDS);
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 }
