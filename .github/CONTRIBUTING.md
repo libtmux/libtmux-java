@@ -109,6 +109,8 @@ $ ./tools/tmux-matrix.sh ~/tmux-builds
 It reads the lane list out of the build, so it cannot drift from what the matrix
 actually runs.
 
+macOS: see [MACOS_CI.md](MACOS_CI.md).
+
 ## Checks that must pass
 
 One command has to pass before anything is proposed:
