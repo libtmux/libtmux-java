@@ -519,7 +519,8 @@ public final class Server implements AutoCloseable {
      * same instant.
      *
      * <pre>{@code
-     * Map<PaneId, Map<String, String>> ttys = server.paneFields(List.of("pane_tty", "pane_dead"));
+     * List<String> names = List.of("pane_tty", "pane_dead");
+     * Map<PaneId, Map<String, String>> ttys = server.paneFields(names);
      * }</pre>
      *
      * @param names tmux format variable names, at most 32
