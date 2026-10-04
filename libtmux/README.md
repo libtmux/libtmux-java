@@ -62,7 +62,8 @@ Needs JDK 25 and a tmux between 3.2a and 3.7c.
 ```java
 // Given: Path socket
 ServerConfig config = ServerConfig.builder()
-        .endpoint(ServerEndpoint.socketPath(socket))   // wherever you want the server to live
+        // Wherever you want the server to live.
+        .endpoint(ServerEndpoint.socketPath(socket))
         .build();
 
 try (Server server = Server.open(config)) {
@@ -144,8 +145,9 @@ go wrong:
 // Given: Server server
 server.newSession("build");
 
+var sessions = server.sessions().stream();
 Session build = Selections.exactlyOne(
-        server.sessions().stream().filter(Session_.name().is("build")).toList());
+        sessions.filter(Session_.name().is("build")).toList());
 
 build.name();                        // → build
 ```
