@@ -49,7 +49,8 @@ $ git clone https://github.com/libtmux/libtmux-java libtmux-source && \
   cp libtmux-source/examples/api/gradle.properties . && \
   cp libtmux-source/examples/api/run.sh . && \
   mkdir -p src/main/java && \
-  cp libtmux-source/examples/src/main/java/io/github/libtmux/examples/api/java/Capture.java \
+  src=libtmux-source/examples/src/main/java && \
+  cp "$src"/io/github/libtmux/examples/api/java/Capture.java \
     src/main/java/
 ```
 
