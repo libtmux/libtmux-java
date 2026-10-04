@@ -7,6 +7,7 @@ import _root_.cats.syntax.all._
 import io.github.libtmux.ServerConfig
 import io.github.libtmux.SessionId
 import io.github.libtmux.control.{ControlClient, Delivery, PaneOutput}
+import io.github.libtmux.testsupport.HangGuard
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.atomic.AtomicBoolean
@@ -149,8 +150,7 @@ final class ObservationSuite extends FunSuite {
           watched <- control.watch("cmd", "%1", "#{pane_current_command}")
           session <- control.watch("sess", "not-a-pane", "#{session_name}")
           stopped <- control.unwatch("cmd")
-          _ <- IO.sleep(300.millis)
-          ended <- control.isAlive
+          ended <- ObservationSuite.awaitEnded(control)
           _ <- IO {
             assert(alive)
             assert(watched.accepted)
@@ -197,7 +197,7 @@ final class ObservationSuite extends FunSuite {
     val program =
       Control.attachUnfenced[IO](config, new SessionId("$0")).use { control =>
         for {
-          _ <- IO.sleep(200.millis)
+          _ <- ObservationSuite.awaitTruncated(control)
           text <- control.standardError
           cut <- control.standardErrorTruncated
           _ <- IO {
@@ -216,6 +216,24 @@ final class ObservationSuite extends FunSuite {
 }
 
 object ObservationSuite {
+
+  /** Polls until the control process has ended, or the hang guard runs out. */
+  def awaitEnded(control: Control[IO]): IO[Boolean] =
+    control.isAlive
+      .flatMap(alive =>
+        if (alive) IO.sleep(10.millis).as(true) else IO.pure(false)
+      )
+      .iterateWhile(alive => alive)
+      .timeoutTo(HangGuard.SECONDS.seconds, control.isAlive)
+
+  /** Polls until the control process's error text has been cut, or the hang
+    * guard runs out.
+    */
+  def awaitTruncated(control: Control[IO]): IO[Boolean] =
+    control.standardErrorTruncated
+      .flatMap(cut => if (cut) IO.pure(true) else IO.sleep(10.millis).as(false))
+      .iterateUntil(cut => cut)
+      .timeoutTo(HangGuard.SECONDS.seconds, control.standardErrorTruncated)
 
   /** What every fake starts with. tmux follows each request line with a marker
     * line, a `display-message -p` of a token, and a reply ends with the

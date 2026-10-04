@@ -5,6 +5,7 @@ import io.github.libtmux.ServerEndpoint
 import io.github.libtmux.WakeReason
 import io.github.libtmux.junit5.TmuxExtension
 import io.github.libtmux.junit5.TmuxSocketPath
+import io.github.libtmux.testsupport.HangGuard
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
@@ -40,14 +41,15 @@ import io.github.libtmux.Session as JavaSession
 class WaitsTest {
 
     @Test
-    fun `a signal ends the wait`(javaServer: JavaServer) {
+    fun `a signal ends the wait`(javaServer: JavaServer, socket: TmuxSocketPath) {
         val channel = javaServer.channel("kotlin-signal")
         channel.drain()
+        val needle = socket.path().toString()
 
         val outcome =
             runBlocking {
-                val waiting = async { channel.await(5.seconds) }
-                delay(200.milliseconds)
+                val waiting = async { channel.await(guard) }
+                assertTrue(awaitWaiter(needle), "the wait never reached tmux")
                 assertFalse(waiting.isCompleted)
                 channel.signal()
                 waiting.await()
@@ -63,12 +65,8 @@ class WaitsTest {
         val needle = socket.path().toString()
 
         runBlocking {
-            val waiting = async { channel.await(5.seconds) }
-            val deadline = System.nanoTime() + 5.seconds.inWholeNanoseconds
-            while (!waiterPresent(needle) && System.nanoTime() < deadline) {
-                delay(20.milliseconds)
-            }
-            assertTrue(waiterPresent(needle), "the wait never reached tmux")
+            val waiting = async { channel.await(guard) }
+            assertTrue(awaitWaiter(needle), "the wait never reached tmux")
             waiting.cancel()
             val failure = runCatching { withTimeout(10.seconds) { waiting.await() } }.exceptionOrNull()
             assertTrue(failure is CancellationException && failure !is TimeoutCancellationException)
@@ -76,15 +74,16 @@ class WaitsTest {
     }
 
     @Test
-    fun `a wait runs on the dispatcher it is given`(javaServer: JavaServer) {
+    fun `a wait runs on the dispatcher it is given`(javaServer: JavaServer, socket: TmuxSocketPath) {
         val channel = javaServer.channel("kotlin-dispatcher")
         channel.drain()
+        val needle = socket.path().toString()
         val recording = RecordingDispatcher()
 
         val outcome =
             runBlocking {
-                val waiting = async { channel.await(5.seconds, recording) }
-                delay(200.milliseconds)
+                val waiting = async { channel.await(guard, recording) }
+                assertTrue(awaitWaiter(needle), "the wait never reached tmux")
                 channel.signal()
                 waiting.await()
             }
@@ -119,11 +118,7 @@ class WaitsTest {
         val needle = socket.path().toString()
 
         val running = async { pane.run("sleep 30", 30.seconds) }
-        val deadline = System.nanoTime() + 5.seconds.inWholeNanoseconds
-        while (!waiterPresent(needle) && System.nanoTime() < deadline) {
-            delay(20.milliseconds)
-        }
-        assertTrue(waiterPresent(needle), "run's wait never reached tmux")
+        assertTrue(awaitWaiter(needle), "run's wait never reached tmux")
         running.cancel()
         val failure = runCatching { withTimeout(10.seconds) { running.await() } }.exceptionOrNull()
         assertTrue(failure is CancellationException && failure !is TimeoutCancellationException)
@@ -248,6 +243,19 @@ private class StalledControlFixture private constructor(
 }
 
 // ProcessHandle rather than /proc, which macOS does not have.
+private val guard = HangGuard.SECONDS.seconds
+
+private suspend fun awaitWaiter(socket: String): Boolean {
+    val end = System.nanoTime() + guard.inWholeNanoseconds
+    while (System.nanoTime() < end) {
+        if (waiterPresent(socket)) {
+            return true
+        }
+        delay(20.milliseconds)
+    }
+    return waiterPresent(socket)
+}
+
 private fun waiterPresent(socket: String): Boolean =
     ProcessHandle.allProcesses().anyMatch { process ->
         val argv = process.info().arguments().orElse(emptyArray())

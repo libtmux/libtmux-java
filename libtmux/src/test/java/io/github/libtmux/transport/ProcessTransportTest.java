@@ -412,13 +412,14 @@ final class ProcessTransportTest {
     }
 
     @Test
-    void anInterruptedCallerReportsUnknownAndKeepsItsInterrupt() throws InterruptedException {
+    void anInterruptedCallerReportsUnknownAndKeepsItsInterrupt(@TempDir Path directory) throws InterruptedException {
         try (ProcessTransport transport = new ProcessTransport()) {
+            Path running = directory.resolve("running");
             BlockingQueue<Object> outcome = new ArrayBlockingQueue<>(1);
             AtomicBoolean interruptRestored = new AtomicBoolean();
             Thread caller = new Thread(() -> {
                 try {
-                    outcome.add(transport.execute(shell("sleep 30", GENEROUS)));
+                    outcome.add(transport.execute(shell("touch \"" + running + "\"; sleep 30", GENEROUS)));
                 } catch (RuntimeException e) {
                     interruptRestored.set(Thread.currentThread().isInterrupted());
                     outcome.add(e);
@@ -426,7 +427,7 @@ final class ProcessTransportTest {
             });
 
             caller.start();
-            Thread.sleep(400);
+            assertTrue(awaitFile(running), "the child never started");
             caller.interrupt();
             caller.join(TimeUnit.SECONDS.toMillis(20));
 
@@ -462,19 +463,21 @@ final class ProcessTransportTest {
      * therefore impossible to act on.
      */
     @Test
-    void closeKillingARunningChildReportsUnknownRatherThanASignalExit() throws InterruptedException {
+    void closeKillingARunningChildReportsUnknownRatherThanASignalExit(@TempDir Path directory)
+            throws InterruptedException {
         ProcessTransport transport = new ProcessTransport();
+        Path running = directory.resolve("running");
         BlockingQueue<Object> outcome = new ArrayBlockingQueue<>(1);
         Thread caller = new Thread(() -> {
             try {
-                outcome.add(transport.execute(shell("sleep 30", GENEROUS)));
+                outcome.add(transport.execute(shell("touch \"" + running + "\"; sleep 30", GENEROUS)));
             } catch (RuntimeException e) {
                 outcome.add(e);
             }
         });
 
         caller.start();
-        Thread.sleep(400);
+        assertTrue(awaitFile(running), "the child never started");
         transport.close();
         caller.join(TimeUnit.SECONDS.toMillis(20));
 
