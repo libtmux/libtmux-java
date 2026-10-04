@@ -152,7 +152,8 @@ fun nextStep(failure: LibTmuxException): String =
         is TargetGoneException -> "look it up again"
         is ServerUnavailableException -> "start a server"
         is CommandRejectedException -> "change the request"
-        is DispatchException -> if (failure.safeToRetry()) "send it again" else "read state first"
+        is DispatchException ->
+            if (failure.safeToRetry()) "send it again" else "read state first"
         is ControlEndedException -> "attach again"
         is UnsupportedFeatureException -> "do without"
         is UnencodableTextException -> "use a UTF-8 locale"
@@ -178,8 +179,9 @@ import kotlinx.coroutines.flow.first
 withServer(config) { server ->
     val session = server.newSession("flow-demo")
     withControl(server, session) { control ->
+        val target = session.name
         val step = control.output(capacity = 64) {
-            control.send("send-keys", "-t", session.name, "echo flowed", "Enter")
+            control.send("send-keys", "-t", target, "echo flowed", "Enter")
         }.first()
         val outcome = when (step) {            // exhaustive, no else
             is Delivery.Event -> "kept"
