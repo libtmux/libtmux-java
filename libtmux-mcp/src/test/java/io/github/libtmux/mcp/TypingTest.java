@@ -629,6 +629,18 @@ final class TypingTest {
     }
 
     @Test
+    void textWrappedByAWidePromptIsStillFound(Server server) throws Exception {
+        var pane = server.panes().getFirst();
+        pane.respawn("env", "PS1=" + "p".repeat(70) + "$ ", "ENV=/dev/null", "/bin/sh", "-i");
+        assertTrue(await(() -> captureOf(server, pane.id().value()).contains("pp$")), "the prompt never drew");
+        String marker = "wrapped-marker";
+
+        sendKeys(server, pane.id().value(), marker);
+
+        assertTrue(await(() -> captureOf(server, pane.id().value()).contains(marker)));
+    }
+
+    @Test
     void sourceOffIgnoresATruePeer(Server server) throws Exception {
         var source = server.panes().getFirst();
         var peer = source.split(SplitSpec.builder().build());
@@ -984,7 +996,10 @@ final class TypingTest {
     }
 
     static String captureOf(Server server, String pane) {
-        return String.join("\n", server.cmd("capture-pane", "-p", "-t", pane).stdout());
+        // Joined: a prompt wide enough to push typed text over the pane's edge wraps it onto a second
+        // row, and a marker split across two rows matches in neither.
+        return String.join(
+                "\n", server.cmd("capture-pane", "-p", "-J", "-t", pane).stdout());
     }
 
     private static List<String> sorted(String... paneIds) {
