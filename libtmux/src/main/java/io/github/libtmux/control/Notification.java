@@ -11,7 +11,8 @@ import java.util.Optional;
  *
  * <pre>{@code
  * switch (event.notification()) {
- *     case Notification.WindowRenamed(WindowId window, String name, boolean attached) -> relabel(window, name);
+ *     case Notification.WindowRenamed(WindowId id, String name, boolean on) ->
+ *         relabel(id, name);
  *     case Notification.SessionsChanged changed -> refreshSessions();
  *     default -> {}
  * }
