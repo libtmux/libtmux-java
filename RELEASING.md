@@ -7,7 +7,7 @@ are done, so cutting the next release is a tag and someone pressing publish.
 
 `alpha` is the lowest qualifier Maven's comparator knows. Its full order is
 
-```
+```text
 alpha < beta < milestone < rc < snapshot < (release) < sp
 ```
 
@@ -150,7 +150,8 @@ $ gpg --armor --export-secret-keys <FINGERPRINT> > /tmp/libtmux-signing.asc
 | `CENTRAL_PORTAL_PASSWORD` | the token's password half |
 
 ```console
-$ gh secret set SIGNING_KEY < /tmp/libtmux-signing.asc && rm /tmp/libtmux-signing.asc
+$ gh secret set SIGNING_KEY < /tmp/libtmux-signing.asc \
+    && rm /tmp/libtmux-signing.asc
 ```
 
 An unset secret reaches a workflow as an **empty string**, not as nothing, and
