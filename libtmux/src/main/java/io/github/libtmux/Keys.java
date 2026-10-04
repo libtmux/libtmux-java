@@ -18,6 +18,7 @@ import org.jspecify.annotations.Nullable;
  * every table when listing; {@link #in} names one.
  *
  * <pre>{@code
+ * // Given: Server server
  * server.keys().bind("F12", List.of("display-message", "hello"));
  * server.keys().in("root").bind("F11", List.of("next-window"));
  * }</pre>

@@ -8,6 +8,7 @@ import java.util.function.Function;
  * A tmux option and the Java type its value reads as.
  *
  * <pre>{@code
+ * // Given: Session session
  * session.options().set(OptionKey.HISTORY_LIMIT, 50_000);
  * session.options().get(OptionKey.HISTORY_LIMIT).orElseThrow();   // → 50000
  *

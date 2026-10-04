@@ -24,7 +24,9 @@ import org.jspecify.annotations.Nullable;
  * record's canonical constructor is public API, and tmux keeps adding flags to {@code split-window}
  * — six of them in 3.7 alone.
  *
+ * <!-- snippet: compile-only: the harness binds no left and right panes -->
  * <pre>{@code
+ * // Given: Pane pane, Pane left, Pane right
  * Pane side = pane.split(s -> s.toRight().percent(30));
  *
  * SplitSpec sidebar = SplitSpec.builder().toRight().percent(25).build();

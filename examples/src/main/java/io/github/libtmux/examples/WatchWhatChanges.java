@@ -22,6 +22,7 @@ import java.util.function.Consumer;
  * the difference between watching a server and polling one, and it is what lets
  * an agent hold a terminal open cheaply.
  *
+ * <!-- snippet: skip: a shell command line, not Java -->
  * <pre>{@code
  * java WatchWhatChanges.java /tmp/libtmux-java-dev/demo/s
  * }</pre>

@@ -499,7 +499,8 @@ Change it in all of them together.
   line above it says otherwise: `throws` (must fail with that exception),
   `does-not-compile` (the compiler must reject it), `compile-only` or
   `skip`, each with its reason, as [docs/README.md](../docs/README.md)
-  lists. `// →` states a value, and `// Given:` binds a fixture.
+  lists. Javadoc blocks use the same markers above `<pre>`. `// →` states a
+  value, and `// Given:` binds a fixture.
 - **Compared output and copied blocks:** `// →` lines and the text they
   compare stay on one line. No block is copied from a source file, so there
   is no sync command; `./gradlew :docs:test` runs the fences and

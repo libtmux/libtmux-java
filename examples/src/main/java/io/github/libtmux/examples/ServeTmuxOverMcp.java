@@ -18,6 +18,7 @@ import java.util.List;
  * Serves a tmux server over MCP and reports the tool surface an agent would
  * see.
  *
+ * <!-- snippet: skip: a shell command line, not Java -->
  * <pre>{@code
  * java ServeTmuxOverMcp.java /tmp/libtmux-java-dev/demo/s
  * }</pre>

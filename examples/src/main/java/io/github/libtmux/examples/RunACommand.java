@@ -12,6 +12,7 @@ import java.time.Duration;
  * Runs a command in a pane and reads what it exited with, rather than what the
  * screen shows.
  *
+ * <!-- snippet: skip: a shell command line, not Java -->
  * <pre>{@code
  * java RunACommand.java /tmp/libtmux-java-dev/demo/s 'make test'
  * }</pre>
