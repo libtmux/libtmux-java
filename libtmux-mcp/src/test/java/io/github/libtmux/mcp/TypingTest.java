@@ -15,6 +15,7 @@ import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.TypedText;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
@@ -1067,7 +1068,7 @@ final class TypingTest {
     }
 
     static boolean await(BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (System.nanoTime() < deadline) {
             if (condition.getAsBoolean()) {
                 return true;

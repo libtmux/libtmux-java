@@ -12,6 +12,7 @@ import io.github.libtmux.SessionId;
 import io.github.libtmux.exception.ControlEndedException;
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.DispatchOutcome;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
@@ -496,7 +497,7 @@ final class ControlClientTest {
     }
 
     private static boolean controlThreadsSettled(int before) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (controlThreads() > before && System.nanoTime() < deadline) {
             Thread.sleep(10);
         }
@@ -504,7 +505,7 @@ final class ControlClientTest {
     }
 
     private static boolean awaitFile(Path file) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (!Files.exists(file) && System.nanoTime() < deadline) {
             Thread.sleep(10);
         }
@@ -512,7 +513,7 @@ final class ControlClientTest {
     }
 
     private static boolean awaitDead(long pid) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false) && System.nanoTime() < deadline) {
             Thread.sleep(10);
         }

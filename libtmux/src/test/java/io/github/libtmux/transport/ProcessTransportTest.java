@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.ServerClosedException;
+import io.github.libtmux.testsupport.HangGuard;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -48,7 +49,7 @@ import org.junit.jupiter.api.io.TempDir;
  */
 final class ProcessTransportTest {
 
-    private static final Duration GENEROUS = Duration.ofSeconds(30);
+    private static final Duration GENEROUS = HangGuard.DURATION;
     private static final int FLOOD_BYTES = 262_144;
 
     private static CommandRequest shell(String script, Duration timeout) {
@@ -897,7 +898,7 @@ final class ProcessTransportTest {
     }
 
     private static boolean awaitDead(long pid) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false) && System.nanoTime() < deadline) {
             Thread.sleep(10);
         }
@@ -905,7 +906,7 @@ final class ProcessTransportTest {
     }
 
     private static boolean awaitFile(Path file) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (!Files.exists(file) && System.nanoTime() < deadline) {
             Thread.sleep(10);
         }
@@ -913,7 +914,7 @@ final class ProcessTransportTest {
     }
 
     private static boolean awaitClosed(ProcessTransport transport) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (System.nanoTime() < deadline) {
             try {
                 transport.execute(shell("true", Duration.ofMillis(1)));
@@ -928,7 +929,7 @@ final class ProcessTransportTest {
     }
 
     private static boolean awaitReclamation(Future<?> request, Thread caller) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (System.nanoTime() < deadline) {
             if (request.isDone() || caller.getState() == Thread.State.TIMED_WAITING) {
                 return true;
@@ -939,7 +940,7 @@ final class ProcessTransportTest {
     }
 
     private static boolean awaitTimedWait(Future<?> request, Thread caller) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (!request.isDone() && System.nanoTime() < deadline) {
             if (caller.getState() == Thread.State.TIMED_WAITING) {
                 return true;

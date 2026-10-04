@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
@@ -337,7 +338,8 @@ final class PaneCommandFrameTest {
     }
 
     private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(5).toNanos();
+        long deadline = System.nanoTime()
+                + java.time.Duration.ofSeconds(HangGuard.SECONDS).toNanos();
         while (System.nanoTime() < deadline) {
             if (condition.getAsBoolean()) {
                 return true;

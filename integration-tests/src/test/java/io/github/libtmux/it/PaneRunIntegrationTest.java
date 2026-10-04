@@ -12,6 +12,7 @@ import io.github.libtmux.Server;
 import io.github.libtmux.TextOutcome;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import java.time.Duration;
 import java.util.List;
 import java.util.OptionalInt;
@@ -27,7 +28,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 @ExtendWith(TmuxExtension.class)
 final class PaneRunIntegrationTest {
 
-    private static final Duration GENEROUS = Duration.ofSeconds(20);
+    private static final Duration GENEROUS = HangGuard.DURATION;
 
     private static Pane shell(Server server, String name, int columns) throws InterruptedException {
         Window window = server.newSession(session -> session.named(name).running("env", "PS1=$ ", "ENV=", "/bin/sh"))

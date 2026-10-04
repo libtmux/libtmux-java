@@ -9,6 +9,7 @@ application {
 }
 
 dependencies {
+    testImplementation(project(":test-support"))
     implementation(libs.jackson.databind)
     implementation(libs.tomlj)
 }

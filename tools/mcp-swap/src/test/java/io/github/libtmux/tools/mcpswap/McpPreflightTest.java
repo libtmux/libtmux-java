@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.testsupport.HangGuard;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -194,7 +195,7 @@ final class McpPreflightTest {
     }
 
     private static void assertEventuallyDead(long pid) throws InterruptedException {
-        for (var attempt = 0; attempt < 100; attempt++) {
+        for (var attempt = 0; attempt < HangGuard.SECONDS * 100; attempt++) {
             if (ProcessHandle.of(pid).isEmpty()
                     || !ProcessHandle.of(pid).orElseThrow().isAlive()) {
                 return;

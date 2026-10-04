@@ -14,6 +14,7 @@ import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.Notification;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.function.Predicate;
@@ -232,7 +233,7 @@ final class ControlWatchIntegrationTest {
 
     private static boolean awaitEvent(EventSubscription<ControlEvent> events, Predicate<ControlEvent> match)
             throws InterruptedException {
-        return awaitEvent(events, match, Duration.ofSeconds(10));
+        return awaitEvent(events, match, HangGuard.DURATION);
     }
 
     private static boolean awaitEvent(

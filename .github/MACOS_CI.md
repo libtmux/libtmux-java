@@ -62,3 +62,6 @@ configure on macOS without a choice for both.
   `Pane.await` and `Pane.awaitText` are the library's own waits.
 - Test servers live under `/tmp/libtmux-java-test/`, which keeps socket paths
   short.
+- `HangGuard` in `test-support` is the one bound a test puts on waiting for an
+  event. Use it rather than a literal, and keep a short bound only where the test
+  asserts a deadline or that something does not happen.

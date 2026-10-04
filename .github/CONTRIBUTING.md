@@ -18,6 +18,7 @@ publication, and the Gradle build fails when that set stops matching
 | `integration-tests/` | no | the real-tmux suites, Java and Scala, which span artifacts |
 | `examples/` | no | whole runnable programs, run by its own suite |
 | `benchmarks/` | no | what an operation costs, measured on demand |
+| `test-support/` | no | what the test suites of several modules share, such as the bound on waiting for an event |
 | [`module-tests/`](../module-tests/) | no | builds of their own that consume the staged artifacts |
 | [`docs/`](../docs/) | no | the guides, and the suite that runs every snippet in them |
 | `build-logic/` | no | convention plugins, code generators and the catalog Doclet, as an included build |

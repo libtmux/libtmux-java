@@ -15,6 +15,7 @@ import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.PaneOutput;
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.DispatchOutcome;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -489,7 +490,7 @@ final class ControlModeIntegrationTest {
 
     private static boolean awaitOutput(EventSubscription<PaneOutput> output, String expected)
             throws InterruptedException {
-        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        long deadline = System.nanoTime() + HangGuard.DURATION.toNanos();
         while (System.nanoTime() < deadline) {
             Duration remaining = Duration.ofNanos(Math.max(0L, deadline - System.nanoTime()));
             var next = output.next(remaining);

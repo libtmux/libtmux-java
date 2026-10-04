@@ -17,6 +17,7 @@ apiDiff {
 val catalogDoclet = configurations.create("catalogDoclet") { isCanBeConsumed = false }
 
 dependencies {
+    testImplementation(project(":test-support"))
     compileOnly(libs.errorprone.annotations)
     // Kotlin reads a Java collection marked @ReadOnly as a read-only List, Set, or Map, with or
     // without this jar on the caller's path; nothing reads it at runtime.

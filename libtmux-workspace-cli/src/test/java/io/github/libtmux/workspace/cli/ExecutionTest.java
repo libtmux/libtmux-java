@@ -14,6 +14,7 @@ import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.SplitSpec;
 import io.github.libtmux.WakeReason;
+import io.github.libtmux.testsupport.HangGuard;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -48,6 +49,7 @@ final class ExecutionTest {
         environment.remove("TMUXP_DETECT_TERMINAL_SIZE");
         environment.put("HOME", directory.toString());
         environment.put("LIBTMUX_TEST_TMUX", System.getProperty("libtmux.tmux", "tmux"));
+        environment.put("LIBTMUX_TEST_READY_TIMEOUT_MS", Long.toString(HangGuard.MILLIS));
         environment.putAll(overrides);
         var out = new ByteArrayOutputStream();
         var err = new ByteArrayOutputStream();
@@ -1633,6 +1635,7 @@ final class ExecutionTest {
         environment.remove("TMUX_PANE");
         environment.put("HOME", directory.toString());
         environment.put("LIBTMUX_TEST_TMUX", System.getProperty("libtmux.tmux", "tmux"));
+        environment.put("LIBTMUX_TEST_READY_TIMEOUT_MS", Long.toString(HangGuard.MILLIS));
         Thread owner = Thread.ofPlatform()
                 .unstarted(() -> status.set(Main.run(
                         new String[] {

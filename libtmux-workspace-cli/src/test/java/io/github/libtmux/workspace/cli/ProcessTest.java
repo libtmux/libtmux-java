@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.testsupport.HangGuard;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -61,6 +62,7 @@ final class ProcessTest {
         process.environment().remove("TMUX_PANE");
         process.environment().put("HOME", directory.toString());
         process.environment().put("LIBTMUX_TEST_TMUX", System.getProperty("libtmux.tmux", "tmux"));
+        process.environment().put("LIBTMUX_TEST_READY_TIMEOUT_MS", Long.toString(HangGuard.MILLIS));
         return process;
     }
 

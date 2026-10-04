@@ -12,6 +12,7 @@ import io.github.libtmux.Server;
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
@@ -913,7 +914,7 @@ final class RunningCommandsTest {
      * with every other lane. The budget is only ever spent when something is already wrong.
      */
     private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (System.nanoTime() < deadline) {
             if (condition.getAsBoolean()) {
                 return true;
