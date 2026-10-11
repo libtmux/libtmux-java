@@ -37,7 +37,8 @@ $ ./gradlew -p module-tests/scala run -PlibtmuxVersion=0.0.1-alpha.17-SNAPSHOT
 ```
 
 ```console
-$ module-tests/sbt/sbtw -Dlibtmux.version=0.0.1-alpha.17-SNAPSHOT core/run cats/run ox/run direct/run
+$ module-tests/sbt/sbtw -Dlibtmux.version=0.0.1-alpha.17-SNAPSHOT \
+    core/run cats/run ox/run direct/run
 ```
 
 ```console

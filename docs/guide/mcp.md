@@ -93,7 +93,7 @@ others.
 So the command is framed instead. It is bracketed by two lines that print a random
 nonce, and only lines strictly between them are returned:
 
-```
+```text
  ( \trap '/usr/bin/tmux -S /tmp/tmux.sock display-message -p lt3fa9-e:"$?"; /usr/bin/tmux -S /tmp/tmux.sock wait-for -S ch_lt3fa9; \exit 0' 0; /usr/bin/tmux -S /tmp/tmux.sock display-message -p lt3fa9-s; ( \eval 'pytest -q' ) )
 ```
 
@@ -185,7 +185,8 @@ try (ControlClient client = server.control(session);
         EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
     client.watch("names", "@*", "#{window_name}");
 
-    Delivery<ControlEvent> step = events.next(Duration.ofSeconds(2)).orElseThrow();
+    Duration wait = Duration.ofSeconds(2);
+    Delivery<ControlEvent> step = events.next(wait).orElseThrow();
     ControlEvent event = Delivery.kept(step);
     event.subscription();   // which watch this came from
     event.windowId();        // which window, when the watch is over windows

@@ -263,7 +263,11 @@ inference:
 ```
 
 ```json
-{"outcome": "SIGNALLED", "exit_status": 1, "output": ["...", "1 failed, 84 passed"]}
+{
+  "outcome": "SIGNALLED",
+  "exit_status": 1,
+  "output": ["...", "1 failed, 84 passed"]
+}
 ```
 
 `outcome` is `SIGNALLED` when the command finished, `TIMED_OUT` when it was still

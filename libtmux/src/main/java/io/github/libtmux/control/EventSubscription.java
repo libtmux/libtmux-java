@@ -354,9 +354,11 @@ public final class EventSubscription<T> implements AutoCloseable {
      * it, the stream fails with {@link #cause()}. Closing the stream closes this subscription, and
      * closing this subscription from another thread ends a stream that is waiting.
      *
+     * <!-- snippet: compile-only: blocks on a live stream -->
      * <pre>{@code
+     * // Given: EventSubscription<PaneOutput> subscription
      * try (Stream<Delivery<PaneOutput>> steps = subscription.stream()) {
-     *     steps.map(Delivery::kept).forEach(output -> System.out.print(output.data()));
+     *     steps.map(Delivery::kept).forEach(o -> System.out.print(o.data()));
      * }
      * }</pre>
      *

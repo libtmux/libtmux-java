@@ -141,7 +141,10 @@ traversal cannot see a half-changed server.
 // Given: Server server
 Window editor = server.newSession("demo").newWindow("editor");
 
-List<String> names = server.windows().stream().map(Window::name).sorted().toList();
+List<String> names = server.windows().stream()
+        .map(Window::name)
+        .sorted()
+        .toList();
 
 names.contains("editor");            // → true
 editor.session().name();             // → demo
@@ -164,7 +167,7 @@ editors.get(0).name();               // → editor
 An expression is a value, so it can also say what it is — which a lambda cannot:
 
 ```java
-Window_.name().startsWith("edit").describe();   // → window_name starts-with edit
+Window_.name().startsWith("edit").describe(); // → window_name starts-with edit
 ```
 
 ### Find one thing
@@ -184,7 +187,8 @@ Which is how "this session, or a new one" stays a single read:
 
 ```java
 // Given: Server server
-Session work = server.session("work").orElseGet(() -> server.newSession("work"));
+Session work = server.session("work")
+        .orElseGet(() -> server.newSession("work"));
 
 work.name();                         // → work
 ```
@@ -195,8 +199,9 @@ work.name();                         // → work
 // Given: Server server
 server.newSession("build");
 
+var sessions = server.sessions().stream();
 Session build = Selections.exactlyOne(
-        server.sessions().stream().filter(Session_.name().is("build")).toList());
+        sessions.filter(Session_.name().is("build")).toList());
 
 build.name();                        // → build
 ```
@@ -256,7 +261,9 @@ and `TmuxEnvironment` reads them back:
 
 ```java
 // Given: Path socket
-Map<String, String> inside = Map.of("TMUX", socket + ",1,$0", "TMUX_PANE", "%0");
+Map<String, String> inside = Map.of(
+        "TMUX", socket + ",1,$0",
+        "TMUX_PANE", "%0");
 
 TmuxEnvironment here = TmuxEnvironment.of(inside).orElseThrow();
 

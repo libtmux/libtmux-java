@@ -429,3 +429,91 @@ Bad:
 # Show the last ten commits as a graph
 $ git log --max-count=10 --graph --oneline
 ```
+
+## Examples
+
+<!-- shared:examples -->
+
+An example is code written for a reader: a program under `examples/`, code in
+a doc comment or docstring, and every fenced block in a README or docs page.
+Shell blocks also follow [Code blocks](#code-blocks).
+
+The text between the shared markers is the same in every libtmux port.
+Change it in all of them together.
+
+### Width
+
+- **Examples stay within 80 columns.** They render in fixed-width boxes that
+  scroll sideways, and 80 columns fits a libtmux.org code block in a
+  laptop-width window. Comments inside examples wrap at 80 too.
+- **The width check enforces it.** It reads the tracked files that
+  `.github/example-width.toml` names and fails on a wider line. It measures
+  the whole source line, so code in a doc comment counts its indent and
+  comment marker. It skips output (a fence tagged `text`, and what a
+  `console` block prints), hidden setup lines, and a line that is only a URL;
+  an untagged fence counts as code.
+- **A line that must stay wider is listed there with its reason.** An entry
+  that no longer matches a line fails the check, so no stale entry stays.
+- **The formatter's width is the hard limit for all other source.** Example
+  directories set their formatter to 80 where the formatter takes a width.
+
+### Reaching 80
+
+- **Change the code, not the line breaks.** A formatter rejoins any line that
+  fits its width. Name a sub-expression, use a short example name, hide setup
+  the reader does not need, or print less.
+- **Break at the outermost level when a break is still needed:** after an
+  opening parenthesis with one argument per line, one call per line in a
+  chain, one field per line in a literal.
+- **Put a comment on its own line above the code it explains.** Never trail
+  one after code in an example, unless the repository's example runner reads
+  it there, as with an assertion marker.
+- **Break a long string at a word boundary,** never inside a tmux format
+  (`#{...}`) or an escape sequence; the joined text stays the same.
+- **Continue a long command in a `console` block the way its shell does:**
+  `\` after a `$ ` prompt, a backtick after `PS> `, one flag per continuation
+  line.
+
+### What never breaks
+
+- **Output a test compares.** Wrapping it changes what the test expects.
+- **A block copied from a source file.** Fix the width in the source and run
+  the sync command; never edit the copy.
+- **Marker lines and URLs,** which tools and readers take whole.
+
+<!-- /shared:examples -->
+
+### In this repository
+
+- **Hard limit:** palantir-java-format through Spotless, configured in
+  `build-logic/conventions/src/main/kotlin/libtmux.java-library.gradle.kts`,
+  which takes no width key, so Java keeps palantir's fixed 120 columns; scalafmt
+  reads `maxColumn` in `.scalafmt.conf`, set to the example width. Kotlin has
+  no formatter. The width check is `python3 tools/check_example_width.py`.
+- **Not formatted:** Javadoc `<pre>{@code}` blocks, Kotlin sources, and every
+  Markdown fence; held to the example width by hand. Java examples reach it
+  through named variables and extracted helpers, because palantir rejoins any
+  line that fits its own width.
+- **Runs, compiles, exempt:** a fence in `docs/` or a README compiles and
+  runs against live tmux unless a `<!-- snippet: ... -->` directive on the
+  line above it says otherwise: `throws` (must fail with that exception),
+  `does-not-compile` (the compiler must reject it), `compile-only` or
+  `skip`, each with its reason, as [docs/README.md](../docs/README.md)
+  lists. Javadoc blocks use the same markers above `<pre>`. `// →` states a
+  value, and `// Given:` binds a fixture.
+- **Compared output and copied blocks:** `// →` lines and the text they
+  compare stay on one line. No block is copied from a source file, so there
+  is no sync command; `./gradlew :docs:test` runs the fences and
+  `./gradlew :examples:test` runs the programs.
+
+Bad, over 80:
+
+```java
+        Path socket = Path.of(args.length > 0 ? args[0] : "/tmp/libtmux-java-dev/demo/s");
+```
+
+Good, hold the default in a constant:
+
+```java
+        Path socket = Path.of(args.length > 0 ? args[0] : DEMO);
+```

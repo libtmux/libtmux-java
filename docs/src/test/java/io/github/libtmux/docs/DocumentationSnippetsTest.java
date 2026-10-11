@@ -11,6 +11,7 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.junit5.TmuxSocketPath;
 import java.io.IOException;
@@ -23,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -51,6 +53,33 @@ final class DocumentationSnippetsTest {
             found.addAll(Documentation.snippetsIn(ROOT, document));
         }
         return found;
+    }
+
+    static List<Snippet> javadocSnippets() {
+        List<Snippet> found = new ArrayList<>();
+        for (Path source : Documentation.javaSources(ROOT)) {
+            found.addAll(Documentation.snippetsInJavadoc(ROOT, source));
+        }
+        return found;
+    }
+
+    /** A Javadoc block the extractor skipped would be a snippet nobody checks. */
+    @Test
+    void everyJavadocBlockIsOneTheExtractorTakes() throws IOException {
+        Pattern opening = Pattern.compile("<pre>\\s*\\{@code");
+        long total = 0;
+        for (Path source : Documentation.javaSources(ROOT)) {
+            long blocks = opening.matcher(Files.readString(source)).results().count();
+            total += blocks;
+            int taken = Documentation.snippetsInJavadoc(ROOT, source).size();
+            assertEquals(
+                    blocks,
+                    taken,
+                    ROOT.relativize(source) + " has " + blocks + " <pre>{@code blocks, " + taken
+                            + " are checked; close each with a bare ' * }</pre>' line");
+        }
+        assertTrue(total > 0, "no source holds a <pre>{@code block; the scan is broken");
+        assertEquals(total, javadocSnippets().size());
     }
 
     /**
@@ -99,7 +128,7 @@ final class DocumentationSnippetsTest {
      * about 2 seconds, since a slow runner still has to pass.
      */
     @ParameterizedTest(name = "{0}")
-    @MethodSource("snippets")
+    @MethodSource({"snippets", "javadocSnippets"})
     @Timeout(value = 15, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void theSnippetIsWhatItClaimsToBe(Snippet snippet, Server server, TmuxSocketPath socket) throws Throwable {
         if (snippet.expectation() == Snippet.Expectation.SKIPPED) {
@@ -142,7 +171,12 @@ final class DocumentationSnippetsTest {
                 return;
             }
             if (snippet.expectation() == Snippet.Expectation.RUNS) {
-                compiler.run(compiled, bindings(server, socket));
+                try {
+                    compiler.run(compiled, bindings(server, socket));
+                } catch (UnsupportedFeatureException refused) {
+                    // The library's own version refusal: the lanes whose tmux has the feature run it.
+                    Assumptions.abort(snippet.where() + " needs a newer tmux: " + refused.getMessage());
+                }
             }
         } finally {
             SnippetCompiler.discard(compiled.classes());

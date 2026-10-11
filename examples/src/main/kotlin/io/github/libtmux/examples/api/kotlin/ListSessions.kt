@@ -10,20 +10,27 @@ import kotlinx.coroutines.runBlocking
 /** List the sessions returned by a server read. */
 fun main(args: Array<String>) {
     try {
-        require(args.size == 3) { "expected: tmux-binary socket-path config-file" }
-        val config = ServerConfig.builder()
-            .binary(args[0])
-            .endpoint(ServerEndpoint.socketPath(Path.of(args[1])))
-            .configFile(Path.of(args[2]))
-            .build()
-        runBlocking {
-            withServer(config) { server ->
-                println("sessions=" + server.sessions().map { it.name }.sorted().joinToString(","))
-            }
-        }
+        execute(args)
     } catch (error: Exception) {
-        if (error is InterruptedException) Thread.currentThread().interrupt()
+        if (error is InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
         System.err.println("Example failed: ${error.message}")
         exitProcess(1)
+    }
+}
+
+private fun execute(args: Array<String>) {
+    require(args.size == 3) { "expected: tmux-binary socket-path config-file" }
+    val config = ServerConfig.builder()
+        .binary(args[0])
+        .endpoint(ServerEndpoint.socketPath(Path.of(args[1])))
+        .configFile(Path.of(args[2]))
+        .build()
+    runBlocking {
+        withServer(config) { server ->
+            val names = server.sessions().map { it.name }.sorted()
+            println("sessions=" + names.joinToString(","))
+        }
     }
 }

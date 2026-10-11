@@ -16,6 +16,7 @@ import org.jspecify.annotations.Nullable;
  * kept.
  *
  * <pre>{@code
+ * // Given: Pane pane
  * List<String> everything = pane.capture(c -> c.fromStartOfHistory());
  * List<String> lastTen = pane.capture(c -> c.from(-10));
  * }</pre>

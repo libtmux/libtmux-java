@@ -81,6 +81,11 @@ jobs:
           "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
           echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
 
+      - name: Examples stay within 80 columns
+        run: |
+          python3 tools/check_example_width.py --self-test
+          python3 tools/check_example_width.py
+
       # Runs every check task instead of stopping at the first failure, so one run names them all.
       - run: ./gradlew :libtmux-mcp:test check --stacktrace --continue -Plibtmux.testJdk=${{ matrix.java }}
 

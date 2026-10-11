@@ -23,12 +23,14 @@ done.drain();
 
 // Keys sent to a shell that is not reading yet are swallowed, and tmux hands
 // back a pane id the moment it forks the pane — before the prompt is drawn.
-pane.await(ready -> !ready.expand("#{cursor_x},#{cursor_y}").equals("0,0"), Duration.ofSeconds(10));
+Duration limit = Duration.ofSeconds(10);
+pane.await(p -> !p.expand("#{cursor_x},#{cursor_y}").equals("0,0"), limit);
 
 // Name the server's own tmux and socket rather than trusting the pane's PATH: a
 // client from a different release than the server is dropped, not served.
 String tmux = server.config().binaryPath();
-pane.sendLine("sleep 1; " + tmux + " -S " + socket + " wait-for -S build-finished");
+String signal = tmux + " -S " + socket + " wait-for -S build-finished";
+pane.sendLine("sleep 1; " + signal);
 
 done.await(Duration.ofSeconds(20));   // SIGNALLED, once the command reaches it
 ```
@@ -105,7 +107,8 @@ try (ControlClient client = server.control(session);
 
     StringBuilder seen = new StringBuilder();
     while (seen.indexOf("streamed") < 0) {
-        seen.append(Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow()).data());
+        var frame = output.next(Duration.ofSeconds(5)).orElseThrow();
+        seen.append(Delivery.kept(frame).data());
     }
     seen.indexOf("streamed") >= 0;  // → true
 }
@@ -136,7 +139,8 @@ try (ControlClient client = server.control(session);
         EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
 
     client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
-    CompletableFuture.delayedExecutor(5, TimeUnit.SECONDS).execute(output::close);
+    Executor timer = CompletableFuture.delayedExecutor(5, TimeUnit.SECONDS);
+    timer.execute(output::close);
 
     StringBuilder seen = new StringBuilder();
     try (Stream<Delivery<PaneOutput>> steps = output.stream()) {
@@ -230,9 +234,10 @@ try (ControlClient client = server.control(session);
 
     String renamed = null;
     while (renamed == null) {
-        Notification seen = Delivery.kept(events.next(Duration.ofSeconds(5)).orElseThrow()).notification();
+        var next = events.next(Duration.ofSeconds(5)).orElseThrow();
+        Notification seen = Delivery.kept(next).notification();
         renamed = switch (seen) {
-            case Notification.WindowRenamed(var window, var name, var attached) -> name;
+            case Notification.WindowRenamed(var id, var name, var on) -> name;
             default -> null;
         };
     }
@@ -257,8 +262,10 @@ try (ServerMirror mirror = ServerMirror.open(session)) {
     session.newWindow("mirrored");
 
     ServerMirror.View view = mirror.current();
-    while (view.snapshot().windows().stream().noneMatch(w -> w.name().equals("mirrored"))) {
-        view = mirror.awaitNewer(view.epoch(), Duration.ofSeconds(5)).orElseThrow();
+    Duration wait = Duration.ofSeconds(5);
+    while (view.snapshot().windows().stream()
+            .noneMatch(w -> w.name().equals("mirrored"))) {
+        view = mirror.awaitNewer(view.epoch(), wait).orElseThrow();
     }
     view.epoch() > 0;                             // → true
 }

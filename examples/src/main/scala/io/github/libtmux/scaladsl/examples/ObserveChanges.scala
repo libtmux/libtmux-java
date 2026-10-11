@@ -4,8 +4,9 @@ import _root_.cats.effect.{ExitCode, IO, IOApp, Resource}
 import _root_.cats.syntax.all._
 import io.github.libtmux.{ServerConfig, SessionSpec}
 import scala.jdk.OptionConverters._
-// Wildcard, not a named import: examples lives beside io.github.libtmux.scaladsl.cats, not inside
-// it, so its generated extension methods need an explicit import.
+// Wildcard, not a named import: examples lives beside
+// io.github.libtmux.scaladsl.cats, not inside it, so its generated extension
+// methods need an explicit import.
 import io.github.libtmux.scaladsl.cats.*
 import scala.concurrent.duration._
 
@@ -62,7 +63,7 @@ object ObserveChanges extends IOApp {
                   )
                   assert(
                     failure.isEmpty,
-                    "the background poller must not have failed while still in use"
+                    "the background poller failed while still in use"
                   )
                 }
               } yield ()

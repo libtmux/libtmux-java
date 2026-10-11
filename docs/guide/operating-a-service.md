@@ -46,7 +46,8 @@ ends, on the thread that ran it:
 ```java
 // Given: ServerConfig config
 List<OperationReport> reports = new CopyOnWriteArrayList<>();
-try (Server observed = Server.open(config.toBuilder().observer(reports::add).build())) {
+ServerConfig watched = config.toBuilder().observer(reports::add).build();
+try (Server observed = Server.open(watched)) {
     observed.cmd("display-message", "-p", "hi");
 }
 OperationReport last = reports.get(reports.size() - 1);
@@ -73,8 +74,9 @@ an OpenTelemetry context, a thread local - is there to read:
 // Given: ServerConfig config
 ThreadLocal<String> request = new ThreadLocal<>();
 Map<String, String> seen = new ConcurrentHashMap<>();
-ServerConfig traced =
-        config.toBuilder().observer(report -> seen.put(report.verbs().get(0), request.get())).build();
+ServerConfig traced = config.toBuilder()
+        .observer(report -> seen.put(report.verbs().get(0), request.get()))
+        .build();
 try (Server server = Server.open(traced)) {
     request.set("req-42");
     server.cmd("display-message", "-p", "hi");
