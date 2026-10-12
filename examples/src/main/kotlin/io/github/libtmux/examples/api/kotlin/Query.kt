@@ -11,21 +11,28 @@ import kotlinx.coroutines.runBlocking
 /** Select sessions with a typed name filter. */
 fun main(args: Array<String>) {
     try {
-        require(args.size == 3) { "expected: tmux-binary socket-path config-file" }
-        val config = ServerConfig.builder()
-            .binary(args[0])
-            .endpoint(ServerEndpoint.socketPath(Path.of(args[1])))
-            .configFile(Path.of(args[2]))
-            .build()
-        runBlocking {
-            withServer(config) { server ->
-                val matches = server.sessions(Session.name eq "work-one")
-                println("matches=" + matches.map { it.name }.sorted().joinToString(","))
-            }
-        }
+        execute(args)
     } catch (error: Exception) {
-        if (error is InterruptedException) Thread.currentThread().interrupt()
+        if (error is InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
         System.err.println("Example failed: ${error.message}")
         exitProcess(1)
+    }
+}
+
+private fun execute(args: Array<String>) {
+    require(args.size == 3) { "expected: tmux-binary socket-path config-file" }
+    val config = ServerConfig.builder()
+        .binary(args[0])
+        .endpoint(ServerEndpoint.socketPath(Path.of(args[1])))
+        .configFile(Path.of(args[2]))
+        .build()
+    runBlocking {
+        withServer(config) { server ->
+            val matches = server.sessions(Session.name eq "work-one")
+            val names = matches.map { it.name }.sorted()
+            println("matches=" + names.joinToString(","))
+        }
     }
 }

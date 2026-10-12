@@ -41,12 +41,14 @@ class MyToolTest {
 
     @Test
     void itRunsSomethingInAPane(Server server) {
-        Session session = server.sessions().get(0);   // the fixture made one, named "libtmux"
+        // The fixture made one session, named "libtmux".
+        Session session = server.sessions().get(0);
         Pane pane = session.windows().get(0).panes().get(0);
 
         pane.sendLine("echo hello");
 
-        assertTrue(pane.capture().stream().anyMatch(line -> line.contains("hello")));
+        var lines = pane.capture();
+        assertTrue(lines.stream().anyMatch(line -> line.contains("hello")));
     }
 }
 ```
@@ -170,7 +172,8 @@ try (Server server = tmux.server();
         ControlClient client = server.control(server.sessions().getFirst());
         EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
     tmux.output(pane, "built");
-    Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow()).data();   // → built
+    var step = output.next(Duration.ofSeconds(5)).orElseThrow();
+    Delivery.kept(step).data();   // → built
 }
 ```
 

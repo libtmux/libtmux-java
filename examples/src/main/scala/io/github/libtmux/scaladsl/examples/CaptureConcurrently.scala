@@ -4,8 +4,9 @@ import _root_.cats.effect.{ExitCode, IO, IOApp, Resource}
 import _root_.cats.syntax.all._
 import fs2.Stream
 import io.github.libtmux.{ServerConfig, SessionSpec, SplitSpec}
-// Wildcard, not a named import: examples lives beside io.github.libtmux.scaladsl.cats, not inside
-// it, so its generated extension methods need an explicit import.
+// Wildcard, not a named import: examples lives beside
+// io.github.libtmux.scaladsl.cats, not inside it, so its generated extension
+// methods need an explicit import.
 import io.github.libtmux.scaladsl.cats.*
 import scala.concurrent.duration._
 

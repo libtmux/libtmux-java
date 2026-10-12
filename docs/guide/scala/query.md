@@ -68,7 +68,9 @@ Using.resource(Server.open(config)) { server =>
   val panes = server.panes()
   val expression = Pane.command.is("cat") && Pane.width.atLeast(1)
   val selected = panes.matching(expression)
-  val native = panes.filter(p => p.info.currentCommand() == "cat" && p.info.size().width() >= 1)
+  val native = panes.filter { p =>
+    p.info.currentCommand() == "cat" && p.info.size().width() >= 1
+  }
   assert(selected == native)
 }
 ```

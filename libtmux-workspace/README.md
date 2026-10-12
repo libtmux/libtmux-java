@@ -98,7 +98,8 @@ It adds a session; it does not take over the one you had:
 
 ```java
 // Given: Server server
-Workspace workspace = WorkspaceBuilder.parse("session_name: added\nwindows:\n  - window_name: w\n");
+String yaml = "session_name: added\nwindows:\n  - window_name: w\n";
+Workspace workspace = WorkspaceBuilder.parse(yaml);
 
 WorkspaceBuilder.build(server, workspace);
 
@@ -114,7 +115,9 @@ while it is still text**, before a single window exists.
 
 <!-- snippet: throws: IllegalArgumentException -->
 ```java
-WorkspaceBuilder.parse("session_name: s\nwindows:\n  - window_name: w\n    layout: sideways");
+String yaml = "session_name: s\nwindows:\n  - window_name: w\n"
+        + "    layout: sideways";
+WorkspaceBuilder.parse(yaml);
 // IllegalArgumentException — tmux has no layout called "sideways"
 ```
 

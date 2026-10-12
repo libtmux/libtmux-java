@@ -43,7 +43,8 @@ $ ./gradlew :examples:compileJava
 
 ```console
 $ java -cp examples/build/classes/java/main:libtmux/build/classes/java/main \
-    io.github.libtmux.examples.FindPanesRunning /tmp/libtmux-java-dev/demo/s nvim
+    io.github.libtmux.examples.FindPanesRunning \
+    /tmp/libtmux-java-dev/demo/s nvim
 ```
 
 The suite launches each program's own `main` in a fresh JVM and checks what it

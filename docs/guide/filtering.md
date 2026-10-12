@@ -82,7 +82,7 @@ windows are zoomed".
 ```java
 var busy = Window_.panes().any(Pane_.command().startsWith("nv"));
 
-busy.describe();                     // → panes any (pane_current_command starts-with nv)
+busy.describe(); // → panes any (pane_current_command starts-with nv)
 ```
 
 This is the half a lambda cannot do, and the reason the AST is a sealed tree of

@@ -192,7 +192,8 @@ public final class Session {
      * Creates a window in this session as described.
      *
      * <pre>{@code
-     * Window logs = session.newWindow(w -> w.named("logs").running("journalctl", "-f"));
+     * // Given: Session session
+     * Window top = session.newWindow(w -> w.named("top").running("top"));
      * }</pre>
      *
      * @param configure receives a builder holding tmux's defaults

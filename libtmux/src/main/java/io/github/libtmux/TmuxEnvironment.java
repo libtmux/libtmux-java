@@ -12,6 +12,7 @@ import org.jspecify.annotations.Nullable;
  * the pane's id. That is how a process discovers the server it is already inside, without being told
  * where to look.
  *
+ * <!-- snippet: compile-only: reads the TMUX variable, which the test JVM does not have -->
  * <pre>{@code
  * TmuxEnvironment here = TmuxEnvironment.current().orElseThrow();
  *

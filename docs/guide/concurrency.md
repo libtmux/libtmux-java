@@ -23,7 +23,7 @@ server.newSession("right");
 int windows = 0;
 try (ExecutorService threads = Executors.newVirtualThreadPerTaskExecutor()) {
     List<Future<Integer>> counts = server.sessions().stream()
-            .map(session -> threads.submit(() -> session.refresh().windows().size()))
+            .map(s -> threads.submit(() -> s.refresh().windows().size()))
             .toList();
     for (Future<Integer> count : counts) {
         windows += count.get();

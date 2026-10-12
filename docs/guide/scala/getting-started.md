@@ -94,8 +94,9 @@ def firstClient(binary: String, socket: Path, configFile: Path): Unit = {
       )
       window.selectLayout(Layout.EVEN_HORIZONTAL)
       second.select()
-      // window.panes is CAPTURED: it answers from window's own frozen capture, taken before the
-      // split, so this refreshes first rather than reading stale data.
+      // window.panes is CAPTURED: it answers from window's own frozen
+      // capture, taken before the split, so this refreshes first rather than
+      // reading stale data.
       val panes = window.refresh().panes
       assert(panes.size == 2)
       assert(panes.exists(_.info.id().value() == second.info.id().value()))
@@ -127,7 +128,10 @@ Follow with [queries](query.md), [ownership](ownership.md), then
 The facades build with the rest of the repository, from its root:
 
 ```console
-$ ./gradlew :libtmux-scala:check :libtmux-scala-cats:check :libtmux-scala-ox:check
+$ ./gradlew \
+    :libtmux-scala:check \
+    :libtmux-scala-cats:check \
+    :libtmux-scala-ox:check
 ```
 
 The real-tmux suites run with the Java ones in `integration-tests`:

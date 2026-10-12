@@ -10,6 +10,7 @@ import java.util.Objects;
  * therefore reports a differently shaped string depending on the server, and a caller that parses it
  * needs to know which it has. This says, so the compiler can carry what used to be a comment:
  *
+ * <!-- snippet: skip: calls restorePanes and restoreGeometry, which the caller supplies -->
  * <pre>{@code
  * switch (window.layout()) {
  *     case WindowLayout.Json json -> restorePanes(json.value());

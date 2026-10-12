@@ -41,7 +41,8 @@ trap 'exit 1' HUP INT TERM
 
 unset TMUX TMUX_PANE
 printf 'set-option -g default-shell /bin/sh\n' > "$config"
-"$binary" -S "$socket" -f "$config" new-session -d -s work-one -n editor /bin/cat
+"$binary" -S "$socket" -f "$config" \
+    new-session -d -s work-one -n editor /bin/cat
 "$binary" -S "$socket" split-window -h -t '=work-one:editor' /bin/cat
 "$binary" -S "$socket" new-window -d -t '=work-one' -n logs /bin/cat
 "$binary" -S "$socket" new-session -d -s work-two -n editor /bin/cat
