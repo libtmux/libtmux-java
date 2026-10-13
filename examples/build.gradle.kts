@@ -13,6 +13,7 @@ plugins {
 kotlin { jvmToolchain(25) }
 
 dependencies {
+    testImplementation(project(":test-support"))
     implementation(project(":libtmux"))
     implementation(project(":libtmux-workspace"))
     implementation(project(":libtmux-kotlin"))

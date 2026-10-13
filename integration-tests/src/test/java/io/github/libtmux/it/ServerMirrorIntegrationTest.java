@@ -14,6 +14,7 @@ import io.github.libtmux.Window;
 import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.snapshot.ServerMirror;
+import io.github.libtmux.testsupport.HangGuard;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -30,7 +31,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 @ExtendWith(TmuxExtension.class)
 final class ServerMirrorIntegrationTest {
 
-    private static final Duration PATIENCE = Duration.ofSeconds(10);
+    private static final Duration PATIENCE = HangGuard.DURATION;
 
     @Test
     void aNewWindowIsPublished(Server server) throws Exception {

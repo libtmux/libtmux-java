@@ -23,6 +23,7 @@ distributions.main {
 tasks.jar { manifest { attributes("Automatic-Module-Name" to "io.github.libtmux.workspace.cli") } }
 
 dependencies {
+    testImplementation(project(":test-support"))
     // The core, named directly: no source here imports :libtmux-workspace, since
     // the two are separate implementations with different document languages.
     implementation(project(":libtmux"))

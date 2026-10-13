@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -283,7 +284,7 @@ final class WaitingForTextTest {
     }
 
     private static boolean onScreen(Server server, String pane, String text) {
-        for (int attempt = 0; attempt < 100; attempt++) {
+        for (int attempt = 0; attempt < HangGuard.SECONDS * 20; attempt++) {
             if (String.join("\n", server.cmd("capture-pane", "-p", "-t", pane).stdout())
                     .contains(text)) {
                 return true;

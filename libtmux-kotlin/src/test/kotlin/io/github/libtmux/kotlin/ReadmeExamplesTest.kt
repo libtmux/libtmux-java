@@ -14,6 +14,7 @@ import io.github.libtmux.junit5.TmuxExtension
 import io.github.libtmux.kotlin.query.active
 import io.github.libtmux.kotlin.query.command
 import io.github.libtmux.kotlin.query.name
+import io.github.libtmux.testsupport.HangGuard
 import io.github.libtmux.transport.DispatchOutcome
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -69,10 +70,10 @@ class ReadmeExamplesTest {
             val pane = session.activeWindow?.activePane ?: error("no active pane")
 
             pane.sendLine("echo ready")
-            pane.awaitText("ready", timeout = 5.seconds)
+            pane.awaitText("ready", timeout = HangGuard.SECONDS.seconds)
             val lines = pane.capture()
 
-            val run = pane.run("echo hi && exit 3", timeout = 5.seconds)
+            val run = pane.run("echo hi && exit 3", timeout = HangGuard.SECONDS.seconds)
             assertEquals(3, run.exitStatus.orNull())
             assertTrue(lines.isNotEmpty())
         }

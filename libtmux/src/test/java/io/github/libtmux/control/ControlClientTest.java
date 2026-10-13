@@ -12,6 +12,7 @@ import io.github.libtmux.SessionId;
 import io.github.libtmux.exception.ControlEndedException;
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.DispatchOutcome;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
@@ -62,7 +63,7 @@ final class ControlClientTest {
             Thread.ofVirtual().start(sentinel::countDown);
 
             assertTrue(
-                    sentinel.await(1, TimeUnit.SECONDS),
+                    sentinel.await(HangGuard.SECONDS, TimeUnit.SECONDS),
                     "the blocked pipe write occupied the only virtual-thread carrier");
             blocked.join(TimeUnit.SECONDS.toMillis(10));
         }
@@ -173,7 +174,7 @@ final class ControlClientTest {
 
             client.close();
 
-            assertEquals(Optional.empty(), waiting.get(1, TimeUnit.SECONDS));
+            assertEquals(Optional.empty(), waiting.get(HangGuard.SECONDS, TimeUnit.SECONDS));
         } finally {
             waiting.cancel(true);
             output.close();
@@ -213,7 +214,7 @@ final class ControlClientTest {
 
             assertEquals(
                     List.of("still in step"),
-                    client.send(List.of("display-message", "valid"), Duration.ofMillis(200))
+                    client.send(List.of("display-message", "valid"), HangGuard.DURATION)
                             .lines());
         }
     }
@@ -319,7 +320,7 @@ final class ControlClientTest {
                 sleep 5
                 """.replace("SUBSCRIBED", subscribed.toString()));
 
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofSeconds(2))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), HangGuard.DURATION)) {
             EventSubscription<PaneOutput> output = client.subscribeOutput(4);
             // Runs on the thread that delivers the end, at the moment it is delivered.
             var aliveAtTheEnd = new java.util.concurrent.CompletableFuture<Boolean>();
@@ -344,7 +345,7 @@ final class ControlClientTest {
                 while read_request; do answer; done
                 """);
 
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofSeconds(2))) {
+        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), HangGuard.DURATION)) {
             assertTrue(client.isAlive());
         }
     }
@@ -427,8 +428,8 @@ final class ControlClientTest {
                 EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
             client.send("display-message");
 
-            PaneOutput first = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
-            PaneOutput second = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
+            PaneOutput first = Delivery.kept(output.next(HangGuard.DURATION).orElseThrow());
+            PaneOutput second = Delivery.kept(output.next(HangGuard.DURATION).orElseThrow());
 
             assertEquals("caf", first.data());
             assertEquals("é\\x!", second.data());
@@ -457,7 +458,7 @@ final class ControlClientTest {
                 EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
             client.send("display-message");
 
-            PaneOutput piece = Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow());
+            PaneOutput piece = Delivery.kept(output.next(HangGuard.DURATION).orElseThrow());
 
             assertEquals(new PaneId("%2"), piece.pane());
             assertEquals("a : b\n", piece.data());
@@ -496,7 +497,7 @@ final class ControlClientTest {
     }
 
     private static boolean controlThreadsSettled(int before) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (controlThreads() > before && System.nanoTime() < deadline) {
             Thread.sleep(10);
         }
@@ -504,7 +505,7 @@ final class ControlClientTest {
     }
 
     private static boolean awaitFile(Path file) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (!Files.exists(file) && System.nanoTime() < deadline) {
             Thread.sleep(10);
         }
@@ -512,7 +513,7 @@ final class ControlClientTest {
     }
 
     private static boolean awaitDead(long pid) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false) && System.nanoTime() < deadline) {
             Thread.sleep(10);
         }

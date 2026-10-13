@@ -28,7 +28,7 @@ import scala.jdk.CollectionConverters._
 import scala.jdk.DurationConverters._
 
 final class CatsLifecycleSuite extends FunSuite {
-  private val deadline = Duration.ofMillis(800)
+  private val deadline = Duration.ofSeconds(10)
 
   // Cats operations take FiniteDuration; fixture.server's raw Java calls keep java.time.Duration.
   private val deadlineFD: FiniteDuration = deadline.toScala
@@ -108,7 +108,7 @@ final class CatsLifecycleSuite extends FunSuite {
             }
           } yield ()
         }
-      program.timeout(1.second).unsafeRunSync()
+      program.timeout(10.seconds).unsafeRunSync()
     }
   }
 
@@ -160,7 +160,7 @@ final class CatsLifecycleSuite extends FunSuite {
             }
           }
         }
-        .timeout(1.second)
+        .timeout(10.seconds)
         .unsafeRunSync()
     }
   }
@@ -200,7 +200,7 @@ final class CatsLifecycleSuite extends FunSuite {
             }
           } yield ()
         }
-        .timeout(1.second)
+        .timeout(10.seconds)
         .unsafeRunSync()
     }
   }
@@ -216,7 +216,7 @@ final class CatsLifecycleSuite extends FunSuite {
           IO.raiseError[Unit](expected)
       }
       val result =
-        resource.use(_ => IO.unit).attempt.timeout(1.second).unsafeRunSync()
+        resource.use(_ => IO.unit).attempt.timeout(10.seconds).unsafeRunSync()
       assert(result.left.toOption.exists(_ eq expected))
       val java = acquired.get().get
       intercept[IllegalStateException](java.cmd("list-sessions"))
@@ -256,7 +256,7 @@ final class CatsLifecycleSuite extends FunSuite {
             }
           } yield ()
         }
-        .timeout(1.second)
+        .timeout(10.seconds)
         .unsafeRunSync()
       assertEquals(transport.closes.get(), 1)
     }

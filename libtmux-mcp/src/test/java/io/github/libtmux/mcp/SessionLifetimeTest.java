@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.testsupport.HangGuard;
 import io.modelcontextprotocol.spec.McpServerSession;
 import io.modelcontextprotocol.spec.McpServerTransportProvider;
 import java.io.IOException;
@@ -46,14 +47,15 @@ final class SessionLifetimeTest {
         SessionLifetime lifetime = new SessionLifetime(ended::countDown);
         lifetime.own(() -> {
             closing.countDown();
-            if (!release.await(5, TimeUnit.SECONDS)) {
+            if (!release.await(2L * HangGuard.SECONDS, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("test did not release cleanup");
             }
         });
         Thread ending = Thread.ofVirtual().start(() -> lifetime.endAfter(new IOException("client disconnected")));
         try {
-            assertTrue(closing.await(1, TimeUnit.SECONDS), "owned cleanup never started");
-            assertTrue(ended.await(1, TimeUnit.SECONDS), "owned cleanup blocked the session-end signal");
+            assertTrue(closing.await(HangGuard.SECONDS, TimeUnit.SECONDS), "owned cleanup never started");
+            assertTrue(
+                    ended.await(HangGuard.SECONDS, TimeUnit.SECONDS), "owned cleanup blocked the session-end signal");
         } finally {
             release.countDown();
             ending.join();

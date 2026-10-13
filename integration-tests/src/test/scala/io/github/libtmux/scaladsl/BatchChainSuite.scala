@@ -35,7 +35,7 @@ import scala.jdk.OptionConverters._
   * concurrent one.
   */
 final class BatchChainSuite extends FunSuite {
-  private val deadline = Duration.ofMillis(800)
+  private val deadline = Duration.ofSeconds(10)
 
   test(
     "batches preserve order, output rows and unproven Java failure reports"

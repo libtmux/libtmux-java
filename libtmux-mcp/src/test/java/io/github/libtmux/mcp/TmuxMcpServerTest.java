@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.TmuxTransport;
@@ -86,13 +87,13 @@ final class TmuxMcpServerTest {
             try {
                 client.write(initialize());
                 client.flush();
-                assertTrue(output.first.await(3, TimeUnit.SECONDS), "initialization did not answer");
+                assertTrue(output.first.await(HangGuard.SECONDS, TimeUnit.SECONDS), "initialization did not answer");
 
                 client.write("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
                         .getBytes(StandardCharsets.UTF_8));
                 client.write(request);
                 client.flush();
-                assertTrue(output.second.await(5, TimeUnit.SECONDS), "read batch did not answer");
+                assertTrue(output.second.await(HangGuard.SECONDS, TimeUnit.SECONDS), "read batch did not answer");
             } finally {
                 mcp.close();
             }
@@ -144,7 +145,7 @@ final class TmuxMcpServerTest {
             try {
                 client.write(initialize());
                 client.flush();
-                assertTrue(output.first.await(3, TimeUnit.SECONDS), "initialization did not answer");
+                assertTrue(output.first.await(HangGuard.SECONDS, TimeUnit.SECONDS), "initialization did not answer");
 
                 client.write("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
                         .getBytes(StandardCharsets.UTF_8));
@@ -160,7 +161,7 @@ final class TmuxMcpServerTest {
                                 + "\n")
                         .getBytes(StandardCharsets.UTF_8));
                 client.flush();
-                assertTrue(output.second.await(5, TimeUnit.SECONDS), "list_sessions did not answer");
+                assertTrue(output.second.await(HangGuard.SECONDS, TimeUnit.SECONDS), "list_sessions did not answer");
             } finally {
                 mcp.close();
             }
@@ -209,7 +210,7 @@ final class TmuxMcpServerTest {
             try {
                 client.write(initialize());
                 client.flush();
-                assertTrue(output.first.await(3, TimeUnit.SECONDS), "initialization did not answer");
+                assertTrue(output.first.await(HangGuard.SECONDS, TimeUnit.SECONDS), "initialization did not answer");
 
                 client.write("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
                         .getBytes(StandardCharsets.UTF_8));
@@ -226,7 +227,7 @@ final class TmuxMcpServerTest {
                                 + "\n")
                         .getBytes(StandardCharsets.UTF_8));
                 client.flush();
-                assertTrue(output.second.await(5, TimeUnit.SECONDS), "list_sessions did not answer");
+                assertTrue(output.second.await(HangGuard.SECONDS, TimeUnit.SECONDS), "list_sessions did not answer");
             } finally {
                 mcp.close();
             }
@@ -274,14 +275,16 @@ final class TmuxMcpServerTest {
             try {
                 client.write(initialize());
                 client.flush();
-                assertTrue(output.first.await(3, TimeUnit.SECONDS), "initialization did not answer");
+                assertTrue(output.first.await(HangGuard.SECONDS, TimeUnit.SECONDS), "initialization did not answer");
                 calls.set(0);
 
                 client.write("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
                         .getBytes(StandardCharsets.UTF_8));
                 client.write(toolCall(acceptedId));
                 client.flush();
-                assertTrue(output.second.await(5, TimeUnit.SECONDS), "near-bound request ID did not answer");
+                assertTrue(
+                        output.second.await(HangGuard.SECONDS, TimeUnit.SECONDS),
+                        "near-bound request ID did not answer");
                 assertEquals(1, calls.get(), "near-bound request ID did not dispatch exactly once");
                 assertEquals(
                         acceptedId,
@@ -290,7 +293,9 @@ final class TmuxMcpServerTest {
 
                 client.write(toolCall("i".repeat(1_000_000)));
                 client.flush();
-                assertTrue(output.awaitLines(3, 5, TimeUnit.SECONDS), "oversized request ID did not answer");
+                assertTrue(
+                        output.awaitLines(3, HangGuard.SECONDS, TimeUnit.SECONDS),
+                        "oversized request ID did not answer");
             } finally {
                 mcp.close();
             }
@@ -322,7 +327,9 @@ final class TmuxMcpServerTest {
                 client.write(initialize());
                 client.flush();
 
-                assertTrue(ended.await(3, TimeUnit.SECONDS), "stdout failed but the protocol session stayed alive");
+                assertTrue(
+                        ended.await(HangGuard.SECONDS, TimeUnit.SECONDS),
+                        "stdout failed but the protocol session stayed alive");
             } finally {
                 mcp.close();
             }
@@ -336,12 +343,15 @@ final class TmuxMcpServerTest {
         McpSyncServer mcp =
                 TmuxMcpServer.overStdio(server, input, new ByteArrayOutputStream(), ToolSurface.defaults(), () -> {});
         try {
-            assertTrue(input.reading.await(3, TimeUnit.SECONDS), "the protocol reader never started");
+            assertTrue(input.reading.await(HangGuard.SECONDS, TimeUnit.SECONDS), "the protocol reader never started");
 
             mcp.close();
 
-            assertTrue(input.closed.await(3, TimeUnit.SECONDS), "closing MCP left its input stream open");
-            assertTrue(input.readEnded.await(3, TimeUnit.SECONDS), "closing MCP left its input reader blocked");
+            assertTrue(
+                    input.closed.await(HangGuard.SECONDS, TimeUnit.SECONDS), "closing MCP left its input stream open");
+            assertTrue(
+                    input.readEnded.await(HangGuard.SECONDS, TimeUnit.SECONDS),
+                    "closing MCP left its input reader blocked");
         } finally {
             input.close();
             mcp.close();
@@ -394,7 +404,9 @@ final class TmuxMcpServerTest {
                 client.write("x".repeat(65).getBytes(StandardCharsets.UTF_8));
                 client.flush();
 
-                assertTrue(ended.await(3, TimeUnit.SECONDS), "oversized input kept buffering without a newline");
+                assertTrue(
+                        ended.await(HangGuard.SECONDS, TimeUnit.SECONDS),
+                        "oversized input kept buffering without a newline");
             } finally {
                 mcp.close();
             }

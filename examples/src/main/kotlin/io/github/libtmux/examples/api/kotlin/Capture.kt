@@ -26,11 +26,11 @@ fun main(args: Array<String>) {
                 )
                 val pane = session.windows.first().panes.first()
                 pane.sendKeys(listOf("printf 'api-%s\\n' keys", "Enter"))
-                check(pane.awaitText("api-keys", timeout = 5.seconds) != TextOutcome.TIMED_OUT) {
+                check(pane.awaitText("api-keys", timeout = 30.seconds) != TextOutcome.TIMED_OUT) {
                     "timed out waiting for keys output"
                 }
                 pane.sendLine("printf 'api-%s\\n' line")
-                check(pane.awaitText("api-line", timeout = 5.seconds) != TextOutcome.TIMED_OUT) {
+                check(pane.awaitText("api-line", timeout = 30.seconds) != TextOutcome.TIMED_OUT) {
                     "timed out waiting for line output"
                 }
                 val lines = pane.capture()

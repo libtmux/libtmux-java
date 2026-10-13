@@ -39,6 +39,7 @@ kotlin {
 }
 
 dependencies {
+    testImplementation(project(":test-support"))
     api(project(":libtmux"))
     // Flow and StateFlow are part of the public signature. The core stays free of this.
     api(libs.kotlinx.coroutines.core)

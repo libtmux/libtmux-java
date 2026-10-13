@@ -16,7 +16,7 @@ import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
 final class ControlObservationSuite extends FunSuite {
-  private val deadline = Duration.ofMillis(800)
+  private val deadline = Duration.ofSeconds(10)
 
   private def attach(fixture: OwnedTmux) = Control.attachUnfenced[IO](
     fixture.config,
@@ -141,9 +141,9 @@ final class ControlObservationSuite extends FunSuite {
                 _ <- IO.interruptible(
                   pane.sendLiteral(java.util.List.of("chunk-"))
                 )
-                _ <- first.get.timeout(800.millis)
+                _ <- first.get.timeout(10.seconds)
                 _ <- IO.interruptible(pane.sendLine("boundary"))
-                parts <- reader.joinWithNever.timeout(800.millis)
+                parts <- reader.joinWithNever.timeout(10.seconds)
                 loss <- observation.droppedCount
                 _ <- IO {
                   assert(parts.size >= 2)
@@ -189,7 +189,7 @@ final class ControlObservationSuite extends FunSuite {
             } yield ()
           }
         }
-        .timeout(1.second)
+        .timeout(10.seconds)
         .unsafeRunSync()
     }
   }
@@ -205,7 +205,11 @@ final class ControlObservationSuite extends FunSuite {
         )
       assertEquals(fixture.server.clients().size(), before)
       val failed =
-        acquisition.use(_ => IO.unit).attempt.timeout(1.second).unsafeRunSync()
+        acquisition
+          .use(_ => IO.unit)
+          .attempt
+          .timeout(10.seconds)
+          .unsafeRunSync()
       assert(failed.isLeft)
       assertEquals(fixture.server.clients().size(), before)
       val invalid = Control
@@ -217,7 +221,7 @@ final class ControlObservationSuite extends FunSuite {
         )
         .use(_ => IO.unit)
         .attempt
-        .timeout(1.second)
+        .timeout(10.seconds)
         .unsafeRunSync()
       assert(invalid.left.exists(_.isInstanceOf[IllegalArgumentException]))
       assertEquals(fixture.server.clients().size(), before)
@@ -271,7 +275,7 @@ final class ControlObservationSuite extends FunSuite {
               } yield ()
           }
         }
-        .timeout(1.second)
+        .timeout(10.seconds)
         .unsafeRunSync()
     }
   }
@@ -306,7 +310,7 @@ final class ControlObservationSuite extends FunSuite {
           } yield ()).guarantee(unsubscribe *> close)
         }
       }
-      result.timeout(1.second).unsafeRunSync()
+      result.timeout(10.seconds).unsafeRunSync()
       assert(fixture.server.isAlive())
       attach(fixture)
         .use { control =>
@@ -331,7 +335,7 @@ final class ControlObservationSuite extends FunSuite {
             } yield ()
           }
         }
-        .timeout(1.second)
+        .timeout(10.seconds)
         .unsafeRunSync()
     }
   }
@@ -380,7 +384,7 @@ final class ControlObservationSuite extends FunSuite {
         .guarantee(
           IO.interruptible(fixture.server.channel("scala-ack-release").signal())
         )
-      program.timeout(1.second).unsafeRunSync()
+      program.timeout(10.seconds).unsafeRunSync()
     }
   }
 
@@ -452,7 +456,7 @@ final class ControlObservationSuite extends FunSuite {
             }
           } yield ()
         }
-        .timeout(1.second)
+        .timeout(10.seconds)
         .unsafeRunSync()
     }
   }

@@ -13,14 +13,17 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.jspecify.annotations.Nullable;
 
 final class McpPreflight {
@@ -217,15 +220,33 @@ final class McpPreflight {
             if (process.isAlive()) {
                 process.destroyForcibly();
             }
-            if (process.waitFor(250, TimeUnit.MILLISECONDS)
-                    && descendants.stream().noneMatch(ProcessHandle::isAlive)) {
+            if (process.waitFor(250, TimeUnit.MILLISECONDS) && gone(descendants, Duration.ofMillis(250))) {
                 return;
             }
         }
         process.waitFor(1, TimeUnit.SECONDS);
-        if (process.isAlive() || descendants.stream().anyMatch(ProcessHandle::isAlive)) {
+        if (process.isAlive() || !gone(descendants, Duration.ofSeconds(5))) {
             throw new IOException("could not terminate the MCP preflight process tree");
         }
+    }
+
+    /**
+     * Whether every process has gone within the budget. A killed process stays visible as a zombie
+     * until its parent or init reaps it, and on a loaded macOS runner that takes longer than the
+     * instant between the kill and a check, so each one is waited on rather than sampled.
+     */
+    static boolean gone(Collection<ProcessHandle> processes, Duration budget) throws InterruptedException {
+        var end = System.nanoTime() + budget.toNanos();
+        for (var process : processes) {
+            try {
+                process.onExit().get(Math.max(0, end - System.nanoTime()), TimeUnit.NANOSECONDS);
+            } catch (TimeoutException notYet) {
+                return false;
+            } catch (ExecutionException ignored) {
+                // The exit future carries no failure of its own; the process is gone either way.
+            }
+        }
+        return true;
     }
 
     private enum Stream {

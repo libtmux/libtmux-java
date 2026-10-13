@@ -11,6 +11,7 @@ import io.github.libtmux.Server;
 import io.github.libtmux.WakeReason;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ProcessTransport;
@@ -52,10 +53,12 @@ final class ReadingTest {
      * cursor instead of calling tmux_capture_pane repeatedly.
      */
     @Test
-    void aPaneThatHasStoppedChangingCostsNothingToWatchAgain(Server server) {
-        String pane = server.panes().get(0).id().value();
+    void aPaneThatHasStoppedChangingCostsNothingToWatchAgain(Server server) throws InterruptedException {
+        Pane shell = server.panes().get(0);
+        pinPrompt(shell);
+        String pane = shell.id().value();
         run(server, pane, "echo first-thing");
-        String cursor = settled(server, pane);
+        String cursor = settled(shell);
 
         Reading.Since again = Reading.since(TestCalls.on(server, "pane_id", pane, "cursor", cursor));
 
@@ -64,33 +67,37 @@ final class ReadingTest {
         assertEquals("Nothing new since the last call.", again.note());
     }
 
+    private static final String PROMPT = "reading-test>";
+
+    /** Runs a plain shell with a prompt no command output can be mistaken for. */
+    private static void pinPrompt(Pane pane) throws InterruptedException {
+        pane.respawn("env", "PS1=" + PROMPT + " ", "ENV=/dev/null", "/bin/sh", "-i");
+        assertEquals(WakeReason.SIGNALLED, awaitPromptLast(pane), "the shell never drew its prompt");
+    }
+
+    private static WakeReason awaitPromptLast(Pane pane) throws InterruptedException {
+        return pane.await(
+                fresh -> fresh.capture().stream()
+                        .map(String::strip)
+                        .filter(line -> !line.isEmpty())
+                        .reduce((first, second) -> second)
+                        .filter(PROMPT::equals)
+                        .isPresent(),
+                HangGuard.DURATION);
+    }
+
     /**
-     * Reads until the pane stops producing lines and answers the cursor that reached that point.
+     * Answers a cursor taken once the shell has drawn its prompt again.
      *
      * <p>A command's own output is not the last thing a pane draws: the shell redraws its prompt
      * afterwards, and run_shell_command returns on the completion signal rather than waiting for that. So a
-     * cursor taken the instant a command finishes legitimately has one more line coming.
+     * cursor taken the instant a command finishes legitimately has one more line coming. Waiting for the
+     * bare prompt as the last line is waiting for that line.
      */
-    private static String settled(Server server, String pane) {
-        String cursor = Reading.since(TestCalls.on(server, "pane_id", pane)).cursor();
-        int quiet = 0;
-        for (int attempt = 0; attempt < 60 && quiet < 4; attempt++) {
-            Reading.Since since = Reading.since(TestCalls.on(server, "pane_id", pane, "cursor", cursor));
-            cursor = since.cursor();
-            // Several quiet reads, not one: the first can land in the gap between the command
-            // finishing and the shell drawing its prompt, when the pane is only briefly still.
-            quiet = since.content().isEmpty() ? quiet + 1 : 0;
-            sleep();
-        }
-        return cursor;
-    }
-
-    private static void sleep() {
-        try {
-            Thread.sleep(50);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+    private static String settled(Pane pane) throws InterruptedException {
+        assertEquals(WakeReason.SIGNALLED, awaitPromptLast(pane), "the shell never drew its prompt again");
+        return Reading.since(TestCalls.on(pane.server(), "pane_id", pane.id().value()))
+                .cursor();
     }
 
     @Test
@@ -221,10 +228,12 @@ final class ReadingTest {
     void historyCompactionKeepsAReachableCursorContinuous(Server server) throws InterruptedException {
         server.globalOptions().set("history-limit", "40");
         var window = server.sessions().get(0).newWindow("rolling-history");
-        String pane = shellReady(window.panes().get(0));
+        Pane shell = window.panes().get(0);
+        String pane = shellReady(shell);
+        pinPrompt(shell);
         server.cmd("resize-window", "-t", window.id().value(), "-x", "80", "-y", "5");
         run(server, pane, "for i in $(seq 1 30); do printf 'before-%03d\\n' $i; done");
-        String cursor = settled(server, pane);
+        String cursor = settled(shell);
 
         run(server, pane, "for i in $(seq 1 15); do printf 'after-%03d\\n' $i; done");
         Reading.Since fresh = Reading.since(TestCalls.on(server, "pane_id", pane, "cursor", cursor));

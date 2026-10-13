@@ -14,6 +14,7 @@ import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.Notification;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.function.Predicate;
@@ -156,7 +157,7 @@ final class ControlWatchIntegrationTest {
             window.split();
 
             Optional<ControlEvent> layoutChange =
-                    awaitMatchingEvent(events, event -> event.kind().equals("layout-change"), Duration.ofSeconds(10));
+                    awaitMatchingEvent(events, event -> event.kind().equals("layout-change"), HangGuard.DURATION);
             String jsonField =
                     layoutChange
                             .orElseThrow(() -> new AssertionError("no layout-change notification arrived"))
@@ -188,9 +189,7 @@ final class ControlWatchIntegrationTest {
             var _ = window.rename("build  logs");
 
             Optional<ControlEvent> renamed = awaitMatchingEvent(
-                    events,
-                    event -> event.notification() instanceof Notification.WindowRenamed,
-                    Duration.ofSeconds(10));
+                    events, event -> event.notification() instanceof Notification.WindowRenamed, HangGuard.DURATION);
 
             assertEquals(
                     new Notification.WindowRenamed(window.id(), "build  logs", true),
@@ -232,7 +231,7 @@ final class ControlWatchIntegrationTest {
 
     private static boolean awaitEvent(EventSubscription<ControlEvent> events, Predicate<ControlEvent> match)
             throws InterruptedException {
-        return awaitEvent(events, match, Duration.ofSeconds(10));
+        return awaitEvent(events, match, HangGuard.DURATION);
     }
 
     private static boolean awaitEvent(

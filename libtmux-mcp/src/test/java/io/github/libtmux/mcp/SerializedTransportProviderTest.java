@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.testsupport.HangGuard;
 import io.modelcontextprotocol.json.TypeRef;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpServerTransport;
@@ -187,7 +188,7 @@ final class SerializedTransportProviderTest {
 
         Thread contender = Thread.ofPlatform().start(() -> {
             try {
-                if (!completing.await(2, TimeUnit.SECONDS)) {
+                if (!completing.await(HangGuard.SECONDS, TimeUnit.SECONDS)) {
                     return;
                 }
                 transport.sendMessage(notification("contender")).subscribe();
@@ -203,13 +204,13 @@ final class SerializedTransportProviderTest {
         Disposable first = transport.sendMessage(notification("first")).subscribe(ignored -> {}, failure::set, () -> {
             completing.countDown();
             try {
-                progressed.set(enqueued.await(2, TimeUnit.SECONDS));
+                progressed.set(enqueued.await(HangGuard.SECONDS, TimeUnit.SECONDS));
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             }
         });
 
-        contender.join(4000);
+        contender.join(HangGuard.MILLIS);
         assertNull(failure.get());
         assertTrue(progressed.get(), "another thread could not enqueue while a completion callback was running");
 

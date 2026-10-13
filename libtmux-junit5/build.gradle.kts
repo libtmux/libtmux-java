@@ -5,6 +5,7 @@ plugins {
 }
 
 dependencies {
+    testImplementation(project(":test-support"))
     api(project(":libtmux"))
     api(platform(libs.junit.bom))
     api(libs.junit.jupiter.api)

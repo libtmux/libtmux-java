@@ -20,6 +20,7 @@ val launcherRuntime = configurations.register("launcherRuntime")
 configurations.runtimeClasspath { extendsFrom(launcherRuntime.get()) }
 
 dependencies {
+    testImplementation(project(":test-support"))
     api(project(":libtmux"))
 
     // On this module's own signature: serving() takes a transport provider and every entry point

@@ -14,7 +14,7 @@ import io.github.libtmux.WakeReason;
 import io.github.libtmux.Window;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.junit5.TmuxExtension;
-import java.time.Duration;
+import io.github.libtmux.testsupport.HangGuard;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -132,7 +132,7 @@ final class WindowMovementIntegrationTest {
                 "attach-session",
                 "-t",
                 popupSession.id().value());
-        assertEquals(WakeReason.SIGNALLED, server.channel("popup-client-ready").await(Duration.ofSeconds(1)));
+        assertEquals(WakeReason.SIGNALLED, server.channel("popup-client-ready").await(HangGuard.DURATION));
 
         assertThrows(LibTmuxException.class, () -> window.displayPopup("-C"));
     }

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.testsupport.HangGuard;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -512,12 +513,12 @@ final class PaneEchoTest {
                 echo.recordLiteral(identity, pane, "second\n").confirm();
             });
             try {
-                assertTrue(started.await(1, TimeUnit.SECONDS));
+                assertTrue(started.await(HangGuard.SECONDS, TimeUnit.SECONDS));
                 assertThrows(TimeoutException.class, () -> next.get(100, TimeUnit.MILLISECONDS));
             } finally {
                 first.confirm();
             }
-            next.get(1, TimeUnit.SECONDS);
+            next.get(HangGuard.SECONDS, TimeUnit.SECONDS);
             assertEquals(
                     List.of("first", "second"), echo.liveFor(identity, pane).recent());
         }

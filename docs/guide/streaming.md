@@ -105,7 +105,7 @@ try (ControlClient client = server.control(session);
 
     StringBuilder seen = new StringBuilder();
     while (seen.indexOf("streamed") < 0) {
-        seen.append(Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow()).data());
+        seen.append(Delivery.kept(output.next(Duration.ofSeconds(30)).orElseThrow()).data());
     }
     seen.indexOf("streamed") >= 0;  // → true
 }
@@ -230,7 +230,7 @@ try (ControlClient client = server.control(session);
 
     String renamed = null;
     while (renamed == null) {
-        Notification seen = Delivery.kept(events.next(Duration.ofSeconds(5)).orElseThrow()).notification();
+        Notification seen = Delivery.kept(events.next(Duration.ofSeconds(30)).orElseThrow()).notification();
         renamed = switch (seen) {
             case Notification.WindowRenamed(var window, var name, var attached) -> name;
             default -> null;
@@ -258,7 +258,7 @@ try (ServerMirror mirror = ServerMirror.open(session)) {
 
     ServerMirror.View view = mirror.current();
     while (view.snapshot().windows().stream().noneMatch(w -> w.name().equals("mirrored"))) {
-        view = mirror.awaitNewer(view.epoch(), Duration.ofSeconds(5)).orElseThrow();
+        view = mirror.awaitNewer(view.epoch(), Duration.ofSeconds(30)).orElseThrow();
     }
     view.epoch() > 0;                             // → true
 }

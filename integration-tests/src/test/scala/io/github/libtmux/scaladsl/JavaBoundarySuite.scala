@@ -12,7 +12,7 @@ import scala.jdk.CollectionConverters._
 import scala.jdk.OptionConverters._
 
 final class JavaBoundarySuite extends FunSuite {
-  private val deadline = Duration.ofSeconds(1)
+  private val deadline = Duration.ofSeconds(10)
   private def breakProducer: Boolean =
     sys.props.get("libtmux.scala.boundary.mutant").contains("producer")
 

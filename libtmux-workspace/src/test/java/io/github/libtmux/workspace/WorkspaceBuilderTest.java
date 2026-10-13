@@ -14,6 +14,7 @@ import io.github.libtmux.Window;
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
@@ -537,7 +538,7 @@ final class WorkspaceBuilderTest {
     }
 
     private static boolean awaitOutput(Pane pane, String expected) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
+        for (int attempt = 0; attempt < HangGuard.SECONDS * 20; attempt++) {
             if (pane.capture().stream().anyMatch(line -> line.contains(expected))) {
                 return true;
             }

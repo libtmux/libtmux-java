@@ -12,6 +12,7 @@ import io.github.libtmux.Server;
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
@@ -153,7 +154,13 @@ final class RunningCommandsTest {
                 "frame_value=kept; frame_helper(){ test \"$frame_value\" = kept; }; " + shadow);
 
         RunningCommands.Ran ran = RunningCommands.run(TestCalls.on(
-                server, "pane_id", pane.id().value(), "command", "frame_helper || exit 91; exit 7", "timeout", 5));
+                server,
+                "pane_id",
+                pane.id().value(),
+                "command",
+                "frame_helper || exit 91; exit 7",
+                "timeout",
+                HangGuard.SECONDS));
 
         assertCompleted(ran, 7);
     }
@@ -195,7 +202,7 @@ final class RunningCommandsTest {
 
         String command = "false; : > " + Shell.quote(forbidden.toString());
         RunningCommands.Ran ran = RunningCommands.run(
-                TestCalls.on(server, "pane_id", pane.id().value(), "command", command, "timeout", 5));
+                TestCalls.on(server, "pane_id", pane.id().value(), "command", command, "timeout", HangGuard.SECONDS));
 
         assertCompleted(ran, 1);
         assertFalse(Files.exists(forbidden), "errexit did not stop the authored sequence");
@@ -230,8 +237,8 @@ final class RunningCommandsTest {
                         TestCalls.on(server, "pane_id", pane.id().value(), "command", inspect));
                 assertEquals(List.of("unset"), inspected.output(), "the frame leaked its status name");
 
-                RunningCommands.Ran collided = RunningCommands.run(
-                        TestCalls.on(measured, "pane_id", pane.id().value(), "command", "exit 6", "timeout", 5));
+                RunningCommands.Ran collided = RunningCommands.run(TestCalls.on(
+                        measured, "pane_id", pane.id().value(), "command", "exit 6", "timeout", HangGuard.SECONDS));
 
                 assertEquals(2, nonces.size(), "the collision nonce was not captured");
                 assertCompleted(collided, 6);
@@ -463,14 +470,14 @@ final class RunningCommandsTest {
         ready(pane, temporary.resolve("timed-output"), ":");
 
         RunningCommands.Ran ran = RunningCommands.run(
-                TestCalls.on(server, "pane_id", pane.id().value(), "command", "echo started; sleep 30", "timeout", 6));
+                TestCalls.on(server, "pane_id", pane.id().value(), "command", "echo started; sleep 30", "timeout", 15));
 
         assertEquals("TIMED_OUT", ran.outcome());
         assertNull(ran.exitStatus(), "a command that has not finished has no status");
         assertTrue(ran.output().contains("started"), ran.output().toString());
         assertNotNull(ran.note());
         assertTrue(String.valueOf(ran.note()).contains("still running"), String.valueOf(ran.note()));
-        assertTrue(ran.seconds() < 20, "it must return at its deadline, not at the command's end");
+        assertTrue(ran.seconds() < 25, "it must return at its deadline, not at the command's end");
     }
 
     @Test
@@ -913,7 +920,7 @@ final class RunningCommandsTest {
      * with every other lane. The budget is only ever spent when something is already wrong.
      */
     private static boolean await(BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HangGuard.SECONDS);
         while (System.nanoTime() < deadline) {
             if (condition.getAsBoolean()) {
                 return true;

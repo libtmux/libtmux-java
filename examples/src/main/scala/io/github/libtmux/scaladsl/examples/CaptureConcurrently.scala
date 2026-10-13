@@ -48,7 +48,7 @@ object CaptureConcurrently extends IOApp {
                   .sendLine("printf 'capture-%s\\n' " + pane.info.id().value())
               )
               _ <- panes.traverse_(pane =>
-                pane.awaitText("capture-" + pane.info.id().value(), 5.seconds)
+                pane.awaitText("capture-" + pane.info.id().value(), 30.seconds)
               )
               captures <- Stream
                 .emits(panes)

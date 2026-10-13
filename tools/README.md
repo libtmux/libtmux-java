@@ -7,6 +7,7 @@
 | [`tmux-matrix.sh`](tmux-matrix.sh) | builds every supported tmux release into a tree the version matrix can use |
 | [`reap-stale-servers.sh`](reap-stale-servers.sh) | reports and optionally ends tmux servers this port abandoned |
 | [`verify-staged-release.sh`](verify-staged-release.sh) | checks a staged release against what the Central Portal refuses |
+| [`stress-tally.py`](stress-tally.py) | counts each test's failures over repeated runs, for the macOS stress workflow |
 | [`mcp-swap/`](mcp-swap/README.md) | points every installed agent CLI at this build of `libtmux-mcp`, and back |
 
 ## Build the tmux matrix

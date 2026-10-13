@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.DispatchOutcome;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -37,7 +38,7 @@ final class ControlWriterTest {
         ControlWriter writer = writer(output, 1, ignored -> {});
         writer.start();
         Thread active = exchange(writer, "active", PATIENCE, new AtomicReference<>());
-        assertTrue(output.entered.await(1, TimeUnit.SECONDS));
+        assertTrue(output.entered.await(HangGuard.SECONDS, TimeUnit.SECONDS));
         AtomicReference<DispatchException> queuedFailure = new AtomicReference<>();
         Thread queued = exchange(writer, "queued", PATIENCE, queuedFailure);
         Thread.sleep(100);
@@ -79,7 +80,7 @@ final class ControlWriterTest {
         long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
 
         assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
-        assertTrue(elapsedMillis < 1_000, "a write added a second timeout: " + elapsedMillis + " ms");
+        assertTrue(elapsedMillis < HangGuard.MILLIS, "a write added a second timeout: " + elapsedMillis + " ms");
         writer.join(1_000);
     }
 
@@ -111,7 +112,7 @@ final class ControlWriterTest {
         AtomicReference<DispatchException> activeFailure = new AtomicReference<>();
         AtomicReference<DispatchException> queuedFailure = new AtomicReference<>();
         Thread active = exchange(writer, "active", PATIENCE, activeFailure);
-        assertTrue(output.entered.await(1, TimeUnit.SECONDS));
+        assertTrue(output.entered.await(HangGuard.SECONDS, TimeUnit.SECONDS));
         Thread queued = exchange(writer, "queued", PATIENCE, queuedFailure);
         Thread.sleep(100);
 
@@ -137,7 +138,7 @@ final class ControlWriterTest {
         AtomicReference<DispatchException> activeFailure = new AtomicReference<>();
         AtomicReference<DispatchException> queuedFailure = new AtomicReference<>();
         Thread active = exchange(writer, "active", PATIENCE, activeFailure);
-        assertTrue(output.entered.await(1, TimeUnit.SECONDS));
+        assertTrue(output.entered.await(HangGuard.SECONDS, TimeUnit.SECONDS));
         Thread queued = exchange(writer, "queued", PATIENCE, queuedFailure);
         Thread.sleep(100);
 
@@ -169,7 +170,7 @@ final class ControlWriterTest {
         AtomicReference<DispatchException> secondFailure = new AtomicReference<>();
         AtomicReference<DispatchException> thirdFailure = new AtomicReference<>();
         Thread first = exchange(writer, "first", PATIENCE, firstFailure);
-        assertTrue(output.firstEntered.await(1, TimeUnit.SECONDS));
+        assertTrue(output.firstEntered.await(HangGuard.SECONDS, TimeUnit.SECONDS));
         Thread second = exchange(writer, "second", PATIENCE, secondFailure);
         Thread.sleep(100);
         Thread third = exchange(writer, "third", PATIENCE, thirdFailure);
@@ -194,7 +195,7 @@ final class ControlWriterTest {
         holder.set(writer);
         writer.start();
         Thread first = exchange(writer, "first", PATIENCE, new AtomicReference<>());
-        assertTrue(output.firstEntered.await(1, TimeUnit.SECONDS));
+        assertTrue(output.firstEntered.await(HangGuard.SECONDS, TimeUnit.SECONDS));
         AtomicReference<long[]> timing = new AtomicReference<>();
         Thread second = Thread.ofVirtual().start(() -> {
             writer.exchange("second", PATIENCE);
@@ -227,7 +228,7 @@ final class ControlWriterTest {
         writer.start();
         FutureTask<ControlReply> waiting = new FutureTask<>(() -> writer.exchange("request", PATIENCE));
         Thread.ofVirtual().start(waiting);
-        assertTrue(written.await(1, TimeUnit.SECONDS));
+        assertTrue(written.await(HangGuard.SECONDS, TimeUnit.SECONDS));
 
         writer.complete(OperationOutcome.COMPLETE, List.of("hooked"), false);
         writer.complete(OperationOutcome.COMPLETE, List.of("answer"), true);
@@ -252,7 +253,7 @@ final class ControlWriterTest {
                 interrupted.set(Thread.currentThread().isInterrupted());
             }
         });
-        assertTrue(output.entered.await(1, TimeUnit.SECONDS));
+        assertTrue(output.entered.await(HangGuard.SECONDS, TimeUnit.SECONDS));
 
         request.interrupt();
         request.join(1_000);
@@ -296,7 +297,7 @@ final class ControlWriterTest {
         writer.start();
         AtomicReference<DispatchException> abandonedFailure = new AtomicReference<>();
         Thread abandoned = exchange(writer, "abandoned", PATIENCE, abandonedFailure);
-        assertTrue(dispatched.await(1, TimeUnit.SECONDS), "the first request never reached tmux");
+        assertTrue(dispatched.await(HangGuard.SECONDS, TimeUnit.SECONDS), "the first request never reached tmux");
         FutureTask<ControlReply> survivor = new FutureTask<>(() -> writer.exchange("survivor", PATIENCE));
         Thread.ofVirtual().start(survivor);
 

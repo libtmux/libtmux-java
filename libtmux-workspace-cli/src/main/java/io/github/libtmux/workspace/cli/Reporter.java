@@ -162,8 +162,12 @@ final class Reporter implements AutoCloseable {
     }
 
     synchronized void document(JsonNode value) throws IOException {
-        context.output().write(Documents.JSON.writeValueAsBytes(value));
-        context.output().write('\n');
+        // One write: an interrupt cancels a write between the body and a separate newline, which
+        // leaves the next event on the same line.
+        byte[] body = Documents.JSON.writeValueAsBytes(value);
+        byte[] line = java.util.Arrays.copyOf(body, body.length + 1);
+        line[body.length] = '\n';
+        context.output().write(line);
         context.output().flush();
     }
 

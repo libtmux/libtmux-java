@@ -13,9 +13,9 @@ import io.github.libtmux.Server;
 import io.github.libtmux.TextOutcome;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
-import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -34,7 +34,7 @@ final class EchoContractTest {
     void shellReady(Server server) throws InterruptedException {
         Pane pane = server.panes().getFirst();
         pane.respawn("env", "PS1=echo-test> ", "ENV=/dev/null", "/bin/sh", "-i");
-        TextOutcome prompt = pane.awaitText("echo-test> ", Duration.ofSeconds(1));
+        TextOutcome prompt = pane.awaitText("echo-test> ", HangGuard.DURATION);
         assertTrue(prompt == TextOutcome.APPEARED || prompt == TextOutcome.PRESENT_AT_ENTRY);
     }
 
@@ -173,8 +173,8 @@ final class EchoContractTest {
         Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of(marker), "literal", true));
         Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of("Left"), "literal", false));
 
-        WaitingForText.Waited waited = WaitingForText.waitFor(
-                TestCalls.on(server, "pane_id", pane, "patterns", List.of("printed " + marker), "timeout", 5));
+        WaitingForText.Waited waited = WaitingForText.waitFor(TestCalls.on(
+                server, "pane_id", pane, "patterns", List.of("printed " + marker), "timeout", HangGuard.SECONDS));
 
         assertEquals("MATCHED", waited.outcome(), "an unmodelled key must not go on hiding real output");
     }

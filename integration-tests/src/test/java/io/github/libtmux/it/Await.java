@@ -2,6 +2,7 @@ package io.github.libtmux.it;
 
 import io.github.libtmux.Pane;
 import io.github.libtmux.TextOutcome;
+import io.github.libtmux.testsupport.HangGuard;
 import java.time.Duration;
 import java.util.function.BooleanSupplier;
 
@@ -15,7 +16,7 @@ import java.util.function.BooleanSupplier;
  */
 final class Await {
 
-    private static final int ATTEMPTS = 300;
+    private static final int ATTEMPTS = HangGuard.SECONDS * 20;
     private static final long INTERVAL_MILLIS = 50;
 
     private Await() {}

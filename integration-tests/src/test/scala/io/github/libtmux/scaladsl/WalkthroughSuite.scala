@@ -3,6 +3,7 @@ package io.github.libtmux.scaladsl
 import io.github.libtmux.exception.TargetGoneException
 import io.github.libtmux.scaladsl.fixture.OwnedTmux
 import io.github.libtmux.scaladsl.query._
+import io.github.libtmux.testsupport.HangGuard
 import munit.FunSuite
 import scala.concurrent.duration._
 import scala.util.Using
@@ -31,7 +32,7 @@ final class WalkthroughSuite extends FunSuite {
         bottom.sendLine("echo hello-from-bottom")
         assert(
           !bottom
-            .awaitText("hello-from-bottom", 5.seconds)
+            .awaitText("hello-from-bottom", HangGuard.SECONDS.seconds)
             .equals(io.github.libtmux.TextOutcome.TIMED_OUT)
         )
         val captured = bottom.capture()

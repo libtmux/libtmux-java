@@ -9,6 +9,7 @@ import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.testsupport.HangGuard;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.DispatchOutcome;
@@ -127,7 +128,7 @@ final class TmuxExtensionTest {
     }
 
     private static boolean dead(Path socket) throws Exception {
-        for (int attempt = 0; attempt < 100; attempt++) {
+        for (int attempt = 0; attempt < HangGuard.SECONDS * 20; attempt++) {
             if (!Files.exists(socket)) {
                 return true;
             }
