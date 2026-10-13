@@ -38,7 +38,7 @@ suites against. See [Compatibility](../docs/guide/scala/compatibility.md).
 
 <!-- snippet: scala-build: readme-install -->
 ```sbt
-libraryDependencies += "io.github.libtmux" %% "libtmux-scala" % "<version>"
+libraryDependencies += "io.github.libtmux" %% "libtmux-scala" % "0.0.1-alpha.17"
 ```
 
 From Gradle or Maven the coordinate is `io.github.libtmux:libtmux-scala_3`.

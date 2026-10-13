@@ -1,5 +1,9 @@
 # Kotlin
 
+Start with the [complete program](../../libtmux-kotlin/README.md#create-and-clean-up-a-private-session)
+for configuration and cleanup. This guide explains coroutine behavior and DSL
+scopes when using those same handles.
+
 ## Wrapper classes over the Java handles
 
 `Server`, `Session`, `Window`, `Pane`, `Client`, and `ControlClient` in
@@ -81,7 +85,9 @@ leaving it running past the point nothing is listening for its result.
 - `ControlClient.output`/`events` hold no thread at all; only collecting the
   returned `Flow` reads.
 
-## The DSL, and the compile error the first draft had
+<a id="the-dsl-and-the-compile-error-the-first-draft-had"></a>
+
+## Scope nested session builders
 
 `@DslMarker` marks `SessionBuilder`, `WindowBuilder`, and `SplitBuilder` so an
 inner block cannot reach an outer block's receiver by accident. Directory is
@@ -105,25 +111,13 @@ withServer(config) { server ->
 }
 ```
 
-tmux's `SplitSpec.Builder` spells direction and size as method calls —
-`below()`/`above()`/`toRight()`/`toLeft()`, `cells(n)`/`percent(n)` — not an
-enum. The DSL forwards to that real vocabulary directly rather than inventing
-a parallel `SplitDirection`/`PaneSize` type.
+Use `below()`/`above()`/`toRight()`/`toLeft()` to choose split direction and
+`cells(n)`/`percent(n)` to choose its size.
 
 `env(name, value)` is on `SessionBuilder`, `WindowBuilder`, and `SplitBuilder`
 alike, matching the Java `SessionSpec.Builder`/`WindowSpec.Builder`/
 `SplitSpec.Builder` each has, and sets a variable in the environment the new
 session, window, or pane's process starts with.
-
-## Why nothing in Java may depend on this
-
-Nothing written in Java may depend on `libtmux-kotlin`, and the build fails if
-it does. Per the JSpecify specification a class carrying `@kotlin.Metadata` is
-*not* null-marked, because the Kotlin compiler does not yet emit full
-nullness into binaries
-([KT-47417](https://youtrack.jetbrains.com/projects/KT/issues/KT-47417/Emit-jspecify-annotations-for-types-in-Kotlin-binaries)).
-A Kotlin-authored API would therefore be worse for a Java caller and invisible
-to NullAway. The dependency runs one way only.
 
 See the [module README](../../libtmux-kotlin/README.md) for the full call-site
 tour, including the query DSL, the exhaustive `when` over sealed failures, and

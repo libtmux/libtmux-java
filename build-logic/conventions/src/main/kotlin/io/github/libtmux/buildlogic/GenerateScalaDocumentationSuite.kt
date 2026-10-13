@@ -24,7 +24,8 @@ import org.gradle.api.tasks.TaskAction
  * cannot stop compiling or running unnoticed.
  *
  * Each fence carries a directive on the line before it, `<!-- snippet: scala-MODE: id | detail -->`:
- * `sync` runs the code against a fresh tmux, `io` runs a Cats `IO` to completion within the
+ * `sync` runs the code against a fresh tmux, `main` invokes a standalone `Main.main`,
+ * and `io` runs a Cats `IO` to completion within the
  * 15-second deadline every documented snippet has, `reject` asserts the code fails to compile with
  * `detail` in the error, and `build` marks an sbt build fragment the consumer checks exercise
  * instead. An unclassified fence fails the build, and so
@@ -87,7 +88,7 @@ abstract class GenerateScalaDocumentationSuite : DefaultTask() {
                         val beforeIndex = (start - 1 downTo 0).firstOrNull { lines[it].isNotBlank() }
                         val before = beforeIndex?.let { lines[it].trim() }.orEmpty()
                         val directive = requireNotNull(DIRECTIVE.matchEntire(before)) {
-                            "$where has an unclassified Scala fence; use a snippet: scala-sync, scala-io, scala-reject or scala-build directive"
+                            "$where has an unclassified Scala fence; use a snippet: scala-sync, scala-main, scala-io, scala-reject or scala-build directive"
                         }
                         unusedDirectives.remove(beforeIndex)
                         val (mode, id, detail) = directive.destructured
@@ -111,7 +112,7 @@ abstract class GenerateScalaDocumentationSuite : DefaultTask() {
             }
             snippets
         }
-        require(found.any { it.mode == "sync" || it.mode == "io" }) { "no runnable Scala documentation fences were discovered" }
+        require(found.any { it.mode in setOf("sync", "main", "io") }) { "no runnable Scala documentation fences were discovered" }
         val duplicates = found.groupBy { it.id }.filterValues { it.size > 1 }.keys.sorted()
         require(duplicates.isEmpty()) { "duplicate Scala documentation ids: $duplicates" }
         return found
@@ -123,14 +124,19 @@ abstract class GenerateScalaDocumentationSuite : DefaultTask() {
             .joinToString(",\n") { quoted(relative(root, it)) + " -> " + quoted(digest(it.readBytes())) }
         val names = runnable.joinToString(",\n") { quoted(it.name(root)) }
         val declarations = runnable.filterNot { it.mode == "reject" }.joinToString("\n") { snippet ->
-            val body = if (snippet.mode == "sync") "DocumentationRuntime.requireUnit {\n${snippet.code}\n}" else "{\n${snippet.code}\n}"
-            val result = if (snippet.mode == "sync") "Unit" else "_root_.cats.effect.IO[Unit]"
-            "private[docs] object ${snippet.objectName} {\ndef run(config: io.github.libtmux.ServerConfig): $result = $body\n}\n"
+            if (snippet.mode == "main") {
+                "private[docs] object ${snippet.objectName} {\n${snippet.code}\ndef run(): Unit = Main.main(Array.empty[String])\n}\n"
+            } else {
+                val body = if (snippet.mode == "sync") "DocumentationRuntime.requireUnit {\n${snippet.code}\n}" else "{\n${snippet.code}\n}"
+                val result = if (snippet.mode == "sync") "Unit" else "_root_.cats.effect.IO[Unit]"
+                "private[docs] object ${snippet.objectName} {\ndef run(config: io.github.libtmux.ServerConfig): $result = $body\n}\n"
+            }
         }
         val cases = runnable.joinToString("\n") { snippet ->
             val invoke = snippet.objectName + ".run(fixture.config)"
             val body = when (snippet.mode) {
                 "sync" -> "io.github.libtmux.scaladsl.fixture.OwnedTmux.use { fixture => $invoke }"
+                "main" -> "${snippet.objectName}.run()"
                 "io" ->
                     "io.github.libtmux.scaladsl.fixture.OwnedTmux.use { fixture =>\n" +
                         "val evaluated = new java.util.concurrent.atomic.AtomicBoolean(false)\n" +
@@ -175,7 +181,7 @@ $cases
         val IGNORED = setOf(".git", ".gradle", ".bsp", ".metals", ".idea", "target", "build", "node_modules")
         val OPENING = Regex("^ {0,3}(`{3,}|~{3,})[ \\t]*([^\\s`]*).*$")
         val UNSUPPORTED_SCALA_FENCE = Regex("(?i)^[ \\t>]*(?:`{3,}|~{3,})[ \\t]*(?:scala\\S*|sbt)(?:[ \\t].*)?$")
-        val DIRECTIVE = Regex("^<!--\\s*snippet:\\s*scala-(sync|io|reject|build):\\s*([a-z0-9][a-z0-9-]*)(?:\\s*\\|\\s*(.+?))?\\s*-->$")
+        val DIRECTIVE = Regex("^<!--\\s*snippet:\\s*scala-(sync|main|io|reject|build):\\s*([a-z0-9][a-z0-9-]*)(?:\\s*\\|\\s*(.+?))?\\s*-->$")
 
         fun relative(root: File, file: File): String = root.toPath().relativize(file.toPath()).toString().replace('\\', '/')
 

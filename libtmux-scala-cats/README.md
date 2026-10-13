@@ -22,7 +22,7 @@ as `libtmux-scala`.
 
 <!-- snippet: scala-build: cats-readme-install -->
 ```sbt
-libraryDependencies += "io.github.libtmux" %% "libtmux-scala-cats" % "<version>"
+libraryDependencies += "io.github.libtmux" %% "libtmux-scala-cats" % "0.0.1-alpha.17"
 ```
 
 From Gradle or Maven the coordinate is `io.github.libtmux:libtmux-scala-cats_3`.

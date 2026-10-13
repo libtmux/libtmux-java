@@ -207,6 +207,9 @@ val documentedKotlin =
                 fence.findAll(text).forEach { match ->
                     val directive = match.groupValues[1]
                     if (directive.startsWith("skip:")) return@forEach
+                    require(directive.isBlank() || directive == "main") {
+                        "$where has an unknown Kotlin snippet directive: $directive"
+                    }
                     found++
 
                     val line = text.substring(0, match.range.first).count { it == '\n' } + 1
@@ -214,6 +217,30 @@ val documentedKotlin =
                     // rather than the file name: every module has a README, and two with a fence on
                     // the same line would otherwise generate one function twice.
                     val name = "${where.replace('/', ' ').replace('.', ' ')} line $line"
+
+                    if (directive == "main") {
+                        val packageName = "io.github.libtmux.docs.kotlin.s$found"
+                        val directory = generated.get().asFile.resolve(packageName.replace('.', '/'))
+                        directory.mkdirs()
+                        // Separate files keep harness imports out of a complete reader program.
+                        directory.resolve("Main.kt").writeText("package $packageName\n\n${match.groupValues[2]}")
+                        directory.resolve("Snippet.kt").writeText(
+                            """
+                            |package $packageName
+                            |
+                            |import org.junit.jupiter.api.Test
+                            |
+                            |class Snippet {
+                            |    @Test
+                            |    fun `$name`() {
+                            |        main()
+                            |    }
+                            |}
+                            |
+                            """.trimMargin(),
+                        )
+                        return@forEach
+                    }
 
                     // A shown result becomes an assertion, the same rule the documentation module applies to the
                     // Java fences: what a reader sees after the arrow is what toString produced, so
@@ -282,17 +309,18 @@ val documentedKotlin =
                             appendLine()
                             appendLine("package io.github.libtmux.docs.kotlin.s$found")
                             appendLine()
+                            // Import the facade by default; importing the core wildcard too
+                            // would make identically named handles ambiguous.
+                            imports += listOf(
+                                "import io.github.libtmux.kotlin.*",
+                                "import io.github.libtmux.junit5.TmuxExtension",
+                                "import io.github.libtmux.junit5.TmuxSocketPath",
+                                "import kotlin.test.assertEquals",
+                                "import kotlinx.coroutines.runBlocking",
+                                "import org.junit.jupiter.api.Test",
+                                "import org.junit.jupiter.api.extension.ExtendWith",
+                            )
                             imports.forEach { appendLine(it) }
-                            // The Kotlin facade, by default — this module's own surface, not the Java
-                            // core it wraps (a wildcard import of both would make Pane/Session/Window/
-                            // Client ambiguous). A snippet naming a Java-only type imports it itself.
-                            appendLine("import io.github.libtmux.kotlin.*")
-                            appendLine("import io.github.libtmux.junit5.TmuxExtension")
-                            appendLine("import io.github.libtmux.junit5.TmuxSocketPath")
-                            appendLine("import kotlin.test.assertEquals")
-                            appendLine("import kotlinx.coroutines.runBlocking")
-                            appendLine("import org.junit.jupiter.api.Test")
-                            appendLine("import org.junit.jupiter.api.extension.ExtendWith")
                             appendLine()
                             append(
                                 """
