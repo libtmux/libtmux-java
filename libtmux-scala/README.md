@@ -30,7 +30,7 @@ for production.
 
 ## Requirements
 
-Scala 3.9 and JDK 25 or newer; there is no Scala 2.13 build. tmux 3.2a through
+Scala 3.9 and JDK 25 or newer; there is no Scala 2.13 build. tmux 3.3a through
 3.7c, which the Java library supports and every tmux lane in CI runs these
 suites against. See [Compatibility](../docs/guide/scala/compatibility.md).
 

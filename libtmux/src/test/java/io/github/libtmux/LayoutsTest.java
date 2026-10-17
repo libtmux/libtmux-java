@@ -150,7 +150,7 @@ final class LayoutsTest {
             assertEquals("main-horizontal", Layouts.require("main-h", server, 1));
             assertThrows(
                     UnsupportedFeatureException.class, () -> Layouts.require("main-horizontal-mirrored", server, 1));
-            assertEquals(List.of("display-message", "display-message"), transport.commands);
+            assertEquals(List.of("run-shell", "run-shell"), transport.commands);
         }
         try (VersionTransport transport = new VersionTransport(new CommandResult(0, List.of("3.7c"), List.of()));
                 Server server = server(transport)) {
@@ -175,7 +175,7 @@ final class LayoutsTest {
         try (VersionTransport transport = new VersionTransport(new CommandResult(1, List.of(), List.of(reason)));
                 Server server = server(transport)) {
             assertEquals("main-horizontal-mirrored", Layouts.require("main-horizontal-m", server, 1));
-            assertEquals(List.of("display-message", "-V"), transport.commands);
+            assertEquals(List.of("run-shell", "-V"), transport.commands);
         }
     }
 
@@ -193,7 +193,7 @@ final class LayoutsTest {
             LibTmuxException failure =
                     assertThrows(LibTmuxException.class, () -> Layouts.require("main-horizontal-mirrored", server, 1));
             assertTrue(String.valueOf(failure.getMessage()).contains(reason));
-            assertEquals(List.of("display-message"), transport.commands);
+            assertEquals(List.of("run-shell"), transport.commands);
         }
     }
 
@@ -223,7 +223,7 @@ final class LayoutsTest {
         try (VersionTransport transport = new VersionTransport(new CommandResult(0, List.of(reported), List.of()));
                 Server server = server(transport)) {
             assertThrows(LibTmuxException.class, () -> Layouts.require("main-horizontal-mirrored", server, 1));
-            assertEquals(List.of("display-message"), transport.commands);
+            assertEquals(List.of("run-shell"), transport.commands);
         }
     }
 
@@ -310,24 +310,12 @@ final class LayoutsTest {
         public CommandResult execute(CommandRequest request) {
             List<String> command = request.commands().getFirst();
             commands.add(command.getFirst());
-            if (command.getFirst().equals("display-message")) {
-                assertEquals(
-                        List.of(
-                                "display-message",
-                                "-p",
-                                io.github.libtmux.format.RowFormat.of("pid", "version", "start_time")
-                                        .template()),
-                        command);
-                if (!daemon.succeeded()) return daemon;
-                return new CommandResult(
-                        0,
-                        List.of(String.join(
-                                io.github.libtmux.format.RowFormat.of("pid", "version", "start_time")
-                                        .separator(),
-                                "4242",
-                                String.join("\n", daemon.stdout()),
-                                "1790000000")),
-                        List.of());
+            if (command.getFirst().equals("run-shell")) {
+                assertTrue(VersionProbes.is(request), String.valueOf(command));
+                assertTrue(request.endpoint().contains("-N"), "a version probe must not start tmux");
+                return daemon.succeeded()
+                        ? VersionProbes.reply(request, daemon.stdout().getFirst())
+                        : daemon;
             }
             assertEquals(List.of("-V"), command);
             return new CommandResult(0, List.of("tmux 3.7c"), List.of());

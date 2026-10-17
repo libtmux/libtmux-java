@@ -219,7 +219,7 @@ private class StalledControlFixture private constructor(
                 """
                 #!/bin/sh
                 for arg; do
-                    if [ "${'$'}arg" = "-C" ]; then
+                    if [ "${'$'}arg" = "attach-session" ]; then
                         read line < "$gate"
                         break
                     fi
@@ -260,7 +260,7 @@ private fun controlClientPid(socket: String): Long? =
         .children()
         .filter { process ->
             val argv = process.info().arguments().orElse(emptyArray())
-            "-C" in argv && socket in argv
+            "-C" in argv && "attach-session" in argv && socket in argv
         }
         .findFirst()
         .map(ProcessHandle::pid)

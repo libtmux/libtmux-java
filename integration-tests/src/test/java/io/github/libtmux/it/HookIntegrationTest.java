@@ -16,7 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 /**
  * Binding commands to tmux events, at each scope that holds them.
  *
- * <p>{@code set-hook} declares the same flags from 3.2a to 3.7b, so nothing here is version-gated.
+ * <p>{@code set-hook} declares the same flags across the supported range, so nothing here is version-gated.
  * What is easy to get wrong is the scope: a hook set where it does not live is accepted and dropped.
  */
 @ExtendWith(TmuxExtension.class)

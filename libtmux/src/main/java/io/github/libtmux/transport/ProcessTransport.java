@@ -116,6 +116,19 @@ public final class ProcessTransport implements TmuxTransport {
     }
 
     /**
+     * Runs one bounded request through a caller-owned process carrier.
+     *
+     * <p>Reclaims only the processes this request started. The carrier remains owned by the caller
+     * and may continue starting other processes.
+     */
+    public static CommandResult executeThroughCarrier(ControlCarrier carrier, CommandRequest request) {
+        try (ProcessTransport transport =
+                new ProcessTransport(1, DEFAULT_MAX_OUTPUT_BYTES, carrier::start, System::nanoTime)) {
+            return transport.execute(request);
+        }
+    }
+
+    /**
      * @param maxConcurrentProcesses how many tmux processes may run at once
      * @param maxOutputBytes maximum bytes accepted from each output channel of one process
      */

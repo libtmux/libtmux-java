@@ -49,6 +49,9 @@ final class TmuxMcpServerTest {
         TmuxTransport environment = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
+                }
                 return new CommandResult(0, List.of("VALUE=" + payload), List.of());
             }
 
@@ -254,6 +257,9 @@ final class TmuxMcpServerTest {
         TmuxTransport environment = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
+                }
                 calls.incrementAndGet();
                 return new CommandResult(0, List.of("VALUE=kept"), List.of());
             }

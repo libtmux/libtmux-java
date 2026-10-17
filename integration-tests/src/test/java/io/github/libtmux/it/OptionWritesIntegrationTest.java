@@ -15,7 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 /**
  * Writing options in the ways tmux offers beyond replacing a value outright.
  *
- * <p>{@code set-option} and {@code show-options} declare byte-identical flags from 3.2a to 3.7b, so
+ * <p>{@code set-option} and {@code show-options} declare byte-identical flags across the supported range, so
  * nothing here is version-gated. What varies between releases is how many options exist, which is
  * why no count below is asserted exactly.
  */

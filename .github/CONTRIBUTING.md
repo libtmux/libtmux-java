@@ -232,7 +232,7 @@ toolchain and `options.release` in
 version matrix in the CI workflow, which builds on 25 and 27, and the claim
 `README.md` makes under `Requirements`.
 
-**tmux 3.2a through 3.7c is the supported range**, and it is not a claim: the
+**tmux 3.3a through 3.7c is the supported range**, and it is not a claim: the
 whole real-tmux suite runs against every one of those releases, and each lane
 checks it really ran the tmux it is named after. Moving the range means moving
 `workflows/tmux-matrix.yml` and the README together.

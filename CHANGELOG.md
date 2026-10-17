@@ -12,6 +12,25 @@ production.
 
 ## Unreleased
 
+### Changed
+
+- **tmux 3.3a is the minimum across the JVM modules and products.** Upgrade
+  the running daemon as well as the client. Commands refuse older daemons
+  before their requested effects; the Python bridge also requires compatible
+  Python libtmux. Cold starts accept 3.3a binaries renamed on disk. See
+  [migration notes](MIGRATION.md). (#67)
+- **The version check no longer runs a user's `after-display-message` hook.**
+  The daemon version is read with `run-shell -C`, which runs no `after-*` or
+  `command-error` hook, instead of `display-message`. (#67)
+- **The version check asks a known daemon once.** A call no longer spends a version
+  probe process of its own; the fence on every dispatch drops the entry when
+  the daemon has been replaced, and an older replacement raises the version
+  error rather than `TargetGoneException`. (#67)
+- **`TmuxVersion` orders release candidates below their release and parses
+  strictly.** `3.8-rc < 3.8`, `compareTo` agrees with `equals`, and text such
+  as `3.3a garbage` or `3.3a-master` is rejected. `atLeast` still counts a
+  candidate as its release. (#67)
+
 ### Documented
 
 - **`SplitSpec.Builder.running`, `WindowSpec.Builder.running` and

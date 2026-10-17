@@ -152,6 +152,7 @@ final class WaitingForTextTest {
      * shell would otherwise print it first.
      */
     private static void typeAndSubmit(Server server, Pane pane, String line) {
+        awaitQuietShell(server, pane.id().value());
         Typing.sendKeys(TestCalls.on(server, "pane_id", pane.id().value(), "keys", List.of(line), "literal", true));
         Typing.sendKeys(TestCalls.on(server, "pane_id", pane.id().value(), "keys", List.of("Enter"), "literal", false));
     }
@@ -310,7 +311,38 @@ final class WaitingForTextTest {
      * only a call that goes through it gets recorded there.
      */
     private static void send(Server server, String pane, String command) {
+        awaitQuietShell(server, pane);
         Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of(command), "literal", true));
         Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of("Enter"), "literal", false));
+    }
+
+    /**
+     * Returns once the shell has drawn its prompt and the pane has stopped changing.
+     *
+     * <p>Keys sent to a shell that is still starting are echoed by the terminal, not the shell, and
+     * the shell then draws its prompt straight after that echo on the same row. The echo is then
+     * glued to the prompt and no longer stands apart as a typed line, which is a different case from
+     * the one these tests pin. A slow runner reaches it by sending the keys a moment too early.
+     */
+    private static void awaitQuietShell(Server server, String pane) {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+        String last = null;
+        int steady = 0;
+        while (System.nanoTime() < deadline) {
+            String now = String.join(
+                    "\n", server.cmd("capture-pane", "-p", "-t", pane).stdout());
+            steady = now.equals(last) && !now.isBlank() ? steady + 1 : 0;
+            if (steady >= 5) {
+                return;
+            }
+            last = now;
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("interrupted waiting for the shell to settle", interrupted);
+            }
+        }
+        throw new AssertionError("the shell never settled: " + last);
     }
 }

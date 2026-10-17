@@ -59,10 +59,21 @@ final class GroupedTmux {
             String liveVersion,
             long liveStart,
             Function<List<String>, CommandResult> command) {
+        if (request.endpoint().contains("-N") && VersionProbes.is(request)) {
+            return VersionProbes.reply(request, liveVersion);
+        }
         if (request.commands().size() > 1) {
             List<String> stdout = new ArrayList<>();
             for (List<String> one : request.commands()) {
-                CommandResult answered = command.apply(one);
+                CommandResult answered = one.getFirst().equals("if-shell")
+                        ? execute(
+                                new CommandRequest(
+                                        request.endpoint(), List.of(one), request.timeout(), request.input()),
+                                livePid,
+                                liveVersion,
+                                liveStart,
+                                command)
+                        : command.apply(one);
                 stdout.addAll(answered.stdout());
                 if (!answered.succeeded()) {
                     return new CommandResult(answered.exitCode(), stdout, answered.stderr());
@@ -75,7 +86,11 @@ final class GroupedTmux {
             return command.apply(argv);
         }
         String stale = argv.get(argv.size() - 1);
-        Matcher fence = FENCED.matcher(argv.get(2));
+        int condition = argv.get(2).equals("-t") ? 4 : 2;
+        if (argv.get(condition).equals("0")) {
+            return new CommandResult(1, List.of(), List.of("unknown command: " + stale));
+        }
+        Matcher fence = FENCED.matcher(argv.get(condition));
         while (fence.find()) {
             String live =
                     switch (fence.group(1)) {
@@ -87,7 +102,8 @@ final class GroupedTmux {
                 return new CommandResult(1, List.of(), List.of("unknown command: " + stale));
             }
         }
-        return group(argv.get(argv.size() - 2), command);
+        String branch = argv.get(argv.size() - 2);
+        return branch.isEmpty() ? new CommandResult(0, List.of(), List.of()) : group(branch, command);
     }
 
     /** Runs each command in turn, and discards the rest once one fails, which is what tmux does. */
@@ -102,7 +118,9 @@ final class GroupedTmux {
             if (words.isEmpty()) {
                 continue;
             }
-            CommandResult answered = words.get(0).equals("display-message") && words.size() == 3
+            CommandResult answered = words.get(0).equals("display-message")
+                            && words.size() == 3
+                            && !words.get(2).contains("#{")
                     ? new CommandResult(0, List.of(words.get(2)), List.of())
                     : command.apply(words);
             stdout.addAll(answered.stdout());

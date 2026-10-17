@@ -1,6 +1,6 @@
 name: tmux matrix
 
-# The README claims tmux 3.2a through 3.7c, and says that range is not a claim because the suite runs
+# The README claims tmux 3.3a through 3.7c, and says that range is not a claim because the suite runs
 # against every one of them. This is where that stops depending on someone running it locally.
 
 on:
@@ -27,7 +27,7 @@ jobs:
   lanes:
     # Preview lanes carry their own label: this is the only place a reader sees which entries the
     # supported range does not include, since the README and the matrix property list only the rest.
-    name: tmux ${{ matrix.tmux }}${{ matrix.experimental && ' (preview, not supported)' || '' }}
+    name: tmux ${{ matrix.tmux }}${{ matrix.experimental && ' (preview, not supported)' || '' }}${{ matrix.rejection && ' (must be refused)' || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.tmux == 'master' && 25 || 15 }}
     continue-on-error: ${{ matrix.experimental == true }}
@@ -38,11 +38,19 @@ jobs:
         # (its `lanes` list), which is the source of truth. The agree step below fails if they drift
         # apart. This is also what DocumentationFactsTest reads the README's claimed range from, so a
         # preview lane belongs in `include` below and never here.
-        tmux: ['3.2a', '3.3', '3.3a', '3.4', '3.5', '3.6', '3.7', '3.7a', '3.7b', '3.7c']
+        tmux: ['3.3a', '3.4', '3.5', '3.6', '3.7', '3.7a', '3.7b', '3.7c']
         # Ahead of the supported range, matching the plugin's `previewLanes` list: 3.8-rc2 is a
         # candidate for a release not yet cut, and master is upstream's development branch, not a
         # version. Both may fail and neither moves the README's claimed range.
         include:
+          # Below the floor, matching the plugin's `rejectionLanes`: the real binary must refuse
+          # every call and leave a sentinel session, option and buffer untouched.
+          - tmux: '3.2a'
+            rejection: true
+          - tmux: '3.3'
+            rejection: true
+          - tmux: '3.8'
+            experimental: true
           - tmux: '3.8-rc2'
             experimental: true
           - tmux: master
@@ -132,6 +140,17 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/workspace-python"
           "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
+          # Source-overlay qualification: released tmuxp still pins libtmux~=0.61.
+          # Reviewed PR779 supplies the version check; these are not a released package pair.
+          git init --quiet "$RUNNER_TEMP/python-libtmux-core"
+          git -C "$RUNNER_TEMP/python-libtmux-core" fetch --quiet --depth=1 \
+            https://github.com/tmux-python/libtmux.git 26123fe7e4fc497a9ddb454ce654e468afe916ab
+          git -C "$RUNNER_TEMP/python-libtmux-core" checkout --quiet --detach \
+            26123fe7e4fc497a9ddb454ce654e468afe916ab
+          PYTHONPATH="$RUNNER_TEMP/python-libtmux-core/src" "$RUNNER_TEMP/workspace-python/bin/python" -c \
+            'import sys, libtmux; from pathlib import Path; from libtmux.common import TMUX_MIN_VERSION; assert TMUX_MIN_VERSION == "3.3a", TMUX_MIN_VERSION; assert Path(libtmux.__file__).resolve() == Path(sys.argv[1]).resolve() / "libtmux" / "__init__.py", libtmux.__file__; print(TMUX_MIN_VERSION, libtmux.__file__)' \
+            "$RUNNER_TEMP/python-libtmux-core/src"
+          echo "PYTHONPATH=$RUNNER_TEMP/python-libtmux-core/src" >> "$GITHUB_ENV"
           echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
 
       # One lane rather than testTmuxMatrix: each version builds and runs on its own runner, so the

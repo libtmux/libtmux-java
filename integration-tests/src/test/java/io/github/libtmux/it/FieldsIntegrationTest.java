@@ -46,21 +46,23 @@ final class FieldsIntegrationTest {
     }
 
     /**
-     * The defect this pins: reading eight names cost eight tmux processes, each at its own moment.
-     * Counted against the fake, which records every command it was sent.
+     * Names are read together, after one version probe for the daemon. Reading one name per process would observe
+     * them at different moments.
      */
     @Test
-    void eachReadIsOneCommandHoweverManyNames() {
+    void eachReadIsOneDataCommandHoweverManyNames() {
         FakeTmux tmux = new FakeTmux();
         tmux.addSession("work");
         try (Server server = tmux.server()) {
             int before = tmux.sent().size();
             server.variables(List.of("pid", "version", "session_name", "window_name"));
-            assertEquals(1, tmux.sent().size() - before, "four names, one command: " + tmux.sent());
+            assertEquals(2, tmux.sent().size() - before, "one version probe and one combined field read");
+            assertTrue(VersionProbes.is(tmux.sent().get(before)));
 
             before = tmux.sent().size();
             server.paneFields(List.of("pane_tty", "pane_pid", "pane_current_command"));
-            assertEquals(1, tmux.sent().size() - before, "every pane, one command");
+            assertEquals(1, tmux.sent().size() - before, "the daemon is known, so one read for every pane");
+            assertTrue(!VersionProbes.is(tmux.sent().get(before)));
         }
     }
 }
