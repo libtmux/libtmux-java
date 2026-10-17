@@ -29,17 +29,21 @@ import org.junit.jupiter.api.extension.ExtendWith;
 final class SnapshotIntegrationTest {
 
     /**
-     * Every command is a tmux process, so what a capture costs is how many it takes. One asks who
-     * the server is; one runs the four listings as a group, fenced against that answer.
+     * One request asks who the server is; one runs the four listings as a group, fenced against
+     * that answer. Both requests have a separate version probe.
      */
     @Test
-    void aCaptureCostsTwoCommands(Server server) {
+    void aCaptureCostsTwoDataRequestsAndTheirVersionProbes(Server server) {
         AtomicInteger commands = new AtomicInteger();
+        AtomicInteger probes = new AtomicInteger();
         try (ProcessTransport processes = new ProcessTransport()) {
             TmuxTransport counting = new TmuxTransport() {
                 @Override
                 public CommandResult execute(CommandRequest request) {
                     commands.incrementAndGet();
+                    if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
+                        probes.incrementAndGet();
+                    }
                     return processes.execute(request);
                 }
 
@@ -50,7 +54,8 @@ final class SnapshotIntegrationTest {
                 ServerSnapshot captured = measured.snapshot();
 
                 assertEquals(1, captured.sessions().size());
-                assertEquals(2, commands.get(), "one identity read, then the listings as one group");
+                assertEquals(4, commands.get(), "one identity read, grouped listings, and their version probes");
+                assertEquals(2, probes.get());
             }
         }
     }

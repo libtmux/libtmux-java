@@ -19,6 +19,8 @@ public enum Idempotence {
     // Full names and their aliases. display-message and capture-pane read only with -p, and are
     // decided below; every other verb, run-shell and if-shell included, is treated as a change.
     private static final Set<String> READS = Set.of(
+            "-V",
+            "-h",
             "has-session",
             "has",
             "list-buffers",
@@ -99,7 +101,11 @@ public enum Idempotence {
         List<String> rest = argv.subList(Math.min(index + 1, argv.size()), argv.size());
         return !rest.isEmpty()
                 && rest.size() <= 2
-                && rest.stream().allMatch(branch -> branch.startsWith("libtmux-stale-") || readsText(branch));
+                && rest.stream()
+                        .allMatch(branch -> branch.isEmpty()
+                                || branch.equals(" ")
+                                || branch.startsWith("libtmux-stale-")
+                                || readsText(branch));
     }
 
     private static boolean readsText(String command) {

@@ -195,6 +195,39 @@ final class ProcessTransportTest {
     // --------------------------------------------------------------------------------- deadlines
 
     @Test
+    void aOneShotCarrierKeepsCallerOwnershipAndTimeoutCertainty() throws Exception {
+        AtomicReference<Process> latest = new AtomicReference<>();
+        AtomicInteger starts = new AtomicInteger();
+        ControlCarrier carrier = command -> {
+            starts.incrementAndGet();
+            Process started = new ProcessBuilder(command).start();
+            latest.set(started);
+            return started;
+        };
+        Process borrowed = carrier.start(List.of("/bin/sh", "-c", "exec sleep 30"));
+        try {
+            DispatchException.TimedOut failure = assertThrows(
+                    DispatchException.TimedOut.class,
+                    () -> ProcessTransport.executeThroughCarrier(carrier, hangingAs(List.of("kill-server"))));
+
+            assertEquals(2, starts.get(), "the request must use the supplied carrier");
+            assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
+            assertFalse(failure.safeToRetry(), "the dispatched mutation may have run");
+            assertFalse(latest.get().isAlive(), "the request's child survived its deadline");
+            assertTrue(borrowed.isAlive(), "one request reclaimed a caller-owned process");
+            assertEquals(
+                    List.of("reused"),
+                    ProcessTransport.executeThroughCarrier(carrier, shell("echo reused", Duration.ofSeconds(2)))
+                            .stdout());
+            assertEquals(3, starts.get());
+            assertTrue(borrowed.isAlive());
+        } finally {
+            borrowed.destroyForcibly();
+            borrowed.waitFor(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
     void aChildThatOutlivesItsDeadlineIsKilledAndReportedUnknown() {
         try (ProcessTransport transport = new ProcessTransport()) {
             DispatchException.TimedOut failure = assertThrows(

@@ -15,6 +15,7 @@ import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.internal.ErrorText;
 import io.github.libtmux.internal.ProcessTree;
 import io.github.libtmux.internal.Utf8;
+import io.github.libtmux.internal.support.Versions;
 import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.OperationObserver;
@@ -219,6 +220,13 @@ public final class ControlClient implements AutoCloseable {
         // control client's own commands travel as UTF-8 over its standard input and are unaffected,
         // but this argv is encoded by the JVM like any other.
         Utf8.requireEncodableArguments(command);
+        long started = System.nanoTime();
+        Versions.requireCarrier(carrier, config.endpointCommand(), timeout);
+        Duration remaining = timeout.minusNanos(System.nanoTime() - started);
+        if (remaining.isZero() || remaining.isNegative()) {
+            throw new DispatchException.TimedOut(
+                    "the tmux version check exceeded the attach deadline", DispatchOutcome.NOT_DISPATCHED, null);
+        }
         Process process;
         try {
             process = carrier.start(command);
@@ -228,7 +236,7 @@ public final class ControlClient implements AutoCloseable {
         ControlClient client = new ControlClient(process, config.observer());
         // Attaching produces a reply of its own. It is awaited like any other, which is also what
         // proves the client is up before the first command is written.
-        ControlWriter.Request attached = client.writer.expectInitial(timeout);
+        ControlWriter.Request attached = client.writer.expectInitial(remaining);
         client.reader.start();
         ControlReply reply;
         try {

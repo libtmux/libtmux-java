@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test;
 
 class NarrowLookupTest {
 
+    private static final List<List<String>> VERSION_PROBE = List.of(List.of("display-message", "-p", "#{version}"));
+
     @Test
     void anAbsentSessionCostsOneFencedRead() {
         List<String> sent = new ArrayList<>();
@@ -24,6 +26,9 @@ class NarrowLookupTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
+                if (request.commands().equals(VERSION_PROBE)) {
+                    return new CommandResult(0, List.of("3.6"), List.of());
+                }
                 String flat = request.commands().stream()
                         .flatMap(List::stream)
                         .reduce("", (left, right) -> left + " " + right);
@@ -57,7 +62,7 @@ class NarrowLookupTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                requests.add(request);
+                if (!request.commands().equals(VERSION_PROBE)) requests.add(request);
                 return GroupedTmux.execute(request, 4242L, argv -> {
                     String template = argv.get(argv.indexOf("-F") + 1);
                     return switch (argv.get(0)) {
@@ -122,7 +127,7 @@ class NarrowLookupTest {
         return new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                requests.add(request);
+                if (!request.commands().equals(VERSION_PROBE)) requests.add(request);
                 return GroupedTmux.execute(request, 4242L, argv -> {
                     String template = argv.get(argv.indexOf("-F") + 1);
                     return switch (argv.get(0)) {
@@ -197,7 +202,7 @@ class NarrowLookupTest {
             assertTrue(server.panes(Pane_.command().is("nvim")).isEmpty());
         }
         String all = String.join("\n", sent);
-        assertTrue(all.contains("-f"), all);
+        assertTrue(all.contains("'-f'"), all);
         assertTrue(all.contains("#{==:#{pane_current_command},nvim}"), all);
     }
 
@@ -230,7 +235,7 @@ class NarrowLookupTest {
             assertTrue(server.windows(Window_.panes().any(Pane_.command().is("nvim")))
                     .isEmpty());
         }
-        assertFalse(String.join("\n", sent).contains("-f"));
+        assertFalse(String.join("\n", sent).contains("'-f'"));
     }
 
     @Test
@@ -239,7 +244,7 @@ class NarrowLookupTest {
         try (Server server = Server.using(ServerConfig.builder().build(), answering(sent))) {
             assertTrue(server.panes(Pane_.command().is("a,b")).isEmpty());
         }
-        assertFalse(String.join("\n", sent).contains("-f"));
+        assertFalse(String.join("\n", sent).contains("'-f'"));
     }
 
     private static List<String> commands() {
@@ -252,6 +257,9 @@ class NarrowLookupTest {
         return new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
+                if (request.commands().equals(VERSION_PROBE)) {
+                    return new CommandResult(0, List.of("3.6"), List.of());
+                }
                 String flat = request.commands().stream()
                         .flatMap(List::stream)
                         .reduce("", (left, right) -> left + " " + right);

@@ -158,6 +158,7 @@ Generated from `@Operation`-annotated methods by the operation-catalog Doclet; d
 | `io.github.libtmux.Server` | `environment()` | CAPTURED | The server's environment, which every session inherits and every new process is given. |
 | `io.github.libtmux.Server` | `hooks()` | CAPTURED | The global hooks every session inherits. |
 | `io.github.libtmux.Server` | `version()` | READ | Which tmux this server is running. |
+| `io.github.libtmux.Server` | `requireCompatibleTmux()` | READ | Requires a compatible daemon, or a compatible executable when this endpoint is unused. |
 | `io.github.libtmux.Server` | `identity()` | CAPTURED | Which server this is. |
 | `io.github.libtmux.Server` | `open(io.github.libtmux.ServerConfig)` | LIFECYCLE | A server over a transport it owns and closes. |
 | `io.github.libtmux.Server` | `using(io.github.libtmux.ServerConfig, io.github.libtmux.transport.TmuxTransport)` | LIFECYCLE | A server over a transport the caller owns. |

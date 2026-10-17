@@ -16,6 +16,7 @@ import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.internal.ErrorText;
+import io.github.libtmux.internal.support.Versions;
 import io.github.libtmux.query.FilterExpr;
 import io.github.libtmux.query.TmuxFilters;
 import io.github.libtmux.snapshot.ServerSnapshot;
@@ -119,7 +120,7 @@ public final class Server implements AutoCloseable {
      * already carries the same name.
      *
      * <p>Keep {@code :} and {@code .} out of the name. tmux decides what to do with them and changes
-     * its mind across the supported range: 3.2a through 3.6 rewrite each one to {@code _}, 3.7
+     * its mind across the supported range: 3.3a through 3.6 rewrite each one to {@code _}, 3.7
      * refuses the name, and 3.7a onwards keeps it — where a bare {@code -t} target still misreads the
      * delimiter, so {@link #hasSession} and {@link #killSession} resolve the id by comparing names
      * instead of building one. {@link Session#name()} reports what tmux settled on.
@@ -153,7 +154,7 @@ public final class Server implements AutoCloseable {
      */
     @Operation(Kind.MUTATION)
     public Session newSession(SessionSpec spec) {
-        CommandResult result = run(spec.argv("#{session_id}", () -> SessionCreation.versionForCreation(this)));
+        CommandResult result = run(spec.argv("#{session_id}"));
         List<String> reported = result.stdout();
         if (reported.isEmpty()) {
             throw new MalformedResponseException(SessionCreation.failureMessage(config, result));
@@ -310,7 +311,7 @@ public final class Server implements AutoCloseable {
      */
     @Operation(Kind.MUTATION)
     public void killServer(Duration timeout) {
-        CommandResult result = transport.execute(
+        CommandResult result = execute(
                 request(List.of(List.of("display-message", "-p", "#{pid}"), List.of("kill-server")), timeout, ""));
         if (result.succeeded()) {
             // Only a process transport runs tmux on this host; another transport's pid belongs to
@@ -318,6 +319,9 @@ public final class Server implements AutoCloseable {
             if (transport instanceof ProcessTransport) {
                 awaitExit(result.stdout(), timeout);
             }
+            return;
+        }
+        if (Versions.absent(result)) {
             return;
         }
         if (!isAlive(timeout)) {
@@ -385,7 +389,7 @@ public final class Server implements AutoCloseable {
      */
     @Operation(Kind.CAPTURED)
     public Batch batch() {
-        return new Batch(commands -> transport.execute(request(commands, config.defaultTimeout(), "")));
+        return new Batch(commands -> execute(request(commands, config.defaultTimeout(), "")));
     }
 
     /**
@@ -396,7 +400,7 @@ public final class Server implements AutoCloseable {
      */
     @Operation(Kind.CAPTURED)
     public CommandChain chain() {
-        return new CommandChain(batch(), () -> SessionCreation.versionForCreation(this));
+        return new CommandChain(batch(), this::versionForCreation);
     }
 
     /**
@@ -424,7 +428,7 @@ public final class Server implements AutoCloseable {
     CommandResult printed(@Nullable ServerSnapshot snapshot, List<String> argv) {
         List<List<String>> group = PrintedText.framed(argv);
         CommandResult result = snapshot == null
-                ? transport.execute(request(group, config.defaultTimeout(), ""))
+                ? execute(request(group, config.defaultTimeout(), ""))
                 : fence.guarded(snapshot, CommandStrings.group(group));
         return PrintedText.unwrap(result);
     }
@@ -471,8 +475,7 @@ public final class Server implements AutoCloseable {
     CommandResult withoutStartingServer(List<String> command) {
         List<String> argv = new ArrayList<>(config.endpointCommand());
         argv.add(1, "-N");
-        CommandResult result =
-                transport.execute(new CommandRequest(argv, List.of(command), config.defaultTimeout(), ""));
+        CommandResult result = execute(new CommandRequest(argv, List.of(command), config.defaultTimeout(), ""));
         if (result.succeeded()) {
             return result;
         }
@@ -568,9 +571,9 @@ public final class Server implements AutoCloseable {
         try {
             CommandRequest request = request(List.of("wait-for", "--", channel), timeout);
             if (reserveSignalCapacity) {
-                transport.executeWaiting(request);
+                executeWaiting(request);
             } else {
-                transport.execute(request);
+                execute(request);
             }
         } catch (DispatchException.TimedOut e) {
             if (Thread.interrupted()) {
@@ -668,6 +671,25 @@ public final class Server implements AutoCloseable {
         return capture.process()
                 .map(SnapshotCapture.ServerProcess::version)
                 .orElseThrow(() -> new ServerUnavailableException("no tmux server is answering on this endpoint"));
+    }
+
+    /**
+     * Requires a compatible daemon, or a compatible executable when this endpoint is unused.
+     *
+     * <p>Starts no daemon. This checks compatibility at call time; every later operation checks
+     * the daemon's version again.
+     *
+     * @throws UnsupportedFeatureException if the selected tmux is older than the core minimum
+     * @throws MalformedResponseException if tmux reports an unrecognized version
+     */
+    @Operation(Kind.READ)
+    public void requireCompatibleTmux() {
+        versionForCreation();
+    }
+
+    TmuxVersion versionForCreation() {
+        return Versions.versionForCreation(
+                transport, request(List.of("display-message", "-p", "#{version}"), config.defaultTimeout()));
     }
 
     TmuxVersion version(ServerSnapshot snapshot) {
@@ -780,7 +802,17 @@ public final class Server implements AutoCloseable {
 
     /** Package-private so {@link IncarnationFence} can send its guard with the caller's input. */
     CommandResult cmd(List<String> argv, Duration timeout, String input) {
-        return transport.execute(request(List.of(argv), timeout, input));
+        return execute(request(List.of(argv), timeout, input));
+    }
+
+    private CommandResult execute(CommandRequest request) {
+        requireOpen();
+        return Versions.execute(transport, request, false);
+    }
+
+    private CommandResult executeWaiting(CommandRequest request) {
+        requireOpen();
+        return Versions.execute(transport, request, true);
     }
 
     private CommandRequest request(List<String> argv, Duration timeout) {

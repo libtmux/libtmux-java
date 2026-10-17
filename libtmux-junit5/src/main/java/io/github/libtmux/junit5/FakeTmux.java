@@ -9,6 +9,10 @@ import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.TmuxTransport;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -247,7 +251,52 @@ public final class FakeTmux implements TmuxTransport {
      */
     @Override
     public Optional<ControlCarrier> controlCarrier() {
-        return Optional.of(command -> attach());
+        return Optional.of(command -> {
+            List<String> probe = List.of("display-message", "-p", "#{version}");
+            if (command.size() >= probe.size()
+                    && command.subList(command.size() - probe.size(), command.size())
+                            .equals(probe)) {
+                return new VersionProbe();
+            }
+            if (command.size() >= 4
+                    && command.subList(command.size() - 4, command.size() - 1)
+                            .equals(List.of("-C", "attach-session", "-t"))) {
+                return attach();
+            }
+            throw new IOException("the fake carrier supports version probes and control attachment");
+        });
+    }
+
+    private static final class VersionProbe extends Process {
+        private final InputStream output = new ByteArrayInputStream((VERSION + "\n").getBytes(StandardCharsets.UTF_8));
+
+        @Override
+        public OutputStream getOutputStream() {
+            return OutputStream.nullOutputStream();
+        }
+
+        @Override
+        public InputStream getInputStream() {
+            return output;
+        }
+
+        @Override
+        public InputStream getErrorStream() {
+            return InputStream.nullInputStream();
+        }
+
+        @Override
+        public int waitFor() {
+            return 0;
+        }
+
+        @Override
+        public int exitValue() {
+            return 0;
+        }
+
+        @Override
+        public void destroy() {}
     }
 
     private synchronized Process attach() {
