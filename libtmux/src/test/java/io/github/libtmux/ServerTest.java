@@ -301,8 +301,8 @@ final class ServerTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of("3.6"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
                 }
                 if (request.commands().stream().anyMatch(command -> command.contains("wait-for"))) {
                     throw failure;
@@ -332,8 +332,8 @@ final class ServerTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of("3.6"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
                 }
                 if (request.commands().stream().anyMatch(command -> command.contains("wait-for"))) {
                     throw failure;
@@ -1082,13 +1082,9 @@ final class ServerTest {
             TmuxTransport transport = new TmuxTransport() {
                 @Override
                 public CommandResult execute(CommandRequest request) {
-                    return new CommandResult(
-                            0,
-                            List.of(
-                                    request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))
-                                            ? "3.6"
-                                            : Long.toString(sleeper.pid())),
-                            List.of());
+                    return VersionProbes.is(request)
+                            ? VersionProbes.reply(request, "3.6")
+                            : new CommandResult(0, List.of(Long.toString(sleeper.pid())), List.of());
                 }
 
                 @Override
@@ -1135,8 +1131,8 @@ final class ServerTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
-            if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                return new CommandResult(0, List.of("3.6"), List.of());
+            if (VersionProbes.is(request)) {
+                return VersionProbes.reply(request, "3.6");
             }
             return new CommandResult(1, List.of(), List.of(stderr));
         }
@@ -1150,8 +1146,8 @@ final class ServerTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
-            if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                return new CommandResult(0, List.of("3.6"), List.of());
+            if (VersionProbes.is(request)) {
+                return VersionProbes.reply(request, "3.6");
             }
             return request.commands().stream().anyMatch(command -> command.contains("kill-server"))
                     ? new CommandResult(1, List.of(), List.of("permission denied"))
@@ -1181,8 +1177,8 @@ final class ServerTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
-            if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                return new CommandResult(0, List.of("3.6"), List.of());
+            if (VersionProbes.is(request)) {
+                return VersionProbes.reply(request, "3.6");
             }
             executions.incrementAndGet();
             requests.add(request);
@@ -1232,10 +1228,8 @@ final class ServerTest {
          */
         @Override
         public CommandResult execute(CommandRequest request) {
-            if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                return at(2 * identityReads.get()).isEmpty()
-                        ? identity("")
-                        : new CommandResult(0, List.of("3.6"), List.of());
+            if (VersionProbes.is(request)) {
+                return at(2 * identityReads.get()).isEmpty() ? identity("") : VersionProbes.reply(request, "3.6");
             }
             String live = at(Math.max(0, 2 * (identityReads.get() - 1) + 1));
             if (live.isEmpty()) {

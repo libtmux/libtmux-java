@@ -134,6 +134,60 @@ final class MinimumTmuxTest {
     }
 
     @Test
+    void theProbeRunsNoCommandThatFiresAHook() {
+        FakeTmux tmux = new FakeTmux("3.3a");
+        List<CommandRequest> probes = new ArrayList<>();
+        TmuxTransport recording = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                if (VersionProbes.is(request)) probes.add(request);
+                return tmux.execute(request);
+            }
+
+            @Override
+            public void close() {}
+        };
+        try (Server server = Server.using(ServerConfig.builder().build(), recording)) {
+            assertTrue(server.cmd("list-sessions").succeeded());
+        }
+        assertEquals(1, probes.size());
+        List<String> probe = probes.getFirst().commands().getFirst();
+        assertEquals(List.of("run-shell", "-C"), probe.subList(0, 2));
+        assertTrue(probes.getFirst().endpoint().contains("-N"), "a probe must never start a daemon");
+        assertTrue(tmux.sawNoCommand("display-message"), "the probe must not use display-message");
+    }
+
+    @Test
+    void anotherRequestsMarkerCannotAnswerTheProbe() {
+        FakeTmux tmux = new FakeTmux("3.8");
+        tmux.probeFailure =
+                new CommandResult(1, List.of(), List.of("unknown command: libtmux-version-0000000000000000-3.8"));
+        try (Server server = Server.using(ServerConfig.builder().build(), tmux)) {
+            assertThrows(CommandRejectedException.class, () -> server.cmd("set-option", "-g", "@sentinel", "x"));
+            assertEquals(0, tmux.effects.get());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"master", "next-3.9x", "3.8-beta"})
+    void aDevelopmentSpellingTheParserDoesNotKnowIsRefused(String version) {
+        FakeTmux tmux = new FakeTmux(version);
+        try (Server server = Server.using(ServerConfig.builder().build(), tmux)) {
+            assertThrows(MalformedResponseException.class, () -> server.cmd("set-option", "-g", "@sentinel", "x"));
+            assertEquals(0, tmux.effects.get());
+        }
+    }
+
+    @Test
+    void theNextDevelopmentBuildIsSupported() {
+        FakeTmux tmux = new FakeTmux("next-3.9");
+        try (Server server = Server.using(ServerConfig.builder().build(), tmux)) {
+            assertTrue(server.cmd("set-option", "-g", "@sentinel", "x").succeeded());
+            assertEquals(1, tmux.effects.get());
+        }
+    }
+
+    @Test
     void aFailedHandshakeNeverFallsBackToTheClientVersion() {
         FakeTmux tmux = new FakeTmux("3.3a");
         tmux.probeFailure = new CommandResult(1, List.of(), List.of("server exited unexpectedly"));
@@ -183,8 +237,8 @@ final class MinimumTmuxTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of("3.3a"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.3a");
                 }
                 dispatched.add(request);
                 return new CommandResult(0, List.of(), List.of());
@@ -216,8 +270,8 @@ final class MinimumTmuxTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                return request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))
-                        ? new CommandResult(0, List.of("3.3a"), List.of())
+                return VersionProbes.is(request)
+                        ? VersionProbes.reply(request, "3.3a")
                         : new CommandResult(1, List.of(), List.of("unknown command: libtmux-stale-version"));
             }
 
@@ -292,9 +346,7 @@ final class MinimumTmuxTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 seen.add(request);
-                return request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))
-                        ? new CommandResult(0, List.of("3.3"), List.of())
-                        : help;
+                return VersionProbes.is(request) ? VersionProbes.reply(request, "3.3") : help;
             }
 
             @Override
@@ -313,8 +365,8 @@ final class MinimumTmuxTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of("3.3a"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.3a");
                 }
                 if (request.endpoint().contains("-N")) {
                     return new CommandResult(1, List.of(), List.of("no server running"));
@@ -340,7 +392,7 @@ final class MinimumTmuxTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 seen.add(request);
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
+                if (VersionProbes.is(request)) {
                     assertEquals("-N", request.endpoint().get(1), "the probe needs a real no-start flag");
                     return new CommandResult(1, List.of(), List.of("no server running"));
                 }
@@ -372,7 +424,7 @@ final class MinimumTmuxTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
+                if (VersionProbes.is(request)) {
                     return new CommandResult(1, List.of(), List.of("no server running"));
                 }
                 return GroupedTmux.execute(request, 4242, "3.2a", command -> {
@@ -446,6 +498,11 @@ final class MinimumTmuxTest {
         private Duration probeDelay = Duration.ZERO;
         private final AtomicInteger effects = new AtomicInteger();
         private final AtomicInteger binaryProbes = new AtomicInteger();
+        private final List<String> verbs = new ArrayList<>();
+
+        boolean sawNoCommand(String verb) {
+            return !verbs.contains(verb);
+        }
 
         FakeTmux(String version) {
             reportedVersion = version;
@@ -454,7 +511,8 @@ final class MinimumTmuxTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
-            if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
+            request.commands().forEach(command -> verbs.add(command.getFirst()));
+            if (VersionProbes.is(request)) {
                 try {
                     Thread.sleep(probeDelay);
                 } catch (InterruptedException interrupted) {
@@ -466,7 +524,7 @@ final class MinimumTmuxTest {
                 }
                 return absent
                         ? new CommandResult(1, List.of(), List.of("no server running"))
-                        : new CommandResult(0, List.of(reportedVersion), List.of());
+                        : VersionProbes.reply(request, reportedVersion);
             }
             if (request.commands().equals(List.of(List.of("-V")))) {
                 binaryProbes.incrementAndGet();

@@ -59,9 +59,8 @@ final class GroupedTmux {
             String liveVersion,
             long liveStart,
             Function<List<String>, CommandResult> command) {
-        if (request.endpoint().contains("-N")
-                && request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-            return new CommandResult(0, List.of(liveVersion), List.of());
+        if (request.endpoint().contains("-N") && VersionProbes.is(request)) {
+            return VersionProbes.reply(request, liveVersion);
         }
         if (request.commands().size() > 1) {
             List<String> stdout = new ArrayList<>();

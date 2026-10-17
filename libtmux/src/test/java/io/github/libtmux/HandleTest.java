@@ -229,9 +229,8 @@ final class HandleTest {
             window.selectLayout(Layout.MAIN_HORIZONTAL_MIRRORED);
 
             assertEquals(captured + 2, transport.calls.get(), "one version probe and the operation reached tmux");
-            assertEquals(
-                    List.of(List.of("display-message", "-p", "#{version}")),
-                    transport.requests.get(captured).commands(),
+            assertTrue(
+                    VersionProbes.is(transport.requests.get(captured)),
                     "the version check must not capture a new handle identity");
         }
     }

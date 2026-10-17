@@ -196,8 +196,8 @@ final class CommandChainIntegrationTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of(version), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, version);
                 }
                 return new CommandResult(0, List.of(), List.of());
             }

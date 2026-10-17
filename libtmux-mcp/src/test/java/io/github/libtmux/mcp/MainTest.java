@@ -278,8 +278,8 @@ final class MainTest {
         TmuxTransport broken = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of("3.6"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
                 }
                 List<String> command = request.commands().getLast();
                 return command.getFirst().equals("start-server")
@@ -304,8 +304,8 @@ final class MainTest {
         TmuxTransport escaping = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of("3.6"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
                 }
                 return new CommandResult(0, List.of("/tmp/libtmux-java-dev/escaped\\001/s"), List.of());
             }
@@ -325,8 +325,8 @@ final class MainTest {
         TmuxTransport denied = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of("3.6"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
                 }
                 return new CommandResult(1, List.of(), List.of("permission denied"));
             }
@@ -402,8 +402,8 @@ final class MainTest {
         TmuxTransport reporting = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of("3.6"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
                 }
                 return new CommandResult(0, List.of("/tmp/reported\nsocket"), List.of());
             }
@@ -423,8 +423,8 @@ final class MainTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of("3.6"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
                 }
                 List<String> command = request.commands().getLast();
                 if (command.getFirst().equals("start-server")) {

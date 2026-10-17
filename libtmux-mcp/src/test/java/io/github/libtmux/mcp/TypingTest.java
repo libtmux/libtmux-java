@@ -291,9 +291,7 @@ final class TypingTest {
         assertEquals(2, preflights.size());
         assertEquals(1, sends.size());
         assertEquals(preflights.getLast() + 2, sends.getFirst());
-        assertEquals(
-                List.of(List.of("display-message", "-p", "#{version}")),
-                requests.get(preflights.getLast() + 1).commands());
+        assertTrue(VersionProbes.is(requests.get(preflights.getLast() + 1)));
     }
 
     @Test

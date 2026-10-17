@@ -43,12 +43,21 @@ final class LifecycleSuite extends FunSuite {
     @volatile var thread = ""
 
     override def execute(request: CommandRequest): CommandResult = {
+      val first = request.commands().getFirst()
       if (
-        request
-          .commands()
-          .equals(List.of(List.of("display-message", "-p", "#{version}")))
+        first.size() == 3 && first
+          .get(0) == "run-shell" && first.get(1) == "-C" &&
+        first.get(2).startsWith("libtmux-version-")
       )
-        return new CommandResult(0, List.of("3.7c"), List.of())
+        return new CommandResult(
+          1,
+          List.of(),
+          List.of(
+            "unknown command: " + first
+              .get(2)
+              .stripSuffix("#{version}") + "3.7c"
+          )
+        )
       calls.incrementAndGet()
       thread = Thread.currentThread().getName
       request.commands().getLast().getFirst() match {
