@@ -4,6 +4,7 @@
             [clojure.test :refer [deftest is]]
             [libtmux.control :as control]
             [libtmux.core :as tmux]
+            [libtmux.internal.control-gate :as gate]
             [libtmux.internal.fixture :as fixture])
   (:import [java.lang AutoCloseable]
            [java.nio.file Files LinkOption Path]
@@ -56,7 +57,7 @@
   (inc (count (filter #(= \newline %) (subs text 0 offset)))))
 
 (defn- snippet! [source line directive code]
-  (when-not (= "fixture" directive)
+  (when-not (#{"fixture" "control"} directive)
     (throw (ex-info "Clojure documentation snippets require the fixture directive"
                     {:docs/error :missing-or-unknown-directive
                      :document source :line line :directive directive})))
@@ -70,6 +71,7 @@
                        :document source :line line :outputs (count outputs)})))
     (let [[_ expected] (first outputs)]
       {:document source
+       :directive directive
        :line line
        :code (str/replace code output-line "")
        :expected (edn/read-string expected)})))
@@ -113,11 +115,15 @@
     (sequential? value) (into #{} (mapcat captured-fields value))
     :else #{}))
 
-(defn- projected-fields! []
+(defn- projected-fields!
+  "The keys a capture projects. A client appears in it only where control can attach."
+  []
   (fixture/with-owned-server
     (fn [{:keys [server]}]
       (let [session (first (tmux/sessions! server))]
-        (with-open [^AutoCloseable connection (control/attach! (:tmux/ref session))]
+        (if (gate/supported? server)
+          (with-open [^AutoCloseable connection (control/attach! (:tmux/ref session))]
+            (captured-fields (tmux/snapshot! server)))
           (captured-fields (tmux/snapshot! server)))))))
 
 (defn- restore-property! [property value]
@@ -153,17 +159,23 @@
          (finally
            (remove-ns name))))))
 
-(defn- run-snippet! [snippet]
-  (fixture/with-owned-server
-    (fn [{:keys [socket]}]
-      (evaluate-snippet! snippet socket))))
-
 (defn- failure-data [f]
   (try
     (f)
     nil
     (catch clojure.lang.ExceptionInfo failure
       (ex-data failure))))
+
+(defn- run-snippet!
+  "Runs a snippet on a fresh server. A control snippet needs tmux 3.7+; older daemons
+  must refuse it with :tmux/unsupported-feature, which is then the displayed result."
+  [{:keys [directive expected] :as snippet}]
+  (fixture/with-owned-server
+    (fn [{:keys [server socket]}]
+      (if (and (= "control" directive) (not (gate/supported? server)))
+        (let [failure (failure-data #(evaluate-snippet! snippet socket))]
+          (if (= :tmux/unsupported-feature (:tmux/error failure)) expected failure))
+        (evaluate-snippet! snippet socket)))))
 
 (deftest required-documentation-is-present-and-discovered
   (let [root (document-root)
@@ -173,8 +185,13 @@
            (set (map :document snippets))))))
 
 (deftest captured-field-reference-matches-the-projection
-  (is (= (projected-fields!)
-         (documented-fields! (document-root)))))
+  (let [documented (documented-fields! (document-root))
+        projected (projected-fields!)]
+    ;; Client keys are documented, and projected only where a control client could attach.
+    (is (= projected
+           (if (some #{:client/name} projected)
+             documented
+             (into #{} (remove #(= "client" (namespace %))) documented))))))
 
 (deftest documented-snippets-open-owned-clients-and-match-their-output
   (doseq [snippet (documented-snippets (document-root))]
