@@ -57,6 +57,9 @@ final class RunnableExamplesSuite extends FunSuite {
     test("runs actual main: " + name.stripPrefix(packageName)) {
       assert(expectedMains(name), "unregistered executable example")
       OwnedTmux.use { fixture =>
+        // Watching is managed control, which needs tmux 3.7 or newer.
+        if (Set("ObserveChanges", "WatchWithOx")(name.stripPrefix(packageName)))
+          assume(fixture.supportsControl, "managed control needs tmux 3.7+")
         val sessionsBefore =
           fixture.server.sessions().asScala.map(_.id()).toVector
         val clientsBefore =
