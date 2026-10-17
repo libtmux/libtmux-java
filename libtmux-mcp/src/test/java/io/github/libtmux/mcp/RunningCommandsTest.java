@@ -591,6 +591,19 @@ final class RunningCommandsTest {
     }
 
     @Test
+    void completionCaptureKeepsSoftWrappedMarkers(Server server) throws Exception {
+        Pane pane = server.panes().getFirst();
+        pane.window().resizeTo(new io.github.libtmux.Dimensions(20, 24));
+        String marker = "lt" + "a".repeat(32) + "-e:00";
+        pane.respawn("sh", "-c", "printf '%s' " + Shell.quote(marker) + "; exec cat");
+        assertTrue(await(() -> "cat".equals(pane.expand("#{pane_current_command}"))));
+
+        assertTrue(
+                capture(server, pane.id().value()).contains(marker),
+                capture(server, pane.id().value()));
+    }
+
+    @Test
     void cancelledRunRetainsItsPaneUntilTheStatusMarker(Server server, @TempDir Path temporary) throws Exception {
         String pane = server.panes().getFirst().id().value();
         Path ready = temporary.resolve("ready");
@@ -978,7 +991,8 @@ final class RunningCommandsTest {
     }
 
     private static String capture(Server server, String paneId) {
-        return String.join("\n", server.cmd("capture-pane", "-p", "-t", paneId).stdout());
+        return String.join(
+                "\n", server.cmd("capture-pane", "-p", "-J", "-t", paneId).stdout());
     }
 
     private static void assertRefusedBeforeRunWork(
