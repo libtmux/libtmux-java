@@ -8,7 +8,7 @@
 // Declared so the source-set accessors resolve; the module already has it via the library plugin.
 plugins { java }
 
-val lanes = listOf("3.2a", "3.3", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.7c")
+val lanes = listOf("3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.7c")
 
 // Ahead of the supported range: previews of what tmux ships next, run so a break shows up before the
 // release that makes it real rather than after. Allowed to fail, and left out of testTmuxMatrix and

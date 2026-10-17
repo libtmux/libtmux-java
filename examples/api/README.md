@@ -34,7 +34,7 @@ their effects through `IOApp`; constructing an `IO` alone does not run it.
 
 ## Minimal consumer
 
-Use JDK 25, Git, and tmux 3.2a through 3.7c on Linux. The source checkout
+Use JDK 25, Git, and tmux 3.3a through 3.7c on Linux. The source checkout
 supplies the Gradle wrapper and library dependencies. Save the chosen variant's
 `settings.gradle.kts` and `build.gradle.kts`, the shared `gradle.properties` and
 `run.sh`, and one complete program under `src/main/java`, `src/main/kotlin`,

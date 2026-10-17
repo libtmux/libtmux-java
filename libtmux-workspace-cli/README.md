@@ -18,7 +18,12 @@
 Command names and flags follow [tmuxp](https://tmuxp.git-pull.com/) 1.74.0, and
 every command answers in JSON or NDJSON on request. Loading, capture,
 conversion, imports, discovery and search run on the JVM alone; only the
-Python shell, tmuxp plugins and custom builders need Python. JDK 25 or newer, tmux 3.2a or newer.
+Python shell, tmuxp plugins and custom builders need Python. JDK 25 or newer, tmux 3.3a or newer.
+
+The Python bridge requires tmuxp 1.74.0 and Python libtmux with the core version check
+for tmux 3.3a or newer. It refuses an older backend before running extensions
+or shell code. Until that Python support change is released, load its source
+in the selected interpreter; see [migration notes](../MIGRATION.md).
 
 `io.github.libtmux:libtmux-workspace-cli` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace-cli).
 
@@ -406,10 +411,6 @@ sessions. Child output remains separate from native build events; the bridge
 does not produce native pane progress. Java retains observed sessions after
 extension failure. Python builders and plugins remain executable user code
 with their own mutation and cleanup behavior.
-
-On tmux 3.2a, the Python classic builder can fail after tmux rewrites a session
-name containing `$`. Use a name without `$` for extension workspaces on that
-version; the bridge does not alter tmux's naming behavior.
 
 ## Subprocesses
 

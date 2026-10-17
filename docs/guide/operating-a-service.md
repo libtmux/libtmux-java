@@ -51,7 +51,7 @@ try (Server observed = Server.open(config.toBuilder().observer(reports::add).bui
 }
 OperationReport last = reports.get(reports.size() - 1);
 
-last.verbs();                                     // → [display-message]
+last.verbs();                                     // → [if-shell, display-message]
 last.certainty();                                 // → COMPLETE
 last.exitCode();                                  // → OptionalInt[0]
 ```
@@ -63,6 +63,9 @@ line counts, and at most 240 characters of stderr in `boundedError`, which
 `toString` leaves out. An observer that throws is logged at `WARNING` with its
 stack trace and otherwise ignored; the command's own result is unaffected, and
 nothing is retried.
+
+The version check emits its own `display-message` probe report. The request's
+report includes the `if-shell` version guard before the requested command.
 
 A report's `id` counts calls on one transport, so two reports can be told
 apart; it is not a request id for tracing. None is needed: the observer runs on
