@@ -17,6 +17,8 @@ import io.github.libtmux.junit5.TmuxExtension;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.function.Predicate;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -27,8 +29,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
  * differs, so a client that subscribes does nothing at all between changes. That is what makes
  * watching a server cost nothing while it is idle, and it is measured here rather than assumed.
  */
+@Tag("control")
 @ExtendWith(TmuxExtension.class)
 final class ControlWatchIntegrationTest {
+
+    @BeforeEach
+    void requireControl(Server server) {
+        ControlSupport.require(server);
+    }
 
     @Test
     void aWindowAppearingIsAnnouncedWithoutAnythingAsking(Server server) throws Exception {

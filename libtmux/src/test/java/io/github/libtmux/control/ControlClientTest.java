@@ -78,7 +78,7 @@ final class ControlClientTest {
                 sleep 5
                 """);
 
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
+        try (ControlClient client = attachFake(config)) {
             Thread blocked = Thread.ofVirtual().start(() -> {
                 try {
                     client.send(List.of("display-message", "x".repeat(1_048_576)), Duration.ofSeconds(4));
@@ -149,7 +149,7 @@ final class ControlClientTest {
                 sleep 5
                 """);
 
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
+        try (ControlClient client = attachFake(config)) {
             client.watch("javatest", target, "#{session_name}");
             assertTrue(awaitFile(captured), "the watch request never reached the fake server");
             return Files.readString(captured).strip();
@@ -167,7 +167,7 @@ final class ControlClientTest {
                 sleep 1
                 """);
 
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
+        try (ControlClient client = attachFake(config);
                 EventSubscription<ControlEvent> events = client.subscribeEvents(1)) {
             DispatchException.TimedOut failure = assertThrows(
                     DispatchException.TimedOut.class,
@@ -189,7 +189,7 @@ final class ControlClientTest {
                 answer
                 IFS= read -r never
                 """);
-        ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
+        ControlClient client = attachFake(config);
         EventSubscription<PaneOutput> output = client.subscribeOutput(1);
         CountDownLatch entered = new CountDownLatch(1);
         FutureTask<Optional<Delivery<PaneOutput>>> waiting = new FutureTask<>(() -> {
@@ -221,7 +221,7 @@ final class ControlClientTest {
                 done
                 """);
 
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
+        try (ControlClient client = attachFake(config)) {
             assertThrows(IllegalArgumentException.class, () -> client.send(List.of("list-windows"), Duration.ZERO));
             assertTrue(client.send("list-panes").succeeded(), "rejection wrote nothing to the stream");
         }
@@ -236,7 +236,7 @@ final class ControlClientTest {
                 done
                 """);
 
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
+        try (ControlClient client = attachFake(config)) {
             assertThrows(
                     IllegalArgumentException.class,
                     () -> client.send(List.of("display-message", "contains\0nul"), Duration.ofMillis(200)));
@@ -261,7 +261,7 @@ final class ControlClientTest {
                 IFS= read -r never
                 """);
 
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
+        try (ControlClient client = attachFake(config)) {
             CountDownLatch entered = new CountDownLatch(1);
             FutureTask<InterruptedFailure> waiting = new FutureTask<>(() -> {
                 entered.countDown();
@@ -293,16 +293,15 @@ final class ControlClientTest {
                 printf '%%begin 100 1 0\nattach refused\n%%error 100 1 0\n'
                 """);
 
-        assertThrows(LibTmuxException.class, () -> ControlClient.attachUnfenced(config, new SessionId("$0")));
+        assertThrows(LibTmuxException.class, () -> attachFake(config));
     }
 
     @Test
     void anAttachDeadlineKeepsItsTimeoutType(@TempDir Path directory) throws Exception {
         ServerConfig config = fakeTmux(directory, "sleep 5\n");
 
-        DispatchException.TimedOut timeout = assertThrows(
-                DispatchException.TimedOut.class,
-                () -> ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofMillis(100)));
+        DispatchException.TimedOut timeout =
+                assertThrows(DispatchException.TimedOut.class, () -> attachFake(config, Duration.ofMillis(100)));
 
         assertEquals(DispatchOutcome.UNKNOWN, timeout.outcome());
     }
@@ -319,7 +318,7 @@ final class ControlClientTest {
                 """);
         int before = controlThreads();
         for (int cycle = 0; cycle < 12; cycle++) {
-            ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
+            ControlClient client = attachFake(config);
             DispatchException.TimedOut timeout = assertThrows(
                     DispatchException.TimedOut.class,
                     () -> client.send(List.of("list-windows"), Duration.ofMillis(80)));
@@ -349,7 +348,7 @@ final class ControlClientTest {
                 sleep 5
                 """.replace("SUBSCRIBED", subscribed.toString()));
 
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofSeconds(2))) {
+        try (ControlClient client = attachFake(config, Duration.ofSeconds(2))) {
             EventSubscription<PaneOutput> output = client.subscribeOutput(4);
             // Runs on the thread that delivers the end, at the moment it is delivered.
             var aliveAtTheEnd = new java.util.concurrent.CompletableFuture<Boolean>();
@@ -374,7 +373,7 @@ final class ControlClientTest {
                 while read_request; do answer; done
                 """);
 
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"), Duration.ofSeconds(2))) {
+        try (ControlClient client = attachFake(config, Duration.ofSeconds(2))) {
             assertTrue(client.isAlive());
         }
     }
@@ -391,7 +390,7 @@ final class ControlClientTest {
                 """);
         long child = -1;
         try {
-            ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
+            ControlClient client = attachFake(config);
             assertTrue(awaitFile(childFile), "the fake control client never started its descendant");
             child = Long.parseLong(Files.readString(childFile).trim());
 
@@ -422,7 +421,7 @@ final class ControlClientTest {
                 """);
         long child = -1;
         try {
-            try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"))) {
+            try (ControlClient client = attachFake(config)) {
                 assertTrue(awaitFile(childFile), "the fake control client never started its descendant");
                 assertTrue(awaitFile(ready), "the fake control client never closed its request pipe");
                 child = Long.parseLong(Files.readString(childFile).trim());
@@ -453,7 +452,7 @@ final class ControlClientTest {
                 answer
                 IFS= read -r never
                 """);
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
+        try (ControlClient client = attachFake(config);
                 EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
             client.send("display-message");
 
@@ -483,7 +482,7 @@ final class ControlClientTest {
                 answer
                 IFS= read -r never
                 """);
-        try (ControlClient client = ControlClient.attachUnfenced(config, new SessionId("$0"));
+        try (ControlClient client = attachFake(config);
                 EventSubscription<PaneOutput> output = client.subscribeOutput(8)) {
             client.send("display-message");
 
@@ -508,8 +507,19 @@ final class ControlClientTest {
                         printf 'unknown command: %s3.7d\\n' "${argument%'#{version}'}" >&2
                         exit 1;;
                 esac
+                if [ "$argument" = '#{version}\t#{pid}\t#{start_time}\t#{socket_path}' ]; then
+                    printf '3.7d\t4242\t10\t/fake-control\n'; exit
+                fi
             done
-            read_request() { IFS= read -r request && IFS= read -r marker; }
+            read_request() {
+                while IFS= read -r request && IFS= read -r marker; do
+                    case "$request" in
+                        *'#{start_time} #{pid} #{version}'*) answer '10 4242 3.7d';;
+                        *) return 0;;
+                    esac
+                done
+                return 1
+            }
             answer() {
                 printf '%%begin 1 1 1\\n'
                 for line in "$@"; do printf '%s\\n' "$line"; done
@@ -518,6 +528,34 @@ final class ControlClientTest {
                 printf '%%begin 1 2 1\\n%s\\n%%end 1 2 1\\n' "${token%"'"}"
             }
             """;
+
+    private static ControlClient attachFake(ServerConfig config) {
+        return attachFake(config, Duration.ofSeconds(30));
+    }
+
+    private static ControlClient attachFake(ServerConfig config, Duration timeout) {
+        ControlCarrier carrier = new ControlCarrier() {
+            @Override
+            public Process start(List<String> command) throws java.io.IOException {
+                return new ProcessBuilder(command).start();
+            }
+
+            @Override
+            public PinnedSocket pinSocket(String socketPath, Duration remaining) {
+                assertEquals("/fake-control", socketPath);
+                return new PinnedSocket() {
+                    @Override
+                    public String socketPath() {
+                        return "/fake-control-pin";
+                    }
+
+                    @Override
+                    public void close() {}
+                };
+            }
+        };
+        return ControlClient.attach(carrier, config, new SessionId("$0"), 4242, OptionalLong.of(10), "3.7d", timeout);
+    }
 
     private static ServerConfig fakeTmux(Path directory, String body) throws Exception {
         Path fakeTmux = directory.resolve("tmux");

@@ -23,6 +23,10 @@ final class LiveStateSuite extends FunSuite {
     "LiveView observes a real window creation as a newer, materially different snapshot"
   ) {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       Using.resource(Server.open(fixture.config)) { server =>
         val session = server.newSession("live-direct")
         Using.resource(LiveView.attach(session)) { live =>
@@ -62,6 +66,10 @@ final class LiveStateSuite extends FunSuite {
     "LiveView snapshots fail with the cause once the anchor session is gone"
   ) {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       Using.resource(Server.open(fixture.config)) { server =>
         server.newSession("live-keep")
         val anchor = server.newSession("live-anchor")

@@ -3,6 +3,9 @@ package io.github.libtmux.kotlin
 import io.github.libtmux.ServerConfig
 import io.github.libtmux.SessionId
 import io.github.libtmux.control.ControlClient
+import io.github.libtmux.transport.ControlCarrier
+import java.time.Duration
+import java.util.OptionalLong
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -32,7 +35,16 @@ internal object FakeControlClients {
         )
         Files.setPosixFilePermissions(fake, PosixFilePermissions.fromString("rwx------"))
         val config = ServerConfig.builder().binary(fake.toString()).build()
-        return ControlClient.attachUnfenced(config, SessionId("\$0"))
+        val carrier = object : ControlCarrier {
+            override fun start(command: List<String>): Process = ProcessBuilder(command).start()
+
+            override fun pinSocket(socketPath: String, remaining: Duration): ControlCarrier.PinnedSocket =
+                object : ControlCarrier.PinnedSocket {
+                    override fun socketPath(): String = "/fake-control-pin"
+                    override fun close() = Unit
+                }
+        }
+        return ControlClient.attach(carrier, config, SessionId("\$0"), 4242, OptionalLong.of(10), "3.7c", Duration.ofSeconds(30))
     }
 
     /**
@@ -42,15 +54,33 @@ internal object FakeControlClients {
      * this client's command, then the marker's block.
      */
     private val PRELUDE =
-        "for argument in \"\$@\"; do case \"\$argument\" in libtmux-version-*'#{version}') " +
-            "printf 'unknown command: %s3.7c\\n' \"\${argument%'#{version}'}\" >&2; exit 1;; esac; done\n" +
-            "printf '%%begin 100 1 0\\n%%end 100 1 0\\n'\n" +
-            "read_request() { IFS= read -r request && IFS= read -r marker; }\n" +
-            "answer() {\n" +
-            "  printf '%%begin 1 1 1\\n'\n" +
-            "  for line in \"\$@\"; do printf '%s\\n' \"\$line\"; done\n" +
-            "  printf '%%end 1 1 1\\n'\n" +
-            "  token=\${marker##*\"' '\"}\n" +
-            "  printf '%%begin 1 2 1\\n%s\\n%%end 1 2 1\\n' \"\${token%\"'\"}\"\n" +
-            "}\n"
+        """
+        for argument in "${'$'}@"; do
+            case "${'$'}argument" in
+                libtmux-version-*'#{version}')
+                    printf 'unknown command: %s3.7c\n' "${'$'}{argument%'#{version}'}" >&2
+                    exit 1;;
+            esac
+            if [ "${'$'}argument" = '#{version}	#{pid}	#{start_time}	#{socket_path}' ]; then
+                printf '3.7c\t4242\t10\t/fake-control\n'; exit
+            fi
+        done
+        printf '%%begin 100 1 0\n%%end 100 1 0\n'
+        read_request() {
+            while IFS= read -r request && IFS= read -r marker; do
+                case "${'$'}request" in
+                    *'#{start_time} #{pid} #{version}'*) answer '10 4242 3.7c';;
+                    *) return 0;;
+                esac
+            done
+            return 1
+        }
+        answer() {
+            printf '%%begin 1 1 1\n'
+            for line in "${'$'}@"; do printf '%s\n' "${'$'}line"; done
+            printf '%%end 1 1 1\n'
+            token=${'$'}{marker##*"' '"}
+            printf '%%begin 1 2 1\n%s\n%%end 1 2 1\n' "${'$'}{token%"'"}"
+        }
+        """.trimIndent() + "\n"
 }

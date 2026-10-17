@@ -229,7 +229,13 @@ final class VersionCheckLaneIntegrationTest {
                                 server.control(known.getFirst(), Duration.ofSeconds(8));
                             }
                         }));
-                assertTrue(refused.belowFloor(), path + ": " + refused.getMessage());
+                if (path.equals("server.control")) {
+                    // The cached version still decides, and it is a control refusal, not a floor one.
+                    String reason = String.valueOf(refused.getMessage());
+                    assertTrue(reason.contains("requires tmux 3.7"), reason);
+                } else {
+                    assertTrue(refused.belowFloor(), path + ": " + refused.getMessage());
+                }
                 assertEquals(List.of("kept"), raw(daemon, socket, "show-options", "-gqv", "@sentinel"), path);
                 assertEquals(List.of("sentinel"), raw(daemon, socket, "list-sessions", "-F", "#{session_name}"), path);
             } finally {

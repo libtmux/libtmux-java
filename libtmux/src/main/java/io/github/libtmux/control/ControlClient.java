@@ -3,6 +3,7 @@ package io.github.libtmux.control;
 import io.github.libtmux.PaneId;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.SessionId;
+import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.catalog.Kind;
 import io.github.libtmux.catalog.Operation;
@@ -12,10 +13,12 @@ import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.exception.MalformedResponseException;
 import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.internal.ControlAcquisition;
 import io.github.libtmux.internal.ErrorText;
+import io.github.libtmux.internal.LocalSocketPin;
 import io.github.libtmux.internal.ProcessTree;
+import io.github.libtmux.internal.TmuxFeatures;
 import io.github.libtmux.internal.Utf8;
-import io.github.libtmux.internal.support.Versions;
 import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.OperationObserver;
@@ -71,13 +74,24 @@ public final class ControlClient implements AutoCloseable {
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
 
-    private static final ControlCarrier LOCAL = command -> new ProcessBuilder(command).start();
+    private static final ControlCarrier LOCAL = new ControlCarrier() {
+        @Override
+        public Process start(List<String> command) throws IOException {
+            return new ProcessBuilder(command).start();
+        }
+
+        @Override
+        public PinnedSocket pinSocket(String socketPath, Duration timeout) throws IOException {
+            return LocalSocketPin.retain(socketPath);
+        }
+    };
 
     /** The same seam as the process transport's, since this client starts its own process. */
     private static final System.Logger LOG = System.getLogger(ControlClient.class.getName());
 
     private static final long EXIT_MILLIS = 5_000;
 
+    private final ControlAcquisition acquisition;
     private final Process process;
     private final ProcessTree processTree;
     private final InputStream standardOutput;
@@ -104,7 +118,8 @@ public final class ControlClient implements AutoCloseable {
     private int stderrLength;
     private boolean stderrTruncated;
 
-    private ControlClient(Process process, OperationObserver observer) {
+    private ControlClient(Process process, OperationObserver observer, ControlAcquisition acquisition) {
+        this.acquisition = acquisition;
         this.process = process;
         this.observer = observer;
         this.processTree = new ProcessTree(process);
@@ -154,9 +169,7 @@ public final class ControlClient implements AutoCloseable {
      */
     @Operation(Kind.LIFECYCLE)
     public static ControlClient attachUnfenced(ServerConfig config, SessionId session, Duration timeout) {
-        ControlClient client = connect(LOCAL, config, session, timeout);
-        client.finishAttach(session);
-        return client;
+        return connect(LOCAL, config, session, timeout, null);
     }
 
     /**
@@ -194,74 +207,77 @@ public final class ControlClient implements AutoCloseable {
         if (serverPid < 1) {
             throw new IllegalArgumentException("serverPid is not positive: " + serverPid);
         }
-        ControlClient client = connect(carrier, config, session, timeout);
-        try {
-            client.confirmIncarnation(serverPid, serverStartTime, serverVersion);
-        } catch (RuntimeException failure) {
-            client.closeAfterFailure(failure);
-            throw failure;
-        }
-        client.finishAttach(session);
-        return client;
+        return connect(carrier, config, session, timeout, new Expected(serverPid, serverStartTime, serverVersion));
     }
 
+    private record Expected(long pid, java.util.OptionalLong start, String version) {}
+
     private static ControlClient connect(
-            ControlCarrier carrier, ServerConfig config, SessionId session, Duration timeout) {
+            ControlCarrier carrier,
+            ServerConfig config,
+            SessionId session,
+            Duration timeout,
+            @org.jspecify.annotations.Nullable Expected expected) {
         Objects.requireNonNull(carrier, "carrier");
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(session, "session");
         Objects.requireNonNull(timeout, "timeout");
-        if (timeout.isZero() || timeout.isNegative()) {
-            throw new IllegalArgumentException("timeout is not positive");
-        }
-        List<String> command = new ArrayList<>(config.endpointCommand());
-        command.addAll(List.of("-C", "attach-session", "-t", session.value()));
-        // The same guard CommandRequest applies to every other process this library starts. A
-        // control client's own commands travel as UTF-8 over its standard input and are unaffected,
-        // but this argv is encoded by the JVM like any other.
-        Utf8.requireEncodableArguments(command);
-        long started = System.nanoTime();
-        Versions.requireCarrier(carrier, config.endpointCommand(), timeout);
-        Duration remaining = timeout.minusNanos(System.nanoTime() - started);
-        if (remaining.isZero() || remaining.isNegative()) {
-            throw new DispatchException.TimedOut(
-                    "the tmux version check exceeded the attach deadline", DispatchOutcome.NOT_DISPATCHED, null);
-        }
-        Process process;
+        if (timeout.isZero() || timeout.isNegative()) throw new IllegalArgumentException("timeout is not positive");
+        ControlAcquisition acquisition = ControlAcquisition.acquire(carrier, config, timeout);
         try {
-            process = carrier.start(command);
-        } catch (IOException e) {
-            throw new DispatchException.Failed("could not start a control client", DispatchOutcome.NOT_DISPATCHED, e);
-        }
-        ControlClient client = new ControlClient(process, config.observer());
-        // Attaching produces a reply of its own. It is awaited like any other, which is also what
-        // proves the client is up before the first command is written.
-        ControlWriter.Request attached = client.writer.expectInitial(remaining);
-        client.reader.start();
-        ControlReply reply;
-        try {
-            reply = client.writer.await(attached);
-        } catch (DispatchException e) {
-            client.closeAfterFailure(e);
-            throw e;
-        }
-        if (reply.outcome() != OperationOutcome.COMPLETE) {
-            LibTmuxException failure = new CommandRejectedException(
-                    "the control client did not become ready" + ErrorText.suffix(reply.lines()),
-                    "attach-session",
-                    -1,
-                    reply.lines());
-            client.closeAfterFailure(failure);
+            if (expected != null) acquisition.verify(expected.pid(), expected.start(), expected.version());
+            List<String> command = new ArrayList<>(acquisition.command());
+            command.addAll(List.of("-C", "attach-session", "-t", session.value()));
+            Utf8.requireEncodableArguments(command);
+            acquisition.remaining(false);
+            Process process;
+            try {
+                process = carrier.start(command);
+            } catch (IOException failure) {
+                throw new DispatchException.Failed(
+                        "could not start a control client", DispatchOutcome.NOT_DISPATCHED, failure);
+            }
+            ControlClient client = new ControlClient(process, config.observer(), acquisition);
+            try {
+                ControlWriter.Request opening = client.writer.expectInitial(acquisition.remaining(true));
+                client.reader.start();
+                ControlReply reply = client.writer.await(opening);
+                if (reply.outcome() != OperationOutcome.COMPLETE) {
+                    throw new CommandRejectedException(
+                            "the control client did not become ready" + ErrorText.suffix(reply.lines()),
+                            "attach-session",
+                            -1,
+                            reply.lines());
+                }
+                client.writer.start();
+                var identity = acquisition.identity();
+                client.confirmIncarnation(
+                        identity.pid(),
+                        java.util.OptionalLong.of(identity.start()),
+                        identity.version(),
+                        acquisition.remaining(true));
+                client.requestJsonLayouts(acquisition.remaining(true));
+                client.finishAttach(session);
+                return client;
+            } catch (RuntimeException failure) {
+                client.closeAfterFailure(failure);
+                throw failure;
+            }
+        } catch (RuntimeException failure) {
+            try {
+                acquisition.close();
+            } catch (RuntimeException cleanup) {
+                failure.addSuppressed(cleanup);
+            }
             throw failure;
         }
-        client.writer.start();
-        return client;
     }
 
     /** Reads the live server and detaches, via the caller, when it is not the one that was named. */
-    private void confirmIncarnation(long expectedPid, java.util.OptionalLong expectedStart, String expectedVersion) {
+    private void confirmIncarnation(
+            long expectedPid, java.util.OptionalLong expectedStart, String expectedVersion, Duration timeout) {
         // The start time leads: it is a number, and the version, compared as text, may hold a space.
-        ControlReply reply = send("display-message", "-p", "#{start_time} #{pid} #{version}");
+        ControlReply reply = send(List.of("display-message", "-p", "#{start_time} #{pid} #{version}"), timeout);
         if (!reply.succeeded() || reply.lines().size() != 1) {
             throw new CommandRejectedException(
                     "could not read the control client's server" + ErrorText.suffix(reply.lines()),
@@ -287,7 +303,6 @@ public final class ControlClient implements AutoCloseable {
     }
 
     private void finishAttach(SessionId session) {
-        requestJsonLayouts();
         LOG.log(System.Logger.Level.DEBUG, "tmux control client attached to session {0}", session.value());
     }
 
@@ -302,8 +317,8 @@ public final class ControlClient implements AutoCloseable {
      * new-layouts} completes with no error on every supported release, just with nothing to change
      * before 3.8, so this is sent unconditionally rather than gated on a version.
      */
-    private void requestJsonLayouts() {
-        ControlReply reply = send("refresh-client", "-f", "new-layouts");
+    private void requestJsonLayouts(Duration timeout) {
+        ControlReply reply = send(List.of("refresh-client", "-f", "new-layouts"), timeout);
         if (reply.outcome() != OperationOutcome.COMPLETE) {
             LibTmuxException failure = new CommandRejectedException(
                     "could not request JSON layouts on attach" + ErrorText.suffix(reply.lines()),
@@ -362,6 +377,8 @@ public final class ControlClient implements AutoCloseable {
         if (closed.get() || failed) {
             throw new IllegalStateException("control client is not usable");
         }
+        TmuxFeatures.require(
+                TmuxVersion.parse(acquisition.identity().version()), TmuxFeatures.Intent.literal(List.of(argv)));
         long started = System.nanoTime();
         try {
             ControlReply reply = writer.exchange(line(argv), timeout);
@@ -498,32 +515,36 @@ public final class ControlClient implements AutoCloseable {
     @Operation(Kind.LIFECYCLE)
     @Override
     public void close() {
-        boolean closeOwner = closed.compareAndSet(false, true);
-        if (closeOwner) {
-            processTree.captureDescendants();
-            writer.close();
-            closeSubscriptions(null);
-        }
-        boolean reclaimed = processTree.terminate();
-        if (!closeOwner) {
+        try {
+            boolean closeOwner = closed.compareAndSet(false, true);
+            if (closeOwner) {
+                processTree.captureDescendants();
+                writer.close();
+                closeSubscriptions(null);
+            }
+            boolean reclaimed = processTree.terminate();
+            if (!closeOwner) {
+                if (!reclaimed) {
+                    throw new IllegalStateException("control process tree was not reclaimed");
+                }
+                return;
+            }
+            AtomicBoolean interrupted = new AtomicBoolean(Thread.interrupted());
+            if (!Thread.currentThread().equals(reader)) {
+                join(reader, EXIT_MILLIS, interrupted);
+            }
+            if (!Thread.currentThread().equals(errorReader)) {
+                join(errorReader, EXIT_MILLIS, interrupted);
+            }
+            join(writer, EXIT_MILLIS, interrupted);
+            if (interrupted.get()) {
+                Thread.currentThread().interrupt();
+            }
             if (!reclaimed) {
                 throw new IllegalStateException("control process tree was not reclaimed");
             }
-            return;
-        }
-        AtomicBoolean interrupted = new AtomicBoolean(Thread.interrupted());
-        if (!Thread.currentThread().equals(reader)) {
-            join(reader, EXIT_MILLIS, interrupted);
-        }
-        if (!Thread.currentThread().equals(errorReader)) {
-            join(errorReader, EXIT_MILLIS, interrupted);
-        }
-        join(writer, EXIT_MILLIS, interrupted);
-        if (interrupted.get()) {
-            Thread.currentThread().interrupt();
-        }
-        if (!reclaimed) {
-            throw new IllegalStateException("control process tree was not reclaimed");
+        } finally {
+            acquisition.close();
         }
     }
 
@@ -561,6 +582,12 @@ public final class ControlClient implements AutoCloseable {
         } catch (IOException | ControlProtocol.LimitExceeded e) {
             readerFailure = e;
         } finally {
+            try {
+                acquisition.close();
+            } catch (RuntimeException cleanup) {
+                if (readerFailure == null) readerFailure = cleanup;
+                else readerFailure.addSuppressed(cleanup);
+            }
             readerEnded = true;
             closeSubscriptions(
                     readerFailure == null && closed.get()

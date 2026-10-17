@@ -27,6 +27,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -37,8 +39,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
  * failed and which never ran. Control-mode requests are independent: the request after a failure
  * still runs, and every reply carries the request that produced it.
  */
+@Tag("control")
 @ExtendWith(TmuxExtension.class)
 final class ControlModeIntegrationTest {
+
+    @BeforeEach
+    void requireControl(Server server) {
+        ControlSupport.require(server);
+    }
 
     /**
      * A control client starts its own process rather than going through the transport, so it logs

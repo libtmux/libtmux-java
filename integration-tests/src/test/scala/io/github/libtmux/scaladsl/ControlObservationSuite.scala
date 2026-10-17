@@ -94,6 +94,10 @@ final class ControlObservationSuite extends FunSuite {
 
   test("registered output retains pane identity across forced marker chunks") {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       val pane = fixture.server.panes().get(0)
       val workersBefore = Thread.getAllStackTraces
         .keySet()
@@ -162,6 +166,10 @@ final class ControlObservationSuite extends FunSuite {
 
   test("a parked reader cancels and releases the single consumer slot") {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       attach(fixture)
         .use { control =>
           control.output(4).use { observation =>
@@ -196,6 +204,10 @@ final class ControlObservationSuite extends FunSuite {
 
   test("attachment is lazy and failed acquisition reclaims its client") {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       val before = fixture.server.clients().size()
       val acquisition = Control
         .attachUnfenced[IO](
@@ -226,6 +238,10 @@ final class ControlObservationSuite extends FunSuite {
 
   test("typed notifications report overflow and reconcile current state") {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       val window = fixture.server.windows().get(0)
       window.options().set("automatic-rename", "off")
       attach(fixture)
@@ -280,6 +296,10 @@ final class ControlObservationSuite extends FunSuite {
     "scope close ends a parked stream and server loss fails it with the client's cause"
   ) {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       val result = attach(fixture).allocated.flatMap { case (control, close) =>
         control.output(4).allocated.flatMap { case (observation, unsubscribe) =>
           val awaited = parked(observation.underlying)
@@ -340,6 +360,10 @@ final class ControlObservationSuite extends FunSuite {
     "acknowledgement retains raw reply without implying deferred completion"
   ) {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       val marker = fixture.directory.resolve("ack-completed")
       val prefix = fixture.config
         .endpointCommand()
@@ -388,6 +412,10 @@ final class ControlObservationSuite extends FunSuite {
     "cancelling a queued or a dispatched call ends only that call"
   ) {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       attach(fixture)
         .use { control =>
           for {

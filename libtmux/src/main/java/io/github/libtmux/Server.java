@@ -951,6 +951,8 @@ public final class Server implements AutoCloseable {
         }
         requireOpen();
         ServerSnapshot captured = session.snapshot();
+        // Before the identity read below, so an unsupported daemon is refused without running anything on it.
+        io.github.libtmux.internal.ControlAcquisition.requireSupported(version(captured));
         long pid = captured.serverPid()
                 .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
         CommandResult live = fence.guarded(captured, "display-message -p '#{pid} #{version}'", "");

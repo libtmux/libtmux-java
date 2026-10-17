@@ -1,6 +1,8 @@
 package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Server;
 import io.github.libtmux.TmuxVersion;
@@ -9,6 +11,7 @@ import io.github.libtmux.junit5.TmuxExtension;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -35,40 +38,55 @@ final class QuotingPropertyIntegrationTest {
     private static final String ALPHABET = "abcXYZ019 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~é中😀";
 
     @Test
-    void aValueSurvivesTheArgumentVectorAndTheControlLine(Server server) {
-        List<String> lost = new ArrayList<>();
-        try (ControlClient client = server.control(server.sessions().get(0))) {
-            String alphabet = server.version().atLeast(new TmuxVersion(3, 4, ""))
-                            && !server.version().atLeast(new TmuxVersion(3, 6, ""))
-                    ? ALPHABET
-                    : CONTROLS + ALPHABET;
-            for (String value : values(new Random(20260924L), 200, alphabet)) {
-                server.globalOptions().set("@vector", value);
-                String viaVector = server.globalOptions().get("@vector").orElse("<unset>");
-                if (!viaVector.equals(value)) {
-                    lost.add("vector " + quoted(value) + " -> " + quoted(viaVector));
-                }
-                String viaFormat = server.expand("#{@vector}");
-                if (!viaFormat.equals(value)) {
-                    lost.add("format " + quoted(value) + " -> " + quoted(viaFormat));
-                }
-                String viaListing = server.globalOptions().all().getOrDefault("@vector", "<unset>");
-                if (!viaListing.equals(value)) {
-                    lost.add("listing " + quoted(value) + " -> " + quoted(viaListing));
-                }
+    void aValueSurvivesTheArgumentVector(Server server) {
+        checkValues(server, null);
+    }
 
+    @Test
+    @Tag("control")
+    void aValueSurvivesTheControlLine(Server server) {
+        ControlSupport.require(server);
+        try (ControlClient client = server.control(server.sessions().getFirst())) {
+            checkValues(server, client);
+        }
+    }
+
+    private static void checkValues(Server server, @org.jspecify.annotations.Nullable ControlClient client) {
+        List<String> lost = new ArrayList<>();
+        String alphabet = server.version().atLeast(new TmuxVersion(3, 4, ""))
+                        && !server.version().atLeast(new TmuxVersion(3, 6, ""))
+                ? ALPHABET
+                : CONTROLS + ALPHABET;
+        for (String value : values(new Random(20260924L), 200, alphabet)) {
+            server.globalOptions().set("@vector", value);
+            String viaVector = server.globalOptions().get("@vector").orElse("<unset>");
+            if (!viaVector.equals(value)) {
+                lost.add("vector " + quoted(value) + " -> " + quoted(viaVector));
+            }
+            String viaFormat = server.expand("#{@vector}");
+            if (!viaFormat.equals(value)) {
+                lost.add("format " + quoted(value) + " -> " + quoted(viaFormat));
+            }
+            String viaListing = server.globalOptions().all().getOrDefault("@vector", "<unset>");
+            if (!viaListing.equals(value)) {
+                lost.add("listing " + quoted(value) + " -> " + quoted(viaListing));
+            }
+
+            if (client != null) {
                 client.send(List.of("set-option", "-g", "@line", value));
                 String viaLine = server.globalOptions().get("@line").orElse("<unset>");
                 if (!viaLine.equals(value)) {
                     lost.add("line " + quoted(value) + " -> " + quoted(viaLine));
                 }
+            }
 
-                server.buffers().set("vector", value);
-                String viaBuffer = server.buffers().show("vector");
-                String inBuffer = value.replaceAll("\n+$", "");
-                if (!viaBuffer.equals(inBuffer)) {
-                    lost.add("buffer " + quoted(value) + " -> " + quoted(viaBuffer));
-                }
+            server.buffers().set("vector", value);
+            String viaBuffer = server.buffers().show("vector");
+            String inBuffer = value.replaceAll("\n+$", "");
+            if (!viaBuffer.equals(inBuffer)) {
+                lost.add("buffer " + quoted(value) + " -> " + quoted(viaBuffer));
+            }
+            if (client != null) {
                 client.send(List.of("set-buffer", "-b", "line", "--", value));
                 String viaLineBuffer = server.buffers().show("line");
                 if (!viaLineBuffer.equals(inBuffer)) {
@@ -77,6 +95,40 @@ final class QuotingPropertyIntegrationTest {
             }
         }
         assertEquals(List.of(), lost);
+    }
+
+    @Test
+    void aDelimiterWordDoesNotAddASecondCommand(Server server) {
+        server.buffers().set("user", "keep");
+        assertFalse(server.cmd("set-option", "-g", "@delimiter", "changed", ";", "delete-buffer", "-bmissing")
+                .succeeded());
+        assertTrue(server.globalOptions().get("@delimiter").isEmpty());
+        assertEquals("keep", server.buffers().show("user"));
+    }
+
+    @Test
+    @Tag("control")
+    void aDelimiterWordDoesNotAddAControlCommand(Server server) {
+        ControlSupport.require(server);
+        String name = server.windows().getFirst().name();
+        try (ControlClient client = server.control(server.sessions().getFirst())) {
+            assertFalse(client.send(
+                            "display-message",
+                            "-p",
+                            "literal",
+                            ";",
+                            "break-pane",
+                            "-n",
+                            "bad",
+                            "-s",
+                            server.panes().getFirst().id().value())
+                    .succeeded());
+            assertEquals(name, server.windows().getFirst().name());
+            assertEquals(
+                    List.of("literal;"),
+                    client.send("display-message", "-p", "literal;").lines());
+        }
+        assertTrue(server.isAlive());
     }
 
     private static List<String> values(Random random, int count, String alphabet) {

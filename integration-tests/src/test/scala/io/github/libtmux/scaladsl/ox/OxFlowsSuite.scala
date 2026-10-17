@@ -27,6 +27,10 @@ final class OxFlowsSuite extends FunSuite {
     "a subscription flow delivers what arrived before it was collected, then stops at take"
   ) {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       Using.resource(Server.open(fixture.config)) { server =>
         val session = server.newSession("ox-events")
         Using.resource(server.control(session)) { control =>
@@ -47,6 +51,10 @@ final class OxFlowsSuite extends FunSuite {
     "a second collection of one subscription is refused while the first holds it"
   ) {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       Using.resource(Server.open(fixture.config)) { server =>
         val session = server.newSession("ox-claim")
         Using.resource(server.control(session)) { control =>
@@ -81,6 +89,10 @@ final class OxFlowsSuite extends FunSuite {
     "a live-view flow starts from the current view, then sees a change made after it began"
   ) {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       Using.resource(Server.open(fixture.config)) { server =>
         val session = server.newSession("ox-live")
         Using.resource(LiveView.attach(session)) { live =>
