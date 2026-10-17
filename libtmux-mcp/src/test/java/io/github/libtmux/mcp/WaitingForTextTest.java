@@ -8,12 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
-import io.github.libtmux.transport.CommandRequest;
-import io.github.libtmux.transport.CommandResult;
-import io.github.libtmux.transport.ProcessTransport;
-import io.github.libtmux.transport.TmuxTransport;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -44,8 +39,10 @@ final class WaitingForTextTest {
         // prompt happens to leave the cursor.
         String marker = "wrapped-" + "x".repeat(120) + "-marker";
 
-        WaitingForText.Waited waited =
-                afterEntry(server, pane, "echo " + marker, "patterns", List.of(marker), "timeout", 20);
+        send(server, pane, "(sleep 1; echo " + marker + ") &");
+
+        WaitingForText.Waited waited = WaitingForText.waitFor(
+                TestCalls.on(server, "pane_id", pane, "patterns", List.of(marker), "timeout", 20));
 
         assertEquals("MATCHED", waited.outcome(), "output the wait saw: " + waited.output());
     }
@@ -53,8 +50,10 @@ final class WaitingForTextTest {
     @Test
     void textThatArrivesIsMatchedAndTheWaitEndsAtOnce(Server server) {
         String pane = server.panes().get(0).id().value();
-        WaitingForText.Waited waited = afterEntry(
-                server, pane, "echo the-server-is-ready", "patterns", List.of("the-server-is-ready"), "timeout", 20);
+        send(server, pane, "(sleep 1; echo the-server-is-ready) &");
+
+        WaitingForText.Waited waited = WaitingForText.waitFor(
+                TestCalls.on(server, "pane_id", pane, "patterns", List.of("the-server-is-ready"), "timeout", 20));
 
         assertEquals("MATCHED", waited.outcome(), "output the wait saw: " + waited.output());
         assertEquals("the-server-is-ready", waited.matched());
@@ -123,9 +122,9 @@ final class WaitingForTextTest {
         Pane pane = server.panes().get(0);
         String marker = "echo-marker-cold";
 
-        assertMatchedTheOutputNotTheEcho(
-                afterEntry(server, pane.id().value(), "echo " + marker, "patterns", List.of(marker), "timeout", 20),
-                marker);
+        typeAndSubmit(server, pane, "sleep 1; echo " + marker);
+
+        assertMatchedTheOutputNotTheEcho(server, pane, marker);
     }
 
     /** As above, against a shell whose prompt has already settled rather than a freshly split one. */
@@ -142,17 +141,29 @@ final class WaitingForTextTest {
                         .outcome(),
                 "the warm-up run never finished, so it still owns the pane");
 
-        assertMatchedTheOutputNotTheEcho(
-                afterEntry(server, pane.id().value(), "echo " + marker, "patterns", List.of(marker), "timeout", 20),
-                marker);
+        typeAndSubmit(server, pane, "sleep 1; echo " + marker);
+
+        assertMatchedTheOutputNotTheEcho(server, pane, marker);
     }
 
+    /**
+     * Types a line and submits it. The line sleeps before printing so its output lands after the
+     * wait takes its starting cursor; output already on screen by then does not count, and a fast
+     * shell would otherwise print it first.
+     */
     private static void typeAndSubmit(Server server, Pane pane, String line) {
+        awaitQuietShell(server, pane.id().value());
         Typing.sendKeys(TestCalls.on(server, "pane_id", pane.id().value(), "keys", List.of(line), "literal", true));
         Typing.sendKeys(TestCalls.on(server, "pane_id", pane.id().value(), "keys", List.of("Enter"), "literal", false));
     }
 
-    private static void assertMatchedTheOutputNotTheEcho(WaitingForText.Waited waited, String marker) {
+    private static void assertMatchedTheOutputNotTheEcho(Server server, Pane pane, String marker) {
+        // Generous on purpose: what is pinned here is which line matched, not how soon. The
+        // command sleeps a second before printing, and a five-second budget left barely four for a
+        // loaded machine to get there - it lost one lane of the matrix that way.
+        WaitingForText.Waited waited = WaitingForText.waitFor(
+                TestCalls.on(server, "pane_id", pane.id().value(), "patterns", List.of(marker), "timeout", 20));
+
         assertEquals("MATCHED", waited.outcome(), "the output must eventually appear");
         String matchedLine = String.valueOf(waited.matchedLine());
         assertTrue(
@@ -167,16 +178,18 @@ final class WaitingForTextTest {
     @Test
     void aStopPatternEndsTheWaitOnFailureRatherThanRunningToTheDeadline(Server server) {
         String pane = server.panes().get(0).id().value();
-        WaitingForText.Waited waited = afterEntry(
+        send(server, pane, "(sleep 1; echo 'error: it did not build') &");
+
+        WaitingForText.Waited waited = WaitingForText.waitFor(TestCalls.on(
                 server,
+                "pane_id",
                 pane,
-                "echo 'error: it did not build'",
                 "patterns",
                 List.of("listening on"),
                 "stop",
                 List.of("error:"),
                 "timeout",
-                25);
+                25));
 
         assertEquals("STOPPED", waited.outcome());
         assertEquals("error:", waited.matched());
@@ -187,7 +200,9 @@ final class WaitingForTextTest {
     @Test
     void withNoPatternsAnyNewOutputEndsTheWait(Server server) {
         String pane = server.panes().get(0).id().value();
-        WaitingForText.Waited waited = afterEntry(server, pane, "echo anything-at-all", "timeout", 20);
+        send(server, pane, "(sleep 1; echo anything-at-all) &");
+
+        WaitingForText.Waited waited = WaitingForText.waitFor(TestCalls.on(server, "pane_id", pane, "timeout", 20));
 
         assertEquals("MATCHED", waited.outcome());
         assertTrue(String.valueOf(waited.note()).contains("any new output"), String.valueOf(waited.note()));
@@ -210,8 +225,10 @@ final class WaitingForTextTest {
     @Test
     void aPatternIsPlainTextUnlessAskedToBeAnExpression(Server server) {
         String pane = server.panes().get(0).id().value();
-        WaitingForText.Waited waited =
-                afterEntry(server, pane, "echo '[FAILED] one test'", "patterns", List.of("[FAILED]"), "timeout", 20);
+        send(server, pane, "(sleep 1; echo '[FAILED] one test') &");
+
+        WaitingForText.Waited waited = WaitingForText.waitFor(
+                TestCalls.on(server, "pane_id", pane, "patterns", List.of("[FAILED]"), "timeout", 20));
 
         assertEquals("MATCHED", waited.outcome());
     }
@@ -247,8 +264,10 @@ final class WaitingForTextTest {
     @Test
     void aSinglePatternSentWithoutAListIsStillUnderstood(Server server) {
         String pane = server.panes().get(0).id().value();
-        WaitingForText.Waited waited =
-                afterEntry(server, pane, "echo lone-pattern-seen", "patterns", "lone-pattern-seen", "timeout", 20);
+        send(server, pane, "(sleep 1; echo lone-pattern-seen) &");
+
+        WaitingForText.Waited waited = WaitingForText.waitFor(
+                TestCalls.on(server, "pane_id", pane, "patterns", "lone-pattern-seen", "timeout", 20));
 
         assertEquals("MATCHED", waited.outcome(), "output the wait saw: " + waited.output());
     }
@@ -280,40 +299,49 @@ final class WaitingForTextTest {
         return false;
     }
 
-    /** Output is released only after the native entry capture has finished. */
-    private WaitingForText.Waited afterEntry(Server server, String pane, String command, Object... arguments) {
-        AtomicBoolean waiting = new AtomicBoolean();
-        AtomicBoolean released = new AtomicBoolean();
-        try (ProcessTransport processes = new ProcessTransport()) {
-            TmuxTransport gated = new TmuxTransport() {
-                @Override
-                public CommandResult execute(CommandRequest request) {
-                    CommandResult result = processes.execute(request);
-                    boolean capture = request.commands().stream()
-                            .flatMap(List::stream)
-                            .anyMatch(
-                                    argument -> argument.equals("capture-pane") || argument.contains("'capture-pane'"));
-                    if (waiting.get() && capture && result.succeeded() && released.compareAndSet(false, true)) {
-                        assertTrue(server.cmd("send-keys", "-t", pane, "Enter").succeeded());
-                    }
-                    return result;
-                }
+    /**
+     * Starts a command in the background and returns at once, without a tracked run to learn when
+     * it finishes - {@code wait_for_text} is for exactly that case, output nobody here is watching
+     * for through a command result.
+     *
+     * <p>Goes through {@link Typing#sendKeys}, the same as {@link #typeAndSubmit}, rather than a raw
+     * {@code send-keys}: every command here is an {@code echo <marker>} whose own typed-and-submitted
+     * text contains the marker too, on screen the instant it is submitted - before the backgrounded
+     * process prints anything. Only {@link io.github.libtmux.TypedText} can tell that line apart from real output, and
+     * only a call that goes through it gets recorded there.
+     */
+    private static void send(Server server, String pane, String command) {
+        awaitQuietShell(server, pane);
+        Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of(command), "literal", true));
+        Typing.sendKeys(TestCalls.on(server, "pane_id", pane, "keys", List.of("Enter"), "literal", false));
+    }
 
-                @Override
-                public void close() {}
-            };
-            try (Server measured = Server.using(server.config(), gated)) {
-                Pane target = Targets.pane(measured, pane);
-                typeAndSubmit(measured, target, "read libtmux_gate; " + command);
-                Object[] parameters = new Object[arguments.length + 2];
-                parameters[0] = "pane_id";
-                parameters[1] = pane;
-                System.arraycopy(arguments, 0, parameters, 2, arguments.length);
-                waiting.set(true);
-                WaitingForText.Waited waited = WaitingForText.waitFor(TestCalls.on(measured, parameters));
-                assertTrue(released.get(), "the wait did not take its entry capture");
-                return waited;
+    /**
+     * Returns once the shell has drawn its prompt and the pane has stopped changing.
+     *
+     * <p>Keys sent to a shell that is still starting are echoed by the terminal, not the shell, and
+     * the shell then draws its prompt straight after that echo on the same row. The echo is then
+     * glued to the prompt and no longer stands apart as a typed line, which is a different case from
+     * the one these tests pin. A slow runner reaches it by sending the keys a moment too early.
+     */
+    private static void awaitQuietShell(Server server, String pane) {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+        String last = null;
+        int steady = 0;
+        while (System.nanoTime() < deadline) {
+            String now = String.join("\n", server.cmd("capture-pane", "-p", "-t", pane).stdout());
+            steady = now.equals(last) && !now.isBlank() ? steady + 1 : 0;
+            if (steady >= 5) {
+                return;
+            }
+            last = now;
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("interrupted waiting for the shell to settle", interrupted);
             }
         }
+        throw new AssertionError("the shell never settled: " + last);
     }
 }
