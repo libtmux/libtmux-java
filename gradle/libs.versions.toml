@@ -17,6 +17,9 @@ maven-publish-plugin = "0.37.0"
 palantir-format = "2.97.0"
 cyclonedx-plugin = "3.4.1"
 japicmp = "0.23.1"
+clojure = "1.12.4"
+core-async = "1.8.741"
+manifold = "0.5.0"
 picocli = "4.7.7"
 reactive-streams = "1.0.4"
 snakeyaml = "2.5"
@@ -53,6 +56,9 @@ asm = { module = "org.ow2.asm:asm", version = "9.9.1" }
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
 nullaway = { module = "com.uber.nullaway:nullaway", version.ref = "nullaway" }
 japicmp = { module = "com.github.siom79.japicmp:japicmp", version.ref = "japicmp" }
+clojure = { module = "org.clojure:clojure", version.ref = "clojure" }
+core-async = { module = "org.clojure:core.async", version.ref = "core-async" }
+manifold = { module = "manifold:manifold", version.ref = "manifold" }
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
 reactive-streams-tck-flow = { module = "org.reactivestreams:reactive-streams-tck-flow", version.ref = "reactive-streams" }
 snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }

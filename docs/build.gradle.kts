@@ -59,7 +59,7 @@ tasks.withType<Test>().configureEach {
     // build-logic's deeper tree included.
     val sources =
         rootProject.fileTree(root) {
-            include("**/*.java", "**/*.kt", "**/*.kts", "**/*.scala")
+            include("**/*.java", "**/*.kt", "**/*.kts", "**/*.scala", "**/*.clj")
             exclude("**/build/**", "**/target/**", ".gradle/**", "**/.gradle/**")
         }
 
