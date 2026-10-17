@@ -171,7 +171,9 @@ invocation, and everything at or below it waits until it is finished.
 
 ## Being told, instead of asking
 
-tmux can push. A control client that has attached is told when a window appears
+tmux can push. Managed control requires tmux 3.7+ and a carrier-owned
+pinned socket. The MCP polling tools retain the core 3.3a minimum. A control
+client that has attached is told when a window appears
 or a session is renamed, and `refresh-client -B` registers a format tmux
 re-expands on its own one-second timer and reports **only when the value differs**.
 

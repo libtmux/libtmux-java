@@ -55,12 +55,13 @@ Server.resource[IO](config).use { server =>
 
 ## Observe a session rename
 
+Managed control requires tmux 3.7+ and a carrier-owned pinned socket.
 Register the subscription and start its reader before changing tmux state.
 Match the typed notification before acting on it. The stream suspends the
 fiber, not a platform thread, while idle — `Async[F].async` over the
 subscription's own `poll()`/`onReady()`, not a dedicated blocking pool.
 
-<!-- snippet: scala-io: cats-observe-session-rename -->
+<!-- snippet: scala-io-control: cats-observe-session-rename -->
 ```scala
 import _root_.cats.effect.IO
 import _root_.cats.syntax.all._

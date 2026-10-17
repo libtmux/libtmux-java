@@ -26,7 +26,8 @@ import org.gradle.api.tasks.TaskAction
  * Each fence carries a directive on the line before it, `<!-- snippet: scala-MODE: id | detail -->`:
  * `sync` runs the code against a fresh tmux, `io` runs a Cats `IO` to completion within the
  * 15-second deadline every documented snippet has, `reject` asserts the code fails to compile with
- * `detail` in the error, and `build` marks an sbt build fragment the consumer checks exercise
+ * `detail` in the error, `io-control` also checks refusal below tmux 3.7, and
+ * `build` marks an sbt build fragment the consumer checks exercise
  * instead. An unclassified fence fails the build, and so
  * does a directive no fence follows. A final inventory test pins each document's digest and fence
  * count, so a document edited after the suite was generated cannot pass on the old code.
@@ -131,6 +132,14 @@ abstract class GenerateScalaDocumentationSuite : DefaultTask() {
             val invoke = snippet.objectName + ".run(fixture.config)"
             val body = when (snippet.mode) {
                 "sync" -> "io.github.libtmux.scaladsl.fixture.OwnedTmux.use { fixture => $invoke }"
+                "io-control" ->
+                    "io.github.libtmux.scaladsl.fixture.OwnedTmux.use { fixture =>\n" +
+                        "val program = $invoke.timeout(_root_.scala.concurrent.duration.FiniteDuration(15, java.util.concurrent.TimeUnit.SECONDS))\n" +
+                        "if (fixture.supportsControl) program.unsafeRunSync()(using _root_.cats.effect.unsafe.IORuntime.global)\n" +
+                        "else {\n" +
+                        "intercept[io.github.libtmux.exception.UnsupportedFeatureException](program.unsafeRunSync()(using _root_.cats.effect.unsafe.IORuntime.global))\n" +
+                        "assert(fixture.server.clients().isEmpty(), \"a refused snippet attached a client\")\n" +
+                        "}\n}"
                 "io" ->
                     "io.github.libtmux.scaladsl.fixture.OwnedTmux.use { fixture =>\n" +
                         "val evaluated = new java.util.concurrent.atomic.AtomicBoolean(false)\n" +
@@ -175,7 +184,7 @@ $cases
         val IGNORED = setOf(".git", ".gradle", ".bsp", ".metals", ".idea", "target", "build", "node_modules")
         val OPENING = Regex("^ {0,3}(`{3,}|~{3,})[ \\t]*([^\\s`]*).*$")
         val UNSUPPORTED_SCALA_FENCE = Regex("(?i)^[ \\t>]*(?:`{3,}|~{3,})[ \\t]*(?:scala\\S*|sbt)(?:[ \\t].*)?$")
-        val DIRECTIVE = Regex("^<!--\\s*snippet:\\s*scala-(sync|io|reject|build):\\s*([a-z0-9][a-z0-9-]*)(?:\\s*\\|\\s*(.+?))?\\s*-->$")
+        val DIRECTIVE = Regex("^<!--\\s*snippet:\\s*scala-(sync|io|io-control|reject|build):\\s*([a-z0-9][a-z0-9-]*)(?:\\s*\\|\\s*(.+?))?\\s*-->$")
 
         fun relative(root: File, file: File): String = root.toPath().relativize(file.toPath()).toString().replace('\\', '/')
 

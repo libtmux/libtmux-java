@@ -18,12 +18,15 @@
 Command names and flags follow [tmuxp](https://tmuxp.git-pull.com/) 1.74.0, and
 every command answers in JSON or NDJSON on request. Loading, capture,
 conversion, imports, discovery and search run on the JVM alone; only the
-Python shell, tmuxp plugins and custom builders need Python. JDK 25 or newer, tmux 3.3a or newer.
+Python shell, tmuxp plugins and custom builders need Python. JDK 25 or newer,
+tmux 3.3a or newer.
 
 The Python bridge requires tmuxp 1.74.0 and Python libtmux with the core version check
-for tmux 3.3a or newer. It refuses an older backend before running extensions
-or shell code. Until that Python support change is released, load its source
+for tmux 3.3a or newer and the integer optional-feature policy marker at least
+2. Both the runtime probe and the actual child check before extension or shell
+code runs. Until that coordinated Python change is released, load its source
 in the selected interpreter; see [migration notes](../MIGRATION.md).
+Native loading retains the core floor and does not acquire control.
 
 `io.github.libtmux:libtmux-workspace-cli` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace-cli).
 
@@ -383,8 +386,11 @@ finish later when the caller drains it; cancellation does not reap that write.
 ## Python
 
 Python shell commands and extension workspaces use `TMUX_WORKSPACE_PYTHON`
-(default `python3`) with tmuxp 1.74.0 installed. The version is checked before
-any input workspace changes. Nonempty `plugins`, `workspace_builder`, or
+(default `python3`) with tmuxp 1.74.0 and the coordinated Python libtmux core
+and optional-feature policy. The child checks `TMUX_MIN_VERSION >= 3.3a` and
+an integer `TMUX_OPTIONAL_FEATURE_POLICY_VERSION >= 2` before loading external
+code. These are library capabilities; a newer tmux executable alone does not
+provide them. Nonempty `plugins`, `workspace_builder`, or
 `workspace_builder_paths` select the bridge. Builder paths resolve relative to
 the workspace file; custom builders receive their own configuration keys.
 Plugin import or version failures stop the load instead of prompting to skip
@@ -476,7 +482,9 @@ $ ./gradlew :libtmux-workspace-cli:check \
 
 The tests use isolated sockets under the Java test root. PTY regressions use
 Python 3 standard-library helpers; native application commands do not require
-Python. Set `TMUX_WORKSPACE_TEST_PYTHON` to an interpreter with tmuxp 1.74.0 to
-enable the extension fixtures. Tests replace `HOME`; user-installed Python
+Python. Set `TMUX_WORKSPACE_TEST_PYTHON` to an interpreter with tmuxp 1.74.0
+and coordinated Python libtmux to enable the extension fixtures. CI verifies a
+reviewed source overlay; see [migration notes](../MIGRATION.md) for its
+unreleased dependency boundary. Tests replace `HOME`; user-installed Python
 packages also need an explicit `PYTHONUSERBASE`. The repository-wide `check`
 remains the full gate; a focused CLI check does not replace it.

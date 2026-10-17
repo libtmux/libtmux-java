@@ -455,9 +455,10 @@ whole whatever the locale. Only `Pane.currentPath()` still needs a UTF-8 locale,
 because a `Path` in this JVM cannot name the directory; `currentPathText()` reads
 it anywhere.
 
-tmux 3.3a through 3.7c. That range is not a claim: the whole real-tmux suite runs
-against every one of those releases, and each lane checks it really ran the tmux
-it is named after.
+tmux 3.3a through 3.7c for ordinary operations. Every supported release has a
+matrix lane that checks the selected daemon. Managed control requires stable
+tmux 3.7 or newer and a carrier that can pin its socket. Other feature
+requirements and replacements are in the [migration notes](MIGRATION.md#optional-tmux-requirements).
 
 ```console
 $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds

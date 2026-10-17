@@ -84,7 +84,9 @@ its owner.
 
 [`Control.attach`][control] on a captured session owns a separate process
 attachment to that capture's process, started by the session's transport.
-`Control.attachUnfenced` on a config and session id does not check the process.
+Both forms require tmux 3.7+ and a carrier-owned pinned socket before
+control initialization. `Control.attachUnfenced` selects the daemon answering
+at call time; it does not require a previously captured incarnation.
 Releasing either stops its admitted requests before closing the attachment and
 preserves the daemon.
 
