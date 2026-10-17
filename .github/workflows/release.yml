@@ -137,6 +137,8 @@ jobs:
             libtmux-jackson/build/libs/*.jar
             libtmux-junit5/build/libs/*.jar
             libtmux-kotlin/build/libs/*.jar
+            libtmux-clojure/build/libs/*.jar
+            libtmux-clojure-core-async/build/libs/*.jar
             libtmux-mcp/build/libs/*.jar
             libtmux-workspace/build/libs/*.jar
             libtmux-workspace-cli/build/libs/*.jar

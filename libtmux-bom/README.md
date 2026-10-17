@@ -74,6 +74,8 @@ doing its job.
 
 [`libtmux`](../libtmux/) · [`libtmux-jackson`](../libtmux-jackson/) ·
 [`libtmux-junit5`](../libtmux-junit5/) · [`libtmux-kotlin`](../libtmux-kotlin/) ·
+[`libtmux-clojure`](../libtmux-clojure/) ·
+[`libtmux-clojure-core-async`](../libtmux-clojure-core-async/) ·
 [`libtmux-mcp`](../libtmux-mcp/) · [`libtmux-workspace`](../libtmux-workspace/) ·
 [`libtmux-workspace-cli`](../libtmux-workspace-cli/) ·
 [`libtmux-scala`](../libtmux-scala/) · [`libtmux-scala-cats`](../libtmux-scala-cats/) ·
