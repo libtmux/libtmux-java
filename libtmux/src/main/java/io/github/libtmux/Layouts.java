@@ -190,7 +190,7 @@ public final class Layouts {
 
     private static TmuxVersion version(Server server) {
         try {
-            return SessionCreation.versionForCreation(server);
+            return server.versionForCreation();
         } catch (IllegalArgumentException invalid) {
             throw new MalformedResponseException("could not read tmux version", invalid);
         }

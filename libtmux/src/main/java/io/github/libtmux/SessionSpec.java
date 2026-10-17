@@ -1,6 +1,5 @@
 package io.github.libtmux;
 
-import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -9,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Supplier;
 import kotlin.annotations.jvm.ReadOnly;
 import org.jspecify.annotations.Nullable;
 
@@ -27,14 +25,6 @@ import org.jspecify.annotations.Nullable;
  * }</pre>
  */
 public final class SessionSpec {
-
-    /**
-     * 3.2a accepts {@code -x}/{@code -y} for a detached session and then ignores them; upstream's
-     * {@code df3fe2aa} ("Only use client for sizing when not detached") is the fix, and it is
-     * already in tag 3.3 - absent from 3.2a, and {@code git log 3.3..3.3a} touches nothing under
-     * {@code spawn.c} or {@code cmd-new-session.c} - so the floor is 3.3, not 3.3a.
-     */
-    private static final TmuxVersion SIZE_SINCE = new TmuxVersion(3, 3, "");
 
     private final @Nullable String name;
     private final @Nullable Path directory;
@@ -96,7 +86,7 @@ public final class SessionSpec {
         return Optional.ofNullable(windowName);
     }
 
-    /** How big the session is, or empty for tmux's default. Requires tmux 3.3. */
+    /** How big the session is, or empty for tmux's default. */
     public Optional<Dimensions> size() {
         return Optional.ofNullable(size);
     }
@@ -123,24 +113,8 @@ public final class SessionSpec {
         return command;
     }
 
-    /**
-     * The command that makes this session, reporting it through {@code format}.
-     *
-     * <p>The version arrives as a supplier because this is the one creating call that may run when
-     * there is no server yet, and asking a socket with nothing behind it for its version fails.
-     * Nothing asks unless the spec depends on the answer.
-     *
-     * @param format the row format the caller will read the result back with
-     * @param running what the server about to run this is, asked only if it matters
-     * @throws UnsupportedFeatureException if the spec asks for something {@code running} does not have
-     */
-    List<String> argv(String format, Supplier<TmuxVersion> running) {
-        if (size != null) {
-            TmuxVersion version = running.get();
-            if (!version.atLeast(SIZE_SINCE)) {
-                throw new UnsupportedFeatureException("a size for a detached session", SIZE_SINCE, version);
-            }
-        }
+    /** The command that makes this session, reporting it through {@code format}. */
+    List<String> argv(String format) {
         List<String> argv = new ArrayList<>(24);
         argv.add("new-session");
         // Always: without -d, tmux tries to attach and fails outright with no terminal.

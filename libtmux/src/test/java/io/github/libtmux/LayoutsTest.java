@@ -311,23 +311,9 @@ final class LayoutsTest {
             List<String> command = request.commands().getFirst();
             commands.add(command.getFirst());
             if (command.getFirst().equals("display-message")) {
-                assertEquals(
-                        List.of(
-                                "display-message",
-                                "-p",
-                                io.github.libtmux.format.RowFormat.of("pid", "version", "start_time")
-                                        .template()),
-                        command);
-                if (!daemon.succeeded()) return daemon;
-                return new CommandResult(
-                        0,
-                        List.of(String.join(
-                                io.github.libtmux.format.RowFormat.of("pid", "version", "start_time")
-                                        .separator(),
-                                "4242",
-                                String.join("\n", daemon.stdout()),
-                                "1790000000")),
-                        List.of());
+                assertEquals(List.of("display-message", "-p", "#{version}"), command);
+                assertTrue(request.endpoint().contains("-N"), "a version probe must not start tmux");
+                return daemon;
             }
             assertEquals(List.of("-V"), command);
             return new CommandResult(0, List.of("tmux 3.7c"), List.of());

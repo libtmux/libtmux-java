@@ -17,7 +17,6 @@ import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.query.FilterExpr;
 import io.github.libtmux.query.TmuxFilters;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -126,16 +125,18 @@ final class PushdownIntegrationTest {
      */
     @Test
     void aFilterThatMatchesNothingCostsOneFilteredRead(Server server) {
-        AtomicInteger dispatches = new AtomicInteger();
+        List<List<String>> verbs = new java.util.ArrayList<>();
         try (Server counted = Server.open(server.config().toBuilder()
-                .observer(report -> dispatches.incrementAndGet())
+                .observer(report -> verbs.add(report.verbs()))
                 .build())) {
             List<Session> none = counted.sessions(Session_.name().is("no-such-session"));
             List<Pane> nothing = counted.panes(Pane_.command().is("no-such-command"));
 
             assertEquals(List.of(), none);
             assertEquals(List.of(), nothing);
-            assertEquals(4, dispatches.get(), "two reads of two processes each, and no full capture after either");
+            assertEquals(8, verbs.size(), "four data requests and their version probes");
+            assertEquals(
+                    4, verbs.stream().filter(List.of("display-message")::equals).count());
         }
     }
 

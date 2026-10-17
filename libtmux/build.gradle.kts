@@ -48,10 +48,11 @@ tasks.jar {
             "the published module is named ${descriptor.name()}"
         }
         val exported = descriptor.exports().map { it.source() }.toSet()
-        require("io.github.libtmux.internal" !in exported) {
-            "the published module exports io.github.libtmux.internal"
+        val internal = { name: String -> name == "io.github.libtmux.internal" || name.startsWith("io.github.libtmux.internal.") }
+        require(exported.none(internal)) {
+            "the published module exports ${exported.filter(internal)}"
         }
-        val packages = descriptor.packages().filterNot { it == "io.github.libtmux.internal" }
+        val packages = descriptor.packages().filterNot(internal)
         val unexported = packages - exported
         require(unexported.isEmpty()) {
             "the published module hides packages a caller needs: $unexported"

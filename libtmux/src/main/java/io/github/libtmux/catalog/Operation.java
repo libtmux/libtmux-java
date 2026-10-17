@@ -23,7 +23,7 @@ public @interface Operation {
 
     /**
      * The first tmux release that has this operation, when it is newer than the supported floor,
-     * 3.2a. Empty when the whole supported range has it.
+     * 3.3a. Empty when the whole supported range has it.
      */
     String tmuxSince() default "";
 }

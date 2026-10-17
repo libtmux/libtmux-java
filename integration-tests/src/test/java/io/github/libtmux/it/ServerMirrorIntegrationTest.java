@@ -109,9 +109,9 @@ final class ServerMirrorIntegrationTest {
 
             server.cmd("rename-window", "-t", window.id().value(), window.name());
 
-            // The rename is one command; a rebuild is two more.
+            // The rename and the two rebuild requests each include a version probe.
             assertTrue(
-                    Await.until(() -> dispatches.get() >= before + 3),
+                    Await.until(() -> dispatches.get() >= before + 6),
                     "tmux announced nothing, so this proves nothing");
             assertEquals(Optional.empty(), mirror.awaitNewer(epoch, Duration.ofMillis(300)));
         }

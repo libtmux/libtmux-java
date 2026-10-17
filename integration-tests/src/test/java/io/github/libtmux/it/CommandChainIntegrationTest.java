@@ -14,7 +14,6 @@ import io.github.libtmux.batch.BatchResult;
 import io.github.libtmux.batch.OperationOutcome;
 import io.github.libtmux.batch.OperationResult;
 import io.github.libtmux.exception.UnsupportedFeatureException;
-import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
@@ -192,15 +191,13 @@ final class CommandChainIntegrationTest {
         }
     }
 
-    /** A server that answers its own identity without a real tmux process behind it. */
+    /** A server that answers its version without a real tmux process behind it. */
     private static Server fakeServer(String version) {
-        String separator = RowFormat.of("field").separator();
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().get(0).get(0).equals("display-message")) {
-                    return new CommandResult(
-                            0, List.of(String.join(separator, "4242", version, "1790000000")), List.of());
+                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
+                    return new CommandResult(0, List.of(version), List.of());
                 }
                 return new CommandResult(0, List.of(), List.of());
             }

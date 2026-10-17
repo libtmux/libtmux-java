@@ -12,7 +12,6 @@ import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.exception.TargetGoneException;
-import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.time.Duration;
 import java.util.List;
@@ -29,8 +28,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
  */
 @ExtendWith(TmuxExtension.class)
 final class ServerControlIntegrationTest {
-
-    private static final TmuxVersion PROMPT_HISTORY_SINCE = new TmuxVersion(3, 3, "");
 
     /** Before 3.6, show-messages wants a client attached and refuses without one. */
     private static final TmuxVersion MESSAGES_WITHOUT_CLIENT_SINCE = new TmuxVersion(3, 6, "");
@@ -243,36 +240,10 @@ final class ServerControlIntegrationTest {
 
     // ------------------------------------------------------------------------------ prompt history
 
-    /** 3.2a has no such command; from 3.3 it answers, empty until something has been typed. */
     @Test
-    void thePromptHistoryIsReadableOrRefusedDependingOnTheRelease(Server server) {
-        if (server.version().atLeast(PROMPT_HISTORY_SINCE)) {
-            assertTrue(server.prompt().history() != null, "a readable history is a list, even when empty");
-            server.prompt().clear();
-            assertTrue(server.isAlive(), "clearing it is not a reason to lose the server");
-        } else {
-            UnsupportedFeatureException refused = assertThrows(
-                    UnsupportedFeatureException.class, () -> server.prompt().history());
-
-            assertTrue(
-                    String.valueOf(refused.getMessage()).contains("3.3"),
-                    "the refusal names the release that has it: " + refused.getMessage());
-            assertThrows(
-                    UnsupportedFeatureException.class, () -> server.prompt().clear());
-        }
-    }
-
-    /** The floor is exactly 3.2a, and every other lane has to take the working path. */
-    @Test
-    void exactlyTheOldestReleaseRefuses(Server server) {
-        String lane = System.getProperty("libtmux.tmux.expected");
-        if (lane == null) {
-            return; // not a matrix lane; the ordinary suite runs whichever tmux is on PATH
-        }
-
-        assertEquals(
-                "3.2a".equals(lane),
-                !server.version().atLeast(PROMPT_HISTORY_SINCE),
-                "lane " + lane + " disagrees with the version rule");
+    void thePromptHistoryIsReadableAndClearable(Server server) {
+        assertTrue(server.prompt().history() != null, "a readable history is a list, even when empty");
+        server.prompt().clear();
+        assertTrue(server.isAlive(), "clearing it must keep the server alive");
     }
 }
