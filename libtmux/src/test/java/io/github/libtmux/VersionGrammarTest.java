@@ -73,19 +73,38 @@ final class VersionGrammarTest {
     void aCandidateOrDevelopmentBuildOfAReleaseIsNotThatRelease() {
         TmuxVersion control = new TmuxVersion(3, 7, "");
         for (String below : List.of("next-3.7", "3.7-rc", "3.7-rc2")) {
-            assertTrue(Versions.compareStrictly(TmuxVersion.parse(below), control) < 0, below);
+            assertTrue(TmuxVersion.parse(below).compareTo(control) < 0, below);
         }
         for (String atOrAbove : List.of("3.7", "3.7a", "3.8-rc2", "next-3.8")) {
-            assertTrue(Versions.compareStrictly(TmuxVersion.parse(atOrAbove), control) >= 0, atOrAbove);
+            assertTrue(TmuxVersion.parse(atOrAbove).compareTo(control) >= 0, atOrAbove);
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"3.3a garbage", "3.3a-master", "3.3a-dev", "3.3abc", "next-3.3a-x", "", "3", "master"})
+    void parseIsAnchoredToTheCanonicalGrammar(String text) {
+        assertThrows(IllegalArgumentException.class, () -> TmuxVersion.parse(text));
+    }
+
+    @Test
+    void theNaturalOrderAgreesWithEqualsButAFeatureGateCountsACandidateAsItsRelease() {
+        TmuxVersion release = TmuxVersion.parse("3.8");
+        TmuxVersion candidate = TmuxVersion.parse("3.8-rc2");
+        assertTrue(candidate.compareTo(release) < 0);
+        assertTrue(!candidate.equals(release));
+        assertTrue(candidate.atLeast(release), "a candidate ships what its release ships");
+        assertTrue(candidate.sameRelease(release));
+        assertTrue(!TmuxVersion.parse("next-3.8").sameRelease(release));
+        assertTrue(!TmuxVersion.parse("3.8a").sameRelease(release));
+        assertEquals(0, release.compareTo(TmuxVersion.parse("3.8")));
     }
 
     private static void assertAscending(String... versions) {
         for (int index = 1; index < versions.length; index++) {
             TmuxVersion lower = TmuxVersion.parse(versions[index - 1]);
             TmuxVersion higher = TmuxVersion.parse(versions[index]);
-            assertTrue(Versions.compareStrictly(lower, higher) < 0, versions[index - 1] + " < " + versions[index]);
-            assertTrue(Versions.compareStrictly(higher, lower) > 0, versions[index] + " > " + versions[index - 1]);
+            assertTrue(lower.compareTo(higher) < 0, versions[index - 1] + " < " + versions[index]);
+            assertTrue(higher.compareTo(lower) > 0, versions[index] + " > " + versions[index - 1]);
         }
     }
 }

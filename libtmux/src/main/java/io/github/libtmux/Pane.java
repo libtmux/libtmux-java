@@ -836,7 +836,7 @@ public final class Pane {
                 new SessionId(fields.get(0)),
                 new WindowIndex(Integer.parseInt(fields.get(2))),
                 new WindowId(fields.get(1)));
-        if (server.version(snapshot).equals(BREAK_PANE_NAMING_BROKEN)) {
+        if (server.version(snapshot).sameRelease(BREAK_PANE_NAMING_BROKEN)) {
             // 3.7 took the name and ignored it, so the caller's choice is applied afterwards.
             wanted.ifPresent(name -> server.run(
                     snapshot, List.of("rename-window", "-t", fields.get(1), "--", TmuxFormats.literal(name))));
