@@ -282,7 +282,7 @@ itself, which a control-mode line needs, since tmux answers a bare `parse error`
 for an unquoted `%0:off` typed there directly.
 
 The four state words are **two independent pairs**, with different loss
-behaviour, measured against tmux 3.2a, 3.7c and next-3.9:
+behaviour, measured against tmux 3.7c and next-3.9:
 
 | stop → resume | recovers? | output produced while stopped |
 | --- | --- | --- |
