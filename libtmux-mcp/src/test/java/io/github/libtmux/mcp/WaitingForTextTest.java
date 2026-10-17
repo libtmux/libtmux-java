@@ -329,7 +329,8 @@ final class WaitingForTextTest {
         String last = null;
         int steady = 0;
         while (System.nanoTime() < deadline) {
-            String now = String.join("\n", server.cmd("capture-pane", "-p", "-t", pane).stdout());
+            String now = String.join(
+                    "\n", server.cmd("capture-pane", "-p", "-t", pane).stdout());
             steady = now.equals(last) && !now.isBlank() ? steady + 1 : 0;
             if (steady >= 5) {
                 return;
