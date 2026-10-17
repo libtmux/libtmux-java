@@ -308,7 +308,7 @@ tmux can also pause a pane on its own. After `client.send("refresh-client",
 "-f", "pause-after=5")`, a pane whose output this client is more than five
 seconds behind on is paused and announced as `Notification.Pause`; output keeps
 reaching `subscribeOutput` until then, and `refresh-client -A <pane>:continue`
-resumes it, announced as `Notification.Continue`. tmux 3.2 and later.
+resumes it, announced as `Notification.Continue`. Every supported tmux has it.
 
 ## Requests are serialized
 

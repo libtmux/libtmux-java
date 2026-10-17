@@ -20,7 +20,7 @@ import java.util.function.Function;
  * on {@link Options} remain for anything else.
  *
  * <p>The constants are the ones whose type is the same on every supported release, checked against
- * tmux's own option table from 3.2a to 3.7c. {@code status} is not among the flags for that reason:
+ * tmux's own option table across the supported range. {@code status} is not among the flags for that reason:
  * tmux reads it as a choice of {@code off}, {@code on} and a line count.
  *
  * @param <T> what the value reads as
