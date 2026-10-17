@@ -19,7 +19,16 @@ import java.util.Set;
 final class PythonExtensions {
     private PythonExtensions() {}
 
-    private static final String BUILD = """
+    static final String CORE_PRELUDE = """
+            import re as _libtmux_re
+            from libtmux.common import TMUX_MIN_VERSION as _libtmux_floor
+            _libtmux_floor = str(_libtmux_floor)
+            _libtmux_release = _libtmux_re.fullmatch(r'(\\d+)\\.(\\d+)([a-z]?)', _libtmux_floor)
+            if not _libtmux_release or (int(_libtmux_release[1]), int(_libtmux_release[2]), _libtmux_release[3]) < (3, 3, 'a'):
+                raise RuntimeError('Python libtmux with a tmux 3.3a minimum is required; install a compatible Python libtmux in TMUX_WORKSPACE_PYTHON (loaded floor: ' + _libtmux_floor + ')')
+            """;
+
+    private static final String BUILD = CORE_PRELUDE + """
             import importlib, json, sys
             from pathlib import Path
             from libtmux import Server
@@ -97,6 +106,7 @@ final class PythonExtensions {
             Reporter report,
             ObjectNode effects)
             throws IOException, InterruptedException {
+        Execution.requireTmuxForExternalPython(server);
         Set<String> windows = new HashSet<>();
         Set<String> panes = new HashSet<>();
         String daemon = "";
