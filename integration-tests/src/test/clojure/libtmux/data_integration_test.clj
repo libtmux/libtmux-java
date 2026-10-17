@@ -56,7 +56,7 @@
                  shared (filter #(= (-> links first :window/id) (:window/id %))
                                 (:tmux/windows entries))
                  detached (data/data entries)]
-             (is (= 4 acquired) "two data requests, each behind its admission probe")
+             (is (= 3 acquired) "two data requests behind one admission probe")
              (is (= 3 (count shared)))
              (is (= 2 (count links)))
              (is (= 2 (count panes)))
