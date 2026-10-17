@@ -17,7 +17,8 @@ production.
 - **tmux 3.3a is the minimum across the JVM modules and products.** Upgrade
   the running daemon as well as the client. Commands refuse older daemons
   before their requested effects; the Python bridge also requires compatible
-  Python libtmux. See [migration notes](MIGRATION.md). (#67)
+  Python libtmux. Cold starts accept 3.3a binaries renamed on disk. See
+  [migration notes](MIGRATION.md). (#67)
 
 ### Documented
 
