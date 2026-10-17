@@ -1,7 +1,7 @@
 # tmux behaviour this library codes around
 
 Facts about tmux's own commands, measured against the supported version range
-(tmux 3.2a through 3.7c unless a row says otherwise), that the implementation
+(tmux 3.3a through 3.7c unless a row says otherwise), that the implementation
 relies on and that are not self-evident from the tmux manual. A decision that
 weighs alternatives belongs in [`docs/decisions/`](../decisions/) instead;
 this page is measurements, kept reachable because source comments cite them.

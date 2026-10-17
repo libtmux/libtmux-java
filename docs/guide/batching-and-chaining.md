@@ -10,17 +10,16 @@ second invocation.
 
 | you want | use | tmux processes |
 | --- | --- | --- |
-| one change or read, typed | a handle's method: `session.rename`, `pane.sendKeys` | two per request |
-| a command no method covers | `server.cmd(...)` to inspect the answer, `server.run(...)` to require success | two |
-| several independent commands, each answered | `batch()` | two, however many commands |
-| steps where each acts on what the last made | `chain()` | two for dispatch, plus any capability reads |
+| one change or read, typed | a handle's method: `session.rename`, `pane.sendKeys` | one tmux process, after one version probe per daemon |
+| a command no method covers | `server.cmd(...)` to inspect the answer, `server.run(...)` to require success | one |
+| several independent commands, each answered | `batch()` | one, however many commands |
+| steps where each acts on what the last made | `chain()` | one for dispatch, plus any capability reads |
 | to know when something in a pane has happened | `Pane.awaitText`, `Channel.await`, or `Pane.run` | [measured](../benchmarks/operation-costs.md#push-against-poll) |
 | output as it arrives | `server.control(session)`, then a subscription | one attached client, with startup probes |
 
-The historical benchmark, before version probes, measured the same twenty
-windows at 64 processes made one at a time and 5 as a batch or
-a chain: [`operation-costs.md`](../benchmarks/operation-costs.md#collapsing-round-trips)
-has the rows.
+Creating twenty windows one at a time costs one process each; as a batch or a
+chain it costs one for the lot. [`operation-costs.md`](../benchmarks/operation-costs.md#collapsing-round-trips)
+has the measured rows.
 
 ## A batch: several commands, each with its own outcome
 
