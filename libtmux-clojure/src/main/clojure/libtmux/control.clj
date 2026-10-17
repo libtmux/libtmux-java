@@ -1,12 +1,15 @@
 (ns libtmux.control
-  "Explicit control replies and owned, bounded pane-output subscriptions."
+  "Explicit control replies and owned, bounded pane-output subscriptions.
+  Control needs tmux 3.7 or newer; an older daemon is refused before
+  any client is attached, with :tmux/error :tmux/unsupported-feature."
   (:require [libtmux.core :as tmux])
-  (:import [io.github.libtmux Session Server PaneId LibTmuxException]
-           [io.github.libtmux.control ControlClient ControlReply EventSubscription
-            EventSubscription$Delivery EventSubscription$Termination PaneOutputBytes PaneOutputDecoder]
-           [io.github.libtmux.transport TmuxTransportException TmuxTimeoutException]
+  (:import [io.github.libtmux Session Server]
+           [io.github.libtmux.control ControlClient ControlReply Delivery$Event Delivery$Gap
+            EventSubscription PaneOutput]
+           [io.github.libtmux.exception DispatchException DispatchException$TimedOut
+            LibTmuxException UnsupportedFeatureException]
            [java.lang AutoCloseable]
-           [java.nio.charset CharacterCodingException CodingErrorAction]
+           [java.nio ByteBuffer]
            [java.time Duration]
            [java.util Optional]
            [java.util.concurrent TimeUnit]
@@ -32,15 +35,21 @@
    (try (f)
         (catch LibTmuxException cause
           (throw (ex-info "Control operation failed"
-                          {:tmux/error (if (instance? TmuxTimeoutException cause)
-                                         :tmux/timeout :tmux/transport)
+                          {:tmux/error (cond
+                                         (instance? UnsupportedFeatureException cause)
+                                         :tmux/unsupported-feature
+                                         (instance? DispatchException$TimedOut cause)
+                                         :tmux/timeout
+                                         :else :tmux/transport)
                            :tmux/operation operation :tmux/phase :protocol
                            :tmux/dispatch
-                           (if (instance? TmuxTransportException cause)
-                             (case (.name (.outcome ^TmuxTransportException cause))
+                           (cond
+                             (instance? UnsupportedFeatureException cause) :not-dispatched
+                             (instance? DispatchException cause)
+                             (case (.name (.outcome ^DispatchException cause))
                                "NOT_DISPATCHED" :not-dispatched
                                :unknown)
-                             :unknown)} cause))))))
+                             :else :unknown)} cause))))))
 
 (deftype ^:private Connection [^ControlClient client identity]
   AutoCloseable
@@ -51,7 +60,7 @@
   "Attaches an owned control client to an explicit captured Session reference.
   Close releases this client, never its server. Use a dedicated connection
   when cancellation must not affect other requests and subscriptions."
-  ([session] (attach! session (Duration/ofMillis 900)))
+  ([session] (attach! session (Duration/ofSeconds 10)))
   ([session timeout]
    (when-not (and (instance? Session session) (duration? timeout)
                   (not (.isZero ^Duration timeout)))
@@ -64,8 +73,7 @@
                                   {:tmux/error :tmux/not-found
                                    :tmux/operation :control/attach
                                    :tmux/phase :validation :tmux/dispatch :not-dispatched})))
-                (Connection. (ControlClient/attach (.config (.server reference))
-                                                  (.id reference) timeout)
+                (Connection. (.control ^Server (.server reference) reference timeout)
                              (dissoc (:tmux/identity captured) :tmux/kind :tmux/id))))))
 
 (defn- reply-data [^ControlReply reply]
@@ -89,119 +97,85 @@
              #(reply-data (.send ^ControlClient (.-client ^Connection connection)
                                  ^java.util.List argv timeout)))))
 
-(deftype ^:private OutputStream [^EventSubscription subscription
-                                 ^PaneOutputDecoder decoder identity options state read-lock]
+;; One reader at a time: the Java subscription refuses overlapping reads, so reads queue on
+;; read-lock and a timed read counts that wait against its budget.
+(deftype ^:private OutputStream [^EventSubscription subscription identity options state read-lock]
   AutoCloseable
   (close [_] (io! (.close subscription))))
 (alter-meta! #'->OutputStream assoc :private true)
 
 (defn subscribe!
   "Creates a closeable output subscription borrowing its connection.
-  :encoding is :bytes (caller-owned byte arrays) or :utf-8. Text uses explicit
-  :malformed :report or :replace and resets after loss. :capacity, :max-bytes,
-  and :max-panes bound queued events, bytes, and text decoder identities.
+  :encoding is :bytes (caller-owned byte arrays) or :utf-8 (text decoded per
+  pane by the Java client, so a character cut between two chunks arrives whole
+  and a byte that is not UTF-8 is written \\xHH). :capacity bounds queued
+  events; when full the oldest is dropped and the next read is a :gap.
   Readers compete; create separate subscriptions for independent fan-out."
   ([connection] (subscribe! connection {}))
   ([connection options]
    (when-not (and (instance? Connection connection) (map? options)
-                  (every? #{:encoding :malformed :capacity :max-bytes :max-panes} (keys options)))
+                  (every? #{:encoding :capacity} (keys options)))
      (invalid! :control/subscribe))
-   (let [options (merge {:encoding :bytes :malformed :report :capacity 256
-                         :max-bytes 1048576 :max-panes 1024} options)
-         {:keys [encoding malformed capacity max-bytes max-panes]} options]
-     (when-not (and (#{:bytes :utf-8} encoding) (#{:report :replace} malformed)
-                    (positive? capacity Integer/MAX_VALUE)
-                    (positive? max-bytes Long/MAX_VALUE)
-                    (positive? max-panes Integer/MAX_VALUE))
+   (let [options (merge {:encoding :bytes :capacity 256} options)
+         {:keys [encoding capacity]} options]
+     (when-not (and (#{:bytes :utf-8} encoding) (positive? capacity Integer/MAX_VALUE))
        (invalid! :control/subscribe))
      (perform! :control/subscribe
                #(OutputStream.
-                 (.subscribeOutputBytes ^ControlClient (.-client ^Connection connection) (int capacity) (long max-bytes))
-                 (when (= :utf-8 encoding)
-                   (PaneOutputDecoder. (if (= :report malformed)
-                                         CodingErrorAction/REPORT CodingErrorAction/REPLACE)))
+                 (.subscribeOutput ^ControlClient (.-client ^Connection connection) (int capacity))
                  (.-identity ^Connection connection) options
-                 (atom {:sequence 0 :panes #{} :decoder-resets 0 :loss 0}) (ReentrantLock.))))))
+                 (atom {:sequence 0}) (ReentrantLock.))))))
 
 (defn- loss-data [^EventSubscription subscription]
-  {:upstream/events (.droppedCount subscription)
-   :upstream/bytes (.droppedBytes subscription)
-   :adapter/events 0 :adapter/bytes 0})
-
-(defn- reason [^EventSubscription$Termination ended]
-  (case (.name (.reason ended))
-    "CLOSED" :closed "CONTROL_EXIT" :control-exit
-    "TRANSPORT_FAILURE" :transport-failure "PROTOCOL_FAILURE" :protocol-failure :unknown))
+  {:upstream/events (.droppedCount subscription)})
 
 (defn terminal
   "Returns the single recorded stream outcome, or nil until a reader drains it.
-  :control-exit means the client ended; it does not assert daemon death.
-  The original :cause, when present, may contain sensitive information."
+  :reason is :closed after an intentional close, or :ended with the original
+  :cause when the control client ended; the cause may contain sensitive
+  information."
   [^OutputStream stream]
   (:terminal @(.-state stream)))
 
-(defn- end!
-  ([stream failure] (end! stream failure nil))
-  ([^OutputStream stream failure trailing]
-   (let [^EventSubscription subscription (.-subscription stream)
-         ^EventSubscription$Termination ended (.orElse (.termination subscription) nil)
-         outcome (cond-> {:reason (if failure :decode-failure (if ended (reason ended) :unknown))
-                          :cause (or failure (when ended (.orElse (.cause ended) nil)))
-                          :loss (loss-data subscription)
-                          :decoder/resets (:decoder-resets @(.-state stream))}
-                   trailing (assoc :output/trailing trailing))]
-     (:terminal (swap! (.-state stream)
-                       #(if (:terminal %) % (assoc % :terminal outcome)))))))
+(defn- end! [^OutputStream stream]
+  (let [^EventSubscription subscription (.-subscription stream)
+        cause (.orElse (.cause subscription) nil)
+        outcome (cond-> {:reason (if cause :ended :closed)
+                         :loss (loss-data subscription)}
+                  cause (assoc :cause cause))]
+    (:terminal (swap! (.-state stream)
+                      #(if (:terminal %) % (assoc % :terminal outcome))))))
 
-(defn- finish! [^OutputStream stream]
-  (let [^PaneOutputDecoder decoder (.-decoder stream)
-        subscription (.-subscription stream)
-        upstream (.orElse (.termination ^EventSubscription subscription) nil)
-        intentional? (and upstream (= :closed (reason upstream)))]
-    (if (or (nil? decoder) intentional?)
-      (do (when decoder (.reset decoder)) (end! stream nil))
-      (try
-        (when (> (.droppedCount ^EventSubscription subscription) (:loss @(.-state stream)))
-          (.reset decoder)
-          (swap! (.-state stream) #(-> % (assoc :panes #{}) (update :decoder-resets inc))))
-        (let [trailing (into []
-                             (keep (fn [^PaneId pane]
-                                     (let [text (.data (.finish decoder pane))]
-                                       (when (seq text)
-                                         {:pane/id (.value pane) :output/text text}))))
-                             (:panes @(.-state stream)))]
-          (end! stream nil trailing))
-        (catch CharacterCodingException failure (end! stream failure))))))
+(defn- bytes-of [^PaneOutput output]
+  (let [^ByteBuffer buffer (.bytes output)
+        octets (byte-array (.remaining buffer))]
+    (.get buffer octets)
+    octets))
 
-(defn- event-data [^OutputStream stream ^EventSubscription$Delivery delivery]
-  (let [^PaneOutputBytes event (.event delivery)
-        ^PaneOutputDecoder decoder (.-decoder stream)
-        pane (.pane event)
-        state (.-state stream)
-        loss (.droppedCount delivery)
-        reset? (and decoder (not (contains? (:panes @state) pane))
-                    (>= (count (:panes @state)) (:max-panes (.-options stream))))]
-    (when (and decoder (or reset? (> loss (:loss @state))))
-      (.reset decoder)
-      (swap! state #(-> % (assoc :panes #{}) (update :decoder-resets inc))))
-    (let [value (if decoder (.data (.decode decoder delivery)) (.data event))
-          current (swap! state #(cond-> (-> % (update :sequence inc) (assoc :loss loss))
-                                  decoder (update :panes conj pane)))]
-      {:stream/status :event
-       :event/sequence (:sequence current)
-       :tmux/identity (assoc (.-identity stream) :tmux/kind :pane :tmux/id (.value pane))
-       :pane/id (.value pane)
-       (if decoder :output/text :output/bytes) value
-       :loss {:upstream/events loss :upstream/bytes (.droppedBytes delivery)
-              :adapter/events 0 :adapter/bytes 0}
-       :decoder/resets (:decoder-resets current)})))
+(defn- delivery-data [^OutputStream stream delivery]
+  (let [state (.-state stream)
+        ^EventSubscription subscription (.-subscription stream)]
+    (if (instance? Delivery$Gap delivery)
+      {:stream/status :gap
+       :gap/events (.missed ^Delivery$Gap delivery)
+       :loss (loss-data subscription)}
+      (let [^PaneOutput output (.value ^Delivery$Event delivery)
+            utf-8? (= :utf-8 (:encoding (.-options stream)))
+            current (swap! state update :sequence inc)]
+        {:stream/status :event
+         :event/sequence (:sequence current)
+         :tmux/identity (assoc (.-identity stream) :tmux/kind :pane :tmux/id (.value (.pane output)))
+         :pane/id (.value (.pane output))
+         (if utf-8? :output/text :output/bytes) (if utf-8? (.data output) (bytes-of output))
+         :loss (loss-data subscription)}))))
 
 (defn next!
-  "Reads one event, timeout, or terminal map; never uses nil for termination.
-  The optional nonnegative Duration includes waiting for another reader.
-  Sequence numbers order deliveries from this stream. Close wakes a reader.
-  Remote termination drains buffered bytes and reports trailing text in the
-  terminal outcome; intentional close discards buffered output."
+  "Reads one event, gap, timeout, or terminal map; never uses nil for termination.
+  A :gap names the events dropped since the previous read and precedes the
+  events that remain. The optional nonnegative Duration includes waiting for
+  another reader. Sequence numbers order the events of this stream. Close wakes
+  a reader. Termination by the client keeps already delivered events readable;
+  an intentional close discards them."
   ([stream] (next! stream nil))
   ([stream timeout]
    (when-not (and (instance? OutputStream stream) (or (nil? timeout) (duration? timeout)))
@@ -218,23 +192,20 @@
                   (if-not acquired
                     {:stream/status :timeout}
                     (try
-                   (if-let [outcome (terminal stream)]
-                    {:stream/status :terminal :stream/terminal outcome}
-                    (let [^EventSubscription subscription (.-subscription stream)
-                          ^Optional delivery (if budget
-                                     (.nextDelivery subscription
-                                                    (Duration/ofNanos
-                                                     (max 0 (- budget (- (System/nanoTime) started)))))
-                                     (.nextDelivery subscription))]
-                      (if (.isPresent delivery)
-                        (try (event-data stream (.get delivery))
-                             (catch CharacterCodingException failure
-                               (.close subscription)
-                               {:stream/status :terminal :stream/terminal (end! stream failure)}))
-                        (if (.isClosed subscription)
-                          {:stream/status :terminal :stream/terminal (finish! stream)}
-                          {:stream/status :timeout}))))
-                   (finally (.unlock lock)))))))))
+                      (if-let [outcome (terminal stream)]
+                        {:stream/status :terminal :stream/terminal outcome}
+                        (let [^EventSubscription subscription (.-subscription stream)
+                              ^Optional delivery (if budget
+                                                   (.next subscription
+                                                          (Duration/ofNanos
+                                                           (max 0 (- budget (- (System/nanoTime) started)))))
+                                                   (.next subscription))]
+                          (cond
+                            (.isPresent delivery) (delivery-data stream (.get delivery))
+                            (.isClosed subscription) {:stream/status :terminal
+                                                      :stream/terminal (end! stream)}
+                            :else {:stream/status :timeout})))
+                      (finally (.unlock lock)))))))))
 
 (defn close!
   "Closes a connection or subscription. Closing a subscription leaves its

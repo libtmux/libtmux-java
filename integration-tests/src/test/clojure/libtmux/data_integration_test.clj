@@ -2,8 +2,10 @@
   (:require [clojure.edn :as edn]
             [clojure.test :refer [deftest is]]
             [libtmux.data :as data]
+            [libtmux.internal.control-gate :as gate]
             [libtmux.internal.fixture :as fixture])
   (:import [io.github.libtmux Pane_ Server ServerConfig ServerEndpoint SessionId Session_ TmuxVersion Window_]
+           [java.lang AutoCloseable]
            [io.github.libtmux.control ControlClient]
            [io.github.libtmux.query FilterExpr]
            [io.github.libtmux.transport ProcessTransport TmuxTransport]
@@ -34,7 +36,9 @@
          (command! server "link-window" "-s" "alpha:0" "-t" "alpha:9")
          (command! server "link-window" "-s" "alpha:0" "-t" "beta:9")
          (command! server "select-window" "-t" "alpha:9")
-         (with-open [client (ControlClient/attach config (SessionId. "$0"))
+         (with-open [^AutoCloseable client (if (gate/supported? server)
+                                    (ControlClient/attachUnfenced config (SessionId. "$0"))
+                                    (reify AutoCloseable (close [_])))
                      measured (Server/using
                                config
                                (reify TmuxTransport
@@ -42,7 +46,7 @@
                                    (swap! calls inc)
                                    (.execute processes request))
                                  (close [_])))]
-           (let [captured (.capture measured)
+           (let [captured (.captureServer measured)
                  entries (data/from-capture captured)
                  acquired @calls
                  alpha (data/exactly-one
@@ -52,7 +56,7 @@
                  shared (filter #(= (-> links first :window/id) (:window/id %))
                                 (:tmux/windows entries))
                  detached (data/data entries)]
-             (is (= 2 acquired))
+             (is (= 4 acquired) "two data requests, each behind its admission probe")
              (is (= 3 (count shared)))
              (is (= 2 (count links)))
              (is (= 2 (count panes)))
@@ -94,8 +98,10 @@
                                       (TmuxVersion. 3 7 ""))
                            false? nil?)
                          (map :pane/floating? (:tmux/panes entries))))
-             (is (seq (:tmux/clients entries)))
-             (is (= "$0" (get-in entries [:tmux/clients 0 :client/session :session/id])))
+             ;; A client exists only where managed control can attach (tmux 3.7+).
+             (when (instance? ControlClient client)
+               (is (seq (:tmux/clients entries)))
+               (is (= "$0" (get-in entries [:tmux/clients 0 :client/session :session/id]))))
              (is (= detached (edn/read-string (pr-str detached))))
              (dotimes [_ 20]
                (hash entries)
@@ -110,4 +116,4 @@
              (reset! old entries)))
          (is (= (data/data @old) (edn/read-string (pr-str (data/data @old)))))
          (is (thrown? IllegalStateException
-                      (.capture ^Server (:tmux/ref @old)))))))))
+                      (.captureServer ^Server (:tmux/ref @old)))))))))

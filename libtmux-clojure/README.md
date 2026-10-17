@@ -9,7 +9,7 @@ work on the captured values without acquiring new tmux state.
 > **Alpha.** The API will change without notice. Pin an exact version; it is
 > not recommended for production.
 
-Requires JDK 21 or newer and tmux 3.2a through 3.7c.
+Requires JDK 25 or newer and tmux 3.3a through 3.7c; control needs tmux 3.7 or newer.
 
 ## Install
 
@@ -17,7 +17,7 @@ Add the direct coordinate to `deps.edn`:
 
 ```edn
 {:deps {io.github.libtmux/libtmux-clojure
-        {:mvn/version "0.0.1-alpha.12"}}}
+        {:mvn/version "0.0.1-alpha.17"}}}
 ```
 
 The Maven coordinate is `io.github.libtmux:libtmux-clojure`. The Java BOM also
@@ -27,7 +27,7 @@ manages it when a Java build owns versions:
 <dependency>
   <groupId>io.github.libtmux</groupId>
   <artifactId>libtmux-clojure</artifactId>
-  <version>0.0.1-alpha.12</version>
+  <version>0.0.1-alpha.17</version>
 </dependency>
 ```
 

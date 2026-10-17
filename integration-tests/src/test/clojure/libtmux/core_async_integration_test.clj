@@ -4,7 +4,7 @@
             [libtmux.control :as control]
             [libtmux.core :as tmux]
             [libtmux.core-async :as adapter]
-            [libtmux.internal.fixture :as fixture])
+            [libtmux.internal.control-gate :as gate])
   (:import [java.lang AutoCloseable]
            [java.time Duration]))
 
@@ -19,7 +19,7 @@
       (if (= pane (:pane/id event)) event (recur)))))
 
 (deftest raw-bytes-consumer-close-and-borrowed-connection-lifecycle
-  (fixture/with-owned-server
+  (gate/with-control-server
    (fn [{:keys [server]}]
      (with-open [^AutoCloseable connection
                  (control/attach! (:tmux/ref (first (tmux/sessions! server))))

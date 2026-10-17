@@ -3,6 +3,7 @@
             [clojure.test :refer [deftest is]]
             [libtmux.control :as control]
             [libtmux.core :as tmux]
+            [libtmux.internal.control-gate :as gate]
             [libtmux.internal.fixture :as fixture])
   (:import [java.lang AutoCloseable ProcessHandle]
            [java.nio.file Files Path]
@@ -22,7 +23,7 @@
         (if (= pane (:pane/id event)) event (recur))))))
 
 (deftest protocol-reply-precedes-a-deferred-completion-marker
-  (fixture/with-owned-server
+  (gate/with-control-server
    (fn [{:keys [server socket binary]}]
      (let [session (first (tmux/sessions! server))
            marker (.resolveSibling ^Path socket "completed")
@@ -41,13 +42,12 @@
              (is (= ["aligned"] (:reply/lines (control/send! connection ["display-message" "-p" "aligned"]))))))
          (finally (Files/deleteIfExists marker)))))))
 
-(deftest stream-preserves-split-utf8-and-independent-loss
-  (fixture/with-owned-server
+(deftest stream-preserves-split-utf8-bytes-and-text
+  (gate/with-control-server
    (fn [{:keys [server]}]
      (with-open [^AutoCloseable connection (control/attach! (:tmux/ref (first (tmux/sessions! server))))
                  ^AutoCloseable raw (control/subscribe! connection {:capacity 32})
-                 ^AutoCloseable text (control/subscribe! connection {:encoding :utf-8 :malformed :replace})
-                 ^AutoCloseable idle (control/subscribe! connection {:capacity 1 :max-bytes 1})]
+                 ^AutoCloseable text (control/subscribe! connection {:encoding :utf-8 :capacity 32})]
        (let [reply (control/send! connection
                                   ["new-window" "-P" "-F" "#{pane_id}"
                                    "stty -echo; printf 'READY'; read -r start; printf '\\303'; read -r more; printf '\\251\\377'; read -r finish"])
@@ -56,21 +56,20 @@
          (is (= "READY" (:output/text (pane-event! text pane))))
          (control/send! connection ["send-keys" "-t" pane "Enter"])
          (is (= [195] (mapv #(bit-and 255 %) (:output/bytes (pane-event! raw pane)))))
-         (is (= "" (:output/text (pane-event! text pane))))
          (control/send! connection ["send-keys" "-t" pane "Enter"])
          (is (= [169 255] (mapv #(bit-and 255 %) (:output/bytes (pane-event! raw pane)))))
+         ;; The text subscription decodes per pane: the cut character is withheld, then arrives
+         ;; whole with its tail.
+         (is (= "" (:output/text (pane-event! text pane))))
          (let [event (pane-event! text pane)]
-           (is (= "é�" (:output/text event)))
-           (is (= 0 (get-in event [:loss :upstream/events])))
+           (is (= "é\\xff" (:output/text event)))
            (is (= pane (get-in event [:tmux/identity :tmux/id]))))
-         (control/close! idle)
-         (let [ended (:stream/terminal (control/next! idle limit))]
-           (is (= :closed (:reason ended)))
-           (is (pos? (get-in ended [:loss :upstream/events]))))
+         (control/close! text)
+         (is (= :closed (get-in (control/next! text limit) [:stream/terminal :reason])))
          (is (= :complete (:reply/status (control/send! connection ["display-message" "-p" "alive"])))))))))
 
 (deftest close-wakes-reader-and-preserves-borrowed-connection
-  (fixture/with-owned-server
+  (gate/with-control-server
    (fn [{:keys [server]}]
      (with-open [^AutoCloseable connection (control/attach! (:tmux/ref (first (tmux/sessions! server))))
                  ^AutoCloseable stream (control/subscribe! connection)]
@@ -91,12 +90,12 @@
          (is (= (control/terminal stream) (:stream/terminal @outcome)))
          (is (= :complete (:reply/status (control/send! connection ["display-message" "-p" "still-alive"])))))))))
 
-(deftest stalled-subscription-enforces-event-and-byte-bounds
-  (fixture/with-owned-server
+(deftest stalled-subscription-reports-a-gap-and-keeps-the-newest-events
+  (gate/with-control-server
    (fn [{:keys [server socket binary]}]
      (with-open [^AutoCloseable connection (control/attach! (:tmux/ref (first (tmux/sessions! server))))
-                 ^AutoCloseable anchor (control/subscribe! connection {:capacity 16 :max-bytes 64})
-                 ^AutoCloseable stalled (control/subscribe! connection {:capacity 2 :max-bytes 4})]
+                 ^AutoCloseable anchor (control/subscribe! connection {:capacity 16})
+                 ^AutoCloseable stalled (control/subscribe! connection {:capacity 2})]
        (let [tmux-command (str (shell-quote binary) " -S " (shell-quote socket))
              script (str "stty -echo; printf aa; " tmux-command " wait-for one; "
                          "printf bbb; " tmux-command " wait-for two; "
@@ -111,17 +110,23 @@
                                   ["three" "12345"] ["four" "z"]]]
            (control/send! connection ["wait-for" "-S" gate])
            (is (= expected (String. ^bytes (:output/bytes (pane-event! anchor pane)) "UTF-8"))))
-         (let [retained (pane-event! stalled pane)]
-           ;; Adding the oversized payload first evicts `cccc`, then drops
-           ;; itself; only the final byte fits in the bounded buffer.
-           (is (= "z" (String. ^bytes (:output/bytes retained) "UTF-8")))
-           (is (= 4 (get-in retained [:loss :upstream/events])))
-           (is (= 14 (get-in retained [:loss :upstream/bytes])))
-           (is (= :timeout (:stream/status
-                            (control/next! stalled (Duration/ofMillis 40)))))))))))
+         ;; The stalled reader missed the oldest events: first the gap, then what remains.
+         (let [gap (control/next! stalled limit)]
+           (is (= :gap (:stream/status gap)))
+           (is (pos? (:gap/events gap))))
+         ;; What the buffer kept is the newest events: drain it, and the last is the final write.
+         (let [drained (loop [out []]
+                         (let [event (control/next! stalled (Duration/ofMillis 100))]
+                           (if (= :event (:stream/status event))
+                             (recur (conj out event))
+                             out)))
+               text (mapv #(String. ^bytes (:output/bytes %) "UTF-8")
+                          (filter #(= pane (:pane/id %)) drained))]
+           (is (<= (count drained) 2))
+           (is (= "z" (last text)) "the newest event is kept")))))))
 
 (deftest pane-death-does-not-end-session-output-stream
-  (fixture/with-owned-server
+  (gate/with-control-server
    (fn [{:keys [server]}]
      (with-open [^AutoCloseable connection (control/attach! (:tmux/ref (first (tmux/sessions! server))))
                  ^AutoCloseable stream (control/subscribe! connection)]
@@ -139,12 +144,16 @@
          (is (= :complete (:reply/status (control/send! connection ["kill-window" "-t" pane]))))
          (is (= :failed (:reply/status (control/send! connection ["list-panes" "-t" pane]))))
          (is (= :complete (:reply/status (control/send! connection ["send-keys" "-t" anchor "Enter"]))))
-         (is (= "alive" (String. ^bytes (:output/bytes (pane-event! stream anchor)) "UTF-8")))
+         (is (loop [seen ""]
+               (let [seen (str seen (String. ^bytes (:output/bytes (pane-event! stream anchor)) "UTF-8"))]
+                 (cond (.contains ^String seen "alive") true
+                       (< 64 (count seen)) false
+                       :else (recur seen)))))
          (is (= :complete (:reply/status
                            (control/send! connection ["display-message" "-p" "connection-alive"])))))))))
 
 (deftest remote-server-loss-drains-buffer-and-preserves-terminal-cause
-  (fixture/with-owned-server
+  (gate/with-control-server
    (fn [{:keys [server]}]
      (with-open [^AutoCloseable connection (control/attach! (:tmux/ref (first (tmux/sessions! server))))
                  ^AutoCloseable anchor (control/subscribe! connection)
@@ -159,13 +168,13 @@
          (tmux/raw! server ["kill-server"])
          (is (= "buffered" (String. ^bytes (:output/bytes (pane-event! buffered pane)) "UTF-8")))
          (let [terminal (:stream/terminal (control/next! buffered limit))]
-           (is (#{:control-exit :transport-failure} (:reason terminal)))
+           (is (= :ended (:reason terminal)))
            (is (some? (:cause terminal)))
            (is (= terminal (control/terminal buffered)))))))))
 
 
 (deftest closing-control-reclaims-only-its-authenticated-client
-  (fixture/with-owned-server
+  (gate/with-control-server
    (fn [{:keys [server socket]}]
      (doseq [exceptional? [false true]]
        (let [owned (atom nil)
@@ -184,7 +193,7 @@
                (is (.isAlive process))
                (is (= (.pid (ProcessHandle/current)) (.pid ^ProcessHandle parent)))
                (is (some #{"-C"} argv))
-               (is (some #(fixture/same-socket-path? socket %) argv))
+               (is (some #{"attach-session"} argv))
                (reset! owned {:process process :started started :argv argv
                               :exit (.onExit process)})
                (when exceptional? (throw expected))))
@@ -197,7 +206,7 @@
            (is (seq (tmux/sessions! server)))))))))
 
 (deftest live-competing-readers-deliver-each-payload-once-and-share-termination
-  (fixture/with-owned-server
+  (gate/with-control-server
    (fn [{:keys [server socket binary]}]
      (with-open [^AutoCloseable connection (control/attach! (:tmux/ref (first (tmux/sessions! server))))
                  ^AutoCloseable anchor (control/subscribe! connection)
@@ -247,7 +256,7 @@
                (is (apply < 0 (map :event/sequence (:events reader)))))
              (is (= (:terminal (first finished)) (:terminal (second finished))))
              (is (= (control/terminal shared) (:terminal (first finished))))
-             (is (#{:control-exit :transport-failure} (:reason (:terminal (first finished))))))
+             (is (= :ended (:reason (:terminal (first finished))))))
            (finally
              (.countDown start)
              (control/close! shared)

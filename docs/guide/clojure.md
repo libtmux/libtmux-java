@@ -249,8 +249,14 @@ closing a borrowed server or executor is never an adapter side effect. Tasks
 have explicit admission, cancellation and deadline results, and expose a Java
 `CompletionStage` for Manifold or other JVM integration.
 
-Control observations have an explicit owner and terminal result. A bounded
-consumer can lose events; an upstream gap and adapter loss remain distinct.
+Control needs tmux 3.7 or newer. On an older daemon `attach!` is
+refused before any client exists, with `:tmux/error` `:tmux/unsupported-feature`
+and `:tmux/dispatch` `:not-dispatched`; the rest of the façade keeps the 3.3a
+minimum. Control observations have an explicit owner and terminal result. A
+bounded consumer can lose events: the next read is a `:gap` naming how many were
+dropped, ahead of the events that remain, and an adapter loss stays distinct
+from it. Text subscriptions are decoded per pane by the Java client, so a
+character cut between two chunks arrives whole.
 Do not model a subscription as an unbounded lazy sequence, and do not perform
 blocking observation work in a core.async `go` block. Add the optional
 `io.github.libtmux/libtmux-clojure-core-async` dependency only for
@@ -259,7 +265,7 @@ blocking observation work in a core.async `go` block. Add the optional
 An empty slow stream reports a timeout without becoming terminal. A later event
 remains readable from the same owned stream.
 
-<!-- clojure-snippet: fixture -->
+<!-- clojure-snippet: control -->
 ```clojure
 (require '[libtmux.control :as control]
          '[libtmux.core :as tm])
@@ -288,7 +294,7 @@ remains readable from the same owned stream.
 ;; => [true true]
 ```
 
-<!-- clojure-snippet: fixture -->
+<!-- clojure-snippet: control -->
 ```clojure
 (require '[clojure.core.async :as async]
          '[libtmux.control :as control]
@@ -355,8 +361,8 @@ explicitly when ownership requires it.
 
 ## Compatibility and Java interop
 
-The façade supports JDK 21 or newer and the repository's tmux 3.2a through 3.7c
-matrix. It is JVM-only: it does not run in ClojureScript, Babashka or a native
+The façade supports JDK 25 or newer, the floor of the Java core it wraps, and the repository's tmux 3.3a through 3.7c
+matrix; control needs tmux 3.7 or newer. It is JVM-only: it does not run in ClojureScript, Babashka or a native
 image. Existing Java handles, `FilterExpr`, the optional Jackson codec and Java
 async types remain directly usable when the Clojure functions do not cover an
 operation.

@@ -18,16 +18,15 @@
                                   (case (int (swap! calls inc))
                                     1 {:stream/status :timeout}
                                     2 {:stream/status :event :output/bytes (byte-array [1 2])
-                                       :loss {:upstream/events 3 :upstream/bytes 4
-                                              :adapter/events 0 :adapter/bytes 0}}
+                                       :loss {:upstream/events 3 :adapter/events 0}}
                                     {:stream/status :terminal
-                                     :stream/terminal {:reason :control-exit}}))
+                                     :stream/terminal {:reason :ended}}))
                   control/close! (fn [_] (.countDown closed))]
       (let [owner (adapter/observe! ::connection)]
         (is (= [1 2] (vec (:output/bytes (take-within (adapter/events owner))))))
-        (is (= :control-exit (:reason (take-within (adapter/terminal owner)))))
+        (is (= :ended (:reason (take-within (adapter/terminal owner)))))
         (is (.await closed 500 TimeUnit/MILLISECONDS))
-        (is (= {:events 1 :bytes 1048576} (adapter/limits owner)))))))
+        (is (= {:events 1} (adapter/limits owner)))))))
 
 (deftest consumer-close-reports-adapter-stop-after-a-java-read-returns
   (let [entered (CountDownLatch. 1)
