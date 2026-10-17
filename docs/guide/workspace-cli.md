@@ -316,6 +316,10 @@ the `default`, `minimal`, `window`, `pane` and `verbose` presets, or a template.
 
 - Python shell commands and extension workspaces use `TMUX_WORKSPACE_PYTHON`
   (default `python3`) with tmuxp 1.74.0 installed.
+- The interpreter's libtmux must also declare
+  `TMUX_OPTIONAL_FEATURE_POLICY_VERSION >= 2`. No released libtmux does yet; it
+  comes with [tmux-python/libtmux#780](https://github.com/tmux-python/libtmux/pull/780).
+  Until then, install libtmux from that source, or skip `shell` and extensions.
 - The version is checked before any input workspace changes.
 - Nonempty `plugins`, `workspace_builder`, or `workspace_builder_paths` select
   the bridge.
@@ -354,8 +358,10 @@ the `default`, `minimal`, `window`, `pane` and `verbose` presets, or a template.
   mutation and cleanup behavior.
 
 The Python bridge requires tmuxp 1.74.0 and a Python libtmux whose minimum is
-tmux 3.3a or newer. It refuses an older backend before running extensions or
-shell code; see the [migration notes](../../MIGRATION.md).
+tmux 3.3a or newer and whose integer optional-feature policy marker is at least
+2. Both the runtime probe and the child check it before extension or shell code
+runs; see the [migration notes](../../MIGRATION.md). Native loading retains the
+core floor and does not acquire control.
 
 ## Subprocesses
 

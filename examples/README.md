@@ -24,6 +24,9 @@ they are the part of a project nobody compiles and everybody reads first.
 | [`ResourceBoundaries`](src/main/scala/io/github/libtmux/scaladsl/examples/ResourceBoundaries.scala) | Scala, Cats: borrowing a Java client, and cancelling one dispatched wait |
 | [`WatchWithOx`](src/main/scala/io/github/libtmux/scaladsl/examples/WatchWithOx.scala) | Scala, Ox: a live view as a `Flow` in a supervised fork, watching a window appear |
 
+Control and live-view examples require tmux 3.7+ and a carrier-owned
+pinned socket. Other examples retain the core 3.3a minimum.
+
 ## Run one
 
 The [common API programs](api/README.md) provide separate complete Java,
