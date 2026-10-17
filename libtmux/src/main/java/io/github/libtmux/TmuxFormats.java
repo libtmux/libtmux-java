@@ -57,12 +57,14 @@ public final class TmuxFormats {
      * tmux printed it.
      */
     static String printed(String line, TmuxVersion version) {
-        return version.equals(DOLLAR_ESCAPED) ? ESCAPED_DOLLAR.matcher(line).replaceAll("") : line;
+        return version.sameRelease(DOLLAR_ESCAPED)
+                ? ESCAPED_DOLLAR.matcher(line).replaceAll("")
+                : line;
     }
 
     /** As {@link #printed(String, TmuxVersion)}, for every line. */
     static java.util.List<String> printed(java.util.List<String> lines, TmuxVersion version) {
-        return version.equals(DOLLAR_ESCAPED)
+        return version.sameRelease(DOLLAR_ESCAPED)
                 ? lines.stream().map(line -> printed(line, version)).toList()
                 : lines;
     }

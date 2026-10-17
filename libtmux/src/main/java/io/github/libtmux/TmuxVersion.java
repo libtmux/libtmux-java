@@ -16,13 +16,14 @@ import java.util.regex.Pattern;
  * nothing later's patches guarantee, so it sorts strictly between the two — above every patch of the
  * release before it, below the release it names and every patch of that.
  *
- * <p>A release candidate, {@code 3.8-rc}, compares equal to the release it names. tmux freezes
- * features at the candidate, so it has everything the release will and differs only in fixes —
- * measured, not assumed: a 3.8 candidate writes JSON layouts and empties a dead pane's pid exactly
- * as 3.8 does, and a feature gated on 3.8 works on it. It is not {@code equals} to the release, and
- * it is written back exactly as tmux wrote it, which matters beyond display: every capture is
- * fenced on the version tmux reports, and a candidate printed as {@code 3.8} failed that fence on
- * every read.
+ * <p>A release candidate, {@code 3.8-rc}, orders below the release it names ({@code next-3.8 <
+ * 3.8-rc < 3.8-rc2 < 3.8 < 3.8a}), so {@link #compareTo} agrees with {@link #equals}. tmux freezes
+ * features at the candidate, so a feature gate asks {@link #atLeast}, which counts a candidate as its
+ * release: a 3.8 candidate writes JSON layouts and empties a dead pane's pid exactly as 3.8 does. A
+ * gate on one release's own bug asks {@link #sameRelease}. A support floor names a release and uses
+ * the strict order. The version is written back exactly as tmux wrote it, which matters beyond
+ * display: every capture is fenced on the version tmux reports, and a candidate printed as {@code
+ * 3.8} failed that fence on every read.
  *
  * @param major the major number
  * @param minor the minor number
@@ -35,7 +36,7 @@ import java.util.regex.Pattern;
 public record TmuxVersion(int major, int minor, String patch, boolean development, String preRelease)
         implements Comparable<TmuxVersion> {
 
-    private static final Pattern RELEASE = Pattern.compile("^(next-)?(\\d+)\\.(\\d+)([a-z]*)(?:-(rc\\d*))?");
+    private static final Pattern RELEASE = Pattern.compile("(next-)?(\\d+)\\.(\\d+)([a-z]?)(?:-(rc\\d*))?");
 
     public TmuxVersion {
         Objects.requireNonNull(patch, "patch");
@@ -61,7 +62,7 @@ public record TmuxVersion(int major, int minor, String patch, boolean developmen
      */
     public static TmuxVersion parse(String reported) {
         Matcher release = RELEASE.matcher(reported);
-        if (!release.find()) {
+        if (!release.matches()) {
             throw new IllegalArgumentException("not a tmux version: " + reported);
         }
         return new TmuxVersion(
@@ -72,13 +73,36 @@ public record TmuxVersion(int major, int minor, String patch, boolean developmen
                 release.group(5) == null ? "" : release.group(5));
     }
 
-    /** Whether this version has everything the given one has. */
+    /**
+     * Whether this version has everything the given one has.
+     *
+     * <p>A release candidate counts as its release here, because a feature gate asks what the build
+     * ships. That is the one place this differs from {@link #compareTo}, which orders a candidate
+     * below its release.
+     */
     public boolean atLeast(TmuxVersion other) {
-        return compareTo(other) >= 0;
+        return compare(other, false) >= 0;
     }
 
+    /**
+     * Whether this is the named release, a release candidate for it included. {@code next-} builds
+     * and other releases are not. For a gate on one release's own bug.
+     */
+    public boolean sameRelease(TmuxVersion other) {
+        return major == other.major
+                && minor == other.minor
+                && patch.equals(other.patch)
+                && !development
+                && !other.development;
+    }
+
+    /** {@code next-X.Y < X.Y-rc < X.Y-rcN < X.Y < X.Ya}, so it agrees with {@link #equals}. */
     @Override
     public int compareTo(TmuxVersion other) {
+        return compare(other, true);
+    }
+
+    private int compare(TmuxVersion other, boolean candidates) {
         int byMajor = Integer.compare(major, other.major);
         if (byMajor != 0) {
             return byMajor;
@@ -89,12 +113,27 @@ public record TmuxVersion(int major, int minor, String patch, boolean developmen
         }
         if (development != other.development) {
             // A next-M.m build has not shipped everything M.m's own patches will carry, so it
-            // sorts below the release it names, whatever either side's patch letter is. A release
-            // candidate is not ordered apart from its release at all: features are frozen at it.
+            // sorts below the release it names, whatever either side's patch letter is.
             return development ? -1 : 1;
         }
         // An unlettered release precedes its own patches, which empty-string ordering already gives.
-        return patch.compareTo(other.patch);
+        int byPatch = patch.compareTo(other.patch);
+        if (byPatch != 0 || !candidates) {
+            return byPatch;
+        }
+        return Integer.compare(candidate(preRelease), candidate(other.preRelease));
+    }
+
+    /** A release outranks every candidate; a bare {@code rc} precedes {@code rc1}, {@code rc2}, ... */
+    private static int candidate(String preRelease) {
+        if (preRelease.isEmpty()) {
+            return Integer.MAX_VALUE;
+        }
+        try {
+            return preRelease.length() <= 2 ? 0 : Math.max(1, Integer.parseInt(preRelease.substring(2)));
+        } catch (NumberFormatException unnumbered) {
+            return 0;
+        }
     }
 
     @Override
