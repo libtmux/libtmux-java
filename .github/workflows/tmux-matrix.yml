@@ -27,7 +27,7 @@ jobs:
   lanes:
     # Preview lanes carry their own label: this is the only place a reader sees which entries the
     # supported range does not include, since the README and the matrix property list only the rest.
-    name: tmux ${{ matrix.tmux }}${{ matrix.experimental && ' (preview, not supported)' || '' }}
+    name: tmux ${{ matrix.tmux }}${{ matrix.experimental && ' (preview, not supported)' || '' }}${{ matrix.rejection && ' (must be refused)' || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.tmux == 'master' && 25 || 15 }}
     continue-on-error: ${{ matrix.experimental == true }}
@@ -43,8 +43,29 @@ jobs:
         # candidate for a release not yet cut, and master is upstream's development branch, not a
         # version. Both may fail and neither moves the README's claimed range.
         include:
+          # Below the floor, matching the plugin's `rejectionLanes`: the real binary must refuse
+          # every call and leave a sentinel session, option and buffer untouched. Each also runs
+          # as the daemon behind a 3.3a client, the only way a 3.0a or 3.1c answer reaches the library.
+          - tmux: '3.0a'
+            rejection: true
+            client: '3.3a'
+          - tmux: '3.1c'
+            rejection: true
+            client: '3.3a'
+          - tmux: '3.2a'
+            rejection: true
+            client: '3.3a'
+          - tmux: '3.3'
+            rejection: true
+            client: '3.3a'
+          - tmux: '3.8'
+            experimental: true
           - tmux: '3.8-rc2'
             experimental: true
+            commit: 17d32ae40d28f1548d4d75b32161ffdc69305482
+          - tmux: '3.8-rc3'
+            experimental: true
+            commit: 331611b632ae3b9306d57dc44f21ca05f567b878
           - tmux: master
             experimental: true
     steps:
@@ -69,7 +90,7 @@ jobs:
       # master has no release tarball to build from a tag, so it is checked out and autoreconf'd
       # instead. autoconf and automake are needed only for that.
       - name: Build dependencies for a git checkout
-        if: matrix.tmux == 'master'
+        if: matrix.tmux == 'master' || matrix.commit
         run: sudo apt-get install --no-install-recommends -y autoconf automake
 
       # Keyed by version alone: a released tarball does not change, so a hit is the same binary the
@@ -84,7 +105,7 @@ jobs:
           key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
 
       - name: Build tmux ${{ matrix.tmux }}
-        if: matrix.tmux != 'master' && steps.tmux-cache.outputs.cache-hit != 'true'
+        if: matrix.tmux != 'master' && !matrix.commit && steps.tmux-cache.outputs.cache-hit != 'true'
         env:
           LANE: ${{ matrix.tmux }}
         run: |
@@ -95,6 +116,48 @@ jobs:
           tar -xzf "$work/tmux.tar.gz" -C "$work"
           cd "$work/tmux-$LANE"
           ./configure --prefix="$HOME/tmux-builds/$LANE"
+          make -j"$(nproc)"
+          make install
+
+      # The 3.8 release candidates have no tarball and their tags are gone upstream, so each is
+      # fetched by the commit it was tagged at.
+      - name: Build tmux ${{ matrix.tmux }} from its commit
+        if: matrix.commit && steps.tmux-cache.outputs.cache-hit != 'true'
+        env:
+          LANE: ${{ matrix.tmux }}
+          COMMIT: ${{ matrix.commit }}
+        run: |
+          set -eux
+          git init "$HOME/tmux-src-$LANE"
+          cd "$HOME/tmux-src-$LANE"
+          git fetch --depth 1 https://github.com/tmux/tmux.git "$COMMIT"
+          git checkout --detach FETCH_HEAD
+          sh autogen.sh
+          ./configure --prefix="$HOME/tmux-builds/$LANE"
+          make -j"$(nproc)"
+          make install
+
+      # The daemon of a 3.0a or 3.1c lane is reached by this client.
+      - name: Restore tmux ${{ matrix.client }} for the client
+        if: matrix.client
+        id: client-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/tmux-builds/${{ matrix.client }}
+          key: tmux-${{ matrix.client }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build tmux ${{ matrix.client }} for the client
+        if: matrix.client && steps.client-cache.outputs.cache-hit != 'true'
+        env:
+          CLIENT: ${{ matrix.client }}
+        run: |
+          set -eux
+          work="$(mktemp -d)"
+          curl -fsSL -o "$work/tmux.tar.gz" \
+            "https://github.com/tmux/tmux/releases/download/$CLIENT/tmux-$CLIENT.tar.gz"
+          tar -xzf "$work/tmux.tar.gz" -C "$work"
+          cd "$work/tmux-$CLIENT"
+          ./configure --prefix="$HOME/tmux-builds/$CLIENT"
           make -j"$(nproc)"
           make install
 
@@ -114,8 +177,20 @@ jobs:
       - name: The lane runs the tmux it is named after
         env:
           LANE: ${{ matrix.tmux }}
+          CLIENT: ${{ matrix.client }}
         run: |
-          "$HOME/tmux-builds/$LANE/bin/tmux" -V
+          check() {
+            reported="$("$HOME/tmux-builds/$1/bin/tmux" -V)"
+            echo "$1: $reported"
+            if [ "$1" = master ]; then
+              case "$reported" in "tmux next-"*) ;; *) echo "::error::$1 reports $reported"; exit 1 ;; esac
+            elif [ "${reported#* }" != "$1" ]; then
+              echo "::error::the $1 build reports $reported"
+              exit 1
+            fi
+          }
+          check "$LANE"
+          if [ -n "$CLIENT" ]; then check "$CLIENT"; fi
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:

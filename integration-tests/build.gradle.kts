@@ -12,6 +12,13 @@ plugins {
     `java-test-fixtures`
 }
 
+// The classes the rejection lanes of the tmux matrix run in this module.
+extra["libtmuxRejectionTests"] =
+    listOf(
+        "io.github.libtmux.it.VersionCheckLaneIntegrationTest",
+        "io.github.libtmux.scaladsl.OldDaemonControlSuite",
+    )
+
 dependencies {
     testImplementation(project(":libtmux"))
     testImplementation(project(":libtmux-jackson"))

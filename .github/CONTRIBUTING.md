@@ -237,6 +237,20 @@ whole real-tmux suite runs against every one of those releases, and each lane
 checks it really ran the tmux it is named after. Moving the range means moving
 `workflows/tmux-matrix.yml` and the README together.
 
+Releases below the floor have rejection lanes that run only the version check
+against the real binary. Each lane also puts a 3.3a client in front of the old
+daemon through `libtmux.tmux.client`, because a client as old as 3.0a or 3.1c
+only ever rejects `-N`, and the daemon's own answers reach the library no other
+way. The lane replaces a daemon the library already knows with the old one on
+the same socket. Each lane passes the release it names (`libtmux.tmux.expected`)
+and whether it is a rejection lane (`libtmux.tmux.rejection`), and the version
+check fails when the binary reports another release or the wrong side of the
+floor; the workflow step that prints each version fails the same way. A module
+lists the classes its rejection lanes run in `libtmuxRejectionTests`, and the
+lane fails unless every one of them produced a result. The 3.8 release
+candidates are preview lanes built from the commit their tag named, since
+upstream removed the tags.
+
 **The API carries no compatibility guarantee.** This project is alpha: releases
 carry an `-alpha` prerelease tag, any release may change or remove exported
 identifiers without a deprecation period, and only the newest release is
