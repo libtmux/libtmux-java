@@ -220,7 +220,7 @@ final class NamedServerFixtureTest {
                         assertTrue(String.valueOf(refused.getMessage()).contains("replacement"));
                         assertTrue(replacement.hasSession("race-replacement"));
                         assertEquals(
-                                List.of("run-shell", "if-shell", "run-shell", "if-shell"),
+                                List.of("run-shell", "if-shell", "if-shell"),
                                 requests.stream()
                                         .map(request ->
                                                 request.commands().getFirst().getFirst())

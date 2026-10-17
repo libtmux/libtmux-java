@@ -101,19 +101,23 @@ final class ServerMirrorIntegrationTest {
         ServerConfig counted = fixture.config().toBuilder()
                 .observer(report -> dispatches.incrementAndGet())
                 .build();
-        try (Server server = Server.open(counted);
-                ServerMirror mirror = ServerMirror.open(server.sessions().get(0))) {
-            Window window = server.sessions().get(0).windows().get(0);
-            long epoch = mirror.current().epoch();
-            int before = dispatches.get();
+        // No shell, so no prompt retitles the pane and bumps the epoch under the test.
+        fixture.newSession(s -> s.named("quiet").firstWindowNamed("quiet").running("sleep", "600"));
+        try (Server server = Server.open(counted)) {
+            Session quiet = server.session("quiet").orElseThrow();
+            try (ServerMirror mirror = ServerMirror.open(quiet)) {
+                Window window = quiet.windows().get(0);
+                long epoch = mirror.current().epoch();
+                int before = dispatches.get();
 
-            server.cmd("rename-window", "-t", window.id().value(), window.name());
+                server.cmd("rename-window", "-t", window.id().value(), window.name());
 
-            // The rename and the two rebuild requests each include a version probe.
-            assertTrue(
-                    Await.until(() -> dispatches.get() >= before + 6),
-                    "tmux announced nothing, so this proves nothing");
-            assertEquals(Optional.empty(), mirror.awaitNewer(epoch, Duration.ofMillis(300)));
+                // The rename and the two rebuild requests, each on a daemon the version check already knows.
+                assertTrue(
+                        Await.until(() -> dispatches.get() >= before + 3),
+                        "tmux announced nothing, so this proves nothing");
+                assertEquals(Optional.empty(), mirror.awaitNewer(epoch, Duration.ofMillis(300)));
+            }
         }
     }
 

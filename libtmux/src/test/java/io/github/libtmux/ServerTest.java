@@ -561,7 +561,7 @@ final class ServerTest {
             assertTrue(snapshot.windows().isEmpty());
             assertTrue(snapshot.panes().isEmpty());
             assertTrue(snapshot.clients().isEmpty());
-            assertEquals(4, requests.get(), "two data invocations each have one version probe");
+            assertEquals(3, requests.get(), "two data invocations share one version probe");
             assertEquals(List.of(), server.sessions());
             assertEquals(List.of(), server.windows());
             assertEquals(List.of(), server.panes());

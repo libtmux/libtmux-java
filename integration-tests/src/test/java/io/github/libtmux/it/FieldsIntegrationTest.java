@@ -46,7 +46,7 @@ final class FieldsIntegrationTest {
     }
 
     /**
-     * Names are read together, after one version probe. Reading one name per process would observe
+     * Names are read together, after one version probe for the daemon. Reading one name per process would observe
      * them at different moments.
      */
     @Test
@@ -61,8 +61,8 @@ final class FieldsIntegrationTest {
 
             before = tmux.sent().size();
             server.paneFields(List.of("pane_tty", "pane_pid", "pane_current_command"));
-            assertEquals(2, tmux.sent().size() - before, "one version probe and one read for every pane");
-            assertTrue(VersionProbes.is(tmux.sent().get(before)));
+            assertEquals(1, tmux.sent().size() - before, "the daemon is known, so one read for every pane");
+            assertTrue(!VersionProbes.is(tmux.sent().get(before)));
         }
     }
 }

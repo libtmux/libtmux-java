@@ -30,10 +30,10 @@ final class SnapshotIntegrationTest {
 
     /**
      * One request asks who the server is; one runs the four listings as a group, fenced against
-     * that answer. Both requests have a separate version probe.
+     * that answer. The daemon's version is checked once for both.
      */
     @Test
-    void aCaptureCostsTwoDataRequestsAndTheirVersionProbes(Server server) {
+    void aCaptureCostsTwoDataRequestsAndOneVersionProbe(Server server) {
         AtomicInteger commands = new AtomicInteger();
         AtomicInteger probes = new AtomicInteger();
         try (ProcessTransport processes = new ProcessTransport()) {
@@ -54,8 +54,8 @@ final class SnapshotIntegrationTest {
                 ServerSnapshot captured = measured.snapshot();
 
                 assertEquals(1, captured.sessions().size());
-                assertEquals(4, commands.get(), "one identity read, grouped listings, and their version probes");
-                assertEquals(2, probes.get());
+                assertEquals(3, commands.get(), "one identity read, grouped listings, and one version probe");
+                assertEquals(1, probes.get());
             }
         }
     }

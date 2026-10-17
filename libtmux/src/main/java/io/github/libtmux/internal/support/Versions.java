@@ -19,11 +19,16 @@ import io.github.libtmux.transport.TmuxTransport;
 import java.io.File;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 
 /** The tmux version check shared by command dispatch and control-client startup. */
 public final class Versions {
@@ -36,6 +41,23 @@ public final class Versions {
 
     private Versions() {}
 
+    /**
+     * What the version check last learned about each daemon, so a call does not spend a process asking again.
+     * The fence on every dispatch is what keeps it honest: a daemon that has been replaced fails the
+     * fence before any command runs, and the entry is dropped and read again.
+     */
+    private static final Map<TmuxTransport, Map<List<String>, String>> KNOWN =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
+    /** The fence refused: the daemon is not the one checked. Nothing ran. */
+    private static final class Replaced extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        Replaced() {
+            super("the tmux daemon version changed before dispatch", null, false, false);
+        }
+    }
+
     /** Checks the live daemon before dispatch and fences the requested commands on that version. */
     public static CommandResult execute(TmuxTransport transport, CommandRequest request, boolean waiting) {
         long started = System.nanoTime();
@@ -43,11 +65,39 @@ public final class Versions {
                 || request.commands().equals(List.of(List.of("-h")))) {
             return transport.execute(request);
         }
+        String known = recall(transport, request);
+        if (known != null) {
+            try {
+                CommandResult result = dispatchChecked(transport, request, known, started, waiting);
+                // A daemon that has gone answers without running anything, so asking again is safe.
+                if (!gone(result)) return result;
+            } catch (Replaced replaced) {
+                // Nothing ran; read the daemon again below.
+            }
+            forget(transport, request);
+        }
+        // A replacement between the read and the dispatch means the read was stale, and nothing ran:
+        // read once more. A refused version surfaces from that read as the version error it is.
+        for (int attempt = 0; ; attempt++) {
+            try {
+                return checkVersion(transport, request, waiting, started);
+            } catch (Replaced replaced) {
+                forget(transport, request);
+                if (attempt == 1) {
+                    throw new TargetGoneException("the tmux daemon version changed before dispatch");
+                }
+            }
+        }
+    }
+
+    private static CommandResult checkVersion(
+            TmuxTransport transport, CommandRequest request, boolean waiting, long started) {
         Probe probe = probe(transport, request);
         String version;
         if (probe.version().isPresent()) {
             version = probe.version().get();
             require(version);
+            remember(transport, request, version);
         } else if (absent(probe.result())) {
             if (noStart(request.endpoint()) || request.idempotence() == Idempotence.IDEMPOTENT || cleanup(request)) {
                 CommandRequest absent = new CommandRequest(
@@ -55,18 +105,51 @@ public final class Versions {
                         request.commands(),
                         remaining(request, started),
                         request.input());
-                return dispatch(transport, absent, prefix(request.commands(), "0"), absent.timeout(), waiting);
+                try {
+                    return dispatch(transport, absent, prefix(request.commands(), "0"), absent.timeout(), waiting);
+                } catch (Replaced appeared) {
+                    throw new TargetGoneException("the tmux daemon version changed before dispatch");
+                }
             }
             version = binaryVersion(transport, request, remaining(request, started));
         } else {
             throw rejected(request, probe.result());
         }
-        CommandRequest checked = probe.version().isPresent()
-                ? new CommandRequest(
-                        withoutStarting(request.endpoint()), request.commands(), request.timeout(), request.input())
-                : request;
-        return dispatch(
-                transport, checked, guarded(request.commands(), version), remaining(request, started), waiting);
+        if (probe.version().isPresent()) {
+            return dispatchChecked(transport, request, version, started, waiting);
+        }
+        return dispatch(transport, request, guarded(request.commands(), version), remaining(request, started), waiting);
+    }
+
+    private static CommandResult dispatchChecked(
+            TmuxTransport transport, CommandRequest request, String version, long started, boolean waiting) {
+        CommandRequest live = new CommandRequest(
+                withoutStarting(request.endpoint()), request.commands(), request.timeout(), request.input());
+        return dispatch(transport, live, guarded(request.commands(), version), remaining(request, started), waiting);
+    }
+
+    private static @Nullable String recall(TmuxTransport transport, CommandRequest request) {
+        Map<List<String>, String> known = KNOWN.get(transport);
+        return known == null ? null : known.get(request.endpoint());
+    }
+
+    private static void remember(TmuxTransport transport, CommandRequest request, String version) {
+        synchronized (KNOWN) {
+            KNOWN.computeIfAbsent(transport, ignored -> new ConcurrentHashMap<>())
+                    .put(request.endpoint(), version);
+        }
+    }
+
+    private static void forget(TmuxTransport transport, CommandRequest request) {
+        Map<List<String>, String> known = KNOWN.get(transport);
+        if (known != null) known.remove(request.endpoint());
+    }
+
+    /** Whether tmux found no daemon to run the request on, which leaves no effect behind. */
+    private static boolean gone(CommandResult result) {
+        return !result.succeeded()
+                && result.stderr().stream()
+                        .anyMatch(line -> line.contains("no server running") || line.contains("error connecting to"));
     }
 
     /** Reports the daemon version, or validates the executable when the endpoint is unused. */
@@ -203,7 +286,7 @@ public final class Versions {
         if (!result.succeeded()
                 && result.stderr().stream()
                         .anyMatch(line -> line.contains(commands.getFirst().getLast()))) {
-            throw new TargetGoneException("the tmux daemon version changed before dispatch");
+            throw new Replaced();
         }
         return result;
     }

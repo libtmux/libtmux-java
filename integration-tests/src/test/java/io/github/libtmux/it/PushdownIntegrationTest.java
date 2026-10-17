@@ -134,8 +134,8 @@ final class PushdownIntegrationTest {
 
             assertEquals(List.of(), none);
             assertEquals(List.of(), nothing);
-            assertEquals(8, verbs.size(), "four data requests and their version probes");
-            assertEquals(4, verbs.stream().filter(List.of("run-shell")::equals).count());
+            assertEquals(5, verbs.size(), "four data requests and the one version probe");
+            assertEquals(1, verbs.stream().filter(List.of("run-shell")::equals).count());
         }
     }
 
