@@ -64,8 +64,10 @@ line counts, and at most 240 characters of stderr in `boundedError`, which
 stack trace and otherwise ignored; the command's own result is unaffected, and
 nothing is retried.
 
-The version check emits its own `display-message` probe report. The request's
-report includes the `if-shell` version guard before the requested command.
+The version check emits its own `run-shell` probe report. The probe fires none
+of a user's `after-*` or `command-error` hooks, so checking a call's daemon has no
+effect a hook could see. The request's report includes the `if-shell` version
+guard before the requested command.
 
 A report's `id` counts calls on one transport, so two reports can be told
 apart; it is not a request id for tracing. None is needed: the observer runs on
