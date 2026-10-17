@@ -22,9 +22,10 @@ diagnostics; their results do not authorize a daemon operation. Unknown full
 version tokens fail with `MalformedResponseException`; a candidate for 3.3a
 does not satisfy the released 3.3a minimum.
 
-Ordinary command requests carry an atomic version guard. Control-client
-startup checks the floor through its process carrier before launching `-C`;
-it does not pin the endpoint between that check and attachment.
+Ordinary command requests carry an atomic version guard. Managed control
+acquisition requires tmux 3.7 or newer and pins the socket before `-C`.
+The identity is checked through that pin before attaching; replacement of the
+original pathname cannot redirect initialization to a new daemon.
 These checks require native built-in command semantics. A tmux configuration
 that replaces commands such as `if-shell` or `display-message` through
 `command-alias` is outside this qualification.
@@ -38,19 +39,68 @@ selected daemon or executable without starting a daemon; later Java operations
 still run their own version check. The bridge also requires Python libtmux
 with the matching core support change: its declared `TMUX_MIN_VERSION` must be
 3.3a or newer, and its own dispatcher must enforce that floor on each command.
-An older installed backend is refused before builders, plugins or shell code
-run. Until the [Python core change][python-core] is released, use an interpreter
-loading that source; upgrading tmuxp alone does not supply a command-level
-version check.
+The bridge also requires the integer
+`libtmux.common.TMUX_OPTIONAL_FEATURE_POLICY_VERSION >= 2`. It checks both
+requirements in the runtime probe and again in the actual child, before
+builders, plugins or shell code run. Policy version 1 is refused. Until the
+[Python feature change][python-features] is released, use an interpreter
+loading that coordinated source; upgrading
+tmuxp alone does not supply a command-level version check or the optional guards.
 
 CI qualifies tmuxp 1.74.0 with the [reviewed Python libtmux source][python-source]
-on `PYTHONPATH`. It verifies both the imported source path and its declared
-floor. Released tmuxp 1.74.0 pins
+on `PYTHONPATH`. It verifies the imported source path, declared
+floor and optional-policy marker. Released tmuxp 1.74.0 pins
 libtmux 0.61, so this source overlay is not a coherent installed package pair;
 that dependency update remains part of the coordinated tmuxp change.
 
 [python-core]: https://github.com/tmux-python/libtmux/pull/779
-[python-source]: https://github.com/tmux-python/libtmux/tree/26123fe7e4fc497a9ddb454ce654e468afe916ab
+[python-features]: https://github.com/tmux-python/libtmux/pull/780
+[python-source]: https://github.com/tmux-python/libtmux/tree/54b277bb673e208820fc9c795abe4444e2ded272
+
+### Optional tmux requirements
+
+Ordinary subprocess operations, polling, MCP tools and native workspace
+building keep the 3.3a core floor. The selected daemon determines eligibility,
+even when the configured client is newer. A refused literal batch runs none
+of its commands, including a preceding command that would otherwise succeed.
+
+| Operation | Requirement or repair |
+| --- | --- |
+| Managed control, watches, mirrors and live views | Stable tmux 3.7+ and a carrier-owned pinned socket. Older daemons are refused before control initialization. |
+| Exact named buffer deletion and rename | tmux 3.4+. On 3.3a, a missing name can select an unrelated buffer. |
+| `Pane.paste(text)` | tmux 3.4+ before creating a temporary buffer, because failure cleanup needs exact named deletion. |
+| Direct `paste-buffer -d -b name` | Retained on 3.3a; native lookup already rejects a missing name. |
+| Literal `select-layout` on 3.3a | Invalid operands are refused before every batch effect. Presets, unique prefixes and serialized layouts remain available; `-o` requires a serialized operand. |
+| Percentage splitting | Typed `SplitSpec.percent` retains `-l N%`. Literal `split-window -p` is refused on exact 3.4. |
+| `break-pane` on exact 3.7 | Literal calls and unnamed typed calls are refused. Use `Pane.breakOut(name)` or upgrade to 3.7a+. |
+| Single-pane `breakOut` before 3.6 | The typed call reads the pane's actual post-command context; native success does not print `-P` output there. |
+| Captured `run-shell` output | Existing 3.5 floor remains; 3.3a and 3.4 lose the requested output. Effect-only shell commands remain available. |
+
+Named `breakOut` on exact 3.7 applies the name after the pane moves, because
+that release ignores `-n` in its multi-pane branch. A later rename failure can
+leave the pane in its new window. An unnamed single-pane break on other
+supported releases preserves the existing window name.
+
+Custom `ControlCarrier` implementations must implement `pinSocket` in their
+own execution realm. Its alias must retain the socket inode in a private
+directory for the attachment's lifetime; replacing the original pathname must
+not redirect it. The default method refuses control acquisition. Ordinary
+commands through an existing custom transport are unaffected. The built-in
+local carrier uses a short private hard link on the socket's filesystem and
+refuses before `-C` if no valid alias can be created. Closing an attachment or
+receiving EOF removes only its owned alias and directory; the carrier remains
+borrowed. One timeout budget covers qualification and attachment.
+
+Literal command words retain their existing encoding, including semicolons
+used as data. Feature guards inspect the literal commands a batch represents,
+without interpreting user-authored `if-shell` bodies, `source-file` contents,
+shell programs or configured aliases. Those opaque programs retain native
+semantics and are outside the managed optional-feature guarantee.
+
+Control-positive matrix cases run from 3.7. Lower lanes keep ordinary
+operations and explicit before-effect refusal assertions. Documentation
+control examples compile on every lane and assert the refusal below that
+feature's floor.
 
 ### Version ordering and parsing
 
