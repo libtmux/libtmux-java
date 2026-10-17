@@ -19,6 +19,8 @@ dependencies {
         api(project(":libtmux"))
         api(project(":libtmux-jackson"))
         api(project(":libtmux-kotlin"))
+        api(project(":libtmux-clojure"))
+        api(project(":libtmux-clojure-core-async"))
         api(project(":libtmux-junit5"))
         api(project(":libtmux-mcp"))
         api(project(":libtmux-workspace"))
