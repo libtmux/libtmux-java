@@ -89,7 +89,7 @@ public final class ControlAcquisition implements AutoCloseable {
      * {@code 3.8-rc2} or {@code next-3.8} rank above.
      */
     public static boolean supports(TmuxVersion version) {
-        return Versions.compareStrictly(version, MINIMUM) >= 0;
+        return version.compareTo(MINIMUM) >= 0;
     }
 
     /**
