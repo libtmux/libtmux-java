@@ -73,3 +73,6 @@ val localeTest =
     }
 
 tasks.check { dependsOn(localeTest) }
+
+// Shared native terminal driver; test resources never enter a published artifact.
+sourceSets.test { resources.srcDir(rootProject.file("gradle/test-fixtures")) }
