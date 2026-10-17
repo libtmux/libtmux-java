@@ -35,7 +35,10 @@ jobs:
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
-          java-version: ${{ matrix.java }}
+          # Gradle runs on 25 in every lane (last entry is JAVA_HOME); the lane's JDK runs the Clojure.
+          java-version: |
+            ${{ matrix.java }}
+            25
 
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
@@ -116,7 +119,10 @@ jobs:
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
-          java-version: ${{ matrix.java }}
+          # Gradle runs on 25 in every lane (last entry is JAVA_HOME); the lane's JDK runs the Clojure.
+          java-version: |
+            ${{ matrix.java }}
+            25
 
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
@@ -202,7 +208,10 @@ jobs:
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
-          java-version: ${{ matrix.java }}
+          # Gradle runs on 25 in every lane (last entry is JAVA_HOME); the lane's JDK runs the Clojure.
+          java-version: |
+            ${{ matrix.java }}
+            25
 
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
