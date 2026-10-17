@@ -19,6 +19,9 @@ production.
   before their requested effects; the Python bridge also requires compatible
   Python libtmux. Cold starts accept 3.3a binaries renamed on disk. See
   [migration notes](MIGRATION.md). (#67)
+- **The version check no longer runs a user's `after-display-message` hook.**
+  The daemon version is read with `run-shell -C`, which runs no `after-*` or
+  `command-error` hook, instead of `display-message`. (#67)
 
 ### Documented
 
