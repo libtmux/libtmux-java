@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -116,12 +117,62 @@ final class ExecutionTest {
         assertTrue(Files.exists(marker), "the qualified child was not entered");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "0", "1", "False", "True", "'2'", "2.0"})
+    void pythonOptionalPolicyIsRequiredBeforeExternalCode(String policy) throws Exception {
+        Path marker = directory.resolve("optional-policy-entered");
+        Path backend = pythonBackend("3.3a", marker, policy.equals("missing") ? "" : policy);
+        assertPythonPolicyRefused(backend, "python3", marker);
+    }
+
+    @Test
+    void pythonChildRechecksOptionalPolicyAfterTheRuntimeProbe() throws Exception {
+        Path marker = directory.resolve("optional-child-entered");
+        Path backend = pythonBackend("3.3a", marker, "1");
+        Path python = directory.resolve("python-probe-only");
+        Files.writeString(python, """
+                #!/bin/sh
+                case "$*" in *importlib.metadata*) printf '1.74.0\\n'; exit;; esac
+                exec python3 "$@"
+                """);
+        assertTrue(python.toFile().setExecutable(true));
+        assertPythonPolicyRefused(backend, python.toString(), marker);
+    }
+
+    private void assertPythonPolicyRefused(Path backend, String python, Path marker) throws Exception {
+        Path source = directory.resolve("optional-policy.yaml");
+        Files.writeString(
+                source,
+                "session_name: external\nplugins: [forbidden.Plugin]\nwindows:\n- window_name: main\n  panes: [null]\n");
+        for (String entry : List.of("load", "shell")) {
+            Result result = invoke(
+                    java.util.Map.of("PYTHONPATH", backend.toString(), "TMUX_WORKSPACE_PYTHON", python),
+                    entry,
+                    "--json",
+                    "-S",
+                    directory.resolve("s").toString(),
+                    entry.equals("load") ? source.toString() : "-c",
+                    entry.equals("load") ? "-d" : "print('must-not-run')");
+            assertFalse(Files.exists(marker), "unqualified backend code ran: " + result.err());
+            assertTrue(result.code() != 0, result.out());
+            assertTrue(
+                    (result.out() + result.err()).contains("optional feature policy v2"), result.out() + result.err());
+        }
+    }
+
     private Path pythonBackend(String floor, Path marker) throws Exception {
+        return pythonBackend(floor, marker, "2");
+    }
+
+    private Path pythonBackend(String floor, Path marker, String policy) throws Exception {
         Path backend = directory.resolve("python-" + floor);
         Files.createDirectories(backend.resolve("libtmux"));
         Files.writeString(
                 backend.resolve("libtmux/__init__.py"), "class Server:\n    def __init__(self, **kwargs): pass\n");
-        Files.writeString(backend.resolve("libtmux/common.py"), "TMUX_MIN_VERSION = '" + floor + "'\n");
+        Files.writeString(
+                backend.resolve("libtmux/common.py"),
+                "TMUX_MIN_VERSION = '" + floor + "'\n"
+                        + (policy.isEmpty() ? "" : "TMUX_OPTIONAL_FEATURE_POLICY_VERSION = " + policy + "\n"));
         Files.createDirectories(backend.resolve("tmuxp/workspace"));
         Files.writeString(backend.resolve("tmuxp/__init__.py"), "");
         String entered = "from pathlib import Path\nPath(" + Documents.JSON.writeValueAsString(marker.toString())
