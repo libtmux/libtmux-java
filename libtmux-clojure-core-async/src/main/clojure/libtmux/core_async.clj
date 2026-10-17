@@ -33,7 +33,7 @@
   (.-terminal adapter))
 
 (defn limits
-  "Returns the adapter's exact retained-event and retained-byte bounds."
+  "Returns the adapter's exact retained-event bound."
   [^Adapter adapter]
   (.-limits adapter))
 
@@ -51,8 +51,7 @@
 (defn- stopped-outcome []
   {:reason :adapter-stopped
    :cause nil
-   :loss {:upstream/events 0 :upstream/bytes 0
-          :adapter/events 0 :adapter/bytes 0}})
+   :loss {:upstream/events 0 :adapter/events 0}})
 
 (defn- terminal-outcome [stopped result]
   (if @stopped
@@ -65,32 +64,26 @@
   "Starts an owned virtual worker over a borrowed control connection.
 
   `:event-capacity` defaults to zero. The worker can retain one pending event;
-  a fixed buffer retains that many more. `:upstream-max-bytes` bounds each
-  event through the Java subscription, so the adapter byte bound is
-  `(inc event-capacity) * upstream-max-bytes`. Closing the events channel or
+  a fixed buffer retains that many more. `:upstream-capacity` bounds the Java
+  subscription, which reports overflow as a :gap value ahead of the events that
+  remain; `:encoding` is :bytes or :utf-8. Closing the events channel or
   adapter stops blocked reads and puts. The borrowed connection remains open."
   ([connection] (observe! connection {}))
   ([connection options]
    (when-not (map? options)
      (throw (IllegalArgumentException. "adapter options must be a map")))
-   (let [allowed #{:event-capacity :upstream-capacity :upstream-max-bytes
-                   :encoding :malformed :max-panes}
+   (let [allowed #{:event-capacity :upstream-capacity :encoding}
          unknown (seq (remove allowed (keys options)))
-         {:keys [event-capacity upstream-capacity upstream-max-bytes encoding malformed max-panes]
-          :or {event-capacity 0 upstream-capacity 256 upstream-max-bytes 1048576
-               encoding :bytes malformed :report max-panes 1024}} options]
+         {:keys [event-capacity upstream-capacity encoding]
+          :or {event-capacity 0 upstream-capacity 256 encoding :bytes}} options]
      (when (or unknown
                (not (and (integer? event-capacity) (<= 0 event-capacity Integer/MAX_VALUE)))
-               (not (and (integer? upstream-capacity) (<= 1 upstream-capacity Integer/MAX_VALUE)))
-               (not (and (integer? upstream-max-bytes) (<= 1 upstream-max-bytes Long/MAX_VALUE))))
+               (not (and (integer? upstream-capacity) (<= 1 upstream-capacity Integer/MAX_VALUE))))
        (throw (IllegalArgumentException. "invalid core.async adapter options")))
      (io!
       (let [subscription (control/subscribe! connection
                                              {:capacity upstream-capacity
-                                              :max-bytes upstream-max-bytes
-                                              :encoding encoding
-                                              :malformed malformed
-                                              :max-panes max-panes})
+                                              :encoding encoding})
             raw-events (async/chan (when (pos? event-capacity)
                                      (async/buffer event-capacity)))
             terminal-channel (async/chan 1)
@@ -111,7 +104,7 @@
                             (case (:stream/status result)
                               :timeout (recur)
                               :terminal (reset! outcome (terminal-outcome stopped result))
-                              :event (let [[accepted port]
+                              (:event :gap) (let [[accepted port]
                                            (async/alts!! [[raw-events result] stop-channel]
                                                          :priority true)]
                                        (when (and (identical? port raw-events) accepted)
@@ -119,8 +112,7 @@
                         (catch Throwable failure
                           (reset! outcome
                                   {:reason :adapter-failure :cause failure
-                                   :loss {:upstream/events 0 :upstream/bytes 0
-                                          :adapter/events 0 :adapter/bytes 0}}))
+                                   :loss {:upstream/events 0 :adapter/events 0}}))
                         (finally
                           (try (control/close! subscription)
                                (catch Throwable cleanup
@@ -132,5 +124,4 @@
                                      (or @outcome (terminal-outcome stopped {:stream/status :stopped})))
                           (async/close! terminal-channel)))))]
         (Adapter. public-events terminal-channel subscription stop-channel stopped worker
-                  {:events (inc event-capacity)
-                   :bytes (*' (inc event-capacity) upstream-max-bytes)}))))))
+                  {:events (inc event-capacity)}))))))

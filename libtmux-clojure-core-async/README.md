@@ -10,14 +10,14 @@ does not depend on core.async.
 <dependency>
   <groupId>io.github.libtmux</groupId>
   <artifactId>libtmux-clojure-core-async</artifactId>
-  <version>0.0.1-alpha.12</version>
+  <version>0.0.1-alpha.17</version>
 </dependency>
 ```
 
 > **Alpha.** The API will change without notice. Pin an exact version; it is
 > not recommended for production.
 
-Requires JDK 21 or newer and tmux 3.2a through 3.7c.
+Requires JDK 25 or newer and tmux 3.3a through 3.7c; control needs tmux 3.7 or newer.
 
 The adapter owns its event and terminal channels. Its stop function closes its
 Java subscription and must be called when the application is finished. The
