@@ -48,6 +48,8 @@ final class DocumentationFactsTest {
             "libtmux-jackson",
             "libtmux-junit5",
             "libtmux-kotlin",
+            "libtmux-clojure",
+            "libtmux-clojure-core-async",
             "libtmux-mcp",
             "libtmux-workspace",
             "libtmux-workspace-cli",
@@ -68,11 +70,11 @@ final class DocumentationFactsTest {
             Pattern.compile("<artifactId>libtmux[a-z0-9-]*</artifactId>\\s*<version>([0-9][^<]*)</version>"),
             Pattern.compile("io\\.github\\.libtmux:[a-z0-9-]+ -> ([0-9][^\\s)]*)"));
 
-    /** Fences this build compiles and runs. A fence in any other source language is not checked. */
-    private static final Set<String> EXECUTED = Set.of("java", "kotlin");
+    /** Fences an owned documentation gate compiles and runs. */
+    private static final Set<String> EXECUTED = Set.of("java", "kotlin", "clojure");
 
     /** Source languages a guide may reasonably carry, whether or not anything here builds them. */
-    private static final Set<String> SOURCE = Set.of("java", "kotlin", "scala", "groovy");
+    private static final Set<String> SOURCE = Set.of("java", "kotlin", "clojure", "scala", "groovy");
 
     private static String read(String path) {
         try {

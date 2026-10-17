@@ -400,6 +400,17 @@ public final class Server implements AutoCloseable {
     }
 
     /**
+     * Collects a group that may wait for a release through this server's transport.
+     *
+     * <p>The transport reserves admission capacity for ordinary release commands. Encoding and
+     * positional attribution match {@link #batch()}.
+     */
+    @Operation(Kind.CAPTURED)
+    public Batch batchReservingCapacity() {
+        return new Batch(commands -> executeWaiting(request(commands, config.defaultTimeout(), "")));
+    }
+
+    /**
      * Starts a chain of commands where each one acts on what the last one made.
      *
      * <p>tmux moves its own current target as a group runs, so a chain needs no round trip to learn
@@ -408,6 +419,12 @@ public final class Server implements AutoCloseable {
     @Operation(Kind.CAPTURED)
     public CommandChain chain() {
         return new CommandChain(batch(), this::versionForCreation);
+    }
+
+    /** Starts an implicit-target chain while reserving transport capacity for its release. */
+    @Operation(Kind.CAPTURED)
+    public CommandChain chainReservingCapacity() {
+        return new CommandChain(batchReservingCapacity(), this::versionForCreation);
     }
 
     /**
@@ -936,6 +953,20 @@ public final class Server implements AutoCloseable {
                 .map(session -> new Session(this, captured, session))
                 .filter(expression)
                 .toList();
+    }
+
+    /**
+     * Captures metadata and entity handles from one observed hierarchy.
+     *
+     * <p>Accessing the returned view or its captured relations issues no commands. Acquisition
+     * uses the same consistency checks and replacement retry as {@link #snapshot()}.
+     *
+     * @throws ServerNotRunningException if no daemon is running
+     * @throws LibTmuxException if the capture otherwise fails
+     */
+    @Operation(Kind.READ)
+    public CapturedServer captureServer() {
+        return new CapturedServer(this, snapshot());
     }
 
     /**

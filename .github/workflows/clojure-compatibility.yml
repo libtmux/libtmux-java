@@ -1,0 +1,246 @@
+name: Clojure compatibility
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Clojure checks (JDK ${{ matrix.java }}, Clojure ${{ matrix.clojure }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['25', '27']
+        clojure: ['1.12.4', '1.12.6']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install tmux
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y tmux
+          tmux -V
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          # Gradle runs on 25 in every lane (last entry is JAVA_HOME); the lane's JDK runs the Clojure.
+          java-version: |
+            ${{ matrix.java }}
+            25
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          validate-wrappers: true
+
+      - name: Run Clojure checks and publish local artifacts
+        run: >-
+          ./gradlew check clojureDependencyMetadata platformCoversEveryPublishedModule
+          publishToMavenLocal --rerun-tasks --stacktrace
+          -PlibtmuxJavaVersion=${{ matrix.java }}
+          -PlibtmuxClojureVersion=${{ matrix.clojure }}
+
+      - name: No tmux server outlived the suite
+        if: always()
+        run: |
+          left="$(pgrep -c tmux || true)"
+          if [ "${left:-0}" -ne 0 ]; then
+            echo "::error::$left tmux server(s) survived the suite"
+            for p in $(pgrep tmux); do tr '\0' ' ' < "/proc/$p/cmdline"; echo; done
+            exit 1
+          fi
+          echo "no tmux server survived the suite"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: reports-clojure-jdk${{ matrix.java }}-${{ matrix.clojure }}
+          path: '**/build/reports/**'
+          retention-days: 7
+
+  tmux:
+    name: Clojure tmux ${{ matrix.tmux }} (JDK ${{ matrix.java }}, Clojure ${{ matrix.clojure }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['25', '27']
+        clojure: ['1.12.4', '1.12.6']
+        tmux: ['3.3a', '3.4', '3.5', '3.6', '3.7', '3.7a', '3.7b', '3.7c']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Build tmux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential libevent-dev libncurses-dev bison pkg-config
+
+      - name: Restore tmux ${{ matrix.tmux }}
+        id: tmux-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/tmux-builds/${{ matrix.tmux }}
+          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build tmux ${{ matrix.tmux }}
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        env:
+          LANE: ${{ matrix.tmux }}
+        run: |
+          set -eux
+          work="$(mktemp -d)"
+          curl -fsSL -o "$work/tmux.tar.gz" \
+            "https://github.com/tmux/tmux/releases/download/$LANE/tmux-$LANE.tar.gz"
+          tar -xzf "$work/tmux.tar.gz" -C "$work"
+          cd "$work/tmux-$LANE"
+          ./configure --prefix="$HOME/tmux-builds/$LANE"
+          make -j"$(nproc)"
+          make install
+
+      - name: The lane runs the tmux it is named after
+        env:
+          LANE: ${{ matrix.tmux }}
+        run: |
+          "$HOME/tmux-builds/$LANE/bin/tmux" -V
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          # Gradle runs on 25 in every lane (last entry is JAVA_HOME); the lane's JDK runs the Clojure.
+          java-version: |
+            ${{ matrix.java }}
+            25
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          validate-wrappers: true
+
+      - name: Run the native Clojure real-tmux suite
+        env:
+          LANE: ${{ matrix.tmux }}
+        run: |
+          ./gradlew :integration-tests:clojureIntegrationTest --rerun-tasks --stacktrace \
+            -PlibtmuxJavaVersion=${{ matrix.java }} \
+            -PlibtmuxClojureVersion=${{ matrix.clojure }} \
+            "-PlibtmuxTmuxBinary=$HOME/tmux-builds/$LANE/bin/tmux" \
+            "-PlibtmuxTmuxExpected=$LANE"
+
+      - name: No tmux server outlived the suite
+        if: always()
+        run: |
+          left="$(pgrep -c tmux || true)"
+          if [ "${left:-0}" -ne 0 ]; then
+            echo "::error::$left tmux server(s) survived the suite"
+            for p in $(pgrep tmux); do tr '\0' ' ' < "/proc/$p/cmdline"; echo; done
+            exit 1
+          fi
+          echo "no tmux server survived the suite"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: reports-clojure-tmux-${{ matrix.tmux }}-jdk${{ matrix.java }}-${{ matrix.clojure }}
+          path: '**/build/reports/**'
+          retention-days: 7
+
+  macos:
+    name: Clojure macOS tmux ${{ matrix.tmux }} (JDK ${{ matrix.java }}, Clojure ${{ matrix.clojure }})
+    runs-on: macos-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['25', '27']
+        clojure: ['1.12.4', '1.12.6']
+        tmux: ['3.3a', '3.7c']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Build tmux dependencies
+        run: brew install libevent ncurses bison pkg-config
+
+      - name: Restore tmux ${{ matrix.tmux }}
+        id: tmux-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/tmux-builds/${{ matrix.tmux }}
+          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build tmux ${{ matrix.tmux }}
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        env:
+          LANE: ${{ matrix.tmux }}
+        run: |
+          set -eux
+          work="$(mktemp -d)"
+          curl -fsSL -o "$work/tmux.tar.gz" \
+            "https://github.com/tmux/tmux/releases/download/$LANE/tmux-$LANE.tar.gz"
+          tar -xzf "$work/tmux.tar.gz" -C "$work"
+          cd "$work/tmux-$LANE"
+          libevent_prefix="$(brew --prefix libevent)"
+          ncurses_prefix="$(brew --prefix ncurses)"
+          export PKG_CONFIG_PATH="$libevent_prefix/lib/pkgconfig:$ncurses_prefix/lib/pkgconfig"
+          export CPPFLAGS="-I$ncurses_prefix/include"
+          export LDFLAGS="-L$ncurses_prefix/lib"
+          ./configure --prefix="$HOME/tmux-builds/$LANE" --disable-utf8proc
+          make -j"$(sysctl -n hw.logicalcpu)"
+          make install
+
+      - name: The lane runs the tmux it is named after
+        env:
+          LANE: ${{ matrix.tmux }}
+        run: |
+          "$HOME/tmux-builds/$LANE/bin/tmux" -V
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          # Gradle runs on 25 in every lane (last entry is JAVA_HOME); the lane's JDK runs the Clojure.
+          java-version: |
+            ${{ matrix.java }}
+            25
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          validate-wrappers: true
+
+      - name: Run the native Clojure smoke and lifecycle suite
+        env:
+          LANE: ${{ matrix.tmux }}
+        run: |
+          ./gradlew :integration-tests:clojureIntegrationTest --rerun-tasks --stacktrace \
+            -PlibtmuxJavaVersion=${{ matrix.java }} \
+            -PlibtmuxClojureVersion=${{ matrix.clojure }} \
+            "-PlibtmuxTmuxBinary=$HOME/tmux-builds/$LANE/bin/tmux" \
+            "-PlibtmuxTmuxExpected=$LANE"
+
+      - name: No tmux server outlived the suite
+        if: always()
+        run: |
+          left="$(pgrep -c tmux || true)"
+          if [ "${left:-0}" -ne 0 ]; then
+            echo "::error::$left tmux server(s) survived the suite"
+            for p in $(pgrep tmux); do ps -o command= -p "$p"; done
+            exit 1
+          fi
+          echo "no tmux server survived the suite"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: reports-clojure-macos-${{ matrix.tmux }}-jdk${{ matrix.java }}-${{ matrix.clojure }}
+          path: '**/build/reports/**'
+          retention-days: 7
