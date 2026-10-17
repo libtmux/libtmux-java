@@ -315,13 +315,23 @@ public final class ControlClient implements AutoCloseable {
         }
     }
 
-    /** Runs one command and waits for its reply. */
+    /**
+     * Runs one command and waits for its reply.
+     *
+     * <p>Nested tmux command strings ({@code if-shell}, {@code run-shell -C}, hooks, brace blocks,
+     * {@code source-file}) are not checked; do not nest a command this library refuses.
+     */
     @Operation(Kind.MUTATION)
     public ControlReply send(String... argv) {
         return send(List.of(argv), DEFAULT_TIMEOUT);
     }
 
-    /** Runs one command and waits for its reply. */
+    /**
+     * Runs one command and waits for its reply.
+     *
+     * <p>Nested tmux command strings ({@code if-shell}, {@code run-shell -C}, hooks, brace blocks,
+     * {@code source-file}) are not checked; do not nest a command this library refuses.
+     */
     @Operation(Kind.MUTATION)
     public ControlReply send(List<String> argv) {
         return send(argv, DEFAULT_TIMEOUT);
@@ -329,6 +339,9 @@ public final class ControlClient implements AutoCloseable {
 
     /**
      * Runs one command and waits for its reply.
+     *
+     * <p>Nested tmux command strings ({@code if-shell}, {@code run-shell -C}, hooks, brace blocks,
+     * {@code source-file}) are not checked; do not nest a command this library refuses.
      *
      * @param argv the command, its arguments already separate elements
      * @param timeout how long to wait for tmux to answer

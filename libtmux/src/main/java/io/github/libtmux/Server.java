@@ -16,6 +16,7 @@ import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.internal.CommandStrings;
 import io.github.libtmux.internal.ErrorText;
+import io.github.libtmux.internal.TmuxFeatures;
 import io.github.libtmux.internal.support.Versions;
 import io.github.libtmux.query.FilterExpr;
 import io.github.libtmux.query.TmuxFilters;
@@ -448,6 +449,9 @@ public final class Server implements AutoCloseable {
      *
      * <p>Each operation gets its own outcome. tmux discards a group after the first failure, so a
      * single exit status cannot say which command failed or which never ran.
+     *
+     * <p>Nested tmux command strings ({@code if-shell}, {@code run-shell -C}, hooks, brace blocks,
+     * {@code source-file}) are not checked; do not nest a command this library refuses.
      */
     @Operation(Kind.CAPTURED)
     public Batch batch() {
@@ -459,6 +463,9 @@ public final class Server implements AutoCloseable {
      *
      * <p>tmux moves its own current target as a group runs, so a chain needs no round trip to learn
      * the id of a window or pane it just created.
+     *
+     * <p>Nested tmux command strings ({@code if-shell}, {@code run-shell -C}, hooks, brace blocks,
+     * {@code source-file}) are not checked; do not nest a command this library refuses.
      */
     @Operation(Kind.CAPTURED)
     public CommandChain chain() {
@@ -491,7 +498,7 @@ public final class Server implements AutoCloseable {
         List<List<String>> group = PrintedText.framed(argv);
         CommandResult result = snapshot == null
                 ? execute(request(group, config.defaultTimeout(), ""))
-                : fence.guarded(snapshot, CommandStrings.group(group));
+                : fence.guarded(snapshot, CommandStrings.group(group), "", TmuxFeatures.Intent.literal(group));
         return PrintedText.unwrap(result);
     }
 
@@ -841,6 +848,11 @@ public final class Server implements AutoCloseable {
     /**
      * Runs one tmux command against this server.
      *
+     * <p>A command this release of tmux mishandles is refused with {@link UnsupportedFeatureException}
+     * before it is sent. Nested tmux command strings ({@code if-shell}, {@code run-shell -C},
+     * hooks, brace blocks, {@code source-file}) are not checked; do not nest a command this library
+     * refuses.
+     *
      * @param argv the tmux command and its arguments, each already a separate element
      * @return the result, in which a nonzero exit is data rather than a failure
      */
@@ -849,13 +861,23 @@ public final class Server implements AutoCloseable {
         return cmd(List.of(argv), config.defaultTimeout());
     }
 
-    /** Runs one tmux command against this server. */
+    /**
+     * Runs one tmux command against this server.
+     *
+     * <p>Nested tmux command strings ({@code if-shell}, {@code run-shell -C}, hooks, brace blocks,
+     * {@code source-file}) are not checked; do not nest a command this library refuses.
+     */
     @Operation(Kind.MUTATION)
     public CommandResult cmd(List<String> argv) {
         return cmd(argv, config.defaultTimeout());
     }
 
-    /** Runs one tmux command against this server, overriding the configured deadline. */
+    /**
+     * Runs one tmux command against this server, overriding the configured deadline.
+     *
+     * <p>Nested tmux command strings ({@code if-shell}, {@code run-shell -C}, hooks, brace blocks,
+     * {@code source-file}) are not checked; do not nest a command this library refuses.
+     */
     @Operation(Kind.MUTATION)
     public CommandResult cmd(List<String> argv, Duration timeout) {
         return cmd(argv, timeout, "");
@@ -864,6 +886,11 @@ public final class Server implements AutoCloseable {
     /** Package-private so {@link IncarnationFence} can send its guard with the caller's input. */
     CommandResult cmd(List<String> argv, Duration timeout, String input) {
         return execute(request(List.of(argv), timeout, input));
+    }
+
+    CommandResult cmd(List<String> argv, Duration timeout, String input, TmuxFeatures.Intent intent) {
+        requireOpen();
+        return Versions.execute(transport, request(List.of(argv), timeout, input), false, intent);
     }
 
     private CommandResult execute(CommandRequest request) {
@@ -1320,12 +1347,13 @@ public final class Server implements AutoCloseable {
     }
 
     CommandResult cmd(ServerSnapshot snapshot, List<String> argv) {
-        return fence.guarded(snapshot, CommandStrings.stringify(argv));
+        return fence.guarded(snapshot, CommandStrings.stringify(argv), "", TmuxFeatures.Intent.literal(List.of(argv)));
     }
 
     /** A batch whose every command is refused once this handle's server has been replaced. */
     Batch batch(ServerSnapshot snapshot) {
-        return new Batch(commands -> fence.guarded(snapshot, CommandStrings.group(commands), ""));
+        return new Batch(commands ->
+                fence.guarded(snapshot, CommandStrings.group(commands), "", TmuxFeatures.Intent.literal(commands)));
     }
 
     /**
@@ -1337,7 +1365,8 @@ public final class Server implements AutoCloseable {
      */
     Batch batch(long pid, long startTime) {
         String condition = IncarnationFence.incarnation(pid, java.util.OptionalLong.of(startTime));
-        return new Batch(commands -> fence.guarded(pid, condition, CommandStrings.group(commands), ""));
+        return new Batch(commands -> fence.guarded(
+                pid, condition, CommandStrings.group(commands), "", TmuxFeatures.Intent.literal(commands)));
     }
 
     CommandResult run(ServerSnapshot snapshot, List<String> argv) {
@@ -1361,11 +1390,30 @@ public final class Server implements AutoCloseable {
 
     /** As {@link #runTogether}, with {@code input} on tmux's standard input for the group to read. */
     CommandResult runTogether(ServerSnapshot snapshot, String input, List<List<String>> commands) {
-        CommandResult result = fence.guarded(snapshot, CommandStrings.group(commands), input);
+        return runTogether(snapshot, input, commands, false);
+    }
+
+    CommandResult runTogether(
+            ServerSnapshot snapshot, String input, List<List<String>> commands, boolean namedBufferCleanup) {
+        CommandResult result = fence.guarded(
+                snapshot,
+                CommandStrings.group(commands),
+                input,
+                new TmuxFeatures.Intent(commands, false, namedBufferCleanup));
         if (!result.succeeded()) {
             String verbs = commands.stream().map(argv -> argv.get(0)).collect(Collectors.joining(" then "));
             throw failed(verbs, result);
         }
+        return result;
+    }
+
+    CommandResult runBreak(ServerSnapshot snapshot, List<List<String>> commands, TmuxVersion version, boolean named) {
+        long pid = snapshot.serverPid().orElseThrow();
+        String condition = "#{&&:" + IncarnationFence.incarnation(pid, snapshot.serverStartTime()) + ",#{==:#{version},"
+                + version + "}}";
+        CommandResult result = fence.guarded(
+                pid, condition, CommandStrings.group(commands), "", new TmuxFeatures.Intent(commands, named, false));
+        if (!result.succeeded()) throw failed(commands.getFirst().getFirst(), result);
         return result;
     }
 
