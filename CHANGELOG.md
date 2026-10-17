@@ -23,6 +23,10 @@ production.
   Python extensions require optional-policy v2. See
   [migration notes](MIGRATION.md#optional-tmux-requirements). (#68)
 
+- **Exact tmux 3.7 refuses `.` and `:` in session and window names before
+  dispatch.** A batch or workspace no longer runs the commands ahead of the
+  one tmux would reject. (#68)
+
 - **tmux 3.3a is the minimum across the JVM modules and products.** Upgrade
   the running daemon as well as the client. Commands refuse older daemons
   before their requested effects; the Python bridge also requires compatible
