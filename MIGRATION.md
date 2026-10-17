@@ -43,7 +43,14 @@ run. Until the [Python core change][python-core] is released, use an interpreter
 loading that source; upgrading tmuxp alone does not supply a command-level
 version check.
 
+CI qualifies tmuxp 1.74.0 with the [reviewed Python libtmux source][python-source]
+on `PYTHONPATH`. It verifies both the imported source path and its declared
+floor. Released tmuxp 1.74.0 pins
+libtmux 0.61, so this source overlay is not a coherent installed package pair;
+that dependency update remains part of the coordinated tmuxp change.
+
 [python-core]: https://github.com/tmux-python/libtmux/pull/779
+[python-source]: https://github.com/tmux-python/libtmux/tree/26123fe7e4fc497a9ddb454ce654e468afe916ab
 
 ## 0.0.1-alpha.16
 
