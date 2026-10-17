@@ -349,7 +349,7 @@ final class ToolsAgainstTmuxTest {
                 server.version().atLeast(REJECTS_DELIMITER) && !server.version().atLeast(ACCEPTS_DELIMITER_AGAIN);
         if (refuses) {
             assertThrows(
-                    LibTmuxException.class,
+                    IllegalArgumentException.class,
                     () -> Operations.renameSession(
                             TestCalls.on(server, "session_id", session.id().value(), "new_name", "a.b")));
             return;
