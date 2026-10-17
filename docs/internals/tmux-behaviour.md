@@ -6,6 +6,14 @@ relies on and that are not self-evident from the tmux manual. A decision that
 weighs alternatives belongs in [`docs/decisions/`](../decisions/) instead;
 this page is measurements, kept reachable because source comments cite them.
 
+## Executable version banners on tmux 3.3a
+
+tmux 3.3a prints the configured executable's basename before its version.
+Copies and symlinks named `opaque client` and `opaque-link` report
+`opaque client 3.3a` and `opaque-link 3.3a`. The cold-start version check
+accepts that exact basename or the canonical `tmux` prefix, followed by a
+complete version token. Daemon reports remain bare version tokens.
+
 ## break-pane on tmux 3.7
 
 `break-pane` gets automatic window naming wrong in two opposite, silent ways,

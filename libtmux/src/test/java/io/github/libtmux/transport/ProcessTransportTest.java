@@ -59,6 +59,229 @@ final class ProcessTransportTest {
         return CommandRequest.of(List.of("/bin/bash"), List.of("-c", script), timeout);
     }
 
+    // ------------------------------------------------------------------- held standard output
+
+    /**
+     * tmux 3.0 and 3.1 leave the client's standard output open in the daemon after the client has
+     * exited, while stderr closes. The double does the same with a background child that keeps stdout.
+     */
+    @Test
+    void aRequestThatReadsNoStdoutDoesNotWaitForAnOutputPipeSomethingElseHolds() {
+        CommandRequest request = new CommandRequest(
+                List.of("/bin/sh"),
+                List.of(List.of("-c", "sleep 5 2>/dev/null & echo out; exit 1")),
+                GENEROUS,
+                "",
+                true);
+        try (ProcessTransport transport = new ProcessTransport(1, 4_096)) {
+            long started = System.nanoTime();
+            CommandResult result = transport.execute(request);
+            Duration took = Duration.ofNanos(System.nanoTime() - started);
+            assertEquals(1, result.exitCode());
+            assertEquals(List.of(), result.stdout(), "the output pipe was never opened");
+            assertTrue(took.compareTo(Duration.ofSeconds(3)) < 0, "returned after " + took);
+        }
+    }
+
+    /**
+     * The same pipe held for a caller that does read standard output: what the exited process wrote
+     * is returned at once, not after the deadline.
+     */
+    @Test
+    void anExitedProcessWhoseOutputPipeStaysOpenReturnsWhatItWrote() {
+        // The reader is already waiting on the pipe when the process exits.
+        CommandRequest request = shell("sleep 5 2>/dev/null & sleep 0.3; echo out; exit 1", GENEROUS);
+        try (ProcessTransport transport = new ProcessTransport(1, 4_096)) {
+            long started = System.nanoTime();
+            CommandResult result = transport.execute(request);
+            Duration took = Duration.ofNanos(System.nanoTime() - started);
+            assertEquals(1, result.exitCode());
+            assertEquals(List.of("out"), result.stdout());
+            assertTrue(took.compareTo(Duration.ofSeconds(3)) < 0, "returned after " + took);
+        }
+    }
+
+    /**
+     * Whatever a process wrote before it exited is in the pipe, however long the reader was kept from
+     * a CPU. A reader that first looks at the pipe well after the exit, as one starved by a busy host
+     * does, still gets every line; a drain that gave up after a quiet interval returned none.
+     */
+    @Test
+    void aReaderStarvedPastTheExitStillGetsEverythingTheProcessWrote() {
+        CommandRequest request = shell("i=0; while [ $i -lt 200 ]; do echo line$i; i=$((i+1)); done; exit 0", GENEROUS);
+        ProcessTransport.ProcessStarter starved = command -> new LateReader(new ProcessBuilder(command).start(), 800);
+        try (ProcessTransport transport = new ProcessTransport(1, 1 << 20, starved, System::nanoTime)) {
+            CommandResult result = transport.execute(request);
+            assertEquals(200, result.stdout().size());
+            assertEquals("line199", result.stdout().getLast());
+        }
+    }
+
+    /**
+     * An old daemon holding the pipe must not keep a library user's JVM alive once its main returns:
+     * the child here never closes its transport.
+     */
+    @Test
+    void aJvmWhosePumpsWaitOnAPipeSomethingElseHoldsStillExits() throws Exception {
+        Process child = new ProcessBuilder(
+                        Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                        "-cp",
+                        System.getProperty("java.class.path"),
+                        HeldPipeMain.class.getName())
+                .redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .start();
+        try {
+            assertTrue(child.waitFor(8, TimeUnit.SECONDS), "the JVM is still alive after its main returned");
+            assertEquals(0, child.exitValue());
+        } finally {
+            child.destroyForcibly();
+        }
+    }
+
+    /**
+     * A pump whose child outlives the kill must stop when its thread is interrupted, whether the
+     * interrupt arrives while it waits or was already set, and must not spin on the flag: a wait
+     * that returns at once on an interrupted thread would burn a core until the child died.
+     */
+    @Test
+    void anInterruptedPumpWhoseChildIsAliveStopsWithoutSpinning() throws Exception {
+        for (boolean alreadySet : new boolean[] {false, true}) {
+            Process child = new ProcessBuilder("/bin/sh", "-c", "sleep 20").start();
+            try {
+                ProcessTransport.StdoutPump pump = new ProcessTransport.StdoutPump(
+                        child, 4_096, new CountDownLatch(1), new CompletableFuture<>(), () -> true);
+                java.lang.management.ThreadMXBean threads = java.lang.management.ManagementFactory.getThreadMXBean();
+                CompletableFuture<Long> cpuNanos = new CompletableFuture<>();
+                CountDownLatch started = new CountDownLatch(1);
+                Thread worker = new Thread(() -> {
+                    long before = threads.getCurrentThreadCpuTime();
+                    if (alreadySet) {
+                        Thread.currentThread().interrupt();
+                    }
+                    started.countDown();
+                    try {
+                        pump.call();
+                        cpuNanos.complete(threads.getCurrentThreadCpuTime() - before);
+                    } catch (Exception e) {
+                        cpuNanos.completeExceptionally(e);
+                    }
+                });
+                worker.start();
+                assertTrue(started.await(5, TimeUnit.SECONDS));
+                if (!alreadySet) {
+                    Thread.sleep(300);
+                    worker.interrupt();
+                }
+                long used = cpuNanos.get(3, TimeUnit.SECONDS);
+                assertTrue(child.isAlive(), "the child must have outlived the pump for this to mean anything");
+                assertTrue(
+                        used < TimeUnit.MILLISECONDS.toNanos(500),
+                        (alreadySet ? "flag already set" : "interrupted while waiting") + " used "
+                                + TimeUnit.NANOSECONDS.toMillis(used) + " ms of CPU");
+            } finally {
+                child.destroyForcibly();
+            }
+        }
+    }
+
+    /** Runs a command whose background child keeps the output pipe, then returns without closing. */
+    public static final class HeldPipeMain {
+        private HeldPipeMain() {}
+
+        public static void main(String[] args) {
+            ProcessTransport transport = new ProcessTransport(1, 4_096);
+            transport.execute(shell("sleep 20 2>/dev/null & echo out; exit 1", GENEROUS));
+        }
+    }
+
+    /** A process whose output is first looked at only after a delay. */
+    private static final class LateReader extends Process {
+        private final Process inner;
+        private final long delayMillis;
+
+        LateReader(Process inner, long delayMillis) {
+            this.inner = inner;
+            this.delayMillis = delayMillis;
+        }
+
+        @Override
+        public InputStream getInputStream() {
+            return new java.io.FilterInputStream(inner.getInputStream()) {
+                private boolean looked;
+
+                @Override
+                public int available() throws IOException {
+                    if (!looked) {
+                        looked = true;
+                        try {
+                            Thread.sleep(delayMillis);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                    return super.available();
+                }
+            };
+        }
+
+        @Override
+        public OutputStream getOutputStream() {
+            return inner.getOutputStream();
+        }
+
+        @Override
+        public InputStream getErrorStream() {
+            return inner.getErrorStream();
+        }
+
+        @Override
+        public int waitFor() throws InterruptedException {
+            return inner.waitFor();
+        }
+
+        @Override
+        public boolean waitFor(long timeout, TimeUnit unit) throws InterruptedException {
+            return inner.waitFor(timeout, unit);
+        }
+
+        @Override
+        public int exitValue() {
+            return inner.exitValue();
+        }
+
+        @Override
+        public void destroy() {
+            inner.destroy();
+        }
+
+        @Override
+        public Process destroyForcibly() {
+            inner.destroyForcibly();
+            return this;
+        }
+
+        @Override
+        public boolean isAlive() {
+            return inner.isAlive();
+        }
+
+        @Override
+        public CompletableFuture<Process> onExit() {
+            return inner.onExit().thenApply(ignored -> this);
+        }
+
+        @Override
+        public long pid() {
+            return inner.pid();
+        }
+
+        @Override
+        public ProcessHandle toHandle() {
+            return inner.toHandle();
+        }
+    }
+
     // ----------------------------------------------------------------------------- logging
 
     /**
@@ -193,6 +416,39 @@ final class ProcessTransportTest {
     }
 
     // --------------------------------------------------------------------------------- deadlines
+
+    @Test
+    void aOneShotCarrierKeepsCallerOwnershipAndTimeoutCertainty() throws Exception {
+        AtomicReference<Process> latest = new AtomicReference<>();
+        AtomicInteger starts = new AtomicInteger();
+        ControlCarrier carrier = command -> {
+            starts.incrementAndGet();
+            Process started = new ProcessBuilder(command).start();
+            latest.set(started);
+            return started;
+        };
+        Process borrowed = carrier.start(List.of("/bin/sh", "-c", "exec sleep 30"));
+        try {
+            DispatchException.TimedOut failure = assertThrows(
+                    DispatchException.TimedOut.class,
+                    () -> ProcessTransport.executeThroughCarrier(carrier, hangingAs(List.of("kill-server"))));
+
+            assertEquals(2, starts.get(), "the request must use the supplied carrier");
+            assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
+            assertFalse(failure.safeToRetry(), "the dispatched mutation may have run");
+            assertFalse(latest.get().isAlive(), "the request's child survived its deadline");
+            assertTrue(borrowed.isAlive(), "one request reclaimed a caller-owned process");
+            assertEquals(
+                    List.of("reused"),
+                    ProcessTransport.executeThroughCarrier(carrier, shell("echo reused", Duration.ofSeconds(2)))
+                            .stdout());
+            assertEquals(3, starts.get());
+            assertTrue(borrowed.isAlive());
+        } finally {
+            borrowed.destroyForcibly();
+            borrowed.waitFor(5, TimeUnit.SECONDS);
+        }
+    }
 
     @Test
     void aChildThatOutlivesItsDeadlineIsKilledAndReportedUnknown() {
@@ -481,6 +737,37 @@ final class ProcessTransportTest {
         ServerClosedException failure = assertInstanceOf(
                 ServerClosedException.class, result, "our own kill must not be reported as tmux's exit status");
         assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
+    }
+
+    /**
+     * Closing kills the child and closes its pipes, and the drain that notices first must not report
+     * that as its own failure. The child here ignores the termination signal for a moment, so its pipes
+     * are closed while it is still alive, which is when a drain would report the closed stream; the
+     * close is repeated across different timings of the drain.
+     */
+    @Test
+    void closeDuringACommandIsAlwaysReportedAsTheTransportClosing() throws Exception {
+        int wrong = 0;
+        for (int round = 0; round < 12; round++) {
+            ProcessTransport transport = new ProcessTransport(1, 4_096);
+            BlockingQueue<Object> outcome = new ArrayBlockingQueue<>(1);
+            Thread caller = new Thread(() -> {
+                try {
+                    outcome.add(transport.execute(shell("trap '' TERM; while :; do sleep 0.05; done", GENEROUS)));
+                } catch (RuntimeException e) {
+                    outcome.add(e);
+                }
+            });
+            caller.start();
+            Thread.sleep(20 + (round % 6) * 10);
+            transport.close();
+            Object result = outcome.poll(20, TimeUnit.SECONDS);
+            if (!(result instanceof ServerClosedException)) {
+                wrong++;
+            }
+            caller.join(TimeUnit.SECONDS.toMillis(5));
+        }
+        assertEquals(0, wrong, "closes reported as something other than the transport closing");
     }
 
     @Test
@@ -949,12 +1236,15 @@ final class ProcessTransportTest {
         return false;
     }
 
+    /**
+     * Standard output whose first look blocks until released, as a pump worker stuck in I/O would.
+     */
     private static final class GatedInputStream extends InputStream {
         private final CountDownLatch readStarted = new CountDownLatch(1);
         private final CountDownLatch released = new CountDownLatch(1);
 
         @Override
-        public int read() {
+        public int available() {
             readStarted.countDown();
             boolean interrupted = false;
             while (released.getCount() > 0) {
@@ -967,6 +1257,11 @@ final class ProcessTransportTest {
             if (interrupted) {
                 Thread.currentThread().interrupt();
             }
+            return 1;
+        }
+
+        @Override
+        public int read() {
             return -1;
         }
 

@@ -587,29 +587,12 @@ final class Execution {
         return index;
     }
 
-    /**
-     * A new owned session, sized like tmuxp's terminal-size detection where {@code Server}
-     * can honor it, and plain otherwise.
-     *
-     * <p>{@code TMUXP_DEFAULT_COLUMNS}/{@code TMUXP_DEFAULT_ROWS} (else {@code COLUMNS}/{@code ROWS},
-     * else 80x24) seed the size; the real stdout's terminal overrides it where there is one, and
-     * {@code COLUMNS}/{@code LINES} override that. {@code TMUXP_DETECT_TERMINAL_SIZE} set to anything
-     * but {@code 1} disables detection outright. Below tmux 3.3a, {@code Server} refuses a size; that
-     * refusal is caught here rather than predicted, because it also carries the running version.
-     */
+    /** A new owned session, using tmuxp's terminal-size detection. */
     private static Session newOwnedSession(Main.Context context, Server server, WorkspacePlan plan)
             throws IOException, InterruptedException {
         SessionSpec.Builder spec = SessionSpec.builder().named(plan.name()).in(plan.directory());
-        Optional<Dimensions> size = sessionDimensions(context);
-        if (size.isEmpty()) return server.newSession(spec.build());
-        try {
-            return server.newSession(spec.sized(size.orElseThrow()).build());
-        } catch (UnsupportedFeatureException tooOld) {
-            return server.newSession(SessionSpec.builder()
-                    .named(plan.name())
-                    .in(plan.directory())
-                    .build());
-        }
+        sessionDimensions(context).ifPresent(spec::sized);
+        return server.newSession(spec.build());
     }
 
     private static Optional<Dimensions> sessionDimensions(Main.Context context)

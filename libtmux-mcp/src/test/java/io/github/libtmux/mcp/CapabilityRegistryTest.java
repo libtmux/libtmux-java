@@ -902,7 +902,7 @@ final class CapabilityRegistryTest {
         TmuxTransport absent = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                return new CommandResult(1, List.of(), List.of("absent"));
+                return new CommandResult(1, List.of(), List.of("no server running"));
             }
 
             @Override
@@ -950,7 +950,7 @@ final class CapabilityRegistryTest {
         TmuxTransport absent = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                return new CommandResult(1, List.of(), List.of("absent"));
+                return new CommandResult(1, List.of(), List.of("no server running"));
             }
 
             @Override
@@ -992,6 +992,9 @@ final class CapabilityRegistryTest {
         TmuxTransport oversizedEnvironment = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
+                }
                 return new CommandResult(0, List.of("VALUE=" + "x".repeat(1_048_576)), List.of());
             }
 
@@ -1034,8 +1037,11 @@ final class CapabilityRegistryTest {
         TmuxTransport secondResultIsOversized = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
+                }
                 return calls.getAndIncrement() == 0
-                        ? new CommandResult(1, List.of(), List.of("absent"))
+                        ? new CommandResult(1, List.of(), List.of("no server running"))
                         : new CommandResult(0, List.of("VALUE=" + "x".repeat(1_048_576)), List.of());
             }
 
@@ -1138,7 +1144,7 @@ final class CapabilityRegistryTest {
         TmuxTransport absent = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                return new CommandResult(1, List.of(), List.of("absent"));
+                return new CommandResult(1, List.of(), List.of("no server running"));
             }
 
             @Override
@@ -1206,6 +1212,9 @@ final class CapabilityRegistryTest {
         TmuxTransport changing = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
+                }
                 return probes.getAndIncrement() == 0
                         ? new CommandResult(0, List.of("123"), List.of())
                         : new CommandResult(1, List.of(), List.of("gone"));

@@ -347,7 +347,7 @@ final class RunningCommandsTest {
         assertEquals(1, sends.size());
         assertTrue(preflights.get(0) < discoveries.getFirst());
         assertTrue(discoveries.getFirst() < preflights.get(1));
-        assertEquals(preflights.get(1) + 1, sends.getFirst(), "a tmux query followed the final preflight");
+        assertEquals(preflights.get(1) + 1, sends.getFirst(), "nothing may follow the final preflight but the send");
         assertEquals(1, directCommandCount(requests, "wait-for"));
     }
 
@@ -621,7 +621,9 @@ final class RunningCommandsTest {
         try (ProcessTransport processes = new ProcessTransport()) {
             TmuxTransport uncertain = borrowing(request -> {
                 CommandResult result = processes.execute(request);
-                if (request.commands().get(0).stream().anyMatch(argument -> argument.contains("ch_lt"))) {
+                if (request.commands().stream()
+                        .flatMap(List::stream)
+                        .anyMatch(argument -> argument.contains("ch_lt"))) {
                     throw new DispatchException.Failed(
                             "simulated failure after delivery", DispatchOutcome.UNKNOWN, null);
                 }
@@ -967,7 +969,8 @@ final class RunningCommandsTest {
     }
 
     private static Optional<String> nonce(CommandRequest request) {
-        return request.commands().getFirst().stream()
+        return request.commands().stream()
+                .flatMap(List::stream)
                 .filter(argument -> argument.contains("ch_lt"))
                 .flatMap(argument -> NONCE.matcher(argument).results())
                 .map(MatchResult::group)

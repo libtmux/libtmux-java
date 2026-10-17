@@ -290,7 +290,7 @@ final class TypingTest {
         List<Integer> sends = indexes(requests, request -> hasCommand(request, "send-keys"));
         assertEquals(2, preflights.size());
         assertEquals(1, sends.size());
-        assertEquals(preflights.getLast() + 1, sends.getFirst());
+        assertEquals(preflights.getLast() + 1, sends.getFirst(), "the daemon is known, so nothing separates them");
     }
 
     @Test
@@ -954,7 +954,7 @@ final class TypingTest {
             TmuxTransport interleaving = new TmuxTransport() {
                 @Override
                 public CommandResult execute(CommandRequest request) {
-                    if (String.join(" ", request.commands().get(0)).contains("paste-buffer")) {
+                    if (hasCommand(request, "paste-buffer")) {
                         // Hold both pastes open at once, so a shared buffer name would collide.
                         bothPending.countDown();
                         await(bothPending);

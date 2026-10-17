@@ -34,14 +34,14 @@ public final class Layouts {
 
     /**
      * tmux 3.8 added the JSON (v2) layout format: {@code layout_dump} in {@code layout-custom.c}
-     * writes {@code {"V":2,"L":...}} instead of the checksummed string from that release on. Landed
-     * at {@code bf43fdc0} in tmux's own history, which {@code git tag --contains} places on {@code
-     * 3.8-rc} and nothing earlier. Every release before it has no JSON parser at all: {@code
+     * writes {@code {"V":2,"L":...}} instead of the checksummed string. The release candidates
+     * already write it: 3.8-rc2 and 3.8-rc3 do, 3.7c does not, and rc2 is the earliest build
+     * measured, so the gate names it. Every release before has no JSON parser at all: {@code
      * layout_construct} dispatches purely on whether the input opens with a curly brace, and
      * anything that branch cannot parse ends the server outright on 3.3a. A JSON-shaped string is
      * therefore only something *this* tmux could have written once it is at least this version.
      */
-    private static final TmuxVersion JSON_LAYOUT_SINCE = new TmuxVersion(3, 8, "");
+    private static final TmuxVersion JSON_LAYOUT_SINCE = new TmuxVersion(3, 8, "", false, "rc2");
 
     private Layouts() {}
 
@@ -190,7 +190,7 @@ public final class Layouts {
 
     private static TmuxVersion version(Server server) {
         try {
-            return SessionCreation.versionForCreation(server);
+            return server.versionForCreation();
         } catch (IllegalArgumentException invalid) {
             throw new MalformedResponseException("could not read tmux version", invalid);
         }

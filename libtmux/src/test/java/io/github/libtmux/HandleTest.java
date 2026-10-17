@@ -2,6 +2,7 @@ package io.github.libtmux;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -228,7 +229,10 @@ final class HandleTest {
 
             window.selectLayout(Layout.MAIN_HORIZONTAL_MIRRORED);
 
-            assertEquals(captured + 1, transport.calls.get(), "the operation must not probe another server version");
+            assertEquals(captured + 1, transport.calls.get(), "only the operation reached tmux: the version is known");
+            assertFalse(
+                    VersionProbes.is(transport.requests.get(captured)),
+                    "the version check must not capture a new handle identity");
         }
     }
 
@@ -328,7 +332,7 @@ final class HandleTest {
 
     private static String last(CountingTransport transport) {
         List<String> argv =
-                transport.requests.get(transport.requests.size() - 1).commands().get(0);
+                transport.requests.get(transport.requests.size() - 1).commands().getLast();
         return argv.get(argv.size() - 2);
     }
 

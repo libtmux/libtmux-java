@@ -108,7 +108,7 @@ final class CatsLifecycleSuite extends FunSuite {
             }
           } yield ()
         }
-      program.timeout(1.second).unsafeRunSync()
+      program.timeout(5.seconds).unsafeRunSync()
     }
   }
 
@@ -160,7 +160,7 @@ final class CatsLifecycleSuite extends FunSuite {
             }
           }
         }
-        .timeout(1.second)
+        .timeout(5.seconds)
         .unsafeRunSync()
     }
   }

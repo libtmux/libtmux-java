@@ -495,9 +495,9 @@ final class ExecutionTest {
                 "usage", new ObjectMapper().readTree(result.err()).path("code").asText());
     }
 
-    /** Below 3.3a a size is silently skipped, not sent and ignored, matching {@code SessionSpec}. */
+    /** An unsupported executable is refused before session creation, not retried without a size. */
     @Test
-    void loadSkipsSizingOnATmuxOlderThan33a() throws Exception {
+    void loadRejectsAnUnsupportedTmuxInsteadOfRetryingWithoutSize() throws Exception {
         Path source = directory.resolve("size-old.yaml");
         Path socket = directory.resolve("size-old-socket");
         Path trace = directory.resolve("size-old-arguments");
@@ -522,8 +522,10 @@ final class ExecutionTest {
                         "-f",
                         "/dev/null",
                         "--json");
-                assertEquals(0, result.code(), result.err());
-                assertFalse(Files.readString(trace).lines().anyMatch("-x"::equals), Files.readString(trace));
+                assertEquals(1, result.code(), result.err());
+                assertTrue(result.err().contains("3.3a"), result.err());
+                assertFalse(Files.readString(trace).lines().anyMatch("new-session"::equals), Files.readString(trace));
+                assertFalse(server.isAlive());
             } finally {
                 if (server.isAlive()) server.killServer();
             }
@@ -1128,7 +1130,7 @@ final class ExecutionTest {
                         "--json");
                 assertEquals(1, result.code(), result.toString());
                 assertEquals(
-                        json && !server.version().atLeast(io.github.libtmux.TmuxVersion.parse("3.8"))
+                        json && !server.version().atLeast(io.github.libtmux.TmuxVersion.parse("3.8-rc2"))
                                 ? "tmux_failed"
                                 : "invalid_workspace",
                         Documents.JSON.readTree(result.err()).path("code").asText());

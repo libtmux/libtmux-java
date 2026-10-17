@@ -392,6 +392,7 @@ public final class io/github/libtmux/kotlin/ServerOperationsKt {
 	public static final fun panes (Lio/github/libtmux/kotlin/Server;Lio/github/libtmux/query/FilterExpr;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun panes (Lio/github/libtmux/kotlin/Server;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun requireAlive (Lio/github/libtmux/kotlin/Server;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun requireCompatibleTmux (Lio/github/libtmux/kotlin/Server;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun run (Lio/github/libtmux/kotlin/Server;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun session (Lio/github/libtmux/kotlin/Server;Lio/github/libtmux/SessionId;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun session (Lio/github/libtmux/kotlin/Server;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;

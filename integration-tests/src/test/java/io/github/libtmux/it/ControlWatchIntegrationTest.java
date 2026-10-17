@@ -147,7 +147,7 @@ final class ControlWatchIntegrationTest {
     void aLayoutChangeCarriesJsonOnceThisClientAskedForIt(Server server) throws Exception {
         Session session = server.sessions().get(0);
         Window window = session.windows().get(0);
-        if (!server.version().atLeast(new TmuxVersion(3, 8, ""))) {
+        if (!server.version().atLeast(new TmuxVersion(3, 8, "", false, "rc2"))) {
             return; // classic-only releases have no JSON layout to disagree about
         }
 

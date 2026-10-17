@@ -27,9 +27,23 @@ import kotlin.annotations.jvm.ReadOnly;
  * @param input what the commands read from tmux's standard input, empty for the commands that
  *     read none. A tmux argument is bounded by MAX_IMSGSIZE, so text too large to be one
  *     travels here instead.
+ * @param discardStdout whether the caller reads only the exit status and standard error. tmux 3.0
+ *     and 3.1 keep the client's standard output open after the client exits; a request that needs
+ *     none of it says so and the transport never opens the pipe. The process transport honours
+ *     it, so the output is empty; a transport that does not still returns once the process has
+ *     exited
  */
 public record CommandRequest(
-        @ReadOnly List<String> endpoint, @ReadOnly List<List<String>> commands, Duration timeout, String input) {
+        @ReadOnly List<String> endpoint,
+        @ReadOnly List<List<String>> commands,
+        Duration timeout,
+        String input,
+        boolean discardStdout) {
+
+    /** A request whose standard output is read like any other. */
+    public CommandRequest(List<String> endpoint, List<List<String>> commands, Duration timeout, String input) {
+        this(endpoint, commands, timeout, input, false);
+    }
 
     public CommandRequest {
         endpoint = List.copyOf(endpoint);

@@ -383,7 +383,7 @@ final class PaneInputCohortTest {
             }
         }
 
-        assertEquals(1, requests.size());
+        assertEquals(1, requests.size(), "one pane/client snapshot on a daemon already checked");
         List<List<String>> commands = requests.stream()
                 .flatMap(request -> request.commands().stream())
                 .filter(command -> command.getFirst().startsWith("list-"))

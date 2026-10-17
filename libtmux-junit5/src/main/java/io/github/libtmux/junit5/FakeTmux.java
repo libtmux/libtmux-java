@@ -9,6 +9,10 @@ import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.TmuxTransport;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -247,7 +251,70 @@ public final class FakeTmux implements TmuxTransport {
      */
     @Override
     public Optional<ControlCarrier> controlCarrier() {
-        return Optional.of(command -> attach());
+        return Optional.of(command -> {
+            if (command.size() >= 3 && isVersionProbe(command.subList(command.size() - 3, command.size()))) {
+                return new VersionProbe(refusal(command.getLast()));
+            }
+            if (command.size() >= 4
+                    && command.subList(command.size() - 4, command.size() - 1)
+                            .equals(List.of("-C", "attach-session", "-t"))) {
+                return attach();
+            }
+            throw new IOException("the fake carrier supports version probes and control attachment");
+        });
+    }
+
+    /**
+     * The version probe: {@code run-shell -C '<marker>#{version}'}, which a daemon answers by
+     * failing to parse the expansion and spelling the version in the error.
+     */
+    private static boolean isVersionProbe(List<String> command) {
+        return command.size() == 3
+                && command.get(0).equals("run-shell")
+                && command.get(1).equals("-C")
+                && command.get(2).endsWith("#{version}");
+    }
+
+    private static String refusal(String format) {
+        return "unknown command: " + format.substring(0, format.length() - "#{version}".length()) + VERSION;
+    }
+
+    private static final class VersionProbe extends Process {
+        private final InputStream error;
+
+        VersionProbe(String stderr) {
+            this.error = new ByteArrayInputStream((stderr + "\n").getBytes(StandardCharsets.UTF_8));
+        }
+
+        private final InputStream output = InputStream.nullInputStream();
+
+        @Override
+        public OutputStream getOutputStream() {
+            return OutputStream.nullOutputStream();
+        }
+
+        @Override
+        public InputStream getInputStream() {
+            return output;
+        }
+
+        @Override
+        public InputStream getErrorStream() {
+            return error;
+        }
+
+        @Override
+        public int waitFor() {
+            return 1;
+        }
+
+        @Override
+        public int exitValue() {
+            return 1;
+        }
+
+        @Override
+        public void destroy() {}
     }
 
     private synchronized Process attach() {
@@ -316,6 +383,10 @@ public final class FakeTmux implements TmuxTransport {
         }
         if (verb.equals("-V")) {
             return ok("tmux " + VERSION);
+        }
+        if (isVersionProbe(argv)) {
+            sent.add(List.copyOf(argv));
+            return new CommandResult(1, List.of(), List.of(refusal(argv.getLast())));
         }
         if (!COMMANDS.contains(verb)) {
             return new CommandResult(1, List.of(), List.of("unknown command: " + verb));
