@@ -23,10 +23,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 /** A mirror follows what tmux announces, and says so when it can no longer follow. */
+@Tag("control")
 @ExtendWith(TmuxExtension.class)
 final class ServerMirrorIntegrationTest {
 

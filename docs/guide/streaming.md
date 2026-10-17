@@ -93,9 +93,12 @@ origin. Treat exhaustion as "carry on" rather than as an error.
 
 ## Pushed output
 
-A control client stays attached and pushes terminal output as tmux produces it,
-rather than being asked:
+Managed control requires tmux 3.7 or newer and a carrier that can pin
+its socket before initialization. Ordinary polling and channels retain the
+3.3a floor. An eligible control client stays attached and pushes terminal
+output as tmux produces it:
 
+<!-- snippet: control: this example acquires managed control -->
 ```java
 // Given: Server server, Session session
 try (ControlClient client = server.control(session);
@@ -130,6 +133,7 @@ time on the consuming thread. It ends when the subscription closes, so a timer
 that closes it bounds the whole read, and closing the stream closes the
 subscription:
 
+<!-- snippet: control: this example acquires managed control -->
 ```java
 // Given: Server server, Session session
 try (ControlClient client = server.control(session);
@@ -174,6 +178,7 @@ subscription's own bounded buffer keeps filling regardless, and a full buffer
 still reports its loss as a `Delivery.Gap`, delivered like any other element.
 Pausing tmux's own push is `pause-after`, further down.
 
+<!-- snippet: control: this example acquires managed control -->
 ```java
 // Given: Server server, Session session
 try (ControlClient client = server.control(session);
@@ -221,6 +226,7 @@ The same client is told about changes as they happen — a window created or
 renamed, a session switched, a layout moved — without asking. Each arrives as a
 `ControlEvent`, and `notification()` is its typed reading, for matching on:
 
+<!-- snippet: control: this example acquires managed control -->
 ```java
 // Given: Server server, Session session
 try (ControlClient client = server.control(session);
@@ -251,6 +257,7 @@ A notification says that something changed, not what everything now is.
 fresh capture, and each capture that differs from the last is published as a
 numbered view:
 
+<!-- snippet: control: a mirror acquires managed control -->
 ```java
 // Given: Session session
 try (ServerMirror mirror = ServerMirror.open(session)) {

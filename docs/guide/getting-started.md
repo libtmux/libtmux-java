@@ -211,8 +211,10 @@ just created.
 
 ## Watching output
 
-A control client stays attached and pushes terminal output as it happens:
+A control client requires tmux 3.7 or newer and a carrier that can pin
+its socket. It stays attached and pushes terminal output as it happens:
 
+<!-- snippet: control: output subscriptions require managed control acquisition -->
 ```java
 // Given: Server server, Session session
 try (ControlClient client = server.control(session);

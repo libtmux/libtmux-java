@@ -12,7 +12,6 @@ import io.github.libtmux.Session_;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowSpec;
 import io.github.libtmux.Window_;
-import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.query.FilterExpr;
 import io.github.libtmux.query.TmuxFilters;
@@ -44,9 +43,10 @@ final class PushdownIntegrationTest {
         for (String name : NAMES) {
             try {
                 server.newSession(name);
-            } catch (LibTmuxException refused) {
-                // 3.7 rejects . and : in a name; earlier releases store them as _.
-                assertTrue(String.valueOf(refused.getMessage()).contains("invalid session name"), refused::toString);
+            } catch (IllegalArgumentException refused) {
+                // 3.7 rejects . and : in a name, and the library says so before dispatch; earlier
+                // releases store them as _.
+                assertTrue(String.valueOf(refused.getMessage()).contains("tmux 3.7 refuses"), refused::toString);
                 continue;
             }
             accepted.add(name);

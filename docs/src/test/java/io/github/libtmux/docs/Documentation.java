@@ -88,6 +88,9 @@ final class Documentation {
         if (directive.startsWith("does-not-compile:") && directive.length() > "does-not-compile:".length()) {
             return Snippet.Expectation.DOES_NOT_COMPILE;
         }
+        if (directive.startsWith("control:") && directive.length() > "control:".length()) {
+            return Snippet.Expectation.CONTROL;
+        }
         if (directive.startsWith("throws:") && directive.length() > "throws:".length()) {
             return Snippet.Expectation.THROWS;
         }
@@ -101,7 +104,7 @@ final class Documentation {
         // exists to prevent. Naming the file because a typo here is silent otherwise.
         throw new IllegalArgumentException("unknown snippet directive '" + directive + "' in " + file
                 + "; expected 'does-not-compile: <diagnostic phrase>', 'throws: <exception>', 'compile-only: <reason>'"
-                + " or 'skip: <reason>'");
+                + ", 'control: <reason>' or 'skip: <reason>'");
     }
 
     /**

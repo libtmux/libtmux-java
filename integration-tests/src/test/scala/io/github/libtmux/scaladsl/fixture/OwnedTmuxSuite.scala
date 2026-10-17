@@ -11,6 +11,10 @@ import scala.util.Using
 final class OwnedTmuxSuite extends FunSuite {
   test("owned cleanup removes the daemon, socket, children and workers") {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       assert(fixture.server.isAlive())
       val daemon = fixture.serverProcess
       val control = fixture.own(

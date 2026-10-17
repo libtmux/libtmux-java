@@ -9,6 +9,7 @@ import io.github.libtmux.exception.ServerUnavailableException;
 import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.internal.ErrorText;
+import io.github.libtmux.internal.TmuxFeatures;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.ControlCarrier;
@@ -60,6 +61,12 @@ public final class Versions {
 
     /** Checks the live daemon before dispatch and fences the requested commands on that version. */
     public static CommandResult execute(TmuxTransport transport, CommandRequest request, boolean waiting) {
+        return execute(transport, request, waiting, TmuxFeatures.Intent.literal(request.commands()));
+    }
+
+    /** As above, refusing first any optional feature the checked version cannot safely run. */
+    public static CommandResult execute(
+            TmuxTransport transport, CommandRequest request, boolean waiting, TmuxFeatures.Intent intent) {
         long started = System.nanoTime();
         if (request.commands().equals(List.of(List.of("-V")))
                 || request.commands().equals(List.of(List.of("-h")))) {
@@ -68,7 +75,7 @@ public final class Versions {
         String known = recall(transport, request);
         if (known != null) {
             try {
-                CommandResult result = dispatchChecked(transport, request, known, started, waiting);
+                CommandResult result = dispatchChecked(transport, request, known, started, waiting, intent);
                 // A daemon that has gone answers without running anything, so asking again is safe.
                 if (!gone(result)) return result;
             } catch (Replaced replaced) {
@@ -80,7 +87,7 @@ public final class Versions {
         // read once more. A refused version surfaces from that read as the version error it is.
         for (int attempt = 0; ; attempt++) {
             try {
-                return checkVersion(transport, request, waiting, started);
+                return checkVersion(transport, request, waiting, started, intent);
             } catch (Replaced replaced) {
                 forget(transport, request);
                 if (attempt == 1) {
@@ -91,7 +98,11 @@ public final class Versions {
     }
 
     private static CommandResult checkVersion(
-            TmuxTransport transport, CommandRequest request, boolean waiting, long started) {
+            TmuxTransport transport,
+            CommandRequest request,
+            boolean waiting,
+            long started,
+            TmuxFeatures.Intent intent) {
         Probe probe = probe(transport, request);
         String version;
         if (probe.version().isPresent()) {
@@ -116,13 +127,20 @@ public final class Versions {
             throw rejected(request, probe.result());
         }
         if (probe.version().isPresent()) {
-            return dispatchChecked(transport, request, version, started, waiting);
+            return dispatchChecked(transport, request, version, started, waiting, intent);
         }
+        TmuxFeatures.require(TmuxVersion.parse(version), intent);
         return dispatch(transport, request, guarded(request.commands(), version), remaining(request, started), waiting);
     }
 
     private static CommandResult dispatchChecked(
-            TmuxTransport transport, CommandRequest request, String version, long started, boolean waiting) {
+            TmuxTransport transport,
+            CommandRequest request,
+            String version,
+            long started,
+            boolean waiting,
+            TmuxFeatures.Intent intent) {
+        TmuxFeatures.require(TmuxVersion.parse(version), intent);
         CommandRequest live = new CommandRequest(
                 withoutStarting(request.endpoint()), request.commands(), request.timeout(), request.input());
         return dispatch(transport, live, guarded(request.commands(), version), remaining(request, started), waiting);
@@ -207,7 +225,7 @@ public final class Versions {
     }
 
     /** Checks through the carrier without taking ownership of the caller's carrier. */
-    public static void requireCarrier(ControlCarrier carrier, List<String> endpoint, Duration timeout) {
+    public static TmuxVersion requireCarrier(ControlCarrier carrier, List<String> endpoint, Duration timeout) {
         String marker = marker();
         CommandRequest request =
                 new CommandRequest(withoutStarting(endpoint), List.of(probeCommand(marker)), timeout, "");
@@ -219,7 +237,7 @@ public final class Versions {
         }
         Optional<String> version = answer(result, marker, endpoint.getFirst());
         if (version.isEmpty()) throw rejected(request, result);
-        require(version.get());
+        return require(version.get());
     }
 
     private static boolean cleanup(CommandRequest request) {

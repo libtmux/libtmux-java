@@ -16,6 +16,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
  * longer usable, or the transport says how far the request got. Nothing may hang, and the server
  * must answer afterwards.
  */
+@Tag("control")
 @ExtendWith(TmuxExtension.class)
 final class ControlSoakIntegrationTest {
 

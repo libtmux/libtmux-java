@@ -696,22 +696,12 @@ public final class Pane {
     /**
      * Moves this pane into a window of its own, leaving tmux to name it.
      *
-     * <p>On tmux 3.7 the name is supplied rather than left to tmux, because letting tmux choose it
-     * there ends the server and every session on it. The name supplied is the one tmux would have
-     * chosen, so the result is the same window either way.
+     * @throws UnsupportedFeatureException on exact tmux 3.7, whose unnamed break can end the server;
+     *     use {@link #breakOut(String)} or tmux 3.7a or newer
      */
     @Operation(Kind.MUTATION)
     public Window breakOut() {
-        // The name tmux would have chosen anyway, supplied only so 3.7 does not have to choose it.
-        // Read live rather than from the capture: a pane's command changes as its shell starts, and
-        // a captured value can be older than the break by any amount.
-        return breakNamed(Optional.empty(), currentCommandNow());
-    }
-
-    /** What tmux says is running here at this moment, rather than when the capture was taken. */
-    private String currentCommandNow() {
-        String reported = expand("#{pane_current_command}");
-        return reported.isEmpty() ? state.currentCommand() : reported;
+        return breakNamed(Optional.empty());
     }
 
     /**
@@ -820,23 +810,28 @@ public final class Pane {
     @Operation(Kind.MUTATION)
     public Window breakOut(String windowName) {
         Objects.requireNonNull(windowName, "windowName");
-        return breakNamed(Optional.of(windowName), windowName);
+        return breakNamed(Optional.of(windowName));
     }
 
-    /**
-     * @param wanted the name the caller asked for, if they asked
-     * @param supplied the name to hand tmux, which is never absent because 3.7 crashes without one
-     */
-    private Window breakNamed(Optional<String> wanted, String supplied) {
-        List<String> argv = new ArrayList<>(List.of("break-pane", "-d", "-n", supplied));
-        argv.addAll(List.of("-s", state.id().value(), "-P", "-F", BROKEN_OUT.template()));
-        List<String> fields =
-                BROKEN_OUT.split(server.run(snapshot, argv).stdout().get(0));
+    private Window breakNamed(Optional<String> wanted) {
+        TmuxVersion running = server.version(snapshot);
+        if (wanted.isEmpty() && running.sameRelease(BREAK_PANE_NAMING_BROKEN)) {
+            throw new UnsupportedFeatureException(
+                    "unnamed break-pane is unreliable on tmux 3.7; use breakOut(name) or tmux 3.7a+");
+        }
+        List<String> argv = new ArrayList<>(List.of("break-pane", "-d"));
+        wanted.ifPresent(name -> argv.addAll(List.of("-n", name)));
+        argv.addAll(List.of("-s", state.id().value()));
+        List<List<String>> commands =
+                List.of(argv, List.of("display-message", "-p", "-t", state.id().value(), BROKEN_OUT.template()));
+        List<String> fields = BROKEN_OUT.split(server.runBreak(snapshot, commands, running, wanted.isPresent())
+                .stdout()
+                .getFirst());
         WindowContext created = new WindowContext(
                 new SessionId(fields.get(0)),
                 new WindowIndex(Integer.parseInt(fields.get(2))),
                 new WindowId(fields.get(1)));
-        if (server.version(snapshot).sameRelease(BREAK_PANE_NAMING_BROKEN)) {
+        if (running.sameRelease(BREAK_PANE_NAMING_BROKEN)) {
             // 3.7 took the name and ignored it, so the caller's choice is applied afterwards.
             wanted.ifPresent(name -> server.run(
                     snapshot, List.of("rename-window", "-t", fields.get(1), "--", TmuxFormats.literal(name))));
@@ -958,10 +953,6 @@ public final class Pane {
             if (text.indexOf('\0') >= 0) {
                 throw new IllegalArgumentException("pasted text cannot contain NUL");
             }
-            TmuxVersion running = server.version(snapshot);
-            if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-                throw new UnsupportedFeatureException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
-            }
             String buffer = "libtmux-paste-" + UUID.randomUUID();
             // Recorded before dispatch: a wait already watching this pane must never see the pasted
             // content on screen before the record that discounts it exists. Rolled back below if the
@@ -981,7 +972,8 @@ public final class Pane {
                                         "-b",
                                         buffer,
                                         "-t",
-                                        state.id().value())));
+                                        state.id().value())),
+                        true);
             } catch (RuntimeException failure) {
                 settleFailure(recorded, failure);
                 try {
@@ -1011,25 +1003,23 @@ public final class Pane {
             if (text.indexOf('\0') >= 0) {
                 throw new IllegalArgumentException("pasted text cannot contain NUL");
             }
-            TmuxVersion running = server.version(snapshot);
-            if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-                throw new UnsupportedFeatureException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
-            }
             String buffer = "libtmux-paste-" + UUID.randomUUID();
             try {
-                server.runTogether(snapshot, text, List.of(List.of("load-buffer", "-b", buffer, "-")));
+                server.runTogether(snapshot, text, List.of(List.of("load-buffer", "-b", buffer, "-")), true);
                 beforePaste.run();
                 PaneEcho.Recorded recorded = server.echo().recordLiteral(identity(), state.id(), text);
                 try {
-                    server.run(
+                    server.runTogether(
                             snapshot,
-                            List.of(
+                            "",
+                            List.of(List.of(
                                     "paste-buffer",
                                     "-d",
                                     "-b",
                                     buffer,
                                     "-t",
-                                    state.id().value()));
+                                    state.id().value())),
+                            true);
                 } catch (RuntimeException failure) {
                     settleFailure(recorded, failure);
                     throw failure;

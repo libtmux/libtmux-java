@@ -14,13 +14,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
 
@@ -56,6 +59,9 @@ public final class FakeTmux implements TmuxTransport {
 
     /** The release it claims to be, one every supported feature is available on. */
     private static final String VERSION = "3.7c";
+
+    // Pins retain model identities; this fake has no host socket.
+    private final Map<String, String> controlPins = new HashMap<>();
 
     private static final String LAYOUT = "c3a4,80x24,0,0,1";
 
@@ -251,16 +257,56 @@ public final class FakeTmux implements TmuxTransport {
      */
     @Override
     public Optional<ControlCarrier> controlCarrier() {
-        return Optional.of(command -> {
-            if (command.size() >= 3 && isVersionProbe(command.subList(command.size() - 3, command.size()))) {
-                return new VersionProbe(refusal(command.getLast()));
+        return Optional.of(new ControlCarrier() {
+            @Override
+            public Process start(List<String> command) throws IOException {
+                synchronized (FakeTmux.this) {
+                    int selector = command.indexOf("-S");
+                    if (selector >= 0
+                            && !Objects.equals(controlPins.get(command.get(selector + 1)), pid + ":" + started)) {
+                        throw new IOException("the fake pinned incarnation has ended");
+                    }
+                    if (command.size() >= 3 && isVersionProbe(command.subList(command.size() - 3, command.size()))) {
+                        return VersionProbe.refusing(refusal(command.getLast()));
+                    }
+                    if (command.size() >= 3
+                            && command.get(command.size() - 3).equals("run-shell")
+                            && command.get(command.size() - 2).equals("-C")
+                            && command.getLast().startsWith("libtmux-identity-")) {
+                        String format = command.getLast();
+                        String marker = format.substring(0, format.indexOf("#{version}"));
+                        return VersionProbe.refusing("unknown command: " + marker + VERSION + "," + pid + "," + started
+                                + ",/tmp/libtmux-java-fake/" + pid);
+                    }
+                    if (command.size() >= 4
+                            && command.subList(command.size() - 4, command.size() - 1)
+                                    .equals(List.of("-C", "attach-session", "-t"))) return attach();
+                    throw new IOException("the fake carrier supports identity probes and control attachment");
+                }
             }
-            if (command.size() >= 4
-                    && command.subList(command.size() - 4, command.size() - 1)
-                            .equals(List.of("-C", "attach-session", "-t"))) {
-                return attach();
+
+            @Override
+            public PinnedSocket pinSocket(String socketPath, Duration timeout) throws IOException {
+                synchronized (FakeTmux.this) {
+                    if (!socketPath.equals("/tmp/libtmux-java-fake/" + pid))
+                        throw new IOException("the fake socket incarnation has ended");
+                    String alias = socketPath + "/control-" + UUID.randomUUID();
+                    controlPins.put(alias, pid + ":" + started);
+                    return new PinnedSocket() {
+                        @Override
+                        public String socketPath() {
+                            return alias;
+                        }
+
+                        @Override
+                        public void close() {
+                            synchronized (FakeTmux.this) {
+                                controlPins.remove(alias);
+                            }
+                        }
+                    };
+                }
             }
-            throw new IOException("the fake carrier supports version probes and control attachment");
         });
     }
 
@@ -280,13 +326,19 @@ public final class FakeTmux implements TmuxTransport {
     }
 
     private static final class VersionProbe extends Process {
+        private final InputStream output;
         private final InputStream error;
+        private final int exit;
 
-        VersionProbe(String stderr) {
-            this.error = new ByteArrayInputStream((stderr + "\n").getBytes(StandardCharsets.UTF_8));
+        private VersionProbe(int exit, String stdout, String stderr) {
+            this.exit = exit;
+            output = new ByteArrayInputStream((stdout.isEmpty() ? "" : stdout + "\n").getBytes(StandardCharsets.UTF_8));
+            error = new ByteArrayInputStream((stderr.isEmpty() ? "" : stderr + "\n").getBytes(StandardCharsets.UTF_8));
         }
 
-        private final InputStream output = InputStream.nullInputStream();
+        static VersionProbe refusing(String stderr) {
+            return new VersionProbe(1, "", stderr);
+        }
 
         @Override
         public OutputStream getOutputStream() {
@@ -305,12 +357,12 @@ public final class FakeTmux implements TmuxTransport {
 
         @Override
         public int waitFor() {
-            return 1;
+            return exit;
         }
 
         @Override
         public int exitValue() {
-            return 1;
+            return exit;
         }
 
         @Override

@@ -44,6 +44,7 @@ final class WorkspaceApplier {
 
     private static void validate(Server server, Workspace workspace) {
         for (WindowSpec window : workspace.windows()) {
+            io.github.libtmux.Names.require(window.name(), server);
             window.layout()
                     .ifPresent(value ->
                             Layouts.require(value, server, window.panes().size()));

@@ -305,9 +305,9 @@ final class Children {
                 throw new Main.Failure(
                         Machine.Code.SCRIPT_FAILED,
                         1,
-                        "tmuxp 1.74.0 is required with Python libtmux's core version check for tmux 3.3a or newer: "
+                        "tmuxp 1.74.0 is required with Python libtmux's core version check and optional feature policy v2: "
                                 + refusal(version)
-                                + "; set TMUX_WORKSPACE_PYTHON to an interpreter with tmuxp 1.74.0 and compatible Python libtmux installed");
+                                + "; set TMUX_WORKSPACE_PYTHON to an interpreter with tmuxp 1.74.0 and the coordinated Python libtmux installed");
             return executable;
         } catch (IOException absent) {
             throw unusableRuntime(absent.getMessage(), absent);

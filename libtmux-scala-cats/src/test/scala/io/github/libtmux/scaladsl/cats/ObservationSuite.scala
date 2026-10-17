@@ -1,11 +1,14 @@
 package io.github.libtmux.scaladsl.cats
 
 import io.github.libtmux.exception.ControlEndedException
-import _root_.cats.effect.{Deferred, IO}
+import _root_.cats.effect.{Deferred, IO, Resource}
 import _root_.cats.effect.unsafe.implicits.global
 import _root_.cats.syntax.all._
 import io.github.libtmux.ServerConfig
 import io.github.libtmux.SessionId
+import io.github.libtmux.transport.ControlCarrier
+import java.time.Duration
+import java.util.OptionalLong
 import io.github.libtmux.control.{ControlClient, Delivery, PaneOutput}
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
@@ -38,8 +41,8 @@ final class ObservationSuite extends FunSuite {
       PosixFilePermissions.fromString("rwx------")
     )
     val config = ServerConfig.builder().binary(fake.toString).build()
-    val program = Control
-      .attachUnfenced[IO](config, new SessionId("$0"))
+    val program = ObservationSuite
+      .attached(config)
       .use(control => control.output(1).use(_.stream.compile.drain))
     val ran =
       try program.timeout(3.seconds).attempt.unsafeRunSync()
@@ -75,7 +78,7 @@ final class ObservationSuite extends FunSuite {
       PosixFilePermissions.fromString("rwx------")
     )
     val config = ServerConfig.builder().binary(fake.toString).build()
-    val client = ControlClient.attachUnfenced(config, new SessionId("$0"))
+    val client = ObservationSuite.client(config)
     val subscription = client.subscribeOutput(1)
     val program = Observation
       .resource[IO, PaneOutput](subscription, new AtomicBoolean(false))
@@ -143,7 +146,7 @@ final class ObservationSuite extends FunSuite {
     )
     val config = ServerConfig.builder().binary(fake.toString).build()
     val program =
-      Control.attachUnfenced[IO](config, new SessionId("$0")).use { control =>
+      ObservationSuite.attached(config).use { control =>
         for {
           alive <- control.isAlive
           watched <- control.watch("cmd", "%1", "#{pane_current_command}")
@@ -195,7 +198,7 @@ final class ObservationSuite extends FunSuite {
     )
     val config = ServerConfig.builder().binary(fake.toString).build()
     val program =
-      Control.attachUnfenced[IO](config, new SessionId("$0")).use { control =>
+      ObservationSuite.attached(config).use { control =>
         for {
           _ <- IO.sleep(200.millis)
           text <- control.standardError
@@ -217,6 +220,43 @@ final class ObservationSuite extends FunSuite {
 
 object ObservationSuite {
 
+  // Protocol fixtures qualify their model realm; native pinning is tested against real sockets.
+  def client(config: ServerConfig): ControlClient = {
+    val carrier = new ControlCarrier {
+      override def start(command: java.util.List[String]): Process =
+        new ProcessBuilder(command).start()
+      override def pinSocket(
+          socket: String,
+          budget: Duration
+      ): ControlCarrier.PinnedSocket =
+        new ControlCarrier.PinnedSocket {
+          override def socketPath(): String = "/fake-control-pin"
+          override def close(): Unit = ()
+        }
+    }
+    ControlClient.attach(
+      carrier,
+      config,
+      new SessionId("$0"),
+      4242L,
+      OptionalLong.of(10L),
+      "3.7c",
+      Duration.ofSeconds(30)
+    )
+  }
+
+  def attached(config: ServerConfig): Resource[IO, Control[IO]] =
+    for {
+      closed <- Resource.eval(IO(new AtomicBoolean(false)))
+      underlying <- Resource.make(IO.interruptible(client(config)))(client =>
+        IO.interruptible(client.close())
+      )
+      execution <- Execution.resource[IO](4)
+      control <- Resource.make(
+        IO(new Control[IO](underlying, closed, execution))
+      )(_.markClosed)
+    } yield control
+
   /** What every fake starts with. tmux follows each request line with a marker
     * line, a `display-message -p` of a token, and a reply ends with the
     * marker's block: `read_request` reads a request and its marker, and
@@ -224,9 +264,22 @@ object ObservationSuite {
     * marker's block.
     */
   val prelude: String =
-    """|for argument in "$@"; do case "$argument" in libtmux-version-*'#{version}')
-       |  printf 'unknown command: %s3.7c\n' "${argument%'#{version}'}" >&2; exit 1;; esac; done
-       |read_request() { IFS= read -r request && IFS= read -r marker; }
+    """|for argument in "$@"; do
+       |  case "$argument" in
+       |    libtmux-version-*'#{version}')
+       |      printf 'unknown command: %s3.7c\n' "${argument%'#{version}'}" >&2; exit 1;;
+       |  esac
+       |  case "$argument" in
+       |    libtmux-identity-*)
+       |      printf 'unknown command: %s3.7c,4242,10,/fake-control\n' "${argument%%'#{version}'*}" >&2; exit 1;;
+       |  esac
+       |done
+       |read_request() {
+       |  while IFS= read -r request && IFS= read -r marker; do
+       |    return 0
+       |  done
+       |  return 1
+       |}
        |answer() {
        |  printf '%%begin 1 1 1\n'
        |  for line in "$@"; do printf '%s\n' "$line"; done

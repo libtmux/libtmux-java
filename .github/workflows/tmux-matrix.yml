@@ -141,14 +141,14 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/workspace-python"
           "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
           # Source-overlay qualification: released tmuxp still pins libtmux~=0.61.
-          # Reviewed PR779 supplies the version check; these are not a released package pair.
+          # Reviewed PR780 supplies optional policy; these are not a released pair.
           git init --quiet "$RUNNER_TEMP/python-libtmux-core"
           git -C "$RUNNER_TEMP/python-libtmux-core" fetch --quiet --depth=1 \
-            https://github.com/tmux-python/libtmux.git 26123fe7e4fc497a9ddb454ce654e468afe916ab
+            https://github.com/tmux-python/libtmux.git 54b277bb673e208820fc9c795abe4444e2ded272
           git -C "$RUNNER_TEMP/python-libtmux-core" checkout --quiet --detach \
-            26123fe7e4fc497a9ddb454ce654e468afe916ab
+            54b277bb673e208820fc9c795abe4444e2ded272
           PYTHONPATH="$RUNNER_TEMP/python-libtmux-core/src" "$RUNNER_TEMP/workspace-python/bin/python" -c \
-            'import sys, libtmux; from pathlib import Path; from libtmux.common import TMUX_MIN_VERSION; assert TMUX_MIN_VERSION == "3.3a", TMUX_MIN_VERSION; assert Path(libtmux.__file__).resolve() == Path(sys.argv[1]).resolve() / "libtmux" / "__init__.py", libtmux.__file__; print(TMUX_MIN_VERSION, libtmux.__file__)' \
+            'import sys, libtmux; from pathlib import Path; from libtmux.common import TMUX_MIN_VERSION, TMUX_OPTIONAL_FEATURE_POLICY_VERSION as policy; assert type(policy) is int and policy >= 2, policy; assert TMUX_MIN_VERSION == "3.3a", TMUX_MIN_VERSION; assert Path(libtmux.__file__).resolve() == Path(sys.argv[1]).resolve() / "libtmux" / "__init__.py", libtmux.__file__; print(TMUX_MIN_VERSION, policy, libtmux.__file__)' \
             "$RUNNER_TEMP/python-libtmux-core/src"
           echo "PYTHONPATH=$RUNNER_TEMP/python-libtmux-core/src" >> "$GITHUB_ENV"
           echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
