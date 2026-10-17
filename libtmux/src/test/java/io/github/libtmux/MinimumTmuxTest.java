@@ -201,6 +201,17 @@ final class MinimumTmuxTest {
     }
 
     @Test
+    void aDaemonThatExitsUnderTheProbeIsNotAlive() {
+        FakeTmux tmux = new FakeTmux("3.3a");
+        tmux.probeFailure = new CommandResult(1, List.of(), List.of("server exited unexpectedly"));
+        try (Server server = Server.using(ServerConfig.builder().build(), tmux)) {
+            assertFalse(server.isAlive());
+            assertThrows(CommandRejectedException.class, () -> server.cmd("list-sessions"));
+            assertEquals(0, tmux.effects.get());
+        }
+    }
+
+    @Test
     void unknownDaemonVersionFailsBeforeEffects() {
         FakeTmux tmux = new FakeTmux("unknown");
         try (Server server = Server.using(ServerConfig.builder().build(), tmux)) {
