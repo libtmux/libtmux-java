@@ -16,6 +16,7 @@ import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.Idempotence;
 import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
+import java.io.File;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -134,11 +135,14 @@ public final class Versions {
             throw rejected(request, result);
         }
         String line = reported(result, request.endpoint().getFirst());
-        if (!line.startsWith("tmux ")) {
+        // tmux 3.3a reports argv[0]'s basename; later releases print tmux.
+        String prefix = new File(request.endpoint().getFirst()).getName() + " ";
+        if (!line.startsWith(prefix)) prefix = "tmux ";
+        if (!line.startsWith(prefix)) {
             throw new MalformedResponseException(
                     request.endpoint().getFirst() + " did not report a tmux version: " + line);
         }
-        String version = line.substring(5);
+        String version = line.substring(prefix.length());
         try {
             require(version);
         } catch (UnsupportedFeatureException unsupported) {
