@@ -72,7 +72,8 @@ final class QueryInteropSuite extends FunSuite {
             .succeeded()
         )
       }
-      fixture.own(ControlClient.attachUnfenced(fixture.config, first.id()))
+      if (fixture.supportsControl)
+        fixture.own(ControlClient.attachUnfenced(fixture.config, first.id()))
       val sessions = server.sessions()
       val windows = sessions.flatMap(_.windows)
       val panes = windows.flatMap(_.panes)
@@ -141,7 +142,7 @@ final class QueryInteropSuite extends FunSuite {
         ),
         sessions.filter(_.windows.exists(_.info.context.index().value() == 4))
       )
-      assert(clients.nonEmpty)
+      assertEquals(clients.nonEmpty, fixture.supportsControl)
       assertEquals(
         clients.matching(
           Expr(Client_.session().is(Session_.name().is("fixture")))

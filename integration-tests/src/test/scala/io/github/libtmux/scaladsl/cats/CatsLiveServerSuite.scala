@@ -38,16 +38,24 @@ final class CatsLiveServerSuite extends FunSuite {
           }
         } yield result
       }
-      val (initial, observed, failure) = program.unsafeRunSync()
-      assert(
-        observed.epoch() > initial.epoch(),
-        s"expected a newer epoch, got ${observed.epoch()} after ${initial.epoch()}"
-      )
-      assertEquals(
-        observed.snapshot().windows().size(),
-        initial.snapshot().windows().size() + 1
-      )
-      assertEquals(failure, None)
+      // A live view is managed control: below tmux 3.7 it is refused before attaching.
+      if (!fixture.supportsControl) {
+        intercept[io.github.libtmux.exception.UnsupportedFeatureException](
+          program.unsafeRunSync()
+        )
+        assert(fixture.server.clients().isEmpty())
+      } else {
+        val (initial, observed, failure) = program.unsafeRunSync()
+        assert(
+          observed.epoch() > initial.epoch(),
+          s"expected a newer epoch, got ${observed.epoch()} after ${initial.epoch()}"
+        )
+        assertEquals(
+          observed.snapshot().windows().size(),
+          initial.snapshot().windows().size() + 1
+        )
+        assertEquals(failure, None)
+      }
     }
   }
 }

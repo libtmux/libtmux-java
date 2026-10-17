@@ -1,6 +1,12 @@
 package io.github.libtmux.scaladsl.fixture
 
-import io.github.libtmux.{Server, ServerConfig, ServerEndpoint, SessionSpec}
+import io.github.libtmux.{
+  Server,
+  ServerConfig,
+  ServerEndpoint,
+  SessionSpec,
+  TmuxVersion
+}
 import io.github.libtmux.junit5.NamedServerFixture
 import java.nio.file.{Files, LinkOption, Path}
 import java.time.Duration
@@ -22,6 +28,10 @@ private[scaladsl] final class OwnedTmux private (
   private var owner: Option[NamedServerFixture] = None
   private var process: Option[ProcessHandle] = None
   private var closed = false
+
+  def supportsControl: Boolean = {
+    io.github.libtmux.internal.ControlAcquisition.supports(server.version())
+  }
 
   def serverProcess: ProcessHandle =
     process.getOrElse(
