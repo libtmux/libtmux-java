@@ -24,6 +24,9 @@ record Snippet(Path file, int line, Expectation expectation, String detail, Shap
          */
         RUNS,
 
+        /** Runs on tmux 3.7+; older daemons must refuse control before attachment. */
+        CONTROL,
+
         /**
          * Must compile, but is not run, and the directive has to say why.
          *

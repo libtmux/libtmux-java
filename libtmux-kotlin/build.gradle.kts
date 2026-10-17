@@ -270,6 +270,20 @@ val documentedKotlin =
                     val unknown = given - fixtures.keys
                     require(unknown.isEmpty()) { "$where line $line: Given names $unknown; a snippet may assume ${fixtures.keys}" }
                     val declared = given.joinToString("") { "        val $it = ${fixtures.getValue(it)}\n" }
+                    val controlRefusal = if (directive.startsWith("control:")) {
+                        """
+                        |        val version = javaServer.version()
+                        |        if (!io.github.libtmux.internal.ControlAcquisition.supports(version)) {
+                        |            assertFailsWith<io.github.libtmux.exception.UnsupportedFeatureException> {
+                        |                runBlocking {
+                        |${body.joinToString("\n") { "                    $it" }}
+                        |                }
+                        |            }
+                        |            assertEquals(0, javaServer.clients().size)
+                        |            return
+                        |        }
+                        """.trimMargin()
+                    } else ""
                     val file = generated.get().asFile.resolve("io/github/libtmux/docs/kotlin/s$found/Snippet.kt")
                     file.parentFile.mkdirs()
                     file.writeText(
@@ -290,6 +304,7 @@ val documentedKotlin =
                             appendLine("import io.github.libtmux.junit5.TmuxExtension")
                             appendLine("import io.github.libtmux.junit5.TmuxSocketPath")
                             appendLine("import kotlin.test.assertEquals")
+                            appendLine("import kotlin.test.assertFailsWith")
                             appendLine("import kotlinx.coroutines.runBlocking")
                             appendLine("import org.junit.jupiter.api.Test")
                             appendLine("import org.junit.jupiter.api.extension.ExtendWith")
@@ -301,6 +316,7 @@ val documentedKotlin =
                                 |    @Test
                                 |    fun `$name`(javaServer: io.github.libtmux.Server, socketPath: TmuxSocketPath) {
                                 |$declared
+                                |$controlRefusal
                                 |        // runBlocking is inline, so a snippet's own declarations shadow the
                                 |        // ones above rather than colliding with them, and a bare return still
                                 |        // leaves the test. Every call in this module's own surface is

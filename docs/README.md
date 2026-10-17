@@ -118,6 +118,7 @@ Say otherwise with an HTML comment directly above the fence:
 | directive | means |
 | --- | --- |
 | *(none)* | compiles, and runs against live tmux |
+| `<!-- snippet: control: <reason> -->` | runs on tmux 3.7+; older daemons must refuse before attaching |
 | `<!-- snippet: throws: IllegalArgumentException -->` | runs, and must fail with exactly that |
 | `<!-- snippet: does-not-compile: cannot find symbol -->` | the compiler must reject it, with a diagnostic containing that phrase |
 | `<!-- snippet: compile-only: <reason> -->` | compiles; not run, for the stated reason |
@@ -282,3 +283,8 @@ that, and each row says where it looks.
 Not `docs/decisions` or `docs/internals`: those are dated or historical
 records. Holding them to today's API would either break the build or quietly
 rewrite history, and neither is what a record is for.
+
+Control-specific Scala effects use `scala-io-control` in place of `scala-io`.
+They compile on every lane, run normally from tmux 3.7, and must raise
+`UnsupportedFeatureException` before attachment on older daemons. Java's
+`control` directive checks the same boundary.

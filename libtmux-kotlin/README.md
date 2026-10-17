@@ -170,6 +170,10 @@ compiler rejects it.
 
 ## A subscription as a cold `Flow`
 
+Managed control requires tmux 3.7+ and a carrier-owned pinned socket.
+Ordinary suspend operations retain the core 3.3a minimum.
+
+<!-- snippet: control: subscriptions require managed control -->
 ```kotlin
 // Given: config: ServerConfig
 import io.github.libtmux.control.Delivery
@@ -200,6 +204,7 @@ ahead of the events that survived a full buffer; nothing is silently dropped.
 
 ## The live server as a `StateFlow`
 
+<!-- snippet: control: subscriptions require managed control -->
 ```kotlin
 // Given: config: ServerConfig
 import kotlinx.coroutines.flow.first

@@ -83,6 +83,11 @@ about, because both are silent:
 - `pane_floating_flag` does not exist before tmux 3.7, and the format expands to
   nothing rather than to zero. `Pane.floating()` is an `Optional` that is empty
   when the running tmux cannot say, rather than defaulting to `false`.
-- tmux 3.7 exactly ends the whole server when `break-pane` has to name the new
-  window itself, and silently discards a name it is given. `Pane.breakOut()`
-  works around both.
+- Exact tmux 3.7 can end the server on an unnamed `break-pane` and ignores an
+  explicit name in its multi-pane branch. `Pane.breakOut()` refuses there;
+  `Pane.breakOut(name)` supplies and then reapplies the explicit name.
+
+Control-positive cases run from tmux 3.7. Lower matrix lanes retain
+ordinary operations and assert that control is refused before attachment.
+Named buffer and managed-paste cases assert their own 3.4 boundary. These
+feature requirements do not change the core 3.3a minimum.

@@ -19,7 +19,9 @@ concurrency on virtual threads.**
 This optional module adds no handle type: the direct-style facade's opaque
 handles work unchanged inside an Ox `supervised` scope and its `fork`s. What it
 adds is a cold `Flow` for the two things that push rather than answer: a control
-client's subscription, and a live view of a server.
+client's subscription, and a live view of a server. Acquiring either requires
+tmux 3.7+ and a carrier-owned pinned socket. Ordinary direct-style
+operations retain the core 3.3a minimum.
 
 <!-- snippet: scala-build: ox-readme-install -->
 ```sbt
