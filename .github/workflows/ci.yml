@@ -79,6 +79,17 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/workspace-python"
           "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
+          # Source-overlay qualification: released tmuxp still pins libtmux~=0.61.
+          # Reviewed PR779 supplies the version check; these are not a released package pair.
+          git init --quiet "$RUNNER_TEMP/python-libtmux-core"
+          git -C "$RUNNER_TEMP/python-libtmux-core" fetch --quiet --depth=1 \
+            https://github.com/tmux-python/libtmux.git 26123fe7e4fc497a9ddb454ce654e468afe916ab
+          git -C "$RUNNER_TEMP/python-libtmux-core" checkout --quiet --detach \
+            26123fe7e4fc497a9ddb454ce654e468afe916ab
+          PYTHONPATH="$RUNNER_TEMP/python-libtmux-core/src" "$RUNNER_TEMP/workspace-python/bin/python" -c \
+            'import sys, libtmux; from pathlib import Path; from libtmux.common import TMUX_MIN_VERSION; assert TMUX_MIN_VERSION == "3.3a", TMUX_MIN_VERSION; assert Path(libtmux.__file__).resolve() == Path(sys.argv[1]).resolve() / "libtmux" / "__init__.py", libtmux.__file__; print(TMUX_MIN_VERSION, libtmux.__file__)' \
+            "$RUNNER_TEMP/python-libtmux-core/src"
+          echo "PYTHONPATH=$RUNNER_TEMP/python-libtmux-core/src" >> "$GITHUB_ENV"
           echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
 
       # Runs every check task instead of stopping at the first failure, so one run names them all.
