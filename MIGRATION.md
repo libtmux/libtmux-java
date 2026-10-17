@@ -87,6 +87,7 @@ of its commands, including a preceding command that would otherwise succeed.
 | Direct `paste-buffer -d -b name` | Retained on 3.3a; native lookup already rejects a missing name. |
 | Literal `select-layout` on 3.3a | Invalid operands are refused before every batch effect. Presets, unique prefixes and serialized layouts remain available; `-o` requires a serialized operand. |
 | Percentage splitting | Typed `SplitSpec.percent` retains `-l N%`. Literal `split-window -p` is refused on exact 3.4. |
+| Session and window names on exact 3.7 | A name containing `.` or `:` is refused before dispatch (`IllegalArgumentException`), including workspace window names; 3.7a and later keep such names. |
 | `break-pane` on exact 3.7 | Literal calls and unnamed typed calls are refused. Use `Pane.breakOut(name)` or upgrade to 3.7a+. |
 | Single-pane `breakOut` before 3.6 | The typed call reads the pane's actual post-command context; native success does not print `-P` output there. |
 | Captured `run-shell` output | Existing 3.5 floor remains; 3.3a and 3.4 lose the requested output. Effect-only shell commands remain available. |
