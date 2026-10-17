@@ -2,12 +2,15 @@ package io.github.libtmux.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
+import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.Window;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -24,8 +27,8 @@ final class PaneOperationsIntegrationTest {
 
     /**
      * On tmux 3.7 exactly, letting tmux name the window it breaks a pane into ends the server and
-     * every session on the socket. The window still has to appear, and the server still has to be
-     * there afterwards, on every supported release.
+     * every session on the socket. The unnamed call is refused there before effects; other
+     * supported releases retain native naming.
      */
     @Test
     void breakingAPaneOutLeavesTheServerStanding(Server server) {
@@ -33,6 +36,13 @@ final class PaneOperationsIntegrationTest {
         Window window = session.windows().get(0);
         Pane split = window.split();
 
+        if (server.version().equals(new TmuxVersion(3, 7, ""))) {
+            assertThrows(UnsupportedFeatureException.class, split::breakOut);
+            assertTrue(server.isAlive());
+            assertEquals(1, server.windows().size());
+            assertEquals(2, server.panes().size());
+            return;
+        }
         Window broken = split.breakOut();
 
         assertTrue(server.isAlive(), "break-pane must not take the server with it");
@@ -65,9 +75,16 @@ final class PaneOperationsIntegrationTest {
         Pane split = server.sessions().get(0).windows().get(0).split();
         String command = awaitSettledCommand(split);
 
+        if (server.version().equals(new TmuxVersion(3, 7, ""))) {
+            assertThrows(UnsupportedFeatureException.class, split::breakOut);
+            assertTrue(server.isAlive());
+            assertEquals(1, server.windows().size());
+            assertEquals(2, server.panes().size());
+            return;
+        }
         Window broken = split.breakOut();
 
-        assertEquals(command, broken.name(), "the workaround must not change what the window is called");
+        assertEquals(command, broken.name(), "native naming must be retained");
     }
 
     /** Polls until two consecutive readings agree, so the startup transient is over. */
