@@ -188,6 +188,45 @@ final class MinimumTmuxTest {
     }
 
     @Test
+    void versionIsAskedOncePerDaemonAndReadAgainWhenTheFenceRefuses() {
+        FakeTmux tmux = new FakeTmux("3.3a");
+        List<CommandRequest> probes = new ArrayList<>();
+        TmuxTransport recording = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                if (VersionProbes.is(request)) probes.add(request);
+                return tmux.execute(request);
+            }
+
+            @Override
+            public void close() {}
+        };
+        try (Server server = Server.using(ServerConfig.builder().build(), recording)) {
+            assertTrue(server.cmd("set-option", "-g", "@sentinel", "one").succeeded());
+            assertTrue(server.cmd("set-option", "-g", "@sentinel", "two").succeeded());
+            assertEquals(1, probes.size(), "a known daemon is not asked again");
+
+            tmux.liveVersion = "3.8";
+            tmux.reportedVersion = "3.8";
+            assertTrue(server.cmd("set-option", "-g", "@sentinel", "three").succeeded());
+            assertEquals(2, probes.size(), "a refused fence reads the daemon again");
+            assertEquals(3, tmux.effects.get());
+        }
+    }
+
+    @Test
+    void aDaemonReplacedByAnOlderOneRaisesTheVersionError() {
+        FakeTmux tmux = new FakeTmux("3.8");
+        try (Server server = Server.using(ServerConfig.builder().build(), tmux)) {
+            assertTrue(server.cmd("set-option", "-g", "@sentinel", "one").succeeded());
+            tmux.liveVersion = "3.2a";
+            tmux.reportedVersion = "3.2a";
+            assertThrows(UnsupportedFeatureException.class, () -> server.cmd("set-option", "-g", "@sentinel", "two"));
+            assertEquals(1, tmux.effects.get(), "the refused call ran nothing");
+        }
+    }
+
+    @Test
     void aFailedHandshakeNeverFallsBackToTheClientVersion() {
         FakeTmux tmux = new FakeTmux("3.3a");
         tmux.probeFailure = new CommandResult(1, List.of(), List.of("server exited unexpectedly"));
@@ -500,7 +539,7 @@ final class MinimumTmuxTest {
     }
 
     private static class FakeTmux implements TmuxTransport {
-        private final String reportedVersion;
+        private String reportedVersion;
         private String liveVersion;
         private String binaryVersion = "3.8";
         private String binaryName = "tmux";
