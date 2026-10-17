@@ -12,6 +12,12 @@ production.
 
 ## Unreleased
 
+### Added
+
+- **`Server.captureServer` returns handles from one captured graph.** Sessions,
+  window links, pane occurrences, clients, and metadata share the same capture;
+  traversing them issues no additional commands.
+
 ### Changed
 
 - **Managed control now requires tmux 3.7+ and a pinned socket.**
@@ -43,6 +49,12 @@ production.
   strictly.** `3.8-rc < 3.8`, `compareTo` agrees with `equals`, and text such
   as `3.3a garbage` or `3.3a-master` is rejected. `atLeast` still counts a
   candidate as its release. (#67)
+
+### Fixed
+
+- **The Clojure `close-runtime!` waits for scheduled callback cancellation.**
+  Closing a runtime with finite pending callbacks no longer reports cleanup as
+  pending before its completion executor can terminate.
 
 ### Documented
 
