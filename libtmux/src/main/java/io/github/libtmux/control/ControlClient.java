@@ -11,8 +11,6 @@ import io.github.libtmux.exception.CommandRejectedException;
 import io.github.libtmux.exception.ControlEndedException;
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.LibTmuxException;
-import io.github.libtmux.exception.MalformedResponseException;
-import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.internal.ControlAcquisition;
 import io.github.libtmux.internal.ErrorText;
 import io.github.libtmux.internal.LocalSocketPin;
@@ -250,12 +248,9 @@ public final class ControlClient implements AutoCloseable {
                             reply.lines());
                 }
                 client.writer.start();
-                var identity = acquisition.identity();
-                client.confirmIncarnation(
-                        identity.pid(),
-                        java.util.OptionalLong.of(identity.start()),
-                        identity.version(),
-                        acquisition.remaining(true));
+                // Not over the control line: run-shell -C reports through stderr, which a control reply
+                // does not carry, and display-message there would run the user's hooks.
+                acquisition.recheck(carrier);
                 client.requestJsonLayouts(acquisition.remaining(true));
                 client.finishAttach(session);
                 return client;
@@ -270,35 +265,6 @@ public final class ControlClient implements AutoCloseable {
                 failure.addSuppressed(cleanup);
             }
             throw failure;
-        }
-    }
-
-    /** Reads the live server and detaches, via the caller, when it is not the one that was named. */
-    private void confirmIncarnation(
-            long expectedPid, java.util.OptionalLong expectedStart, String expectedVersion, Duration timeout) {
-        // The start time leads: it is a number, and the version, compared as text, may hold a space.
-        ControlReply reply = send(List.of("display-message", "-p", "#{start_time} #{pid} #{version}"), timeout);
-        if (!reply.succeeded() || reply.lines().size() != 1) {
-            throw new CommandRejectedException(
-                    "could not read the control client's server" + ErrorText.suffix(reply.lines()),
-                    "display-message",
-                    -1,
-                    reply.lines());
-        }
-        String[] reported = reply.lines().get(0).split(" ", 3);
-        long started;
-        long pid;
-        try {
-            started = Long.parseLong(reported[0]);
-            pid = Long.parseLong(reported.length > 1 ? reported[1] : "");
-        } catch (NumberFormatException e) {
-            throw new MalformedResponseException("tmux reported a malformed server identity");
-        }
-        String version = reported.length > 2 ? reported[2] : "";
-        if (pid != expectedPid
-                || !version.equals(expectedVersion)
-                || (expectedStart.isPresent() && started != expectedStart.getAsLong())) {
-            throw new TargetGoneException("the tmux server this handle belonged to has ended");
         }
     }
 

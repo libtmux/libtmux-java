@@ -785,7 +785,7 @@ final class ServerTest {
                                 0,
                                 List.of(String.join(
                                         separator, "$0", "@0", "0", "%0", "0", "1", "zsh", "80", "24", "0", "0", "",
-                                        "/tmp", "", "0", "0", "0", "0")),
+                                        "/tmp", "", "0", "0", "0", "0", "0")),
                                 List.of());
                     default -> new CommandResult(0, List.of(), List.of());
                 });
