@@ -33,7 +33,13 @@ fun registerLane(lane: String, rejection: Boolean = false) =
         // "locale" joins the excludes for the same reason "carrier" is here: it needs a JVM
         // started differently — one whose platform encoding is not UTF-8 — so running it in an
         // ordinary fork asserts nothing and fails saying so.
-        useJUnitPlatform { excludeTags("fixture", "carrier", "benchmark", "locale") }
+        useJUnitPlatform {
+            excludeTags("fixture", "carrier", "benchmark", "locale")
+            // Ordinary 3.3a+ operations still run; managed control has its own 3.7 floor.
+            if (lane in listOf("3.3a", "3.4", "3.5", "3.6")) {
+                excludeTags("control")
+            }
+        }
 
         // By class, not by tag: the Scala suites run under another engine that ignores tags.
         if (rejection) {

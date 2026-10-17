@@ -11,7 +11,6 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.exception.ServerUnavailableException;
 import io.github.libtmux.exception.TargetGoneException;
@@ -238,14 +237,15 @@ final class BuffersAndClientIntegrationTest {
     // --------------------------------------------------------------------------------- client
 
     /**
-     * The fixture session is detached, so a client has to be made. A control client attaches, which
-     * is what gives tmux a client to report at all.
+     * The fixture session is detached, so an ordinary terminal client supplies the attachment
+     * these reads report.
      */
     @Test
     void anAttachedClientReportsWhatItIsLookingAt(Server server) throws Exception {
         Session session = server.sessions().get(0);
-        try (ControlClient attached = server.control(session)) {
-            assertTrue(Await.until(() -> !server.clients().isEmpty()), "the control client never appeared as a client");
+        try (NativeClient attached = NativeClient.attach(session)) {
+            assertTrue(
+                    Await.until(() -> !server.clients().isEmpty()), "the ordinary client never appeared as a client");
 
             Client client = server.clients().get(0);
             ClientAttachment looking = client.attachment().orElseThrow();
@@ -256,15 +256,17 @@ final class BuffersAndClientIntegrationTest {
                     looking.activeWindow().id(),
                     "the window it reports is the session's active one");
             assertTrue(looking.activePane().active(), "and the pane is that window's active pane");
-            assertEquals(attached.send("display-message", "-p", "ok").lines(), List.of("ok"));
+            assertTrue(attached.isAlive());
+            assertEquals(
+                    List.of("ok"), server.cmd("display-message", "-p", "ok").stdout());
         }
     }
 
     @Test
     void fetchingAnAttachmentTakesAFreshLook(Server server) throws Exception {
         Session session = server.sessions().get(0);
-        try (ControlClient attached = server.control(session)) {
-            assertTrue(attached.send("display-message", "-p", "ready").succeeded());
+        try (NativeClient attached = NativeClient.attach(session)) {
+            assertTrue(attached.isAlive());
             assertTrue(Await.until(() -> !server.clients().isEmpty()));
             Client client = server.clients().get(0);
             String before = client.attachment().orElseThrow().activeWindow().name();
@@ -288,8 +290,8 @@ final class BuffersAndClientIntegrationTest {
         Set<String> before = server.clients().stream().map(Client::name).collect(Collectors.toSet());
 
         Client client;
-        try (ControlClient attached = server.control(session)) {
-            assertTrue(attached.send("display-message", "-p", "ready").succeeded());
+        try (NativeClient attached = NativeClient.attach(session)) {
+            assertTrue(attached.isAlive());
             assertTrue(Await.until(() -> appeared(server, before).isPresent()), "no client ever attached");
             client = appeared(server, before).orElseThrow();
         }

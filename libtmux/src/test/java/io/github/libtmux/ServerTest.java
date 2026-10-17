@@ -768,11 +768,11 @@ final class ServerTest {
                 if (request.commands().stream()
                         .flatMap(List::stream)
                         .anyMatch(word -> word.contains("#{pid} #{version}"))) {
-                    return new CommandResult(0, List.of("4242 3.6"), List.of());
+                    return new CommandResult(0, List.of("4242 3.7c"), List.of());
                 }
-                return GroupedTmux.execute(request, 4242L, "3.6", command -> switch (command.get(0)) {
+                return GroupedTmux.execute(request, 4242L, "3.7c", command -> switch (command.get(0)) {
                     case "display-message" ->
-                        new CommandResult(0, List.of(String.join(separator, "4242", "3.6", "1790000000")), List.of());
+                        new CommandResult(0, List.of(String.join(separator, "4242", "3.7c", "1790000000")), List.of());
                     case "list-sessions" ->
                         new CommandResult(0, List.of(String.join(separator, "$0", "only", "1", "1")), List.of());
                     case "list-windows" ->

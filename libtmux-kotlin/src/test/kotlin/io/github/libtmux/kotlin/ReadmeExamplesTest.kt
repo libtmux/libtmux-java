@@ -20,6 +20,7 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import io.github.libtmux.Server as JavaServer
@@ -130,6 +131,7 @@ class ReadmeExamplesTest {
     }
 
     @Test
+    @Tag("control")
     fun `a subscription as a cold Flow`(javaServer: JavaServer) = runBlocking {
         withServer(javaServer.config()) { server ->
             val session = server.newSession("flow-demo")
@@ -147,6 +149,7 @@ class ReadmeExamplesTest {
     }
 
     @Test
+    @Tag("control")
     fun `the live server as a StateFlow`(javaServer: JavaServer) = runBlocking {
         withServer(javaServer.config()) { server ->
             val session = server.newSession("live-demo")
