@@ -215,6 +215,15 @@ round. Gate a behaviour on the release that ships it, such as
 `IllegalArgumentException` for anything else, such as `3.3a garbage`,
 `next-3.9a` or `3.8-rc0`.
 
+### Version ordering and parsing
+
+`TmuxVersion.compareTo` now orders `next-X.Y < X.Y-rc < X.Y-rcN < X.Y < X.Ya`,
+so it agrees with `equals`; a candidate no longer compares equal to its release.
+Use `atLeast` for a feature gate, which counts a candidate as its release, and
+`sameRelease` for a gate on one release's own defect. `TmuxVersion.parse` accepts
+only what tmux has reported (`3.3a`, `3.8-rc2`, `next-3.9`) and throws
+`IllegalArgumentException` for anything else, such as `3.3a garbage`.
+
 ## 0.0.1-alpha.16
 
 ### `CommandResult.stdout()` keeps carriage returns
