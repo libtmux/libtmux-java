@@ -14,11 +14,16 @@ val lanes = listOf("3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.7c")
 // release that makes it real rather than after. Allowed to fail, and left out of testTmuxMatrix and
 // the README's claimed range on purpose — 3.8-rc2 is a candidate for a release not yet cut, and master
 // is upstream's development branch, not a version at all.
-val previewLanes = listOf("3.8-rc2", "master")
+val previewLanes = listOf("3.8", "3.8-rc2", "master")
+
+// Below the floor: these run only the version check cases against the real binary, which must refuse
+// every call and leave a sentinel session, option and buffer as it was. They are part of the matrix
+// because a refusal that a fake alone vouches for is not one.
+val rejectionLanes = listOf("3.2a", "3.3")
 
 val matrix = providers.gradleProperty("libtmuxMatrix")
 
-fun registerLane(lane: String) =
+fun registerLane(lane: String, rejection: Boolean = false) =
     tasks.register<Test>("test-tmux-$lane") {
         group = "verification"
         description = "Runs the real-tmux tests against tmux $lane."
@@ -29,6 +34,9 @@ fun registerLane(lane: String) =
         // started differently — one whose platform encoding is not UTF-8 — so running it in an
         // ordinary fork asserts nothing and fails saying so.
         useJUnitPlatform { excludeTags("fixture", "carrier", "benchmark", "locale") }
+
+        // By class, not by tag: the Scala suites run under another engine that ignores tags.
+        if (rejection) filter.includeTestsMatching("io.github.libtmux.it.VersionCheckLaneIntegrationTest")
 
         // Resolved lazily: the task is registered whether or not a matrix exists, so asking for
         // it without one fails loudly instead of the lane silently not existing.
@@ -55,11 +63,12 @@ fun registerLane(lane: String) =
         }
     }
 
-val laneTasks = lanes.map(::registerLane)
-previewLanes.forEach(::registerLane)
+val laneTasks = lanes.map { registerLane(it) }
+previewLanes.forEach { registerLane(it) }
+val rejectionTasks = rejectionLanes.map { registerLane(it, rejection = true) }
 
 rootProject.tasks.maybeCreate("testTmuxMatrix").apply {
     group = "verification"
     description = "Runs every real-tmux test against every supported tmux release."
-    dependsOn(laneTasks)
+    dependsOn(laneTasks, rejectionTasks)
 }

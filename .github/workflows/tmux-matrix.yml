@@ -27,7 +27,7 @@ jobs:
   lanes:
     # Preview lanes carry their own label: this is the only place a reader sees which entries the
     # supported range does not include, since the README and the matrix property list only the rest.
-    name: tmux ${{ matrix.tmux }}${{ matrix.experimental && ' (preview, not supported)' || '' }}
+    name: tmux ${{ matrix.tmux }}${{ matrix.experimental && ' (preview, not supported)' || '' }}${{ matrix.rejection && ' (must be refused)' || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.tmux == 'master' && 25 || 15 }}
     continue-on-error: ${{ matrix.experimental == true }}
@@ -43,6 +43,14 @@ jobs:
         # candidate for a release not yet cut, and master is upstream's development branch, not a
         # version. Both may fail and neither moves the README's claimed range.
         include:
+          # Below the floor, matching the plugin's `rejectionLanes`: the real binary must refuse
+          # every call and leave a sentinel session, option and buffer untouched.
+          - tmux: '3.2a'
+            rejection: true
+          - tmux: '3.3'
+            rejection: true
+          - tmux: '3.8'
+            experimental: true
           - tmux: '3.8-rc2'
             experimental: true
           - tmux: master
