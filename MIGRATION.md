@@ -8,6 +8,43 @@ API changes that require updates to calling code are recorded here. See
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### tmux 3.3a is the minimum
+
+Upgrade the tmux daemon to 3.3a or newer. Installing a newer client alone does
+not upgrade a daemon that is already running. Finish or save its sessions,
+stop that daemon, then start the new tmux binary on the same endpoint.
+
+Commands through Java, Kotlin and Scala, including MCP tools and native
+workspace loading, refuse an older daemon with `UnsupportedFeatureException`
+before sending the requested operation. Raw commands and batches follow the
+same rule. Standalone `cmd("-V")` and `cmd("-h")` remain available for executable
+diagnostics; their results do not authorize a daemon operation. Unknown full
+version tokens fail with `MalformedResponseException`; a candidate for 3.3a
+does not satisfy the released 3.3a minimum.
+
+Ordinary command requests carry an atomic version guard. Control-client
+startup checks the floor through its process carrier before launching `-C`;
+it does not pin the endpoint between that check and attachment.
+These checks require native built-in command semantics. A tmux configuration
+that replaces commands such as `if-shell` or `display-message` through
+`command-alias` is outside this qualification.
+
+The first session on an unused endpoint checks the configured binary before
+starting a daemon. Reads leave an unused endpoint empty; cleanup of an absent
+daemon remains harmless. Optional features retain their own version
+requirements. Python extensions and the Python shell use
+`Server.requireCompatibleTmux()` before starting Python. This validates the
+selected daemon or executable without starting a daemon; later Java operations
+still run their own version check. The bridge also requires Python libtmux
+with the matching core support change: its declared `TMUX_MIN_VERSION` must be
+3.3a or newer, and its own dispatcher must enforce that floor on each command.
+An older installed backend is refused before builders, plugins or shell code
+run. Until the [Python core change][python-core] is released, use an interpreter
+loading that source; upgrading tmuxp alone does not supply a command-level
+version check.
+
+[python-core]: https://github.com/tmux-python/libtmux/pull/779
+
 ## 0.0.1-alpha.16
 
 ### `CommandResult.stdout()` keeps carriage returns
