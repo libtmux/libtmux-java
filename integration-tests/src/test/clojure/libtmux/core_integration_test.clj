@@ -3,6 +3,7 @@
             [libtmux.control :as control]
             [libtmux.core :as tmux]
             [libtmux.data :as data]
+            [libtmux.internal.control-gate :as gate]
             [libtmux.internal.fixture :as fixture])
   (:import [java.lang AutoCloseable]))
 
@@ -40,7 +41,7 @@
          (tmux/delete-buffer! server "clj")
          (let [error (try (tmux/delete-buffer! server "clj")
                           (catch clojure.lang.ExceptionInfo e e))]
-           (is (= :tmux/unsupported-version (:tmux/error (ex-data error))))
+           (is (= :tmux/unsupported-feature (:tmux/error (ex-data error))))
            (is (= :not-dispatched (:tmux/dispatch (ex-data error))))))
        (is (= (:pane/id pane) (tmux/expand! (:tmux/ref pane) "#{pane_id}")))
        (is (vector? (tmux/capture! (:tmux/ref pane) {:from :history})))
@@ -75,7 +76,7 @@
          (is (some? (tmux/refresh! (:tmux/ref window)))))))))
 
 (deftest typed-client-operations-switch-and-detach-the-captured-client
-  (fixture/with-owned-server
+  (gate/with-control-server
    (fn [{:keys [server]}]
      (let [source (tmux/new-session! server {:name "client-source"})
            target (tmux/new-session! server {:name "client-target"})]
@@ -266,7 +267,7 @@
            (is (= :unknown (:tmux/dispatch (ex-data error))))
            (is (= [:unknown :unknown :unknown :unknown]
                   (mapv :operation/outcome (:tmux/results (ex-data error)))))
-           (is (instance? io.github.libtmux.transport.TmuxTransportException
+           (is (instance? io.github.libtmux.exception.DispatchException
                           (.getCause ^Throwable error))))
          (is (= "applied" (tmux/show-buffer! server "cancel-before")))
          (finally

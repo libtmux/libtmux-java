@@ -2,12 +2,32 @@
   (:require [clojure.test :refer [deftest is]]
             [libtmux.core :as tmux])
   (:import [io.github.libtmux Server ServerConfig]
-           [io.github.libtmux.transport TmuxTransport CommandResult TmuxTransportException DispatchOutcome]))
+           [io.github.libtmux.transport TmuxTransport CommandRequest CommandResult DispatchOutcome]
+           [io.github.libtmux.exception DispatchException DispatchException$Failed]))
 
-(defn- ^Server fake-server [dispatch]
+(defn- version-probe?
+  "The hook-free admission probe: run-shell -C '<marker>#{version}'."
+  [^CommandRequest request]
+  (let [commands (.commands request)]
+    (and (= 1 (count commands))
+         (let [argv (vec (first commands))]
+           (and (= 3 (count argv)) (= ["run-shell" "-C"] (subvec argv 0 2))
+                (.startsWith ^String (argv 2) "libtmux-version-"))))))
+
+(defn- probe-reply [^CommandRequest request]
+  (let [^String format (nth (first (.commands request)) 2)]
+    (CommandResult. 1 [] [(str "unknown command: "
+                               (subs format 0 (- (count format) (count "#{version}")))
+                               "3.7c")])))
+
+(defn- ^Server fake-server
+  "A server over a fake transport. Admission is answered, so `dispatch` sees only the
+  requests a call itself makes."
+  [dispatch]
   (Server/using (.build (ServerConfig/builder))
                 (reify TmuxTransport
-                  (execute [_ request] (dispatch request))
+                  (execute [_ request]
+                    (if (version-probe? request) (probe-reply request) (dispatch request)))
                   (close [_]))))
 
 (defn- failure [f]
@@ -37,7 +57,7 @@
       (is (zero? @calls)))))
 
 (deftest original-cause-and-conservative-dispatch-survive
-  (let [cause (TmuxTransportException. "sensitive payload" DispatchOutcome/NOT_DISPATCHED nil)]
+  (let [cause (DispatchException$Failed. "sensitive payload" DispatchOutcome/NOT_DISPATCHED nil)]
     (with-open [server (fake-server (fn [_] (throw cause)))]
       (let [error (failure #(tmux/raw! server ["set-buffer" "private"]))]
         (is (identical? cause (.getCause ^Throwable error)))
@@ -59,7 +79,7 @@
   (doseq [[outcome dispatch effects] [[DispatchOutcome/NOT_DISPATCHED :not-dispatched :none]
                                       [DispatchOutcome/UNKNOWN :unknown :possible]
                                       [DispatchOutcome/COMPLETE :complete :possible]]]
-    (let [cause (TmuxTransportException. "transport detail" outcome nil)]
+    (let [cause (DispatchException$Failed. "transport detail" outcome nil)]
       (with-open [server (fake-server (fn [_] (throw cause)))]
         (let [error (failure #(tmux/set-buffer! server "buffer" "contents"))]
           (is (identical? cause (.getCause ^Throwable error)))
@@ -69,8 +89,11 @@
 (defn- run-group [kind server operations]
   ((ns-resolve 'libtmux.core kind) server operations))
 
-(defn- marked-reply [request exit]
-  (let [commands (.commands ^io.github.libtmux.transport.CommandRequest request)]
+(defn- marked-reply
+  "Answers a group the way tmux does. Admission puts a version fence ahead of the caller's
+  commands, which prints nothing; each caller command is then followed by its marker."
+  [request exit]
+  (let [commands (rest (.commands ^io.github.libtmux.transport.CommandRequest request))]
     (CommandResult. exit
                     (vec (mapcat (fn [[index marker]] [(str "value-" index) (last marker)])
                                  (map-indexed vector (take-nth 2 (rest commands)))))
@@ -88,7 +111,7 @@
             (is (= [0 1] (mapv :operation/index results)))
             (is (= [:complete :complete] (mapv :operation/outcome results)))
             (is (= [["value-0"] ["value-1"]] (mapv :operation/stdout results)))))
-        (is (= [4 4] @sizes))))))
+        (is (= [5 5] @sizes) "one fence, then each command and its marker")))))
 
 (deftest groups-preserve-unknown-and-reject-invalid-input
   (doseq [kind ['batch! 'chain!]]
@@ -107,7 +130,7 @@
   (doseq [kind ['batch! 'chain!]
           [outcome dispatch result-outcome] [[DispatchOutcome/NOT_DISPATCHED :not-dispatched :skipped]
                                               [DispatchOutcome/UNKNOWN :unknown :unknown]]]
-    (let [cause (TmuxTransportException. "transport failed" outcome nil)]
+    (let [cause (DispatchException$Failed. "transport failed" outcome nil)]
       (with-open [server (fake-server (fn [_] (throw cause)))]
         (let [error (failure #(run-group kind server [["set-buffer" "a"] ["set-buffer" "b"]]))]
           (is (identical? cause (.getCause ^Throwable error)))
