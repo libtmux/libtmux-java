@@ -214,7 +214,13 @@ public final class Server implements AutoCloseable {
      */
     @Operation(Kind.READ)
     public boolean isAlive(Duration timeout) {
-        return cmd(List.of("display-message", "-p", "#{pid}"), timeout).succeeded();
+        try {
+            return cmd(List.of("display-message", "-p", "#{pid}"), timeout).succeeded();
+        } catch (CommandRejectedException refused) {
+            // The version check asks tmux for its version first, and tmux refusing that is the same answer.
+            // A daemon that exits under the probe is the common case.
+            return false;
+        }
     }
 
     /**
