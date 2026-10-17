@@ -14,6 +14,14 @@ Copies and symlinks named `opaque client` and `opaque-link` report
 accepts that exact basename or the canonical `tmux` prefix, followed by a
 complete version token. Daemon reports remain bare version tokens.
 
+## Soft-wrapped capture rows
+
+On tmux 3.3a and 3.7c, `capture-pane -p` inserts a newline where terminal
+output wraps across screen rows. With a 70-character prefix in an 80-column
+pane, `batch-first-marker` is captured as `batch-firs\nt-marker` despite
+arriving intact. `capture-pane -p -J` joins those rows without joining hard
+line breaks; typing tests use it when checking delivered text.
+
 ## break-pane on tmux 3.7
 
 `break-pane` gets automatic window naming wrong in two opposite, silent ways,
