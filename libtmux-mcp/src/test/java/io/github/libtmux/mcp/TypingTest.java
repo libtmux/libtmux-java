@@ -290,8 +290,7 @@ final class TypingTest {
         List<Integer> sends = indexes(requests, request -> hasCommand(request, "send-keys"));
         assertEquals(2, preflights.size());
         assertEquals(1, sends.size());
-        assertEquals(preflights.getLast() + 2, sends.getFirst());
-        assertTrue(VersionProbes.is(requests.get(preflights.getLast() + 1)));
+        assertEquals(preflights.getLast() + 1, sends.getFirst(), "the daemon is known, so nothing separates them");
     }
 
     @Test
