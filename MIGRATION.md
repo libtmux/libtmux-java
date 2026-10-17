@@ -52,6 +52,15 @@ that dependency update remains part of the coordinated tmuxp change.
 [python-core]: https://github.com/tmux-python/libtmux/pull/779
 [python-source]: https://github.com/tmux-python/libtmux/tree/26123fe7e4fc497a9ddb454ce654e468afe916ab
 
+### Version ordering and parsing
+
+`TmuxVersion.compareTo` now orders `next-X.Y < X.Y-rc < X.Y-rcN < X.Y < X.Ya`,
+so it agrees with `equals`; a candidate no longer compares equal to its release.
+Use `atLeast` for a feature gate, which counts a candidate as its release, and
+`sameRelease` for a gate on one release's own defect. `TmuxVersion.parse` accepts
+only what tmux has reported (`3.3a`, `3.8-rc2`, `next-3.9`) and throws
+`IllegalArgumentException` for anything else, such as `3.3a garbage`.
+
 ## 0.0.1-alpha.16
 
 ### `CommandResult.stdout()` keeps carriage returns
