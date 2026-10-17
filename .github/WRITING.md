@@ -321,7 +321,7 @@ Bad (Delete):
 Good (Keep):
 
 ```java
-// tmux < 3.2 reports the pane ID only after the command completes,
+// Some releases report the pane ID only after the command completes,
 // so this query must stay separate.
 ```
 
