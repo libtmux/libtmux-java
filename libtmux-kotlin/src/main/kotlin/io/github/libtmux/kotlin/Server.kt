@@ -28,6 +28,61 @@ import io.github.libtmux.Window as JavaWindow
  *
  * [asJava] exposes the underlying [JavaServer] for interoperability. Both objects share the same
  * resources, so closing either closes both.
+ *
+ * # What is on here
+ *
+ * A tmux server does a great many things, so this class has a great many members. They fall into a
+ * few groups:
+ *
+ * **Connecting.** [open] makes a server over a transport it owns, [withServer] does so for the
+ * length of a block and closes it however the block ends, and [fromJava] wraps a server opened in
+ * Java. [config] says how it was configured, [identity] which server it is, and [version] which
+ * tmux. [isAlive] and [requireAlive] answer whether anything is listening. [admissionBound] says
+ * how many commands run at once, and [policy] decides how the `suspend` functions are dispatched.
+ * [control] attaches a control client, whose output and events arrive as cold `Flow`s, and
+ * [withControl] scopes one to a block. [close] releases what the server owns.
+ *
+ * **Finding one thing.** Given a filter, [session], [window], and [pane] throw unless exactly one
+ * object matches, and [sessionOrNull], [windowOrNull], and [paneOrNull] return null when none does;
+ * several matches throw either way. [session] by name or `SessionId`, [pane] by `PaneId`, and
+ * [window] by `WindowContext` return null when tmux does not have it. [hasSession] answers by name
+ * without returning the session.
+ *
+ * **Listing everything.** [sessions], [windows], [panes], [clients], and [attachedSessions] each
+ * return a `List` captured now. A failed read throws, so an outage does not read as an empty
+ * server. [windows] also takes a `WindowId` and answers every link to that window. [snapshot]
+ * captures the whole tree with one listing per kind of object rather than one command per object,
+ * and [liveState] publishes it again as a `StateFlow` whenever tmux announces a change;
+ * [withLiveState] scopes that to a block.
+ *
+ * **Querying things and getting around.** Hand [sessions], [windows], [panes], [session], [window],
+ * or [pane] a filter built from the field properties on the handle companions, such as
+ * `Pane.command startsWith "nvim"`, and tmux does the filtering when it can. To move between
+ * levels, go down with [Session.windows] and [Window.panes], up with [Pane.window] and
+ * [Window.session], and across to the focused child with [Session.activeWindow] and
+ * [Window.activePane]. Each is a pure read of the capture, so none suspends or asks tmux again.
+ *
+ * **Changing things.** [newSession] creates a detached session from a name, a `SessionSpec`, or a
+ * builder block, and returns the session tmux made. [killSession] ends a session by name,
+ * [killServer] ends the tmux server and every session on it, which [close] deliberately does not,
+ * and [lock] locks every attached client.
+ *
+ * **Options and hooks.** [options] holds the server-wide options, [globalOptions] the session
+ * options every session inherits unless it sets its own, [hooks] the global hooks, and
+ * [environment] the variables every new process is given. Each returns a wrapper whose own
+ * operations are `suspend`.
+ *
+ * **Everything else tmux keeps.** Paste buffers ([buffers]), key bindings ([keys]), a file of tmux
+ * commands to run ([sourceFile]), shell commands ([shell]), the command list ([commands]), the
+ * message log ([messageLog]), prompt history ([prompt]), and wait-for channels ([channel]).
+ * [expand][Server.expand] expands a format against the server, [variables][Server.variables] reads
+ * named variables in one expansion, and [paneFields] reads chosen fields of every pane from one
+ * listing.
+ *
+ * Anything tmux can do that is not here is reachable through [cmd], which runs one command and
+ * hands back its result, [run][Server.run], which throws when tmux reports a nonzero exit, [batch]
+ * and [chain], which run several in one invocation, or [asJava], for an operation this class does
+ * not mirror.
  */
 public class Server private constructor(
     internal val java: JavaServer,
