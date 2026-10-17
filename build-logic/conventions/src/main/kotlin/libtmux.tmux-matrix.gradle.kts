@@ -36,7 +36,11 @@ fun registerLane(lane: String, rejection: Boolean = false) =
         useJUnitPlatform { excludeTags("fixture", "carrier", "benchmark", "locale") }
 
         // By class, not by tag: the Scala suites run under another engine that ignores tags.
-        if (rejection) filter.includeTestsMatching("io.github.libtmux.it.VersionCheckLaneIntegrationTest")
+        if (rejection) {
+            filter.includeTestsMatching("io.github.libtmux.it.VersionCheckLaneIntegrationTest")
+            // Every module has the lane task, and only integration-tests has the class.
+            filter.isFailOnNoMatchingTests = false
+        }
 
         // Resolved lazily: the task is registered whether or not a matrix exists, so asking for
         // it without one fails loudly instead of the lane silently not existing.
