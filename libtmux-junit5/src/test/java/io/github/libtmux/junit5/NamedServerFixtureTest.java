@@ -10,6 +10,7 @@ import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.ProcessTransport;
 import io.github.libtmux.transport.TmuxTransport;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -195,11 +196,17 @@ final class NamedServerFixtureTest {
                         @Override
                         public CommandResult execute(CommandRequest request) {
                             requests.add(request);
-                            List<String> command = request.commands().getFirst();
+                            List<String> command = request.commands().getLast();
                             Server destination = command.getFirst().equals("display-message") && identityReads[0]++ < 2
                                     ? original
                                     : replacement;
-                            return destination.cmd(command);
+                            try (ProcessTransport processes = new ProcessTransport(1)) {
+                                List<String> endpoint =
+                                        new ArrayList<>(destination.config().endpointCommand());
+                                endpoint.add(1, "-N");
+                                return processes.execute(new CommandRequest(
+                                        endpoint, request.commands(), request.timeout(), request.input()));
+                            }
                         }
 
                         @Override
@@ -213,7 +220,7 @@ final class NamedServerFixtureTest {
                         assertTrue(String.valueOf(refused.getMessage()).contains("replacement"));
                         assertTrue(replacement.hasSession("race-replacement"));
                         assertEquals(
-                                List.of("display-message", "if-shell"),
+                                List.of("display-message", "if-shell", "display-message", "if-shell"),
                                 requests.stream()
                                         .map(request ->
                                                 request.commands().getFirst().getFirst())
@@ -237,7 +244,10 @@ final class NamedServerFixtureTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 requests.add(request);
-                if (request.commands().getFirst().getFirst().equals("display-message")) {
+                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
+                    return new CommandResult(0, List.of("3.7c"), List.of());
+                }
+                if (request.commands().getLast().getFirst().equals("display-message")) {
                     return new CommandResult(0, List.of("malformed"), List.of());
                 }
                 return new CommandResult(0, List.of(), List.of());
@@ -258,10 +268,13 @@ final class NamedServerFixtureTest {
             assertTrue(String.valueOf(refused.getMessage()).contains("malformed identity row"));
         }
         assertEquals("keep", Files.readString(sentinel));
-        assertEquals(1, requests.size());
+        assertEquals(2, requests.size());
+        assertEquals(
+                List.of(List.of("display-message", "-p", "#{version}")),
+                requests.getFirst().commands());
         assertEquals(
                 List.of("display-message", "-p", "#{pid}\t#{socket_path}"),
-                requests.get(0).commands().getFirst());
+                requests.getLast().commands().getLast());
         assertTrue(requests.stream().allMatch(request -> request.endpoint().contains(sentinel.toString())));
     }
 

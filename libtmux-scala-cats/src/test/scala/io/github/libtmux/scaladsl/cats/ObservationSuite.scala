@@ -224,7 +224,8 @@ object ObservationSuite {
     * marker's block.
     */
   val prelude: String =
-    """|read_request() { IFS= read -r request && IFS= read -r marker; }
+    """|case "$*" in *'display-message -p #{version}') printf '3.7c\n'; exit;; esac
+       |read_request() { IFS= read -r request && IFS= read -r marker; }
        |answer() {
        |  printf '%%begin 1 1 1\n'
        |  for line in "$@"; do printf '%s\n' "$line"; done

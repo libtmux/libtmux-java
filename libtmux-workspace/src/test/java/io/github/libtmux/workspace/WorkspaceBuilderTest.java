@@ -350,16 +350,8 @@ final class WorkspaceBuilderTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().get(0).get(0).equals("display-message")) {
-                    return new CommandResult(
-                            0,
-                            List.of(String.join(
-                                    io.github.libtmux.format.RowFormat.of("field")
-                                            .separator(),
-                                    "4242",
-                                    "3.4",
-                                    "1790000000")),
-                            List.of());
+                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
+                    return new CommandResult(0, List.of("3.4"), List.of());
                 }
                 effected.set(true);
                 return new CommandResult(0, List.of(), List.of());
@@ -386,16 +378,8 @@ final class WorkspaceBuilderTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().get(0).get(0).equals("display-message")) {
-                    return new CommandResult(
-                            0,
-                            List.of(String.join(
-                                    io.github.libtmux.format.RowFormat.of("field")
-                                            .separator(),
-                                    "4242",
-                                    "3.4",
-                                    "1790000000")),
-                            List.of());
+                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
+                    return new CommandResult(0, List.of("3.4"), List.of());
                 }
                 effected.set(true);
                 return new CommandResult(0, List.of(), List.of());
@@ -445,16 +429,16 @@ final class WorkspaceBuilderTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().get(0).get(0).equals("new-session")) {
-                    staged.set(request.commands()
-                            .get(0)
-                            .get(request.commands().get(0).indexOf("-s") + 1));
+                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
+                    return new CommandResult(0, List.of("3.7c"), List.of());
+                }
+                List<String> command = request.commands().getLast();
+                if (command.getFirst().equals("new-session")) {
+                    staged.set(command.get(command.indexOf("-s") + 1));
                     throw new DispatchException.Failed("reply lost", DispatchOutcome.UNKNOWN, null);
                 }
-                if (request.commands().get(0).get(0).equals("kill-session")) {
-                    cleaned.set(request.commands()
-                            .get(0)
-                            .get(request.commands().get(0).indexOf("-t") + 1));
+                if (command.getFirst().equals("kill-session")) {
+                    cleaned.set(command.get(command.indexOf("-t") + 1));
                     return new CommandResult(0, List.of(), List.of());
                 }
                 return new CommandResult(0, List.of(), List.of());
