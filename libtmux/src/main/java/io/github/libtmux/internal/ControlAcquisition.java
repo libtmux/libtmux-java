@@ -18,11 +18,12 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalLong;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Qualifies a carrier-owned endpoint before the first control effect. */
 public final class ControlAcquisition implements AutoCloseable {
-    private static final String FORMAT = "#{version}\t#{pid}\t#{start_time}\t#{socket_path}";
+    private static final String FORMAT = "#{version},#{pid},#{start_time},'#{s/'/'\\\\''/:socket_path}'";
     private static final TmuxVersion MINIMUM = new TmuxVersion(3, 7, "");
     private final ControlCarrier.PinnedSocket pin;
     private final Identity identity;
@@ -103,14 +104,24 @@ public final class ControlAcquisition implements AutoCloseable {
         }
     }
 
+    /**
+     * Reads the daemon identity without firing a user's hooks.
+     *
+     * <p>As the version probe does, this uses {@code run-shell -C}: tmux parses the expansion as a
+     * command and names the first word it cannot parse, so every field travels in one word. The
+     * fields are joined with commas, and the socket path comes last inside single quotes with its own
+     * quotes closed, escaped and reopened, so spaces and quotes in it survive the parse.
+     */
     private static Identity read(ControlCarrier carrier, List<String> command, Duration timeout) {
         List<String> endpoint = new ArrayList<>(command);
         endpoint.add(1, "-N");
+        String marker = "libtmux-identity-"
+                + Long.toHexString(ThreadLocalRandom.current().nextLong()) + "-";
         CommandResult result;
         try {
             result = ProcessTransport.executeThroughCarrier(
                     carrier,
-                    new CommandRequest(endpoint, List.of(List.of("display-message", "-p", FORMAT)), timeout, ""));
+                    new CommandRequest(endpoint, List.of(List.of("run-shell", "-C", marker + FORMAT)), timeout, ""));
         } catch (DispatchException failure) {
             DispatchException denied = failure instanceof DispatchException.TimedOut
                     ? new DispatchException.TimedOut(
@@ -119,15 +130,17 @@ public final class ControlAcquisition implements AutoCloseable {
                             "control identity probe failed", DispatchOutcome.NOT_DISPATCHED, failure);
             throw denied;
         }
-        if (!result.succeeded()) {
+        String prefix = "unknown command: " + marker;
+        List<String> answers =
+                result.stderr().stream().filter(line -> line.startsWith(prefix)).toList();
+        if (result.succeeded() || answers.size() != 1 || result.stderr().size() != 1) {
             throw new CommandRejectedException(
                     "cannot query the control endpoint" + ErrorText.suffix(result.stderr()),
-                    "display-message",
+                    "run-shell",
                     result.exitCode(),
                     result.stderr());
         }
-        if (result.stdout().size() != 1) throw new MalformedResponseException("tmux reported no control identity");
-        String[] fields = result.stdout().getFirst().split("\t", 4);
+        String[] fields = answers.getFirst().substring(prefix.length()).split(",", 4);
         try {
             if (fields.length != 4 || fields[3].isEmpty()) throw new NumberFormatException();
             long pid = Long.parseLong(fields[1]);
@@ -136,6 +149,13 @@ public final class ControlAcquisition implements AutoCloseable {
             return new Identity(fields[0], pid, start, fields[3]);
         } catch (NumberFormatException failure) {
             throw new MalformedResponseException("tmux reported an invalid control identity", failure);
+        }
+    }
+
+    /** Rereads the identity through the pin and refuses a daemon that is no longer the qualified one. */
+    public void recheck(ControlCarrier carrier) {
+        if (!identity.equals(read(carrier, command, remaining(true)))) {
+            throw new TargetGoneException("the tmux endpoint changed during control acquisition");
         }
     }
 

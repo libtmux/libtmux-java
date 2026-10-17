@@ -269,16 +269,14 @@ object ObservationSuite {
        |    libtmux-version-*'#{version}')
        |      printf 'unknown command: %s3.7c\n' "${argument%'#{version}'}" >&2; exit 1;;
        |  esac
-       |  if [ "$argument" = '#{version}	#{pid}	#{start_time}	#{socket_path}' ]; then
-       |    printf '3.7c\t4242\t10\t/fake-control\n'; exit
-       |  fi
+       |  case "$argument" in
+       |    libtmux-identity-*)
+       |      printf 'unknown command: %s3.7c,4242,10,/fake-control\n' "${argument%%'#{version}'*}" >&2; exit 1;;
+       |  esac
        |done
        |read_request() {
        |  while IFS= read -r request && IFS= read -r marker; do
-       |    case "$request" in
-       |      *'#{start_time} #{pid} #{version}'*) answer '10 4242 3.7c';;
-       |      *) return 0;;
-       |    esac
+       |    return 0
        |  done
        |  return 1
        |}

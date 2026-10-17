@@ -270,11 +270,13 @@ public final class FakeTmux implements TmuxTransport {
                         return VersionProbe.refusing(refusal(command.getLast()));
                     }
                     if (command.size() >= 3
-                            && command.subList(command.size() - 3, command.size() - 1)
-                                    .equals(List.of("display-message", "-p"))
-                            && command.getLast().equals("#{version}\t#{pid}\t#{start_time}\t#{socket_path}")) {
-                        return VersionProbe.reporting(
-                                VERSION + "\t" + pid + "\t" + started + "\t/tmp/libtmux-java-fake/" + pid);
+                            && command.get(command.size() - 3).equals("run-shell")
+                            && command.get(command.size() - 2).equals("-C")
+                            && command.getLast().startsWith("libtmux-identity-")) {
+                        String format = command.getLast();
+                        String marker = format.substring(0, format.indexOf("#{version}"));
+                        return VersionProbe.refusing("unknown command: " + marker + VERSION + "," + pid + "," + started
+                                + ",/tmp/libtmux-java-fake/" + pid);
                     }
                     if (command.size() >= 4
                             && command.subList(command.size() - 4, command.size() - 1)
@@ -332,10 +334,6 @@ public final class FakeTmux implements TmuxTransport {
             this.exit = exit;
             output = new ByteArrayInputStream((stdout.isEmpty() ? "" : stdout + "\n").getBytes(StandardCharsets.UTF_8));
             error = new ByteArrayInputStream((stderr.isEmpty() ? "" : stderr + "\n").getBytes(StandardCharsets.UTF_8));
-        }
-
-        static VersionProbe reporting(String report) {
-            return new VersionProbe(0, report, "");
         }
 
         static VersionProbe refusing(String stderr) {
