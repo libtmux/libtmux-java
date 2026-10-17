@@ -455,7 +455,7 @@ whole whatever the locale. Only `Pane.currentPath()` still needs a UTF-8 locale,
 because a `Path` in this JVM cannot name the directory; `currentPathText()` reads
 it anywhere.
 
-tmux 3.2a through 3.7c. That range is not a claim: the whole real-tmux suite runs
+tmux 3.3a through 3.7c. That range is not a claim: the whole real-tmux suite runs
 against every one of those releases, and each lane checks it really ran the tmux
 it is named after.
 

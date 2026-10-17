@@ -1,6 +1,6 @@
 name: tmux matrix
 
-# The README claims tmux 3.2a through 3.7c, and says that range is not a claim because the suite runs
+# The README claims tmux 3.3a through 3.7c, and says that range is not a claim because the suite runs
 # against every one of them. This is where that stops depending on someone running it locally.
 
 on:
@@ -38,7 +38,7 @@ jobs:
         # (its `lanes` list), which is the source of truth. The agree step below fails if they drift
         # apart. This is also what DocumentationFactsTest reads the README's claimed range from, so a
         # preview lane belongs in `include` below and never here.
-        tmux: ['3.2a', '3.3', '3.3a', '3.4', '3.5', '3.6', '3.7', '3.7a', '3.7b', '3.7c']
+        tmux: ['3.3a', '3.4', '3.5', '3.6', '3.7', '3.7a', '3.7b', '3.7c']
         # Ahead of the supported range, matching the plugin's `previewLanes` list: 3.8-rc2 is a
         # candidate for a release not yet cut, and master is upstream's development branch, not a
         # version. Both may fail and neither moves the README's claimed range.

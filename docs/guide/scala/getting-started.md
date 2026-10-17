@@ -1,6 +1,6 @@
 # Getting started
 
-The Scala facades need Scala 3.9 and JDK 25 or newer, and tmux 3.2a through
+The Scala facades need Scala 3.9 and JDK 25 or newer, and tmux 3.3a through
 3.7c on the machine they drive.
 
 ## Install
