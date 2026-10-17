@@ -1,6 +1,7 @@
 package io.github.libtmux.internal;
 
 import io.github.libtmux.Layouts;
+import io.github.libtmux.Names;
 import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.exception.UnsupportedFeatureException;
 import java.util.HashSet;
@@ -56,6 +57,12 @@ public final class TmuxFeatures {
                     && !intent.repairedBreak()) {
                 throw new UnsupportedFeatureException(
                         "literal break-pane and unnamed breaks are unreliable on tmux 3.7; use Pane.breakOut(name) or tmux 3.7a+");
+            } else if (matches(verb, "new-session", "new", 3)) {
+                names(version, command, "cefFnstxy", "ns");
+            } else if (matches(verb, "new-window", "neww", 5)) {
+                names(version, command, "cenFt", "n");
+            } else if (matches(verb, "rename-session", "rename", 8) || matches(verb, "rename-window", "renamew", 8)) {
+                renamed(version, command);
             } else if (matches(verb, "select-layout", "selectl", 8) && !version.atLeast(LAYOUT_ERROR_REPORTING)) {
                 Set<Character> flags = new HashSet<>();
                 int operand = options(command, "t", flags);
@@ -75,6 +82,36 @@ public final class TmuxFeatures {
                 }
             }
         }
+    }
+
+    /** Refuses a name flag's value that the exact release would reject; {@code wanted} lists the flags. */
+    private static void names(TmuxVersion version, List<String> command, String valued, String wanted) {
+        int index = 1;
+        for (; index < command.size(); index++) {
+            String word = command.get(index);
+            if (word.equals("--") || !word.startsWith("-") || word.equals("-")) break;
+            for (int offset = 1; offset < word.length(); offset++) {
+                char flag = word.charAt(offset);
+                if (valued.indexOf(flag) < 0) continue;
+                String value;
+                if (offset + 1 < word.length()) {
+                    value = word.substring(offset + 1);
+                } else if (index + 1 < command.size()) {
+                    value = command.get(++index);
+                } else {
+                    return;
+                }
+                if (wanted.indexOf(flag) >= 0) Names.require(value, version);
+                break;
+            }
+        }
+    }
+
+    /** The new name is the operand after the options of rename-session and rename-window. */
+    private static void renamed(TmuxVersion version, List<String> command) {
+        Set<Character> ignored = new HashSet<>();
+        int operand = options(command, "t", ignored);
+        if (operand < command.size()) Names.require(command.get(operand), version);
     }
 
     /** Whether the string leads with the four-digit checksum tmux computes over the rest. */

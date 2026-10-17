@@ -180,4 +180,26 @@ final class OptionalFeatureIntegrationTest {
                             .succeeded());
         assertFalse(pane.split(spec -> spec.percent(30)).id().equals(pane.id()));
     }
+
+    @Test
+    void exactly37RefusesADelimiterInANameBeforeAnyEarlierCommandRuns(Server server) {
+        String name = "split.name";
+        if (server.version().sameRelease(new TmuxVersion(3, 7, ""))) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> server.batch()
+                            .add("set-option", "-g", "@name-effect", "changed")
+                            .add("new-window", "-d", "-n", name)
+                            .run());
+            assertThrows(IllegalArgumentException.class, () -> server.cmd("rename-session", "colon:name"));
+            assertThrows(IllegalArgumentException.class, () -> server.cmd("new-session", "-d", "-s", name));
+            assertThrows(IllegalArgumentException.class, () -> server.cmd("new-window", "-dn" + name));
+            assertEquals(
+                    List.of(),
+                    server.cmd("show-options", "-gqv", "@name-effect").stdout());
+            assertEquals(1, server.windows().size());
+        } else {
+            assertTrue(server.cmd("new-window", "-d", "-n", name).succeeded());
+        }
+    }
 }
