@@ -291,7 +291,11 @@ final class Children {
                     executable(context, context.environment().getOrDefault("TMUX_WORKSPACE_PYTHON", "python3"));
             Output version = run(
                     context,
-                    List.of(executable, "-c", "import importlib.metadata; print(importlib.metadata.version('tmuxp'))"),
+                    List.of(
+                            executable,
+                            "-c",
+                            PythonExtensions.CORE_PRELUDE
+                                    + "import importlib.metadata; print(importlib.metadata.version('tmuxp'))"),
                     context.directory(),
                     report,
                     Duration.ofSeconds(5),
@@ -301,8 +305,9 @@ final class Children {
                 throw new Main.Failure(
                         Machine.Code.SCRIPT_FAILED,
                         1,
-                        "tmuxp 1.74.0 is required: " + refusal(version)
-                                + "; set TMUX_WORKSPACE_PYTHON to an interpreter with tmuxp 1.74.0 installed");
+                        "tmuxp 1.74.0 is required with Python libtmux's core version check for tmux 3.3a or newer: "
+                                + refusal(version)
+                                + "; set TMUX_WORKSPACE_PYTHON to an interpreter with tmuxp 1.74.0 and compatible Python libtmux installed");
             return executable;
         } catch (IOException absent) {
             throw unusableRuntime(absent.getMessage(), absent);
@@ -345,8 +350,12 @@ final class Children {
         if (interactive && !Main.controllingTerminal())
             throw Main.usage("interactive Python shell requires a terminal; use -c for captured output");
         Main.Context bridge = withSelectedTmuxFirstOnPath(context);
-        var command = new ArrayList<>(
-                List.of(python(bridge, report), "-u", "-c", "from tmuxp.cli import cli; cli()", "shell"));
+        var command = new ArrayList<>(List.of(
+                python(bridge, report),
+                "-u",
+                "-c",
+                PythonExtensions.CORE_PRELUDE + "from tmuxp.cli import cli; cli()",
+                "shell"));
         if (!interactive) {
             command.add("-c");
             command.add(code);
@@ -370,6 +379,9 @@ final class Children {
         for (int index = 0; index < 2; index++) {
             String value = args.matchedPositionalValue(index, "");
             if (!value.isEmpty()) command.add(value);
+        }
+        try (var server = Execution.server(bridge, args)) {
+            Execution.requireTmuxForExternalPython(server);
         }
         Output output = interactive
                 ? terminal(bridge, command)

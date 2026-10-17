@@ -131,6 +131,8 @@ public final class Main {
         if (failure instanceof InterruptedException || failure instanceof InterruptedIOException)
             return Machine.Code.INTERRUPTED;
         if (failure instanceof Failure known) return known.code;
+        if (failure instanceof io.github.libtmux.exception.UnsupportedFeatureException unsupported
+                && unsupported.belowFloor()) return Machine.Code.TMUX_UNSUPPORTED;
         if (failure instanceof io.github.libtmux.exception.LibTmuxException) return Machine.Code.TMUX_FAILED;
         if (failure instanceof IOException
                 || failure instanceof UncheckedIOException

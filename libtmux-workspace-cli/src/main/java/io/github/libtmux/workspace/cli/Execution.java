@@ -60,6 +60,11 @@ final class Execution {
         }
     }
 
+    /** Validates the selected tmux without starting a daemon before Python runs. */
+    static void requireTmuxForExternalPython(Server server) {
+        server.requireCompatibleTmux();
+    }
+
     static void load(Main.Context context, ParseResult args, Reporter report) throws IOException, InterruptedException {
         if (Main.flag(args, "-8"))
             throw new Main.Failure(

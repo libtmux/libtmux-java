@@ -185,6 +185,8 @@ one a script calls:
 - **`session_mismatch`** — the named session exists and is not what the
   document describes
 - **`tmux_unavailable`** — tmux could not be found or run
+- **`tmux_unsupported`** — tmux is older than 3.3a; the message says to
+  upgrade tmux or use the previous release
 - **`tmux_failed`** — tmux ran and refused, or the server changed under the
   command
 - **`script_failed`** — a child program could not be run, or ended badly

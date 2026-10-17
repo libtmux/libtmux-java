@@ -54,6 +54,7 @@ final class MainTest {
                 "session_not_found",
                 "session_mismatch",
                 "tmux_unavailable",
+                "tmux_unsupported",
                 "tmux_failed",
                 "script_failed",
                 "destination_exists",
@@ -83,6 +84,17 @@ final class MainTest {
         var extra = new java.util.HashSet<>(declared);
         extra.removeAll(shared);
         assertEquals(documented, extra, "a code outside the shared set must be one the README names");
+    }
+
+    /** Only a tmux below the floor is `tmux_unsupported`; a missing optional feature is a tmux refusal. */
+    @Test
+    void onlyAFloorRefusalReportsTmuxUnsupported() {
+        assertEquals(
+                Machine.Code.TMUX_UNSUPPORTED,
+                Main.classify(io.github.libtmux.exception.UnsupportedFeatureException.tmuxBelowFloor("too old")));
+        assertEquals(
+                Machine.Code.TMUX_FAILED,
+                Main.classify(new io.github.libtmux.exception.UnsupportedFeatureException("needs a newer tmux")));
     }
 
     /** A missing workspace file is `workspace_not_found`. */
