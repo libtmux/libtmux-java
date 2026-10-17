@@ -77,3 +77,6 @@ tasks.register<JavaExec>("runDevelopment") {
     )
     jvmArgs("-XX:TieredStopAtLevel=1")
 }
+
+// Shared native terminal driver; test resources never enter a published artifact.
+sourceSets.test { resources.srcDir(rootProject.file("gradle/test-fixtures")) }
