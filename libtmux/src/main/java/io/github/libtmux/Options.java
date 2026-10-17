@@ -145,7 +145,7 @@ public final class Options {
      *
      * <p>A listed value is escaped with {@code vis(3)} and wrapped in whichever quotes that release
      * chose, and which characters it reaches changed inside the supported range — {@code a$b} prints
-     * as {@code "a\$b"} on 3.2a and {@code "a\\$b"} on 3.4. {@code -v} output is ambiguous on 3.4
+     * as {@code "a\$b"} on 3.3a and {@code "a\\$b"} on 3.4. {@code -v} output is ambiguous on 3.4
      * and 3.5, which print a carriage return and a literal {@code \r} alike, so those two read the
      * listing's quoted spelling; elsewhere {@code -v} prints the value itself, as {@link #get} reads it.
      */

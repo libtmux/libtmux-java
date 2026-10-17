@@ -65,7 +65,7 @@ final class ControlWatchIntegrationTest {
 
     /**
      * A message another client aims at this one arrives as a notification, " : " and all. A name
-     * cannot carry that separator across releases: 3.2a to 3.6 store {@code :} as {@code _} and 3.7
+     * cannot carry that separator across releases: 3.3a to 3.6 store {@code :} as {@code _} and 3.7
      * refuses it, so the message is the real-tmux proof that only a subscription is split there.
      */
     @Test

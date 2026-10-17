@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
  * A released tmux version, ordered the way tmux releases are.
  *
  * <p>tmux numbers a patch release with a letter rather than a third number: 3.7a follows 3.7, and
- * 3.2a follows 3.2. Comparing the text alone gets that wrong in both directions, and a feature gate
+ * 3.3a follows 3.3. Comparing the text alone gets that wrong in both directions, and a feature gate
  * that gets it wrong reads a format the running tmux does not have.
  *
  * <p>Between releases, tmux reports itself as {@code next-M.m}: a development build tracking toward

@@ -144,9 +144,9 @@ final class LeadingDashIntegrationTest {
      */
     @Test
     void theRawCommandEscapeHatchDoesNotInsertTheTerminator(Server server) {
-        // tmux's own wording for a rejected flag changed across the supported range — 3.2a says
-        // "unknown option -- Z" and 3.7 "unknown flag -Z" — so this asserts that it refused, which
-        // is the fact, rather than how it said so.
+        // tmux's own wording for a rejected flag differs between releases — "unknown option -- Z",
+        // "unknown flag -Z" — so this asserts that it refused, which is the fact, rather than how
+        // it said so.
         assertFalse(
                 server.cmd("run-shell", UNKNOWN).succeeded(),
                 "cmd is the way past the typed API, so it does not quietly rewrite the argv");

@@ -36,7 +36,7 @@ API reference: [libtmux.org][reference] for the current trunk,
 
 ## Quick start
 
-Add it through the BOM. It needs JDK 25 and a tmux between 3.2a and 3.7c:
+Add it through the BOM. It needs JDK 25 and a tmux between 3.3a and 3.7c:
 
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
@@ -441,7 +441,7 @@ rename.getAnnotation(io.github.libtmux.catalog.Operation.class).value();   // â†
 
 ## Support and status
 
-- **JDK 25 or newer**, and **tmux 3.2a through 3.7c**.
+- **JDK 25 or newer**, and **tmux 3.3a through 3.7c**.
 - **Linux, including WSL.** CI runs on Ubuntu. A macOS job runs the same checks
   and reports without gating a merge.
 - **Alpha.** The API will change without notice.

@@ -864,22 +864,23 @@ final class OperationBenchmark {
                 .append(" windows, asked for three ways. This is the whole of the answer to ")
                 .append("per-command process cost, so it leads.\n\n");
         table(out, "strategy", grouping);
-        out.append("\nEvery row pays the same four commands for the handle it starts from and the ")
-                .append("count it ends with, so the ratio between them understates what grouping ")
-                .append("saves: the work itself is 60 commands against one.\n");
+        out.append("\nEvery row also pays for the handle it starts from and the count it ends with. ")
+                .append("Each ordinary request has its own version probe; grouping reduces ")
+                .append("the number of those requests as well as the data commands.\n");
 
         out.append("\n## Reading the hierarchy\n\n")
                 .append("`windows()` and `snapshot()` both throw when capture fails. They read who the ")
                 .append("server is, then run the four listings as one group fenced against that ")
-                .append("answer. Two commands, whatever the hierarchy holds.\n\n");
+                .append("answer. Two data requests and their version probes, whatever the hierarchy holds.\n\n");
         table(out, "read", reading);
 
         out.append("\n## Narrow reads\n\n")
                 .append("Five sessions, one wanted. A lookup by name, by pane id, or by a filter tmux can ")
                 .append("apply reads who the server is, then lists only the sessions it wants, with their ")
-                .append("windows and panes, as one fenced group: two commands, the same as a snapshot, ")
+                .append("windows and panes, as one fenced group: two data requests and their version probes, ")
+                .append("the same as a snapshot, ")
                 .append("over less of the server. A pane or window condition is looped over each ")
-                .append("session inside tmux, so no probe comes first.\n\n");
+                .append("session inside tmux, so no separate pane-existence probe comes first.\n\n");
         table(out, "read", narrowing);
         out.append("\nThe same reads against fifty sessions of three windows each. The commands do not ")
                 .append("change; what a whole-server read pays for is the rows.\n\n");
@@ -923,8 +924,8 @@ final class OperationBenchmark {
                 .append("between releases, so names come from the listing and values from ")
                 .append("`show-options -v`, batched.\n\n");
         table(out, "read", options);
-        out.append("\nThat is the cost: one option is one command, and a listing is two whatever ")
-                .append("its size, until it outgrows what one command may carry.\n");
+        out.append("\nOne option is one data request, and a listing is two whatever its size, until ")
+                .append("it outgrows what one command may carry. Each request has a version probe.\n");
 
         out.append("\n## One command, two transports\n\n")
                 .append("The same read, `display-message -p \"#{session_name}\"`, sent ")
@@ -970,7 +971,8 @@ final class OperationBenchmark {
                 .append("| p95 | %s |%n".formatted(micros(following.p95Nanos())))
                 .append("| commands the mirror dispatched per change | %.1f |%n"
                         .formatted(following.dispatchesPerChange()))
-                .append("\nA rebuild is a snapshot, two commands. A new window is announced more than once, ")
+                .append("\nA rebuild is a snapshot: two data requests and their version probes. ")
+                .append("A new window is announced more than once, ")
                 .append("and announcements that arrive during a rebuild fold into one more, so a change ")
                 .append("costs one or two rebuilds rather than one per announcement.\n");
 

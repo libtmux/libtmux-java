@@ -118,8 +118,8 @@ final class ControlClientTest {
     /**
      * tmux(1) documents {@code refresh-client -B name:what:format}'s {@code what} as empty,
      * {@code %N}, {@code %*}, {@code @N} or {@code @*} only. A session id ({@code $0}) or an
-     * arbitrary word were never spellings the manual promises for "the attached session" - 3.2a and
-     * 3.7c happen to accept them leniently, but on master the identical call is accepted and fires
+     * arbitrary word were never spellings the manual promises for "the attached session" - some releases
+     * happen to accept them leniently, but on master the identical call is accepted and fires
      * nothing, silently. {@code watch} now sends the one spelling confirmed to work everywhere -
      * {@code ""} - for anything that does not itself name a pane or window.
      */

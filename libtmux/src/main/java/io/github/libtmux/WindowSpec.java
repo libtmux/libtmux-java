@@ -207,7 +207,7 @@ public final class WindowSpec {
 
         /**
          * Starts the window in this directory. A relative one resolves against this process's working
-         * directory, on every release: tmux 3.2a would resolve it against the server's.
+         * directory, on every release.
          */
         public Builder in(Path directory) {
             this.directory = Objects.requireNonNull(directory, "directory");

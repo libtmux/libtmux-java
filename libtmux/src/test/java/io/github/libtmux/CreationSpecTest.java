@@ -13,12 +13,12 @@ import org.junit.jupiter.api.Test;
 /**
  * What the window and session specs lower to, and what they refuse.
  *
- * <p>Neither command changed its flags between 3.2a and 3.7b, so the version rules here are about
+ * <p>Neither command changed its flags between 3.3a and 3.7b, so the version rules here are about
  * behaviour tmux accepts and then ignores rather than about flags it rejects.
  */
 final class CreationSpecTest {
 
-    private static final TmuxVersion V32A = new TmuxVersion(3, 2, "a");
+    private static final TmuxVersion V33A = TmuxVersion.MINIMUM;
     private static final TmuxVersion V37B = new TmuxVersion(3, 7, "b");
     private static final String FORMAT = "#{window_id}";
 
@@ -93,9 +93,9 @@ final class CreationSpecTest {
     }
 
     /**
-     * tmux 3.2a resolves a relative {@code -c} against the server's working directory, falling back
-     * to home; 3.3 onwards resolves it against the requesting client's, which is this process's.
-     * Every spawn site sends it resolved, so every release starts the process where 3.3 does.
+     * tmux resolves a relative {@code -c} against the requesting client's working directory, which
+     * is this process's. Every spawn site sends it resolved anyway, so the start directory never
+     * depends on where the server was started.
      */
     @Test
     void aRelativeDirectoryReachesTmuxResolvedAgainstThisProcess() {
@@ -104,7 +104,7 @@ final class CreationSpecTest {
 
         List<String> session = SessionSpec.builder().in(relative).build().argv(FORMAT);
         List<String> window = WindowSpec.builder().in(relative).build().argv("$1", FORMAT);
-        List<String> split = SplitSpec.builder().in(relative).build().argv("%1", FORMAT, V32A);
+        List<String> split = SplitSpec.builder().in(relative).build().argv("%1", FORMAT, V33A);
         List<String> respawn = Pane.respawnArgv(new PaneId("%1"), relative);
 
         assertEquals(resolved, session.get(session.indexOf("-c") + 1));

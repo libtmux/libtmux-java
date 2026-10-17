@@ -22,8 +22,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
  * ready the moment the pane exists, and keys sent before it is are lost. Every count below therefore
  * describes tmux and not a race.
  *
- * <p>Sizes are asserted in relative terms because tmux 3.2a ignores {@code -x}/{@code -y} on a
- * detached session, so a pane there is the default size and not the one asked for.
+ * <p>Sizes are asserted in relative terms, so a count does not depend on the pane's exact
+ * dimensions.
  */
 @ExtendWith(TmuxExtension.class)
 final class CaptureIntegrationTest {

@@ -23,19 +23,17 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Asking the server to run things and to say what it knows.
  *
- * <p>{@code run-shell} reports its command's output on 3.2a, loses it from 3.3 through 3.4, and
- * reports it again from 3.5. That is a hole in the middle of the range rather than a floor, so both
- * branches assert here and the version arithmetic is spelled out rather than assumed.
+ * <p>{@code run-shell} loses its command's output on 3.3a and 3.4 and reports it again from 3.5.
+ * That is a hole at the start of the range rather than a floor, so both branches assert here and
+ * the version arithmetic is spelled out rather than assumed.
  */
 @ExtendWith(TmuxExtension.class)
 final class ServerScriptingIntegrationTest {
 
-    private static final TmuxVersion LOST = new TmuxVersion(3, 3, "");
     private static final TmuxVersion FOUND = new TmuxVersion(3, 5, "");
 
     private static boolean losesShellOutput(Server server) {
-        TmuxVersion running = server.version();
-        return running.atLeast(LOST) && !running.atLeast(FOUND);
+        return !server.version().atLeast(FOUND);
     }
 
     // -------------------------------------------------------------------------------- expanding
@@ -134,17 +132,17 @@ final class ServerScriptingIntegrationTest {
     }
 
     /**
-     * A refusal must not be a silent one: the releases that lose the output are exactly 3.3, 3.3a
-     * and 3.4, and every other lane has to take the capturing path.
+     * A refusal must not be a silent one: the releases that lose the output are exactly 3.3a and
+     * 3.4, and every other lane has to take the capturing path.
      */
     @Test
-    void exactlyTheThreeBrokenReleasesRefuse(Server server) {
+    void exactlyTheTwoBrokenReleasesRefuse(Server server) {
         String lane = System.getProperty("libtmux.tmux.expected");
         if (lane == null) {
             return; // not a matrix lane; the ordinary suite runs whichever tmux is on PATH
         }
 
-        boolean expectedToRefuse = List.of("3.3", "3.3a", "3.4").contains(lane);
+        boolean expectedToRefuse = List.of("3.3a", "3.4").contains(lane);
 
         assertEquals(expectedToRefuse, losesShellOutput(server), "lane " + lane + " disagrees with the version rule");
     }

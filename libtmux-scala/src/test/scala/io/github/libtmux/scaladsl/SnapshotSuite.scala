@@ -66,7 +66,7 @@ final class SnapshotSuite extends FunSuite {
     ServerSnapshot.of(
       Instant.EPOCH,
       123L,
-      new TmuxVersion(3, 2, "a"),
+      new TmuxVersion(3, 3, "a"),
       JList.of(
         new SessionState(session, "one", false, 2),
         new SessionState(other, "two", false, 1)

@@ -17,9 +17,9 @@ final class SessionCreation {
      * binary when it did not, rather than letting an empty list reach {@code SessionId} and throw
      * an unchecked collection exception with neither in it.
      *
-     * <p>tmux 3.2a says nothing at all when it cannot create its socket: the server queues the
-     * error and tells the client to exit at once, and the client leaves before the error reaches
-     * it. So a silent exit checks the one cause this client can see for itself.
+     * <p>A tmux that exits without a word when it cannot create its socket, because the server queues
+     * the error and tells the client to exit before the error reaches it, leaves nothing to read. So
+     * a silent exit checks the one cause this client can see for itself.
      */
     static String failureMessage(ServerConfig config, CommandResult result) {
         if (!result.stderr().isEmpty()) {

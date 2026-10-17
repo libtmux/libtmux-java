@@ -154,8 +154,8 @@ final class CreationIntegrationTest {
 
     /**
      * A relative directory starts every kind of process where this JVM's working directory says. The
-     * daemon is started from another directory, because tmux 3.2a resolves a relative {@code -c}
-     * against the server's own, and a daemon started from here would agree with it by accident.
+     * daemon is started from another directory, because a daemon started from here would agree with this
+     * process about a relative {@code -c} by accident.
      */
     @Test
     void aRelativeStartDirectoryResolvesAgainstThisProcess(@TempDir Path directory) throws Exception {

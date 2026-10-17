@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
  */
 final class TmuxEnvironmentTest {
 
-    /** The exact shape observed on every lane from 3.2a to 3.7b. */
+    /** The exact shape observed on every lane from 3.3a to 3.7b. */
     private static Map<String, String> inside() {
         return Map.of("TMUX", "/tmp/libtmux-abc/s,2821815,0", "TMUX_PANE", "%0");
     }

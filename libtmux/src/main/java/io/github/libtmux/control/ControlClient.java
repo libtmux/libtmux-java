@@ -298,7 +298,7 @@ public final class ControlClient implements AutoCloseable {
      * <p>Without this, this client's own {@code %layout-change} carries the classic string even on a
      * server new enough to write JSON elsewhere: the same window's layout then disagrees depending
      * on which kind of client read it — the mismatch a {@code watch}ed layout format or a parsed
-     * notification would otherwise hit. Measured harmless back to 3.2a: {@code refresh-client -f
+     * notification would otherwise hit. Measured harmless on every supported release: {@code refresh-client -f
      * new-layouts} completes with no error on every supported release, just with nothing to change
      * before 3.8, so this is sent unconditionally rather than gated on a version.
      */
@@ -465,7 +465,7 @@ public final class ControlClient implements AutoCloseable {
     /**
      * tmux(1) documents {@code refresh-client -B name:what:format}'s {@code what} as empty,
      * {@code %N}, {@code %*}, {@code @N} or {@code @*} only - a session id or an arbitrary word was
-     * never a spelling the manual promises, even though 3.2a and 3.7c happen to accept one leniently
+     * never a spelling the manual promises, even though some releases happen to accept one leniently
      * (confirmed against the matrix). On master the same non-empty, non-{@code %}/{@code @} target
      * is accepted by the parser but delivers nothing, silently. The empty string is the one
      * spelling confirmed to mean "the attached session" and to actually fire on every tested release,

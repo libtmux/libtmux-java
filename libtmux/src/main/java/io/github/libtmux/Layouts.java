@@ -168,7 +168,7 @@ public final class Layouts {
     }
 
     private static Optional<Layout> named(String value, TmuxVersion version) {
-        return builtIn(value, version).filter(layout -> version.atLeast(layout.since()));
+        return builtIn(value, version).filter(layout -> layout.availableOn(version));
     }
 
     /**
@@ -182,8 +182,10 @@ public final class Layouts {
             return new IllegalArgumentException("not a unique layout for tmux " + running + ": " + layout);
         }
         String names = matches.stream().map(Layout::tmuxName).collect(java.util.stream.Collectors.joining(", "));
-        TmuxVersion introduced =
-                matches.stream().map(Layout::since).max(TmuxVersion::compareTo).orElseThrow();
+        TmuxVersion introduced = matches.stream()
+                .map(candidate -> candidate.since().orElse(TmuxVersion.MINIMUM))
+                .max(TmuxVersion::compareTo)
+                .orElseThrow();
         return new IllegalArgumentException("not a unique layout for tmux " + running + ": " + layout + "; matches "
                 + names + ", ambiguous since tmux " + introduced + "; use the full name");
     }
@@ -198,7 +200,7 @@ public final class Layouts {
 
     private static List<Layout> supported(TmuxVersion running) {
         return Arrays.stream(Layout.values())
-                .filter(candidate -> running.atLeast(candidate.since()))
+                .filter(candidate -> candidate.availableOn(running))
                 .toList();
     }
 

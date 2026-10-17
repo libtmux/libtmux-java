@@ -817,7 +817,7 @@ final class ServerTest {
 
     /**
      * An older client cannot talk to a newer daemon at all - confirmed against the matrix,
-     * a 3.2a client against a 3.7c daemon on the same socket fails outright, {@code server exited
+     * a 3.3a client against a 3.7c daemon on the same socket fails outright, {@code server exited
      * unexpectedly}. tmux reports that identically to "no daemon ever started here", so {@code
      * versionForCreation} used to read it as "no daemon" and quietly substitute the configured
      * binary's own {@code -V}, inverting {@link Server#version()}'s documented guarantee that it
@@ -989,9 +989,10 @@ final class ServerTest {
     }
 
     /**
-     * tmux 3.2a exits 0 and prints nothing when it cannot create its socket: the server queues the
-     * error and tells the client to exit in the same breath, and the client leaves first. 3.3 and
-     * later print {@code error creating ...}. So when tmux says nothing, the directory is checked here.
+     * A tmux that exits 0 and prints nothing when it cannot create its socket, because the server
+     * queues the error and tells the client to exit in the same breath, leaves nothing to read. tmux
+     * prints {@code error creating ...} itself, so only when it says nothing is the directory checked
+     * here.
      */
     @Test
     void aSilentExitUnderAMissingSocketDirectoryNamesTheDirectory(@TempDir Path directory) {

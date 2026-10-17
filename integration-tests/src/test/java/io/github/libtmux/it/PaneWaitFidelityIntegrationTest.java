@@ -32,9 +32,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 final class PaneWaitFidelityIntegrationTest {
 
     /**
-     * Sized by resizing the window rather than the session: a detached session cannot be given a
-     * size before tmux 3.3, and {@code resize-pane} does not move a lone pane in a detached session
-     * at all — measured on 3.2a, where the width stayed 80 — while {@code resize-window} does.
+     * Sized by resizing the window rather than the session: {@code resize-pane} does not move a lone pane in a detached session at all,
+     * while {@code resize-window} does.
      */
     private static Pane shell(Server server, String name, int columns) throws InterruptedException {
         Window window = server.newSession(session -> session.named(name).running("env", "PS1=$ ", "ENV=", "/bin/sh"))

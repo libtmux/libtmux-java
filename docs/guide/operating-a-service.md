@@ -51,7 +51,7 @@ try (Server observed = Server.open(config.toBuilder().observer(reports::add).bui
 }
 OperationReport last = reports.get(reports.size() - 1);
 
-last.verbs();                                     // → [display-message]
+last.verbs();                                     // → [if-shell, display-message]
 last.certainty();                                 // → COMPLETE
 last.exitCode();                                  // → OptionalInt[0]
 ```
@@ -64,6 +64,11 @@ line counts, and at most 240 characters of stderr in `boundedError`, which
 stack trace and otherwise ignored; the command's own result is unaffected, and
 nothing is retried.
 
+The version check emits its own `run-shell` probe report. The probe fires none
+of a user's `after-*` or `command-error` hooks, so checking a call's daemon has
+no effect a hook could see. The request's report includes the `if-shell` version
+guard before the requested command.
+
 A report's `id` counts calls on one transport, so two reports can be told
 apart; it is not a request id for tracing. None is needed: the observer runs on
 the thread that made the call, so whatever that thread carries - a logging MDC,
@@ -74,7 +79,7 @@ an OpenTelemetry context, a thread local - is there to read:
 ThreadLocal<String> request = new ThreadLocal<>();
 Map<String, String> seen = new ConcurrentHashMap<>();
 ServerConfig traced =
-        config.toBuilder().observer(report -> seen.put(report.verbs().get(0), request.get())).build();
+        config.toBuilder().observer(report -> seen.put(report.verbs().getLast(), request.get())).build();
 try (Server server = Server.open(traced)) {
     request.set("req-42");
     server.cmd("display-message", "-p", "hi");

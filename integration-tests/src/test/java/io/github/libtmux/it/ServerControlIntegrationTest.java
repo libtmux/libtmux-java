@@ -22,9 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
  * Deciding inside tmux, locking, and reading what the server has been told.
  *
  * <p>{@code if-shell}, {@code lock-server} and {@code show-messages} declare the same flags on every
- * supported release. The prompt-history commands do not exist at all before 3.3, which is a floor rather
- * than a flag, so both branches assert: 3.2a takes the refusing one and every later release the
- * working one.
+ * supported release. The prompt-history commands exist on every supported release.
  */
 @ExtendWith(TmuxExtension.class)
 final class ServerControlIntegrationTest {

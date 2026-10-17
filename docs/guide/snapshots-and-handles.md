@@ -22,15 +22,17 @@ That is deliberate. tmux offers no transaction across separate listings, so a
 traversal that re-queried could observe a hierarchy that never existed — a window
 in one listing and its panes from after it closed.
 
-A capture costs two tmux commands: one asks which server this is, and one runs the
-four listings as a group fenced against that answer. Because tmux runs a group
-inside the server, the rows cannot come from two of them, and a server replaced
+A capture sends two data requests, each with a separate version probe: one asks
+which server this is, and one runs the four listings as a group fenced against
+that answer. Because tmux runs a group inside the server, the rows cannot come
+from two of them, and a server replaced
 under the capture is refused rather than half-read. "Which server" is its pid and
 when it started: a pid can be reused, and a handle is refused by a tmux started
 since on the same one. tmux reports that start in whole seconds, so a server
 replaced on the same pid within the same second would pass; nothing short of a
 token planted in the server closes that gap. What that costs is measured in
-[`docs/benchmarks/operation-costs.md`](../benchmarks/operation-costs.md).
+[`docs/benchmarks/operation-costs.md`](../benchmarks/operation-costs.md), whose
+recorded commit predates the extra version probes.
 
 `refresh()` is how to look again. Every live listing, finder and snapshot
 capture throws when it fails. An absent daemon throws
@@ -107,10 +109,8 @@ captured.size();             // → 90x20
 captured.refresh().size();   // → 100x30
 ```
 
-The first size is set rather than inherited on purpose. A new window's default
-is the client's size, less a row for the status line on tmux 3.2a and not on
-3.3 or later, so a snippet that printed that default would be telling the truth
-on only some of the releases this supports.
+The first size is set so the example does not depend on the client's terminal
+dimensions.
 
 `Session.rename`, `Window.rename`, `Pane.retitle`, and each handle's `refresh`
 carry `@CheckReturnValue`. Error Prone rejects a call that discards their results.
@@ -170,11 +170,12 @@ recent.size() <= everything.size();                             // → true
 These talk to tmux. They do not update `info()`.
 
 `server.shell()` runs a shell command, or chooses one from an exit status.
-`server.commands().list()` is the catalog this tmux knows. `server.prompt()`
-is prompt history, present since tmux 3.3. `server.messageLog().lines()` is
-the server log. Before 3.6 it needs a client attached. `server.keys()` binds
-keys. `server.lock()` locks every attached client. It stays a method on
-`Server`: it is one command, not a group. The Scala facades call it `lock`.
+`server.commands().list()` is the catalog this tmux knows. `server.prompt()` is
+prompt history, present on every supported release.
+`server.messageLog().lines()` is the server log. Before 3.6 it needs a client
+attached. `server.keys()` binds keys. `server.lock()` locks every attached
+client. It stays a method on `Server`: it is one command, not a group. The Scala
+facades call it `lock`.
 
 ```java
 // Given: Server server

@@ -353,9 +353,9 @@ the `default`, `minimal`, `window`, `pane` and `verbose` presets, or a template.
 - Python builders and plugins remain executable user code with their own
   mutation and cleanup behavior.
 
-On tmux 3.2a, the Python classic builder can fail after tmux rewrites a session
-name containing `$`. Use a name without `$` for extension workspaces on that
-version; the bridge does not alter tmux's naming behavior.
+The Python bridge requires tmuxp 1.74.0 and a Python libtmux whose minimum is
+tmux 3.3a or newer. It refuses an older backend before running extensions or
+shell code; see the [migration notes](../../MIGRATION.md).
 
 ## Subprocesses
 

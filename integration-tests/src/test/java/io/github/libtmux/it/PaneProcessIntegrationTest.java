@@ -22,7 +22,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Restarting what a pane runs, watching what it prints, and asking tmux things a snapshot does not
  * carry.
  *
- * <p>None of these commands changed a flag between 3.2a and 3.7b, so there is no version rule here —
+ * <p>None of these commands changed a flag across the supported range, so there is no version rule here —
  * only behaviour, checked on whichever release the lane runs.
  */
 @ExtendWith(TmuxExtension.class)
