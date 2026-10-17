@@ -22,6 +22,14 @@ production.
 - **The version check no longer runs a user's `after-display-message` hook.**
   The daemon version is read with `run-shell -C`, which runs no `after-*` or
   `command-error` hook, instead of `display-message`. (#67)
+- **The version check asks a known daemon once.** A call no longer spends a version
+  probe process of its own; the fence on every dispatch drops the entry when
+  the daemon has been replaced, and an older replacement raises the version
+  error rather than `TargetGoneException`. (#67)
+- **`TmuxVersion` orders release candidates below their release and parses
+  strictly.** `3.8-rc < 3.8`, `compareTo` agrees with `equals`, and text such
+  as `3.3a garbage` or `3.3a-master` is rejected. `atLeast` still counts a
+  candidate as its release. (#67)
 
 ### Documented
 
