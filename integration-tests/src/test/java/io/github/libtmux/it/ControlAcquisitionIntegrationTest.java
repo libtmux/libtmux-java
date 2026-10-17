@@ -10,6 +10,7 @@ import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.internal.ControlAcquisition;
 import io.github.libtmux.junit5.NamedServerFixture;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.transport.CommandRequest;
@@ -159,5 +160,61 @@ final class ControlAcquisitionIntegrationTest {
         } finally {
             Files.deleteIfExists(root);
         }
+    }
+
+    /** The identity travels in one word, so a socket path with a space and a quote must survive it. */
+    @Test
+    void anIdentityKeepsSpacesAndQuotesInTheSocketPath(Server fixture) throws Exception {
+        Path root = Files.createTempDirectory(Path.of("/tmp/libtmux-java-test"), "quoted-");
+        Path directory = Files.createDirectory(root.resolve("it's a dir"));
+        Path socket = directory.resolve("a socket, with comma");
+        ServerConfig config = ServerConfig.builder()
+                .binary(fixture.config().binary())
+                .endpoint(ServerEndpoint.socketPath(socket))
+                .configFile(Path.of("/dev/null"))
+                .build();
+        try (Server server = Server.open(config)) {
+            try {
+                server.newSession("quoted-socket");
+                try (ProcessTransport processes = new ProcessTransport();
+                        ControlAcquisition acquisition = ControlAcquisition.acquire(
+                                processes.controlCarrier().orElseThrow(), config, Duration.ofSeconds(30))) {
+                    assertEquals(socket.toString(), acquisition.identity().socket());
+                }
+            } finally {
+                server.killServer();
+            }
+        } finally {
+            Files.deleteIfExists(socket);
+            Files.deleteIfExists(directory);
+            Files.deleteIfExists(root);
+        }
+    }
+
+    /**
+     * Qualifying a daemon for control reads its version and identity, rechecks both through the
+     * pin, and a user's {@code after-display-message} hook must not run for any of it. (Control
+     * replies are framed with {@code display-message} markers once a client is attached; that is
+     * the client's own traffic and is not part of acquisition.) The last step fires the hook the
+     * ordinary way, so a quiet record means the hook was live and not run.
+     */
+    @Test
+    void qualifyingTheDaemonRunsNoAfterDisplayMessageHook(Server server) throws Exception {
+        assertTrue(server.cmd("set-hook", "-g", "after-display-message", "set-option -g @acquire-hook fired")
+                .succeeded());
+        try (ProcessTransport processes = new ProcessTransport();
+                ControlAcquisition acquisition = ControlAcquisition.acquire(
+                        processes.controlCarrier().orElseThrow(), server.config(), Duration.ofSeconds(30))) {
+            acquisition.recheck(processes.controlCarrier().orElseThrow());
+            assertTrue(acquisition.identity().pid() > 0);
+        }
+
+        assertEquals(
+                List.of(), server.cmd("show-options", "-gqv", "@acquire-hook").stdout(), "acquisition ran the hook");
+        assertTrue(server.cmd("display-message", "-p", "control").succeeded());
+        assertEquals(
+                List.of("fired"),
+                server.cmd("show-options", "-gqv", "@acquire-hook").stdout(),
+                "the hook never fires, so the check above proves nothing");
     }
 }

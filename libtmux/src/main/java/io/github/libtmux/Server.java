@@ -875,32 +875,16 @@ public final class Server implements AutoCloseable {
         requireOpen();
         ServerSnapshot captured = session.snapshot();
         // Before the identity read below, so an unsupported daemon is refused without running anything on it.
-        io.github.libtmux.internal.ControlAcquisition.requireSupported(version(captured));
+        // The hook-free probe, not version(captured): an unversioned capture would read it with display-message.
+        TmuxVersion daemon = captured.serverVersion().orElseGet(this::versionForCreation);
+        io.github.libtmux.internal.ControlAcquisition.requireSupported(daemon);
         long pid = captured.serverPid()
                 .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
-        CommandResult live = fence.guarded(captured, "display-message -p '#{pid} #{version}'", "");
-        if (!live.succeeded() || live.stdout().size() != 1) {
-            throw failed("display-message", live);
-        }
-        String reported = live.stdout().get(0);
-        int space = reported.indexOf(' ');
-        if (space < 1) {
-            throw new MalformedResponseException("tmux reported a malformed server identity");
-        }
-        long seen;
-        try {
-            seen = Long.parseLong(reported.substring(0, space));
-        } catch (NumberFormatException e) {
-            throw new MalformedResponseException("tmux reported a malformed server pid");
-        }
-        if (seen != pid) {
-            throw new TargetGoneException("the tmux server this handle belonged to has ended");
-        }
         ControlCarrier carrier = transport
                 .controlCarrier()
                 .orElseThrow(() -> new IllegalStateException("this transport does not start control clients"));
         return ControlClient.attach(
-                carrier, config, session.id(), pid, captured.serverStartTime(), reported.substring(space + 1), timeout);
+                carrier, config, session.id(), pid, captured.serverStartTime(), daemon.toString(), timeout);
     }
 
     /**
