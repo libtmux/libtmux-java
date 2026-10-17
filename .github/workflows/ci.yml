@@ -81,11 +81,11 @@ jobs:
           "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
           git init --quiet "$RUNNER_TEMP/python-libtmux-core"
           git -C "$RUNNER_TEMP/python-libtmux-core" fetch --quiet --depth=1 \
-            https://github.com/tmux-python/libtmux.git c27dd929fc25c3a95648759d8c0537a07ef60258
+            https://github.com/tmux-python/libtmux.git 5df9cb3e89647577b7dd8484f844ffe1053129bb
           git -C "$RUNNER_TEMP/python-libtmux-core" checkout --quiet --detach \
-            c27dd929fc25c3a95648759d8c0537a07ef60258
+            5df9cb3e89647577b7dd8484f844ffe1053129bb
           PYTHONPATH="$RUNNER_TEMP/python-libtmux-core/src" "$RUNNER_TEMP/workspace-python/bin/python" -c \
-            'import sys, libtmux; from pathlib import Path; from libtmux.common import TMUX_MIN_VERSION; assert TMUX_MIN_VERSION == "3.3a", TMUX_MIN_VERSION; assert Path(libtmux.__file__).resolve() == Path(sys.argv[1]).resolve() / "libtmux" / "__init__.py", libtmux.__file__; print(TMUX_MIN_VERSION, libtmux.__file__)' \
+            'import sys, libtmux; from pathlib import Path; from libtmux.common import TMUX_MIN_VERSION, TMUX_OPTIONAL_FEATURE_POLICY_VERSION as policy; assert type(policy) is int and policy >= 2, policy; assert TMUX_MIN_VERSION == "3.3a", TMUX_MIN_VERSION; assert Path(libtmux.__file__).resolve() == Path(sys.argv[1]).resolve() / "libtmux" / "__init__.py", libtmux.__file__; print(TMUX_MIN_VERSION, policy, libtmux.__file__)' \
             "$RUNNER_TEMP/python-libtmux-core/src"
           echo "PYTHONPATH=$RUNNER_TEMP/python-libtmux-core/src" >> "$GITHUB_ENV"
           echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
