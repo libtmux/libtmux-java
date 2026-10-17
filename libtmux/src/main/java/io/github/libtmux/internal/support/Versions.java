@@ -147,6 +147,29 @@ public final class Versions {
                                 || command.equals(List.of("display-message", "-p", "#{pid}")));
     }
 
+    /**
+     * Orders two versions the way a support policy must: {@code next-X.Y < X.Y-rc < X.Y-rc2 < X.Y <
+     * X.Ya}. {@link TmuxVersion#compareTo} treats a candidate as its release because feature gates
+     * measure what the candidate ships, but a floor or a control gate names a release: a candidate
+     * for it is not that release.
+     */
+    public static int compareStrictly(TmuxVersion left, TmuxVersion right) {
+        int ordered = left.compareTo(right);
+        return ordered != 0 ? ordered : Integer.compare(candidate(left.preRelease()), candidate(right.preRelease()));
+    }
+
+    /** A release outranks every candidate; a bare {@code rc} precedes {@code rc1}, {@code rc2}, ... */
+    private static int candidate(String preRelease) {
+        if (preRelease.isEmpty()) {
+            return Integer.MAX_VALUE;
+        }
+        try {
+            return preRelease.length() <= 2 ? 0 : Math.max(1, Integer.parseInt(preRelease.substring(2)));
+        } catch (NumberFormatException unnumbered) {
+            return 0;
+        }
+    }
+
     /** The minimum applies to the daemon's own report, including patch letters. */
     public static TmuxVersion require(String reported) {
         if (!VERSION.matcher(reported).matches()) {
@@ -158,8 +181,7 @@ public final class Versions {
         } catch (IllegalArgumentException malformed) {
             throw new MalformedResponseException("tmux reported an unrecognized version: " + reported, malformed);
         }
-        if (!running.atLeast(MINIMUM)
-                || (running.compareTo(MINIMUM) == 0 && !running.preRelease().isEmpty())) {
+        if (compareStrictly(running, MINIMUM) < 0) {
             throw new UnsupportedFeatureException("libtmux core", MINIMUM, running);
         }
         return running;
