@@ -43,9 +43,15 @@ final class LifecycleSuite extends FunSuite {
     @volatile var thread = ""
 
     override def execute(request: CommandRequest): CommandResult = {
+      if (
+        request
+          .commands()
+          .equals(List.of(List.of("display-message", "-p", "#{version}")))
+      )
+        return new CommandResult(0, List.of("3.7c"), List.of())
       calls.incrementAndGet()
       thread = Thread.currentThread().getName
-      request.commands().get(0).get(0) match {
+      request.commands().getLast().getFirst() match {
         case "block" =>
           entered.complete(())
           try {

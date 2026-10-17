@@ -42,7 +42,8 @@ internal object FakeControlClients {
      * this client's command, then the marker's block.
      */
     private val PRELUDE =
-        "printf '%%begin 100 1 0\\n%%end 100 1 0\\n'\n" +
+        "case \"\$*\" in *'display-message -p #{version}') printf '3.7c\\n'; exit;; esac\n" +
+            "printf '%%begin 100 1 0\\n%%end 100 1 0\\n'\n" +
             "read_request() { IFS= read -r request && IFS= read -r marker; }\n" +
             "answer() {\n" +
             "  printf '%%begin 1 1 1\\n'\n" +

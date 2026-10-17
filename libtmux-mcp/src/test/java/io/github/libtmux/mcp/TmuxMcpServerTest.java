@@ -49,6 +49,9 @@ final class TmuxMcpServerTest {
         TmuxTransport environment = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
+                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
+                    return new CommandResult(0, List.of("3.6"), List.of());
+                }
                 return new CommandResult(0, List.of("VALUE=" + payload), List.of());
             }
 
@@ -254,6 +257,9 @@ final class TmuxMcpServerTest {
         TmuxTransport environment = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
+                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
+                    return new CommandResult(0, List.of("3.6"), List.of());
+                }
                 calls.incrementAndGet();
                 return new CommandResult(0, List.of("VALUE=kept"), List.of());
             }

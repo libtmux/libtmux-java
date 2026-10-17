@@ -347,7 +347,10 @@ final class RunningCommandsTest {
         assertEquals(1, sends.size());
         assertTrue(preflights.get(0) < discoveries.getFirst());
         assertTrue(discoveries.getFirst() < preflights.get(1));
-        assertEquals(preflights.get(1) + 1, sends.getFirst(), "a tmux query followed the final preflight");
+        assertEquals(preflights.get(1) + 2, sends.getFirst(), "only the version check may follow the final preflight");
+        assertEquals(
+                List.of(List.of("display-message", "-p", "#{version}")),
+                requests.get(preflights.get(1) + 1).commands());
         assertEquals(1, directCommandCount(requests, "wait-for"));
     }
 
@@ -621,7 +624,9 @@ final class RunningCommandsTest {
         try (ProcessTransport processes = new ProcessTransport()) {
             TmuxTransport uncertain = borrowing(request -> {
                 CommandResult result = processes.execute(request);
-                if (request.commands().get(0).stream().anyMatch(argument -> argument.contains("ch_lt"))) {
+                if (request.commands().stream()
+                        .flatMap(List::stream)
+                        .anyMatch(argument -> argument.contains("ch_lt"))) {
                     throw new DispatchException.Failed(
                             "simulated failure after delivery", DispatchOutcome.UNKNOWN, null);
                 }
@@ -812,7 +817,10 @@ final class RunningCommandsTest {
         List<Integer> sends = requestIndexes(requests, request -> hasCommand(request, "send-keys"));
         assertEquals(2, preflights.size());
         assertEquals(1, sends.size());
-        assertEquals(preflights.getLast() + 1, sends.getFirst());
+        assertEquals(preflights.getLast() + 2, sends.getFirst());
+        assertEquals(
+                List.of(List.of("display-message", "-p", "#{version}")),
+                requests.get(preflights.getLast() + 1).commands());
     }
 
     private static java.util.stream.Stream<Arguments> invalidCompletionStatuses() {
@@ -967,7 +975,8 @@ final class RunningCommandsTest {
     }
 
     private static Optional<String> nonce(CommandRequest request) {
-        return request.commands().getFirst().stream()
+        return request.commands().stream()
+                .flatMap(List::stream)
                 .filter(argument -> argument.contains("ch_lt"))
                 .flatMap(argument -> NONCE.matcher(argument).results())
                 .map(MatchResult::group)
