@@ -688,8 +688,7 @@ public final class Server implements AutoCloseable {
     }
 
     TmuxVersion versionForCreation() {
-        return Versions.versionForCreation(
-                transport, request(List.of("display-message", "-p", "#{version}"), config.defaultTimeout()));
+        return Versions.versionForCreation(transport, request(List.of("-V"), config.defaultTimeout()));
     }
 
     TmuxVersion version(ServerSnapshot snapshot) {

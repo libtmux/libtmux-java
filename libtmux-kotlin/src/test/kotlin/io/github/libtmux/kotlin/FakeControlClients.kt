@@ -42,7 +42,8 @@ internal object FakeControlClients {
      * this client's command, then the marker's block.
      */
     private val PRELUDE =
-        "case \"\$*\" in *'display-message -p #{version}') printf '3.7c\\n'; exit;; esac\n" +
+        "for argument in \"\$@\"; do case \"\$argument\" in libtmux-version-*'#{version}') " +
+            "printf 'unknown command: %s3.7c\\n' \"\${argument%'#{version}'}\" >&2; exit 1;; esac; done\n" +
             "printf '%%begin 100 1 0\\n%%end 100 1 0\\n'\n" +
             "read_request() { IFS= read -r request && IFS= read -r marker; }\n" +
             "answer() {\n" +

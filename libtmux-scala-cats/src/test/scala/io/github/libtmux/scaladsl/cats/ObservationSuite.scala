@@ -224,7 +224,8 @@ object ObservationSuite {
     * marker's block.
     */
   val prelude: String =
-    """|case "$*" in *'display-message -p #{version}') printf '3.7c\n'; exit;; esac
+    """|for argument in "$@"; do case "$argument" in libtmux-version-*'#{version}')
+       |  printf 'unknown command: %s3.7c\n' "${argument%'#{version}'}" >&2; exit 1;; esac; done
        |read_request() { IFS= read -r request && IFS= read -r marker; }
        |answer() {
        |  printf '%%begin 1 1 1\n'

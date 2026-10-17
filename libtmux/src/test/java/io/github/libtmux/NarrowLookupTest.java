@@ -16,8 +16,6 @@ import org.junit.jupiter.api.Test;
 
 class NarrowLookupTest {
 
-    private static final List<List<String>> VERSION_PROBE = List.of(List.of("display-message", "-p", "#{version}"));
-
     @Test
     void anAbsentSessionCostsOneFencedRead() {
         List<String> sent = new ArrayList<>();
@@ -26,8 +24,8 @@ class NarrowLookupTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(VERSION_PROBE)) {
-                    return new CommandResult(0, List.of("3.6"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
                 }
                 String flat = request.commands().stream()
                         .flatMap(List::stream)
@@ -62,7 +60,7 @@ class NarrowLookupTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (!request.commands().equals(VERSION_PROBE)) requests.add(request);
+                if (!VersionProbes.is(request)) requests.add(request);
                 return GroupedTmux.execute(request, 4242L, argv -> {
                     String template = argv.get(argv.indexOf("-F") + 1);
                     return switch (argv.get(0)) {
@@ -127,7 +125,7 @@ class NarrowLookupTest {
         return new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (!request.commands().equals(VERSION_PROBE)) requests.add(request);
+                if (!VersionProbes.is(request)) requests.add(request);
                 return GroupedTmux.execute(request, 4242L, argv -> {
                     String template = argv.get(argv.indexOf("-F") + 1);
                     return switch (argv.get(0)) {
@@ -257,8 +255,8 @@ class NarrowLookupTest {
         return new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(VERSION_PROBE)) {
-                    return new CommandResult(0, List.of("3.6"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
                 }
                 String flat = request.commands().stream()
                         .flatMap(List::stream)

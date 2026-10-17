@@ -20,7 +20,9 @@ import java.io.File;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Pattern;
 
 /** The tmux version check shared by command dispatch and control-client startup. */
@@ -28,7 +30,8 @@ public final class Versions {
 
     private static final Pattern VERSION = Pattern.compile("(?:next-\\d+\\.\\d+|\\d+\\.\\d+[a-z]?(?:-rc\\d*)?)");
     private static final TmuxVersion MINIMUM = new TmuxVersion(3, 3, "a");
-    private static final List<String> PROBE = List.of("display-message", "-p", "#{version}");
+    private static final String PROBE_MARKER = "libtmux-version-";
+    private static final String UNKNOWN_COMMAND = "unknown command: ";
     private static final String CHANGED = "libtmux-stale-version";
 
     private Versions() {}
@@ -40,12 +43,12 @@ public final class Versions {
                 || request.commands().equals(List.of(List.of("-h")))) {
             return transport.execute(request);
         }
-        CommandResult probe = probe(transport, request);
+        Probe probe = probe(transport, request);
         String version;
-        if (probe.succeeded()) {
-            version = reported(probe, request.endpoint().getFirst());
+        if (probe.version().isPresent()) {
+            version = probe.version().get();
             require(version);
-        } else if (absent(probe)) {
+        } else if (absent(probe.result())) {
             if (noStart(request.endpoint()) || request.idempotence() == Idempotence.IDEMPOTENT || cleanup(request)) {
                 CommandRequest absent = new CommandRequest(
                         withoutStarting(request.endpoint()),
@@ -56,9 +59,9 @@ public final class Versions {
             }
             version = binaryVersion(transport, request, remaining(request, started));
         } else {
-            throw rejected(request, probe);
+            throw rejected(request, probe.result());
         }
-        CommandRequest checked = probe.succeeded()
+        CommandRequest checked = probe.version().isPresent()
                 ? new CommandRequest(
                         withoutStarting(request.endpoint()), request.commands(), request.timeout(), request.input())
                 : request;
@@ -69,33 +72,71 @@ public final class Versions {
     /** Reports the daemon version, or validates the executable when the endpoint is unused. */
     public static TmuxVersion versionForCreation(TmuxTransport transport, CommandRequest request) {
         long started = System.nanoTime();
-        CommandResult daemon = probe(transport, request);
-        if (daemon.succeeded())
-            return require(reported(daemon, request.endpoint().getFirst()));
-        if (!absent(daemon)) throw rejected(request, daemon);
+        Probe daemon = probe(transport, request);
+        if (daemon.version().isPresent()) return require(daemon.version().get());
+        if (!absent(daemon.result())) throw rejected(request, daemon.result());
         return TmuxVersion.parse(binaryVersion(transport, request, remaining(request, started)));
     }
 
-    private static CommandResult probe(TmuxTransport transport, CommandRequest request) {
+    /** What the version probe learned: the daemon's version, or the failure that says why not. */
+    private record Probe(Optional<String> version, CommandResult result) {}
+
+    /**
+     * Asks the daemon for its version without running a command that fires a user's hooks.
+     *
+     * <p>{@code run-shell -C} parses its expanded argument as a command, so the format expands in
+     * the daemon and the parse failure carries the answer on stderr as
+     * {@code unknown command: <marker><version>}. Unlike {@code display-message} the command runs
+     * no {@code after-*} hook, and the parse failure never reaches {@code command-error}.
+     */
+    private static Probe probe(TmuxTransport transport, CommandRequest request) {
+        String marker = marker();
+        CommandResult result;
         try {
-            return transport.execute(
-                    new CommandRequest(withoutStarting(request.endpoint()), List.of(PROBE), request.timeout(), ""));
+            result = transport.execute(new CommandRequest(
+                    withoutStarting(request.endpoint()), List.of(probeCommand(marker)), request.timeout(), ""));
         } catch (DispatchException failure) {
             throw beforeDispatch(failure, request);
         }
+        return new Probe(answer(result, marker, request.endpoint().getFirst()), result);
+    }
+
+    private static String marker() {
+        return PROBE_MARKER + Long.toHexString(ThreadLocalRandom.current().nextLong()) + "-";
+    }
+
+    private static List<String> probeCommand(String marker) {
+        return List.of("run-shell", "-C", marker + "#{version}");
+    }
+
+    /** The version a probe's refusal spelled, or empty when tmux answered anything else. */
+    private static Optional<String> answer(CommandResult result, String marker, String binary) {
+        if (result.succeeded()) {
+            throw new MalformedResponseException(binary + " exited 0 and reported no tmux version; is it tmux?");
+        }
+        String expected = UNKNOWN_COMMAND + marker;
+        for (String line : result.stderr()) {
+            if (line.startsWith(expected) && line.length() > expected.length()) {
+                return Optional.of(line.substring(expected.length()));
+            }
+        }
+        return Optional.empty();
     }
 
     /** Checks through the carrier without taking ownership of the caller's carrier. */
     public static void requireCarrier(ControlCarrier carrier, List<String> endpoint, Duration timeout) {
-        CommandRequest request = new CommandRequest(withoutStarting(endpoint), List.of(PROBE), timeout, "");
+        String marker = marker();
+        CommandRequest request =
+                new CommandRequest(withoutStarting(endpoint), List.of(probeCommand(marker)), timeout, "");
         CommandResult result;
         try {
             result = ProcessTransport.executeThroughCarrier(carrier, request);
         } catch (DispatchException failure) {
             throw beforeDispatch(failure, request);
         }
-        if (!result.succeeded()) throw rejected(request, result);
-        require(reported(result, endpoint.getFirst()));
+        Optional<String> version = answer(result, marker, endpoint.getFirst());
+        if (version.isEmpty()) throw rejected(request, result);
+        require(version.get());
     }
 
     private static boolean cleanup(CommandRequest request) {
@@ -224,8 +265,8 @@ public final class Versions {
         String message = "tmux version probe failed (exit " + result.exitCode() + ")"
                 + (error.isEmpty() ? "; check that " + request.endpoint().getFirst() + " is tmux" : error);
         return absent(result)
-                ? new ServerUnavailableException(message, "display-message", result.exitCode(), result.stderr())
-                : new CommandRejectedException(message, "display-message", result.exitCode(), result.stderr());
+                ? new ServerUnavailableException(message, "run-shell", result.exitCode(), result.stderr())
+                : new CommandRejectedException(message, "run-shell", result.exitCode(), result.stderr());
     }
 
     private static Duration remaining(CommandRequest request, long started) {

@@ -41,7 +41,7 @@ final class SnapshotIntegrationTest {
                 @Override
                 public CommandResult execute(CommandRequest request) {
                     commands.incrementAndGet();
-                    if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
+                    if (VersionProbes.is(request)) {
                         probes.incrementAndGet();
                     }
                     return processes.execute(request);

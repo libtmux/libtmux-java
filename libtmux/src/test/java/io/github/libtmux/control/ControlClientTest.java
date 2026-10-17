@@ -503,7 +503,11 @@ final class ControlClientTest {
     private static final String PRELUDE = """
             #!/bin/sh
             for argument in "$@"; do
-                if [ "$argument" = '#{version}' ]; then printf '3.7d\n'; exit; fi
+                case "$argument" in
+                    libtmux-version-*'#{version}')
+                        printf 'unknown command: %s3.7d\\n' "${argument%'#{version}'}" >&2
+                        exit 1;;
+                esac
             done
             read_request() { IFS= read -r request && IFS= read -r marker; }
             answer() {

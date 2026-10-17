@@ -220,7 +220,7 @@ final class NamedServerFixtureTest {
                         assertTrue(String.valueOf(refused.getMessage()).contains("replacement"));
                         assertTrue(replacement.hasSession("race-replacement"));
                         assertEquals(
-                                List.of("display-message", "if-shell", "display-message", "if-shell"),
+                                List.of("run-shell", "if-shell", "run-shell", "if-shell"),
                                 requests.stream()
                                         .map(request ->
                                                 request.commands().getFirst().getFirst())
@@ -244,8 +244,8 @@ final class NamedServerFixtureTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 requests.add(request);
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of("3.7c"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.7c");
                 }
                 if (request.commands().getLast().getFirst().equals("display-message")) {
                     return new CommandResult(0, List.of("malformed"), List.of());
@@ -269,9 +269,7 @@ final class NamedServerFixtureTest {
         }
         assertEquals("keep", Files.readString(sentinel));
         assertEquals(2, requests.size());
-        assertEquals(
-                List.of(List.of("display-message", "-p", "#{version}")),
-                requests.getFirst().commands());
+        assertTrue(VersionProbes.is(requests.getFirst()));
         assertEquals(
                 List.of("display-message", "-p", "#{pid}\t#{socket_path}"),
                 requests.getLast().commands().getLast());

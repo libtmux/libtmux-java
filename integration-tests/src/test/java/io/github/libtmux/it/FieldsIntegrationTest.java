@@ -57,14 +57,12 @@ final class FieldsIntegrationTest {
             int before = tmux.sent().size();
             server.variables(List.of("pid", "version", "session_name", "window_name"));
             assertEquals(2, tmux.sent().size() - before, "one version probe and one combined field read");
-            assertEquals(
-                    List.of("display-message", "-p", "#{version}"), tmux.sent().get(before));
+            assertTrue(VersionProbes.is(tmux.sent().get(before)));
 
             before = tmux.sent().size();
             server.paneFields(List.of("pane_tty", "pane_pid", "pane_current_command"));
             assertEquals(2, tmux.sent().size() - before, "one version probe and one read for every pane");
-            assertEquals(
-                    List.of("display-message", "-p", "#{version}"), tmux.sent().get(before));
+            assertTrue(VersionProbes.is(tmux.sent().get(before)));
         }
     }
 }

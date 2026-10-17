@@ -384,9 +384,7 @@ final class PaneInputCohortTest {
         }
 
         assertEquals(2, requests.size(), "one version probe and one pane/client snapshot");
-        assertEquals(
-                List.of(List.of("display-message", "-p", "#{version}")),
-                requests.getFirst().commands());
+        assertTrue(VersionProbes.is(requests.getFirst()));
         List<List<String>> commands = requests.stream()
                 .flatMap(request -> request.commands().stream())
                 .filter(command -> command.getFirst().startsWith("list-"))

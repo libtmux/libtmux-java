@@ -350,8 +350,8 @@ final class WorkspaceBuilderTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of("3.4"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.4");
                 }
                 effected.set(true);
                 return new CommandResult(0, List.of(), List.of());
@@ -378,8 +378,8 @@ final class WorkspaceBuilderTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of("3.4"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.4");
                 }
                 effected.set(true);
                 return new CommandResult(0, List.of(), List.of());
@@ -429,8 +429,8 @@ final class WorkspaceBuilderTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().equals(List.of(List.of("display-message", "-p", "#{version}")))) {
-                    return new CommandResult(0, List.of("3.7c"), List.of());
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.7c");
                 }
                 List<String> command = request.commands().getLast();
                 if (command.getFirst().equals("new-session")) {

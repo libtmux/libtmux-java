@@ -348,9 +348,7 @@ final class RunningCommandsTest {
         assertTrue(preflights.get(0) < discoveries.getFirst());
         assertTrue(discoveries.getFirst() < preflights.get(1));
         assertEquals(preflights.get(1) + 2, sends.getFirst(), "only the version check may follow the final preflight");
-        assertEquals(
-                List.of(List.of("display-message", "-p", "#{version}")),
-                requests.get(preflights.get(1) + 1).commands());
+        assertTrue(VersionProbes.is(requests.get(preflights.get(1) + 1)));
         assertEquals(1, directCommandCount(requests, "wait-for"));
     }
 
@@ -831,9 +829,7 @@ final class RunningCommandsTest {
         assertEquals(2, preflights.size());
         assertEquals(1, sends.size());
         assertEquals(preflights.getLast() + 2, sends.getFirst());
-        assertEquals(
-                List.of(List.of("display-message", "-p", "#{version}")),
-                requests.get(preflights.getLast() + 1).commands());
+        assertTrue(VersionProbes.is(requests.get(preflights.getLast() + 1)));
     }
 
     private static java.util.stream.Stream<Arguments> invalidCompletionStatuses() {
