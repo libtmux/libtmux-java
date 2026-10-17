@@ -81,7 +81,7 @@
                (is (= [:unknown :unknown :unknown :unknown]
                       (mapv :operation/outcome (:tmux/results (ex-data failure)))))
                (is (and (instance? Throwable failure)
-                        (some #(instance? io.github.libtmux.transport.TmuxTransportException %)
+                        (some #(instance? io.github.libtmux.exception.DispatchException %)
                               (take-while some? (iterate #(.getCause ^Throwable %) failure)))))
                (is (= :terminal (async/task-state waiting))))
              (is (= "applied" (core/show-buffer! server id)))

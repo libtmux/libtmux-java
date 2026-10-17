@@ -3,10 +3,10 @@
   (:require [libtmux.data :as data])
   (:import [io.github.libtmux Server ServerEndpoint Session Window Pane Client
             SessionSpec SessionSpec$Builder WindowSpec WindowSpec$Builder
-            SplitSpec SplitSpec$Builder CaptureSpec Dimensions Options Environment Hooks BufferInfo LibTmuxException
-            ObjectDoesNotExistException ServerNotRunningException
-            UnsupportedTmuxVersionException]
-           [io.github.libtmux.transport TmuxTimeoutException TmuxTransportException]
+            SplitSpec SplitSpec$Builder CaptureSpec Dimensions Options Environment Hooks BufferInfo]
+           [io.github.libtmux.exception LibTmuxException TargetGoneException ServerUnavailableException
+            UnsupportedFeatureException ServerClosedException]
+           [io.github.libtmux.exception DispatchException$TimedOut DispatchException]
            [io.github.libtmux.batch BatchResult OperationResult]
            [java.nio.file Path]
            [java.time Duration]))
@@ -51,24 +51,23 @@
     :signal-channel :capture :expand})
 
 (defn- translate [operation mutation? cause & [composed?]]
-  (let [refused? (and (not composed?) (instance? UnsupportedTmuxVersionException cause))
+  (let [refused? (and (not composed?) (instance? UnsupportedFeatureException cause))
         dispatch (cond
                    refused? :not-dispatched
                    (and (not composed?) (single-effect-operations operation)
-                        (instance? TmuxTransportException cause))
-                   (case (.name (.outcome ^TmuxTransportException cause))
+                        (instance? DispatchException cause))
+                   (case (.name (.outcome ^DispatchException cause))
                      "NOT_DISPATCHED" :not-dispatched
                      "COMPLETE" :complete
                      :unknown)
                    :else :unknown)
         kind (cond
-               (instance? ObjectDoesNotExistException cause) :tmux/not-found
-               (instance? ServerNotRunningException cause) :tmux/server-unavailable
-               (instance? UnsupportedTmuxVersionException cause) :tmux/unsupported-version
-               (instance? TmuxTimeoutException cause) :tmux/timeout
-               (instance? TmuxTransportException cause) :tmux/transport
-               (and (instance? IllegalStateException cause)
-                    (= "server is closed" (.getMessage ^Exception cause))) :tmux/closed
+               (instance? TargetGoneException cause) :tmux/not-found
+               (instance? ServerUnavailableException cause) :tmux/server-unavailable
+               (instance? UnsupportedFeatureException cause) :tmux/unsupported-feature
+               (instance? DispatchException$TimedOut cause) :tmux/timeout
+               (instance? DispatchException cause) :tmux/transport
+               (instance? ServerClosedException cause) :tmux/closed
                :else :tmux/failure)]
     (ex-info "tmux operation failed"
              {:tmux/error kind :tmux/operation operation
@@ -137,7 +136,7 @@
 (defn snapshot! "Acquires an eager captured graph from an explicit server."
   [server]
   (let [^Server server (ref! :snapshot server [Server])]
-    (execute! :snapshot :read #(data/from-capture (.capture server)))))
+    (execute! :snapshot :read #(data/from-capture (.captureServer server)))))
 
 (defn sessions! "Acquires captured sessions; acquisition failure throws." [server]
   (:tmux/sessions (snapshot! server)))
@@ -166,7 +165,7 @@
 
 (defn- refresh-reference! [reference & [context]]
   (let [^Server server (if (instance? Server reference) reference (call reference server [Session Window Pane Client]))]
-    (captured-reference (data/from-capture (.capture server)) reference context)))
+    (captured-reference (data/from-capture (.captureServer server)) reference context)))
 
 (defn refresh!
   "Reacquires an explicit reference, retaining window and pane placement.
@@ -326,7 +325,7 @@
 (defn run-shell! "Runs an explicitly requested shell command on the server." [server command]
   (require! :run-shell (string? command))
   (let [^Server server (ref! :run-shell server [Server])]
-    (execute! :run-shell :mutation #(.runShell server command))))
+    (execute! :run-shell :mutation #(.run (.shell server) command))))
 
 (defn await-text! "Waits within a positive Duration; returns a keyword describing the outcome." [pane text timeout]
   (require! :await-text (and (string? text) (duration? timeout)))
@@ -488,7 +487,7 @@
                   (doseq [argv operations] (.then builder ^java.util.List argv))
                   (.run builder)))]
           (mapv operation-result (range) (.operations result)))
-        (catch TmuxTransportException cause
+        (catch DispatchException cause
           (let [error (translate operation true cause)
                 outcome (if (= :not-dispatched (:tmux/dispatch (ex-data error)))
                           :skipped :unknown)]
