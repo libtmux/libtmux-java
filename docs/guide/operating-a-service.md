@@ -79,7 +79,7 @@ an OpenTelemetry context, a thread local - is there to read:
 ThreadLocal<String> request = new ThreadLocal<>();
 Map<String, String> seen = new ConcurrentHashMap<>();
 ServerConfig traced =
-        config.toBuilder().observer(report -> seen.put(report.verbs().get(0), request.get())).build();
+        config.toBuilder().observer(report -> seen.put(report.verbs().getLast(), request.get())).build();
 try (Server server = Server.open(traced)) {
     request.set("req-42");
     server.cmd("display-message", "-p", "hi");
