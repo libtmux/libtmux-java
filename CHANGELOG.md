@@ -14,6 +14,15 @@ production.
 
 ### Changed
 
+- **Managed control now requires tmux 3.7+ and a pinned socket.**
+  Ordinary operations keep the 3.3a minimum. Named buffer deletion, rename
+  and managed paste require 3.4; invalid literal layouts are refused on 3.3a.
+  Literal percentage splits are refused on exact 3.4, and raw or unnamed
+  breaks on exact 3.7. Named breaks retain the
+  requested name; single-pane breaks also work without native `-P` output.
+  Python extensions require optional-policy v2. See
+  [migration notes](MIGRATION.md#optional-tmux-requirements). (#68)
+
 - **tmux 3.3a is the minimum across the JVM modules and products.** Upgrade
   the running daemon as well as the client. Commands refuse older daemons
   before their requested effects; the Python bridge also requires compatible
