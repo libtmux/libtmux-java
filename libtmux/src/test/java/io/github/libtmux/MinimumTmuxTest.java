@@ -69,6 +69,60 @@ final class MinimumTmuxTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"tmux", "configured client"})
+    void coldVersionBannerMayNameTheConfiguredExecutable(String name) {
+        FakeTmux tmux = new FakeTmux("3.3a");
+        tmux.absent = true;
+        tmux.binaryVersion = "3.3a";
+        tmux.binaryName = name;
+        try (Server server = Server.using(
+                ServerConfig.builder().binary("/tmp/configured client").build(), tmux)) {
+            server.requireCompatibleTmux();
+            assertEquals(1, tmux.binaryProbes.get());
+            assertEquals(0, tmux.effects.get());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"other", "configured", "configured client-helper"})
+    void coldVersionBannerMustNameTmuxOrTheExactConfiguredExecutable(String name) {
+        FakeTmux tmux = new FakeTmux("3.3a");
+        tmux.absent = true;
+        tmux.binaryVersion = "3.3a";
+        tmux.binaryName = name;
+        try (Server server = Server.using(
+                ServerConfig.builder().binary("/tmp/configured client").build(), tmux)) {
+            assertThrows(MalformedResponseException.class, server::requireCompatibleTmux);
+            assertEquals(0, tmux.effects.get());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"3.3rc1", "3.3a+unknown", "3.3a trailing"})
+    void renamedExecutableStillRequiresAnExactVersionToken(String version) {
+        FakeTmux tmux = new FakeTmux("3.3a");
+        tmux.absent = true;
+        tmux.binaryVersion = version;
+        tmux.binaryName = "configured-client";
+        try (Server server =
+                Server.using(ServerConfig.builder().binary("configured-client").build(), tmux)) {
+            assertThrows(MalformedResponseException.class, server::requireCompatibleTmux);
+            assertEquals(0, tmux.effects.get());
+        }
+    }
+
+    @Test
+    void anExecutableBannerNeverBecomesADaemonVersionToken() {
+        FakeTmux tmux = new FakeTmux("configured-client 3.3a");
+        try (Server server =
+                Server.using(ServerConfig.builder().binary("configured-client").build(), tmux)) {
+            assertThrows(MalformedResponseException.class, server::requireCompatibleTmux);
+            assertEquals(0, tmux.binaryProbes.get());
+            assertEquals(0, tmux.effects.get());
+        }
+    }
+
     @Test
     void aDaemonReplacementCannotPassTheVersionProbeThenReceiveAMutation() {
         FakeTmux tmux = new FakeTmux("3.3a");
@@ -386,6 +440,7 @@ final class MinimumTmuxTest {
         private final String reportedVersion;
         private String liveVersion;
         private String binaryVersion = "3.8";
+        private String binaryName = "tmux";
         private boolean absent;
         private CommandResult probeFailure = new CommandResult(0, List.of(), List.of());
         private Duration probeDelay = Duration.ZERO;
@@ -415,7 +470,7 @@ final class MinimumTmuxTest {
             }
             if (request.commands().equals(List.of(List.of("-V")))) {
                 binaryProbes.incrementAndGet();
-                return new CommandResult(0, List.of("tmux " + binaryVersion), List.of());
+                return new CommandResult(0, List.of(binaryName + " " + binaryVersion), List.of());
             }
             if (absent) {
                 return new CommandResult(1, List.of(), List.of("no server running"));
