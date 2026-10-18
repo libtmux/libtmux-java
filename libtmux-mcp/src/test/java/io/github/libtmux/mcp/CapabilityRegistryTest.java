@@ -1162,6 +1162,7 @@ final class CapabilityRegistryTest {
             assertEquals(surface.tools().size(), report.get("toolCount"));
             assertEquals("tmux-user", report.get("executionAuthority"));
             assertEquals("none", report.get("operatingSystemBoundary"));
+            assertEquals("3.3a", report.get("minimumTmux"));
             assertEquals(
                     Map.of(
                             "oneSocketPerProcess", true,

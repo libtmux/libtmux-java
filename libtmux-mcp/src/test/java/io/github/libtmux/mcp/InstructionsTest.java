@@ -32,14 +32,7 @@ final class InstructionsTest {
     void everyToolsetCombinationFitsClaudeCodesInstructionsBudget() {
         String prefix = "/tmp/libtmux-java-test/";
         String stressPath = prefix + "s".repeat(104 - prefix.length());
-        SocketProfile stress = new SocketProfile(
-                "path:" + stressPath,
-                "operator-current",
-                "existing",
-                "unknown",
-                stressPath,
-                "tmux -N -S '" + stressPath + "' attach",
-                false);
+        SocketProfile stress = profile(stressPath);
 
         try (Server server = Server.using(ServerConfig.builder().build(), noOpTransport())) {
             for (int bits = 0; bits < (1 << TOOLSET_NAMES.length); bits++) {
@@ -61,6 +54,29 @@ final class InstructionsTest {
                                 + CLAUDE_CODE_INSTRUCTIONS_MAX_BYTES + "-byte instructions ceiling");
             }
         }
+    }
+
+    @Test
+    void theInstructionsStateTheTmuxFloor() {
+        try (Server server = Server.using(ServerConfig.builder().build(), noOpTransport())) {
+            ToolSurface surface = ToolSurface.resolve(Map.of(), profile("/tmp/libtmux-java-test/s"));
+            Connection connection = new Connection(server, Caller.nowhere(), surface);
+
+            String instructions = Instructions.forServer(connection);
+
+            assertTrue(instructions.contains("Requires tmux 3.3a or newer"), instructions);
+        }
+    }
+
+    private static SocketProfile profile(String path) {
+        return new SocketProfile(
+                "path:" + path,
+                "operator-current",
+                "existing",
+                "unknown",
+                path,
+                "tmux -N -S '" + path + "' attach",
+                false);
     }
 
     private static TmuxTransport noOpTransport() {

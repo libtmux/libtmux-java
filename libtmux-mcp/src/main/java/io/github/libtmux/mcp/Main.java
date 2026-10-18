@@ -2,6 +2,10 @@ package io.github.libtmux.mcp;
 
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
+import java.io.InputStream;
+import java.io.PrintStream;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -23,6 +27,9 @@ import java.util.concurrent.CountDownLatch;
  *
  * <p>The unordered toolset and named-tool environment variables resolve one immutable surface
  * before tmux is opened. A tool outside it is neither listed nor callable.
+ *
+ * <p>A tmux older than 3.3a, or one that reports no release, is refused at startup: one line on
+ * stderr naming the version required and what to do, and a non-zero exit, with no stack trace.
  */
 public final class Main {
 
@@ -34,25 +41,31 @@ public final class Main {
      * @param args {@code --socket PATH}, {@code --socket-name NAME}, {@code --tmux BINARY}
      */
     public static void main(String[] args) {
+        System.exit(run(args, System.getenv(), System.in, System.err));
+    }
+
+    /** The process, with its streams passed in; returns the exit status rather than exiting. */
+    static int run(String[] args, Map<String, String> environment, InputStream stdin, PrintStream err) {
         LaunchConfiguration launch;
-        Map<String, String> environment = System.getenv();
         try {
             List<String> given = List.of(args);
             ToolSurface.resolve(environment);
             launch = LaunchConfiguration.resolve(given, environment);
         } catch (IllegalArgumentException e) {
-            System.err.println("libtmux-mcp: " + e.getMessage());
-            System.err.println("usage: libtmux-mcp [--socket PATH] [--socket-name NAME] [--tmux BINARY]");
-            System.exit(2);
-            return;
+            err.println("libtmux-mcp: " + e.getMessage());
+            err.println("usage: libtmux-mcp [--socket PATH] [--socket-name NAME] [--tmux BINARY]");
+            return 2;
         }
         // The server outlives setup: the MCP transport reads stdin until the client closes it.
         // Lexical ownership also releases its process transport when protocol startup fails.
         try (Server server = Server.open(launch.config())) {
+            // Checks the daemon, or the binary when no daemon is running, so a tmux below the floor is
+            // refused here and not at the first tool call.
+            server.requireCompatibleTmux();
             SocketProfile profile = launch.profile(server);
             ToolSurface surface = ToolSurface.resolve(environment, profile);
             Runtime.getRuntime().addShutdownHook(new Thread(server::close, "libtmux-mcp-shutdown"));
-            System.err.println("libtmux-mcp: serving " + server.identity() + " on " + profile.selector()
+            err.println("libtmux-mcp: serving " + server.identity() + " on " + profile.selector()
                     + " (server_state=" + profile.serverState()
                     + ", configuration_provenance=" + profile.configurationProvenance() + ") with toolsets "
                     + surface.toolsetNames() + " (" + surface.tools().size()
@@ -61,7 +74,7 @@ public final class Main {
             // A client that disconnects closes this end. Without noticing that, the process outlives
             // the client that launched it, and an MCP client leaves one behind every time it restarts.
             CountDownLatch disconnected = new CountDownLatch(1);
-            var mcp = TmuxMcpServer.overStdio(server, System.in, surface, disconnected::countDown);
+            var mcp = TmuxMcpServer.overStdio(server, stdin, surface, disconnected::countDown);
             Runtime.getRuntime().addShutdownHook(new Thread(mcp::close, "libtmux-mcp-protocol-shutdown"));
             try {
                 disconnected.await();
@@ -69,8 +82,12 @@ public final class Main {
                 Thread.currentThread().interrupt();
             }
             mcp.closeGracefully();
+        } catch (UnsupportedFeatureException | MalformedResponseException refused) {
+            // The message already says what was found, what is required and what to do.
+            err.println("libtmux-mcp: " + refused.getMessage());
+            return 1;
         }
-        System.exit(0);
+        return 0;
     }
 
     static ServerConfig configure(List<String> args) {

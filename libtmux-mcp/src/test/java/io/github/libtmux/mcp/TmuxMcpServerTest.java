@@ -32,6 +32,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Mono;
 
 /**
@@ -249,6 +251,83 @@ final class TmuxMcpServerTest {
         var meta = result.path("_meta");
         assertEquals("INTERNAL_ERROR", meta.path("error_code").asText());
         assertEquals(false, meta.path("retryable").asBoolean());
+    }
+
+    /**
+     * A daemon below the floor answers a tool call with the version refusal and its remedy, not a
+     * generic failure, and nothing is sent to it.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"list_sessions", "get_server_info"})
+    void aDaemonBelowTheFloorAnswersAToolCallWithTheRemedy(String tool) throws Exception {
+        AtomicInteger effects = new AtomicInteger();
+        TmuxTransport old = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.2a");
+                }
+                effects.incrementAndGet();
+                return new CommandResult(0, List.of(), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+        // The profile was read at startup, while the daemon still passed; the refusal comes later.
+        ToolSurface surface = ToolSurface.resolve(
+                Map.of(ToolSurface.TOOLSETS_ENV, "", ToolSurface.TOOLS_ENV, tool),
+                new SocketProfile(
+                        "path:/tmp/libtmux-java-test/s",
+                        "operator-current",
+                        "existing",
+                        "unknown",
+                        "/tmp/libtmux-java-test/s",
+                        "tmux -N -S '/tmp/libtmux-java-test/s' attach",
+                        false));
+        WireOutput output = new WireOutput();
+
+        try (Server oldServer = Server.using(ServerConfig.builder().build(), old);
+                PipedInputStream input = new PipedInputStream();
+                PipedOutputStream client = new PipedOutputStream(input)) {
+            McpSyncServer mcp = TmuxMcpServer.overStdio(oldServer, input, output, surface, () -> {});
+            try {
+                client.write(initialize());
+                client.flush();
+                assertTrue(output.first.await(3, TimeUnit.SECONDS), "initialization did not answer");
+
+                client.write("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
+                        .getBytes(StandardCharsets.UTF_8));
+                client.write((Answers.JSON.writeValueAsString(Map.of(
+                                        "jsonrpc",
+                                        "2.0",
+                                        "id",
+                                        "below-floor",
+                                        "method",
+                                        "tools/call",
+                                        "params",
+                                        Map.of("name", tool, "arguments", Map.of())))
+                                + "\n")
+                        .getBytes(StandardCharsets.UTF_8));
+                client.flush();
+                assertTrue(output.second.await(5, TimeUnit.SECONDS), tool + " did not answer");
+            } finally {
+                mcp.close();
+            }
+        }
+
+        String response = output.lines().stream()
+                .filter(line -> line.contains("below-floor"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(tool + " response is absent"));
+        var result = Answers.JSON.readTree(response).path("result");
+        assertEquals(true, result.path("isError").asBoolean(), response);
+        String message = result.path("content").get(0).path("text").asText();
+        assertTrue(message.contains("requires tmux 3.3a or newer"), message);
+        assertTrue(message.contains("upgrade tmux"), message);
+        assertEquals(
+                "UNSUPPORTED_FEATURE", result.path("_meta").path("error_code").asText());
+        assertEquals(0, effects.get(), "a refused call must send nothing");
     }
 
     @Test

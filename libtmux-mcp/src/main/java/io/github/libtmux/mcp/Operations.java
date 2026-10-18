@@ -10,6 +10,7 @@ import io.github.libtmux.Window;
 import io.github.libtmux.WindowSpec;
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -48,6 +49,10 @@ final class Operations {
                     snapshot.sessions().size());
         } catch (DispatchException transportFailure) {
             throw transportFailure;
+        } catch (UnsupportedFeatureException belowFloor) {
+            // A daemon that answers but is below the floor is running; saying it is stopped would hide
+            // the one fact the caller can act on.
+            throw belowFloor;
         } catch (LibTmuxException captureFailed) {
             return values(
                     "running", false, "identity", server.identity().toString(), "version", "unknown", "sessions", 0);
