@@ -590,3 +590,112 @@ for a test — one that scripts an exact sequence of requests and replies
 rather than answering every request generically — now has one more request
 to answer, right after the attach reply, before whatever its own script
 expects next.
+
+### `libtmux-mcp`: toolsets, tool names and resources replace the earlier surface
+
+The server's launch options, tool names and resources changed in earlier alpha
+releases. A launcher configuration or client written for the old surface needs
+these changes.
+
+#### Launch options
+
+- `--safety` and `LIBTMUX_SAFETY` are retired and fail startup. The old
+  `readonly`, `mutating`, and `destructive` values map to `inspect`;
+  `inspect,manage,execute`; and all four toolsets, respectively. Use
+  `LIBTMUX_TOOLS` and `LIBTMUX_EXCLUDE_TOOLS` for exact exceptions.
+- `--watch` and `LIBTMUX_WATCH` are retired and fail startup. MCP no longer
+  sends dynamic resource notifications. Use [`wait_for_text`][tool-wait-for-text],
+  [`wait_for_channel`][tool-wait-for-channel], or [`capture_since`][tool-capture-since]; Java applications can use
+  `ControlClient`.
+
+#### Tool names
+
+- `tmux_capture_pane`, `tmux_capture_since`, `tmux_list_panes`,
+  `tmux_list_sessions`, `tmux_list_windows`, `tmux_paste_text`,
+  `tmux_resize_pane`, `tmux_search_panes`, `tmux_select_layout`,
+  `tmux_send_keys`, `tmux_show_environment`, `tmux_show_hooks`,
+  `tmux_signal_channel`, `tmux_wait_for_channel`, and `tmux_wait_for_text`
+  retain their suffix without `tmux_`. [`list_panes`][tool-list-panes] no longer accepts a
+  filter; filter its bounded metadata client-side. Use [`search_panes`][tool-search-panes] only for
+  displayed text.
+- `tmux_run`, `tmux_new_session`, `tmux_new_window`, `tmux_split_pane`, and
+  `tmux_show_options` become [`run_shell_command`][tool-run-shell-command], [`create_session`][tool-create-session],
+  [`create_window`][tool-create-window], [`split_window`][tool-split-window], and [`show_option`][tool-show-option], in the same order.
+- `tmux_whoami` splits into [`get_server_info`][tool-get-server-info] and the caller marker from
+  [`list_panes`][tool-list-panes]. `tmux_rename` becomes [`rename_session`][tool-rename-session] or [`rename_window`][tool-rename-window];
+  `tmux_select` becomes [`select_window`][tool-select-window] or [`select_pane`][tool-select-pane]; `tmux_kill` becomes
+  [`kill_session`][tool-kill-session], [`kill_window`][tool-kill-window], or [`kill_pane`][tool-kill-pane]. Server termination is not
+  exposed.
+- [`list_windows`][tool-list-windows] and [`show_environment`][tool-show-environment] take `session_id`, such as `$1`, or
+  `session_name`, in place of `session`.
+- `tmux_set_option` has no generic equivalent. Migrate supported uses to
+  [`set_mouse_enabled`][tool-set-mouse-enabled], [`set_history_limit`][tool-set-history-limit], [`set_synchronize_panes`][tool-set-synchronize-panes], or
+  [`set_pane_title`][tool-set-pane-title].
+- `tmux_apply_workspace` becomes explicit [`create_session`][tool-create-session], [`create_window`][tool-create-window],
+  [`split_window`][tool-split-window], and [`select_layout`][tool-select-layout] calls followed by [`run_shell_command`][tool-run-shell-command],
+  [`send_keys`][tool-send-keys], or [`paste_text`][tool-paste-text].
+- `tmux_list_servers`, `tmux_list_clients`, and `tmux_drain_channel` have no
+  direct equivalents. Each process pins one server, described by
+  [`get_server_info`][tool-get-server-info]; [`list_sessions`][tool-list-sessions] marks attached sessions but exposes no
+  client details; stale channel signals cannot be drained through MCP.
+
+#### Resources, prompts and completion
+
+- `tmux://server` becomes [`get_server_info`][tool-get-server-info]; the static capability resource
+  adds connection and selection provenance.
+- `tmux://sessions` and `tmux://panes` become [`list_sessions`][tool-list-sessions] and
+  [`list_panes`][tool-list-panes].
+- `tmux://sessions/{session_name}` and `tmux://panes/{pane_id}` become
+  [`get_session_info`][tool-get-session-info] and [`get_pane_info`][tool-get-pane-info].
+- `tmux://panes/{pane_id}/content` becomes [`capture_pane`][tool-capture-pane], [`snapshot_pane`][tool-snapshot-pane], or
+  [`capture_since`][tool-capture-since]. Use [`wait_for_text`][tool-wait-for-text] when the old subscription was waiting
+  for a terminal condition.
+- `run_and_wait` becomes one [`run_shell_command`][tool-run-shell-command] call.
+- `watch_until_ready` uses [`wait_for_text`][tool-wait-for-text], or [`snapshot_pane`][tool-snapshot-pane] followed by
+  [`capture_since`][tool-capture-since] when output must be carried across turns. After a timeout,
+  continue from the returned cursor instead of restarting the observation.
+- `find_the_pane` composes [`list_panes`][tool-list-panes], [`search_panes`][tool-search-panes],
+  [`find_pane_by_position`][tool-find-pane-by-position], and [`get_pane_info`][tool-get-pane-info] as needed.
+- `build_workspace` composes the create, split, layout, title, selection, and
+  execution tools.
+- `clean_up_safely` starts with [`list_panes`][tool-list-panes] to identify the MCP pane and
+  [`list_sessions`][tool-list-sessions] to identify attached sessions, then uses the specific pane,
+  window, or session teardown tool. An attached session may have a person
+  watching it, so apparently abandoned state may still be live.
+- Earlier live `completion/complete` suggestions for `pane_id` have no direct
+  replacement. Call [`list_panes`][tool-list-panes], then pass the exact id through the typed tool
+  schema.
+
+[tool-capture-pane]: https://libtmux.org/en/java/latest/mcp/tools/capture_pane/
+[tool-capture-since]: https://libtmux.org/en/java/latest/mcp/tools/capture_since/
+[tool-create-session]: https://libtmux.org/en/java/latest/mcp/tools/create_session/
+[tool-create-window]: https://libtmux.org/en/java/latest/mcp/tools/create_window/
+[tool-find-pane-by-position]: https://libtmux.org/en/java/latest/mcp/tools/find_pane_by_position/
+[tool-get-pane-info]: https://libtmux.org/en/java/latest/mcp/tools/get_pane_info/
+[tool-get-server-info]: https://libtmux.org/en/java/latest/mcp/tools/get_server_info/
+[tool-get-session-info]: https://libtmux.org/en/java/latest/mcp/tools/get_session_info/
+[tool-kill-pane]: https://libtmux.org/en/java/latest/mcp/tools/kill_pane/
+[tool-kill-session]: https://libtmux.org/en/java/latest/mcp/tools/kill_session/
+[tool-kill-window]: https://libtmux.org/en/java/latest/mcp/tools/kill_window/
+[tool-list-panes]: https://libtmux.org/en/java/latest/mcp/tools/list_panes/
+[tool-list-sessions]: https://libtmux.org/en/java/latest/mcp/tools/list_sessions/
+[tool-list-windows]: https://libtmux.org/en/java/latest/mcp/tools/list_windows/
+[tool-paste-text]: https://libtmux.org/en/java/latest/mcp/tools/paste_text/
+[tool-rename-session]: https://libtmux.org/en/java/latest/mcp/tools/rename_session/
+[tool-rename-window]: https://libtmux.org/en/java/latest/mcp/tools/rename_window/
+[tool-run-shell-command]: https://libtmux.org/en/java/latest/mcp/tools/run_shell_command/
+[tool-search-panes]: https://libtmux.org/en/java/latest/mcp/tools/search_panes/
+[tool-select-layout]: https://libtmux.org/en/java/latest/mcp/tools/select_layout/
+[tool-select-pane]: https://libtmux.org/en/java/latest/mcp/tools/select_pane/
+[tool-select-window]: https://libtmux.org/en/java/latest/mcp/tools/select_window/
+[tool-send-keys]: https://libtmux.org/en/java/latest/mcp/tools/send_keys/
+[tool-set-history-limit]: https://libtmux.org/en/java/latest/mcp/tools/set_history_limit/
+[tool-set-mouse-enabled]: https://libtmux.org/en/java/latest/mcp/tools/set_mouse_enabled/
+[tool-set-pane-title]: https://libtmux.org/en/java/latest/mcp/tools/set_pane_title/
+[tool-set-synchronize-panes]: https://libtmux.org/en/java/latest/mcp/tools/set_synchronize_panes/
+[tool-show-environment]: https://libtmux.org/en/java/latest/mcp/tools/show_environment/
+[tool-show-option]: https://libtmux.org/en/java/latest/mcp/tools/show_option/
+[tool-snapshot-pane]: https://libtmux.org/en/java/latest/mcp/tools/snapshot_pane/
+[tool-split-window]: https://libtmux.org/en/java/latest/mcp/tools/split_window/
+[tool-wait-for-channel]: https://libtmux.org/en/java/latest/mcp/tools/wait_for_channel/
+[tool-wait-for-text]: https://libtmux.org/en/java/latest/mcp/tools/wait_for_text/
