@@ -442,8 +442,8 @@ rename.getAnnotation(io.github.libtmux.catalog.Operation.class).value();   // â†
 ## Support and status
 
 - **JDK 25 or newer**, and **tmux 3.3a through 3.7c**.
-- **Linux, including WSL.** CI runs on Ubuntu. A macOS job runs the same checks
-  and reports without gating a merge.
+- **Linux, including WSL.** CI runs on Ubuntu. macOS is supported on a
+  best-effort basis, and CI coverage for it is highly limited.
 - **Alpha.** The API will change without notice.
 - **Reference.** [libtmux.org][reference] for the current trunk,
   [javadoc.io][javadoc-libtmux] for a released version.

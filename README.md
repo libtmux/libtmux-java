@@ -713,8 +713,8 @@ $ tmux-workspace load \
 
 - **JDK 25 or newer**, on the module path or the classpath: `libtmux` is the
   named module `io.github.libtmux`, and the jars carry no OSGi bundle headers.
-- **Linux, including WSL.** CI runs on Ubuntu. A macOS job runs the same checks
-  and reports without gating a merge.
+- **Linux, including WSL.** CI runs on Ubuntu. macOS is supported on a
+  best-effort basis, and CI coverage for it is highly limited.
 - **tmux 3.3a through 3.7c.** The whole real-tmux suite runs against every one
   of those releases, and each lane checks it ran the tmux it is named after:
 

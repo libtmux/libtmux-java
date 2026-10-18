@@ -218,8 +218,8 @@ Then the agent can:
 ## Support and status
 
 - **JDK 25 or newer**, and **tmux 3.3a or newer**.
-- **Linux, including WSL.** CI runs on Ubuntu. A macOS job runs the same checks
-  and reports without gating a merge.
+- **Linux, including WSL.** CI runs on Ubuntu. macOS is supported on a
+  best-effort basis, and CI coverage for it is highly limited.
 - **Alpha.** Commands, flags and output records change without notice. Pin an
   exact version.
 - **Machine output.** `--json` is one document and `--ndjson` one record per

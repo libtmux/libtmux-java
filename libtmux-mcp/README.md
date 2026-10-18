@@ -549,8 +549,8 @@ the stdio launcher, and reads its selection from the process environment.
 ## Support and status
 
 - **JDK 25 or newer.** It depends on [`libtmux`][libtmux] and the MCP Java SDK.
-- **Linux, including WSL.** CI runs on Ubuntu. A macOS job runs the same checks
-  and reports without gating a merge.
+- **Linux, including WSL.** CI runs on Ubuntu. macOS is supported on a
+  best-effort basis, and CI coverage for it is highly limited.
 - **Alpha.** Tool names and shapes change without notice; pin an exact version.
 - **Optional siblings.** [`libtmux-jackson`][jackson] and
   [`libtmux-workspace`][workspace] stay available to Java applications that
