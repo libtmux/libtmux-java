@@ -19,6 +19,21 @@ production.
   command has started.** Wait for the pane's command with `Pane.await` rather
   than reading it straight after creating the pane. (#35)
 
+- **The Java `Server` Javadoc now has a "What is on here" overview.** It groups
+  the methods by what they do, from connecting to the options and hooks tmux
+  keeps, links each one, and names `cmd`, `run`, `batch` and `chain` for
+  anything it does not list.
+
+- **The Kotlin `Server` KDoc now has a "What is on here" overview.** It groups
+  the members by what they do, from connecting to the options and hooks tmux
+  keeps, links each one that Dokka can resolve, and names `cmd`, `run`,
+  `batch`, `chain` and `asJava` for anything it does not list.
+
+- **The Scala `Server` Scaladoc now has a description and a "What is on here"
+  overview.** It groups the members by what they do, from connecting to the
+  options and hooks tmux keeps, links each one that Scaladoc can resolve, and
+  names `cmd`, `run`, `batch` and `chain` for anything it does not list.
+
 ## 0.0.1-alpha.17 — 2026-09-26
 
 No user-visible behaviour changed since 0.0.1-alpha.16: this is the same code,

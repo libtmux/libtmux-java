@@ -5,12 +5,84 @@ import io.github.libtmux.control.ControlClient
 import scala.concurrent.duration.FiniteDuration
 import scala.jdk.DurationConverters._
 
-/** The Java client, opaque: every member beyond
+/** Manages sessions, windows, and panes on a tmux server.
+  *
+  * Use [[Server.open]] with a [[io.github.libtmux.ServerConfig ServerConfig]]
+  * to select a server by socket name or path. From this object, create sessions
+  * or query the server's existing sessions, windows, and panes. Each
+  * [[Session]] contains windows, and each [[Window]] contains panes.
+  *
+  * The Java client, opaque: every member beyond
   * [[java.lang.AutoCloseable#close]] is an extension, generated from the
   * operation catalog or handwritten where the catalog marks it `WAIT`, `STREAM`
   * or `LIFECYCLE`. Closing an owned client releases its transport, not tmux;
   * `close()` comes from the `AutoCloseable` bound with no forwarding of its
   * own, so `Using.resource(server) { ... }` works.
+  *
+  * # What is on here
+  *
+  * A tmux server does a great many things, so this type has a great many
+  * members. They fall into a few groups:
+  *
+  * **Connecting.** [[Server.open]] makes a server over a transport it owns, and
+  * [[Server.fromJava]] wraps a server opened in Java. [[config]] says how it
+  * was configured, [[Server.identity]] which server it is, and [[version]]
+  * which tmux. [[isAlive]] and [[requireAlive]] answer whether anything is
+  * listening. [[Server.within]] bounds every command by a deadline,
+  * [[admissionBound]] says how many commands run at once, and
+  * [[Server.control]] attaches a control client. [[toBuilder]] starts a Java
+  * builder from this server's choices, and [[Server.asJava]] reaches the
+  * underlying Java server.
+  *
+  * **Finding one thing.** [[session]] takes a name, an id, or an expression;
+  * [[pane]] takes an id or an expression; [[window]] takes an expression or a
+  * `WindowContext`. Each returns an `Option` that is empty when tmux does not
+  * have it, and an expression that matches several throws
+  * `CardinalityException.MultipleMatches`. [[hasSession]] answers by name
+  * without returning the session.
+  *
+  * **Listing everything.** [[sessions]], [[windows]], [[panes]], [[clients]],
+  * and [[attachedSessions]] each return a `Vector` captured now. A failed read
+  * throws, so an outage does not read as an empty server. [[windows]] also
+  * takes a `WindowId` and answers every link to that window. [[snapshot]]
+  * captures the whole tree with one listing per kind of object rather than one
+  * command per object, and [[io.github.libtmux.scaladsl.live.LiveView]] keeps
+  * that tree current as tmux announces changes.
+  *
+  * **Querying things and getting around.** Build an
+  * [[io.github.libtmux.scaladsl.query.Expr Expr]] from the fields on the
+  * `Session`, `Window`, and `Pane` companions, such as
+  * `Pane.command.startsWith("nvim")`, and hand it to [[sessions]], [[windows]],
+  * [[panes]], [[session]], [[window]], or [[pane]]; tmux does the filtering
+  * when it can. To move between levels, go down with [[Session.windows]] and
+  * [[Window.panes]], up with [[Pane.window]] and [[Window.session]], and across
+  * to the focused child with [[Session.activeWindow]] and
+  * [[Window.activePane]]. Each is a pure read of the capture, so none asks tmux
+  * again.
+  *
+  * **Changing things.** [[newSession]] creates a detached session from a name,
+  * a callback on a builder, or a `SessionSpec`, and returns the session tmux
+  * made. [[killSession]] ends a session by name, [[killServer]] ends the tmux
+  * server and every session on it, which `close()` deliberately does not, and
+  * [[lock]] locks every attached client.
+  *
+  * **Options and hooks.** [[options]] holds the server-wide options,
+  * [[globalOptions]] the session options every session inherits unless it sets
+  * its own, [[hooks]] the global hooks, and [[environment]] the variables every
+  * new process is given.
+  *
+  * **Everything else tmux keeps.** Paste buffers ([[buffers]]), key bindings
+  * ([[keys]]), a file of tmux commands to run ([[sourceFile]]), shell commands
+  * ([[shell]]), the command list ([[commands]]), the message log
+  * ([[messageLog]]), prompt history ([[prompt]]), and wait-for channels
+  * ([[channel]]). [[expand]] expands a format against the server, [[variables]]
+  * reads named variables in one expansion, and [[paneFields]] reads chosen
+  * fields of every pane from one listing.
+  *
+  * Anything tmux can do that is not here is reachable through [[cmd]], which
+  * runs one command and hands back its result, [[run]], which throws when tmux
+  * reports a nonzero exit, or [[batch]] and [[chain]], which run several in one
+  * invocation.
   */
 opaque type Server <: AutoCloseable = JavaServer
 
