@@ -15,10 +15,12 @@ production.
 ### Documented
 
 - **The root README heads each module, and `libtmux`'s README each package it
-  exports, with a link to its directory on GitHub.** Under each heading are one
-  line on what it is, its API reference on libtmux.org and javadoc.io, and an
-  example the documentation suite compiles and runs. Every other module README
-  now links its API reference.
+  exports, with a link to its directory on GitHub.** The module list and the
+  package map stay above the headings. Under each heading are one line on what
+  it is, its API reference on libtmux.org and javadoc.io, and an example the
+  documentation suite compiles and runs. Every other module README now links
+  its API reference, and the opening sections of the root and `libtmux`
+  READMEs link each API where they first name it.
 
 - **The `libtmux-mcp` README links every tool it lists to its page on
   libtmux.org, and sets out input checks, waits and limits as short bullets.**
@@ -50,7 +52,8 @@ production.
 
 - **The README link check also follows absolute links to this repository's
   `master` branch, and holds the root and `libtmux` READMEs to a heading that
-  links each module's or package's directory.**
+  links each module's or package's directory, to a bullet for each in the
+  module list and package map, and to a link for each public type they name.**
 
 - **The `libtmux-mcp` tests hold every documented `libtmux-mcp` flag,
   `LIBTMUX_` variable and client configuration to the launcher, and the
