@@ -104,7 +104,9 @@ compiled, and run against a real tmux** by
 [the documentation suite](docs/README.md#how-these-pages-are-tested), unless a
 directive above it says `compile-only` or `skip` and why. A snippet that stopped
 working fails the build; one that claims the compiler rejects it must actually be
-rejected.
+rejected. The Kotlin and Scala fences are run the same way, and every
+`libtmux-mcp` and `tmux-workspace` command is held to the flags and variables
+those programs read.
 
 A fence's first line, `// Given: Server server` and the like, names what the
 snippet *reads* rather than builds — real code still needs its own imports and,
@@ -326,50 +328,264 @@ rather than collapsing both into one error.
 
 ## Modules
 
-Group `io.github.libtmux`. Each listed published directory is an artifact with
-its own README. They are [on Maven Central](https://central.sonatype.com/namespace/io.github.libtmux),
-the Scala artifacts suffixed `_3`.
+Group `io.github.libtmux`, on
+[Maven Central](https://central.sonatype.com/namespace/io.github.libtmux), the
+Scala artifacts suffixed `_3`. Each heading links to the module's directory on
+GitHub, where its README lives. Only `libtmux` is required. The other modules
+are optional and build on it, and `libtmux-bom` only names their versions.
 
-- **[`libtmux`](libtmux/)** — the library itself. Transport, snapshots,
-  entities, options, hooks, batching, control mode, query model.
-  **No runtime dependencies**, and a real Java module, `io.github.libtmux`.
+### [`libtmux`](https://github.com/libtmux/libtmux-java/tree/master/libtmux): the library
 
-- **[`libtmux-bom`](libtmux-bom/)** — name one BOM version, and every
-  BOM-managed coordinate below follows it.
+Transport, snapshots, entities, options, hooks, batching, control mode, and the
+query model, with no runtime dependencies, as the named module
+`io.github.libtmux`. Reference: [libtmux.org][java-reference] and
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux). Its
+[README](libtmux/README.md#packages) maps the packages.
 
-- **[`libtmux-mcp`](libtmux-mcp/)** — give a model a tmux server, over the
-  [Model Context Protocol](https://modelcontextprotocol.io/). Finds its way
-  around, reads what a pane shows, runs a command and waits for its exit status,
-  and pushes notifications as tmux changes.
+[`Server.chain`][command-chain] builds a window, splits it, and types into the
+new pane in one tmux invocation, with no round trip to learn an id:
 
-- **[`libtmux-junit5`](libtmux-junit5/)** — test *your* code against real tmux.
-  One server per test. A JVM killed outright leaves its server for the next
-  run sharing the fixture root to reap.
+```java
+// Given: Server server
+server.chain()
+        .newWindow("built")
+        .splitLeftRight()
+        .sendLine("echo chained")
+        .run();
 
-- **[`libtmux-kotlin`](libtmux-kotlin/)** — Kotlin ergonomics. Optional: the core
-  is already null-safe from Kotlin without it.
+server.windows().stream().anyMatch(w -> w.name().equals("built"));   // → true
+```
 
-- **[`libtmux-scala`](libtmux-scala/)** — Scala 3 collections, opaque handles
-  over the Java ones, and the typed query DSL.
+### [`libtmux-bom`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-bom): one version for every module
 
-- **[`libtmux-scala-cats`](libtmux-scala-cats/)** — optional Cats Effect
-  resources and FS2 observations.
+Names one version for every BOM-managed coordinate, so two releases of modules
+built against each other cannot be mixed. It has no API of its own; see
+[Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-bom).
+Import the platform, and leave the version off the module:
 
-- **[`libtmux-scala-ox`](libtmux-scala-ox/)** — an optional Ox `Flow` over
-  subscriptions and live views.
+<!-- snippet: skip: build configuration, not library code -->
+```kotlin
+dependencies {
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.17"))
+    implementation("io.github.libtmux:libtmux-jackson")   // no version
+}
+```
 
-- **[`libtmux-jackson`](libtmux-jackson/)** — a filter expression as a versioned
-  JSON document, so it can be stored, sent, or written by something that is not
-  a Java program.
+### [`libtmux-mcp`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-mcp): a tmux server for agents
 
-- **[`libtmux-workspace`](libtmux-workspace/)** — build a session from a
-  tmuxp-shaped YAML file.
+Gives a model a tmux server over the
+[Model Context Protocol](https://github.com/modelcontextprotocol/modelcontextprotocol): it finds its way
+around, reads what a pane shows, and runs a command and waits for its exit
+status. Reference: [libtmux.org](https://libtmux.org/en/java/latest/mcp/reference/),
+the [tool reference](https://libtmux.org/en/java/latest/mcp/tools/), and
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-mcp).
 
-- **[`libtmux-workspace-cli`](libtmux-workspace-cli/)** — the `tmux-workspace`
-  command: load, capture, convert and import workspaces, with tmuxp's command
-  names and JSON or NDJSON output. A separate implementation from
-  `libtmux-workspace`, whose package documentation states how their document
-  shapes and building behaviour diverge.
+An MCP client starts the launcher itself and speaks to it over stdin and
+stdout. Build it from this repository:
+
+```console
+$ ./gradlew :libtmux-mcp:installDist
+```
+
+With `libtmux-mcp/build/install/libtmux-mcp/bin` on `PATH`, register it with
+Claude Code on the tmux socket named `work`, offering only the tools that read
+tmux. That is the socket the `tmux-workspace load` command below builds on:
+
+```console
+$ claude mcp add tmux \
+    -e LIBTMUX_TOOLSETS=inspect \
+    -- libtmux-mcp --socket-name work
+```
+
+### [`libtmux-junit5`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-junit5): tests against real tmux
+
+Test *your* code against real tmux: `@ExtendWith(TmuxExtension.class)` gives
+each test a server of its own and removes it afterwards, and `FakeTmux` stands
+in where a test has no tmux at all. Reference:
+[libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-junit5-tmuxextension-tmuxextension/)
+and [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-junit5).
+
+[`FakeTmux`][fake-tmux] answers the way tmux answers, so a snapshot of it is a
+real snapshot and every handle works:
+
+```java
+FakeTmux tmux = new FakeTmux();
+PaneId editor = tmux.addSession("work");
+tmux.show(editor, "$ make", "make: Nothing to be done.");
+
+try (Server server = tmux.server()) {
+    Pane pane = server.pane(editor).orElseThrow();
+    pane.capture().get(1);            // → make: Nothing to be done.
+}
+```
+
+### [`libtmux-kotlin`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-kotlin): Kotlin ergonomics
+
+Coroutine wrappers, a session, window, and split DSL, and `Flow` bridges over
+the Java API. Optional: the core is already null-safe from Kotlin without it.
+Reference: [libtmux.org](https://libtmux.org/en/kotlin/latest/reference/) and
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-kotlin).
+
+[`withServer`][kotlin-with-server] opens a server and closes it however the
+block ends, and [`newSession`][kotlin-session-builder] declares a session, its
+windows, and their splits:
+
+```kotlin
+// Given: config: ServerConfig
+withServer(config) { server ->
+    val session = server.newSession {
+        name = "editors"
+        window { name = "left" }
+        window {
+            name = "right"
+            split { toRight(); percent(30) }
+        }
+    }
+
+    session.windows.size                  // → 2
+}
+```
+
+### [`libtmux-scala`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-scala): Scala 3 collections over the handles
+
+Scala collections, opaque handles over the Java ones, and the typed query DSL.
+Reference: [libtmux.org](https://libtmux.org/en/scala/latest/reference/) and
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-scala_3).
+
+[`Server.panes`][scala-server] captures once, and the `Pane` fields filter the
+captured `Vector` without asking tmux again:
+
+<!-- snippet: scala-sync: root-scala-query-panes -->
+```scala
+import io.github.libtmux.scaladsl.{config => _, *}
+import io.github.libtmux.scaladsl.query.*
+import scala.util.Using
+
+Using.resource(Server.open(config)) { server =>
+  val panes = server.panes()
+  val wide = panes.matching(Pane.width.atLeast(1) && Pane.active.isTrue)
+  assert(wide == panes.filter(p => p.info.size().width() >= 1 && p.info.active()))
+  assert(wide.exactlyOne.isRight)
+}
+```
+
+### [`libtmux-scala-cats`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-scala-cats): Cats Effect and FS2
+
+Optional Cats Effect resources and FS2 observations for `libtmux-scala`.
+Reference: [libtmux.org](https://libtmux.org/en/scala/latest/reference/) and
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-scala-cats_3).
+
+[`Server.resource`][scala-cats-server] owns the client for the length of `use`,
+and the capture it returns is an ordinary vector:
+
+<!-- snippet: scala-io: root-cats-active-panes -->
+```scala
+import _root_.cats.effect.IO
+import io.github.libtmux.scaladsl.cats.{config => _, *}
+
+Server.resource[IO](config).use { server =>
+  server.panes().flatMap { panes =>
+    val active = panes.filter(_.info.active())
+    IO(assert(active.size == 1))
+  }
+}
+```
+
+### [`libtmux-scala-ox`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-scala-ox): Ox flows
+
+An optional Ox `Flow` over subscriptions and live views, for structured
+concurrency on virtual threads. Reference:
+[libtmux.org](https://libtmux.org/en/scala/latest/reference/io-github-libtmux-scaladsl-ox-flows/)
+and [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-scala-ox_3).
+
+[`Flows.liveView`][scala-ox-flows] emits the current view of a server when the
+flow starts, then every newer one:
+
+<!-- snippet: scala-sync: root-ox-live-view -->
+```scala
+import _root_.ox.{supervised, useCloseableInScope}
+import io.github.libtmux.scaladsl.{config => _, *}
+import io.github.libtmux.scaladsl.live.LiveView
+import io.github.libtmux.scaladsl.ox.Flows
+
+supervised {
+  val server = useCloseableInScope(Server.open(config))
+  val live = useCloseableInScope(LiveView.attach(server.sessions().head))
+  val first = Flows.liveView(live).take(1).runToList()
+  assert(first.head.snapshot.sessions().size() == 1)
+}
+```
+
+### [`libtmux-jackson`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-jackson): filters as JSON
+
+A filter expression as a versioned JSON document, so it can be stored, sent, or
+written by something that is not a Java program. Reference:
+[libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-jackson-filterjson-filterjson/)
+and [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-jackson).
+
+[`FilterJson`][filter-json] writes an expression and reads it back, validated
+against a model:
+
+```java
+String json = FilterJson.writeString(
+        Pane_.command().startsWith("nvim"), LibTmuxModels.pane());
+
+FilterExpr<Pane> restored = FilterJson.readString(json, LibTmuxModels.pane());
+
+restored.describe();                      // → pane_current_command starts-with nvim
+```
+
+### [`libtmux-workspace`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-workspace): sessions from YAML
+
+Builds a session from a tmuxp-shaped YAML file. Reference:
+[libtmux.org](https://libtmux.org/en/java/latest/workspace/reference/) and
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-workspace).
+
+[`WorkspaceBuilder.parse`][workspace-builder] reads a description into a value
+while it is still text, and `build` is what touches tmux:
+
+```java
+// Given: Server server
+Workspace workspace = WorkspaceBuilder.parse("""
+        session_name: built
+        windows:
+          - window_name: editor
+            layout: even-horizontal
+            panes:
+              - shell_command: echo one
+              - shell_command: echo two
+        """);
+
+Session session = WorkspaceBuilder.build(server, workspace);
+
+session.windows().get(0).panes().size();          // → 2
+```
+
+### [`libtmux-workspace-cli`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-workspace-cli): the `tmux-workspace` command
+
+Loads, captures, converts, and imports workspaces with tmuxp's command names and
+JSON or NDJSON output. Reference: the
+[command manual](https://libtmux.org/en/java/latest/workspace/cli/) and the
+[`load`](https://libtmux.org/en/java/latest/workspace/cli/load/) and
+[`freeze`](https://libtmux.org/en/java/latest/workspace/cli/freeze/) pages.
+
+Build the launcher from this repository:
+
+```console
+$ ./gradlew :libtmux-workspace-cli:installDist
+```
+
+With `libtmux-workspace-cli/build/install/tmux-workspace/bin` on `PATH`, and
+[a workspace file](libtmux-workspace-cli/README.md#use-it) saved as
+`workspace.yaml`, build it on the tmux socket named `work` without attaching
+to it:
+
+```console
+$ tmux-workspace load \
+    -L work \
+    -d \
+    ./workspace.yaml
+```
 
 Not published, and part of how the library is built:
 [`examples/`](examples/) · [`integration-tests/`](integration-tests/) ·
@@ -535,3 +751,14 @@ in [`RELEASING.md`](RELEASING.md).
 ## License
 
 MIT. See [`LICENSE`](LICENSE).
+
+[command-chain]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-commandchain-commandchain/
+[fake-tmux]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-junit5-faketmux-faketmux/
+[filter-json]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-jackson-filterjson-filterjson/
+[java-reference]: https://libtmux.org/en/java/latest/reference/
+[kotlin-session-builder]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-server-newsession/
+[kotlin-with-server]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-withserver/
+[scala-cats-server]: https://libtmux.org/en/scala/latest/reference/io-github-libtmux-scaladsl-cats-server/
+[scala-ox-flows]: https://libtmux.org/en/scala/latest/reference/io-github-libtmux-scaladsl-ox-flows/
+[scala-server]: https://libtmux.org/en/scala/latest/reference/io-github-libtmux-scaladsl-server/
+[workspace-builder]: https://libtmux.org/en/java/latest/workspace/reference/io-github-libtmux-workspace-workspacebuilder-workspacebuilder-parse/

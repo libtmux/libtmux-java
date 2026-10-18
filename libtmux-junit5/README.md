@@ -20,6 +20,10 @@ For testing *your* code against real tmux — not for testing libtmux — or, wi
 `FakeTmux`, without it.
 
 `io.github.libtmux:libtmux-junit5` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-junit5).
+API reference: [`TmuxExtension`](https://libtmux.org/en/java/latest/reference/io-github-libtmux-junit5-tmuxextension-tmuxextension/)
+and [`FakeTmux`](https://libtmux.org/en/java/latest/reference/io-github-libtmux-junit5-faketmux-faketmux/) on
+libtmux.org for the current trunk, [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-junit5)
+for a released version.
 
 > **Alpha.** The API will change without notice.
 

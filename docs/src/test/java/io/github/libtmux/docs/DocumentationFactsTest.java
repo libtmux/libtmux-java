@@ -468,13 +468,19 @@ final class DocumentationFactsTest {
     }
 
     /**
-     * Every relative link in the repository's Markdown names a file or directory that exists. A link
-     * GitHub renders as a 404 is found by a reader first, since nothing else follows it.
+     * A link into this repository that GitHub's own address for the {@code master} branch uses.
+     * Maven Central and javadoc.io render no relative link, so the module READMEs spell these out.
+     */
+    private static final Pattern REPOSITORY_LINK = Pattern.compile(
+            "^https://github\\.com/libtmux/libtmux-java/(?:tree|blob)/master(?:/([^#?]*))?(?:[#?].*)?$");
+
+    /**
+     * Every link in the repository's Markdown that points into this repository names a file or
+     * directory that exists: a relative link, or an absolute one to the {@code master} branch. A
+     * link GitHub renders as a 404 is found by a reader first, since nothing else follows it.
      */
     @Test
-    void everyRelativeMarkdownLinkResolves() throws IOException {
-        Pattern inline = Pattern.compile("\\]\\(([^)\\s]+)\\)");
-        Pattern reference = Pattern.compile("(?m)^\\[[^\\]]+\\]:\\s*\\n?\\s*(\\S+)");
+    void everyMarkdownLinkIntoThisRepositoryResolves() throws IOException {
         List<String> broken = new ArrayList<>();
         try (Stream<Path> tree = Files.walk(ROOT)) {
             for (Path file : tree.filter(path -> path.toString().endsWith(".md"))
@@ -482,25 +488,108 @@ final class DocumentationFactsTest {
                             .toString()
                             .matches("(.*/)?(build|target|\\.gradle|\\.git|\\.claude)/.*"))
                     .toList()) {
-                // Code is not prose: `Resource[IO](config)` in a fence is a call, not a link.
-                String text = Files.readString(file)
-                        .replaceAll("(?ms)^\\s*```.*?^\\s*```", "")
-                        .replaceAll("`[^`\\n]*`", "");
-                for (Pattern pattern : List.of(inline, reference)) {
-                    Matcher link = pattern.matcher(text);
-                    while (link.find()) {
-                        String target = link.group(1).replaceFirst("#.*", "");
-                        if (target.isEmpty() || target.matches("[a-z][a-z0-9+.-]*:.*") || target.startsWith("<")) {
-                            continue;
-                        }
-                        if (!Files.exists(file.resolveSibling(target))) {
-                            broken.add(ROOT.relativize(file) + " -> " + link.group(1));
-                        }
+                broken.addAll(brokenLinks(file, Files.readString(file)));
+            }
+        }
+        assertEquals(List.of(), broken, "these links into the repository name nothing");
+    }
+
+    /** The links in {@code markdown}, as it would be read from {@code file}, that name nothing. */
+    private static List<String> brokenLinks(Path file, String markdown) {
+        Pattern inline = Pattern.compile("\\]\\(([^)\\s]+)\\)");
+        Pattern reference = Pattern.compile("(?m)^\\[[^\\]]+\\]:\\s*\\n?\\s*(\\S+)");
+        List<String> broken = new ArrayList<>();
+        // Code is not prose: `Resource[IO](config)` in a fence is a call, not a link.
+        String text = markdown.replaceAll("(?ms)^\\s*```.*?^\\s*```", "").replaceAll("`[^`\\n]*`", "");
+        for (Pattern pattern : List.of(inline, reference)) {
+            Matcher link = pattern.matcher(text);
+            while (link.find()) {
+                Matcher repository = REPOSITORY_LINK.matcher(link.group(1));
+                Path target;
+                if (repository.matches()) {
+                    String path = repository.group(1);
+                    target = path == null ? ROOT : ROOT.resolve(path);
+                } else {
+                    String relative = link.group(1).replaceFirst("#.*", "");
+                    if (relative.isEmpty() || relative.matches("[a-z][a-z0-9+.-]*:.*") || relative.startsWith("<")) {
+                        continue;
                     }
+                    target = file.resolveSibling(relative);
+                }
+                if (!Files.exists(target)) {
+                    broken.add(ROOT.relativize(file) + " -> " + link.group(1));
                 }
             }
         }
-        assertEquals(List.of(), broken, "these relative links name nothing");
+        return broken;
+    }
+
+    /**
+     * The link check is only evidence once it can fail: a link to a directory the branch lacks, and
+     * a relative one, are both reported, and one that resolves is not.
+     */
+    @Test
+    void theLinkCheckReportsALinkThatNamesNothing() {
+        Path readme = ROOT.resolve("README.md");
+        String base = "https://github.com/libtmux/libtmux-java/tree/master/";
+
+        assertEquals(List.of(), brokenLinks(readme, "[core](" + base + "libtmux) [root](" + base + ")"));
+        assertEquals(List.of(), brokenLinks(readme, "[core][c]\n\n[c]: " + base + "libtmux#packages"));
+        assertEquals(
+                1,
+                brokenLinks(readme, "[gone](" + base + "libtmux-nonexistent)").size());
+        assertEquals(
+                1,
+                brokenLinks(readme, "[gone][c]\n\n[c]: " + base + "libtmux/src/gone")
+                        .size());
+        assertEquals(1, brokenLinks(readme, "[gone](libtmux-nonexistent/)").size());
+        assertEquals(
+                List.of(), brokenLinks(readme, "[elsewhere](https://github.com/libtmux/libtmux-go/tree/master/tmux)"));
+    }
+
+    /** What a heading that links a directory names, and where it points. */
+    private static Map<String, String> directoryHeadings(String markdown) {
+        Map<String, String> headings = new TreeMap<>();
+        Matcher heading = Pattern.compile(
+                        "(?m)^### \\[`([^`]+)`]\\((https://github\\.com/libtmux/libtmux-java/tree/master/[^)\\s]+)\\)")
+                .matcher(markdown);
+        while (heading.find()) {
+            headings.put(heading.group(1), heading.group(2));
+        }
+        return headings;
+    }
+
+    /**
+     * The root README heads each module, and the core's README each package it exports, with a
+     * heading that links the directory on GitHub. Maven Central renders no README, and GitHub's tree
+     * view is where one is found, so the link is absolute.
+     */
+    @Test
+    void theRootAndCoreReadmesHeadEveryModuleAndPackageWithItsDirectory() {
+        String tree = "https://github.com/libtmux/libtmux-java/tree/master/";
+        Map<String, String> modules = new TreeMap<>();
+        PUBLISHED.forEach(module -> modules.put(module, tree + module));
+        modules.put("libtmux-bom", tree + "libtmux-bom");
+        assertEquals(modules, directoryHeadings(read("README.md")), "the root README's module headings");
+
+        Map<String, String> packages = new TreeMap<>();
+        named("exports ([a-z.]+);", read("libtmux/src/main/java/module-info.java"))
+                .forEach(name -> packages.put(name, tree + "libtmux/src/main/java/" + name.replace('.', '/')));
+        assertFalse(packages.isEmpty(), "libtmux's module descriptor exports nothing");
+        assertEquals(packages, directoryHeadings(read("libtmux/README.md")), "the core README's package headings");
+    }
+
+    /** The heading check fails on a missing, a misdirected, and an unlinked heading. */
+    @Test
+    void theHeadingCheckReportsAHeadingThatDoesNotLinkItsDirectory() {
+        String tree = "https://github.com/libtmux/libtmux-java/tree/master/";
+
+        assertEquals(
+                Map.of("libtmux", tree + "libtmux"),
+                directoryHeadings("### [`libtmux`](" + tree + "libtmux): the library"));
+        assertEquals(Map.of(), directoryHeadings("### `libtmux`: the library"));
+        assertEquals(Map.of(), directoryHeadings("### [`libtmux`](libtmux/): the library"));
+        assertEquals(Map.of(), directoryHeadings("## [`libtmux`](" + tree + "libtmux)"));
     }
 
     /** Searched for by file name rather than loaded, since these will not be on this module's path. */

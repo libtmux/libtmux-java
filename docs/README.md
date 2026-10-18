@@ -250,6 +250,22 @@ the task. Only one direction is checked: a Kotlin fence that uses a name it did
 not ask for fails to compile, but one that asks for a name it never reads is not
 caught, because the generated file suppresses unused-variable warnings.
 
+### Console fences
+
+A command in a `console` fence is not Java, so the module whose program it runs
+checks it. `libtmux-mcp`'s `DocumentedCommandsTest` hands every `libtmux-mcp`
+command, and every `mcpServers` configuration in a `json` fence, to the
+launcher's own flag and environment handling, and holds each `LIBTMUX_` name to
+one the launcher's sources read. `libtmux-workspace-cli`'s
+`DocumentedCommandsTest` parses every `tmux-workspace` command with the
+program's own command line, and its `ReadmeExamplesTest` runs the `load` and
+`freeze` commands its README shows against tmux.
+
+```console
+$ ./gradlew :libtmux-mcp:test --tests '*DocumentedCommandsTest' \
+    :libtmux-workspace-cli:test --tests '*DocumentedCommandsTest' --tests '*ReadmeExamplesTest'
+```
+
 ### Claims that are not code
 
 A snippet is executed, so it cannot lie. A version in an install block, or a
@@ -262,6 +278,8 @@ six months later, in the one place every reader starts. Those are checked too:
 | `libtmux-bom`'s README lists exactly what the platform constrains | that README against `libtmux-bom/build.gradle.kts` |
 | Every published module's README names it first and states its coordinate | each published module's README |
 | A fence in a source language nothing here builds carries a directive saying so | every reader-facing document |
+| Every link into this repository names a file or directory | every Markdown file: relative links, and absolute links to the `master` branch |
+| The root README heads each module, and `libtmux`'s README each exported package, with a link to its directory | those two READMEs against the published modules and `module-info.java` |
 | The contract tests the parity documents cite are unwritten or really declared | `docs/parity/python-api.md`, `docs/parity/test-map.md` |
 | Those documents keep saying "planned parity" while those tests are unwritten | the same two |
 

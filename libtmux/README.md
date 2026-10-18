@@ -19,6 +19,9 @@ This is the whole library. Everything else in the repository is an adapter to
 something — Jackson, JUnit, Kotlin, MCP, tmuxp — and depends on this.
 
 `io.github.libtmux:libtmux` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux).
+API reference: [libtmux.org](https://libtmux.org/en/java/latest/reference/) for
+the current trunk, [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux)
+for a released version.
 
 > **Alpha.** The API will change without notice. Pin an exact version.
 
@@ -201,17 +204,180 @@ try {
 }
 ```
 
-## Package map
+## Packages
 
-- **`io.github.libtmux`** — `Server`, `Session`, `Window`, `Pane`, `Client`,
-  `Options`, `Hooks`, and the typed fields `Pane_`, `Window_`, `Session_`, `Client_`
-- **`io.github.libtmux.query`** — `FilterExpr` and its record nodes, `Selections`, `Fields`
-- **`io.github.libtmux.snapshot`** — the immutable capture a traversal reads from
-- **`io.github.libtmux.transport`** — how a command travels: `TmuxTransport`,
-  `CommandResult`, and dispatch certainty
-- **`io.github.libtmux.control`** — `ControlClient`, for subscriptions and `%output`
-- **`io.github.libtmux.batch`** — `Batch`, `BatchResult`, per-operation outcomes
-- **`io.github.libtmux.format`** — tmux format templates and row parsing
+Each heading links to its directory on GitHub. The module exports these nine
+packages and no others: `io.github.libtmux.internal` is public only because the
+exported packages share it. Kotlin, Scala, Jackson, JUnit 5, MCP and the
+workspace tools are modules of their own, described under
+[Modules](../README.md#modules) in the root README.
+
+### [`io.github.libtmux`](https://github.com/libtmux/libtmux-java/tree/master/libtmux/src/main/java/io/github/libtmux): servers, sessions, windows, and panes
+
+`Server`, `Session`, `Window`, `Pane`, `Client`, `Options`, and `Hooks`, with
+the typed fields `Pane_`, `Window_`, `Session_`, and `Client_`. Reference:
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux/latest/io.github.libtmux/io/github/libtmux/package-summary.html)
+and [libtmux.org](https://libtmux.org/en/java/latest/reference/).
+
+[`Pane.run`][pane-run] runs a command in a pane and waits for it. A nonzero
+exit status is a result, not an exception:
+
+```java
+// Given: Pane pane
+PaneRun ran = pane.run("printf 'built\\n'; exit 3", Duration.ofSeconds(30));
+
+ran.exitStatus().getAsInt();   // → 3
+ran.output();                  // → [built]
+```
+
+### [`io.github.libtmux.query`](https://github.com/libtmux/libtmux-java/tree/master/libtmux/src/main/java/io/github/libtmux/query): filters that run and print
+
+[`FilterExpr`][filterexpr] is a `Predicate` and also a value that prints itself,
+and [`Selections`][selections] says how many matches a caller expects. Reference:
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux/latest/io.github.libtmux/io/github/libtmux/query/package-summary.html)
+and [libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-query-filterexpr-filterexpr/).
+
+```java
+// Given: Server server
+server.newSession("build").newWindow("editor");
+
+FilterExpr<Window> editors =
+        Window_.name().startsWith("edit").and(Window_.name().endsWith("or"));
+
+editors.describe();                  // → (window_name starts-with edit and window_name ends-with or)
+server.windows(editors).size();      // → 1
+```
+
+### [`io.github.libtmux.snapshot`](https://github.com/libtmux/libtmux-java/tree/master/libtmux/src/main/java/io/github/libtmux/snapshot): a hierarchy as it was
+
+[`ServerSnapshot`][serversnapshot] answers from what it captured, so walking it
+asks tmux nothing. [`ServerMirror`][servermirror] keeps one current. Reference:
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux/latest/io.github.libtmux/io/github/libtmux/snapshot/package-summary.html)
+and [libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-snapshot-serversnapshot-serversnapshot/).
+
+```java
+// Given: Server server
+ServerSnapshot snapshot = server.snapshot();
+SessionState first = snapshot.sessions().get(0);
+
+first.name();                                  // → libtmux
+snapshot.windowsOf(first.id()).size();         // → 1
+```
+
+### [`io.github.libtmux.transport`](https://github.com/libtmux/libtmux-java/tree/master/libtmux/src/main/java/io/github/libtmux/transport): one command, one result
+
+[`TmuxTransport`][tmuxtransport] runs a tmux command, and
+[`CommandResult`][commandresult] carries what came back. A nonzero exit is data.
+Reference:
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux/latest/io.github.libtmux/io/github/libtmux/transport/package-summary.html)
+and [libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-transport-commandresult-commandresult/).
+
+```java
+// Given: Server server
+CommandResult listed = server.cmd("list-sessions", "-F", "#{session_name}");
+
+listed.stdout();                     // → [libtmux]
+listed.succeeded();                  // → true
+```
+
+### [`io.github.libtmux.control`](https://github.com/libtmux/libtmux-java/tree/master/libtmux/src/main/java/io/github/libtmux/control): staying attached, and being told
+
+[`ControlClient`][controlclient] holds a control-mode connection, and
+[`EventSubscription`][eventsubscription] delivers what tmux pushes, with a gap
+where the buffer overflowed. Reference:
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux/latest/io.github.libtmux/io/github/libtmux/control/package-summary.html)
+and [libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-control-controlclient-controlclient/).
+
+```java
+// Given: Server server, Session session
+try (ControlClient client = server.control(session);
+        EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
+
+    client.send("send-keys", "-t", session.name(), "echo streamed", "Enter");
+
+    StringBuilder seen = new StringBuilder();
+    while (seen.indexOf("streamed") < 0) {
+        seen.append(Delivery.kept(output.next(Duration.ofSeconds(5)).orElseThrow()).data());
+    }
+    seen.indexOf("streamed") >= 0;   // → true
+}
+```
+
+### [`io.github.libtmux.batch`](https://github.com/libtmux/libtmux-java/tree/master/libtmux/src/main/java/io/github/libtmux/batch): several commands, an outcome for each
+
+[`Batch`][batch] sends independent commands in one invocation, and
+[`BatchResult`][batchresult] reports every operation for itself. Reference:
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux/latest/io.github.libtmux/io/github/libtmux/batch/package-summary.html)
+and [libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-batch-batch-batch/).
+
+```java
+// Given: Server server
+BatchResult result = server.batch()
+        .add("new-window", "-d", "-n", "one")
+        .add("display-message", "-p", "#{window_name}")
+        .run();
+
+result.succeeded();                         // → true
+result.operations().get(0).outcome();       // → COMPLETE
+result.operations().get(1).outcome();       // → COMPLETE
+```
+
+### [`io.github.libtmux.format`](https://github.com/libtmux/libtmux-java/tree/master/libtmux/src/main/java/io/github/libtmux/format): listing templates and their rows
+
+[`RowFormat`][rowformat] builds the template for a listing and reads the rows
+back. Its separator is generated per process, so a window named with a
+separator cannot shift the fields after it. Reference:
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux/latest/io.github.libtmux/io/github/libtmux/format/package-summary.html)
+and [libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-format-rowformat-rowformat/).
+
+```java
+// Given: Server server
+RowFormat format = RowFormat.of("session_name", "session_windows");
+
+CommandResult listed = server.cmd("list-sessions", "-F", format.template());
+RowFormat.Row row = format.rows(listed.stdout()).get(0);
+
+row.text("session_name");            // → libtmux
+row.number("session_windows");       // → 1
+```
+
+### [`io.github.libtmux.exception`](https://github.com/libtmux/libtmux-java/tree/master/libtmux/src/main/java/io/github/libtmux/exception): one sealed tree of failures
+
+[`LibTmuxException`][libtmuxexception] is sealed, so a `switch` over it fails to
+compile when a new kind of failure appears. Reference:
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux/latest/io.github.libtmux/io/github/libtmux/exception/package-summary.html)
+and [libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-exception-libtmuxexception-libtmuxexception/).
+
+```java
+Function<LibTmuxException, String> nextStep = failure -> switch (failure) {
+    case TargetGoneException gone -> "look it up again";
+    case ServerUnavailableException unavailable -> "start a server";
+    case CommandRejectedException rejected -> "change the request";
+    case DispatchException dispatch -> dispatch.safeToRetry() ? "send it again" : "read state first";
+    case ControlEndedException ended -> "attach again";
+    case UnsupportedFeatureException unsupported -> "do without";
+    case UnencodableTextException unencodable -> "use a UTF-8 locale";
+    case MalformedResponseException malformed -> "report it";
+    case CardinalityException.NoMatch none -> "nothing matched";
+    case CardinalityException.MultipleMatches many -> "ambiguous";
+};
+
+nextStep.apply(new CardinalityException.MultipleMatches("many", 3));   // → ambiguous
+```
+
+### [`io.github.libtmux.catalog`](https://github.com/libtmux/libtmux-java/tree/master/libtmux/src/main/java/io/github/libtmux/catalog): what kind of operation each method is
+
+[`Operation`][operation] classifies a public method as a read, a mutation, a
+wait, a stream, or a lifecycle call, which is how the Kotlin and Scala facades
+and the generated reference are built from one list. Reference:
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux/latest/io.github.libtmux/io/github/libtmux/catalog/package-summary.html)
+and [libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-catalog-operation-operation/).
+
+```java
+var rename = Session.class.getMethod("rename", String.class);
+
+rename.getAnnotation(io.github.libtmux.catalog.Operation.class).value();   // → MUTATION
+```
 
 ## Next
 
@@ -221,3 +387,18 @@ try {
 - [Options and hooks](../docs/guide/options-and-hooks.md)
 - Runnable programs: [`examples/`](../examples/)
 - Testing your own code against real tmux: [`libtmux-junit5`](../libtmux-junit5/)
+
+[batch]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-batch-batch-batch/
+[batchresult]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-batch-batchresult-batchresult/
+[commandresult]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-transport-commandresult-commandresult/
+[controlclient]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-control-controlclient-controlclient/
+[eventsubscription]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-control-eventsubscription-eventsubscription/
+[filterexpr]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-query-filterexpr-filterexpr/
+[libtmuxexception]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-exception-libtmuxexception-libtmuxexception/
+[operation]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-catalog-operation-operation/
+[pane-run]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-pane-pane-run/
+[rowformat]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-format-rowformat-rowformat/
+[selections]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-query-selections-selections/
+[servermirror]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-snapshot-servermirror-servermirror/
+[serversnapshot]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-snapshot-serversnapshot-serversnapshot/
+[tmuxtransport]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-transport-tmuxtransport-tmuxtransport/

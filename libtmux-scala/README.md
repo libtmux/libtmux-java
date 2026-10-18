@@ -47,6 +47,10 @@ and release with the Java ones. Core depends on `libtmux` and the Scala 3 librar
 and Ox arrive through [`libtmux-scala-cats`](../libtmux-scala-cats/) and
 [`libtmux-scala-ox`](../libtmux-scala-ox/).
 
+API reference: [libtmux.org](https://libtmux.org/en/scala/latest/reference/)
+for the current trunk, [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-scala_3)
+for a released version.
+
 ## Inspect captured panes
 
 Start with [a first client](../docs/guide/scala/getting-started.md#a-first-client) to construct

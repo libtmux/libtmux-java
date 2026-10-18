@@ -19,6 +19,10 @@ Enough of [tmuxp](https://tmuxp.git-pull.com/)'s format to describe a workspace
 and build it. Not a runtime-compatible reimplementation.
 
 `io.github.libtmux:libtmux-workspace` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace).
+API reference: [libtmux.org](https://libtmux.org/en/java/latest/workspace/reference/) for the current trunk,
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-workspace) for a
+released version. For a command line, see
+[`libtmux-workspace-cli`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-workspace-cli).
 
 > **Alpha.** The API will change without notice.
 

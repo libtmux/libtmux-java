@@ -29,6 +29,10 @@ libraryDependencies += "io.github.libtmux" %% "libtmux-scala-ox" % "<version>"
 From Gradle or Maven the coordinate is `io.github.libtmux:libtmux-scala-ox_3`.
 It is on Maven Central and releases with the Java artifacts.
 
+API reference: [`Flows`](https://libtmux.org/en/scala/latest/reference/io-github-libtmux-scaladsl-ox-flows/)
+on libtmux.org for the current trunk, [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-scala-ox_3)
+for a released version.
+
 **This project is alpha.** Releases carry an `-alpha` prerelease tag. The API is
 not settled, and any release may change or remove exported identifiers without a
 deprecation period. Pin an exact version rather than a range. Not recommended
