@@ -757,7 +757,7 @@ final class Execution {
      * Where an attached load ends up: outside tmux ({@code insideTmux} false), switched via a known
      * client, or switched blind when the invoking pane cannot be identified.
      */
-    private record AttachTarget(boolean insideTmux, Optional<io.github.libtmux.Client> client) {}
+    record AttachTarget(boolean insideTmux, Optional<io.github.libtmux.Client> client) {}
 
     /**
      * Decided before anything is built: every way the invoking context can fail to carry this load
@@ -806,7 +806,35 @@ final class Execution {
                 : Character.toLowerCase(line.strip().charAt(0));
     }
 
+    /** The terminal handoff; {@code -N} keeps it from starting a daemon the version check never saw. */
+    static List<String> attachCommand(List<String> endpoint, String session) {
+        var argv = new ArrayList<>(endpoint);
+        argv.add(1, "-N");
+        argv.addAll(List.of("attach-session", "-t", session));
+        return List.copyOf(argv);
+    }
+
+    /** Runs the terminal handoff to completion and returns its exit status. */
+    @FunctionalInterface
+    interface Handoff {
+        int run(ProcessBuilder builder) throws IOException, InterruptedException;
+    }
+
+    private static int spawn(ProcessBuilder builder) throws IOException, InterruptedException {
+        Process child = builder.start();
+        try {
+            return child.waitFor();
+        } finally {
+            if (child.isAlive()) child.destroyForcibly();
+        }
+    }
+
     private static void attach(Server server, Session session, Main.Context context, AttachTarget target)
+            throws IOException, InterruptedException {
+        attach(server, session, context, target, Execution::spawn);
+    }
+
+    static void attach(Server server, Session session, Main.Context context, AttachTarget target, Handoff handoff)
             throws IOException, InterruptedException {
         if (target.insideTmux()) {
             authenticate(context, server);
@@ -834,10 +862,7 @@ final class Execution {
             }
             return;
         }
-        var argv = new ArrayList<>(server.config().endpointCommand());
-        argv.add("attach-session");
-        argv.add("-t");
-        argv.add(session.id().value());
+        var argv = attachCommand(server.config().endpointCommand(), session.id().value());
         // This process's own descriptors, not a fresh open of the tty by path: a client whose stdio
         // is reopened attaches and reads input but draws nothing.
         ProcessBuilder builder = new ProcessBuilder(argv)
@@ -848,13 +873,8 @@ final class Execution {
         builder.environment().putAll(context.environment());
         builder.environment().remove("TMUX");
         builder.environment().remove("TMUX_PANE");
-        Process child = builder.start();
-        try {
-            int status = child.waitFor();
-            if (status != 0) throw new Main.Failure(Machine.Code.TMUX_FAILED, status, "tmux attachment failed");
-        } finally {
-            if (child.isAlive()) child.destroyForcibly();
-        }
+        int status = handoff.run(builder);
+        if (status != 0) throw new Main.Failure(Machine.Code.TMUX_FAILED, status, "tmux attachment failed");
     }
 
     static List<Session> existingSessions(Server server) {

@@ -28,6 +28,52 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 final class ExecutionTest {
+
+    @Test
+    void theTerminalHandoffNeverStartsADaemon() {
+        assertEquals(
+                java.util.List.of("tmux", "-N", "-S", "/tmp/s", "attach-session", "-t", "$1"),
+                Execution.attachCommand(java.util.List.of("tmux", "-S", "/tmp/s"), "$1"));
+    }
+
+    /** The argv {@code attach} spawns, not the helper that builds one: removing -N there must fail. */
+    @Test
+    void attachSpawnsTheHandoffWithoutStartingADaemon() throws Exception {
+        Path socket = directory.resolve("handoff-socket");
+        try (Server server = server(socket)) {
+            try {
+                Session session = server.newSession("handoff");
+                java.util.List<java.util.List<String>> spawned = new java.util.ArrayList<>();
+                Main.Context context = new Main.Context(
+                        java.util.Map.of("TMUX", "inherited", "TMUX_PANE", "%1", "PATH", "/usr/bin"),
+                        directory,
+                        InputStream.nullInputStream(),
+                        new ByteArrayOutputStream(),
+                        new ByteArrayOutputStream());
+
+                Execution.attach(
+                        server,
+                        session,
+                        context,
+                        new Execution.AttachTarget(false, java.util.Optional.empty()),
+                        builder -> {
+                            spawned.add(builder.command());
+                            assertFalse(builder.environment().containsKey("TMUX"));
+                            assertFalse(builder.environment().containsKey("TMUX_PANE"));
+                            return 0;
+                        });
+
+                var expected = new java.util.ArrayList<>(server.config().endpointCommand());
+                expected.add(1, "-N");
+                expected.addAll(
+                        java.util.List.of("attach-session", "-t", session.id().value()));
+                assertEquals(java.util.List.of(expected), spawned);
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     @TempDir
     Path directory;
 
