@@ -14,6 +14,18 @@ production.
 
 ### Documented
 
+- **The root README heads each module, and `libtmux`'s README each package it
+  exports, with a link to its directory on GitHub.** Under each heading are one
+  line on what it is, its API reference on libtmux.org and javadoc.io, and an
+  example the documentation suite compiles and runs. Every other module README
+  now links its API reference.
+
+- **The `libtmux-mcp` README links every tool it lists to its page on
+  libtmux.org, and sets out input checks, waits and limits as short bullets.**
+  It also shows a Claude Code registration and a JSON client configuration that
+  select a toolset. The `libtmux-workspace-cli` README adds `tmux-workspace`
+  commands for `ls`, `search`, `convert` and `import`.
+
 - **`SplitSpec.Builder.running`, `WindowSpec.Builder.running` and
   `SessionSpec.Builder.running` say that tmux reports the pane before the
   command has started.** Wait for the pane's command with `Pane.await` rather
@@ -33,6 +45,19 @@ production.
   overview.** It groups the members by what they do, from connecting to the
   options and hooks tmux keeps, links each one that Scaladoc can resolve, and
   names `cmd`, `run`, `batch` and `chain` for anything it does not list.
+
+### Development
+
+- **The README link check also follows absolute links to this repository's
+  `master` branch, and holds the root and `libtmux` READMEs to a heading that
+  links each module's or package's directory.**
+
+- **The `libtmux-mcp` tests hold every documented `libtmux-mcp` flag,
+  `LIBTMUX_` variable and client configuration to the launcher, and the
+  `libtmux-workspace-cli` tests hold every documented `tmux-workspace` command
+  to its parser.** The `libtmux-workspace-cli` tests also run the README's
+  `load` and `freeze` example against tmux, and the `libtmux-mcp` tests hold
+  every tool the README lists in a table or list to a link to its page.
 
 ## 0.0.1-alpha.17 — 2026-09-26
 
