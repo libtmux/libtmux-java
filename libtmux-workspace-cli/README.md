@@ -21,6 +21,9 @@ conversion, imports, discovery and search run on the JVM alone; only the
 Python shell, tmuxp plugins and custom builders need Python. JDK 25 or newer, tmux 3.2a or newer.
 
 `io.github.libtmux:libtmux-workspace-cli` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace-cli).
+Reference: the [command manual](https://libtmux.org/en/java/latest/workspace/cli/)
+on libtmux.org, with a page for each command listed under
+[Commands](#commands).
 
 > **Alpha.** Commands, flags and output records will change without notice.
 
@@ -33,7 +36,17 @@ $ ./gradlew :libtmux-workspace-cli:installDist
 ```
 
 That writes `libtmux-workspace-cli/build/install/tmux-workspace/bin/tmux-workspace`.
-Put its directory on `PATH`.
+Put its directory on `PATH`:
+
+```console
+$ export PATH="$PWD/libtmux-workspace-cli/build/install/tmux-workspace/bin:$PATH"
+```
+
+Then check that it runs:
+
+```console
+$ tmux-workspace --version
+```
 
 ## Use it
 
@@ -77,6 +90,34 @@ Writing the capture to a file requires `--save-to`. `freeze` derives no
 destination from the session, because a session name is tmux's to choose and
 carries neither a directory nor an extension.
 
+### Find, convert, and import
+
+List the workspaces found in the current project and in the global
+configuration directory:
+
+```console
+$ tmux-workspace ls
+```
+
+Search them. This finds the workspaces with `editor` in a window's name:
+
+```console
+$ tmux-workspace search editor --field window
+```
+
+Convert the workspace file to JSON without loading it:
+
+```console
+$ tmux-workspace convert ./workspace.yaml --save-to ./workspace.json --yes
+```
+
+Import a tmuxinator project as a native workspace file. `import teamocil` takes
+a Teamocil file the same way:
+
+```console
+$ tmux-workspace import tmuxinator ./project.yml --save-to ./imported.yaml --yes
+```
+
 ### What freeze captures
 
 Capture recovers topology, directories, focus and configured options, preserving
@@ -84,6 +125,21 @@ carriage returns and embedded or trailing line feeds in option values. Capture
 omits session-local environment variables and cannot recover original
 command history, bootstrap scripts or plugin intent. Normal loading expands
 defined environment variables in captured strings.
+
+## Commands
+
+| command | what it does | reference |
+| --- | --- | --- |
+| `load` | builds workspaces in order, creating or reusing a session | [`load`](https://libtmux.org/en/java/latest/workspace/cli/load/) |
+| `freeze` | captures a running session as a workspace file | [`freeze`](https://libtmux.org/en/java/latest/workspace/cli/freeze/) |
+| `convert` | converts a workspace file between YAML and JSON | [`convert`](https://libtmux.org/en/java/latest/workspace/cli/convert/) |
+| `import tmuxinator`, `import teamocil` | translates another tool's file into a workspace | [`import`](https://libtmux.org/en/java/latest/workspace/cli/import/), [`tmuxinator`](https://libtmux.org/en/java/latest/workspace/cli/import-tmuxinator/), [`teamocil`](https://libtmux.org/en/java/latest/workspace/cli/import-teamocil/) |
+| `ls` | lists the local project and global workspaces | [`ls`](https://libtmux.org/en/java/latest/workspace/cli/ls/) |
+| `search` | searches names, paths, sessions, windows and pane commands | [`search`](https://libtmux.org/en/java/latest/workspace/cli/search/) |
+| `edit` | resolves a workspace and opens it in `EDITOR` | [`edit`](https://libtmux.org/en/java/latest/workspace/cli/edit/) |
+| `shell` | opens a Python shell on a session; needs Python with tmuxp 1.74.0 | [`shell`](https://libtmux.org/en/java/latest/workspace/cli/shell/) |
+| `debug-info` | reports runtime and configuration diagnostics | [`debug-info`](https://libtmux.org/en/java/latest/workspace/cli/debug-info/) |
+| `--generate` | writes the command schema or Bash, Zsh or Fish completion | [completion](https://libtmux.org/en/java/latest/workspace/cli/completion/) |
 
 ## Loading
 
@@ -219,12 +275,19 @@ $ ./gradlew :libtmux-mcp:installDist \
     --no-parallel
 ```
 
-Configure your MCP client to launch
-`libtmux-mcp/build/install/libtmux-mcp/bin/libtmux-mcp` with arguments
-`--socket /tmp/libtmux-java-dev/workspace-example.sock` and environment variable
-`LIBTMUX_TOOLSETS=inspect`. This selects the same socket as the detached load
-above. Use `--socket-name` when loading with `-L`; the endpoint is selected once
-at MCP startup.
+Register the launcher with Claude Code on the socket the detached load above
+built, offering only the tools that read tmux:
+
+```console
+$ claude mcp add tmux \
+    -e LIBTMUX_TOOLSETS=inspect \
+    -- libtmux-mcp/build/install/libtmux-mcp/bin/libtmux-mcp \
+    --socket /tmp/libtmux-java-dev/workspace-example.sock
+```
+
+Another client launches the same program with the same arguments and
+environment variable. Use `--socket-name` when loading with `-L`; the endpoint
+is selected once at MCP startup.
 
 Discover tools with `tools/list`, then call `list_sessions`, `list_windows`
 with `session_name: dev`, and `list_panes`. Use returned pane IDs with
