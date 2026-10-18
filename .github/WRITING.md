@@ -20,7 +20,7 @@ and what contract you are buying into — in that order, and then it stops.
 Anything a reader does not need in order to run the package belongs on
 libtmux.org or under `docs/`, with a link from here.
 
-A reader skims it at speed, so it is built to be skimmed:
+Readers skim it, so it follows one shape:
 
 - **The quick start comes first.** Install, then one example that runs.
 - **Sections are tasks, in the reader's words.** A `##` heading says what the

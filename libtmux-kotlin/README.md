@@ -17,21 +17,24 @@ bridges over the Java API.**
 </div>
 
 Drive tmux from Kotlin: [`withServer`][with-server] opens a server and closes
-it, the [`newSession`][server-newsession] DSL declares a session with its windows
-and splits, and [`Pane.run`][pane] runs a command to its exit status. Every
-operation that reaches tmux is `suspend`.
+it, the [`newSession`][server-newsession] DSL declares a session with its
+windows and splits, and [`Pane.run`][pane] runs a command to its exit status.
+Every operation that reaches tmux is `suspend`.
 
-`io.github.libtmux:libtmux-kotlin` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin).
+`io.github.libtmux:libtmux-kotlin` — [on Maven
+Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin).
 API reference: [libtmux.org][reference] for the current trunk,
 [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-kotlin) for a
 released version.
 
 > **Alpha.** The API will change without notice.
 
-**Contents** — [Quick start](#quick-start) · [Declare a session](#declare-a-session-its-windows-and-their-splits) ·
-[Send keys](#send-keys-capture-output-and-run-a-command) · [Query](#query-with-typed-fields) ·
-[Handle failures](#handle-failures) · [Watch tmux](#watch-tmux-change) ·
-[Leaves out](#what-it-leaves-out) · [Support](#support-and-status)
+**Contents** — [Quick start](#quick-start) · [Declare a
+session](#declare-a-session-its-windows-and-their-splits) · [Send
+keys](#send-keys-capture-output-and-run-a-command) ·
+[Query](#query-with-typed-fields) · [Handle failures](#handle-failures) · [Watch
+tmux](#watch-tmux-change) · [Leaves out](#what-it-leaves-out) ·
+[Support](#support-and-status)
 
 ## Quick start
 
@@ -68,8 +71,8 @@ It runs against a real tmux, and every value after a `→` is asserted.
   server opened in Java.
 - Captured state is a plain property.
 - A subsystem an accessor answers, such as [`Pane.options()`][options],
-  [`Server.hooks()`][hooks] and [`Server.keys()`][keys], is wrapped the same way,
-  so calling into it never blocks the caller's thread outside
+  [`Server.hooks()`][hooks] and [`Server.keys()`][keys], is wrapped the same
+  way, so calling into it never blocks the caller's thread outside
   [`ExecutionPolicy`][execution-policy].
 
 ## Declare a session, its windows, and their splits
@@ -133,9 +136,9 @@ withServer(config) { server ->
 
 ### [`Pane.command`][text-field]: fields live on the companion
 
-Fields live on the handle type's companion: `Pane.command`, not a static
-`Pane_.command()`. They are generated from the same `field-catalog.tsv` that
-generates the Java metamodel, so the two cannot disagree:
+Fields live on the handle type's companion: `Pane.command`, where Java has the
+static `Pane_.command()`. They are generated from the same `field-catalog.tsv`
+that generates the Java metamodel, so the two cannot disagree:
 
 ```kotlin
 // Given: config: ServerConfig
@@ -152,8 +155,8 @@ withServer(config) { server ->
 }
 ```
 
-- `server.session(expr)` throws [`CardinalityException`][cardinality] on no match
-  or more than one.
+- `server.session(expr)` throws [`CardinalityException`][cardinality] on no
+  match or more than one.
 - `server.sessionOrNull(expr)` is null on no match and still throws on more than
   one. That is Kotlin's collection convention (`single` and `singleOrNull`),
   applied to a tmux lookup.
@@ -241,8 +244,8 @@ withServer(config) { server ->
 }
 ```
 
-- `output` and `events` open a fresh Java [`EventSubscription`][subscription] per
-  `collect()`, never a parked thread, and close it when collection ends, is
+- `output` and `events` open a fresh Java [`EventSubscription`][subscription]
+  per `collect()`, never a parked thread, and close it when collection ends, is
   cancelled, or throws.
 - Output tmux sends before the subscription opens is not delivered. Put the
   command whose output you want in the trailing `onSubscribed` block, which runs
@@ -266,11 +269,9 @@ withServer(config) { server ->
 }
 ```
 
-- It wraps Java's [`ServerMirror`][server-mirror], so resnapshotting on a
-  notification, a gap or a reconnect happens once, inside it, rather than being
-  patched in Kotlin.
-- It is named `liveState`, not `ServerMirror`, so it does not collide with the
-  Java type it wraps.
+- It wraps Java's [`ServerMirror`][server-mirror], so the resnapshot after a
+  notification, a gap or a reconnect happens once, inside it.
+- It is named `liveState` so it does not collide with the Java type it wraps.
 - `liveState`'s background pump runs until its scope ends, so a caller
   collecting for a program's whole life passes its own long-lived scope.
 - `withLiveState` is the scoped form for everything shorter: it cancels the pump
@@ -290,7 +291,8 @@ withServer(config) { server ->
 - **Kotlin 2.1 or later.** The module is compiled for Kotlin 2.2 metadata and
   the 2.2 standard library, the level kotlinx-coroutines 1.11 is compiled for.
   A Kotlin compiler reads metadata up to one minor version newer than itself.
-- **A guarded floor.** `ConsumerBaselineTest` fails if a build raises that level.
+- **A guarded floor.** `ConsumerBaselineTest` fails if a build raises that
+  level.
 - **Examples run.** Every Kotlin example above is executed against a real tmux
   server by
   [`ReadmeExamplesTest`](src/test/kotlin/io/github/libtmux/kotlin/ReadmeExamplesTest.kt),

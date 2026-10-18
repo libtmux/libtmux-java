@@ -15,22 +15,26 @@
 
 </div>
 
-Point Claude Code, Claude Desktop, Codex, or any MCP client at a tmux socket.
-It can [list what is running][tool-list-panes], [read a pane][tool-capture-pane],
-[run a command and wait for it][tool-run-shell-command], and build a session with
-typed calls such as [`create_session`][tool-create-session] and [`split_window`][tool-split-window].
+Point Claude Code, Claude Desktop, Codex, or any MCP client at a tmux socket. It
+can [list what is running][tool-list-panes], [read a pane][tool-capture-pane],
+[run a command and wait for it][tool-run-shell-command], and build a session
+with typed calls such as [`create_session`][tool-create-session] and
+[`split_window`][tool-split-window].
 
-`io.github.libtmux:libtmux-mcp` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-mcp).
-API reference: [libtmux.org][mcp-reference] and [one page for each tool][mcp-tools]
-for the current trunk, [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-mcp)
-for a released version.
+`io.github.libtmux:libtmux-mcp` — [on Maven
+Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-mcp).
+API reference: [libtmux.org][mcp-reference] and [one page for each
+tool][mcp-tools] for the current trunk,
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-mcp) for a
+released version.
 
 > **Alpha.** Tool names and shapes will change without notice.
 
-**Contents** — [Quick start](#quick-start) · [Read panes](#find-your-way-and-read-panes) ·
-[Run a command](#run-a-command-and-wait) · [Type](#type-into-a-pane) ·
-[Build a session](#build-a-session) · [Limits](#limit-what-a-client-can-do) ·
-[Tools](#the-tools) · [Support](#support-and-status)
+**Contents** — [Quick start](#quick-start) · [Read
+panes](#find-your-way-and-read-panes) · [Run a command](#run-a-command-and-wait)
+· [Type](#type-into-a-pane) · [Build a session](#build-a-session) ·
+[Limits](#limit-what-a-client-can-do) · [Tools](#the-tools) ·
+[Support](#support-and-status)
 
 ## Quick start
 
@@ -124,14 +128,14 @@ they select on standard error, then exits:
 $ LIBTMUX_TOOLSETS=inspect libtmux-mcp --socket-name my-project < /dev/null
 ```
 
-## What it feels like
+## A conversation with an agent
 
 > **You:** What's running in my tmux panes, and is the test suite still going?
 >
 > **Agent:** Three panes. `%1` is running `pytest`, on `tests/test_auth.py`: 84
 > passed so far, nothing failed yet. Want me to wait for it to finish?
 
-The agent reads and drives the terminal directly. There is no pasting output
+The agent reads the panes and types into them itself, so nobody pastes output
 back and forth.
 
 Three rules shape every tool:
@@ -147,8 +151,9 @@ Three rules shape every tool:
 
 ### [`list_panes`][tool-list-panes]: what is running, and where
 
-[`get_server_info`][tool-get-server-info], [`list_sessions`][tool-list-sessions], [`list_windows`][tool-list-windows] and [`list_panes`][tool-list-panes] answer
-with ids that other tools take:
+[`get_server_info`][tool-get-server-info],
+[`list_sessions`][tool-list-sessions], [`list_windows`][tool-list-windows] and
+[`list_panes`][tool-list-panes] answer with ids that other tools take:
 
 | tool | gives back |
 | --- | --- |
@@ -159,13 +164,13 @@ with ids that other tools take:
 | [`get_session_info`][tool-get-session-info], [`get_window_info`][tool-get-window-info], [`get_pane_info`][tool-get-pane-info] | one target's metadata |
 | [`find_pane_by_position`][tool-find-pane-by-position] | one pane at a named window corner |
 
-[`list_panes`][tool-list-panes] reads metadata: what is running. [`search_panes`][tool-search-panes] reads content:
-what is displayed.
+[`list_panes`][tool-list-panes] reads metadata: what is running.
+[`search_panes`][tool-search-panes] reads content: what is displayed.
 
 ### [`capture_pane`][tool-capture-pane]: what a pane shows
 
-[`capture_pane`][tool-capture-pane] returns what a pane shows now, plus a cursor. Its siblings read
-a pane or its configuration in other ways:
+[`capture_pane`][tool-capture-pane] returns what a pane shows now, plus a
+cursor. Its siblings read a pane or its configuration in other ways:
 
 | tool | gives back |
 | --- | --- |
@@ -179,13 +184,13 @@ a pane or its configuration in other ways:
 
 To read a pane without entering copy mode, which belongs to a person:
 
-- Set `history: true` on [`capture_pane`][tool-capture-pane] or [`snapshot_pane`][tool-snapshot-pane] for bounded
-  scrollback.
+- Set `history: true` on [`capture_pane`][tool-capture-pane] or
+  [`snapshot_pane`][tool-snapshot-pane] for bounded scrollback.
 - Use [`search_panes`][tool-search-panes] to find displayed text.
 - Continue from a cursor with [`capture_since`][tool-capture-since].
 
-[`capture_since`][tool-capture-since] hands over finished lines only, so half a line never passes
-for a whole one.
+[`capture_since`][tool-capture-since] hands over finished lines only, so half a
+line never passes for a whole one.
 
 ### [`search_panes`][tool-search-panes]: which pane mentions it
 
@@ -248,8 +253,9 @@ What to know about the command:
 - It runs in a subshell of the pane's POSIX shell, so `cd` and `export` do not
   persist in that shell.
 - Its status is still reported if it is interrupted or terminated.
-- A command still running at the deadline keeps the pane. [`send_keys`][tool-send-keys] with only
-  stop keys (`C-c`, `C-\`) is let through, because it ends the command.
+- A command still running at the deadline keeps the pane.
+  [`send_keys`][tool-send-keys] with only stop keys (`C-c`, `C-\`) is let
+  through, because it ends the command.
 - Shell functions that already exist and are named `trap`, `eval`, `exit`, or
   like the resolved tmux client are outside the guarantee.
 - ASCII control characters, DEL included, are refused in the tmux executable
@@ -282,47 +288,51 @@ come back:
  "arguments": {"pane_id": "%1", "cursor": "<cursor from capture_pane>"}}
 ```
 
-[`wait_for_channel`][tool-wait-for-channel] lets tmux itself block until a command signals a channel,
-and [`signal_channel`][tool-signal-channel] is the other end. The Java library still exposes
-control-mode subscriptions for a long-lived event stream; the
-[streaming guide][streaming] covers it.
+[`wait_for_channel`][tool-wait-for-channel] lets tmux itself block until a
+command signals a channel, and [`signal_channel`][tool-signal-channel] is the
+other end. The Java library still exposes control-mode subscriptions for a
+long-lived event stream; the [streaming guide][streaming] covers it.
 
 ### Limits on every wait
 
 - A wait is capped at 30 seconds by default and two minutes at most, and the
   answer reports the ceiling it enforced.
-- The cap protects the agent's turn, not the connection: a blocked tool call
-  does not stop the server answering anything else.
+- A waiting call holds the agent's turn for up to the cap. The server keeps
+  answering other calls meanwhile.
 - A client's request deadline is separate. The Java SDK 2.0.1 client defaults
   to 20 seconds, so configure it above any longer wait you request.
 - With that SDK, cancelling or timing out abandons the answer but does not stop
   the handler or undo tmux changes it already dispatched. Inspect state before
   retrying.
 
-The full contract is on the [`run_shell_command`][tool-run-shell-command] and [`wait_for_text`][tool-wait-for-text] pages.
+The full contract is on the [`run_shell_command`][tool-run-shell-command] and
+[`wait_for_text`][tool-wait-for-text] pages.
 
 ## Type into a pane
 
 ### [`send_keys`][tool-send-keys]: keys, checked first
 
-[`send_keys`][tool-send-keys], [`send_keys_batch`][tool-send-keys-batch] and [`paste_text`][tool-paste-text] type into a pane. Each is
-checked before it types:
+[`send_keys`][tool-send-keys], [`send_keys_batch`][tool-send-keys-batch] and
+[`paste_text`][tool-paste-text] type into a pane. Each is checked before it
+types:
 
-- [`send_keys`][tool-send-keys] refuses the whole send if any pane that would receive it is in
-  a mode, is dead, is the pane this conversation runs in, or is shown by a
-  terminal client. Panes synchronized with the target count as recipients.
+- [`send_keys`][tool-send-keys] refuses the whole send if any pane that would
+  receive it is in a mode, is dead, is the pane this conversation runs in, or is
+  shown by a terminal client. Panes synchronized with the target count as
+  recipients.
 - [`paste_text`][tool-paste-text] applies the same check to its target only.
-- [`run_shell_command`][tool-run-shell-command] needs one live shell and refuses a synchronized cohort
-  of more than one pane.
-- The check is an observation, not a delivery receipt. `resolved_pane_ids`
-  lists the configured recipients, not confirmed ones.
+- [`run_shell_command`][tool-run-shell-command] needs one live shell and refuses
+  a synchronized cohort of more than one pane.
+- The check observes the panes before the send. `resolved_pane_ids` lists the
+  configured recipients and does not confirm delivery.
 
 The full contract is on the [Java MCP topics][mcp-topics] page.
 
 ### [`kill_pane`][tool-kill-pane]: ending things
 
-[`clear_pane_scrollback`][tool-clear-pane-scrollback], [`kill_pane`][tool-kill-pane], [`kill_window`][tool-kill-window] and [`kill_session`][tool-kill-session]
-sit in the `teardown` toolset:
+[`clear_pane_scrollback`][tool-clear-pane-scrollback],
+[`kill_pane`][tool-kill-pane], [`kill_window`][tool-kill-window] and
+[`kill_session`][tool-kill-session] sit in the `teardown` toolset:
 
 - The kill tools refuse to end the pane this conversation runs in, or the
   window or session that holds it, unless `confirm_self` is set.
@@ -387,15 +397,16 @@ Layout names follow the running tmux version; mirrored main layouts need tmux
 still decides geometry and pruning.
 
 These tools accept no command or environment payload. Start the process first,
-then use [`run_shell_command`][tool-run-shell-command], [`send_keys`][tool-send-keys] or [`paste_text`][tool-paste-text]. If a later step
-fails, the earlier results still say what exists.
+then use [`run_shell_command`][tool-run-shell-command],
+[`send_keys`][tool-send-keys] or [`paste_text`][tool-paste-text]. If a later
+step fails, the earlier results still say what exists.
 
 ## Limit what a client can do
 
-### `LIBTMUX_TOOLSETS`: four sets, not levels
+### `LIBTMUX_TOOLSETS`: four independent sets
 
-`inspect`, `manage`, `execute` and `teardown` are independent capabilities.
-Ask for the sets a client needs:
+`inspect`, `manage`, `execute` and `teardown` each grant their own tools, and
+none implies another. Ask for the sets a client needs:
 
 ```console
 $ LIBTMUX_TOOLSETS=inspect,manage libtmux-mcp --socket-name my-project
@@ -417,8 +428,9 @@ The same immutable selection governs listing and calls:
 
 - A tool outside it is neither listed nor callable.
 - Exclusions win.
-- [`call_read_tools_batch`][tool-call-read-tools-batch] keeps its eligible nested inspect operations when
-  it is selected alone, unless they are excluded explicitly.
+- [`call_read_tools_batch`][tool-call-read-tools-batch] keeps its eligible
+  nested inspect operations when it is selected alone, unless they are excluded
+  explicitly.
 
 ### Filtering does not confine effects
 
@@ -460,16 +472,22 @@ The complete frozen inventory below is generated from the code registry.
 
 The same tools by what they do:
 
-- **Name and choose.** [`rename_session`][tool-rename-session] · [`rename_window`][tool-rename-window] · [`select_window`][tool-select-window]
+- **Name and choose.** [`rename_session`][tool-rename-session] ·
+  [`rename_window`][tool-rename-window] · [`select_window`][tool-select-window]
   · [`select_pane`][tool-select-pane] · [`set_pane_title`][tool-set-pane-title]
-- **Size and arrange.** [`select_layout`][tool-select-layout] · [`resize_window`][tool-resize-window] · [`resize_pane`][tool-resize-pane]
-  · [`move_window`][tool-move-window] · [`swap_pane`][tool-swap-pane]
-- **Create.** [`create_session`][tool-create-session] · [`create_window`][tool-create-window] · [`split_window`][tool-split-window] ·
+- **Size and arrange.** [`select_layout`][tool-select-layout] ·
+  [`resize_window`][tool-resize-window] · [`resize_pane`][tool-resize-pane] ·
+  [`move_window`][tool-move-window] · [`swap_pane`][tool-swap-pane]
+- **Create.** [`create_session`][tool-create-session] ·
+  [`create_window`][tool-create-window] · [`split_window`][tool-split-window] ·
   [`respawn_pane`][tool-respawn-pane]
-- **Type.** [`send_keys`][tool-send-keys] · [`send_keys_batch`][tool-send-keys-batch] · [`paste_text`][tool-paste-text] ·
+- **Type.** [`send_keys`][tool-send-keys] ·
+  [`send_keys_batch`][tool-send-keys-batch] · [`paste_text`][tool-paste-text] ·
   [`set_synchronize_panes`][tool-set-synchronize-panes]
-- **Configure.** [`set_mouse_enabled`][tool-set-mouse-enabled] · [`set_history_limit`][tool-set-history-limit]
-- **End.** [`clear_pane_scrollback`][tool-clear-pane-scrollback] · [`kill_pane`][tool-kill-pane] · [`kill_window`][tool-kill-window] ·
+- **Configure.** [`set_mouse_enabled`][tool-set-mouse-enabled] ·
+  [`set_history_limit`][tool-set-history-limit]
+- **End.** [`clear_pane_scrollback`][tool-clear-pane-scrollback] ·
+  [`kill_pane`][tool-kill-pane] · [`kill_window`][tool-kill-window] ·
   [`kill_session`][tool-kill-session]
 
 ## Settings
@@ -509,19 +527,24 @@ the stdio launcher, and reads its selection from the process environment.
 
 - **Server termination.** No tool ends the tmux server itself.
 - **Dynamic resources, subscriptions, prompts and live completion.** State
-  belongs in typed tools, and `tmux://capabilities` answers what this process can
-  reach. [The old routes and prompts][migration] map to typed reads.
-- **A generic `set-option`.** [`set_mouse_enabled`][tool-set-mouse-enabled], [`set_history_limit`][tool-set-history-limit],
-  [`set_synchronize_panes`][tool-set-synchronize-panes] and [`set_pane_title`][tool-set-pane-title] cover the supported cases.
+  belongs in typed tools, and `tmux://capabilities` answers what this process
+  can reach. [The old routes and prompts][migration] map to typed reads.
+- **A generic `set-option`.** [`set_mouse_enabled`][tool-set-mouse-enabled],
+  [`set_history_limit`][tool-set-history-limit],
+  [`set_synchronize_panes`][tool-set-synchronize-panes] and
+  [`set_pane_title`][tool-set-pane-title] cover the supported cases.
 - **Open filter expressions.** The Java library's
   [`filter-expr-v1.schema.json`][filter-schema] stays available to application
   code, but a field not in a tool's schema never reaches tmux.
-- **Client details and stale channel signals.** [`list_sessions`][tool-list-sessions] marks attached
-  sessions, and stale signals cannot be drained through MCP.
+- **Client details and stale channel signals.**
+  [`list_sessions`][tool-list-sessions] marks attached sessions, and stale
+  signals cannot be drained through MCP.
 
 ## Support and status
 
 - **JDK 25 or newer.** It depends on [`libtmux`][libtmux] and the MCP Java SDK.
+- **Linux, including WSL.** CI runs on Ubuntu. A macOS job runs the same checks
+  and reports without gating a merge.
 - **Alpha.** Tool names and shapes change without notice; pin an exact version.
 - **Optional siblings.** [`libtmux-jackson`][jackson] and
   [`libtmux-workspace`][workspace] stay available to Java applications that

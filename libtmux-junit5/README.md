@@ -11,25 +11,27 @@
 
 # libtmux-junit5
 
-**A JUnit 5 extension that gives each test its own tmux server, and guarantees it
-is gone afterwards.**
+**A JUnit 5 extension that gives each test its own tmux server, and guarantees
+it is gone afterwards.**
 
 </div>
 
-For testing *your* code against real tmux, not for testing libtmux. Put
+For testing your own code against a real tmux. Put
 [`@ExtendWith(TmuxExtension.class)`][tmux-extension] on a test class and each
 test gets a [`Server`][server] of its own, gone afterwards. With
 [`FakeTmux`][fake-tmux] there is no tmux at all.
 
-`io.github.libtmux:libtmux-junit5` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-junit5).
+`io.github.libtmux:libtmux-junit5` — [on Maven
+Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-junit5).
 API reference: [`TmuxExtension`][tmux-extension] and [`FakeTmux`][fake-tmux] on
 libtmux.org for the current trunk, [javadoc.io][javadoc] for a released version.
 
 > **Alpha.** The API will change without notice.
 
-**Contents** — [Quick start](#quick-start) · [What the fixture hands you](#what-the-fixture-hands-you) ·
-[Choosing the tmux](#choosing-the-tmux-binary) · [Without tmux](#without-tmux) ·
-[Leaves out](#what-it-leaves-out) · [Support](#support-and-status)
+**Contents** — [Quick start](#quick-start) · [What the fixture hands
+you](#what-the-fixture-hands-you) · [Choosing the
+tmux](#choosing-the-tmux-binary) · [Without tmux](#without-tmux) · [Leaves
+out](#what-it-leaves-out) · [Support](#support-and-status)
 
 ## Quick start
 
@@ -124,10 +126,10 @@ socket.getFileName().toString();                           // → s
 - **No server outlives the run, even one killed outright.** The socket path
   names the owning JVM's pid, and a shutdown hook ends this JVM's own servers.
 - **A killed run is swept.** Before making its first server, a run sweeps
-  servers whose owner is gone, reading the process table rather than a registry
-  the killed run never updated. A live owner is never touched.
-- **Cleanup failures are loud.** If a fixture's tmux will not die, the test
-  fails rather than unlinking a socket a live daemon still owns.
+  servers whose owner is gone. It finds them in the process table, since a
+  killed run never updates a registry. A live owner is never touched.
+- **Cleanup failures fail the test.** If a fixture's tmux will not die, the
+  test fails and the socket stays, because a live daemon still owns it.
 
 The measurements, and the two designs that lost, are in
 [`docs/decisions/0006`](../docs/decisions/0006-real-tmux-junit5-fixture-lifecycle.md).
@@ -145,17 +147,17 @@ That is how one suite runs against a whole matrix of releases; see
 
 ## Without tmux
 
-### [`FakeTmux`][fake-tmux]: a tmux server that is not there
+### [`FakeTmux`][fake-tmux]: a server that needs no tmux
 
-For code whose interest in tmux ends at the calls it makes. It answers the way
-tmux answers rather than the way a stub would:
+For code whose interest in tmux ends at the calls it makes. It answers as tmux
+does:
 
 - Listings are rendered from the templates the library sends, so a snapshot of
   it is a real snapshot and every handle works.
 - A handle is refused once the server is replaced, as tmux refuses one.
 - A group stops at its first failure.
 - It models sessions, windows, panes and what each pane shows. It does not run
-  a shell: keys sent to a pane are recorded, not typed.
+  a shell, so keys sent to a pane are only recorded.
 
 ```java
 FakeTmux tmux = new FakeTmux();
@@ -197,8 +199,7 @@ try (Server server = tmux.server();
 
 ## What it leaves out
 
-- **Tests of libtmux itself.** This is for testing your code, not for testing
-  libtmux.
+- **Tests of libtmux itself.** The fixture is for code that uses libtmux.
 - **A shell in the fake.** [`FakeTmux`][fake-tmux] records keys; it does not
   type them.
 - **The default socket.** Every server lives under this port's own root, so

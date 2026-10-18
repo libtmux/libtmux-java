@@ -16,9 +16,9 @@ concurrency on virtual threads.**
 
 </div>
 
-[`Flows.liveView`][flows] and [`Flows.subscription`][flows] turn what pushes
-rather than answers into a cold `Flow`: a live view of a server, and a control
-client's subscription. The facade's handles work unchanged in an Ox `supervised`
+[`Flows.liveView`][flows] and [`Flows.subscription`][flows] turn pushed events
+into a cold `Flow`: a live view of a server, and a control client's
+subscription. The facade's handles work unchanged in an Ox `supervised`
 scope.
 
 `io.github.libtmux:libtmux-scala-ox_3` — on Maven Central, released with the
@@ -30,8 +30,9 @@ API reference: [`Flows`][flows] on libtmux.org for the current trunk,
 > and any release may change or remove exported identifiers without a
 > deprecation period. Pin an exact version. Not recommended for production.
 
-**Contents** — [Quick start](#quick-start) · [What it leaves out](#what-it-leaves-out) ·
-[Support](#support-and-status) · [Documentation](#documentation)
+**Contents** — [Quick start](#quick-start) · [What it leaves
+out](#what-it-leaves-out) · [Support](#support-and-status) ·
+[Documentation](#documentation)
 
 ## Quick start
 
@@ -76,9 +77,9 @@ event it kept, or a gap naming how many were lost.
 
 - Collecting it takes the subscription for good and closes it when the
   collection ends.
-- A second collection is refused as it starts, rather than splitting one
-  gap-bearing sequence between two readers, or closing the subscription under
-  the first.
+- A second collection is refused as it starts. Otherwise two readers would
+  split one sequence, gaps included, or the second would close the subscription
+  under the first.
 
 ## What it leaves out
 

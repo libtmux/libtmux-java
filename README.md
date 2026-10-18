@@ -14,7 +14,8 @@
 Typed, blocking access to [tmux](https://github.com/tmux/tmux) from the JVM.
 
 A sibling of the Python [libtmux](https://libtmux.git-pull.com/), targeting
-practical parity while reading as Java rather than as a translation.
+practical parity. It uses Java types: `Optional` for absence, `AutoCloseable`
+servers and typed query fields.
 
 [![CI](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml)
 [![tmux matrix](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml)
@@ -29,14 +30,16 @@ practical parity while reading as Java rather than as a translation.
 > deprecation period. Pin an exact version. Not recommended for production.
 
 [`Create`][server-newsession] sessions, windows and panes,
-[`find and filter`][window_] what a [`Server`][server] holds, and [`run a command`][pane-run]
-and read its exit status. It suits tools that drive a terminal program, test
-suites that need a real tmux, and agents that share a terminal.
+[`find and filter`][window_] what a [`Server`][server] holds, and
+[`run a command`][pane-run] and read its exit status. It suits tools that drive
+a terminal program, test suites that need a real tmux, and agents that share a
+terminal.
 
-**Contents** — [Quick start](#quick-start) · [Find things](#find-sessions-windows-and-panes) ·
-[Create and run](#create-type-and-run) · [Where am I](#know-where-you-are-running) ·
-[Round trips](#fewer-round-trips) · [Modules](#modules) ·
-[Leaves out](#what-it-leaves-out) · [Support](#support-and-status) ·
+**Contents** — [Quick start](#quick-start) · [Find
+things](#find-sessions-windows-and-panes) · [Create and
+run](#create-type-and-run) · [Where am I](#know-where-you-are-running) · [Round
+trips](#fewer-round-trips) · [Modules](#modules) · [Leaves
+out](#what-it-leaves-out) · [Support](#support-and-status) ·
 [Documentation](#documentation)
 
 ## Quick start
@@ -81,10 +84,10 @@ dependencies {
 To build against an unreleased change instead, `./gradlew publishToMavenLocal`
 installs every module into your local repository under the same coordinates.
 
-A [`Server`][server] is a client for one tmux server. [`Server.open`][server] takes a
-[`ServerConfig`][serverconfig] that describes the server to reach, and
-[`Server.newSession(String)`][server-newsession] creates a [`Session`][session]. A session holds
-[`Window`][window]s, and a window splits into [`Pane`][pane]s:
+A [`Server`][server] is a client for one tmux server. [`Server.open`][server]
+takes a [`ServerConfig`][serverconfig] that describes the server to reach, and
+[`Server.newSession(String)`][server-newsession] creates a [`Session`][session].
+A session holds [`Window`][window]s, and a window splits into [`Pane`][pane]s:
 
 ```java
 // Given: Path socket
@@ -101,8 +104,7 @@ try (Server server = Server.open(config)) {
 }
 ```
 
-That leaves a session behind on a tmux server of its own. Reading it back is
-where the library earns its keep:
+That leaves a session behind on a tmux server of its own. Read it back:
 
 ```java
 // Given: Server server
@@ -118,16 +120,16 @@ window.refresh().panes().size();           // → 2
 
 Every value after a `→` is asserted against a real tmux: the
 [documentation suite](docs/README.md#how-these-pages-are-tested) runs each Java
-block on this page. A block's first line, `// Given: Server server`, names what
-it reads rather than builds.
+block on this page. A block that starts with `// Given: Server server` reads a
+server the suite supplies.
 
 ## Find sessions, windows, and panes
 
 ### [`Server.sessions()`][server]: what tmux has now
 
-One read hands you handles. [`Server.windows()`][server] and [`Server.panes()`][server] are its
-siblings. Walking the handles issues no further commands, so a traversal cannot
-see a half-changed server:
+One read hands you handles. [`Server.windows()`][server] and
+[`Server.panes()`][server] are its siblings. Walking the handles issues no
+further commands, so a traversal cannot see a half-changed server:
 
 ```java
 // Given: Server server
@@ -139,8 +141,8 @@ names.contains("editor");            // → true
 editor.session().name();             // → demo
 ```
 
-A capture is a moment, not a live view. [`Window.refresh()`][window] is how you look
-again.
+A handle holds what tmux said when you read it. [`Window.refresh()`][window]
+reads again.
 
 ### [`Pane.window`][pane]: walk back up
 
@@ -156,8 +158,8 @@ pane.window().session().name();      // → libtmux
 
 ### [`Window_`][window_]: filter without asking tmux again
 
-[`Window_`][window_] has the typed fields of a [`Window`][window]. An expression built from one
-is a `Predicate`, so it drops into a stream:
+[`Window_`][window_] has the typed fields of a [`Window`][window]. An expression
+built from one is a `Predicate`, so it drops into a stream:
 
 ```java
 // Given: Server server
@@ -171,8 +173,8 @@ editors.size();                      // → 1
 editors.get(0).name();               // → editor
 ```
 
-An expression is a [`FilterExpr`][filterexpr], which is a value, so [`describe()`][filterexpr] can say
-what it is — which a lambda cannot:
+An expression is a [`FilterExpr`][filterexpr], which is a value, so
+[`describe()`][filterexpr] can say what it is — which a lambda cannot:
 
 ```java
 Window_.name().startsWith("edit").describe();   // → window_name starts-with edit
@@ -180,9 +182,9 @@ Window_.name().startsWith("edit").describe();   // → window_name starts-with e
 
 ### [`Server.session(String)`][server]: one thing, or none
 
-One read answers. [`Server.session(String)`][server] returns an [`Optional`][optional], so absence
-is a value rather than an exception, and the caller says whether it is a bug
-with `orElseThrow`:
+One read answers. [`Server.session(String)`][server] returns an
+[`Optional`][optional] that is empty when no session has the name. Call
+`orElseThrow` where a missing session is a bug:
 
 ```java
 // Given: Server server
@@ -223,7 +225,8 @@ bugs in the calling code.
 
 ### [`Session.newWindow`][session]: make things
 
-[`Session.newWindow`][session] and [`Window.split`][window] each return the new handle:
+[`Session.newWindow`][session] and [`Window.split`][window] each return the new
+handle:
 
 ```java
 // Given: Server server
@@ -238,8 +241,8 @@ editor.refresh().panes().size();     // → 2
 
 ### [`Pane.sendLine`][pane]: type, then read the screen
 
-[`Pane.sendLine`][pane] types a line into a pane, and [`Pane.capture`][pane] reads what it
-shows:
+[`Pane.sendLine`][pane] types a line into a pane, and [`Pane.capture`][pane]
+reads what it shows:
 
 ```java
 // Given: Server server
@@ -252,9 +255,9 @@ pane.capture().isEmpty();            // → false
 
 ### [`Pane.run`][pane-run]: a command to its end
 
-When the command is yours, run it rather than typing it and reading the screen.
-[`Pane.run`][pane-run] returns a [`PaneRun`][panerun] whose status is the shell's and whose output
-is only the command's:
+To get a command's exit status, call [`Pane.run`][pane-run] instead of typing
+the command and reading the screen. It returns a [`PaneRun`][panerun] whose
+status is the shell's and whose output is the command's alone:
 
 ```java
 // Given: Pane pane
@@ -266,8 +269,8 @@ ran.output();                  // → [built]
 
 ### [`Server.cmd`][server]: any tmux command
 
-Nothing is hidden behind the typed API. [`Server.cmd`][server] sends any tmux command,
-and a nonzero exit is data in the [`CommandResult`][commandresult], not an exception:
+[`Server.cmd`][server] sends any tmux command. A nonzero exit shows up in the
+[`CommandResult`][commandresult] and throws nothing:
 
 ```java
 // Given: Server server
@@ -280,7 +283,8 @@ server.cmd("kill-session", "-t", "=nope").succeeded();           // → false
 ### [`TmuxEnvironment`][tmuxenvironment]: which pane am I in
 
 Code running inside a pane can ask where it is. tmux writes `TMUX` and
-`TMUX_PANE` into every pane it spawns, and [`TmuxEnvironment`][tmuxenvironment] reads them back:
+`TMUX_PANE` into every pane it spawns, and [`TmuxEnvironment`][tmuxenvironment]
+reads them back:
 
 ```java
 // Given: Path socket
@@ -293,14 +297,15 @@ here.pane().orElseThrow().value();   // → %0
 ```
 
 In a real pane those variables are already set, so
-[`TmuxEnvironment.current()`][tmuxenvironment] takes nothing and returns empty when there is no
-pane to describe. This README is not running inside one, so the example supplies
-them.
+[`TmuxEnvironment.current()`][tmuxenvironment] takes nothing and returns empty
+when there is no pane to describe. This README is not running inside one, so the
+example supplies them.
 
 ### [`Server.environment`][environment]: what a later pane will see
 
 tmux keeps an environment per server and per session, and gives it to every
-process it starts afterwards. [`Server.environment`][server] reaches the server's:
+process it starts afterwards. [`Server.environment`][server] reaches the
+server's:
 
 ```java
 // Given: Server server
@@ -314,8 +319,9 @@ server.environment().get("LIBTMUX_TOKEN").orElseThrow();   // → abc123
 ### [`Server.chain()`][command-chain]: dependent commands in one request
 
 [`Server.batch()`][batch] sends independent commands in one invocation.
-[`Server.chain()`][command-chain] does the same for dependent ones, letting tmux carry the
-current target from one step to the next, with no round trip to learn an id:
+[`Server.chain()`][command-chain] does the same for dependent ones, letting tmux
+carry the current target from one step to the next, with no round trip to learn
+an id:
 
 ```java
 // Given: Server server
@@ -334,10 +340,10 @@ the [transport][tmuxtransport] reports which happened.
 
 ### See every command tmux ran
 
-The [process transport][processtransport] and the
-[control client][controlclient] log through the JDK's own
-[`System.Logger`][system-logger], so the library brings no logging dependency. Turn on `DEBUG`
-for `io.github.libtmux` and each command is one line:
+The [process transport][processtransport] and the [control
+client][controlclient] log through the JDK's own
+[`System.Logger`][system-logger], so the library brings no logging dependency.
+Turn on `DEBUG` for `io.github.libtmux` and each command is one line:
 
 ```text
 tmux list-sessions exited 0 in 4 ms
@@ -352,11 +358,13 @@ contents and whatever was typed.
 Both use the Java API directly, because the core is annotated with
 [JSpecify](https://jspecify.dev/) and carries no Scala version suffix.
 
-- **Kotlin** sees the API as null-safe rather than as platform types, since
-  Kotlin has read JSpecify since 1.5.20. [`Server`][server] is `AutoCloseable`, so
-  `use {}` works, and the `Consumer<Builder>` overloads take trailing lambdas.
+- **Kotlin** reads the JSpecify annotations (since Kotlin 1.5.20), so a value
+  is `String` or `String?` and never a platform type. [`Server`][server] is
+  `AutoCloseable`, so `use {}` works, and the `Consumer<Builder>` overloads take
+  trailing lambdas.
 - **[`libtmux-kotlin`](libtmux-kotlin/README.md)** adds what Java cannot
-  express: absence as `null` rather than [`Optional`][optional], and `!expr` on a filter.
+  express: absence as `null` where Java has [`Optional`][optional], and `!expr`
+  on a filter.
 - **Scala** can consume the Java artifacts directly; the
   [direct Java guide](docs/guide/scala.md) shows how.
 - **[`libtmux-scala`](libtmux-scala/README.md)** is a Scala 3 facade with its
@@ -690,11 +698,12 @@ $ tmux-workspace load \
 
 ## What it leaves out
 
-- **Live objects.** A [`Session`][session] or a [`Pane`][pane] is what tmux said when it was
-  read, and does not change when tmux does. Read again with
+- **Live objects.** A [`Session`][session] or a [`Pane`][pane] is what tmux said
+  when it was read, and does not change when tmux does. Read again with
   [`Window.refresh()`][window] to see a change.
 - **A logging dependency.** The library logs through the JDK's
-  [`System.Logger`][system-logger], and writes only a command's verb, never its arguments.
+  [`System.Logger`][system-logger], and writes only a command's verb, never its
+  arguments.
 - **Runtime dependencies.** [`libtmux`](libtmux/README.md) has none. The
   adapters carry their own, and [`libtmux-bom`](libtmux-bom/README.md) names
   their versions.
@@ -704,6 +713,8 @@ $ tmux-workspace load \
 
 - **JDK 25 or newer**, on the module path or the classpath: `libtmux` is the
   named module `io.github.libtmux`, and the jars carry no OSGi bundle headers.
+- **Linux, including WSL.** CI runs on Ubuntu. A macOS job runs the same checks
+  and reports without gating a merge.
 - **tmux 3.2a through 3.7c.** The whole real-tmux suite runs against every one
   of those releases, and each lane checks it ran the tmux it is named after:
 
@@ -718,7 +729,7 @@ $ tmux-workspace load \
 - **Alpha.** Any release may change or remove exported identifiers without a
   deprecation period, including in ways that do not compile. Pin an exact
   version. Not recommended for production.
-- **tmux correctness is not alpha.** The real-tmux suite runs against every
+- **Tested against real tmux.** The real-tmux suite runs against every
   supported release on every push.
 
 Changes are recorded in [`CHANGELOG.md`](CHANGELOG.md); how a release is cut is
@@ -752,7 +763,8 @@ current trunk; each released version's Javadoc is on
 
 ## Attribution
 
-Please use the following BibTeX template to cite libtmux-java in scientific discourse:
+Please use the following BibTeX template to cite libtmux-java in scientific
+discourse:
 
 ```bibtex
 @misc{libtmux-java,

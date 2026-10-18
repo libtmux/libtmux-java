@@ -127,12 +127,11 @@ Say otherwise with an HTML comment directly above the fence:
 | `<!-- snippet: skip: <reason> -->` | not checked, for the stated reason |
 
 - The comment has to sit directly above the fence, with nothing between them.
-- An unrecognised directive fails the build: a snippet nobody is checking,
-  because of a typo in the thing that says how to check it, is the state this
-  exists to prevent.
+- An unrecognised directive fails the build, so a typo in a directive cannot
+  leave a snippet unchecked.
 
-`throws:` names the exception's simple name, not its package — the comparison is
-against `getClass().getSimpleName()`, so `IllegalArgumentException` matches and
+`throws:` takes the exception's simple name. It is compared with
+`getClass().getSimpleName()`, so `IllegalArgumentException` matches and
 `java.lang.IllegalArgumentException` does not.
 
 - A block that declares a type — a `class`, `record`, `interface` or `enum` — is
@@ -142,12 +141,11 @@ against `getClass().getSimpleName()`, so `IllegalArgumentException` matches and
   `Given:` line asked for (below) in scope; a type is compiled as it stands and
   never sees one.
 
-- `does-not-compile` earns its keep: it is what keeps
-  `Pane_.index().startsWith("2")` an error.
+- `does-not-compile` keeps `Pane_.index().startsWith("2")` an error.
 - A README claiming the compiler rejects something would otherwise survive the
   day it stopped being true.
-- The phrase is what makes the rejection the documented one: without it, a typo
-  elsewhere in the block would pass for the error the prose describes.
+- The phrase names the error the prose describes. Without it, a typo elsewhere
+  in the block would pass for that error.
 
 Every snippet that runs has 15 seconds. A snippet that hangs fails on its own
 line instead of hanging the build.
@@ -181,14 +179,13 @@ Two consequences worth knowing:
 - **The value is trimmed**, so one with a leading or trailing space cannot be
   expressed this way. Assert it in a test instead.
 - **The expression has to fit on the line the arrow is on.** A call split across
-  lines leaves the rewriter with a fragment, which fails to compile rather than
-  failing quietly — put the value in a local first.
+  lines leaves the rewriter with a fragment, which fails to compile — put the
+  value in a local first.
 
 ### What a snippet may assume
 
-- Documentation shows the interesting line, not the ones before it that made a
-  server — but leaning on one of those without saying so is a snippet a reader
-  cannot paste and run, whatever it proves to this build.
+- A snippet may show only the interesting line, but one that leans on setup it
+  does not show cannot be pasted and run.
 - So the harness offers nothing by default.
 - A snippet that needs one declares it, visibly, as the first line inside the
   fence:
@@ -198,9 +195,8 @@ Two consequences worth knowing:
 Session session = server.newSession("demo");
 ```
 
-- `Given:` is not an HTML comment above the fence like the directives below — it
-  is inside it, in the language the fence is written in, so it is part of what a
-  reader sees and copies, not part of the machinery checking it.
+- `Given:` sits inside the fence, in the fence's own language, where the
+  directives below are HTML comments above it. A reader sees and copies it.
 - The names on offer are `server` (`Server`), `config` (`ServerConfig`),
   `session` (`Session`), `window` (`Window`), `pane` (`Pane`), `options`
   (`Options`), `socket` (`Path`), `directory` (`Path`), `timeout` (`Duration`)
@@ -246,9 +242,7 @@ The declaration is held to exactly what the snippet uses, in both directions:
   one into a test function, and the ordinary Kotlin compilation and test run do
   the checking.
 
-Generating a source file rather than running the Kotlin compiler in-process is the
-same guarantee by a shorter road — and because the generated file *is* the
-documentation, the two cannot drift.
+The generated file is the documentation, so the two cannot drift.
 
 ```console
 $ ./gradlew :libtmux-kotlin:test

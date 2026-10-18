@@ -20,16 +20,17 @@
 session. Enough of [tmuxp](https://tmuxp.git-pull.com/)'s format to describe a
 workspace and build it; not a runtime-compatible reimplementation.
 
-`io.github.libtmux:libtmux-workspace` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace).
+`io.github.libtmux:libtmux-workspace` — [on Maven
+Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace).
 API reference: [libtmux.org][reference] for the current trunk,
 [javadoc.io][javadoc] for a released version. For a command line, see
 [`libtmux-workspace-cli`][cli].
 
 > **Alpha.** The API will change without notice.
 
-**Contents** — [Quick start](#quick-start) · [What you get back](#what-you-get-back) ·
-[Read first](#read-first-build-second) · [The format](#what-the-format-supports) ·
-[What it leaves out](#what-it-leaves-out)
+**Contents** — [Quick start](#quick-start) · [What you get
+back](#what-you-get-back) · [Read first](#read-first-build-second) · [The
+format](#what-the-format-supports) · [What it leaves out](#what-it-leaves-out)
 
 ## Quick start
 

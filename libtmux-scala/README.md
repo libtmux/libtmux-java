@@ -47,10 +47,11 @@ library only; Cats, FS2 and Ox arrive through
 
 ### [`Server.panes`][server]: inspect captured panes
 
-Start with [a first client](../docs/guide/scala/getting-started.md#a-first-client)
-to build a `ServerConfig` from your tmux executable, socket and configuration
-file. Here `config` selects an existing server, and opening the client does not
-create a session:
+Start with [a first
+client](../docs/guide/scala/getting-started.md#a-first-client) to build a
+`ServerConfig` from your tmux executable, socket and configuration file. Here
+`config` selects an existing server, and opening the client does not create a
+session:
 
 <!-- snippet: scala-sync: readme-inspect-panes -->
 ```scala
@@ -83,8 +84,7 @@ the daemon running.
 - **Effects in the core.** Cats Effect and FS2 live in
   [`libtmux-scala-cats`](../libtmux-scala-cats/README.md), and Ox in
   [`libtmux-scala-ox`](../libtmux-scala-ox/README.md).
-- **A parallel type.** The handles are never a hand-copied copy of the Java
-  ones.
+- **A parallel type.** The handles are opaque aliases of the Java ones.
 
 ## Support and status
 
@@ -108,7 +108,8 @@ the daemon running.
   visible loss.
 - [Compatibility](../docs/guide/scala/compatibility.md): compilers, runtimes and
   what CI runs.
-- [Examples](../examples/): runnable programs, each executed against a real tmux.
+- [Examples](../examples/): runnable programs, each executed against a real
+  tmux.
 
 The [Java guide](../docs/guide/scala.md) shows direct Java use without the
 facade. Source contracts live beside [direct-style operations][source-server]

@@ -20,7 +20,9 @@ production.
   command it names. The `libtmux-workspace-cli` reference for loading,
   document rules, imports, output and Python moved to
   `docs/guide/workspace-cli.md`, and the `libtmux-mcp` migration lists moved to
-  `MIGRATION.md`; the READMEs link both.
+  `MIGRATION.md`; the READMEs link both. The root, `libtmux`, `libtmux-mcp` and
+  `libtmux-workspace-cli` READMEs now say Linux, including WSL, and what CI runs
+  on Ubuntu and macOS.
 
 - **The root README heads each module, and `libtmux`'s README each package it
   exports, with a link to its directory on GitHub.** The module list and the

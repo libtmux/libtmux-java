@@ -20,16 +20,17 @@
 between YAML and JSON, or [import][cli-import] a tmuxinator or Teamocil project.
 Flags follow tmuxp 1.74.0, and every command can answer in JSON or NDJSON.
 
-`io.github.libtmux:libtmux-workspace-cli` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace-cli).
+`io.github.libtmux:libtmux-workspace-cli` — [on Maven
+Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace-cli).
 Reference: the [command manual][cli-manual] on libtmux.org.
 
 > **Alpha.** Commands, flags and output records will change without notice.
 
-**Contents** — [Quick start](#quick-start) ·
-[Find, convert, and import](#find-convert-and-import) ·
-[Inspect a loaded workspace through MCP](#inspect-a-loaded-workspace-through-mcp) ·
-[Commands](#commands) · [What it leaves out](#what-it-leaves-out) ·
-[Support and status](#support-and-status) · [Documentation](#documentation)
+**Contents** — [Quick start](#quick-start) · [Find, convert, and
+import](#find-convert-and-import) · [Inspect a loaded workspace through
+MCP](#inspect-a-loaded-workspace-through-mcp) · [Commands](#commands) · [What it
+leaves out](#what-it-leaves-out) · [Support and status](#support-and-status) ·
+[Documentation](#documentation)
 
 ## Quick start
 
@@ -97,7 +98,8 @@ $ tmux-workspace freeze dev \
 It prints the workspace as one JSON document: `session_name` is `dev`, and the
 window lists two panes.
 
-It recovers topology, directories, focus and options, not command history.
+It recovers topology, directories, focus and options. It does not recover
+command history.
 Writing the capture to a file takes `--save-to`.
 
 ## Find, convert, and import
@@ -199,8 +201,8 @@ Then the agent can:
 
 ## What it leaves out
 
-- **Rollback.** A failed append reports what it kept instead of claiming to
-  undo it. [Creating, reusing and appending][ref-loading] has the rules.
+- **Rollback.** A failed append reports what it kept and undoes nothing.
+  [Creating, reusing and appending][ref-loading] has the rules.
 - **tmuxp's layout and focus defaults.** A window with no `layout` tiles its
   panes where tmuxp stacks them, and no `focus` keeps the first window active.
   [Layouts and focus][ref-loading] says why.
@@ -216,6 +218,8 @@ Then the agent can:
 ## Support and status
 
 - **JDK 25 or newer**, and **tmux 3.2a or newer**.
+- **Linux, including WSL.** CI runs on Ubuntu. A macOS job runs the same checks
+  and reports without gating a merge.
 - **Alpha.** Commands, flags and output records change without notice. Pin an
   exact version.
 - **Machine output.** `--json` is one document and `--ndjson` one record per

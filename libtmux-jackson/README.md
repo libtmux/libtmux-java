@@ -19,7 +19,8 @@
 `libtmux.filter/1` document and reads it back, so a filter can be stored, sent
 over a wire, or written by something that is not a Java program.
 
-`io.github.libtmux:libtmux-jackson` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-jackson).
+`io.github.libtmux:libtmux-jackson` — [on Maven
+Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-jackson).
 API reference: [`FilterJson`][filter-json] on libtmux.org for the current trunk,
 [javadoc.io][javadoc] for a released version.
 
@@ -113,9 +114,10 @@ Operators: `equals`, `not_equals`, `contains`, `starts_with`, `ends_with`,
 
 ## Why the names look like that
 
-- **Field and operator ids are tmux's own format names.** `pane_current_command`,
-  not `command`; `session_name`, not `name`. Java class names and record
-  component names are deliberately not wire identifiers.
+- **Field and operator ids are tmux's own format names.** The id is
+  `pane_current_command` where the Java accessor is `command`, and
+  `session_name` where it is `name`. Java class names and record component
+  names are never wire identifiers.
 - **`matches` is Java's.** Its pattern syntax and numeric flags are those of
   `java.util.regex.Pattern`, so a non-Java consumer must reproduce those
   semantics or reject that operator.
@@ -138,8 +140,7 @@ FilterJson.writeString(mine, LibTmuxModels.session());
 
 It has a declared field's name and a different accessor. Writing it
 would produce a document that looks like a filter on `#{session_name}` and
-answers a different question. Refusing it is what makes this a format rather
-than a hope.
+answers a different question, so writing it throws `SchemaException`.
 
 ### Writing and reading are validated against a model
 
@@ -152,8 +153,8 @@ than a hope.
 
 ## What it leaves out
 
-- **Dependencies in the core.** Jackson lives here, so [`libtmux`][libtmux] never
-  carries it.
+- **Dependencies in the core.** Jackson lives here, so [`libtmux`][libtmux]
+  never carries it.
 - **Java names on the wire.** Class and record component names are not
   identifiers in a document.
 

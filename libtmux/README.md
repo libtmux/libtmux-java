@@ -69,10 +69,10 @@ dependencies {
 ```
 </details>
 
-[`Server.open`][server] connects to the tmux server a [`ServerConfig`][serverconfig]
-describes, and [`Server.newSession(String)`][server-newsession] creates a
-[`Session`][session]. A session makes [`Window`][window]s, and a window splits
-into [`Pane`][pane]s:
+[`Server.open`][server] connects to the tmux server a
+[`ServerConfig`][serverconfig] describes, and
+[`Server.newSession(String)`][server-newsession] creates a [`Session`][session].
+A session makes [`Window`][window]s, and a window splits into [`Pane`][pane]s:
 
 ```java
 // Given: Path socket
@@ -103,16 +103,16 @@ window.name();                             // → build
 window.refresh().panes().size();           // → 2
 ```
 
-Closing a [`Server`][server] closes *your client*, not tmux. The session outlives your
-program, which is the entire point of tmux.
+Closing a [`Server`][server] closes your client. The tmux server and its
+sessions keep running after your program exits.
 
 ## Read what tmux has
 
-### [`server.sessions()`][server]: a capture is a moment, not a live view
+### [`server.sessions()`][server]: one read, then handles
 
-[`server.sessions()`][server] reads tmux once and hands back handles. Walking from a
-session to its windows to their panes and back issues **no further commands**, so
-a traversal can never observe a half-changed server.
+[`server.sessions()`][server] reads tmux once and hands back handles. Walking
+from a session to its windows to their panes and back issues **no further
+commands**, so a traversal can never observe a half-changed server.
 
 ```java
 // Given: Server server
@@ -148,8 +148,8 @@ logs.size();                         // → 1
 logs.get(0).name();                  // → logs
 ```
 
-Typed fields ([`Pane_`][pane_], made with [`Fields`][fields]) fail at **compile** time,
-not at runtime:
+Typed fields ([`Pane_`][pane_], made with [`Fields`][fields]) fail at
+**compile** time, not at runtime:
 
 <!-- snippet: does-not-compile: method startsWith -->
 ```java
@@ -159,8 +159,8 @@ Pane_.active().contains("yes");  // active is a flag
 
 ### [`Selections.exactlyOne`][selections]: say how many you expect
 
-When you need exactly one, say so, and get a distinct failure for each way it can
-go wrong:
+When you need exactly one, say so, and get a distinct failure for each way it
+can go wrong:
 
 ```java
 // Given: Server server
@@ -172,8 +172,8 @@ Session build = Selections.exactlyOne(
 build.name();                        // → build
 ```
 
-[`CardinalityException.NoMatch`][cardinality] for none, `CardinalityException.MultipleMatches` for
-several — never a silent `first()`.
+[`CardinalityException.NoMatch`][cardinality] for none,
+`CardinalityException.MultipleMatches` for several — never a silent `first()`.
 
 Full guide: **[Filtering](../docs/guide/filtering.md)**.
 
@@ -196,16 +196,17 @@ result.operations().size();                               // → 2
 result.operations().get(0).outcome();                     // → COMPLETE
 ```
 
-tmux discards a group after its first failure, so a single exit status cannot say
-which command failed or which never ran. Each operation gets its own outcome.
+tmux discards a group after its first failure, so a single exit status cannot
+say which command failed or which never ran. Each operation gets its own
+outcome.
 
 ## Read and set options and hooks
 
 ### [`Options`][options]: tmux options at each scope
 
 [`Options`][options] reads and sets tmux options, and [`Hooks`][hooks] registers
-commands for tmux events; the [options and hooks topic][options-and-hooks] covers
-the scopes:
+commands for tmux events; the [options and hooks topic][options-and-hooks]
+covers the scopes:
 
 ```java
 // Given: Server server
@@ -221,8 +222,8 @@ options.get("status-left").orElseThrow();                 // → [libtmux]
 ### [`DispatchException`][dispatchexception]: failures say how certain they are
 
 "tmux never started" and "tmux timed out halfway" call for opposite recovery, so
-the [transport][tmuxtransport] reports which happened rather than collapsing both,
-and [`DispatchException`][dispatchexception] says how far a command got:
+the [transport][tmuxtransport] reports which of the two happened, and
+[`DispatchException`][dispatchexception] says how far a command got:
 
 ```java
 // Given: Server server
@@ -272,7 +273,7 @@ fields [`Pane_`][pane_], [`Window_`][window_], [`Session_`][session_], and
 and [libtmux.org][libtmux-org-en-java-latest-reference].
 
 [`Pane.run`][pane-run] runs a command in a pane and waits for it. A nonzero
-exit status is a result, not an exception:
+exit status comes back in the result and throws nothing:
 
 ```java
 // Given: Pane pane
@@ -285,9 +286,8 @@ ran.output();                  // → [built]
 ### [`io.github.libtmux.query`](https://github.com/libtmux/libtmux-java/tree/master/libtmux/src/main/java/io/github/libtmux/query): filters that run and print
 
 [`FilterExpr`][filterexpr] is a `Predicate` and also a value that prints itself,
-and [`Selections`][selections] says how many matches a caller expects. Reference:
-[javadoc.io][javadoc-query]
-and [libtmux.org][filterexpr].
+and [`Selections`][selections] says how many matches a caller expects.
+Reference: [javadoc.io][javadoc-query] and [libtmux.org][filterexpr].
 
 ```java
 // Given: Server server
@@ -433,8 +433,7 @@ rename.getAnnotation(io.github.libtmux.catalog.Operation.class).value();   // �
 
 ## What it leaves out
 
-- **Runtime dependencies.** The library has none, and the adapters depend on it
-  rather than the other way round.
+- **Runtime dependencies.** The library has none; the adapters depend on it.
 - **Live objects.** A handle reads from one capture, and
   [`refresh()`][window] looks again.
 - **A stable API.** It is alpha, so any release may change it. Pin an exact
@@ -443,18 +442,24 @@ rename.getAnnotation(io.github.libtmux.catalog.Operation.class).value();   // �
 ## Support and status
 
 - **JDK 25 or newer**, and **tmux 3.2a through 3.7c**.
+- **Linux, including WSL.** CI runs on Ubuntu. A macOS job runs the same checks
+  and reports without gating a merge.
 - **Alpha.** The API will change without notice.
 - **Reference.** [libtmux.org][reference] for the current trunk,
   [javadoc.io][javadoc-libtmux] for a released version.
 
 ## Documentation
 
-- [Getting started](../docs/guide/getting-started.md) · [Snapshots and handles](../docs/guide/snapshots-and-handles.md)
-- [Filtering](../docs/guide/filtering.md) · [Batching and chaining](../docs/guide/batching-and-chaining.md)
-- [Streaming](../docs/guide/streaming.md) · [Concurrency](../docs/guide/concurrency.md)
+- [Getting started](../docs/guide/getting-started.md) · [Snapshots and
+  handles](../docs/guide/snapshots-and-handles.md)
+- [Filtering](../docs/guide/filtering.md) · [Batching and
+  chaining](../docs/guide/batching-and-chaining.md)
+- [Streaming](../docs/guide/streaming.md) ·
+  [Concurrency](../docs/guide/concurrency.md)
 - [Options and hooks](../docs/guide/options-and-hooks.md)
 - Runnable programs: [`examples/`](../examples/)
-- Testing your own code against real tmux: [`libtmux-junit5`](../libtmux-junit5/)
+- Testing your own code against real tmux:
+  [`libtmux-junit5`](../libtmux-junit5/)
 - The [root README](../README.md), with every module
 
 [batch]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-batch-batch-batch/

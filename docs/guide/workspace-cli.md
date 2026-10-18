@@ -47,7 +47,6 @@ workspace lookup: supported tmux releases removed 88-color mode.
   still reject a layout during application.
 - A window naming no `layout` tiles its panes; tmuxp instead stacks them,
   halving each split.
-- That is a deliberate difference from tmuxp.
 - A window naming no `focus` keeps the first window active, which tmuxp does
   not.
 - A pane naming no `focus` leaves the last pane of its window active, which is
@@ -199,8 +198,8 @@ one a script calls:
   abbreviation there.
 - The document is the same either way; the daemon is not.
 
-Declining a prompt is an answer, not a failure: nothing is written, nothing is
-an error, and the command says what it did not do. A prompt that cannot be
+Declining a prompt writes nothing and is not an error; the command says what it
+did not do. A prompt that cannot be
 asked for want of a terminal is `usage`.
 
 - Names outside that set are not a verdict on the request.

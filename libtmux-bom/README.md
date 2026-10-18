@@ -16,15 +16,16 @@
 </div>
 
 Import it as a platform and leave the version off every module it manages.
-[`libtmux`](../libtmux/README.md), [`libtmux-jackson`](../libtmux-jackson/README.md)
-and the rest are built against each other, so one version keeps them together.
+[`libtmux`](../libtmux/README.md),
+[`libtmux-jackson`](../libtmux-jackson/README.md) and the rest are built against
+each other, so one version keeps them together.
 
 `io.github.libtmux:libtmux-bom` — [on Maven Central][central]. It is a platform
 and has no API of its own; each module it manages links its reference from its
 README.
 
-**Contents** — [Quick start](#quick-start) · [What it manages](#what-it-manages) ·
-[What it leaves out](#what-it-leaves-out) · [Support](#support-and-status)
+**Contents** — [Quick start](#quick-start) · [What it manages](#what-it-manages)
+· [What it leaves out](#what-it-leaves-out) · [Support](#support-and-status)
 
 ## Quick start
 
@@ -84,13 +85,15 @@ platform doing its job.
 ## What it manages
 
 [`libtmux`](../libtmux/) · [`libtmux-jackson`](../libtmux-jackson/) ·
-[`libtmux-junit5`](../libtmux-junit5/) · [`libtmux-kotlin`](../libtmux-kotlin/) ·
-[`libtmux-mcp`](../libtmux-mcp/) · [`libtmux-workspace`](../libtmux-workspace/) ·
+[`libtmux-junit5`](../libtmux-junit5/) · [`libtmux-kotlin`](../libtmux-kotlin/)
+· [`libtmux-mcp`](../libtmux-mcp/) ·
+[`libtmux-workspace`](../libtmux-workspace/) ·
 [`libtmux-workspace-cli`](../libtmux-workspace-cli/) ·
-[`libtmux-scala`](../libtmux-scala/) · [`libtmux-scala-cats`](../libtmux-scala-cats/) ·
+[`libtmux-scala`](../libtmux-scala/) ·
+[`libtmux-scala-cats`](../libtmux-scala-cats/) ·
 [`libtmux-scala-ox`](../libtmux-scala-ox/)
 
-That list is checked rather than trusted:
+A test checks that list:
 
 - `platformCoversEveryPublishedModule` fails the build when the set of published
   artifacts stops matching this one.

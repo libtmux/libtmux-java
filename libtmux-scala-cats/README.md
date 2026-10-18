@@ -107,9 +107,9 @@ Server.resource[IO](config).use { server =>
 }
 ```
 
-The stream suspends the fiber, not a platform thread, while idle. It is
-`Async[F].async` over the subscription's own `poll()` and `onReady()`, not a
-dedicated blocking pool.
+While idle, the stream suspends the fiber and holds no platform thread. It is
+`Async[F].async` over the subscription's own `poll()` and `onReady()`, and uses
+no blocking pool.
 
 ### [`Observation`][observation]: a gap is an element
 
@@ -123,7 +123,7 @@ dedicated blocking pool.
 
 ## Subsystem handles
 
-These answer a small wrapper class parameterized by `F[_]`, not the raw Java
+These return a small wrapper class parameterized by `F[_]`, never the raw Java
 handle. Their own reads and mutations run through this server's `Execution` like
 every other Cats operation, admission-bounded and cancellable:
 
@@ -133,8 +133,8 @@ every other Cats operation, admission-bounded and cancellable:
 - [`Server.messageLog`][message-log], [`Server.prompt`][prompt],
   [`Server.keys`][keys]
 
-The direct-style facade keeps returning the raw Java handle for these, since it
-is blocking by design.
+The direct-style facade returns the raw Java handle for these, since its calls
+block.
 
 ## What it leaves out
 
