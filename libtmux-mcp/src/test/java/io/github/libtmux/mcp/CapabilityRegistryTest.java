@@ -23,6 +23,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -757,6 +759,85 @@ final class CapabilityRegistryTest {
                 () -> byName("call_read_tools_batch").validateOutput(malformedBatch));
     }
 
+    /** Where libtmux.org documents each tool; the README links every tool it lists here. */
+    private static final String TOOL_PAGES = "https://libtmux.org/en/java/latest/mcp/tools/";
+
+    /**
+     * A tool the README lists in a table or a list is a link to its page, and every such link
+     * names a tool that exists. A reader scanning a list reaches the contract from the name, and a
+     * renamed tool leaves no dead page behind.
+     */
+    @Test
+    void readmeLinksEveryToolItListsToItsPage() throws IOException {
+        Path workingDirectory = Path.of(System.getProperty("user.dir"));
+        Path readme = workingDirectory.resolve("libtmux-mcp/README.md");
+        if (!Files.isRegularFile(readme)) {
+            readme = workingDirectory.resolve("README.md");
+        }
+        Set<String> tools = Catalog.tools().stream().map(ToolSpec::name).collect(java.util.stream.Collectors.toSet());
+        List<String> problems = unlinkedOrUnknownTools(Files.readString(readme), tools);
+        assertEquals(List.of(), problems);
+    }
+
+    @Test
+    void anUnlinkedOrMisspelledToolInAListIsReported() {
+        Set<String> tools = Set.of("capture_pane", "send_keys");
+        String linked = "- [`capture_pane`](" + TOOL_PAGES + "capture_pane/)\n";
+
+        assertEquals(
+                List.of(),
+                unlinkedOrUnknownTools(linked + "| [`send_keys`](" + TOOL_PAGES + "send_keys/) | x |\n", tools));
+        assertEquals(1, unlinkedOrUnknownTools("- `capture_pane`\n", tools).size());
+        assertEquals(1, unlinkedOrUnknownTools("| `send_keys` | x |\n", tools).size());
+        assertEquals(
+                2,
+                unlinkedOrUnknownTools("`capture_pane` · `send_keys`\n", tools).size());
+        assertEquals(
+                1,
+                unlinkedOrUnknownTools("- [`capture_pain`](" + TOOL_PAGES + "capture_pain/)\n", tools)
+                        .size());
+        assertEquals(
+                1,
+                unlinkedOrUnknownTools("- [`capture_pane`](" + TOOL_PAGES + "send_keys/)\n", tools)
+                        .size());
+        // Prose and code are not lists.
+        assertEquals(
+                List.of(), unlinkedOrUnknownTools("Use `capture_pane` here.\n\n```json\n- `send_keys`\n```\n", tools));
+    }
+
+    /** Problems with how {@code markdown} names tools in tables, lists, and {@code ·} runs. */
+    private static List<String> unlinkedOrUnknownTools(String markdown, Set<String> tools) {
+        Pattern listing = Pattern.compile("^(\\||\\s*[-*] |\\s{2,}\\S)");
+        Pattern named = Pattern.compile("(?<!\\[)`([a-z_]+)`(?!\\]\\()");
+        Pattern link = Pattern.compile("\\[`([a-z_]+)`]\\(" + Pattern.quote(TOOL_PAGES) + "([a-z_]+)/\\)");
+        List<String> problems = new ArrayList<>();
+        boolean fenced = false;
+        for (String line : markdown.split("\n", -1)) {
+            if (line.strip().startsWith("```")) {
+                fenced = !fenced;
+                continue;
+            }
+            if (fenced) {
+                continue;
+            }
+            Matcher links = link.matcher(line);
+            while (links.find()) {
+                if (!tools.contains(links.group(2)) || !links.group(1).equals(links.group(2))) {
+                    problems.add("links " + links.group(1) + " to " + links.group(2) + ": " + line.strip());
+                }
+            }
+            if (listing.matcher(line).find() || line.contains(" · ")) {
+                Matcher names = named.matcher(line);
+                while (names.find()) {
+                    if (tools.contains(names.group(1))) {
+                        problems.add(names.group(1) + " is not linked: " + line.strip());
+                    }
+                }
+            }
+        }
+        return problems;
+    }
+
     @Test
     void readmeInventoryIsGeneratedFromTheAuthoritativeCatalog() throws IOException {
         Path workingDirectory = Path.of(System.getProperty("user.dir"));
@@ -1162,7 +1243,7 @@ final class CapabilityRegistryTest {
         for (ToolSpec.Toolset toolset : ToolSpec.Toolset.values()) {
             String tools = Catalog.tools().stream()
                     .filter(tool -> tool.toolset() == toolset)
-                    .map(tool -> "`" + tool.name() + "`")
+                    .map(tool -> "[`" + tool.name() + "`](" + TOOL_PAGES + tool.name() + "/)")
                     .collect(java.util.stream.Collectors.joining(" · "));
             inventory
                     .append("| `")

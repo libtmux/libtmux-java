@@ -20,6 +20,10 @@ it can find its way around, read what a pane is showing, run a command and wait
 for it, and build a whole session with typed operations.
 
 `io.github.libtmux:libtmux-mcp` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-mcp).
+API reference: [libtmux.org](https://libtmux.org/en/java/latest/mcp/reference/)
+and [one page for each tool](https://libtmux.org/en/java/latest/mcp/tools/) for
+the current trunk, [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-mcp)
+for a released version.
 
 > **Alpha.** Tool names and shapes will change without notice.
 
@@ -42,11 +46,13 @@ on `PATH`; otherwise substitute the full path.
 | `--socket-name <name>` | which tmux server, by name under tmux's own directory |
 | `--tmux <binary>` | which tmux to run |
 
-Without a socket flag, the launcher pins the named socket `libtmux-mcp`. When
-that socket does not exist, it starts tmux with the package's minimal
-configuration and enables all four toolsets. A process that finds an existing
-or explicitly selected server cannot prove how it was configured, so teardown
-is omitted from its default surface.
+How the launcher picks a server:
+
+- With no socket flag, it uses the socket named `libtmux-mcp`.
+- If that socket does not exist, it starts tmux with the package's minimal
+  configuration and enables all four toolsets.
+- It cannot prove how an existing or explicitly selected server was
+  configured, so `teardown` is left out of the default.
 
 | environment | what it chooses |
 | --- | --- |
@@ -66,8 +72,8 @@ startup. Existing launcher configurations must migrate:
   `inspect,manage,execute`; and all four toolsets, respectively. Use
   `LIBTMUX_TOOLS` and `LIBTMUX_EXCLUDE_TOOLS` for exact exceptions.
 - `--watch` and `LIBTMUX_WATCH` are retired and fail startup. MCP no longer
-  sends dynamic resource notifications. Use `wait_for_text`,
-  `wait_for_channel`, or `capture_since`; Java applications can use
+  sends dynamic resource notifications. Use [`wait_for_text`](https://libtmux.org/en/java/latest/mcp/tools/wait_for_text/),
+  [`wait_for_channel`](https://libtmux.org/en/java/latest/mcp/tools/wait_for_channel/), or [`capture_since`](https://libtmux.org/en/java/latest/mcp/tools/capture_since/); Java applications can use
   `ControlClient`.
 
 See [Watching, instead of polling](#watching-instead-of-polling) for bounded
@@ -77,6 +83,16 @@ waits and [Safety](#safety) for the capability and trust boundary.
 
 ```console
 $ claude mcp add tmux -- /absolute/path/to/libtmux-mcp --socket /tmp/my-app/s
+```
+
+To offer a client only the tools that read tmux, put the toolset in the
+environment the client starts the server with, and name a socket by its name
+instead of its path:
+
+```console
+$ claude mcp add tmux \
+    -e LIBTMUX_TOOLSETS=inspect \
+    -- /absolute/path/to/libtmux-mcp --socket-name work
 ```
 
 ### Codex CLI
@@ -95,6 +111,21 @@ Add to `claude_desktop_config.json`:
     "tmux": {
       "command": "/absolute/path/to/libtmux-mcp",
       "args": ["--socket", "/tmp/my-app/s"]
+    }
+  }
+}
+```
+
+A client that reads a JSON configuration passes the flags as `args` and the
+environment as `env`:
+
+```json
+{
+  "mcpServers": {
+    "tmux": {
+      "command": "/absolute/path/to/libtmux-mcp",
+      "args": ["--socket-name", "work"],
+      "env": { "LIBTMUX_TOOLSETS": "inspect" }
     }
   }
 }
@@ -138,10 +169,10 @@ The complete frozen inventory below is generated from the code registry.
 
 | toolset | public tools |
 | --- | --- |
-| `inspect` | `list_sessions` · `list_windows` · `list_panes` · `get_server_info` · `get_session_info` · `get_window_info` · `get_pane_info` · `capture_pane` · `capture_since` · `snapshot_pane` · `search_panes` · `find_pane_by_position` · `wait_for_text` · `get_tmux_variables` · `show_option` · `show_environment` · `show_hooks` · `call_read_tools_batch` |
-| `manage` | `rename_session` · `rename_window` · `select_window` · `select_pane` · `select_layout` · `resize_window` · `resize_pane` · `move_window` · `swap_pane` · `set_pane_title` · `wait_for_channel` · `signal_channel` · `set_mouse_enabled` · `set_history_limit` |
-| `execute` | `create_session` · `create_window` · `split_window` · `respawn_pane` · `run_shell_command` · `send_keys` · `send_keys_batch` · `paste_text` · `set_synchronize_panes` |
-| `teardown` | `clear_pane_scrollback` · `kill_pane` · `kill_window` · `kill_session` |
+| `inspect` | [`list_sessions`](https://libtmux.org/en/java/latest/mcp/tools/list_sessions/) · [`list_windows`](https://libtmux.org/en/java/latest/mcp/tools/list_windows/) · [`list_panes`](https://libtmux.org/en/java/latest/mcp/tools/list_panes/) · [`get_server_info`](https://libtmux.org/en/java/latest/mcp/tools/get_server_info/) · [`get_session_info`](https://libtmux.org/en/java/latest/mcp/tools/get_session_info/) · [`get_window_info`](https://libtmux.org/en/java/latest/mcp/tools/get_window_info/) · [`get_pane_info`](https://libtmux.org/en/java/latest/mcp/tools/get_pane_info/) · [`capture_pane`](https://libtmux.org/en/java/latest/mcp/tools/capture_pane/) · [`capture_since`](https://libtmux.org/en/java/latest/mcp/tools/capture_since/) · [`snapshot_pane`](https://libtmux.org/en/java/latest/mcp/tools/snapshot_pane/) · [`search_panes`](https://libtmux.org/en/java/latest/mcp/tools/search_panes/) · [`find_pane_by_position`](https://libtmux.org/en/java/latest/mcp/tools/find_pane_by_position/) · [`wait_for_text`](https://libtmux.org/en/java/latest/mcp/tools/wait_for_text/) · [`get_tmux_variables`](https://libtmux.org/en/java/latest/mcp/tools/get_tmux_variables/) · [`show_option`](https://libtmux.org/en/java/latest/mcp/tools/show_option/) · [`show_environment`](https://libtmux.org/en/java/latest/mcp/tools/show_environment/) · [`show_hooks`](https://libtmux.org/en/java/latest/mcp/tools/show_hooks/) · [`call_read_tools_batch`](https://libtmux.org/en/java/latest/mcp/tools/call_read_tools_batch/) |
+| `manage` | [`rename_session`](https://libtmux.org/en/java/latest/mcp/tools/rename_session/) · [`rename_window`](https://libtmux.org/en/java/latest/mcp/tools/rename_window/) · [`select_window`](https://libtmux.org/en/java/latest/mcp/tools/select_window/) · [`select_pane`](https://libtmux.org/en/java/latest/mcp/tools/select_pane/) · [`select_layout`](https://libtmux.org/en/java/latest/mcp/tools/select_layout/) · [`resize_window`](https://libtmux.org/en/java/latest/mcp/tools/resize_window/) · [`resize_pane`](https://libtmux.org/en/java/latest/mcp/tools/resize_pane/) · [`move_window`](https://libtmux.org/en/java/latest/mcp/tools/move_window/) · [`swap_pane`](https://libtmux.org/en/java/latest/mcp/tools/swap_pane/) · [`set_pane_title`](https://libtmux.org/en/java/latest/mcp/tools/set_pane_title/) · [`wait_for_channel`](https://libtmux.org/en/java/latest/mcp/tools/wait_for_channel/) · [`signal_channel`](https://libtmux.org/en/java/latest/mcp/tools/signal_channel/) · [`set_mouse_enabled`](https://libtmux.org/en/java/latest/mcp/tools/set_mouse_enabled/) · [`set_history_limit`](https://libtmux.org/en/java/latest/mcp/tools/set_history_limit/) |
+| `execute` | [`create_session`](https://libtmux.org/en/java/latest/mcp/tools/create_session/) · [`create_window`](https://libtmux.org/en/java/latest/mcp/tools/create_window/) · [`split_window`](https://libtmux.org/en/java/latest/mcp/tools/split_window/) · [`respawn_pane`](https://libtmux.org/en/java/latest/mcp/tools/respawn_pane/) · [`run_shell_command`](https://libtmux.org/en/java/latest/mcp/tools/run_shell_command/) · [`send_keys`](https://libtmux.org/en/java/latest/mcp/tools/send_keys/) · [`send_keys_batch`](https://libtmux.org/en/java/latest/mcp/tools/send_keys_batch/) · [`paste_text`](https://libtmux.org/en/java/latest/mcp/tools/paste_text/) · [`set_synchronize_panes`](https://libtmux.org/en/java/latest/mcp/tools/set_synchronize_panes/) |
+| `teardown` | [`clear_pane_scrollback`](https://libtmux.org/en/java/latest/mcp/tools/clear_pane_scrollback/) · [`kill_pane`](https://libtmux.org/en/java/latest/mcp/tools/kill_pane/) · [`kill_window`](https://libtmux.org/en/java/latest/mcp/tools/kill_window/) · [`kill_session`](https://libtmux.org/en/java/latest/mcp/tools/kill_session/) |
 <!-- END GENERATED TOOL INVENTORY -->
 
 Existing callers from earlier alpha releases must also migrate tool names:
@@ -151,102 +182,106 @@ Existing callers from earlier alpha releases must also migrate tool names:
   `tmux_resize_pane`, `tmux_search_panes`, `tmux_select_layout`,
   `tmux_send_keys`, `tmux_show_environment`, `tmux_show_hooks`,
   `tmux_signal_channel`, `tmux_wait_for_channel`, and `tmux_wait_for_text`
-  retain their suffix without `tmux_`. `list_panes` no longer accepts a
-  filter; filter its bounded metadata client-side. Use `search_panes` only for
+  retain their suffix without `tmux_`. [`list_panes`](https://libtmux.org/en/java/latest/mcp/tools/list_panes/) no longer accepts a
+  filter; filter its bounded metadata client-side. Use [`search_panes`](https://libtmux.org/en/java/latest/mcp/tools/search_panes/) only for
   displayed text.
 - `tmux_run`, `tmux_new_session`, `tmux_new_window`, `tmux_split_pane`, and
-  `tmux_show_options` become `run_shell_command`, `create_session`,
-  `create_window`, `split_window`, and `show_option`, in the same order.
-- `tmux_whoami` splits into `get_server_info` and the caller marker from
-  `list_panes`. `tmux_rename` becomes `rename_session` or `rename_window`;
-  `tmux_select` becomes `select_window` or `select_pane`; `tmux_kill` becomes
-  `kill_session`, `kill_window`, or `kill_pane`. Server termination is not
+  `tmux_show_options` become [`run_shell_command`](https://libtmux.org/en/java/latest/mcp/tools/run_shell_command/), [`create_session`](https://libtmux.org/en/java/latest/mcp/tools/create_session/),
+  [`create_window`](https://libtmux.org/en/java/latest/mcp/tools/create_window/), [`split_window`](https://libtmux.org/en/java/latest/mcp/tools/split_window/), and [`show_option`](https://libtmux.org/en/java/latest/mcp/tools/show_option/), in the same order.
+- `tmux_whoami` splits into [`get_server_info`](https://libtmux.org/en/java/latest/mcp/tools/get_server_info/) and the caller marker from
+  [`list_panes`](https://libtmux.org/en/java/latest/mcp/tools/list_panes/). `tmux_rename` becomes [`rename_session`](https://libtmux.org/en/java/latest/mcp/tools/rename_session/) or [`rename_window`](https://libtmux.org/en/java/latest/mcp/tools/rename_window/);
+  `tmux_select` becomes [`select_window`](https://libtmux.org/en/java/latest/mcp/tools/select_window/) or [`select_pane`](https://libtmux.org/en/java/latest/mcp/tools/select_pane/); `tmux_kill` becomes
+  [`kill_session`](https://libtmux.org/en/java/latest/mcp/tools/kill_session/), [`kill_window`](https://libtmux.org/en/java/latest/mcp/tools/kill_window/), or [`kill_pane`](https://libtmux.org/en/java/latest/mcp/tools/kill_pane/). Server termination is not
   exposed.
-- `list_windows` and `show_environment` take `session_id`, such as `$1`, or
+- [`list_windows`](https://libtmux.org/en/java/latest/mcp/tools/list_windows/) and [`show_environment`](https://libtmux.org/en/java/latest/mcp/tools/show_environment/) take `session_id`, such as `$1`, or
   `session_name`, in place of `session`.
 - `tmux_set_option` has no generic equivalent. Migrate supported uses to
-  `set_mouse_enabled`, `set_history_limit`, `set_synchronize_panes`, or
-  `set_pane_title`.
-- `tmux_apply_workspace` becomes explicit `create_session`, `create_window`,
-  `split_window`, and `select_layout` calls followed by `run_shell_command`,
-  `send_keys`, or `paste_text`.
+  [`set_mouse_enabled`](https://libtmux.org/en/java/latest/mcp/tools/set_mouse_enabled/), [`set_history_limit`](https://libtmux.org/en/java/latest/mcp/tools/set_history_limit/), [`set_synchronize_panes`](https://libtmux.org/en/java/latest/mcp/tools/set_synchronize_panes/), or
+  [`set_pane_title`](https://libtmux.org/en/java/latest/mcp/tools/set_pane_title/).
+- `tmux_apply_workspace` becomes explicit [`create_session`](https://libtmux.org/en/java/latest/mcp/tools/create_session/), [`create_window`](https://libtmux.org/en/java/latest/mcp/tools/create_window/),
+  [`split_window`](https://libtmux.org/en/java/latest/mcp/tools/split_window/), and [`select_layout`](https://libtmux.org/en/java/latest/mcp/tools/select_layout/) calls followed by [`run_shell_command`](https://libtmux.org/en/java/latest/mcp/tools/run_shell_command/),
+  [`send_keys`](https://libtmux.org/en/java/latest/mcp/tools/send_keys/), or [`paste_text`](https://libtmux.org/en/java/latest/mcp/tools/paste_text/).
 - `tmux_list_servers`, `tmux_list_clients`, and `tmux_drain_channel` have no
   direct equivalents. Each process pins one server, described by
-  `get_server_info`; `list_sessions` marks attached sessions but exposes no
+  [`get_server_info`](https://libtmux.org/en/java/latest/mcp/tools/get_server_info/); [`list_sessions`](https://libtmux.org/en/java/latest/mcp/tools/list_sessions/) marks attached sessions but exposes no
   client details; stale channel signals cannot be drained through MCP.
 
 ### Finding your way
 
 | tool | gives back |
 | --- | --- |
-| `get_server_info` | the pinned server's identity, version, and current state |
-| `list_sessions` | sessions, with stable `$id` values |
-| `list_windows` | windows, with the `@id` other tools take |
-| `list_panes` | panes, with the `%id` other tools take |
-| `get_session_info`, `get_window_info`, `get_pane_info` | one target's metadata |
-| `find_pane_by_position` | one pane at a named window corner |
+| [`get_server_info`](https://libtmux.org/en/java/latest/mcp/tools/get_server_info/) | the pinned server's identity, version, and current state |
+| [`list_sessions`](https://libtmux.org/en/java/latest/mcp/tools/list_sessions/) | sessions, with stable `$id` values |
+| [`list_windows`](https://libtmux.org/en/java/latest/mcp/tools/list_windows/) | windows, with the `@id` other tools take |
+| [`list_panes`](https://libtmux.org/en/java/latest/mcp/tools/list_panes/) | panes, with the `%id` other tools take |
+| [`get_session_info`](https://libtmux.org/en/java/latest/mcp/tools/get_session_info/), [`get_window_info`](https://libtmux.org/en/java/latest/mcp/tools/get_window_info/), [`get_pane_info`](https://libtmux.org/en/java/latest/mcp/tools/get_pane_info/) | one target's metadata |
+| [`find_pane_by_position`](https://libtmux.org/en/java/latest/mcp/tools/find_pane_by_position/) | one pane at a named window corner |
 
 ### Reading what panes show
 
 | tool | gives back |
 | --- | --- |
-| `capture_pane` | what a pane shows now, plus a cursor |
-| `capture_since` | **only what is new** since a cursor, plus the next cursor — finished lines only, so half a line is never handed over as though it were the whole of one |
-| `snapshot_pane` | bounded content and pane metadata together |
-| `search_panes` | which panes show bounded plain text or a bounded RE2 pattern |
-| `show_environment`, `show_hooks`, `show_option` | selected configuration state |
-| `get_tmux_variables` | a capped set of validated variable names |
-| `call_read_tools_batch` | up to sixteen typed inspect calls with full nested MCP results when they fit |
+| [`capture_pane`](https://libtmux.org/en/java/latest/mcp/tools/capture_pane/) | what a pane shows now, plus a cursor |
+| [`capture_since`](https://libtmux.org/en/java/latest/mcp/tools/capture_since/) | **only what is new** since a cursor, plus the next cursor — finished lines only, so half a line is never handed over as though it were the whole of one |
+| [`snapshot_pane`](https://libtmux.org/en/java/latest/mcp/tools/snapshot_pane/) | bounded content and pane metadata together |
+| [`search_panes`](https://libtmux.org/en/java/latest/mcp/tools/search_panes/) | which panes show bounded plain text or a bounded RE2 pattern |
+| [`show_environment`](https://libtmux.org/en/java/latest/mcp/tools/show_environment/), [`show_hooks`](https://libtmux.org/en/java/latest/mcp/tools/show_hooks/), [`show_option`](https://libtmux.org/en/java/latest/mcp/tools/show_option/) | selected configuration state |
+| [`get_tmux_variables`](https://libtmux.org/en/java/latest/mcp/tools/get_tmux_variables/) | a capped set of validated variable names |
+| [`call_read_tools_batch`](https://libtmux.org/en/java/latest/mcp/tools/call_read_tools_batch/) | up to sixteen typed inspect calls with full nested MCP results when they fit |
 
 `list_panes` reads metadata — what is *running*, and where. `search_panes`
 reads content — what is *displayed*. "Which pane mentions the error" is a search.
 
-Copy mode is an attached-client interface, not a prerequisite for reading pane
-text. Set `history: true` on `capture_pane` or `snapshot_pane` for bounded
-scrollback, use `search_panes` to locate displayed text, and continue from a
-cursor with `capture_since` instead of entering or cancelling a person's mode.
+To read a pane without entering copy mode, which belongs to a person:
 
-Key sends resolve the target's current effective synchronized cohort and refuse
-the whole send when one configured recipient is modal, dead, the caller pane,
-or displayed by a terminal client. Paste applies the same guard to its target
-only, while framed shell runs require one guarded effective recipient at both
-preflights. Each preflight reads pane and client state in one snapshot; it is
-still an observation rather than a delivery receipt. `resolved_pane_ids`
-reports configured membership rather than confirmed recipients or delivery.
+- Set `history: true` on [`capture_pane`](https://libtmux.org/en/java/latest/mcp/tools/capture_pane/) or [`snapshot_pane`](https://libtmux.org/en/java/latest/mcp/tools/snapshot_pane/) for bounded
+  scrollback.
+- Use [`search_panes`](https://libtmux.org/en/java/latest/mcp/tools/search_panes/) to find displayed text.
+- Continue from a cursor with [`capture_since`](https://libtmux.org/en/java/latest/mcp/tools/capture_since/).
 
-Batch rows retain the nested MCP envelope rather than flattening its text or
-structured content. The complete JSON-RPC response, including line framing, is
-capped at 1,000,000 bytes. A row that would cross that boundary remains in
-order with `result: null` and
-`resultTruncated: true`; the outer result sets `truncated` and reports the
-removed byte count in `truncatedBytes`.
+Typing into a pane is checked first:
 
-A serialized request ID may use at most 524,288 bytes; a larger ID returns an
-`id: null` invalid-request error before any tool runs.
+- [`send_keys`](https://libtmux.org/en/java/latest/mcp/tools/send_keys/) refuses the whole send if any pane that would receive it is in a
+  mode, is dead, is the pane this conversation runs in, or is shown by a
+  terminal client. Panes synchronized with the target count as recipients.
+- [`paste_text`](https://libtmux.org/en/java/latest/mcp/tools/paste_text/) applies the same check to its target only.
+- [`run_shell_command`](https://libtmux.org/en/java/latest/mcp/tools/run_shell_command/) needs one live shell and refuses a synchronized cohort
+  of more than one pane.
+- The check is an observation, not a delivery receipt. `resolved_pane_ids`
+  lists the configured recipients, not confirmed ones.
+
+`call_read_tools_batch` keeps each nested result whole. A row that would push
+the response past its size cap stays in order with `result: null` and
+`resultTruncated: true`, and the outer result sets `truncated` and counts the
+removed bytes in `truncatedBytes`.
+
+The full contract is on libtmux.org: the
+[Java MCP topics](https://libtmux.org/en/java/latest/mcp/topics/) and the page for each tool.
 
 ### Waiting
 
 | tool | for |
 | --- | --- |
-| `run_shell_command` | **a command you wrote** — sends it, waits, returns output *and exit status* in one call |
-| `wait_for_text` | output you did not start: a dev server, a daemon, someone else's build |
-| `wait_for_channel` | anything you can compose `; tmux wait-for -S name` into |
-| `signal_channel` | the other end of that |
+| [`run_shell_command`](https://libtmux.org/en/java/latest/mcp/tools/run_shell_command/) | **a command you wrote** — sends it, waits, returns output *and exit status* in one call |
+| [`wait_for_text`](https://libtmux.org/en/java/latest/mcp/tools/wait_for_text/) | output you did not start: a dev server, a daemon, someone else's build |
+| [`wait_for_channel`](https://libtmux.org/en/java/latest/mcp/tools/wait_for_channel/) | anything you can compose `; tmux wait-for -S name` into |
+| [`signal_channel`](https://libtmux.org/en/java/latest/mcp/tools/signal_channel/) | the other end of that |
 
 ### Input, structure, configuration
 
-`rename_session` · `rename_window` · `select_window` · `select_pane` ·
-`select_layout` · `resize_window` · `resize_pane` · `move_window` · `swap_pane` ·
-`set_pane_title` · `set_mouse_enabled` · `set_history_limit` · `create_session` ·
-`create_window` · `split_window` ·
-`respawn_pane` · `send_keys` · `send_keys_batch` · `paste_text` ·
-`set_synchronize_panes`
+[`rename_session`](https://libtmux.org/en/java/latest/mcp/tools/rename_session/) · [`rename_window`](https://libtmux.org/en/java/latest/mcp/tools/rename_window/) · [`select_window`](https://libtmux.org/en/java/latest/mcp/tools/select_window/) · [`select_pane`](https://libtmux.org/en/java/latest/mcp/tools/select_pane/) ·
+[`select_layout`](https://libtmux.org/en/java/latest/mcp/tools/select_layout/) · [`resize_window`](https://libtmux.org/en/java/latest/mcp/tools/resize_window/) · [`resize_pane`](https://libtmux.org/en/java/latest/mcp/tools/resize_pane/) · [`move_window`](https://libtmux.org/en/java/latest/mcp/tools/move_window/) ·
+[`swap_pane`](https://libtmux.org/en/java/latest/mcp/tools/swap_pane/) · [`set_pane_title`](https://libtmux.org/en/java/latest/mcp/tools/set_pane_title/) · [`set_mouse_enabled`](https://libtmux.org/en/java/latest/mcp/tools/set_mouse_enabled/) · [`set_history_limit`](https://libtmux.org/en/java/latest/mcp/tools/set_history_limit/) ·
+[`create_session`](https://libtmux.org/en/java/latest/mcp/tools/create_session/) · [`create_window`](https://libtmux.org/en/java/latest/mcp/tools/create_window/) · [`split_window`](https://libtmux.org/en/java/latest/mcp/tools/split_window/) · [`respawn_pane`](https://libtmux.org/en/java/latest/mcp/tools/respawn_pane/) ·
+[`send_keys`](https://libtmux.org/en/java/latest/mcp/tools/send_keys/) · [`send_keys_batch`](https://libtmux.org/en/java/latest/mcp/tools/send_keys_batch/) · [`paste_text`](https://libtmux.org/en/java/latest/mcp/tools/paste_text/) · [`set_synchronize_panes`](https://libtmux.org/en/java/latest/mcp/tools/set_synchronize_panes/)
 
 ### Ending things
 
-`clear_pane_scrollback` · `kill_pane` · `kill_window` · `kill_session`. The kill
-tools refuse to end the pane this conversation is running through, or one of its
-containers, unless `confirm_self` is set. No tool ends the tmux server itself.
+[`clear_pane_scrollback`](https://libtmux.org/en/java/latest/mcp/tools/clear_pane_scrollback/) · [`kill_pane`](https://libtmux.org/en/java/latest/mcp/tools/kill_pane/) · [`kill_window`](https://libtmux.org/en/java/latest/mcp/tools/kill_window/) · [`kill_session`](https://libtmux.org/en/java/latest/mcp/tools/kill_session/)
+
+- The kill tools refuse to end the pane this conversation runs in, or the
+  window or session that holds it, unless `confirm_self` is set.
+- No tool ends the tmux server itself.
 
 ## Waiting, which is the part that pays for itself
 
@@ -266,25 +301,29 @@ inference:
 {"outcome": "SIGNALLED", "exit_status": 1, "output": ["...", "1 failed, 84 passed"]}
 ```
 
-`outcome` is `SIGNALLED` when the command finished, `TIMED_OUT` when it was still
-running at the deadline, and `SERVER_GONE` when tmux itself died underneath the
-wait. Those mean different things, and only the first makes `exit_status`
-meaningful — tmux reports a server that died under a waiter as a *successful*
-wake, so "it worked" is never the answer on its own.
+`outcome` says how the wait ended:
 
-Completion runs inside the pane's trusted POSIX shell: an inherited inner
-subshell contains the authored command, while an outer trap emits its status and
-signals through one absolute tmux client and the server's resolved `-S` socket.
-That trap is armed for interrupt and terminate as well as exit. A command still
-running at the deadline keeps the pane, so nothing else can type into the line it
-occupies; `send_keys` with only stop keys — `C-c`, `C-\` — is let through that,
-because it is what ends the command rather than competing with it, and it is what
-the timeout's own note tells you to send. Ordinary output aliases and functions are tolerated; pre-existing
-functions named `trap`, `eval`, `exit`, or exactly like that resolved client are
-outside this boundary. Marker `display-message` calls honor the selected trusted
-server's command aliases and hooks.
-ASCII control characters and DEL are refused in executable and socket routes
-before those values can enter framing.
+- `SIGNALLED`: the command finished. Only then is `exit_status` meaningful.
+- `TIMED_OUT`: it was still running at the deadline.
+- `SERVER_GONE`: tmux itself died underneath the wait.
+
+tmux reports a server that died under a waiter as a *successful* wake, so "it
+worked" is never the answer on its own.
+
+What to know about the command:
+
+- It runs in a subshell of the pane's POSIX shell, so `cd` and `export` do not
+  persist in that shell.
+- Its status is still reported if it is interrupted or terminated.
+- A command still running at the deadline keeps the pane, so nothing else can
+  type into its line. [`send_keys`](https://libtmux.org/en/java/latest/mcp/tools/send_keys/) with only stop keys (`C-c`, `C-\`) is let
+  through, because it ends the command; the timeout's own note tells you to
+  send it.
+- Shell functions that already exist and are named `trap`, `eval`, `exit`, or
+  like the resolved tmux client are outside the guarantee. Ordinary output
+  aliases and functions are fine.
+- ASCII control characters, DEL included, are refused in the tmux executable
+  and socket paths.
 
 **You did not write it.** Always pass `stop`:
 
@@ -294,26 +333,29 @@ before those values can enter framing.
                "stop": ["error:", "EADDRINUSE"], "timeout": 60}}
 ```
 
-Without `stop`, a run that fails in the first second is still waited on until the
-deadline, and what comes back is a timeout instead of the error. Patterns are
-plain text unless you pass `regex` — a model asking for `[FAILED]` means those
-eight characters, not a character class.
+- Without `stop`, a run that fails in the first second is waited on until the
+  deadline, and you get a timeout instead of the error.
+- Patterns are plain text unless you pass `regex`, so `[FAILED]` means those
+  eight characters.
+- Text already on the screen when a cursorless call starts is not a fresh
+  match. The outcome is `PRESENT_AT_ENTRY`, not `MATCHED`, with the text
+  included. Pass the returned `cursor` to a later call to watch only for what
+  comes after.
 
-Text already on the screen when a cursorless call starts is never reported as a
-fresh match — it did not just happen — but it is not hidden either: the outcome
-comes back `PRESENT_AT_ENTRY` rather than `MATCHED`, with the text included, so a
-call made moments after the output landed does not read as a timeout with
-nothing in it. Pass the returned `cursor` to a later call to watch only for what
-comes after.
+Limits on every wait:
 
-Every wait is capped (30 s by default, 2 minutes hard) and reports the ceiling it
-actually enforced. The cap protects the agent's turn, not the connection: a tool
-call that blocks does not stop this server answering anything else.
+- It is capped at 30 seconds by default and two minutes at most, and the answer
+  reports the ceiling it enforced.
+- The cap protects the agent's turn, not the connection: a blocked tool call
+  does not stop the server answering anything else.
+- A client's request deadline is separate. The Java SDK 2.0.1 client defaults
+  to 20 seconds, so configure it above any longer wait you request.
+- With that SDK, cancelling or timing out abandons the answer but does not stop
+  the handler or undo tmux changes it already dispatched. Inspect state before
+  retrying.
 
-A client's request deadline is separate. The Java SDK 2.0.1 client defaults to
-20 seconds, so configure it above any longer wait you request. With that SDK,
-cancelling or timing out abandons the answer but does not stop the synchronous
-handler or undo tmux changes it already dispatched.
+The full contract is on the
+[`run_shell_command`](https://libtmux.org/en/java/latest/mcp/tools/run_shell_command/) and [`wait_for_text`](https://libtmux.org/en/java/latest/mcp/tools/wait_for_text/) pages.
 
 ## Watching, instead of polling
 
@@ -321,11 +363,11 @@ The MCP surface no longer keeps a hidden control client or advertises dynamic
 resource subscriptions. Instead it gives an agent three bounded ways to wait
 without rereading a screen in a loop.
 
-- `wait_for_text` watches one pane for wanted or stop patterns and returns the
+- [`wait_for_text`](https://libtmux.org/en/java/latest/mcp/tools/wait_for_text/) watches one pane for wanted or stop patterns and returns the
   output that arrived during the call.
-- `wait_for_channel` lets tmux itself block until a cooperating command signals
+- [`wait_for_channel`](https://libtmux.org/en/java/latest/mcp/tools/wait_for_channel/) lets tmux itself block until a cooperating command signals
   a channel.
-- `capture_since` takes an opaque cursor and returns only finished lines added
+- [`capture_since`](https://libtmux.org/en/java/latest/mcp/tools/capture_since/) takes an opaque cursor and returns only finished lines added
   since that point.
 
 ```json
@@ -352,23 +394,37 @@ $ LIBTMUX_TOOLSETS= LIBTMUX_TOOLS=capture_pane,wait_for_text libtmux-mcp \
     --socket-name my-project
 ```
 
-The same immutable selection governs both listing and calls. A hidden tool is
-not callable, exclusions win, and an aggregate-only
-`call_read_tools_batch` retains its eligible nested inspect operations unless
-they are excluded explicitly.
+To see what a selection offers without a client, start the launcher with its
+input closed. It reports the toolsets and the tools they select on standard
+error, then exits:
 
-Filtering the catalog does not confine effects. Every call runs with the tmux
-user's authority; pane input can reach a shell, and reads may return terminal
-content, process environment, or configured commands. Use a separate OS
-account, socket permissions, or a container when effects must be contained.
+```console
+$ LIBTMUX_TOOLSETS=inspect libtmux-mcp --socket-name my-project < /dev/null
+```
 
-Every tool carries MCP's own effect hints — `readOnlyHint`, `destructiveHint`,
-`idempotentHint`, and `openWorldHint` — plus its full native capability row.
-The hints are the same conservative set on every tool, reads included: tmux
-runs an `after-<command>` hook after `list-sessions`, `capture-pane`, and every
-other command a tool sends, and a configuration this server did not write can
-set one that changes or kills anything. The capability row says what each tool
-itself does.
+The same immutable selection governs listing and calls:
+
+- A tool outside it is neither listed nor callable.
+- Exclusions win.
+- [`call_read_tools_batch`](https://libtmux.org/en/java/latest/mcp/tools/call_read_tools_batch/) keeps its eligible nested inspect operations when it
+  is selected alone, unless they are excluded explicitly.
+
+Filtering the catalog does not confine effects:
+
+- Every call runs with the tmux user's authority.
+- Pane input can reach a shell, and reads may return terminal content, process
+  environment, or configured commands.
+- To contain effects, use a separate OS account, socket permissions, or a
+  container.
+
+Every tool carries MCP's four effect hints (`readOnlyHint`, `destructiveHint`,
+`idempotentHint`, `openWorldHint`) and a capability row:
+
+- The hints are the same conservative set on every tool, reads included,
+  because tmux runs an `after-<command>` hook after every command a tool sends,
+  and a configuration this server did not write can set one that changes or
+  kills anything.
+- The capability row says what each tool itself does.
 
 ## Resources, prompts, completion
 
@@ -382,28 +438,28 @@ pinned tmux connection, and the same capability row published on every tool.
 
 Earlier dynamic resource routes migrate to typed reads:
 
-- `tmux://server` becomes `get_server_info`; the static capability resource
+- `tmux://server` becomes [`get_server_info`](https://libtmux.org/en/java/latest/mcp/tools/get_server_info/); the static capability resource
   adds connection and selection provenance.
-- `tmux://sessions` and `tmux://panes` become `list_sessions` and
-  `list_panes`.
+- `tmux://sessions` and `tmux://panes` become [`list_sessions`](https://libtmux.org/en/java/latest/mcp/tools/list_sessions/) and
+  [`list_panes`](https://libtmux.org/en/java/latest/mcp/tools/list_panes/).
 - `tmux://sessions/{session_name}` and `tmux://panes/{pane_id}` become
-  `get_session_info` and `get_pane_info`.
-- `tmux://panes/{pane_id}/content` becomes `capture_pane`, `snapshot_pane`, or
-  `capture_since`. Use `wait_for_text` when the old subscription was waiting
+  [`get_session_info`](https://libtmux.org/en/java/latest/mcp/tools/get_session_info/) and [`get_pane_info`](https://libtmux.org/en/java/latest/mcp/tools/get_pane_info/).
+- `tmux://panes/{pane_id}/content` becomes [`capture_pane`](https://libtmux.org/en/java/latest/mcp/tools/capture_pane/), [`snapshot_pane`](https://libtmux.org/en/java/latest/mcp/tools/snapshot_pane/), or
+  [`capture_since`](https://libtmux.org/en/java/latest/mcp/tools/capture_since/). Use [`wait_for_text`](https://libtmux.org/en/java/latest/mcp/tools/wait_for_text/) when the old subscription was waiting
   for a terminal condition.
 
 The removed prompts remain useful as explicit tool workflows:
 
-- `run_and_wait` becomes one `run_shell_command` call.
-- `watch_until_ready` uses `wait_for_text`, or `snapshot_pane` followed by
-  `capture_since` when output must be carried across turns. After a timeout,
+- `run_and_wait` becomes one [`run_shell_command`](https://libtmux.org/en/java/latest/mcp/tools/run_shell_command/) call.
+- `watch_until_ready` uses [`wait_for_text`](https://libtmux.org/en/java/latest/mcp/tools/wait_for_text/), or [`snapshot_pane`](https://libtmux.org/en/java/latest/mcp/tools/snapshot_pane/) followed by
+  [`capture_since`](https://libtmux.org/en/java/latest/mcp/tools/capture_since/) when output must be carried across turns. After a timeout,
   continue from the returned cursor instead of restarting the observation.
-- `find_the_pane` composes `list_panes`, `search_panes`,
-  `find_pane_by_position`, and `get_pane_info` as needed.
+- `find_the_pane` composes [`list_panes`](https://libtmux.org/en/java/latest/mcp/tools/list_panes/), [`search_panes`](https://libtmux.org/en/java/latest/mcp/tools/search_panes/),
+  [`find_pane_by_position`](https://libtmux.org/en/java/latest/mcp/tools/find_pane_by_position/), and [`get_pane_info`](https://libtmux.org/en/java/latest/mcp/tools/get_pane_info/) as needed.
 - `build_workspace` composes the create, split, layout, title, selection, and
   execution tools documented below.
-- `clean_up_safely` starts with `list_panes` to identify the MCP pane and
-  `list_sessions` to identify attached sessions, then uses the specific pane,
+- `clean_up_safely` starts with [`list_panes`](https://libtmux.org/en/java/latest/mcp/tools/list_panes/) to identify the MCP pane and
+  [`list_sessions`](https://libtmux.org/en/java/latest/mcp/tools/list_sessions/) to identify attached sessions, then uses the specific pane,
   window, or session teardown tool. An attached session may have a person
   watching it, so apparently abandoned state may still be live.
 
@@ -435,12 +491,16 @@ every pane capture.
 }
 ```
 
-One call examines at most 200 panes, 20,000 lines, 1,000,000 UTF-8 bytes, and
-five seconds of matching work. The answer's `truncated` field says when a pane,
-line, byte, time, or result limit stopped it — the same field `capture_pane`,
-`capture_since`, `wait_for_text`, and `run_shell_command` report a cut through.
-Pattern count and UTF-8 size are rejected before tmux opens; regular
-expressions use the bounded RE2 dialect.
+One call is bounded in panes, lines, bytes, matching time, and results:
+
+- The answer's `truncated` field says when a limit stopped it, the same field
+  [`capture_pane`](https://libtmux.org/en/java/latest/mcp/tools/capture_pane/), [`capture_since`](https://libtmux.org/en/java/latest/mcp/tools/capture_since/), [`wait_for_text`](https://libtmux.org/en/java/latest/mcp/tools/wait_for_text/), and [`run_shell_command`](https://libtmux.org/en/java/latest/mcp/tools/run_shell_command/)
+  report a cut through.
+- Too many patterns, or patterns that are too long, are rejected before tmux
+  opens.
+- Regular expressions use the bounded RE2 dialect.
+
+Argument defaults are on the [`search_panes`](https://libtmux.org/en/java/latest/mcp/tools/search_panes/) page.
 
 For several different observations, batch exact inspect calls instead of asking
 for one broad untyped projection:
@@ -500,13 +560,17 @@ it returns, then create and split windows and choose a layout.
  "layout": "even-horizontal"}}
 ```
 
-`select_layout` also accepts unique abbreviations such as `even-h` and
-checksummed layouts previously returned by tmux. Names follow the running
-daemon's version; mirrored main layouts require tmux 3.5. Malformed syntax is
-refused before window lookup, while tmux retains geometry and pruning.
-Existing enum spellings such as `EVEN_HORIZONTAL` remain accepted. The
-`what` result keeps the enum spelling for named layouts and the validated
-request string for saved layouts; inspect the window to read the applied tree.
+`select_layout` takes:
+
+- A layout name or a unique abbreviation such as `even-h`, or an enum spelling
+  such as `EVEN_HORIZONTAL`.
+- A checksummed layout that tmux returned earlier.
+
+Layout names follow the running tmux version; mirrored main layouts need tmux
+3.5. Malformed layout syntax is refused before the window is looked up, and
+tmux still decides geometry and pruning. The `what` result keeps the enum
+spelling for named layouts and the validated string for saved layouts; inspect
+the window to read the applied tree.
 
 These tools accept no command or environment payload. Start the configured
 process first, then use `run_shell_command`, `send_keys`, or `paste_text` for
@@ -517,6 +581,8 @@ exactly what exists and what can be removed.
 
 The tools are separate from the protocol wiring, because what a tool does to tmux
 is worth testing against real tmux and attaching it to a transport is not.
+[`TmuxMcpServer`](https://libtmux.org/en/java/latest/mcp/reference/io-github-libtmux-mcp-tmuxmcpserver-tmuxmcpserver/)
+is the entry point.
 
 <!-- snippet: compile-only: overStdio reads standard input until the client closes it -->
 ```java
@@ -553,6 +619,7 @@ applications that need filter documents or declarative workspace building.
 ## Next
 
 - [MCP guide](../docs/guide/mcp.md) — the design, and why each tool is shaped as it is
+- [Tool pages](https://libtmux.org/en/java/latest/mcp/tools/) — one page for each tool
 - [Filtering guide](../docs/guide/filtering.md) — the expression model behind the wire format
 - [Streaming guide](../docs/guide/streaming.md) — the lower-level control client
   used by Java applications
