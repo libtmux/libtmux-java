@@ -76,12 +76,12 @@ doing its job.
 
 ## What it manages
 
-[`libtmux`][libtmux] · [`libtmux-jackson`][libtmux-jackson] ·
-[`libtmux-junit5`][libtmux-junit5] · [`libtmux-kotlin`][libtmux-kotlin] ·
-[`libtmux-mcp`][libtmux-mcp] · [`libtmux-workspace`][libtmux-workspace] ·
-[`libtmux-workspace-cli`][libtmux-workspace-cli] ·
-[`libtmux-scala`][libtmux-scala] · [`libtmux-scala-cats`][libtmux-scala-cats] ·
-[`libtmux-scala-ox`][libtmux-scala-ox]
+[`libtmux`](../libtmux/) · [`libtmux-jackson`](../libtmux-jackson/) ·
+[`libtmux-junit5`](../libtmux-junit5/) · [`libtmux-kotlin`](../libtmux-kotlin/) ·
+[`libtmux-mcp`](../libtmux-mcp/) · [`libtmux-workspace`](../libtmux-workspace/) ·
+[`libtmux-workspace-cli`](../libtmux-workspace-cli/) ·
+[`libtmux-scala`](../libtmux-scala/) · [`libtmux-scala-cats`](../libtmux-scala-cats/) ·
+[`libtmux-scala-ox`](../libtmux-scala-ox/)
 
 That list is checked rather than trusted. `platformCoversEveryPublishedModule`
 fails the build when the set of published artifacts stops matching this one.
@@ -91,14 +91,3 @@ artifact does.
 ## Next
 
 - [Root README](../README.md) · [RELEASING.md](../RELEASING.md)
-
-[libtmux]: https://github.com/libtmux/libtmux-java/tree/master/libtmux
-[libtmux-jackson]: https://github.com/libtmux/libtmux-java/tree/master/libtmux-jackson
-[libtmux-junit5]: https://github.com/libtmux/libtmux-java/tree/master/libtmux-junit5
-[libtmux-kotlin]: https://github.com/libtmux/libtmux-java/tree/master/libtmux-kotlin
-[libtmux-mcp]: https://github.com/libtmux/libtmux-java/tree/master/libtmux-mcp
-[libtmux-workspace]: https://github.com/libtmux/libtmux-java/tree/master/libtmux-workspace
-[libtmux-workspace-cli]: https://github.com/libtmux/libtmux-java/tree/master/libtmux-workspace-cli
-[libtmux-scala]: https://github.com/libtmux/libtmux-java/tree/master/libtmux-scala
-[libtmux-scala-cats]: https://github.com/libtmux/libtmux-java/tree/master/libtmux-scala-cats
-[libtmux-scala-ox]: https://github.com/libtmux/libtmux-java/tree/master/libtmux-scala-ox

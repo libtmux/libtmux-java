@@ -9,7 +9,10 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -590,6 +593,193 @@ final class DocumentationFactsTest {
         assertEquals(Map.of(), directoryHeadings("### `libtmux`: the library"));
         assertEquals(Map.of(), directoryHeadings("### [`libtmux`](libtmux/): the library"));
         assertEquals(Map.of(), directoryHeadings("## [`libtmux`](" + tree + "libtmux)"));
+    }
+
+    /** The READMEs whose prose names the core API, and so must link it. */
+    private static final List<String> API_READMES = List.of("README.md", "libtmux/README.md");
+
+    /** Where libtmux.org keeps the reference page for each public type. */
+    private static final String REFERENCE = "https://libtmux.org/en/java/latest/reference/";
+
+    /** The slug libtmux.org gives a type's page: the package, then the type's name twice. */
+    private static String pageSlug(String javaPackage, String type) {
+        String name = type.toLowerCase(Locale.ROOT);
+        return javaPackage.replace('.', '-') + "-" + name + "-" + name;
+    }
+
+    /**
+     * Every public type of the exported packages, with its page slug. The typed fields, {@code
+     * Pane_} and the rest, are generated into the build, so they come from the field catalog.
+     */
+    private static Map<String, String> publicTypePages() throws IOException {
+        Map<String, String> pages = new TreeMap<>();
+        for (String javaPackage : named("exports ([a-z.]+);", read("libtmux/src/main/java/module-info.java"))) {
+            Path directory = ROOT.resolve("libtmux/src/main/java").resolve(javaPackage.replace('.', '/'));
+            try (Stream<Path> files = Files.list(directory)) {
+                for (Path file :
+                        files.filter(path -> path.toString().endsWith(".java")).toList()) {
+                    String name = file.getFileName().toString().replace(".java", "");
+                    Pattern declaration = Pattern.compile(
+                            "(?m)^public (?:(?:final|abstract|sealed|non-sealed) )*(?:class|interface|record|enum|@interface) "
+                                    + name + "\\b");
+                    if (!name.equals("package-info")
+                            && declaration.matcher(Files.readString(file)).find()) {
+                        pages.put(name, pageSlug(javaPackage, name));
+                    }
+                }
+            }
+        }
+        for (String line : read("libtmux/src/main/resources/META-INF/io.github.libtmux/field-catalog.tsv")
+                .split("\n", -1)) {
+            String[] columns = line.strip().split("\t", -1);
+            if (!line.isBlank() && !line.startsWith("#") && columns.length > 1) {
+                pages.put(columns[1] + "_", pageSlug("io.github.libtmux", columns[1] + "_"));
+            }
+        }
+        return pages;
+    }
+
+    /**
+     * The public types {@code markdown} names in backticks, outside a fence, and never links to
+     * their reference page. A link to one of a type's member pages counts: it lands on the type.
+     */
+    private static List<String> unlinkedTypes(String markdown, Map<String, String> pages) {
+        String prose = markdown.replaceAll("(?ms)^\\s*```.*?^\\s*```", "");
+        Map<String, String> definitions = new HashMap<>();
+        Matcher definition = Pattern.compile("(?m)^\\[([^\\]]+)\\]:\\s*(\\S+)").matcher(prose);
+        while (definition.find()) {
+            definitions.put(definition.group(1).toLowerCase(Locale.ROOT), definition.group(2));
+        }
+        List<String> targets = new ArrayList<>();
+        Matcher inline = Pattern.compile("\\]\\(([^)\\s]+)\\)").matcher(prose);
+        while (inline.find()) {
+            targets.add(inline.group(1));
+        }
+        // A definition counts only where a link uses its label: an orphan links nothing.
+        Matcher used = Pattern.compile("\\]\\[([^\\]]+)\\]").matcher(prose);
+        while (used.find()) {
+            String target = definitions.get(used.group(1).toLowerCase(Locale.ROOT));
+            if (target != null) {
+                targets.add(target);
+            }
+        }
+        Set<String> mentioned = new LinkedHashSet<>();
+        Matcher span = Pattern.compile("`([^`\\n]+)`").matcher(prose);
+        while (span.find()) {
+            Matcher identifier =
+                    Pattern.compile("(?<![A-Za-z0-9_])[A-Z][A-Za-z0-9]*_?").matcher(span.group(1));
+            while (identifier.find()) {
+                if (pages.containsKey(identifier.group())) {
+                    mentioned.add(identifier.group());
+                }
+            }
+        }
+        List<String> unlinked = new ArrayList<>();
+        for (String type : mentioned) {
+            String page = REFERENCE + pages.get(type);
+            if (targets.stream().noneMatch(target -> target.startsWith(page + "/") || target.startsWith(page + "-"))) {
+                unlinked.add(type + " is named but never linked to " + page + "/");
+            }
+        }
+        return unlinked;
+    }
+
+    /**
+     * The first mention of an API is a link to its page, so a reader who meets {@code Server} or
+     * {@code Window_} in the opening sections can follow it. Only whether a type is linked at all
+     * is checked here, not where, and a mention inside a fence is not prose.
+     */
+    @Test
+    void everyPublicTypeTheApiReadmesNameIsLinkedToItsReferencePage() throws IOException {
+        Map<String, String> pages = publicTypePages();
+        assertTrue(pages.containsKey("Server") && pages.containsKey("Pane_"), "found only " + pages.keySet());
+        List<String> problems = new ArrayList<>();
+        for (String readme : API_READMES) {
+            unlinkedTypes(read(readme), pages).forEach(problem -> problems.add(readme + ": " + problem));
+        }
+        assertEquals(List.of(), problems);
+    }
+
+    /** The type check fails on an unlinked mention and passes on a linked one, a member page included. */
+    @Test
+    void theTypeLinkCheckReportsAMentionThatIsNeverLinked() {
+        Map<String, String> pages = Map.of(
+                "Server", "io-github-libtmux-server-server",
+                "Pane_", "io-github-libtmux-pane_-pane_");
+        String server = "[`Server`](" + REFERENCE + "io-github-libtmux-server-server/)";
+        String member = "[`Server.newSession`](" + REFERENCE + "io-github-libtmux-server-server-newsession/)";
+
+        assertEquals(1, unlinkedTypes("Use `Server` here.", pages).size());
+        assertEquals(
+                1,
+                unlinkedTypes("Use `Pane_.name()` here, and " + server + ".", pages)
+                        .size());
+        assertEquals(List.of(), unlinkedTypes("Use " + server + " here.", pages));
+        assertEquals(List.of(), unlinkedTypes("Use `Server` here, via " + member + ".", pages));
+        String definition = "\n\n[s]: " + REFERENCE + "io-github-libtmux-server-server/\n";
+        assertEquals(List.of(), unlinkedTypes("Use [`Server`][s] here." + definition, pages));
+        // A definition nothing uses links nothing.
+        assertEquals(1, unlinkedTypes("Use `Server` here." + definition, pages).size());
+        // A fence, a lowercase word, and a longer name are not mentions.
+        assertEquals(List.of(), unlinkedTypes("```java\nServer server = null;\n```\n`server` and `MyServer`\n", pages));
+    }
+
+    /** A link inside a fence is not a link, so the opening READMEs keep their links in prose. */
+    @Test
+    void noFenceInTheApiReadmesCarriesALink() {
+        Pattern fence = Pattern.compile("(?ms)^```[^\\n]*\\n(.*?)^```");
+        for (String readme : API_READMES) {
+            Matcher found = fence.matcher(read(readme));
+            while (found.find()) {
+                assertFalse(
+                        found.group(1).contains("](http"),
+                        readme + " links from inside a code block: "
+                                + found.group(1).lines().findFirst());
+            }
+        }
+        assertTrue(fence.matcher("```java\nx](http://y)\n```\n")
+                .results()
+                .anyMatch(m -> m.group(1).contains("](http")));
+    }
+
+    /**
+     * The module list and the package map are the index a reader scans, and the headings below them
+     * are additions rather than replacements: each published module keeps its bullet in the root
+     * README, and each exported package keeps its bullet in the core's.
+     */
+    @Test
+    void theRootReadmeKeepsItsListOfModules() {
+        String root = read("README.md");
+        String modules = root.substring(root.indexOf("## Modules\n"), root.indexOf("### [`libtmux`]("));
+        Set<String> expectedModules = new TreeSet<>(PUBLISHED);
+        expectedModules.add("libtmux-bom");
+        assertEquals(
+                expectedModules,
+                named("(?m)^- \\*\\*\\[`([a-z0-9-]+)`]\\(\\1/\\)\\*\\*", modules),
+                "the root README's module list");
+    }
+
+    /** The core's package map keeps one bullet for each package the module exports. */
+    @Test
+    void theCoreReadmeKeepsItsPackageMap() {
+        String core = read("libtmux/README.md");
+        String map = core.substring(core.indexOf("## Package map\n"), core.indexOf("## Packages\n"));
+        assertEquals(
+                named("exports ([a-z.]+);", read("libtmux/src/main/java/module-info.java")),
+                named("(?m)^- \\*\\*`([a-z.]+)`\\*\\*", map),
+                "the core README's package map");
+    }
+
+    /** The index check fails when a bullet is replaced by a heading. */
+    @Test
+    void theIndexCheckReportsAModuleWithoutItsBullet() {
+        String bullet = "(?m)^- \\*\\*\\[`([a-z0-9-]+)`]\\(\\1/\\)\\*\\*";
+
+        assertEquals(Set.of("libtmux"), named(bullet, "- **[`libtmux`](libtmux/)** — the library itself.\n"));
+        assertEquals(
+                Set.of(),
+                named(bullet, "### [`libtmux`](https://github.com/libtmux/libtmux-java/tree/master/libtmux)\n"));
+        assertEquals(Set.of(), named(bullet, "- **[`libtmux`](libtmux-bom/)** — a link to another directory\n"));
     }
 
     /** Searched for by file name rather than loaded, since these will not be on this module's path. */
