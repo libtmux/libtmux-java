@@ -15,9 +15,29 @@ a comment, so a hard-wrapped comment body arrives as ragged stubs.
 ## README
 
 The README is the door; the guides under `docs/guide/` and the Javadoc are the
-manual. It answers what this is, whether you can use it, how to install it, what
-normal use looks like, and what contract you are buying into — in that order,
-and then it stops.
+manual. It answers what this is, how to install it, what normal use looks like,
+and what contract you are buying into — in that order, and then it stops.
+Anything a reader does not need in order to run the package belongs on
+libtmux.org or under `docs/`, with a link from here.
+
+A reader skims it at speed, so it is built to be skimmed:
+
+- **The quick start comes first.** Install, then one example that runs.
+- **Sections are tasks, in the reader's words.** A `##` heading says what the
+  reader is doing, such as `Find sessions, windows, and panes`. A `###` beneath
+  it links the call and gives its job in plain words, as in
+  `` ### [`Server.sessions()`][server]: what tmux has now ``.
+- **Each subsection builds up the same way.** One sentence names the call and
+  links its siblings, a short example follows, then one line says where it runs
+  or what it prints. A note, if any, is a single short one.
+- **No paragraph runs past four lines.** A list of three or more is bullets with
+  a bold lead, and a long contract is a link to the page that holds it.
+- **Every API, tool, and command named in prose is a link** to its libtmux.org
+  page, written as a reference-style link whose definitions sit at the bottom of
+  the file. A link never sits inside a code fence, where it would render as
+  text.
+- **An index stays an index.** The module list, the package map, and a heading
+  for each directory keep their place; sections are added beside them.
 
 Four things near the top are compatibility claims, and they move together:
 
@@ -26,8 +46,8 @@ Four things near the top are compatibility claims, and they move together:
 - **The alpha notice states the terms in full.** Releases carry an `-alpha`
   prerelease tag, the API is not settled, any release may change or remove
   exported identifiers without a deprecation period, pin an exact version, not
-  recommended for production. `CHANGELOG.md` and the `Status` section say the
-  same thing in the same words.
+  recommended for production. `CHANGELOG.md` and the `Support and status`
+  section say the same thing in the same words.
 - **The requirements are JDK 25 or newer, and tmux 3.2a through 3.7c.** The tmux
   range is not a claim — the matrix runs every lane of it — so it may not drift
   from `workflows/tmux-matrix.yml`.
@@ -45,9 +65,11 @@ Claims have to be falsifiable. "Zero runtime dependencies" is one. A performance
 claim carries its number and the command that reproduces it, or it does not
 appear.
 
-Headings are literal: `Requirements`, `Installation`, `Documentation`, `Status`.
-A reader scanning for how to install does not look under a heading called
-something clever, and neither does an agent.
+Fixed headings are literal: `Quick start`, `What it leaves out`, `Support and
+status`, `Documentation`. A reader scanning for how to install does not look
+under a heading called something clever, and neither does an agent. What the
+package leaves out is a bulleted list with a bold lead on each item, so that
+the contract is read before it is relied on.
 
 Badges are metadata, not an introduction. Each of the five present — CI, tmux
 matrix, Maven Central, license, status — answers a question a reader would
