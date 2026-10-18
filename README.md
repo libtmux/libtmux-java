@@ -366,7 +366,8 @@ the Scala artifacts suffixed `_3`.
 - **[`libtmux-mcp`](libtmux-mcp/)** — give a model a tmux server, over the
   [Model Context Protocol](https://modelcontextprotocol.io/). Finds its way
   around, reads what a pane shows, runs a command and waits for its exit status,
-  and pushes notifications as tmux changes.
+  and has bounded waits for text, a channel or new output in place of pushed
+  notifications.
 
 - **[`libtmux-junit5`](libtmux-junit5/)** — test *your* code against real tmux.
   One server per test. A JVM killed outright leaves its server for the next
