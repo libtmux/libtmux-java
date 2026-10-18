@@ -14,6 +14,14 @@ production.
 
 ### Documented
 
+- **Every README opens with a quick start and is sectioned by task, with the
+  API linked in each heading.** Each section shows a short example the
+  documentation suite runs, and a reference-style link for every API, tool and
+  command it names. The `libtmux-workspace-cli` reference for loading,
+  document rules, imports, output and Python moved to
+  `docs/guide/workspace-cli.md`, and the `libtmux-mcp` migration lists moved to
+  `MIGRATION.md`; the READMEs link both.
+
 - **The root README heads each module, and `libtmux`'s README each package it
   exports, with a link to its directory on GitHub.** The module list and the
   package map stay above the headings. Under each heading are one line on what
@@ -49,6 +57,11 @@ production.
   names `cmd`, `run`, `batch` and `chain` for anything it does not list.
 
 ### Development
+
+- **The README type-link check now covers the BOM, Jackson, JUnit 5, MCP,
+  workspace and workspace CLI READMEs, and the `libtmux-mcp` tests hold every
+  tool a README names, in prose or a list, to a link to its page, including
+  reference-style links.**
 
 - **The README link check also follows absolute links to this repository's
   `master` branch, and holds the root and `libtmux` READMEs to a heading that
