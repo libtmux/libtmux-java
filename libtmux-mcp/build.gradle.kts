@@ -41,3 +41,15 @@ dependencies {
 }
 
 tasks.jar { manifest { attributes("Automatic-Module-Name" to "io.github.libtmux.mcp") } }
+
+// The documented-commands test reads the repository's reader-facing Markdown. Without the files as
+// inputs, editing a README leaves the test task up to date and the check silently stops happening.
+tasks.withType<Test>().configureEach {
+    val documents =
+        rootProject.fileTree(rootProject.projectDir) {
+            include("README.md", "*/README.md", "docs/guide/**/*.md")
+            exclude("**/build/**")
+        }
+    inputs.files(documents).withPropertyName("documentation").withPathSensitivity(PathSensitivity.RELATIVE)
+    systemProperty("libtmux.docs.root", rootProject.projectDir.path)
+}

@@ -20,6 +20,9 @@ so that a filter can be stored, sent over a wire, or written by something that i
 not a Java program.
 
 `io.github.libtmux:libtmux-jackson` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-jackson).
+API reference: [libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-jackson-filterjson-filterjson/)
+for the current trunk, [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-jackson)
+for a released version.
 
 > **Alpha.** The API will change without notice. The `libtmux.filter/1` wire
 > format is versioned separately and will not change under that name.

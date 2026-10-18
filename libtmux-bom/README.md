@@ -15,6 +15,10 @@
 
 </div>
 
+`io.github.libtmux:libtmux-bom` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-bom).
+It is a platform and has no API of its own; each module it manages links its
+reference from its README.
+
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {

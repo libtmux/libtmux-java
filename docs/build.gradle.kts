@@ -23,6 +23,7 @@ dependencies {
     testImplementation(project(":libtmux-workspace"))
     testImplementation(project(":libtmux-scala"))
     testImplementation(project(":libtmux-scala-cats"))
+    testImplementation(project(":libtmux-scala-ox"))
     testImplementation(testFixtures(project(":integration-tests")))
 }
 

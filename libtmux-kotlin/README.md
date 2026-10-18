@@ -17,6 +17,9 @@ bridges over the Java API.**
 </div>
 
 `io.github.libtmux:libtmux-kotlin` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin).
+API reference: [libtmux.org](https://libtmux.org/en/kotlin/latest/reference/)
+for the current trunk, [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-kotlin)
+for a released version.
 
 > **Alpha.** The API will change without notice.
 

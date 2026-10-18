@@ -70,6 +70,12 @@ dependencies {
 the rest: tmux's supported range, locale behaviour, and every module's
 coordinate.
 
+A [`Server`][server] is a client for one tmux server. [`Server.open`][server]
+takes a [`ServerConfig`][serverconfig] that describes the server to reach, and
+[`Server.newSession(String)`][server-newsession] creates a
+[`Session`][session]. A session holds [`Window`][window]s, and a window splits
+into [`Pane`][pane]s:
+
 ```java
 // Given: Path socket
 ServerConfig config = ServerConfig.builder()
@@ -104,7 +110,9 @@ compiled, and run against a real tmux** by
 [the documentation suite](docs/README.md#how-these-pages-are-tested), unless a
 directive above it says `compile-only` or `skip` and why. A snippet that stopped
 working fails the build; one that claims the compiler rejects it must actually be
-rejected.
+rejected. The Kotlin and Scala fences are run the same way, and every
+`libtmux-mcp` and `tmux-workspace` command is held to the flags and variables
+those programs read.
 
 A fence's first line, `// Given: Server server` and the like, names what the
 snippet *reads* rather than builds — real code still needs its own imports and,
@@ -149,6 +157,9 @@ editor.session().name();             // → demo
 
 ### Filter, without asking tmux again
 
+[`Window_`][window_] has the typed fields of a [`Window`][window]. An
+expression built from one is a `Predicate`, so it drops into a stream:
+
 ```java
 // Given: Server server
 server.newSession("build").newWindow("editor");
@@ -161,7 +172,8 @@ editors.size();                      // → 1
 editors.get(0).name();               // → editor
 ```
 
-An expression is a value, so it can also say what it is — which a lambda cannot:
+An expression is a [`FilterExpr`][filterexpr], which is a value, so
+[`describe()`][filterexpr] can say what it is — which a lambda cannot:
 
 ```java
 Window_.name().startsWith("edit").describe();   // → window_name starts-with edit
@@ -169,8 +181,9 @@ Window_.name().startsWith("edit").describe();   // → window_name starts-with e
 
 ### Find one thing
 
-One read answers, and absence is a value rather than an exception, so the caller
-says whether it is a bug:
+One read answers. [`Server.session(String)`][server] returns an
+[`Optional`][optional], so absence is a value rather than an exception, and the
+caller says whether it is a bug with `orElseThrow`:
 
 ```java
 // Given: Server server
@@ -191,6 +204,8 @@ work.name();                         // → work
 
 ### Say how many you expect
 
+[`Selections.exactlyOne`][selections] takes the matches and insists on one:
+
 ```java
 // Given: Server server
 server.newSession("build");
@@ -201,13 +216,15 @@ Session build = Selections.exactlyOne(
 build.name();                        // → build
 ```
 
-`exactlyOne` raises `CardinalityException.NoMatch` for none and `CardinalityException.MultipleMatches`
-for several, because those are different bugs in the calling code.
+`exactlyOne` raises [`CardinalityException.NoMatch`][cardinality] for none and
+`CardinalityException.MultipleMatches` for several, because those are different
+bugs in the calling code.
 
 ### Run a command to its end
 
-When the command is yours, run it rather than typing it and reading the screen:
-the status is the shell's and the output is only the command's.
+When the command is yours, run it rather than typing it and reading the screen.
+[`Pane.run`][pane-run] returns a [`PaneRun`][panerun] whose status is the
+shell's and whose output is only the command's:
 
 ```java
 // Given: Pane pane
@@ -218,6 +235,9 @@ ran.output();                  // → [built]
 ```
 
 ### Send keys and read what a pane shows
+
+[`Pane.sendLine`][pane] types a line into a pane, and [`Pane.capture`][pane]
+reads what it shows:
 
 ```java
 // Given: Server server
@@ -230,6 +250,9 @@ pane.capture().isEmpty();            // → false
 
 ### Traverse in both directions
 
+A handle reaches back up as well as down, through [`Pane.window`][pane] and
+[`Window.session`][window]:
+
 ```java
 // Given: Server server
 Pane pane = server.sessions().get(0).windows().get(0).panes().get(0);
@@ -239,8 +262,9 @@ pane.window().session().name();      // → libtmux
 
 ### Run any tmux command
 
-Nothing is hidden behind the typed API. Every object can reach tmux directly, and
-a nonzero exit is data rather than an exception:
+Nothing is hidden behind the typed API. Every object can reach tmux directly,
+through [`Server.cmd`][server] and its counterparts, and a nonzero exit is data
+in the [`CommandResult`][commandresult] rather than an exception:
 
 ```java
 // Given: Server server
@@ -252,7 +276,7 @@ server.cmd("kill-session", "-t", "=nope").succeeded();           // → false
 
 Code running *inside* a pane — a script in a split, a tmux hook, an agent — can
 ask where it is. tmux writes `TMUX` and `TMUX_PANE` into every pane it spawns,
-and `TmuxEnvironment` reads them back:
+and [`TmuxEnvironment`][tmuxenvironment] reads them back:
 
 ```java
 // Given: Path socket
@@ -272,7 +296,8 @@ not running inside one, so the example supplies them.
 
 tmux keeps an environment per server and per session, and gives it to every
 process it starts afterwards — so this is how a long-running session hands a
-refreshed value to panes opened from now on.
+refreshed value to panes opened from now on. [`Server.environment`][environment]
+reaches the server's:
 
 ```java
 // Given: Server server
@@ -283,8 +308,9 @@ server.environment().get("LIBTMUX_TOKEN").orElseThrow();   // → abc123
 
 ### See every command tmux ran
 
-The process transport and the control client log through the JDK's own
-`System.Logger`, so the library brings no logging dependency and reaches
+The [process transport][processtransport] and the [control
+client][controlclient] log through the JDK's own
+[`System.Logger`][system-logger], so the library brings no logging dependency and reaches
 whatever you already route logging to — `java.util.logging` by default, SLF4J or
 Log4j through their bridges. Turn on `DEBUG` for `io.github.libtmux` and each
 command is one line: which ran, how it ended, how long it took.
@@ -299,13 +325,13 @@ contents and whatever was typed, a password at a prompt among them.
 
 ## Avoid unnecessary round trips
 
-`server.batch()` sends independent commands in one invocation. `server.chain()`
-does the same for dependent commands, letting tmux carry the current target from
+[`server.batch()`][batch] sends independent commands in one invocation.
+[`server.chain()`][command-chain] does the same for dependent commands, letting tmux carry the current target from
 one step to the next. Both retain an outcome for every operation.
 
 ## What it is like to use
 
-**A capture is a moment, not a live view.** `server.sessions()` reads tmux once
+**A capture is a moment, not a live view.** [`server.sessions()`][server] reads tmux once
 and hands back handles. Walking from a session to its windows to their panes and
 back issues no further commands, so a traversal cannot observe a half-changed
 server. `refresh()` is how you look again.
@@ -321,8 +347,8 @@ List<Window> editors = server.windows().stream()
 ```
 
 **A failure says how certain it is.** "tmux never started" and "tmux timed out
-halfway" call for opposite recovery, so the transport reports which happened
-rather than collapsing both into one error.
+halfway" call for opposite recovery, so the [transport][tmuxtransport] reports
+which happened rather than collapsing both into one error.
 
 ## Modules
 
@@ -340,7 +366,8 @@ the Scala artifacts suffixed `_3`.
 - **[`libtmux-mcp`](libtmux-mcp/)** — give a model a tmux server, over the
   [Model Context Protocol](https://modelcontextprotocol.io/). Finds its way
   around, reads what a pane shows, runs a command and waits for its exit status,
-  and pushes notifications as tmux changes.
+  and has bounded waits for text, a channel or new output in place of pushed
+  notifications.
 
 - **[`libtmux-junit5`](libtmux-junit5/)** — test *your* code against real tmux.
   One server per test. A JVM killed outright leaves its server for the next
@@ -379,6 +406,267 @@ Not published, and part of how the library is built:
 A directory is a published artifact exactly when it appears in the list above,
 and `platformCoversEveryPublishedModule` fails the build when the published
 artifacts stop matching the BOM.
+
+Each heading below links to the module's directory on GitHub, where its README
+lives. Only `libtmux` is required. The other modules are optional and build on
+it, and `libtmux-bom` only names their versions.
+
+### [`libtmux`](https://github.com/libtmux/libtmux-java/tree/master/libtmux): the library
+
+[Transport][tmuxtransport], [snapshots][serversnapshot], entities,
+[options][options], [hooks][hooks], [batching][batch], [control
+mode][controlclient], and the [query model][queries], with no runtime
+dependencies, as the named module `io.github.libtmux`. Reference:
+[libtmux.org][java-reference] and
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux). Its
+[README](libtmux/README.md#packages) maps the packages.
+
+[`Server.chain`][command-chain] builds a window, splits it, and types into the
+new pane in one tmux invocation, with no round trip to learn an id:
+
+```java
+// Given: Server server
+server.chain()
+        .newWindow("built")
+        .splitLeftRight()
+        .sendLine("echo chained")
+        .run();
+
+server.windows().stream().anyMatch(w -> w.name().equals("built"));   // → true
+```
+
+### [`libtmux-bom`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-bom): one version for every module
+
+Names one version for every BOM-managed coordinate, so two releases of modules
+built against each other cannot be mixed. It has no API of its own; see
+[Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-bom).
+Import the platform, and leave the version off the module:
+
+<!-- snippet: skip: build configuration, not library code -->
+```kotlin
+dependencies {
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.17"))
+    implementation("io.github.libtmux:libtmux-jackson")   // no version
+}
+```
+
+### [`libtmux-mcp`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-mcp): a tmux server for agents
+
+Gives a model a tmux server over the
+[Model Context Protocol](https://github.com/modelcontextprotocol/modelcontextprotocol): it finds its way
+around, reads what a pane shows, and runs a command and waits for its exit
+status. Reference: [libtmux.org](https://libtmux.org/en/java/latest/mcp/reference/),
+the [tool reference](https://libtmux.org/en/java/latest/mcp/tools/), and
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-mcp).
+
+An MCP client starts the launcher itself and speaks to it over stdin and
+stdout. Build it from this repository:
+
+```console
+$ ./gradlew :libtmux-mcp:installDist
+```
+
+With `libtmux-mcp/build/install/libtmux-mcp/bin` on `PATH`, register it with
+Claude Code on the tmux socket named `work`, offering only the tools that read
+tmux. That is the socket the `tmux-workspace load` command below builds on:
+
+```console
+$ claude mcp add tmux \
+    -e LIBTMUX_TOOLSETS=inspect \
+    -- libtmux-mcp --socket-name work
+```
+
+### [`libtmux-junit5`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-junit5): tests against real tmux
+
+Test *your* code against real tmux: `@ExtendWith(TmuxExtension.class)` gives
+each test a server of its own and removes it afterwards, and `FakeTmux` stands
+in where a test has no tmux at all. Reference:
+[libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-junit5-tmuxextension-tmuxextension/)
+and [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-junit5).
+
+[`FakeTmux`][fake-tmux] answers the way tmux answers, so a snapshot of it is a
+real snapshot and every handle works:
+
+```java
+FakeTmux tmux = new FakeTmux();
+PaneId editor = tmux.addSession("work");
+tmux.show(editor, "$ make", "make: Nothing to be done.");
+
+try (Server server = tmux.server()) {
+    Pane pane = server.pane(editor).orElseThrow();
+    pane.capture().get(1);            // → make: Nothing to be done.
+}
+```
+
+### [`libtmux-kotlin`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-kotlin): Kotlin ergonomics
+
+Coroutine wrappers, a session, window, and split DSL, and `Flow` bridges over
+the Java API. Optional: the core is already null-safe from Kotlin without it.
+Reference: [libtmux.org](https://libtmux.org/en/kotlin/latest/reference/) and
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-kotlin).
+
+[`withServer`][kotlin-with-server] opens a server and closes it however the
+block ends, and [`newSession`][kotlin-session-builder] declares a session, its
+windows, and their splits:
+
+```kotlin
+// Given: config: ServerConfig
+withServer(config) { server ->
+    val session = server.newSession {
+        name = "editors"
+        window { name = "left" }
+        window {
+            name = "right"
+            split { toRight(); percent(30) }
+        }
+    }
+
+    session.windows.size                  // → 2
+}
+```
+
+### [`libtmux-scala`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-scala): Scala 3 collections over the handles
+
+Scala collections, opaque handles over the Java ones, and the typed query DSL.
+Reference: [libtmux.org](https://libtmux.org/en/scala/latest/reference/) and
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-scala_3).
+
+[`Server.panes`][scala-server] captures once, and the `Pane` fields filter the
+captured `Vector` without asking tmux again:
+
+<!-- snippet: scala-sync: root-scala-query-panes -->
+```scala
+import io.github.libtmux.scaladsl.{config => _, *}
+import io.github.libtmux.scaladsl.query.*
+import scala.util.Using
+
+Using.resource(Server.open(config)) { server =>
+  val panes = server.panes()
+  val wide = panes.matching(Pane.width.atLeast(1) && Pane.active.isTrue)
+  assert(wide == panes.filter(p => p.info.size().width() >= 1 && p.info.active()))
+  assert(wide.exactlyOne.isRight)
+}
+```
+
+### [`libtmux-scala-cats`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-scala-cats): Cats Effect and FS2
+
+Optional Cats Effect resources and FS2 observations for `libtmux-scala`.
+Reference: [libtmux.org](https://libtmux.org/en/scala/latest/reference/) and
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-scala-cats_3).
+
+[`Server.resource`][scala-cats-server] owns the client for the length of `use`,
+and the capture it returns is an ordinary vector:
+
+<!-- snippet: scala-io: root-cats-active-panes -->
+```scala
+import _root_.cats.effect.IO
+import io.github.libtmux.scaladsl.cats.{config => _, *}
+
+Server.resource[IO](config).use { server =>
+  server.panes().flatMap { panes =>
+    val active = panes.filter(_.info.active())
+    IO(assert(active.size == 1))
+  }
+}
+```
+
+### [`libtmux-scala-ox`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-scala-ox): Ox flows
+
+An optional Ox `Flow` over subscriptions and live views, for structured
+concurrency on virtual threads. Reference:
+[libtmux.org](https://libtmux.org/en/scala/latest/reference/io-github-libtmux-scaladsl-ox-flows/)
+and [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-scala-ox_3).
+
+[`Flows.liveView`][scala-ox-flows] emits the current view of a server when the
+flow starts, then every newer one:
+
+<!-- snippet: scala-sync: root-ox-live-view -->
+```scala
+import _root_.ox.{supervised, useCloseableInScope}
+import io.github.libtmux.scaladsl.{config => _, *}
+import io.github.libtmux.scaladsl.live.LiveView
+import io.github.libtmux.scaladsl.ox.Flows
+
+supervised {
+  val server = useCloseableInScope(Server.open(config))
+  val live = useCloseableInScope(LiveView.attach(server.sessions().head))
+  val first = Flows.liveView(live).take(1).runToList()
+  assert(first.head.snapshot.sessions().size() == 1)
+}
+```
+
+### [`libtmux-jackson`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-jackson): filters as JSON
+
+A filter expression as a versioned JSON document, so it can be stored, sent, or
+written by something that is not a Java program. Reference:
+[libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-jackson-filterjson-filterjson/)
+and [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-jackson).
+
+[`FilterJson`][filter-json] writes an expression and reads it back, validated
+against a model:
+
+```java
+String json = FilterJson.writeString(
+        Pane_.command().startsWith("nvim"), LibTmuxModels.pane());
+
+FilterExpr<Pane> restored = FilterJson.readString(json, LibTmuxModels.pane());
+
+restored.describe();                      // → pane_current_command starts-with nvim
+```
+
+### [`libtmux-workspace`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-workspace): sessions from YAML
+
+Builds a session from a tmuxp-shaped YAML file. Reference:
+[libtmux.org](https://libtmux.org/en/java/latest/workspace/reference/) and
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-workspace).
+
+[`WorkspaceBuilder.parse`][workspace-builder] reads a description into a value
+while it is still text, and `build` is what touches tmux:
+
+```java
+// Given: Server server
+Workspace workspace = WorkspaceBuilder.parse("""
+        session_name: built
+        windows:
+          - window_name: editor
+            layout: even-horizontal
+            panes:
+              - shell_command: echo one
+              - shell_command: echo two
+        """);
+
+Session session = WorkspaceBuilder.build(server, workspace);
+
+session.windows().get(0).panes().size();          // → 2
+```
+
+### [`libtmux-workspace-cli`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-workspace-cli): the `tmux-workspace` command
+
+Loads, captures, converts, and imports workspaces with tmuxp's command names and
+JSON or NDJSON output. A separate implementation from `libtmux-workspace`, whose
+package documentation states how their document shapes and building behaviour
+diverge. Reference: the
+[command manual](https://libtmux.org/en/java/latest/workspace/cli/) and the
+[`load`](https://libtmux.org/en/java/latest/workspace/cli/load/) and
+[`freeze`](https://libtmux.org/en/java/latest/workspace/cli/freeze/) pages.
+
+Build the launcher from this repository:
+
+```console
+$ ./gradlew :libtmux-workspace-cli:installDist
+```
+
+With `libtmux-workspace-cli/build/install/tmux-workspace/bin` on `PATH`, and
+[a workspace file](libtmux-workspace-cli/README.md#use-it) saved as
+`workspace.yaml`, build it on the tmux socket named `work` without attaching
+to it:
+
+```console
+$ tmux-workspace load \
+    -L work \
+    -d \
+    ./workspace.yaml
+```
 
 ## Installation
 
@@ -429,7 +717,7 @@ Both can use the Java API directly, because the core is annotated with
 [JSpecify](https://jspecify.dev/) and carries no Scala version suffix.
 
 **Kotlin** sees the API as null-safe rather than as platform types — Kotlin has
-read JSpecify since 1.5.20. `Server` is `AutoCloseable`, so `use {}` works, and
+read JSpecify since 1.5.20. [`Server`][server] is `AutoCloseable`, so `use {}` works, and
 the `Consumer<Builder>` overloads take trailing lambdas. `libtmux-kotlin` adds
 what Java cannot express: absence as `null` rather than `Optional`, and `!expr`
 on a filter.
@@ -451,7 +739,7 @@ carries text the JVM cannot encode, the library sends it over tmux's standard
 input instead, which it writes as UTF-8 itself; names, titles, buffers, options,
 environment values and typed text all arrive intact. Reading is unaffected
 either way: every command says it reads UTF-8, so what tmux sends back arrives
-whole whatever the locale. Only `Pane.currentPath()` still needs a UTF-8 locale,
+whole whatever the locale. Only [`Pane.currentPath()`][pane] still needs a UTF-8 locale,
 because a `Path` in this JVM cannot name the directory; `currentPathText()` reads
 it anywhere.
 
@@ -535,3 +823,39 @@ in [`RELEASING.md`](RELEASING.md).
 ## License
 
 MIT. See [`LICENSE`](LICENSE).
+
+[batch]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-batch-batch-batch/
+[cardinality]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-exception-cardinalityexception-cardinalityexception/
+[command-chain]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-commandchain-commandchain/
+[commandresult]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-transport-commandresult-commandresult/
+[controlclient]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-control-controlclient-controlclient/
+[environment]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-environment-environment/
+[fake-tmux]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-junit5-faketmux-faketmux/
+[filter-json]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-jackson-filterjson-filterjson/
+[filterexpr]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-query-filterexpr-filterexpr/
+[hooks]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-hooks-hooks/
+[java-reference]: https://libtmux.org/en/java/latest/reference/
+[kotlin-session-builder]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-server-newsession/
+[kotlin-with-server]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-withserver/
+[optional]: https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/Optional.html
+[options]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-options-options/
+[pane]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-pane-pane/
+[pane-run]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-pane-pane-run/
+[panerun]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-panerun-panerun/
+[processtransport]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-transport-processtransport-processtransport/
+[queries]: https://libtmux.org/en/java/latest/concepts/queries/
+[scala-cats-server]: https://libtmux.org/en/scala/latest/reference/io-github-libtmux-scaladsl-cats-server/
+[scala-ox-flows]: https://libtmux.org/en/scala/latest/reference/io-github-libtmux-scaladsl-ox-flows/
+[scala-server]: https://libtmux.org/en/scala/latest/reference/io-github-libtmux-scaladsl-server/
+[selections]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-query-selections-selections/
+[server]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server/
+[server-newsession]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server-newsession/
+[serverconfig]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-serverconfig-serverconfig/
+[serversnapshot]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-snapshot-serversnapshot-serversnapshot/
+[session]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-session-session/
+[system-logger]: https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/System.Logger.html
+[tmuxenvironment]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-tmuxenvironment-tmuxenvironment/
+[tmuxtransport]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-transport-tmuxtransport-tmuxtransport/
+[window]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-window-window/
+[window_]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-window_-window_/
+[workspace-builder]: https://libtmux.org/en/java/latest/workspace/reference/io-github-libtmux-workspace-workspacebuilder-workspacebuilder-parse/
