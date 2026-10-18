@@ -16,10 +16,25 @@ concurrency on virtual threads.**
 
 </div>
 
-This optional module adds no handle type: the direct-style facade's opaque
-handles work unchanged inside an Ox `supervised` scope and its `fork`s. What it
-adds is a cold `Flow` for the two things that push rather than answer: a control
-client's subscription, and a live view of a server.
+[`Flows.liveView`][flows] and [`Flows.subscription`][flows] turn pushed events
+into a cold `Flow`: a live view of a server, and a control client's
+subscription. The facade's handles work unchanged in an Ox `supervised`
+scope.
+
+`io.github.libtmux:libtmux-scala-ox_3` — on Maven Central, released with the
+Java artifacts.
+API reference: [`Flows`][flows] on libtmux.org for the current trunk,
+[javadoc.io][javadoc] for a released version.
+
+> **Alpha.** Releases carry an `-alpha` prerelease tag. The API is not settled,
+> and any release may change or remove exported identifiers without a
+> deprecation period. Pin an exact version. Not recommended for production.
+
+**Contents** — [Quick start](#quick-start) · [What it leaves
+out](#what-it-leaves-out) · [Support](#support-and-status) ·
+[Documentation](#documentation)
+
+## Quick start
 
 <!-- snippet: scala-build: ox-readme-install -->
 ```sbt
@@ -27,40 +42,69 @@ libraryDependencies += "io.github.libtmux" %% "libtmux-scala-ox" % "<version>"
 ```
 
 From Gradle or Maven the coordinate is `io.github.libtmux:libtmux-scala-ox_3`.
-It is on Maven Central and releases with the Java artifacts.
 
-API reference: [`Flows`](https://libtmux.org/en/scala/latest/reference/io-github-libtmux-scaladsl-ox-flows/)
-on libtmux.org for the current trunk, [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-scala-ox_3)
-for a released version.
+### [`Flows.liveView`][flows]: the current view, then every newer one
 
-**This project is alpha.** Releases carry an `-alpha` prerelease tag. The API is
-not settled, and any release may change or remove exported identifiers without a
-deprecation period. Pin an exact version rather than a range. Not recommended
-for production.
+It emits the current view of a server when the flow starts, then every newer
+one, so a change published between reading a view and collecting the flow is not
+missed. Here `config` selects an existing tmux server:
 
-## Flows
+<!-- snippet: scala-sync: ox-readme-live-view -->
+```scala
+import _root_.ox.{supervised, useCloseableInScope}
+import io.github.libtmux.scaladsl.{config => _, *}
+import io.github.libtmux.scaladsl.live.LiveView
+import io.github.libtmux.scaladsl.ox.Flows
 
-`Flows.subscription(sub)` emits one element per step of an `EventSubscription`:
-an event it kept, or a gap naming how many were lost. Collecting it takes the
-subscription for good and closes it when the collection ends, so a second
-collection is refused as it starts rather than splitting one gap-bearing
-sequence between two readers, or closing the subscription under the first.
+supervised {
+  val server = useCloseableInScope(Server.open(config))
+  val live = useCloseableInScope(LiveView.attach(server.sessions().head))
+  val first = Flows.liveView(live).take(1).runToList()
+  assert(first.head.snapshot.sessions().size() == 1)
+}
+```
 
-`Flows.liveView(view)` emits the current view of a server when the flow starts,
-then every newer one, so a change published between reading a view and
-collecting the flow is not missed.
+It runs against a real tmux in the documentation suite. Both flows are cold:
+nothing is read until the flow runs.
 
-Both are cold: nothing is read until the flow runs, and the flow's scope owns
-the reading. [`WatchWithOx`][example] is a runnable program: a supervised fork
-collects a live view's flow while the main body adds a window.
+[`WatchWithOx`][example] is a runnable program: a supervised fork collects a
+live view's flow while the main body adds a window.
+
+### [`Flows.subscription`][flows]: a subscription step by step
+
+It emits one element per step of an [`EventSubscription`][subscription]: an
+event it kept, or a gap naming how many were lost.
+
+- Collecting it takes the subscription for good and closes it when the
+  collection ends.
+- A second collection is refused as it starts. Otherwise two readers would
+  split one sequence, gaps included, or the second would close the subscription
+  under the first.
+
+## What it leaves out
+
+- **A handle type.** The facade's opaque handles work unchanged here.
+- **Hot flows.** Nothing is read until the flow runs.
+- **Sharing a subscription.** A second collection of one is refused.
+
+## Support and status
+
+- **Scala 3 on virtual threads**, with the same JDK and tmux range as
+  [`libtmux-scala`](../libtmux-scala/README.md).
+- **Alpha.** Pin an exact version rather than a range.
 
 ## Documentation
 
-The [Scala guides](../docs/guide/scala/getting-started.md) cover installation
-and the facades' contracts; [streaming](../docs/guide/scala/streaming.md)
-covers subscriptions, loss and cancellation. Source: [`Flows`][flows].
+- The [Scala guides](../docs/guide/scala/getting-started.md) cover installation
+  and the facades' contracts.
+- [Streaming](../docs/guide/scala/streaming.md) covers subscriptions, loss and
+  cancellation.
+- Source: [`Flows`][flows-source].
 
-[flows]:
-  src/main/scala/io/github/libtmux/scaladsl/ox/Flows.scala
 [example]:
   ../examples/src/main/scala/io/github/libtmux/scaladsl/examples/WatchWithOx.scala
+[flows]: https://libtmux.org/en/scala/latest/reference/io-github-libtmux-scaladsl-ox-flows/
+[flows-source]:
+  src/main/scala/io/github/libtmux/scaladsl/ox/Flows.scala
+[javadoc]: https://javadoc.io/doc/io.github.libtmux/libtmux-scala-ox_3
+[subscription]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-control-eventsubscription-eventsubscription/

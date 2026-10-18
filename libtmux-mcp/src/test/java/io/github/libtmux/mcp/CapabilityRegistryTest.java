@@ -16,9 +16,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -759,16 +761,16 @@ final class CapabilityRegistryTest {
                 () -> byName("call_read_tools_batch").validateOutput(malformedBatch));
     }
 
-    /** Where libtmux.org documents each tool; the README links every tool it lists here. */
+    /** Where libtmux.org documents each tool; the README links every tool it names here. */
     private static final String TOOL_PAGES = "https://libtmux.org/en/java/latest/mcp/tools/";
 
     /**
-     * A tool the README lists in a table or a list is a link to its page, and every such link
-     * names a tool that exists. A reader scanning a list reaches the contract from the name, and a
-     * renamed tool leaves no dead page behind.
+     * A tool the README names outside a code block is a link to its page, whether it sits in a
+     * table, a list or a sentence, and every such link names a tool that exists. A reader reaches
+     * the contract from the name, and a renamed tool leaves no dead page behind.
      */
     @Test
-    void readmeLinksEveryToolItListsToItsPage() throws IOException {
+    void readmeLinksEveryToolItNamesToItsPage() throws IOException {
         Path workingDirectory = Path.of(System.getProperty("user.dir"));
         Path readme = workingDirectory.resolve("libtmux-mcp/README.md");
         if (!Files.isRegularFile(readme)) {
@@ -780,18 +782,30 @@ final class CapabilityRegistryTest {
     }
 
     @Test
-    void anUnlinkedOrMisspelledToolInAListIsReported() {
+    void anUnlinkedOrMisspelledToolIsReported() {
         Set<String> tools = Set.of("capture_pane", "send_keys");
-        String linked = "- [`capture_pane`](" + TOOL_PAGES + "capture_pane/)\n";
+        String definition = "\n\n[tool]: " + TOOL_PAGES + "capture_pane/\n";
 
+        // Linked inline, in a table row, and by reference, with the name or with other words.
         assertEquals(
                 List.of(),
-                unlinkedOrUnknownTools(linked + "| [`send_keys`](" + TOOL_PAGES + "send_keys/) | x |\n", tools));
+                unlinkedOrUnknownTools(
+                        "- [`capture_pane`](" + TOOL_PAGES + "capture_pane/)\n| [`send_keys`](" + TOOL_PAGES
+                                + "send_keys/) | x |\n",
+                        tools));
+        assertEquals(List.of(), unlinkedOrUnknownTools("Use [`capture_pane`][tool] here." + definition, tools));
+        assertEquals(List.of(), unlinkedOrUnknownTools("Use [the screen][tool] here." + definition, tools));
+        // The index of tool pages is not a tool's page.
+        assertEquals(List.of(), unlinkedOrUnknownTools("See [every tool][all].\n\n[all]: " + TOOL_PAGES + "\n", tools));
+        // Named but not linked: in a list, a row, a run, and a sentence.
         assertEquals(1, unlinkedOrUnknownTools("- `capture_pane`\n", tools).size());
         assertEquals(1, unlinkedOrUnknownTools("| `send_keys` | x |\n", tools).size());
         assertEquals(
                 2,
                 unlinkedOrUnknownTools("`capture_pane` · `send_keys`\n", tools).size());
+        assertEquals(
+                1, unlinkedOrUnknownTools("Use `capture_pane` here.\n", tools).size());
+        // Linked to a page that does not exist, or to another tool's, or to nothing.
         assertEquals(
                 1,
                 unlinkedOrUnknownTools("- [`capture_pain`](" + TOOL_PAGES + "capture_pain/)\n", tools)
@@ -800,16 +814,28 @@ final class CapabilityRegistryTest {
                 1,
                 unlinkedOrUnknownTools("- [`capture_pane`](" + TOOL_PAGES + "send_keys/)\n", tools)
                         .size());
-        // Prose and code are not lists.
         assertEquals(
-                List.of(), unlinkedOrUnknownTools("Use `capture_pane` here.\n\n```json\n- `send_keys`\n```\n", tools));
+                1,
+                unlinkedOrUnknownTools("Use [`send_keys`][tool] here." + definition, tools)
+                        .size());
+        assertEquals(
+                1,
+                unlinkedOrUnknownTools("Use [`capture_pane`][nowhere] here.", tools)
+                        .size());
+        // A code block is not prose.
+        assertEquals(List.of(), unlinkedOrUnknownTools("```json\n- `send_keys`\n```\n", tools));
     }
 
-    /** Problems with how {@code markdown} names tools in tables, lists, and {@code ·} runs. */
+    /** Problems with how {@code markdown} names tools outside its code blocks. */
     private static List<String> unlinkedOrUnknownTools(String markdown, Set<String> tools) {
-        Pattern listing = Pattern.compile("^(\\||\\s*[-*] |\\s{2,}\\S)");
-        Pattern named = Pattern.compile("(?<!\\[)`([a-z_]+)`(?!\\]\\()");
-        Pattern link = Pattern.compile("\\[`([a-z_]+)`]\\(" + Pattern.quote(TOOL_PAGES) + "([a-z_]+)/\\)");
+        Map<String, String> definitions = new HashMap<>();
+        Matcher definition = Pattern.compile("(?m)^\\[([^\\]]+)\\]:\\s*(\\S+)").matcher(markdown);
+        while (definition.find()) {
+            definitions.put(definition.group(1).toLowerCase(Locale.ROOT), definition.group(2));
+        }
+        Pattern inline = Pattern.compile("\\[([^\\]]+)]\\(" + Pattern.quote(TOOL_PAGES) + "([a-z_]+)/\\)");
+        Pattern reference = Pattern.compile("\\[([^\\]]+)]\\[([^\\]]+)]");
+        Pattern named = Pattern.compile("`([a-z_]+)`");
         List<String> problems = new ArrayList<>();
         boolean fenced = false;
         for (String line : markdown.split("\n", -1)) {
@@ -820,22 +846,37 @@ final class CapabilityRegistryTest {
             if (fenced) {
                 continue;
             }
-            Matcher links = link.matcher(line);
-            while (links.find()) {
-                if (!tools.contains(links.group(2)) || !links.group(1).equals(links.group(2))) {
-                    problems.add("links " + links.group(1) + " to " + links.group(2) + ": " + line.strip());
+            Matcher inlineLinks = inline.matcher(line);
+            while (inlineLinks.find()) {
+                checkToolLink(inlineLinks.group(1), inlineLinks.group(2), tools, line, problems);
+            }
+            Matcher referenceLinks = reference.matcher(line);
+            while (referenceLinks.find()) {
+                String target = definitions.get(referenceLinks.group(2).toLowerCase(Locale.ROOT));
+                if (target == null) {
+                    problems.add("uses the undefined label " + referenceLinks.group(2) + ": " + line.strip());
+                } else if (target.length() > TOOL_PAGES.length() && target.startsWith(TOOL_PAGES)) {
+                    String page = target.substring(TOOL_PAGES.length()).replaceAll("/$", "");
+                    checkToolLink(referenceLinks.group(1), page, tools, line, problems);
                 }
             }
-            if (listing.matcher(line).find() || line.contains(" · ")) {
-                Matcher names = named.matcher(line);
-                while (names.find()) {
-                    if (tools.contains(names.group(1))) {
-                        problems.add(names.group(1) + " is not linked: " + line.strip());
-                    }
+            String bare =
+                    reference.matcher(inline.matcher(line).replaceAll(" ")).replaceAll(" ");
+            Matcher names = named.matcher(bare);
+            while (names.find()) {
+                if (tools.contains(names.group(1))) {
+                    problems.add(names.group(1) + " is not linked: " + line.strip());
                 }
             }
         }
         return problems;
+    }
+
+    private static void checkToolLink(String text, String page, Set<String> tools, String line, List<String> problems) {
+        String spelled = text.startsWith("`") && text.endsWith("`") ? text.substring(1, text.length() - 1) : null;
+        if (!tools.contains(page) || (spelled != null && !spelled.equals(page))) {
+            problems.add("links " + text + " to " + page + ": " + line.strip());
+        }
     }
 
     @Test

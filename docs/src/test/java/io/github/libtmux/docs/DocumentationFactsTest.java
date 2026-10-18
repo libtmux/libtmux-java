@@ -595,8 +595,19 @@ final class DocumentationFactsTest {
         assertEquals(Map.of(), directoryHeadings("## [`libtmux`](" + tree + "libtmux)"));
     }
 
-    /** The READMEs whose prose names the core API, and so must link it. */
-    private static final List<String> API_READMES = List.of("README.md", "libtmux/README.md");
+    /**
+     * The READMEs whose prose names the core API, and so must link it. The Kotlin and Scala facades
+     * are left out: they define types of their own that share a core type's name.
+     */
+    private static final List<String> API_READMES = List.of(
+            "README.md",
+            "libtmux/README.md",
+            "libtmux-bom/README.md",
+            "libtmux-jackson/README.md",
+            "libtmux-junit5/README.md",
+            "libtmux-mcp/README.md",
+            "libtmux-workspace/README.md",
+            "libtmux-workspace-cli/README.md");
 
     /** Where libtmux.org keeps the reference page for each public type. */
     private static final String REFERENCE = "https://libtmux.org/en/java/latest/reference/";

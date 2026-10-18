@@ -15,19 +15,26 @@
 
 </div>
 
-The core has no dependencies and never will. This module is where Jackson lives,
-so that a filter can be stored, sent over a wire, or written by something that is
-not a Java program.
+[`FilterJson`][filter-json] writes a [`FilterExpr`][filterexpr] as a
+`libtmux.filter/1` document and reads it back, so a filter can be stored, sent
+over a wire, or written by something that is not a Java program.
 
-`io.github.libtmux:libtmux-jackson` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-jackson).
-API reference: [libtmux.org](https://libtmux.org/en/java/latest/reference/io-github-libtmux-jackson-filterjson-filterjson/)
-for the current trunk, [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-jackson)
-for a released version.
+`io.github.libtmux:libtmux-jackson` — [on Maven
+Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-jackson).
+API reference: [`FilterJson`][filter-json] on libtmux.org for the current trunk,
+[javadoc.io][javadoc] for a released version.
 
 > **Alpha.** The API will change without notice. The `libtmux.filter/1` wire
 > format is versioned separately and will not change under that name.
 
-## Install
+**Contents** — [Quick start](#quick-start) · [The document](#the-document) ·
+[Why the names look like that](#why-the-names-look-like-that) ·
+[What it refuses](#what-it-refuses) · [Support](#support-and-status)
+
+## Quick start
+
+The core has no dependencies and never will. This module is where Jackson
+lives:
 
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
@@ -37,7 +44,10 @@ dependencies {
 }
 ```
 
-## Write one
+### [`FilterJson.writeString`][filter-json]: an expression as a document
+
+It takes the expression and the model that gives its fields their identity.
+[`LibTmuxModels.pane()`][models] is the model for a [`Pane`][pane] filter:
 
 ```java
 String json = FilterJson.writeString(
@@ -47,7 +57,7 @@ json.contains("libtmux.filter/1");        // → true
 json.contains("pane_current_command");    // → true
 ```
 
-## Read one back
+### [`FilterJson.readString`][filter-json]: a document as an expression
 
 ```java
 String json = FilterJson.writeString(
@@ -58,10 +68,10 @@ FilterExpr<Pane> restored = FilterJson.readString(json, LibTmuxModels.pane());
 restored.describe();                      // → pane_current_command starts-with nvim
 ```
 
-## Use it like any other filter
+### [`FilterExpr`][filterexpr]: use it like any other filter
 
-It is a `Predicate`, so it drops straight into a stream over a capture you already
-hold — reading it from JSON changes nothing about how it is applied:
+It is a `Predicate`, so it drops straight into a stream over a capture you
+already hold. Reading it from JSON changes nothing about how it is applied:
 
 ```java
 // Given: Server server
@@ -71,7 +81,9 @@ FilterExpr<Pane> active = FilterJson.readString(json, LibTmuxModels.pane());
 server.panes().stream().filter(active).toList().size();   // → 1
 ```
 
-The document those calls produce:
+## The document
+
+The first example produces this:
 
 ```json
 {
@@ -85,41 +97,6 @@ The document those calls produce:
   }
 }
 ```
-
-## Why the names look like that
-
-**Field and operator ids are tmux's own format names.** `pane_current_command`,
-not `command`; `session_name`, not `name`. Java class names and record component
-names are deliberately *not* wire identifiers. The exception is `matches`: its
-pattern syntax and numeric flags are those of `java.util.regex.Pattern`, so a
-non-Java consumer must reproduce those semantics or reject that operator.
-[`libtmux-mcp`](../libtmux-mcp/) accepts these documents directly.
-
-## What it refuses, and why
-
-**An undeclared field cannot be written.** Only the exact handles declared by the
-supplied model have wire identity:
-
-<!-- snippet: throws: SchemaException -->
-```java
-FilterExpr<Session> mine = Fields.text("session_name", (Session s) -> s.name().toLowerCase())
-        .is("demo");
-
-FilterJson.writeString(mine, LibTmuxModels.session());
-```
-
-That field has the name of a declared field and a different accessor. Writing it
-would produce a document that *looks* like a filter on `#{session_name}` and
-answers a different question. Refusing it is what makes this a format rather than
-a hope.
-
-**Writing and reading are validated against a model.** A document claiming `pane`
-cannot be read as a `FilterExpr<Window>`, and an expression cannot borrow the name
-of a field or relation its model did not declare. Unknown schema versions, models,
-fields, relations, operators, properties and node shapes all fail closed, with a
-`SchemaException` naming what was wrong.
-
-## The schema
 
 [`filter-expr-v1.schema.json`](src/main/resources/io/github/libtmux/jackson/filter-expr-v1.schema.json)
 ships inside the jar, so a consumer can validate without fetching anything.
@@ -135,8 +112,71 @@ ships inside the jar, so a consumer can validate without fetching anything.
 Operators: `equals`, `not_equals`, `contains`, `starts_with`, `ends_with`,
 `matches`, `less_than`, `at_most`, `greater_than`, `at_least`, `in`.
 
-## Next
+## Why the names look like that
+
+- **Field and operator ids are tmux's own format names.** The id is
+  `pane_current_command` where the Java accessor is `command`, and
+  `session_name` where it is `name`. Java class names and record component
+  names are never wire identifiers.
+- **`matches` is Java's.** Its pattern syntax and numeric flags are those of
+  `java.util.regex.Pattern`, so a non-Java consumer must reproduce those
+  semantics or reject that operator.
+- **A non-Java caller already exists.** [`libtmux-mcp`][mcp] accepts these
+  documents directly.
+
+## What it refuses
+
+### [`SchemaException`][schema-exception]: an undeclared field cannot be written
+
+Only the exact handles the supplied model declares have wire identity:
+
+<!-- snippet: throws: SchemaException -->
+```java
+FilterExpr<Session> mine = Fields.text("session_name", (Session s) -> s.name().toLowerCase())
+        .is("demo");
+
+FilterJson.writeString(mine, LibTmuxModels.session());
+```
+
+It has a declared field's name and a different accessor. Writing it
+would produce a document that looks like a filter on `#{session_name}` and
+answers a different question, so writing it throws `SchemaException`.
+
+### Writing and reading are validated against a model
+
+- A document claiming `pane` cannot be read as a `FilterExpr` of a
+  [`Window`][window].
+- An expression cannot borrow the name of a field or relation its model did not
+  declare.
+- Unknown schema versions, models, fields, relations, operators, properties and
+  node shapes all fail closed, with a `SchemaException` naming what was wrong.
+
+## What it leaves out
+
+- **Dependencies in the core.** Jackson lives here, so [`libtmux`][libtmux]
+  never carries it.
+- **Java names on the wire.** Class and record component names are not
+  identifiers in a document.
+
+## Support and status
+
+- **Alpha.** The API will change without notice. The `libtmux.filter/1` format
+  is versioned separately.
+- **Versioned fail-closed reading.** An unknown schema version is refused, not
+  guessed at.
+
+## Documentation
 
 - [Filtering guide](../docs/guide/filtering.md)
-- [`libtmux-mcp`](../libtmux-mcp/) — the worked example of a non-Java caller
+- [`libtmux-mcp`][mcp] — the worked example of a non-Java caller
 - [Root README](../README.md)
+
+[filter-json]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-jackson-filterjson-filterjson/
+[filterexpr]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-query-filterexpr-filterexpr/
+[javadoc]: https://javadoc.io/doc/io.github.libtmux/libtmux-jackson
+[libtmux]: ../libtmux/README.md
+[mcp]: ../libtmux-mcp/README.md
+[models]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-jackson-libtmuxmodels-libtmuxmodels/
+[pane]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-pane-pane/
+[schema-exception]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-jackson-schemaexception-schemaexception/
+[window]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-window-window/

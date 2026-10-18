@@ -16,23 +16,29 @@ bridges over the Java API.**
 
 </div>
 
-`io.github.libtmux:libtmux-kotlin` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin).
-API reference: [libtmux.org](https://libtmux.org/en/kotlin/latest/reference/)
-for the current trunk, [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-kotlin)
-for a released version.
+Drive tmux from Kotlin: [`withServer`][with-server] opens a server and closes
+it, the [`newSession`][server-newsession] DSL declares a session with its
+windows and splits, and [`Pane.run`][pane] runs a command to its exit status.
+Every operation that reaches tmux is `suspend`.
+
+`io.github.libtmux:libtmux-kotlin` — [on Maven
+Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin).
+API reference: [libtmux.org][reference] for the current trunk,
+[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-kotlin) for a
+released version.
 
 > **Alpha.** The API will change without notice.
 
-Needs Kotlin 2.1 or later. The module is compiled for Kotlin 2.2 metadata and
-the 2.2 standard library, the level kotlinx-coroutines 1.11 is compiled for, and
-a Kotlin compiler reads metadata up to one minor version newer than itself.
-`ConsumerBaselineTest` fails if a build raises that level.
+**Contents** — [Quick start](#quick-start) · [Declare a
+session](#declare-a-session-its-windows-and-their-splits) · [Send
+keys](#send-keys-capture-output-and-run-a-command) ·
+[Query](#query-with-typed-fields) · [Handle failures](#handle-failures) · [Watch
+tmux](#watch-tmux-change) · [Leaves out](#what-it-leaves-out) ·
+[Support](#support-and-status)
 
-Every Kotlin example below is executed against a real tmux server by
-[`ReadmeExamplesTest`](src/test/kotlin/io/github/libtmux/kotlin/ReadmeExamplesTest.kt),
-one test per section.
+## Quick start
 
-## Install
+Add it through the BOM, which names one version for every module:
 
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
@@ -42,17 +48,12 @@ dependencies {
 }
 ```
 
-## Wrapper classes, not the Java types directly
+### [`withServer`][with-server]: open a server, close it however the block ends
 
-`Server`, `Session`, `Window`, `Pane`, `Client`, and `ControlClient` here are
-Kotlin classes over the matching Java handle, which each answers as `asJava`;
-`Server.fromJava` wraps a server opened in Java. Every operation that reaches
-tmux is `suspend`; captured state is a plain property. A tmux subsystem an
-accessor answers — `Pane.options()`, `Server.hooks()`, `Server.keys()`, and
-the rest — is wrapped the same way, so calling into it never blocks the
-caller's thread outside `ExecutionPolicy`.
-`withServer` opens one and closes it even if the block throws or is
-cancelled:
+[`Server`][server], [`Session`][session], [`Window`][window], [`Pane`][pane],
+[`Client`][client] and [`ControlClient`][control-client] here are Kotlin classes
+over the matching Java handle. `withServer` closes the server even if the block
+throws or is cancelled:
 
 ```kotlin
 // Given: config: ServerConfig
@@ -64,14 +65,22 @@ withServer(config) { server ->
 }
 ```
 
-## Declare a session, its windows, and their splits with the DSL
+It runs against a real tmux, and every value after a `→` is asserted.
 
-`@DslMarker` keeps a nested block from reaching an outer block's receiver by
-accident: a `split { }` inside a `window { }` cannot set the *session's*
-`directory` without writing `this@newSession.directory` to say so. tmux
-always gives a new session one window; the first `window { }` block renames
-that one, and each later block is a genuine new window — two blocks make two
-windows, not three.
+- Each class answers its Java handle as `asJava`, and `Server.fromJava` wraps a
+  server opened in Java.
+- Captured state is a plain property.
+- A subsystem an accessor answers, such as [`Pane.options()`][options],
+  [`Server.hooks()`][hooks] and [`Server.keys()`][keys], is wrapped the same
+  way, so calling into it never blocks the caller's thread outside
+  [`ExecutionPolicy`][execution-policy].
+
+## Declare a session, its windows, and their splits
+
+### [`Server.newSession`][server-newsession]: the DSL
+
+[`SessionBuilder`][session-builder], [`WindowBuilder`][window-builder] and
+[`SplitBuilder`][split-builder] nest, so the code reads like the layout:
 
 ```kotlin
 // Given: config: ServerConfig
@@ -89,7 +98,20 @@ withServer(config) { server ->
 }
 ```
 
-## Send keys, capture output, run a command
+- `@DslMarker` keeps a nested block from reaching an outer block's receiver by
+  accident. A `split { }` inside a `window { }` cannot set the session's
+  `directory` without writing `this@newSession.directory`.
+- tmux always gives a new session one window. The first `window { }` block
+  renames it, and each later block is a new window, so two blocks make two
+  windows, not three.
+
+## Send keys, capture output, and run a command
+
+### [`Pane.run`][pane]: a command to its exit status
+
+[`Pane`][pane] types a line, waits for text, captures the screen, and runs a
+command to its end. `orNull` turns the exit status's [`OptionalInt`][ornull]
+into a Kotlin nullable:
 
 ```kotlin
 // Given: config: ServerConfig
@@ -110,11 +132,13 @@ withServer(config) { server ->
 }
 ```
 
-## Query with typed fields on the companion
+## Query with typed fields
 
-Fields live on the handle type's companion — `Pane.command`, not a static
-`Pane_.command()` — generated from the same `field-catalog.tsv` that
-generates the Java metamodel, so the two can never disagree.
+### [`Pane.command`][text-field]: fields live on the companion
+
+Fields live on the handle type's companion: `Pane.command`, where Java has the
+static `Pane_.command()`. They are generated from the same `field-catalog.tsv`
+that generates the Java metamodel, so the two cannot disagree:
 
 ```kotlin
 // Given: config: ServerConfig
@@ -131,12 +155,19 @@ withServer(config) { server ->
 }
 ```
 
-`server.session(expr)` throws `CardinalityException` on no match or more than
-one; `server.sessionOrNull(expr)` is null on no match and still throws on
-more than one — Kotlin's own collection convention (`single`/`singleOrNull`),
-applied to a tmux lookup.
+- `server.session(expr)` throws [`CardinalityException`][cardinality] on no
+  match or more than one.
+- `server.sessionOrNull(expr)` is null on no match and still throws on more than
+  one. That is Kotlin's collection convention (`single` and `singleOrNull`),
+  applied to a tmux lookup.
+- [`FlagField.isTrue`][is-true] and the text operators build the expression.
 
-## Exhaustive `when` over the sealed failure tree
+## Handle failures
+
+### [`LibTmuxException`][libtmux-exception]: an exhaustive `when`
+
+Every failure the library raises is one sealed tree, so a `when` over it needs
+no `else`:
 
 ```kotlin
 import io.github.libtmux.exception.CardinalityException
@@ -171,7 +202,27 @@ A new leaf breaks every such `when` at the branch that omits it:
 `ExhaustivenessCompileTest` compiles a `when` one branch short and asserts the
 compiler rejects it.
 
-## A subscription as a cold `Flow`
+### [`retryIfSafe`][retry-if-safe]: retry only when it is safe
+
+```kotlin
+// Given: config: ServerConfig
+withServer(config) { server ->
+    val version = retryIfSafe(times = 3) { server.version() }
+    version.major >= 3                    // → true
+}
+```
+
+- It catches only [`DispatchException`][dispatch] and checks
+  `failure.safeToRetry()`, which the operation that threw it computed from its
+  own catalogued idempotence.
+- There is no retry executor, and no catalog lookup at the call site.
+
+## Watch tmux change
+
+### [`ControlClient.output`][control-client]: a subscription as a cold `Flow`
+
+[`withControl`][with-control] attaches a control client, and `output` turns a
+[`Delivery`][delivery] stream into a `Flow`:
 
 ```kotlin
 // Given: config: ServerConfig
@@ -193,15 +244,16 @@ withServer(config) { server ->
 }
 ```
 
-`output`/`events` open a *fresh* Java subscription per `collect()` — over
-`EventSubscription.poll`/`onReady`, never a parked thread — and close it when
-collection ends, is cancelled, or throws. Output tmux sends before that
-subscription opens is not delivered, so the command whose output you want goes
-in the trailing `onSubscribed` block, which runs once the subscription exists
-and before the first read. A `Delivery.Gap` is an element like any other,
-ahead of the events that survived a full buffer; nothing is silently dropped.
+- `output` and `events` open a fresh Java [`EventSubscription`][subscription]
+  per `collect()`, never a parked thread, and close it when collection ends, is
+  cancelled, or throws.
+- Output tmux sends before the subscription opens is not delivered. Put the
+  command whose output you want in the trailing `onSubscribed` block, which runs
+  once the subscription exists and before the first read.
+- A `Delivery.Gap` is an element like any other, ahead of the events that
+  survived a full buffer. Nothing is silently dropped.
 
-## The live server as a `StateFlow`
+### `Server.withLiveState`: the live server as a `StateFlow`
 
 ```kotlin
 // Given: config: ServerConfig
@@ -217,41 +269,67 @@ withServer(config) { server ->
 }
 ```
 
-Wraps Java's `ServerMirror` — resnapshot on notification, on gap, and on
-reconnect happen once, inside it — rather than patching state in Kotlin.
-Named `liveState`, not `ServerMirror`, so it does not collide with the Java
-type it wraps. `liveState`'s own background pump runs until its scope ends,
-by design — a caller collecting for a program's whole life passes its own
-long-lived scope — so `withLiveState` is the scoped form for everything
-shorter: it cancels the pump once its block returns, the same shape
-`withServer`/`withControl` already have for the resources they open.
+- It wraps Java's [`ServerMirror`][server-mirror], so the resnapshot after a
+  notification, a gap or a reconnect happens once, inside it.
+- It is named `liveState` so it does not collide with the Java type it wraps.
+- `liveState`'s background pump runs until its scope ends, so a caller
+  collecting for a program's whole life passes its own long-lived scope.
+- `withLiveState` is the scoped form for everything shorter: it cancels the pump
+  once its block returns, as `withServer` and `withControl` do for the resources
+  they open.
 
-## Retry using the safe-to-retry predicate
+## What it leaves out
 
-```kotlin
-// Given: config: ServerConfig
-withServer(config) { server ->
-    val version = retryIfSafe(times = 3) { server.version() }
-    version.major >= 3                    // → true
-}
-```
+- **Java depending on it.** The build fails if anything in Java does: a class
+  carrying `@kotlin.Metadata` is not null-marked under JSpecify
+  ([KT-47417][kt-47417]), so the dependency runs one way only.
+- **A retry executor.** [`retryIfSafe`][retry-if-safe] is a function, with no
+  catalog lookup at the call site.
 
-`retryIfSafe` catches only `DispatchException` and checks
-`failure.safeToRetry()`, computed by the operation that threw it from its own
-catalogued idempotence — no retry executor, and no catalog lookup at the call
-site.
+## Support and status
 
-## Why nothing in Java may depend on this
+- **Kotlin 2.1 or later.** The module is compiled for Kotlin 2.2 metadata and
+  the 2.2 standard library, the level kotlinx-coroutines 1.11 is compiled for.
+  A Kotlin compiler reads metadata up to one minor version newer than itself.
+- **A guarded floor.** `ConsumerBaselineTest` fails if a build raises that
+  level.
+- **Examples run.** Every Kotlin example above is executed against a real tmux
+  server by
+  [`ReadmeExamplesTest`](src/test/kotlin/io/github/libtmux/kotlin/ReadmeExamplesTest.kt),
+  one test per section.
+- **Alpha.** The API will change without notice. Pin an exact version.
 
-The build fails if it does. Per the JSpecify specification a class carrying
-`@kotlin.Metadata` is **not** null-marked, because the Kotlin compiler does not
-yet emit full nullness into binaries
-([KT-47417](https://youtrack.jetbrains.com/projects/KT/issues/KT-47417/Emit-jspecify-annotations-for-types-in-Kotlin-binaries)).
-A Kotlin-authored API would therefore be worse for a Java caller and invisible to
-NullAway. The dependency runs one way only.
-
-## Next
+## Documentation
 
 - [Kotlin guide](../docs/guide/kotlin.md)
-- [`libtmux`](../libtmux/) — the API this wraps
+- [`libtmux`](../libtmux/README.md) — the API this wraps
 - [Root README](../README.md)
+
+[cardinality]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-exception-cardinalityexception-cardinalityexception/
+[client]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-client/
+[control-client]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-controlclient/
+[delivery]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-control-delivery-delivery/
+[dispatch]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-exception-dispatchexception-dispatchexception/
+[execution-policy]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-executionpolicy/
+[hooks]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-hooks/
+[is-true]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-query-flagfield-istrue/
+[keys]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-keys/
+[kt-47417]: https://youtrack.jetbrains.com/projects/KT/issues/KT-47417/Emit-jspecify-annotations-for-types-in-Kotlin-binaries
+[libtmux-exception]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-exception-libtmuxexception-libtmuxexception/
+[options]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-options/
+[ornull]: https://libtmux.org/en/kotlin/latest/reference/java-util-optionalint-ornull/
+[pane]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-pane/
+[reference]: https://libtmux.org/en/kotlin/latest/reference/
+[retry-if-safe]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-retryifsafe/
+[server]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-server/
+[server-mirror]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-snapshot-servermirror-servermirror/
+[server-newsession]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-server-newsession/
+[session]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-session/
+[session-builder]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-sessionbuilder/
+[split-builder]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-splitbuilder/
+[subscription]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-control-eventsubscription-eventsubscription/
+[text-field]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-query-textfield/
+[window]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-window/
+[window-builder]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-windowbuilder/
+[with-control]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-withcontrol/
+[with-server]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-withserver/

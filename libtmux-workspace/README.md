@@ -15,18 +15,24 @@
 
 </div>
 
-Enough of [tmuxp](https://tmuxp.git-pull.com/)'s format to describe a workspace
-and build it. Not a runtime-compatible reimplementation.
+[`WorkspaceBuilder.parse`][parse] reads a tmuxp-shaped YAML description into a
+[`Workspace`][workspace] value, and [`WorkspaceBuilder.build`][build] makes the
+session. Enough of [tmuxp](https://tmuxp.git-pull.com/)'s format to describe a
+workspace and build it; not a runtime-compatible reimplementation.
 
-`io.github.libtmux:libtmux-workspace` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace).
-API reference: [libtmux.org](https://libtmux.org/en/java/latest/workspace/reference/) for the current trunk,
-[javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-workspace) for a
-released version. For a command line, see
-[`libtmux-workspace-cli`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-workspace-cli).
+`io.github.libtmux:libtmux-workspace` — [on Maven
+Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace).
+API reference: [libtmux.org][reference] for the current trunk,
+[javadoc.io][javadoc] for a released version. For a command line, see
+[`libtmux-workspace-cli`][cli].
 
 > **Alpha.** The API will change without notice.
 
-## Install
+**Contents** — [Quick start](#quick-start) · [What you get
+back](#what-you-get-back) · [Read first](#read-first-build-second) · [The
+format](#what-the-format-supports) · [What it leaves out](#what-it-leaves-out)
+
+## Quick start
 
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
@@ -36,7 +42,7 @@ dependencies {
 }
 ```
 
-## Use it
+Describe a workspace in YAML:
 
 ```yaml
 # workspace.yaml
@@ -51,6 +57,11 @@ windows:
     panes:
       - echo server-pane
 ```
+
+### [`WorkspaceBuilder.build`][build]: make the session
+
+[`parse`][parse] reads the text and `build` makes the session on a
+[`Server`][server]:
 
 ```java
 // Given: Server server
@@ -67,9 +78,11 @@ Workspace workspace = WorkspaceBuilder.parse("""
 Session session = WorkspaceBuilder.build(server, workspace);
 ```
 
-`WorkspaceBuilder.read(path)` does the same from a file on disk.
+[`WorkspaceBuilder.read`][read] does the same from a file on disk.
 
 ## What you get back
+
+### [`Session`][session]: the one `build` made
 
 `build` returns the session it made, so there is nothing to look up afterwards:
 
@@ -112,9 +125,11 @@ server.hasSession("libtmux");                     // → true
 
 ## Read first, build second
 
-`read` and `parse` produce a `Workspace` value; `build` is what touches tmux.
-That split is the point: a description that tmux could not build is **rejected
-while it is still text**, before a single window exists.
+### [`WorkspaceBuilder.parse`][parse]: rejected while it is still text
+
+`read` and `parse` produce a `Workspace` value, and `build` is what touches
+tmux. A description tmux could not build is rejected before a single window
+exists:
 
 <!-- snippet: throws: IllegalArgumentException -->
 ```java
@@ -122,8 +137,9 @@ WorkspaceBuilder.parse("session_name: s\nwindows:\n  - window_name: w\n    layou
 // IllegalArgumentException — tmux has no layout called "sideways"
 ```
 
-Building half a workspace and then failing leaves a mess someone has to clean up
-by hand. Every layout name tmux accepts is accepted here, and nothing else is.
+- Building half a workspace and then failing leaves a mess someone has to clean
+  up by hand.
+- Every layout name tmux accepts is accepted here, and nothing else is.
 
 ## What the format supports
 
@@ -136,7 +152,32 @@ by hand. Every layout name tmux accepts is accepted here, and nothing else is.
 
 A window with no panes stated still gets the one tmux makes for it.
 
-## Next
+## What it leaves out
 
-- [`libtmux`](../libtmux/) — the API this builds on
+- **A runtime-compatible tmuxp.** It reads enough of the format to build a
+  workspace.
+- **Taking over a session.** `build` adds one and leaves yours alone.
+- **A command line.** [`libtmux-workspace-cli`][cli] loads, captures, converts
+  and imports workspaces from a shell.
+
+## Support and status
+
+- **Alpha.** The API will change without notice. Pin an exact version.
+- **Layouts follow tmux.** Every layout name tmux accepts is accepted, and
+  nothing else is.
+
+## Documentation
+
+- [`libtmux`](../libtmux/README.md) — the API this builds on
+- [`libtmux-workspace-cli`][cli] — the command line
 - [Root README](../README.md)
+
+[build]: https://libtmux.org/en/java/latest/workspace/reference/io-github-libtmux-workspace-workspacebuilder-workspacebuilder-build/
+[cli]: ../libtmux-workspace-cli/README.md
+[javadoc]: https://javadoc.io/doc/io.github.libtmux/libtmux-workspace
+[parse]: https://libtmux.org/en/java/latest/workspace/reference/io-github-libtmux-workspace-workspacebuilder-workspacebuilder-parse/
+[read]: https://libtmux.org/en/java/latest/workspace/reference/io-github-libtmux-workspace-workspacebuilder-workspacebuilder-read/
+[reference]: https://libtmux.org/en/java/latest/workspace/reference/
+[server]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server/
+[session]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-session-session/
+[workspace]: https://libtmux.org/en/java/latest/workspace/reference/io-github-libtmux-workspace-workspace-workspace/

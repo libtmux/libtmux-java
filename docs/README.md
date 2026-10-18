@@ -32,6 +32,8 @@ Task-oriented. Start here.
   MCP client.
 - [Testing with real tmux](guide/testing.md) — `libtmux-junit5`: one tmux server
   per test, always cleaned up.
+- [tmux-workspace](guide/workspace-cli.md) — the rules `load`, `convert`, `import`
+  and the machine output follow.
 - [Kotlin](guide/kotlin.md) — why the core is already null-safe from Kotlin, and
   what `libtmux-kotlin` adds.
 - [Scala](guide/scala.md) — the direct-Java path and the separate Scala facade,
@@ -93,10 +95,11 @@ Consequences.
 This directory is also a build module. It compiles and runs the code in every
 guide and README, and checks the claims around it.
 
-A snippet is the part of a project people copy and the part nothing compiles, so
-it goes stale silently — and a stale snippet reads exactly as well as a working
-one. This module puts every Java fence in the READMEs and guides through javac
-against the real artifacts, and then runs it against a real tmux server.
+- A snippet is the part of a project people copy and the part nothing compiles,
+  so it goes stale silently — and a stale snippet reads exactly as well as a
+  working one.
+- This module puts every Java fence in the READMEs and guides through javac
+  against the real artifacts, and then runs it against a real tmux server.
 
 ```console
 $ ./gradlew :docs:test
@@ -123,26 +126,26 @@ Say otherwise with an HTML comment directly above the fence:
 | `<!-- snippet: compile-only: <reason> -->` | compiles; not run, for the stated reason |
 | `<!-- snippet: skip: <reason> -->` | not checked, for the stated reason |
 
-The comment has to sit directly above the fence, with nothing between them. An
-unrecognised directive fails the build: a snippet nobody is checking, because of
-a typo in the thing that says how to check it, is the state this exists to
-prevent.
+- The comment has to sit directly above the fence, with nothing between them.
+- An unrecognised directive fails the build, so a typo in a directive cannot
+  leave a snippet unchecked.
 
-`throws:` names the exception's simple name, not its package — the comparison is
-against `getClass().getSimpleName()`, so `IllegalArgumentException` matches and
+`throws:` takes the exception's simple name. It is compared with
+`getClass().getSimpleName()`, so `IllegalArgumentException` matches and
 `java.lang.IllegalArgumentException` does not.
 
-A block that declares a type — a `class`, `record`, `interface` or `enum` — is
-compiled and never run, whatever its directive says, because a declaration has
-nothing to execute. Statements are wrapped in a method body, with whatever the
-fence's own `Given:` line asked for (below) in scope; a type is compiled as it
-stands and never sees one.
+- A block that declares a type — a `class`, `record`, `interface` or `enum` — is
+  compiled and never run, whatever its directive says, because a declaration has
+  nothing to execute.
+- Statements are wrapped in a method body, with whatever the fence's own
+  `Given:` line asked for (below) in scope; a type is compiled as it stands and
+  never sees one.
 
-`does-not-compile` earns its keep: it is what keeps
-`Pane_.index().startsWith("2")` an error. A README claiming the compiler rejects
-something would otherwise survive the day it stopped being true. The phrase is
-what makes the rejection the documented one: without it, a typo elsewhere in
-the block would pass for the error the prose describes.
+- `does-not-compile` keeps `Pane_.index().startsWith("2")` an error.
+- A README claiming the compiler rejects something would otherwise survive the
+  day it stopped being true.
+- The phrase names the error the prose describes. Without it, a typo elsewhere
+  in the block would pass for that error.
 
 Every snippet that runs has 15 seconds. A snippet that hangs fails on its own
 line instead of hanging the build.
@@ -159,10 +162,11 @@ server.sessions().size();            // → 2
 server.hasSession("demo");           // → true
 ```
 
-Python's doctest is why the sibling library's README can show what every call
-returns and still be trusted. Java has no doctest, so this is one: the value after
-the arrow is compared against `String.valueOf(…)` of the expression above it, and
-a README cannot claim a value the library does not produce.
+- Python's doctest is why the sibling library's README can show what every call
+  returns and still be trusted.
+- Java has no doctest, so this is one: the value after the arrow is compared
+  against `String.valueOf(…)` of the expression above it, and a README cannot
+  claim a value the library does not produce.
 
 Comparing as text means one rule covers a string, a number, a boolean and a list
 without a comment having to contain Java literals — what you see after the arrow
@@ -175,31 +179,32 @@ Two consequences worth knowing:
 - **The value is trimmed**, so one with a leading or trailing space cannot be
   expressed this way. Assert it in a test instead.
 - **The expression has to fit on the line the arrow is on.** A call split across
-  lines leaves the rewriter with a fragment, which fails to compile rather than
-  failing quietly — put the value in a local first.
+  lines leaves the rewriter with a fragment, which fails to compile — put the
+  value in a local first.
 
 ### What a snippet may assume
 
-Documentation shows the interesting line, not the ones before it that made a
-server — but leaning on one of those without saying so is a snippet a reader
-cannot paste and run, whatever it proves to this build. So the harness offers
-nothing by default. A snippet that needs one declares it, visibly, as the first
-line inside the fence:
+- A snippet may show only the interesting line, but one that leans on setup it
+  does not show cannot be pasted and run.
+- So the harness offers nothing by default.
+- A snippet that needs one declares it, visibly, as the first line inside the
+  fence:
 
 ```java
 // Given: Server server
 Session session = server.newSession("demo");
 ```
 
-`Given:` is not an HTML comment above the fence like the directives below — it
-is inside it, in the language the fence is written in, so it is part of what a
-reader sees and copies, not part of the machinery checking it. The names on
-offer are `server` (`Server`), `config` (`ServerConfig`), `session` (`Session`),
-`window` (`Window`), `pane` (`Pane`), `options` (`Options`), `socket` (`Path`),
-`directory` (`Path`), `timeout` (`Duration`) and `yamlString` (`String`); several
-go on one line, comma-separated: `// Given: Server server, Session session`. A
-snippet declaring its own `server` shadows the supplied one, which is what a
-reader copying it would get anyway.
+- `Given:` sits inside the fence, in the fence's own language, where the
+  directives below are HTML comments above it. A reader sees and copies it.
+- The names on offer are `server` (`Server`), `config` (`ServerConfig`),
+  `session` (`Session`), `window` (`Window`), `pane` (`Pane`), `options`
+  (`Options`), `socket` (`Path`), `directory` (`Path`), `timeout` (`Duration`)
+  and `yamlString` (`String`).
+- Several go on one line, comma-separated: `// Given: Server server, Session
+  session`.
+- A snippet declaring its own `server` shadows the supplied one, which is what a
+  reader copying it would get anyway.
 
 The declaration is held to exactly what the snippet uses, in both directions:
 
@@ -207,59 +212,63 @@ The declaration is held to exactly what the snippet uses, in both directions:
   find symbol" — nothing of that name exists on the harness the snippet asked
   for.
 - **Declares a name it never reads** fails too, for that reason specifically.
-  Java has no "declared and not used" error for a field the way some languages
-  do for a local, so this half is checked textually: comments are stripped
-  (the `Given:` line itself included) and the rest is searched for the name as
-  a whole word. A name mentioned only in prose does not count as used, and a
-  name inside a string this check cannot tell from code would be a false
-  negative it does not try to catch — keep a `Given:` line to real bindings and
-  this does not come up.
+  - Java has no "declared and not used" error for a field, so this half is
+    checked textually.
+  - Comments are stripped (the `Given:` line itself included) and the rest is
+    searched for the name as a whole word.
+  - A name mentioned only in prose does not count as used.
+  - A name inside a string is a false negative the check does not try to
+    catch, so keep a `Given:` line to real bindings.
 
-A fence with no `Given:` line gets nothing and must be self-contained.
-Consequently a fence cannot depend on a variable another fence declared, a
-harness field it never asked for, or on being read in the order it prints —
-and neither can a reader who copies just that fence.
+- A fence with no `Given:` line gets nothing and must be self-contained.
+- Consequently a fence cannot depend on a variable another fence declared, a
+  harness field it never asked for, or on being read in the order it prints —
+  and neither can a reader who copies just that fence.
 
-[`SnippetCompilerTest`](src/test/java/io/github/libtmux/docs/SnippetCompilerTest.java)
-pins this mechanism directly, the way go's own doc-generator pins the same
-property for its regions: a binding declared and used compiles, one used but
-not declared fails as "cannot find symbol", and one declared but not used fails
-as unused — with no tmux server needed for any of the three, since compiling a
-snippet never starts one.
+-
+  [`SnippetCompilerTest`](src/test/java/io/github/libtmux/docs/SnippetCompilerTest.java)
+  pins this mechanism directly, with no tmux server, since compiling a snippet
+  never starts one:
+  - A binding declared and used compiles.
+  - One used but not declared fails as "cannot find symbol".
+  - One declared but not used fails as unused.
 
 ### Kotlin fences
 
-This module reads Java. The Kotlin fences in the root README, `libtmux-kotlin`'s
-README and the Kotlin guide are checked a different way: `libtmux-kotlin` has a
-`generateDocumentationSnippets` task that turns each one into a test function, and
-the ordinary Kotlin compilation and test run do the checking.
+- This module reads Java.
+- The Kotlin fences in the root README, `libtmux-kotlin`'s README and the Kotlin
+  guide are checked a different way.
+- `libtmux-kotlin` has a `generateDocumentationSnippets` task that turns each
+  one into a test function, and the ordinary Kotlin compilation and test run do
+  the checking.
 
-Generating a source file rather than running the Kotlin compiler in-process is the
-same guarantee by a shorter road — and because the generated file *is* the
-documentation, the two cannot drift.
+The generated file is the documentation, so the two cannot drift.
 
 ```console
 $ ./gradlew :libtmux-kotlin:test
 ```
 
-A Kotlin fence gets `server` and nothing else unless its first line asks, the
-same rule as the Java `Given:` line: `// Given: config: ServerConfig` or
-`// Given: session: Session, window: Window, pane: Pane`. The names on offer are
-`config`, `session`, `window`, `pane` and `socket`, and a name outside them fails
-the task. Only one direction is checked: a Kotlin fence that uses a name it did
-not ask for fails to compile, but one that asks for a name it never reads is not
-caught, because the generated file suppresses unused-variable warnings.
+- A Kotlin fence gets `server` and nothing else unless its first line asks, the
+  same rule as the Java `Given:` line: `// Given: config: ServerConfig` or `//
+  Given: session: Session, window: Window, pane: Pane`.
+- The names on offer are `config`, `session`, `window`, `pane` and `socket`, and
+  a name outside them fails the task.
+- Only one direction is checked: a Kotlin fence that uses a name it did not ask
+  for fails to compile, but one that asks for a name it never reads is not
+  caught, because the generated file suppresses unused-variable warnings.
 
 ### Console fences
 
-A command in a `console` fence is not Java, so the module whose program it runs
-checks it. `libtmux-mcp`'s `DocumentedCommandsTest` hands every `libtmux-mcp`
-command, and every `mcpServers` configuration in a `json` fence, to the
-launcher's own flag and environment handling, and holds each `LIBTMUX_` name to
-one the launcher's sources read. `libtmux-workspace-cli`'s
-`DocumentedCommandsTest` parses every `tmux-workspace` command with the
-program's own command line, and its `ReadmeExamplesTest` runs the `load` and
-`freeze` commands its README shows against tmux.
+- A command in a `console` fence is not Java, so the module whose program it
+  runs checks it.
+- `libtmux-mcp`'s `DocumentedCommandsTest` hands every `libtmux-mcp` command, and
+  every `mcpServers` configuration in a `json` fence, to the launcher's own flag
+  and environment handling.
+- It also holds each `LIBTMUX_` name to one the launcher's sources read.
+- `libtmux-workspace-cli`'s `DocumentedCommandsTest` parses every
+  `tmux-workspace` command with the program's own command line, and its
+  `ReadmeExamplesTest` runs the `load` and `freeze` commands its README shows
+  against tmux.
 
 ```console
 $ ./gradlew :libtmux-mcp:test --tests '*DocumentedCommandsTest' \
