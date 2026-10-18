@@ -15,9 +15,18 @@
 
 </div>
 
-`io.github.libtmux:libtmux-bom` — [on Maven Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-bom).
-It is a platform and has no API of its own; each module it manages links its
-reference from its README.
+Import it as a platform and leave the version off every module it manages.
+[`libtmux`](../libtmux/README.md), [`libtmux-jackson`](../libtmux-jackson/README.md)
+and the rest are built against each other, so one version keeps them together.
+
+`io.github.libtmux:libtmux-bom` — [on Maven Central][central]. It is a platform
+and has no API of its own; each module it manages links its reference from its
+README.
+
+**Contents** — [Quick start](#quick-start) · [What it manages](#what-it-manages) ·
+[What it leaves out](#what-it-leaves-out) · [Support](#support-and-status)
+
+## Quick start
 
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
@@ -48,16 +57,14 @@ dependencies {
 ```
 </details>
 
-## Why
+Mixing two releases of these artifacts is the failure a platform exists to
+prevent, and it is easy to do by hand when three coordinates each carry their
+own version string.
 
-These BOM-managed artifacts are built against each other. Mixing two releases
-of them is the failure a platform exists to prevent, and it is easy to do by
-hand when three coordinates each carry their own version string.
+### `./gradlew dependencies`: check it took
 
-## Check it took
-
-After adding the platform, the coordinates below need no version. If one still
-does, the platform is not being imported — most often because `platform(...)` was
+After adding the platform, the coordinates need no version. If one still does,
+the platform is not being imported, most often because `platform(...)` was
 written as an ordinary dependency:
 
 ```console
@@ -71,8 +78,8 @@ runtimeClasspath
 \--- io.github.libtmux:libtmux -> 0.0.1-alpha.17
 ```
 
-The `-> 0.0.1-alpha.17` on a coordinate you wrote without a version is the platform
-doing its job.
+The `-> 0.0.1-alpha.17` on a coordinate you wrote without a version is the
+platform doing its job.
 
 ## What it manages
 
@@ -83,11 +90,26 @@ doing its job.
 [`libtmux-scala`](../libtmux-scala/) · [`libtmux-scala-cats`](../libtmux-scala-cats/) ·
 [`libtmux-scala-ox`](../libtmux-scala-ox/)
 
-That list is checked rather than trusted. `platformCoversEveryPublishedModule`
-fails the build when the set of published artifacts stops matching this one.
-The Scala artifacts carry the `_3` suffix in their coordinates, as every Scala 3
-artifact does.
+That list is checked rather than trusted:
 
-## Next
+- `platformCoversEveryPublishedModule` fails the build when the set of published
+  artifacts stops matching this one.
+- The Scala artifacts carry the `_3` suffix in their coordinates, as every
+  Scala 3 artifact does.
+
+## What it leaves out
+
+- **An API.** A platform has no code; each module links its own reference.
+- **Mixed releases.** One version applies to every module listed above.
+
+## Support and status
+
+- **Alpha.** Pin an exact version, not a range.
+- **Checked.** The version in every install block is held to the version this
+  build publishes.
+
+## Documentation
 
 - [Root README](../README.md) · [RELEASING.md](../RELEASING.md)
+
+[central]: https://central.sonatype.com/artifact/io.github.libtmux/libtmux-bom
