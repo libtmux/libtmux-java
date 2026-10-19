@@ -38,6 +38,8 @@ final class Machine {
         SESSION_MISMATCH("session_mismatch"),
         /** tmux itself could not be found or run. */
         TMUX_UNAVAILABLE("tmux_unavailable"),
+        /** tmux is older than the minimum this tool supports, so no command can run on it. */
+        TMUX_UNSUPPORTED("tmux_unsupported"),
         /** tmux ran and refused, or the server changed under the command. */
         TMUX_FAILED("tmux_failed"),
         /** A child program the document asked for could not be run, or ended badly. */

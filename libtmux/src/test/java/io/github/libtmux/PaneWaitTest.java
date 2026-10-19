@@ -166,7 +166,9 @@ final class PaneWaitTest {
             var _ = server.within(bound).panes().get(0).capture();
 
             assertTrue(seen.size() >= 2, "a listing and a capture both reached tmux");
-            assertTrue(seen.stream().allMatch(bound::equals), "every command carried the chosen deadline: " + seen);
+            assertTrue(
+                    seen.stream().allMatch(timeout -> timeout.isPositive() && timeout.compareTo(bound) <= 0),
+                    "the version check and command share the chosen deadline: " + seen);
             assertThrows(IllegalArgumentException.class, () -> server.within(Duration.ZERO));
         }
     }

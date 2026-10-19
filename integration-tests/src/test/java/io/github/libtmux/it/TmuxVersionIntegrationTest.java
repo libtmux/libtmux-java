@@ -23,7 +23,9 @@ final class TmuxVersionIntegrationTest {
     void theServerReportsItsOwnVersion(Server server) {
         TmuxVersion version = server.version();
 
-        assertTrue(version.atLeast(new TmuxVersion(3, 2, "a")), "this library supports 3.2a and later: " + version);
+        assertTrue(
+                version.atLeast(TmuxVersion.MINIMUM),
+                "this library supports " + TmuxVersion.MINIMUM + " and later: " + version);
     }
 
     /**

@@ -68,12 +68,11 @@ final class TmuxVersionTest {
     }
 
     /**
-     * A release candidate has what its release has — tmux freezes features at the candidate, and a
-     * 3.8 candidate behaves as 3.8 does on every lane-tested gate — so it compares equal to it, above
-     * the development build tracking toward it. It is still not the release: not {@code equals} to it.
+     * A release candidate orders above the development build tracking toward it and below its release,
+     * so the order agrees with {@code equals}, and a gate on the release is not met by its candidate.
      */
     @Test
-    void aReleaseCandidateComparesAsItsRelease() {
+    void aReleaseCandidateOrdersBelowItsReleaseAndFailsItsGates() {
         TmuxVersion previous = TmuxVersion.parse("3.7c");
         TmuxVersion development = TmuxVersion.parse("next-3.8");
         TmuxVersion candidate = TmuxVersion.parse("3.8-rc");
@@ -82,9 +81,11 @@ final class TmuxVersionTest {
 
         assertTrue(previous.compareTo(development) < 0);
         assertTrue(development.compareTo(candidate) < 0, "a development build precedes the candidate");
-        assertEquals(0, candidate.compareTo(release), "features are frozen at the candidate");
+        assertTrue(candidate.compareTo(release) < 0, "the order agrees with equals");
         assertTrue(candidate.compareTo(patch) < 0);
-        assertTrue(candidate.atLeast(release), "a gate on the release is met by its candidate");
+        assertTrue(!candidate.atLeast(release), "a gate on the release is not met by its candidate");
+        assertTrue(!development.atLeast(candidate));
+        assertTrue(!development.atLeast(release));
         assertTrue(!candidate.equals(release), "and the candidate is still not the release");
     }
 }

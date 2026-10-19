@@ -1,5 +1,7 @@
 package io.github.libtmux.mcp;
 
+import io.github.libtmux.TmuxVersion;
+
 /**
  * What a client tells the model before it has called anything.
  *
@@ -62,6 +64,7 @@ final class Instructions {
         return "\nCAPABILITIES\nOperating on selected socket " + socket.get("selector")
                 + " (" + socket.get("selectionProvenance") + "). Enabled toolsets: "
                 + (toolsets.isEmpty() ? "none" : toolsets) + ". Execute tools run with the tmux user's authority. "
-                + "Tool filtering shapes this advertised interface; it is not authorization or an OS sandbox.\n";
+                + "Tool filtering shapes this advertised interface; it is not authorization or an OS sandbox. "
+                + "Requires tmux " + TmuxVersion.MINIMUM + " or newer.\n";
     }
 }

@@ -12,6 +12,47 @@ production.
 
 ## Unreleased
 
+### Added
+
+- **`TmuxVersion.MINIMUM` and `UnsupportedFeatureException.belowFloor()`.**
+  `MINIMUM` is the oldest supported tmux, 3.3a. `belowFloor()` is true when the
+  exception reports a tmux older than that and false when one optional feature
+  is missing from a supported tmux, so a handler that skips optional features
+  can still surface a floor refusal. (#69)
+- **`CommandRequest` can discard standard output.** `discardStdout` sends it to
+  the null device for a caller that reads only the exit status and standard
+  error; the version probe uses it, because tmux 3.0 and 3.1 daemons hold the
+  client's standard output open after it exits. The four-argument constructor
+  is unchanged. (#69)
+- **The MCP server states the tmux floor.** Its instructions and
+  `tmux://capabilities` (`minimumTmux`) name 3.3a. Against an older tmux,
+  startup prints one `libtmux-mcp:` line and exits non-zero without a stack
+  trace. (#69)
+- **`tmux-workspace` reports a tmux older than 3.3a as `tmux_unsupported`.**
+  The code appears in JSON output beside the message, which says to upgrade
+  tmux or use the previous release. (#69)
+
+### Changed
+
+- **tmux 3.3a is the minimum across the JVM modules and products.** Upgrade the
+  running daemon as well as the client. Commands refuse older daemons with
+  `UnsupportedFeatureException` before their requested effects, and the message
+  says to upgrade tmux and restart any running server, or use the previous
+  libtmux release. This includes 3.0 and 3.1, which cannot name their version. A
+  version that names no release, such as `master`, fails with
+  `MalformedResponseException`. The Python bridge also requires compatible
+  Python libtmux. See [migration notes](MIGRATION.md). (#69)
+- **The workspace CLI's attached handoff starts no daemon.** `workspace load`
+  passes `-N` to the `attach-session` it runs. (#69)
+- **`TmuxVersion` orders release candidates below their release and parses
+  strictly.** `3.8-rc < 3.8`, `compareTo` agrees with `equals`, and text such
+  as `3.3a garbage`, `3.3a-master`, `next-3.9a` or `3.8-rc0` is rejected.
+  `atLeast` follows the same order, so a candidate or `next-` build no longer
+  meets a gate on the release it names. (#69)
+- **JSON layouts are gated on tmux 3.8-rc2.** The release candidates already
+  write them, so the gate names the earliest build measured to; `3.8-rc` and
+  `next-3.8` are still refused. (#69)
+
 ### Documented
 
 - **Every README opens with a quick start and is sectioned by task, with the

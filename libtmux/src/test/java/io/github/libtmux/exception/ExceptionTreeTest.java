@@ -36,7 +36,7 @@ final class ExceptionTreeTest {
 
     @Test
     void everyFailureNamesWhatTheCallerDoesNext() {
-        TmuxVersion old = TmuxVersion.parse("3.2a");
+        TmuxVersion old = TmuxVersion.parse("3.3a");
         assertAll(
                 () -> assertEquals("re-resolve gone", nextStep(new TargetGoneException("gone"))),
                 () -> assertEquals("start a server down", nextStep(new ServerUnavailableException("down"))),

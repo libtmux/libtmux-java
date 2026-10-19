@@ -8,6 +8,73 @@ API changes that require updates to calling code are recorded here. See
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### tmux 3.3a is the minimum
+
+Upgrade the tmux daemon to 3.3a or newer. Installing a newer client alone does
+not upgrade a daemon that is already running. Finish or save its sessions,
+stop that daemon, then start the new tmux binary on the same endpoint.
+
+Commands through Java, Kotlin and Scala, including MCP tools and native
+workspace loading, refuse an older daemon with `UnsupportedFeatureException`
+before sending the requested operation. Raw commands and batches follow the
+same rule. The message says to upgrade tmux and restart any running server, or
+to use the previous libtmux release. A daemon older than 3.2 cannot answer the
+version probe and is refused the same way.
+
+`UnsupportedFeatureException.belowFloor()` is true for this refusal and false
+when one optional feature is missing from a supported tmux. A handler that
+skips optional features should test it first, so that a tmux below the floor
+is surfaced and not skipped.
+
+Standalone `cmd("-V")` and `cmd("-h")` remain available for executable
+diagnostics; their results do not authorize a daemon operation. A version
+token that names no release, such as `master`, fails with
+`MalformedResponseException`. A candidate for 3.3a does not satisfy the
+released 3.3a minimum.
+
+Ordinary command requests carry an atomic version guard. Control-client
+startup checks the floor through its process carrier before launching `-C`;
+it does not pin the endpoint between that check and attachment. These checks
+require native built-in command semantics. A tmux configuration that replaces
+commands such as `if-shell` or `run-shell` through `command-alias` is outside
+this qualification.
+
+The first session on an unused endpoint checks the configured binary before
+starting a daemon. Reads leave an unused endpoint empty; cleanup of an absent
+daemon remains harmless. Optional features retain their own version
+requirements.
+
+The MCP server names the floor in its instructions and in
+`tmux://capabilities` as `minimumTmux`. Against an older tmux it prints one
+`libtmux-mcp:` line and exits non-zero at startup, and a tool call answered by
+an older daemon mid-session returns the `UNSUPPORTED_FEATURE` error code. The
+workspace CLI reports the refusal with the machine code `tmux_unsupported`.
+
+Python extensions and the Python shell use `Server.requireCompatibleTmux()`
+before starting Python. This validates the selected daemon or executable
+without starting a daemon; later Java operations still run their own version
+check. The bridge also requires Python libtmux whose declared
+`TMUX_MIN_VERSION` is 3.3a or newer and whose own dispatcher enforces that
+floor on each command. An older installed backend is refused before builders,
+plugins or shell code run, and upgrading tmuxp alone does not supply a
+command-level version check.
+
+### Version ordering and parsing
+
+`TmuxVersion.compareTo` now orders `next-X.Y < X.Y-rc < X.Y-rcN < X.Y < X.Ya`,
+so it agrees with `equals`; a candidate no longer compares equal to its
+release. `atLeast` follows that order: `3.8-rc` and `next-3.8` no longer meet a
+gate on `3.8`, which the 0.0.1-alpha.14 notes below describe the other way
+round. Gate a behaviour that a candidate already ships on the earliest build
+measured to have it, such as `new TmuxVersion(3, 8, "", false, "rc2")` for JSON
+layouts and an empty dead-pane pid. Use `sameRelease` for a gate on one
+release's own defect.
+
+`TmuxVersion.parse` accepts only what tmux has reported (`3.3a`, `3.8-rc2`,
+`next-3.9`), with numbers of up to four digits, and throws
+`IllegalArgumentException` for anything else, such as `3.3a garbage`,
+`next-3.9a` or `3.8-rc0`.
+
 ## 0.0.1-alpha.16
 
 ### `CommandResult.stdout()` keeps carriage returns

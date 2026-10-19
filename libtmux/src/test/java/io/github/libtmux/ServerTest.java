@@ -56,7 +56,7 @@ final class ServerTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 requests.add(request);
-                return GroupedTmux.execute(request, 4242L, argv -> switch (argv.getFirst()) {
+                return GroupedTmux.execute(request, 4242L, "3.4", argv -> switch (argv.getFirst()) {
                     case "display-message" ->
                         argv.getLast().equals("#{version}")
                                 ? version.get()
@@ -71,7 +71,10 @@ final class ServerTest {
         };
         try (Server server = Server.using(config(directory), transport)) {
             assertEquals(java.util.Optional.of("a\rb"), server.globalOptions().get("@value"));
-            assertEquals(1, requests.size(), "the version and the value come from one invocation");
+            assertEquals(
+                    2,
+                    requests.size(),
+                    "the version check precedes the invocation that reads version and value together");
             assertTrue(requests.getLast().commands().contains(List.of("show-options", "-g", "-A", "--", "@value")));
             value.set(new CommandResult(0, List.of("@value a\\377\\376é"), List.of()));
             assertEquals(
@@ -88,9 +91,7 @@ final class ServerTest {
             assertThrows(
                     ServerUnavailableException.class,
                     () -> server.globalOptions().get("@value"));
-            assertEquals(
-                    List.of("display-message", "-p", "#{version}"),
-                    requests.getLast().commands().getFirst());
+            assertTrue(requests.getLast().commands().contains(List.of("display-message", "-p", "#{version}")));
         }
     }
 
@@ -227,9 +228,12 @@ final class ServerTest {
             server.killServer(chosen);
             server.isAlive();
 
-            assertEquals(
-                    List.of(chosen, chosen, server.config().defaultTimeout()),
-                    transport.requests.stream().map(CommandRequest::timeout).toList());
+            List<Duration> budgets = List.of(chosen, chosen, server.config().defaultTimeout());
+            assertEquals(budgets.size(), transport.requests.size());
+            for (int index = 0; index < budgets.size(); index++) {
+                Duration sent = transport.requests.get(index).timeout();
+                assertTrue(sent.isPositive() && sent.compareTo(budgets.get(index)) <= 0);
+            }
         }
     }
 
@@ -249,10 +253,10 @@ final class ServerTest {
         try (Server server = Server.using(config(directory), refusing)) {
             server.killServer(chosen);
 
-            assertEquals(
-                    List.of(chosen, chosen),
-                    refusing.requests.stream().map(CommandRequest::timeout).toList(),
-                    "the kill and the look that confirms it");
+            assertEquals(2, refusing.requests.size(), "the kill and the look that confirms it");
+            for (CommandRequest request : refusing.requests) {
+                assertTrue(request.timeout().isPositive() && request.timeout().compareTo(chosen) <= 0);
+            }
         }
     }
 
@@ -297,7 +301,10 @@ final class ServerTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().get(0).contains("wait-for")) {
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
+                }
+                if (request.commands().stream().anyMatch(command -> command.contains("wait-for"))) {
                     throw failure;
                 }
                 return new CommandResult(0, List.of("4242"), List.of());
@@ -325,7 +332,10 @@ final class ServerTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                if (request.commands().get(0).contains("wait-for")) {
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
+                }
+                if (request.commands().stream().anyMatch(command -> command.contains("wait-for"))) {
                     throw failure;
                 }
                 return new CommandResult(1, List.of(), List.of("no server running"));
@@ -422,8 +432,14 @@ final class ServerTest {
                 public void close() {}
             };
             try (Server server = Server.using(config(directory), transport)) {
-                assertAll(liveReads(server).stream()
-                        .map(read -> () -> assertSame(failure, assertThrows(DispatchException.class, read))));
+                assertAll(liveReads(server).stream().map(read -> () -> {
+                    DispatchException seen = assertThrows(DispatchException.class, read);
+                    assertEquals(failure.getClass(), seen.getClass());
+                    assertEquals(failure.getMessage(), seen.getMessage());
+                    assertSame(cause, seen.getCause());
+                    assertEquals(DispatchOutcome.NOT_DISPATCHED, seen.outcome());
+                    assertTrue(seen.safeToRetry());
+                }));
             }
         }
     }
@@ -520,11 +536,11 @@ final class ServerTest {
             @Override
             public CommandResult execute(CommandRequest request) {
                 requests.incrementAndGet();
-                return GroupedTmux.execute(request, 4242L, "3.2a", argv -> switch (argv.getFirst()) {
+                return GroupedTmux.execute(request, 4242L, "3.3a", argv -> switch (argv.getFirst()) {
                     case "display-message" ->
                         new CommandResult(
                                 0,
-                                List.of(String.join(RowFormat.of("field").separator(), "4242", "3.2a", "1790000000")),
+                                List.of(String.join(RowFormat.of("field").separator(), "4242", "3.3a", "1790000000")),
                                 List.of());
                     case "list-sessions" -> new CommandResult(0, List.of(), List.of());
                     // tmux has no current target to list children against, and says so.
@@ -540,12 +556,12 @@ final class ServerTest {
             var snapshot = server.snapshot();
 
             assertEquals(4242L, snapshot.serverPid().orElseThrow());
-            assertEquals(TmuxVersion.parse("3.2a"), snapshot.serverVersion().orElseThrow());
+            assertEquals(TmuxVersion.parse("3.3a"), snapshot.serverVersion().orElseThrow());
             assertTrue(snapshot.sessions().isEmpty());
             assertTrue(snapshot.windows().isEmpty());
             assertTrue(snapshot.panes().isEmpty());
             assertTrue(snapshot.clients().isEmpty());
-            assertEquals(2, requests.get(), "tmux refused the rest of the group, which cost no further request");
+            assertEquals(3, requests.get(), "two data invocations share one version probe");
             assertEquals(List.of(), server.sessions());
             assertEquals(List.of(), server.windows());
             assertEquals(List.of(), server.panes());
@@ -749,8 +765,9 @@ final class ServerTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                List<String> argv = request.commands().get(0);
-                if (argv.stream().anyMatch(word -> word.contains("#{pid} #{version}"))) {
+                if (request.commands().stream()
+                        .flatMap(List::stream)
+                        .anyMatch(word -> word.contains("#{pid} #{version}"))) {
                     return new CommandResult(0, List.of("4242 3.6"), List.of());
                 }
                 return GroupedTmux.execute(request, 4242L, "3.6", command -> switch (command.get(0)) {
@@ -790,36 +807,17 @@ final class ServerTest {
 
     // --------------------------------------------------------------------------- version gates
 
-    /**
-     * The guard asks the daemon rather than trusting a version string, so it cannot fail the way a
-     * version predicate can: a floor fitted to the two adjacent releases a matrix happens to run,
-     * one lettered patch off from what tmux's own history says. Proven by making the two disagree -
-     * a version the constant would refuse, with {@code list-commands} naming the command anyway, and
-     * the reverse - and checking the daemon's answer is the one that wins.
-     */
     @Test
-    void promptHistoryAsksTheDaemonRatherThanTrustingAVersionString(@TempDir Path directory) throws IOException {
-        try (Server server =
-                Server.using(config(directory), listingCommands("3.2a", "show-prompt-history (showphist) [-T type]"))) {
-            assertDoesNotThrow(
-                    () -> server.prompt().history(), "list-commands names it, so a low version must not refuse");
+    void promptHistoryUsesTheSupportedCommandDirectly(@TempDir Path directory) throws IOException {
+        try (Server server = Server.using(config(directory), listingCommands("3.3a"))) {
+            assertDoesNotThrow(() -> server.prompt().history());
             assertDoesNotThrow(() -> server.prompt().clear());
-        }
-        try (Server server = Server.using(config(directory), listingCommands("99.0"))) {
-            UnsupportedFeatureException refused = assertThrows(
-                    UnsupportedFeatureException.class, () -> server.prompt().history());
-
-            assertTrue(
-                    String.valueOf(refused.getMessage()).contains("3.3"),
-                    "the refusal still names the release most callers will recognise: " + refused.getMessage());
-            assertThrows(
-                    UnsupportedFeatureException.class, () -> server.prompt().clear());
         }
     }
 
     /**
      * An older client cannot talk to a newer daemon at all - confirmed against the matrix,
-     * a 3.2a client against a 3.7c daemon on the same socket fails outright, {@code server exited
+     * a 3.3a client against a 3.7c daemon on the same socket fails outright, {@code server exited
      * unexpectedly}. tmux reports that identically to "no daemon ever started here", so {@code
      * versionForCreation} used to read it as "no daemon" and quietly substitute the configured
      * binary's own {@code -V}, inverting {@link Server#version()}'s documented guarantee that it
@@ -991,9 +989,10 @@ final class ServerTest {
     }
 
     /**
-     * tmux 3.2a exits 0 and prints nothing when it cannot create its socket: the server queues the
-     * error and tells the client to exit in the same breath, and the client leaves first. 3.3 and
-     * later print {@code error creating ...}. So when tmux says nothing, the directory is checked here.
+     * A tmux that exits 0 and prints nothing when it cannot create its socket, because the server
+     * queues the error and tells the client to exit in the same breath, leaves nothing to read. tmux
+     * prints {@code error creating ...} itself, so only when it says nothing is the directory checked
+     * here.
      */
     @Test
     void aSilentExitUnderAMissingSocketDirectoryNamesTheDirectory(@TempDir Path directory) {
@@ -1014,19 +1013,15 @@ final class ServerTest {
      * with {@code lines}, whatever the real relationship between the two would be.
      */
     private static TmuxTransport listingCommands(String version, String... lines) {
-        String separator = RowFormat.of("field").separator();
         return new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                List<String> argv = request.commands().get(0);
-                if (argv.get(0).equals("display-message")) {
-                    return new CommandResult(
-                            0, List.of(String.join(separator, "4242", version, "1790000000")), List.of());
-                }
-                if (argv.get(0).equals("list-commands")) {
-                    return new CommandResult(0, List.of(lines), List.of());
-                }
-                return new CommandResult(0, List.of(), List.of());
+                return GroupedTmux.execute(
+                        request,
+                        4242L,
+                        version,
+                        command -> new CommandResult(
+                                0, command.getFirst().equals("list-commands") ? List.of(lines) : List.of(), List.of()));
             }
 
             @Override
@@ -1088,7 +1083,9 @@ final class ServerTest {
             TmuxTransport transport = new TmuxTransport() {
                 @Override
                 public CommandResult execute(CommandRequest request) {
-                    return new CommandResult(0, List.of(Long.toString(sleeper.pid())), List.of());
+                    return VersionProbes.is(request)
+                            ? VersionProbes.reply(request, "3.6")
+                            : new CommandResult(0, List.of(Long.toString(sleeper.pid())), List.of());
                 }
 
                 @Override
@@ -1135,6 +1132,9 @@ final class ServerTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
+            if (VersionProbes.is(request)) {
+                return VersionProbes.reply(request, "3.6");
+            }
             return new CommandResult(1, List.of(), List.of(stderr));
         }
 
@@ -1147,6 +1147,9 @@ final class ServerTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
+            if (VersionProbes.is(request)) {
+                return VersionProbes.reply(request, "3.6");
+            }
             return request.commands().stream().anyMatch(command -> command.contains("kill-server"))
                     ? new CommandResult(1, List.of(), List.of("permission denied"))
                     : new CommandResult(0, List.of("4242"), List.of());
@@ -1175,6 +1178,9 @@ final class ServerTest {
 
         @Override
         public CommandResult execute(CommandRequest request) {
+            if (VersionProbes.is(request)) {
+                return VersionProbes.reply(request, "3.6");
+            }
             executions.incrementAndGet();
             requests.add(request);
             return new CommandResult(exitCode, List.of("ok"), List.of());
@@ -1223,14 +1229,15 @@ final class ServerTest {
          */
         @Override
         public CommandResult execute(CommandRequest request) {
-            if (request.commands().get(0).get(0).equals("display-message")) {
-                return identity(at(2 * identityReads.getAndIncrement()));
+            if (VersionProbes.is(request)) {
+                return at(2 * identityReads.get()).isEmpty() ? identity("") : VersionProbes.reply(request, "3.6");
             }
-            String live = at(2 * (identityReads.get() - 1) + 1);
+            String live = at(Math.max(0, 2 * (identityReads.get() - 1) + 1));
             if (live.isEmpty()) {
-                return new CommandResult(1, List.of(), List.of("no server running on /tmp/s"));
+                return identity("");
             }
             return GroupedTmux.execute(request, Long.parseLong(live), argv -> switch (argv.get(0)) {
+                case "display-message" -> identity(at(2 * identityReads.getAndIncrement()));
                 case "list-sessions" ->
                     new CommandResult(0, List.of(sessionRows.get(sessionReads.getAndIncrement())), List.of());
                 default -> new CommandResult(0, List.of(), List.of());

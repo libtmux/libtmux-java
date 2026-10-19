@@ -124,22 +124,6 @@ final class SnapshotCapture {
         return identity(Server::serverAbsent);
     }
 
-    /**
-     * As {@link #process}, except a live daemon this client cannot actually talk to is never folded
-     * into "no daemon" - used only by {@link SessionCreation#versionForCreation}, the one caller for which
-     * that distinction matters.
-     *
-     * <p>tmux reports both the same way from a client's side: "no server running"/"(No such file or
-     * directory)" for a socket nothing is listening on, and "server exited unexpectedly" for a
-     * daemon that refused this client's handshake - confirmed against the matrix, a 3.2a client
-     * against a 3.7c daemon on the same socket fails the second way, rc 1. {@link #process} still
-     * folds both into "no daemon" for every other caller, which asks "is there a server I can read
-     * from" and for which a daemon this client cannot use is no more usable than none at all.
-     */
-    Optional<ServerProcess> processForCreation() {
-        return identity(SnapshotCapture::daemonGenuinelyAbsent);
-    }
-
     private Optional<ServerProcess> identity(Predicate<String> absent) {
         CommandResult result = server.cmd("display-message", "-p", PROCESS.template());
         if (!result.succeeded()) {
@@ -167,10 +151,6 @@ final class SnapshotCapture {
             throw new MalformedResponseException("tmux reported a malformed server start time: " + started);
         }
         return Optional.of(new ServerProcess(pid, TmuxVersion.parse(version), started));
-    }
-
-    private static boolean daemonGenuinelyAbsent(String message) {
-        return message.contains("no server running") || message.contains("(No such file or directory)");
     }
 
     /** The whole hierarchy in one invocation, fenced against the identity just read. */
@@ -334,7 +314,7 @@ final class SnapshotCapture {
      *
      * <p>The filter loops each listed row's own session, so every listing keeps whole sessions, and a
      * window linked into two sessions brings both. tmux evaluates this loop inside {@code -f} the same
-     * way on every release from 3.2a; see {@code docs/decisions/0005-pushdown-lowering-is-exact-or-refused.md}.
+     * way on every supported release; see {@code docs/decisions/0005-pushdown-lowering-is-exact-or-refused.md}.
      */
     Optional<ServerSnapshot> sessionsHolding(PaneId id) {
         ServerProcess process = process()

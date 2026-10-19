@@ -55,22 +55,27 @@ public enum Layout {
     }
 
     /**
-     * The first supported release that has this layout.
+     * The first supported release that has this layout, or empty when every supported release does.
      *
      * <p>A switch rather than a field, so that adding a layout cannot compile until someone says
      * which release brought it — and so the enum holds nothing but its name.
      */
-    TmuxVersion since() {
+    Optional<TmuxVersion> since() {
         return switch (this) {
-            case MAIN_HORIZONTAL_MIRRORED, MAIN_VERTICAL_MIRRORED -> new TmuxVersion(3, 5, "");
-            case EVEN_HORIZONTAL, EVEN_VERTICAL, MAIN_HORIZONTAL, MAIN_VERTICAL, TILED -> new TmuxVersion(3, 2, "a");
+            case MAIN_HORIZONTAL_MIRRORED, MAIN_VERTICAL_MIRRORED -> Optional.of(new TmuxVersion(3, 5, ""));
+            case EVEN_HORIZONTAL, EVEN_VERTICAL, MAIN_HORIZONTAL, MAIN_VERTICAL, TILED -> Optional.empty();
         };
+    }
+
+    /** Whether the running tmux has this layout. */
+    boolean availableOn(TmuxVersion running) {
+        return since().map(running::atLeast).orElse(true);
     }
 
     /** Refuses this layout when the running tmux predates it. */
     public void requireSupported(TmuxVersion running) {
-        if (!running.atLeast(since())) {
-            throw new UnsupportedFeatureException("the " + this + " layout", since(), running);
+        if (!availableOn(running)) {
+            throw new UnsupportedFeatureException("the " + this + " layout", since().orElseThrow(), running);
         }
     }
 

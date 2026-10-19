@@ -78,7 +78,19 @@ public final class ProcessTransport implements TmuxTransport {
      */
     private static final long IDLE_PUMP_SECONDS = 10;
 
-    private static final ProcessStarter SYSTEM_STARTER = command -> new ProcessBuilder(command).start();
+    private static final ProcessStarter SYSTEM_STARTER = new ProcessStarter() {
+        @Override
+        public Process start(List<String> command) throws IOException {
+            return new ProcessBuilder(command).start();
+        }
+
+        @Override
+        public Process start(List<String> command, boolean discardStdout) throws IOException {
+            ProcessBuilder builder = new ProcessBuilder(command);
+            if (discardStdout) builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            return builder.start();
+        }
+    };
 
     private static final System.Logger LOG = System.getLogger(ProcessTransport.class.getName());
 
@@ -116,6 +128,19 @@ public final class ProcessTransport implements TmuxTransport {
     }
 
     /**
+     * Runs one bounded request through a caller-owned process carrier.
+     *
+     * <p>Reclaims only the processes this request started. The carrier remains owned by the caller
+     * and may continue starting other processes.
+     */
+    public static CommandResult executeThroughCarrier(ControlCarrier carrier, CommandRequest request) {
+        try (ProcessTransport transport =
+                new ProcessTransport(1, DEFAULT_MAX_OUTPUT_BYTES, carrier::start, System::nanoTime)) {
+            return transport.execute(request);
+        }
+    }
+
+    /**
      * @param maxConcurrentProcesses how many tmux processes may run at once
      * @param maxOutputBytes maximum bytes accepted from each output channel of one process
      */
@@ -144,13 +169,11 @@ public final class ProcessTransport implements TmuxTransport {
         this.admission = new Semaphore(maxConcurrentProcesses);
         this.waitingAdmission = maxConcurrentProcesses == 1 ? null : new Semaphore(maxConcurrentProcesses - 1);
         this.pumps = (ThreadPoolExecutor) Executors.newFixedThreadPool(3 * maxConcurrentProcesses, factory());
-        // An idle pump lets go of the JVM. The threads are not daemons on purpose — work in flight
-        // has to finish, and a drain abandoned halfway is a truncated reply reported as a whole one
-        // — but "in flight" is the point, not "ever used". Without this a caller who forgot to
-        // close a transport kept a JVM alive forever after its last command, which for a
-        // command-line program is indistinguishable from a deadlock. A pump that is running holds
-        // the JVM exactly as before; one that has had nothing to do for this long does not, and the
-        // pool makes another the moment there is work.
+        // An idle pump lets go of its thread. A caller who forgot to close a transport used to keep
+        // a JVM alive forever after its last command, which for a command-line program is
+        // indistinguishable from a deadlock; the threads are daemons now, so a pipe some other
+        // process holds can never do that, and the keep-alive only bounds how many sit idle. Work in
+        // flight is still finished: the caller's own thread waits for it.
         this.pumps.setKeepAliveTime(idlePumpNanos, TimeUnit.NANOSECONDS);
         this.pumps.allowCoreThreadTimeOut(true);
         this.maxOutputBytes = maxOutputBytes;
@@ -504,7 +527,7 @@ public final class ProcessTransport implements TmuxTransport {
             gate.unlock();
         }
         try {
-            Process process = starter.start(request.commandLine());
+            Process process = starter.start(request.commandLine(), request.discardStdout());
             RunningProcess running = new RunningProcess(process, new ProcessTree(process), request.idempotence());
             live.add(running);
             return running;
@@ -532,7 +555,12 @@ public final class ProcessTransport implements TmuxTransport {
         CompletableFuture<Throwable> failure = new CompletableFuture<>();
         try {
             return new Pumps(
-                    pumps.submit(new Pump(process.process().getInputStream(), maxOutputBytes, finished, failure)),
+                    pumps.submit(new StdoutPump(
+                            process.process(),
+                            maxOutputBytes,
+                            finished,
+                            failure,
+                            () -> killedByClose.contains(process))),
                     pumps.submit(new Pump(process.process().getErrorStream(), maxOutputBytes, finished, failure)),
                     pumps.submit(new InputPump(process.process().getOutputStream(), input, finished)),
                     finished,
@@ -684,14 +712,15 @@ public final class ProcessTransport implements TmuxTransport {
     }
 
     /**
-     * Non-daemon, so a drain in flight finishes rather than being abandoned halfway and reported as
-     * a whole reply. An idle one times out instead, so forgetting to close still lets a JVM exit.
+     * Daemon threads. A drain in flight still finishes, because the thread that asked for the result
+     * waits for it; what a daemon pump cannot do is keep a JVM alive after that thread has returned,
+     * whatever some other process does with the pipe it was given.
      */
     private static ThreadFactory factory() {
         AtomicInteger index = new AtomicInteger();
         return runnable -> {
             Thread worker = new Thread(runnable, "libtmux-pump-" + index.incrementAndGet());
-            worker.setDaemon(false);
+            worker.setDaemon(true);
             return worker;
         };
     }
@@ -733,6 +762,11 @@ public final class ProcessTransport implements TmuxTransport {
     @FunctionalInterface
     interface ProcessStarter {
         Process start(List<String> command) throws IOException;
+
+        /** As above, with standard output sent to the null device when the caller reads none of it. */
+        default Process start(List<String> command, boolean discardStdout) throws IOException {
+            return start(command);
+        }
     }
 
     private record Pump(InputStream source, int limit, CountDownLatch finished, CompletableFuture<Throwable> failure)
@@ -750,6 +784,88 @@ public final class ProcessTransport implements TmuxTransport {
                     }
                     output.write(buffer, 0, read);
                     total += read;
+                }
+                byte[] result = output.toByteArray();
+                source.close();
+                return result;
+            } catch (IOException | RuntimeException e) {
+                failure.complete(e);
+                throw e;
+            } finally {
+                finished.countDown();
+            }
+        }
+    }
+
+    /**
+     * Reads standard output without ever blocking on the pipe.
+     *
+     * <p>A read that blocks is a thread nothing can wake: tmux 3.0 and 3.1 daemons keep the client's
+     * standard output open after the client has exited, and closing the stream does not end a read
+     * already waiting in it. So this reads what is there and waits only while the process is alive.
+     * Once it has exited, everything it wrote is already in the pipe, so the pump reads while bytes
+     * are waiting and finishes at the first moment none are — a decision on the pipe's contents, not
+     * on a clock, which cannot drop bytes however long the pump was starved of a CPU.
+     */
+    record StdoutPump(
+            Process process,
+            int limit,
+            CountDownLatch finished,
+            CompletableFuture<Throwable> failure,
+            BooleanSupplier killedByClose)
+            implements Callable<byte[]> {
+        /** The longest an idle pump sleeps; the child's exit wakes it at once, and data resets it. */
+        private static final long MAX_WAIT_NANOS = TimeUnit.MILLISECONDS.toNanos(25);
+
+        @Override
+        public byte[] call() throws IOException {
+            InputStream source = process.getInputStream();
+            try {
+                ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(limit, 8_192));
+                byte[] buffer = new byte[8_192];
+                int total = 0;
+                long wait = TimeUnit.MICROSECONDS.toNanos(20);
+                boolean reading = true;
+                while (reading) {
+                    try {
+                        int ready = source.available();
+                        if (ready > 0) {
+                            int read = source.read(buffer, 0, Math.min(ready, buffer.length));
+                            if (read < 0) {
+                                break;
+                            }
+                            if (read > limit - total) {
+                                throw new OutputLimitExceeded(limit);
+                            }
+                            output.write(buffer, 0, read);
+                            total += read;
+                            wait = TimeUnit.MICROSECONDS.toNanos(20);
+                        } else if (!process.isAlive()) {
+                            // The exit came before this look at the pipe, so anything written is in it.
+                            reading = source.available() > 0;
+                        } else {
+                            // Sleep on the child's exit, so an idle pump costs nothing and the exit is
+                            // seen at once. An interrupt means the transport is closing; stop rather
+                            // than spin on a flag that makes every later wait return immediately.
+                            if (process.waitFor(wait, TimeUnit.NANOSECONDS)) {
+                                continue;
+                            }
+                            wait = Math.min(wait * 2, MAX_WAIT_NANOS);
+                        }
+                    } catch (OutputLimitExceeded tooLong) {
+                        throw tooLong;
+                    } catch (InterruptedException closing) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    } catch (IOException closed) {
+                        // Terminating the process closes its streams, often while it is still alive.
+                        // What was read is then not wanted, and the failure is the transport's own
+                        // close, which the caller reports, not a defect of the drain.
+                        if (process.isAlive() && !killedByClose.getAsBoolean()) {
+                            throw closed;
+                        }
+                        break;
+                    }
                 }
                 byte[] result = output.toByteArray();
                 source.close();

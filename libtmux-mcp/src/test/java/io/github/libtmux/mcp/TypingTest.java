@@ -290,7 +290,7 @@ final class TypingTest {
         List<Integer> sends = indexes(requests, request -> hasCommand(request, "send-keys"));
         assertEquals(2, preflights.size());
         assertEquals(1, sends.size());
-        assertEquals(preflights.getLast() + 1, sends.getFirst());
+        assertEquals(preflights.getLast() + 1, sends.getFirst(), "the daemon is known, so nothing separates them");
     }
 
     @Test
@@ -628,6 +628,45 @@ final class TypingTest {
     }
 
     @Test
+    void typingCapturePreservesSoftWrappedInput(Server server) throws Exception {
+        Pane source = server.panes().getFirst();
+        source.window().resizeTo(new io.github.libtmux.Dimensions(80, 24));
+        String prefix = "P".repeat(70);
+        String consumer = "stty raw -echo; printf '%s' '" + prefix + "'; exec cat";
+        source.respawn("sh", "-c", consumer);
+        Pane peer =
+                source.split(SplitSpec.builder().running("sh", "-c", consumer).build());
+        Pane disabled =
+                source.split(SplitSpec.builder().running("sh", "-c", consumer).build());
+        assertTrue(await(() -> List.of(source, peer, disabled).stream()
+                .allMatch(pane -> "cat".equals(pane.expand("#{pane_current_command}"))
+                        && captureOf(server, pane.id().value()).contains(prefix))));
+        source.window().synchronizePanes();
+        disabled.options().set("synchronize-panes", "off");
+        String marker = "batch-first-marker";
+
+        Typing.Sent sent = sendKeys(server, source.id().value(), marker);
+
+        assertEquals(sorted(source.id().value(), peer.id().value()), sent.resolvedPaneIds());
+        assertTrue(
+                await(() -> String.join(
+                                "\n",
+                                server.cmd(
+                                                "capture-pane",
+                                                "-p",
+                                                "-t",
+                                                source.id().value())
+                                        .stdout())
+                        .contains("batch-firs\nt-marker")),
+                "the fixture did not soft-wrap its input");
+        assertTrue(
+                captureOf(server, source.id().value()).contains(marker),
+                captureOf(server, source.id().value()));
+        assertTrue(await(() -> captureOf(server, peer.id().value()).contains(marker)));
+        assertFalse(captureOf(server, disabled.id().value()).contains(marker));
+    }
+
+    @Test
     void sourceOffIgnoresATruePeer(Server server) throws Exception {
         var source = server.panes().getFirst();
         var peer = source.split(SplitSpec.builder().build());
@@ -954,7 +993,7 @@ final class TypingTest {
             TmuxTransport interleaving = new TmuxTransport() {
                 @Override
                 public CommandResult execute(CommandRequest request) {
-                    if (String.join(" ", request.commands().get(0)).contains("paste-buffer")) {
+                    if (hasCommand(request, "paste-buffer")) {
                         // Hold both pastes open at once, so a shared buffer name would collide.
                         bothPending.countDown();
                         await(bothPending);
@@ -983,7 +1022,8 @@ final class TypingTest {
     }
 
     static String captureOf(Server server, String pane) {
-        return String.join("\n", server.cmd("capture-pane", "-p", "-t", pane).stdout());
+        return String.join(
+                "\n", server.cmd("capture-pane", "-p", "-J", "-t", pane).stdout());
     }
 
     private static List<String> sorted(String... paneIds) {

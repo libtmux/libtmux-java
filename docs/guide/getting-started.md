@@ -119,6 +119,22 @@ Being told is the point. A split that silently ignored `empty()` would hand back
 a pane with a shell in it, and nothing downstream could tell that apart from the
 pane that was asked for.
 
+The same exception type reports a tmux older than 3.3a, which no call can do
+without. `belowFloor()` is true for that refusal and false for a missing
+optional feature, so test it before skipping a feature:
+
+```java
+// Given: Server server
+try {
+    server.requireCompatibleTmux();
+} catch (UnsupportedFeatureException refused) {
+    if (!refused.belowFloor()) {
+        throw refused;
+    }
+    // Upgrade tmux, or use an earlier libtmux release: nothing works below 3.3a.
+}
+```
+
 ## A capture is a moment
 
 Accessors read tmux once and hand back handles over what they saw. Walking the

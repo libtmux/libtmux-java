@@ -60,6 +60,11 @@ final class Execution {
         }
     }
 
+    /** Validates the selected tmux without starting a daemon before Python runs. */
+    static void requireTmuxForExternalPython(Server server) {
+        server.requireCompatibleTmux();
+    }
+
     static void load(Main.Context context, ParseResult args, Reporter report) throws IOException, InterruptedException {
         if (Main.flag(args, "-8"))
             throw new Main.Failure(
@@ -587,29 +592,12 @@ final class Execution {
         return index;
     }
 
-    /**
-     * A new owned session, sized like tmuxp's terminal-size detection where {@code Server}
-     * can honor it, and plain otherwise.
-     *
-     * <p>{@code TMUXP_DEFAULT_COLUMNS}/{@code TMUXP_DEFAULT_ROWS} (else {@code COLUMNS}/{@code ROWS},
-     * else 80x24) seed the size; the real stdout's terminal overrides it where there is one, and
-     * {@code COLUMNS}/{@code LINES} override that. {@code TMUXP_DETECT_TERMINAL_SIZE} set to anything
-     * but {@code 1} disables detection outright. Below tmux 3.3a, {@code Server} refuses a size; that
-     * refusal is caught here rather than predicted, because it also carries the running version.
-     */
+    /** A new owned session, using tmuxp's terminal-size detection. */
     private static Session newOwnedSession(Main.Context context, Server server, WorkspacePlan plan)
             throws IOException, InterruptedException {
         SessionSpec.Builder spec = SessionSpec.builder().named(plan.name()).in(plan.directory());
-        Optional<Dimensions> size = sessionDimensions(context);
-        if (size.isEmpty()) return server.newSession(spec.build());
-        try {
-            return server.newSession(spec.sized(size.orElseThrow()).build());
-        } catch (UnsupportedFeatureException tooOld) {
-            return server.newSession(SessionSpec.builder()
-                    .named(plan.name())
-                    .in(plan.directory())
-                    .build());
-        }
+        sessionDimensions(context).ifPresent(spec::sized);
+        return server.newSession(spec.build());
     }
 
     private static Optional<Dimensions> sessionDimensions(Main.Context context)
@@ -769,7 +757,7 @@ final class Execution {
      * Where an attached load ends up: outside tmux ({@code insideTmux} false), switched via a known
      * client, or switched blind when the invoking pane cannot be identified.
      */
-    private record AttachTarget(boolean insideTmux, Optional<io.github.libtmux.Client> client) {}
+    record AttachTarget(boolean insideTmux, Optional<io.github.libtmux.Client> client) {}
 
     /**
      * Decided before anything is built: every way the invoking context can fail to carry this load
@@ -818,7 +806,35 @@ final class Execution {
                 : Character.toLowerCase(line.strip().charAt(0));
     }
 
+    /** The terminal handoff; {@code -N} keeps it from starting a daemon the version check never saw. */
+    static List<String> attachCommand(List<String> endpoint, String session) {
+        var argv = new ArrayList<>(endpoint);
+        argv.add(1, "-N");
+        argv.addAll(List.of("attach-session", "-t", session));
+        return List.copyOf(argv);
+    }
+
+    /** Runs the terminal handoff to completion and returns its exit status. */
+    @FunctionalInterface
+    interface Handoff {
+        int run(ProcessBuilder builder) throws IOException, InterruptedException;
+    }
+
+    private static int spawn(ProcessBuilder builder) throws IOException, InterruptedException {
+        Process child = builder.start();
+        try {
+            return child.waitFor();
+        } finally {
+            if (child.isAlive()) child.destroyForcibly();
+        }
+    }
+
     private static void attach(Server server, Session session, Main.Context context, AttachTarget target)
+            throws IOException, InterruptedException {
+        attach(server, session, context, target, Execution::spawn);
+    }
+
+    static void attach(Server server, Session session, Main.Context context, AttachTarget target, Handoff handoff)
             throws IOException, InterruptedException {
         if (target.insideTmux()) {
             authenticate(context, server);
@@ -846,10 +862,7 @@ final class Execution {
             }
             return;
         }
-        var argv = new ArrayList<>(server.config().endpointCommand());
-        argv.add("attach-session");
-        argv.add("-t");
-        argv.add(session.id().value());
+        var argv = attachCommand(server.config().endpointCommand(), session.id().value());
         // This process's own descriptors, not a fresh open of the tty by path: a client whose stdio
         // is reopened attaches and reads input but draws nothing.
         ProcessBuilder builder = new ProcessBuilder(argv)
@@ -860,13 +873,8 @@ final class Execution {
         builder.environment().putAll(context.environment());
         builder.environment().remove("TMUX");
         builder.environment().remove("TMUX_PANE");
-        Process child = builder.start();
-        try {
-            int status = child.waitFor();
-            if (status != 0) throw new Main.Failure(Machine.Code.TMUX_FAILED, status, "tmux attachment failed");
-        } finally {
-            if (child.isAlive()) child.destroyForcibly();
-        }
+        int status = handoff.run(builder);
+        if (status != 0) throw new Main.Failure(Machine.Code.TMUX_FAILED, status, "tmux attachment failed");
     }
 
     static List<Session> existingSessions(Server server) {

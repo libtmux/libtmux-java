@@ -185,6 +185,8 @@ one a script calls:
 - **`session_mismatch`** — the named session exists and is not what the
   document describes
 - **`tmux_unavailable`** — tmux could not be found or run
+- **`tmux_unsupported`** — tmux is older than 3.3a; the message says to
+  upgrade tmux or use the previous release
 - **`tmux_failed`** — tmux ran and refused, or the server changed under the
   command
 - **`script_failed`** — a child program could not be run, or ended badly
@@ -351,9 +353,9 @@ the `default`, `minimal`, `window`, `pane` and `verbose` presets, or a template.
 - Python builders and plugins remain executable user code with their own
   mutation and cleanup behavior.
 
-On tmux 3.2a, the Python classic builder can fail after tmux rewrites a session
-name containing `$`. Use a name without `$` for extension workspaces on that
-version; the bridge does not alter tmux's naming behavior.
+The Python bridge requires tmuxp 1.74.0 and a Python libtmux whose minimum is
+tmux 3.3a or newer. It refuses an older backend before running extensions or
+shell code; see the [migration notes](../../MIGRATION.md).
 
 ## Subprocesses
 

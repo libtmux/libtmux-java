@@ -12,6 +12,7 @@ import io.github.libtmux.SessionId;
 import io.github.libtmux.exception.ControlEndedException;
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.DispatchOutcome;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
@@ -20,10 +21,13 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -35,6 +39,32 @@ import org.junit.jupiter.api.io.TempDir;
  * measurements are in {@code docs/decisions/0009-command-groups-are-transport-agnostic.md}.
  */
 final class ControlClientTest {
+
+    @Test
+    void aCarrierProbeTimeoutDoesNotAcquireControl() {
+        AtomicInteger starts = new AtomicInteger();
+        AtomicReference<Process> probe = new AtomicReference<>();
+        ControlCarrier carrier = command -> {
+            starts.incrementAndGet();
+            Process started = new ProcessBuilder("/bin/sh", "-c", "exec sleep 30").start();
+            probe.set(started);
+            return started;
+        };
+        DispatchException.TimedOut failure = assertThrows(
+                DispatchException.TimedOut.class,
+                () -> ControlClient.attach(
+                        carrier,
+                        ServerConfig.builder().build(),
+                        new SessionId("$0"),
+                        4242L,
+                        OptionalLong.empty(),
+                        "3.7c",
+                        Duration.ofMillis(250)));
+
+        assertEquals(DispatchOutcome.NOT_DISPATCHED, failure.outcome());
+        assertEquals(1, starts.get(), "only the version probe may start");
+        assertFalse(probe.get().isAlive(), "the timed-out version probe survived");
+    }
 
     /** A pipe write on the calling virtual thread pins the only carrier and starves the sentinel. */
     @Test
@@ -88,8 +118,8 @@ final class ControlClientTest {
     /**
      * tmux(1) documents {@code refresh-client -B name:what:format}'s {@code what} as empty,
      * {@code %N}, {@code %*}, {@code @N} or {@code @*} only. A session id ({@code $0}) or an
-     * arbitrary word were never spellings the manual promises for "the attached session" - 3.2a and
-     * 3.7c happen to accept them leniently, but on master the identical call is accepted and fires
+     * arbitrary word were never spellings the manual promises for "the attached session" - some releases
+     * happen to accept them leniently, but on master the identical call is accepted and fires
      * nothing, silently. {@code watch} now sends the one spelling confirmed to work everywhere -
      * {@code ""} - for anything that does not itself name a pane or window.
      */
@@ -472,6 +502,13 @@ final class ControlClientTest {
      */
     private static final String PRELUDE = """
             #!/bin/sh
+            for argument in "$@"; do
+                case "$argument" in
+                    libtmux-version-*'#{version}')
+                        printf 'unknown command: %s3.7d\\n' "${argument%'#{version}'}" >&2
+                        exit 1;;
+                esac
+            done
             read_request() { IFS= read -r request && IFS= read -r marker; }
             answer() {
                 printf '%%begin 1 1 1\\n'

@@ -349,7 +349,7 @@ public final class Window {
      * pane's id. A classic string — every release before 3.8, or an older reader against a newer
      * server — restores the geometry but names no pane, so which process lands in which cell can
      * differ from where it started; whether it does depends on whether the pane list still happens
-     * to match the order the layout was saved in. Confirmed by hand on 3.2a and 3.7c.
+     * to match the order the layout was saved in. Confirmed by hand on 3.7c.
      *
      * @throws IllegalArgumentException if the string is not a layout tmux wrote
      * @throws UnsupportedFeatureException if it is JSON-shaped but this server predates JSON

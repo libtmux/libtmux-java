@@ -20,7 +20,8 @@ final class SessionLookup {
         RowFormat format = RowFormat.of("session_id", "session_name", "version");
         CommandResult result = server.cmd("list-sessions", "-F", format.template());
         if (!result.succeeded()) {
-            // A live server with no sessions lists nothing and exits 0, on 3.2a and 3.7d alike, so
+            // A live server with no sessions lists nothing and exits 0 on every supported
+            // release, so
             // any failure is not an answer: no daemon, a socket this user cannot open, or a binary
             // that is not tmux. failed() tells the first apart.
             throw server.failed("list-sessions", result);

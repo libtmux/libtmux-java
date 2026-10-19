@@ -57,12 +57,14 @@ public final class TmuxFormats {
      * tmux printed it.
      */
     static String printed(String line, TmuxVersion version) {
-        return version.equals(DOLLAR_ESCAPED) ? ESCAPED_DOLLAR.matcher(line).replaceAll("") : line;
+        return version.sameRelease(DOLLAR_ESCAPED)
+                ? ESCAPED_DOLLAR.matcher(line).replaceAll("")
+                : line;
     }
 
     /** As {@link #printed(String, TmuxVersion)}, for every line. */
     static java.util.List<String> printed(java.util.List<String> lines, TmuxVersion version) {
-        return version.equals(DOLLAR_ESCAPED)
+        return version.sameRelease(DOLLAR_ESCAPED)
                 ? lines.stream().map(line -> printed(line, version)).toList()
                 : lines;
     }
@@ -74,8 +76,8 @@ public final class TmuxFormats {
      * The names to look for when a caller names a session: the one this release stores for it, then
      * the name exactly as given, which is what {@link Session#name} already reports.
      *
-     * <p>tmux doubles each backslash; 3.2a through 3.4 put a backslash before a {@code $} that a
-     * letter, {@code _}, or <code>{</code> follows; 3.2a through 3.6 store {@code .} and {@code :}
+     * <p>tmux doubles each backslash; 3.3a through 3.4 put a backslash before a {@code $} that a
+     * letter, {@code _}, or <code>{</code> follows; 3.3a through 3.6 store {@code .} and {@code :}
      * as {@code _} and a control character as a C escape or three octal digits. 3.7 and later refuse
      * control characters. The stored form is an escaping, so it names at most one session; only a
      * name that is itself some other name's stored form is ambiguous, and the stored form wins.

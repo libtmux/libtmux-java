@@ -11,11 +11,9 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.SessionSpec;
-import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowSpec;
 import io.github.libtmux.exception.TargetGoneException;
-import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,14 +27,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 /**
  * Making windows and sessions against a real tmux, on whichever release the lane is running.
  *
- * <p>Neither command changed its flags across the supported range, so what is version-dependent here
- * is behaviour 3.2a accepts and then ignores: a detached session's size, and a relative start
- * directory. Both branches assert.
+ * <p>Sizes and working directories must describe the created process on every supported daemon.
  */
 @ExtendWith(TmuxExtension.class)
 final class CreationIntegrationTest {
-
-    private static final TmuxVersion SIZE_SINCE = new TmuxVersion(3, 3, "");
 
     // ------------------------------------------------------------------------------ new-window
 
@@ -160,8 +154,8 @@ final class CreationIntegrationTest {
 
     /**
      * A relative directory starts every kind of process where this JVM's working directory says. The
-     * daemon is started from another directory, because tmux 3.2a resolves a relative {@code -c}
-     * against the server's own, and a daemon started from here would agree with it by accident.
+     * daemon is started from another directory, because a daemon started from here would agree with this
+     * process about a relative {@code -c} by accident.
      */
     @Test
     void aRelativeStartDirectoryResolvesAgainstThisProcess(@TempDir Path directory) throws Exception {
@@ -236,23 +230,11 @@ final class CreationIntegrationTest {
         assertTrue(Await.until(() -> "sleep".equals(pane.refresh().currentCommand())));
     }
 
-    /** 3.2a accepts {@code -x}/{@code -y} for a detached session and gives it the default size. */
     @Test
-    void aSizeIsHonouredOrRefusedDependingOnTheRelease(Server server) {
+    void aDetachedSessionHonoursItsSize(Server server) {
         Dimensions wanted = new Dimensions(100, 40);
-
-        if (server.version().atLeast(SIZE_SINCE)) {
-            Session sized = server.newSession(s -> s.named("sized").sized(wanted));
-
-            assertEquals(wanted, sized.windows().get(0).size());
-        } else {
-            assertThrows(
-                    UnsupportedFeatureException.class,
-                    () -> server.newSession(s -> s.named("sized").sized(wanted)));
-            assertTrue(
-                    server.sessions().stream().noneMatch(session -> "sized".equals(session.name())),
-                    "a refused spec must not have reached tmux");
-        }
+        Session sized = server.newSession(s -> s.named("sized").sized(wanted));
+        assertEquals(wanted, sized.windows().getFirst().size());
     }
 
     @Test
@@ -273,34 +255,21 @@ final class CreationIntegrationTest {
         }
     }
 
-    /**
-     * Sizing is exactly the one thing {@link SessionSpec#argv} needs the version for, and a
-     * fresh socket has no daemon yet to ask {@link Server#version()}. The version has to come from
-     * somewhere that does not need one already running — here, the binary itself.
-     */
     @Test
-    void aSizedSessionCanBeMadeBeforeAnythingHasAskedTheServerItsVersion(Server server, @TempDir Path directory)
-            throws Exception {
+    void aSizedSessionCanBeMadeOnAFreshEndpoint(@TempDir Path directory) throws Exception {
         Path config = directory.resolve("empty.conf");
         Files.writeString(config, "");
-        Path socket = directory.resolve("s");
         Dimensions wanted = new Dimensions(120, 40);
-
         try (Server fresh = Server.open(io.github.libtmux.ServerConfig.builder()
                 .binary(System.getProperty("libtmux.tmux", "tmux"))
-                .endpoint(io.github.libtmux.ServerEndpoint.socketPath(socket))
+                .endpoint(io.github.libtmux.ServerEndpoint.socketPath(directory.resolve("s")))
                 .configFile(config)
                 .build())) {
-            if (server.version().atLeast(SIZE_SINCE)) {
+            try {
                 Session sized = fresh.newSession(s -> s.named("sized").sized(wanted));
-
-                assertEquals(wanted, sized.windows().get(0).size());
+                assertEquals(wanted, sized.windows().getFirst().size());
+            } finally {
                 fresh.killServer();
-            } else {
-                assertThrows(
-                        UnsupportedFeatureException.class,
-                        () -> fresh.newSession(s -> s.named("sized").sized(wanted)));
-                assertTrue(Files.notExists(socket), "a refused spec must not have started the daemon");
             }
         }
     }

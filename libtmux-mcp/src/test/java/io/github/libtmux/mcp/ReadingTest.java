@@ -118,10 +118,9 @@ final class ReadingTest {
      * screens together.
      *
      * <p>The history is dropped through tmux rather than by running {@code clear} in the pane. What
-     * the shell's own clear does to the scrollback is not the same across the supported range — on
-     * 3.2a the cleared lines are still in history, so a reader that found them there and reported
-     * continuity was right — and this is here to pin what this server promises, not what a terminal
-     * happens to do with an escape sequence.
+     * the shell's own clear does to the scrollback is not the same across releases, and this is
+     * here to pin what this server promises, not what a terminal happens to do with an escape
+     * sequence.
      */
     @Test
     void aPaneWhoseHistoryIsGoneIsReportedAsADiscontinuity(Server server) {

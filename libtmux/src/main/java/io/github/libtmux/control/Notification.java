@@ -85,11 +85,11 @@ public sealed interface Notification {
     /**
      * {@code %pause}: tmux stopped sending a pane's output to this client, which turned flow control
      * on with {@code refresh-client -f pause-after=N} and fell N seconds behind. {@code refresh-client
-     * -A '%1:continue'} resumes it. tmux 3.2 and later.
+     * -A '%1:continue'} resumes it.
      */
     record Pause(PaneId pane) implements Notification {}
 
-    /** {@code %continue}: a paused pane's output flows to this client again. tmux 3.2 and later. */
+    /** {@code %continue}: a paused pane's output flows to this client again. */
     record Continue(PaneId pane) implements Notification {}
 
     /** {@code %message}: text another client showed on this one with {@code display-message -c}. tmux 3.4 and later. */

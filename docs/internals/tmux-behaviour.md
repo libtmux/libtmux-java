@@ -1,10 +1,26 @@
 # tmux behaviour this library codes around
 
 Facts about tmux's own commands, measured against the supported version range
-(tmux 3.2a through 3.7c unless a row says otherwise), that the implementation
+(tmux 3.3a through 3.7c unless a row says otherwise), that the implementation
 relies on and that are not self-evident from the tmux manual. A decision that
 weighs alternatives belongs in [`docs/decisions/`](../decisions/) instead;
 this page is measurements, kept reachable because source comments cite them.
+
+## Executable version banners on tmux 3.3a
+
+tmux 3.3a prints the configured executable's basename before its version.
+Copies and symlinks named `opaque client` and `opaque-link` report
+`opaque client 3.3a` and `opaque-link 3.3a`. The cold-start version check
+accepts that exact basename or the canonical `tmux` prefix, followed by a
+complete version token. Daemon reports remain bare version tokens.
+
+## Soft-wrapped capture rows
+
+On tmux 3.3a and 3.7c, `capture-pane -p` inserts a newline where terminal
+output wraps across screen rows. With a 70-character prefix in an 80-column
+pane, `batch-first-marker` is captured as `batch-firs\nt-marker` despite
+arriving intact. `capture-pane -p -J` joins those rows without joining hard
+line breaks; typing tests use it when checking delivered text.
 
 ## break-pane on tmux 3.7
 
@@ -25,7 +41,7 @@ chosen anyway cannot detect the second failure mode.
 
 ## split-window flags across releases
 
-| flag | 3.2a–3.3 | 3.4 | 3.5–3.6 | 3.7+ |
+| flag | 3.3a | 3.4 | 3.5–3.6 | 3.7+ |
 | --- | --- | --- | --- | --- |
 | `-v -h -b -l -f -Z -c -e` | yes | yes | yes | yes |
 | `-p` (percentage) | yes | **broken** (`size missing`, an upstream typo reading the wrong flag) | yes | yes |
@@ -44,19 +60,16 @@ attribute of a just-created pane must come from a later read.
 
 ## new-window and new-session across releases
 
-`new-window` and `new-session` have not gained or lost a flag since 3.2a — the
-version-gated concerns are behavioral, not syntactic:
+`new-window` and `new-session` have not gained or lost a flag across the
+supported range — the version-gated concerns are behavioral, not syntactic:
 
-- **3.2a resolves a relative `-c` against the server's working directory.**
-  The path reaches the child unchanged, so it lands wherever the server was
-  started, or in `$HOME` when that directory has no such path, exit `0`
-  either way. 3.3 onwards resolves it against the requesting client's
-  directory. `new-window`, `split-window`, `new-session` and `respawn-pane`
-  share the spawn code, so all four do this. An absolute directory is honored
-  on every release, and every directory is sent absolute, resolved against the
-  calling process, so each release starts the process where 3.3 does.
-- **3.2a ignores `new-session -x/-y` (sizing)**, silently and with exit `0`.
-  It is refused before dispatch rather than accepted and ignored.
+- **A relative `-c` is resolved against the requesting client's directory.**
+  `new-window`, `split-window`, `new-session` and `respawn-pane` share the
+  spawn code, so all four do this. An absolute directory is honored on every
+  release, and every directory is sent absolute, resolved against the calling
+  process, so the start directory never depends on where the server was
+  started.
+- **`new-session -x/-y` size a detached session** on every supported release.
 - **`new-window -S` (reuse-if-named) reports nothing.** It correctly selects
   the existing window rather than making a second one, but its `-P -F`
   template expands to the empty string on every lane. The window has to be
@@ -82,14 +95,13 @@ and are not exposed for that reason, the same as `new-session -A` above.
 
 ## run-shell output is missing on 3.3a and 3.4 only
 
-Reading what `run-shell` printed works on 3.2a, silently reports nothing on
-3.3a and 3.4, and works again from 3.5 onward — never intermittent, and the
-exit status and the command's real effect are correct throughout. This is a
-gap with working releases on both sides, not a floor, so the library exposes
-two methods: one that runs a command for effect (works everywhere) and one
-that runs it and returns its output (refuses on 3.3a and 3.4, rather than
-returning an empty list that would be indistinguishable from a command that
-printed nothing there).
+Reading what `run-shell` printed silently reports nothing on 3.3a and 3.4, and
+works from 3.5 onward — never intermittent, and the exit status and the
+command's real effect are correct throughout. This is a gap at the start of the
+supported range, not a floor, so the library exposes two methods: one that runs
+a command for effect (works everywhere) and one that runs it and returns its
+output (refuses on 3.3a and 3.4, rather than returning an empty list that would
+be indistinguishable from a command that printed nothing there).
 
 ## find-window is a chooser, not a search
 

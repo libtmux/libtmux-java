@@ -190,9 +190,9 @@ final class SplitSpecTest {
     void theRefusalNamesTheFeatureAndBothVersions() {
         UnsupportedFeatureException refused = assertThrows(
                 UnsupportedFeatureException.class,
-                () -> argv(SplitSpec.builder().empty().build(), new TmuxVersion(3, 2, "a")));
+                () -> argv(SplitSpec.builder().empty().build(), new TmuxVersion(3, 3, "a")));
 
-        assertEquals("an empty pane requires tmux 3.7, but this server runs 3.2a", refused.getMessage());
+        assertEquals("an empty pane requires tmux 3.7, but this server runs 3.3a", refused.getMessage());
     }
 
     @Test
@@ -205,7 +205,7 @@ final class SplitSpecTest {
                 .zoomed()
                 .build();
 
-        assertFalse(argv(everyday, new TmuxVersion(3, 2, "a")).isEmpty());
+        assertFalse(argv(everyday, TmuxVersion.MINIMUM).isEmpty());
     }
 
     /** A 3.7 patch release still has what 3.7 had; letter ordering is the trap this guards. */

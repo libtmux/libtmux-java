@@ -4,6 +4,9 @@ plugins {
     application
 }
 
+// The classes the rejection lanes of the tmux matrix run in this module.
+extra["libtmuxRejectionTests"] = listOf("io.github.libtmux.mcp.OldDaemonToolCallTest")
+
 // An MCP client launches this as a subprocess and speaks JSON-RPC over its standard streams, so it
 // needs a real launcher rather than a library jar. installDist writes one with its own lib
 // directory; no stdout but the protocol may reach the client.

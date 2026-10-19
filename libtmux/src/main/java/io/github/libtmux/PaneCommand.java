@@ -154,10 +154,10 @@ public final class PaneCommand {
      * The framed rows, with anything the marker shared its row with kept as the last of them.
      *
      * <p>Each row loses its trailing space, because tmux's does not mean anything. Asking it to
-     * rejoin wrapped rows also asks it to keep trailing spaces, and it pads the rows out to do so on
-     * 3.2a though not on 3.7c — measured — so one command answered {@code built} on one release and
-     * {@code built} followed by fifteen spaces on another. {@code -T} would ask tmux for less but
-     * arrived in 3.4, below the range this supports. A terminal cannot tell a printed trailing space
+     * rejoin wrapped rows also asks it to keep trailing spaces, and a release can pad the rows out
+     * to do so, as 3.7c does not — measured — so one command could answer {@code built} on one
+     * release and {@code built} followed by fifteen spaces on another. {@code -T} would ask tmux for
+     * less but arrived in 3.4, so the oldest supported release lacks it. A terminal cannot tell a printed trailing space
      * from a cell nothing ever wrote, so dropping both is the only answer that is the same
      * everywhere.
      */

@@ -145,7 +145,7 @@ final class FailedReadIntegrationTest {
 
     /**
      * A name tmux has no option for, rather than an unset {@code @user} one: tmux accepts any
-     * {@code @} name as a user option, and 3.2a answers an unset one with an empty value where 3.7
+     * {@code @} name as a user option, and releases differ on an unset one: an empty value where 3.7
      * calls it invalid. Only a name that is not an option at all means the same thing on every
      * supported release.
      */

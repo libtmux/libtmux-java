@@ -347,7 +347,7 @@ final class RunningCommandsTest {
         assertEquals(1, sends.size());
         assertTrue(preflights.get(0) < discoveries.getFirst());
         assertTrue(discoveries.getFirst() < preflights.get(1));
-        assertEquals(preflights.get(1) + 1, sends.getFirst(), "a tmux query followed the final preflight");
+        assertEquals(preflights.get(1) + 1, sends.getFirst(), "nothing may follow the final preflight but the send");
         assertEquals(1, directCommandCount(requests, "wait-for"));
     }
 
@@ -591,6 +591,19 @@ final class RunningCommandsTest {
     }
 
     @Test
+    void completionCaptureKeepsSoftWrappedMarkers(Server server) throws Exception {
+        Pane pane = server.panes().getFirst();
+        pane.window().resizeTo(new io.github.libtmux.Dimensions(20, 24));
+        String marker = "lt" + "a".repeat(32) + "-e:00";
+        pane.respawn("sh", "-c", "printf '%s' " + Shell.quote(marker) + "; exec cat");
+        assertTrue(await(() -> "cat".equals(pane.expand("#{pane_current_command}"))));
+
+        assertTrue(
+                capture(server, pane.id().value()).contains(marker),
+                capture(server, pane.id().value()));
+    }
+
+    @Test
     void cancelledRunRetainsItsPaneUntilTheStatusMarker(Server server, @TempDir Path temporary) throws Exception {
         String pane = server.panes().getFirst().id().value();
         Path ready = temporary.resolve("ready");
@@ -621,7 +634,9 @@ final class RunningCommandsTest {
         try (ProcessTransport processes = new ProcessTransport()) {
             TmuxTransport uncertain = borrowing(request -> {
                 CommandResult result = processes.execute(request);
-                if (request.commands().get(0).stream().anyMatch(argument -> argument.contains("ch_lt"))) {
+                if (request.commands().stream()
+                        .flatMap(List::stream)
+                        .anyMatch(argument -> argument.contains("ch_lt"))) {
                     throw new DispatchException.Failed(
                             "simulated failure after delivery", DispatchOutcome.UNKNOWN, null);
                 }
@@ -967,7 +982,8 @@ final class RunningCommandsTest {
     }
 
     private static Optional<String> nonce(CommandRequest request) {
-        return request.commands().getFirst().stream()
+        return request.commands().stream()
+                .flatMap(List::stream)
                 .filter(argument -> argument.contains("ch_lt"))
                 .flatMap(argument -> NONCE.matcher(argument).results())
                 .map(MatchResult::group)
@@ -975,7 +991,8 @@ final class RunningCommandsTest {
     }
 
     private static String capture(Server server, String paneId) {
-        return String.join("\n", server.cmd("capture-pane", "-p", "-t", paneId).stdout());
+        return String.join(
+                "\n", server.cmd("capture-pane", "-p", "-J", "-t", paneId).stdout());
     }
 
     private static void assertRefusedBeforeRunWork(

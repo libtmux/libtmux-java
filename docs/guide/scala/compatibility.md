@@ -10,9 +10,9 @@ the facades' unit suites, their real-tmux suites, the documented Scala examples
 and the runnable programs on JDK 25 and 27 on Linux, and on macOS.
 
 Every lane of the [tmux matrix][tmux-matrix] runs the real-tmux suites against
-its own tmux: `3.2a`, `3.3`, `3.3a`, `3.4`, `3.5`, `3.6`, `3.7`, `3.7a`, `3.7b`
-and `3.7c`. The Scala fixture takes the lane's tmux the same way the Java one
-does.
+its own tmux: `3.3a`, `3.4`, `3.5`, `3.6`, `3.7`, `3.7a`, `3.7b` and `3.7c`.
+The Scala fixture takes the lane's tmux the same way the Java one does. The
+facades inherit Java's version check and reject older daemons.
 
 ## Artifacts
 

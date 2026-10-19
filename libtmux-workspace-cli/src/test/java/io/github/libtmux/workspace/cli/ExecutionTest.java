@@ -28,6 +28,52 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 final class ExecutionTest {
+
+    @Test
+    void theTerminalHandoffNeverStartsADaemon() {
+        assertEquals(
+                java.util.List.of("tmux", "-N", "-S", "/tmp/s", "attach-session", "-t", "$1"),
+                Execution.attachCommand(java.util.List.of("tmux", "-S", "/tmp/s"), "$1"));
+    }
+
+    /** The argv {@code attach} spawns, not the helper that builds one: removing -N there must fail. */
+    @Test
+    void attachSpawnsTheHandoffWithoutStartingADaemon() throws Exception {
+        Path socket = directory.resolve("handoff-socket");
+        try (Server server = server(socket)) {
+            try {
+                Session session = server.newSession("handoff");
+                java.util.List<java.util.List<String>> spawned = new java.util.ArrayList<>();
+                Main.Context context = new Main.Context(
+                        java.util.Map.of("TMUX", "inherited", "TMUX_PANE", "%1", "PATH", "/usr/bin"),
+                        directory,
+                        InputStream.nullInputStream(),
+                        new ByteArrayOutputStream(),
+                        new ByteArrayOutputStream());
+
+                Execution.attach(
+                        server,
+                        session,
+                        context,
+                        new Execution.AttachTarget(false, java.util.Optional.empty()),
+                        builder -> {
+                            spawned.add(builder.command());
+                            assertFalse(builder.environment().containsKey("TMUX"));
+                            assertFalse(builder.environment().containsKey("TMUX_PANE"));
+                            return 0;
+                        });
+
+                var expected = new java.util.ArrayList<>(server.config().endpointCommand());
+                expected.add(1, "-N");
+                expected.addAll(
+                        java.util.List.of("attach-session", "-t", session.id().value()));
+                assertEquals(java.util.List.of(expected), spawned);
+            } finally {
+                if (server.isAlive()) server.killServer();
+            }
+        }
+    }
+
     @TempDir
     Path directory;
 
@@ -70,6 +116,115 @@ final class ExecutionTest {
         assertEquals(
                 server.panes().stream().map(pane -> pane.id().value()).collect(toSet()),
                 effects.path("pane_ids").valueStream().map(JsonNode::asText).collect(toSet()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"load", "shell"})
+    void obsoletePythonBackendIsRefusedBeforeExternalCode(String entry) throws Exception {
+        Path marker = directory.resolve("backend-entered");
+        Path backend = pythonBackend("3.2a", marker);
+        Path source = directory.resolve("external.yaml");
+        Files.writeString(
+                source,
+                "session_name: external\nplugins: [forbidden.Plugin]\nwindows:\n- window_name: main\n  panes: [null]\n");
+        String argument = entry.equals("load") ? source.toString() : "-c";
+        String value = entry.equals("load") ? "-d" : "print('must-not-run')";
+        Result result = invoke(
+                java.util.Map.of("PYTHONPATH", backend.toString(), "TMUX_WORKSPACE_PYTHON", "python3"),
+                entry,
+                "--json",
+                "-S",
+                directory.resolve("s").toString(),
+                argument,
+                value);
+
+        assertFalse(Files.exists(marker), "obsolete Python code ran before the version check: " + result.err());
+        assertTrue(result.code() != 0, result.out());
+        assertTrue(
+                (result.out() + result.err()).contains("Python libtmux with a tmux 3.3a minimum is required"),
+                result.out() + result.err());
+    }
+
+    @Test
+    void aQualifiedPythonBackendCanEnterTheShell() throws Exception {
+        Path marker = directory.resolve("qualified-backend-entered");
+        Path backend = pythonBackend("3.3a", marker);
+        Result result = invoke(
+                java.util.Map.of("PYTHONPATH", backend.toString(), "TMUX_WORKSPACE_PYTHON", "python3"),
+                "shell",
+                "--json",
+                "-S",
+                directory.resolve("s").toString(),
+                "-c",
+                "print('qualified')");
+
+        assertEquals(0, result.code(), result.out() + result.err());
+        assertTrue(Files.exists(marker), "the qualified child was not entered");
+    }
+
+    private Path pythonBackend(String floor, Path marker) throws Exception {
+        Path backend = directory.resolve("python-" + floor);
+        Files.createDirectories(backend.resolve("libtmux"));
+        Files.writeString(
+                backend.resolve("libtmux/__init__.py"), "class Server:\n    def __init__(self, **kwargs): pass\n");
+        Files.writeString(backend.resolve("libtmux/common.py"), "TMUX_MIN_VERSION = '" + floor + "'\n");
+        Files.createDirectories(backend.resolve("tmuxp/workspace"));
+        Files.writeString(backend.resolve("tmuxp/__init__.py"), "");
+        String entered = "from pathlib import Path\nPath(" + Documents.JSON.writeValueAsString(marker.toString())
+                + ").write_text('entered')\n";
+        Files.writeString(backend.resolve("tmuxp/workspace/__init__.py"), entered);
+        Files.writeString(
+                backend.resolve("tmuxp/cli.py"), "def cli():\n" + entered.indent(4) + "    print('qualified')\n");
+        Files.createDirectories(backend.resolve("tmuxp-1.74.0.dist-info"));
+        Files.writeString(
+                backend.resolve("tmuxp-1.74.0.dist-info/METADATA"),
+                "Metadata-Version: 2.1\nName: tmuxp\nVersion: 1.74.0\n");
+        return backend;
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"load", "shell"})
+    void externalPythonCannotStartAnUnsupportedFreshTmux(String entry) throws Exception {
+        Path marker = directory.resolve("python-builder-started");
+        Path python = directory.resolve("python");
+        Files.writeString(
+                python,
+                "#!/bin/sh\ncase \"$*\" in *importlib.metadata*) printf '1.74.0\\n'; exit;; esac\nprintf started > '"
+                        + marker + "'\nexit 1\n");
+        assertTrue(python.toFile().setExecutable(true));
+        Path tmux = directory.resolve("old-tmux");
+        Files.writeString(
+                tmux,
+                "#!/bin/sh\nfor argument in \"$@\"; do\n  if [ \"$argument\" = -V ]; then printf 'tmux 3.3\\n'; exit; fi\ndone\nprintf 'no server running\\n' >&2\nexit 1\n");
+        assertTrue(tmux.toFile().setExecutable(true));
+        Path source = directory.resolve("external.yaml");
+        Files.writeString(source, "session_name: external\nworkspace_builder: external:Builder\nwindows: [{}]\n");
+        String[] arguments = entry.equals("load")
+                ? new String[] {
+                    "load",
+                    source.toString(),
+                    "-d",
+                    "-S",
+                    directory.resolve("s").toString(),
+                    "--json"
+                }
+                : new String[] {
+                    "shell",
+                    "-c",
+                    "print('must not run')",
+                    "-S",
+                    directory.resolve("s").toString(),
+                    "--json"
+                };
+        Result result = invoke(
+                java.util.Map.of("LIBTMUX_TEST_TMUX", tmux.toString(), "TMUX_WORKSPACE_PYTHON", python.toString()),
+                arguments);
+        assertEquals(1, result.code(), result.toString());
+        assertTrue(result.err().contains("3.3a"), result.toString());
+        assertEquals(
+                "tmux_unsupported",
+                new ObjectMapper().readTree(result.err()).path("code").asText());
+        assertFalse(Files.exists(marker), "external Python started before the minimum-version check");
     }
 
     @ParameterizedTest
@@ -381,7 +536,6 @@ final class ExecutionTest {
         Path socket = directory.resolve("size-socket");
         Files.writeString(source, "session_name: sized\nwindows:\n  - window_name: a\n  - window_name: b\n");
         try (Server server = server(socket)) {
-            assumeSizesDetachedSessions(server);
             try {
                 assertFalse(server.isAlive(), "the daemon must still be cold before this load");
                 Result result = invoke(
@@ -419,7 +573,6 @@ final class ExecutionTest {
         assertTrue(wrapper.toFile().setExecutable(true));
         Files.writeString(source, "session_name: default-size\nwindows: [{}]\n");
         try (Server server = server(socket)) {
-            assumeSizesDetachedSessions(server);
             try {
                 Result result = invoke(
                         java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString()),
@@ -495,9 +648,13 @@ final class ExecutionTest {
                 "usage", new ObjectMapper().readTree(result.err()).path("code").asText());
     }
 
-    /** Below 3.3a a size is silently skipped, not sent and ignored, matching {@code SessionSpec}. */
-    @Test
-    void loadSkipsSizingOnATmuxOlderThan33a() throws Exception {
+    /**
+     * An unsupported executable is refused before session creation. The refusal carries the machine
+     * code {@code tmux_unsupported} in JSON and the message with its remedy in text.
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void loadRejectsAnUnsupportedTmuxInsteadOfRetryingWithoutSize(boolean json) throws Exception {
         Path source = directory.resolve("size-old.yaml");
         Path socket = directory.resolve("size-old-socket");
         Path trace = directory.resolve("size-old-arguments");
@@ -512,18 +669,27 @@ final class ExecutionTest {
         try (Server server = server(socket)) {
             try {
                 assertFalse(server.isAlive());
+                java.util.List<String> arguments = new java.util.ArrayList<>(
+                        java.util.List.of("load", source.toString(), "-d", "-S", socket.toString(), "-f", "/dev/null"));
+                if (json) arguments.add("--json");
                 Result result = invoke(
                         java.util.Map.of("LIBTMUX_TEST_TMUX", wrapper.toString(), "COLUMNS", "120", "LINES", "40"),
-                        "load",
-                        source.toString(),
-                        "-d",
-                        "-S",
-                        socket.toString(),
-                        "-f",
-                        "/dev/null",
-                        "--json");
-                assertEquals(0, result.code(), result.err());
-                assertFalse(Files.readString(trace).lines().anyMatch("-x"::equals), Files.readString(trace));
+                        arguments.toArray(String[]::new));
+                assertEquals(1, result.code(), result.err());
+                assertTrue(result.err().contains("3.3a"), result.err());
+                assertTrue(result.err().contains("upgrade tmux"), result.err());
+                if (json) {
+                    assertEquals(
+                            "tmux_unsupported",
+                            new ObjectMapper()
+                                    .readTree(result.err())
+                                    .path("code")
+                                    .asText());
+                } else {
+                    assertTrue(result.err().startsWith("Error: libtmux core requires tmux 3.3a"), result.err());
+                }
+                assertFalse(Files.readString(trace).lines().anyMatch("new-session"::equals), Files.readString(trace));
+                assertFalse(server.isAlive());
             } finally {
                 if (server.isAlive()) server.killServer();
             }
@@ -1049,9 +1215,8 @@ final class ExecutionTest {
                     var panes = keeper.windows().getFirst().panes().stream()
                             .map(io.github.libtmux.Pane::id)
                             .toList();
-                    String version = server.version().atLeast(io.github.libtmux.TmuxVersion.parse("3.5"))
-                            ? "3.7c"
-                            : server.version().atLeast(io.github.libtmux.TmuxVersion.parse("3.3")) ? "3.3a" : "3.2a";
+                    String version =
+                            server.version().atLeast(io.github.libtmux.TmuxVersion.parse("3.5")) ? "3.7c" : "3.3a";
                     for (var item : cases) {
                         String id = item.path("id").asText();
                         var workspace = mapper.createObjectNode().put("session_name", "layout-" + id);
@@ -1128,7 +1293,7 @@ final class ExecutionTest {
                         "--json");
                 assertEquals(1, result.code(), result.toString());
                 assertEquals(
-                        json && !server.version().atLeast(io.github.libtmux.TmuxVersion.parse("3.8"))
+                        json && !server.version().atLeast(io.github.libtmux.TmuxVersion.parse("3.8-rc2"))
                                 ? "tmux_failed"
                                 : "invalid_workspace",
                         Documents.JSON.readTree(result.err()).path("code").asText());
@@ -2681,14 +2846,6 @@ final class ExecutionTest {
                 if (server.isAlive()) server.killServer();
             }
         }
-    }
-
-    /** tmux 3.2a accepts -x/-y for a detached session and ignores them, so the CLI sends no size there. */
-    private static void assumeSizesDetachedSessions(Server server) {
-        String client = server.cmd("-V").stdout().getFirst().replace("tmux ", "");
-        org.junit.jupiter.api.Assumptions.assumeTrue(
-                io.github.libtmux.TmuxVersion.parse(client).atLeast(io.github.libtmux.TmuxVersion.parse("3.3a")),
-                "detached session sizing needs tmux 3.3a");
     }
 
     /**

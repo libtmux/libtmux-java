@@ -188,7 +188,8 @@ fun nextStep(failure: LibTmuxException): String =
         is CommandRejectedException -> "change the request"
         is DispatchException -> if (failure.safeToRetry()) "send it again" else "read state first"
         is ControlEndedException -> "attach again"
-        is UnsupportedFeatureException -> "do without"
+        is UnsupportedFeatureException ->
+            if (failure.belowFloor()) "upgrade tmux" else "do without"
         is UnencodableTextException -> "use a UTF-8 locale"
         is MalformedResponseException -> "report it"
         is CardinalityException.NoMatch -> "nothing matched"

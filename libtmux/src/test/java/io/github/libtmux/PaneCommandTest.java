@@ -115,9 +115,9 @@ final class PaneCommandTest {
     }
 
     /**
-     * Asking tmux to rejoin wrapped rows also asks it to keep trailing spaces, and it pads the rows
-     * out to the pane to do so on 3.2a where 3.7c does not. The same command answered {@code built}
-     * on one and {@code built} followed by fifteen spaces on the other.
+     * Asking tmux to rejoin wrapped rows also asks it to keep trailing spaces, and a release can pad
+     * the rows out to the pane to do so, as 3.7c does not. The same command could answer {@code
+     * built} on one and {@code built} followed by fifteen spaces on the other.
      */
     @Test
     void tmuxsOwnPaddingIsNotTheCommandsOutput() {

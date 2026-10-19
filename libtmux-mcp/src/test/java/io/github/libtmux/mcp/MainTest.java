@@ -12,7 +12,11 @@ import io.github.libtmux.junit5.NamedServerFixture;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.TmuxTransport;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -21,6 +25,9 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * Which server the launcher was told to expose. A client passes these once and never sees them
@@ -37,6 +44,73 @@ final class MainTest {
         assertTrue(!minimal.equals(Path.of("/dev/null")));
         assertTrue(Files.readString(minimal).contains("libtmux-mcp"));
         assertEquals("tmux", config.binary());
+    }
+
+    /**
+     * A tmux that reports an old or unreadable release stops startup with one line on stderr and a
+     * non-zero status. The remedy is in that line; a stack trace would bury it.
+     */
+    @ParameterizedTest
+    @CsvSource({"3.2a,requires tmux 3.3a or newer", "master,unrecognized version: master"})
+    void aTmuxTheFloorRefusesStopsStartupWithOneLine(String reported, String expected, @TempDir Path dir)
+            throws IOException {
+        Path binary = dir.resolve("tmux");
+        Files.writeString(binary, """
+                #!/bin/sh
+                for argument in "$@"; do
+                  case "$argument" in
+                    -V) echo "tmux %1$s"; exit 0 ;;
+                    libtmux-version-*)
+                      printf 'unknown command: %%s\\n' "${argument%%'#{version}'}%1$s" >&2; exit 1 ;;
+                  esac
+                done
+                exit 0
+                """.formatted(reported));
+        Files.setPosixFilePermissions(binary, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+
+        int status = Main.run(
+                new String[] {"--socket", dir.resolve("socket").toString(), "--tmux", binary.toString()},
+                Map.of(),
+                InputStream.nullInputStream(),
+                new PrintStream(captured, true, StandardCharsets.UTF_8));
+
+        String stderr = captured.toString(StandardCharsets.UTF_8);
+        assertEquals(1, status);
+        assertTrue(stderr.startsWith("libtmux-mcp: "), stderr);
+        assertTrue(stderr.contains(expected), stderr);
+        assertEquals(1, stderr.lines().count(), stderr);
+        assertFalse(stderr.contains("Exception"), stderr);
+    }
+
+    /** With no daemon running the binary itself is checked, so the refusal still comes at startup. */
+    @Test
+    void aColdBinaryBelowTheFloorStopsStartupToo(@TempDir Path dir) throws IOException {
+        Path binary = dir.resolve("tmux");
+        Files.writeString(binary, """
+                #!/bin/sh
+                for argument in "$@"; do
+                  case "$argument" in
+                    -V) echo "tmux 3.2a"; exit 0 ;;
+                  esac
+                done
+                echo "no server running on socket" >&2
+                exit 1
+                """);
+        Files.setPosixFilePermissions(binary, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+
+        int status = Main.run(
+                new String[] {"--socket", dir.resolve("socket").toString(), "--tmux", binary.toString()},
+                Map.of(),
+                InputStream.nullInputStream(),
+                new PrintStream(captured, true, StandardCharsets.UTF_8));
+
+        String stderr = captured.toString(StandardCharsets.UTF_8);
+        assertEquals(1, status);
+        assertTrue(stderr.contains("requires tmux 3.3a or newer"), stderr);
+        assertFalse(stderr.contains("serving"), stderr);
+        assertEquals(1, stderr.lines().count(), stderr);
     }
 
     @Test
@@ -278,7 +352,10 @@ final class MainTest {
         TmuxTransport broken = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                List<String> command = request.commands().getFirst();
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
+                }
+                List<String> command = request.commands().getLast();
                 return command.getFirst().equals("start-server")
                         ? new CommandResult(0, List.of(), List.of())
                         : new CommandResult(1, List.of(), List.of("metadata unavailable"));
@@ -301,6 +378,9 @@ final class MainTest {
         TmuxTransport escaping = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
+                }
                 return new CommandResult(0, List.of("/tmp/libtmux-java-dev/escaped\\001/s"), List.of());
             }
 
@@ -319,6 +399,9 @@ final class MainTest {
         TmuxTransport denied = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
+                }
                 return new CommandResult(1, List.of(), List.of("permission denied"));
             }
 
@@ -393,6 +476,9 @@ final class MainTest {
         TmuxTransport reporting = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
+                }
                 return new CommandResult(0, List.of("/tmp/reported\nsocket"), List.of());
             }
 
@@ -411,7 +497,10 @@ final class MainTest {
         TmuxTransport transport = new TmuxTransport() {
             @Override
             public CommandResult execute(CommandRequest request) {
-                List<String> command = request.commands().getFirst();
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
+                }
+                List<String> command = request.commands().getLast();
                 if (command.getFirst().equals("start-server")) {
                     return new CommandResult(0, List.of(), List.of());
                 }

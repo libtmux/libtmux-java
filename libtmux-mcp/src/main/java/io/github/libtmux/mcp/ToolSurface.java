@@ -2,6 +2,7 @@ package io.github.libtmux.mcp;
 
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.TmuxVersion;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -134,6 +135,7 @@ final class ToolSurface {
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("schemaVersion", 1);
         report.put("frozen", true);
+        report.put("minimumTmux", TmuxVersion.MINIMUM.toString());
         report.put(
                 "boundary",
                 Map.of(

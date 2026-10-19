@@ -22,7 +22,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Restarting what a pane runs, watching what it prints, and asking tmux things a snapshot does not
  * carry.
  *
- * <p>None of these commands changed a flag between 3.2a and 3.7b, so there is no version rule here —
+ * <p>None of these commands changed a flag across the supported range, so there is no version rule here —
  * only behaviour, checked on whichever release the lane runs.
  */
 @ExtendWith(TmuxExtension.class)
@@ -32,7 +32,7 @@ final class PaneProcessIntegrationTest {
     private static final TmuxVersion REMAIN_ON_EXIT_SINCE = new TmuxVersion(3, 7, "");
 
     /** tmux 3.8 stopped reporting a dead pane's stale {@code #{pane_pid}}. */
-    private static final TmuxVersion EMPTY_DEAD_PID_SINCE = new TmuxVersion(3, 8, "");
+    private static final TmuxVersion EMPTY_DEAD_PID_SINCE = new TmuxVersion(3, 8, "", false, "rc2");
 
     // ------------------------------------------------------------------------------- dead panes
 

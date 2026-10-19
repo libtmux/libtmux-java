@@ -450,12 +450,18 @@ Every tool carries MCP's four effect hints and a capability row:
 ### `tmux://capabilities`: what this process can reach
 
 The one resource is static for the process lifetime. It reports the effective
-tool surface, its selection provenance, the pinned tmux connection, and the
-capability row published on every tool:
+tool surface, its selection provenance, the pinned tmux connection, the
+capability row published on every tool, and `minimumTmux`, the oldest tmux the
+server accepts (3.3a):
 
 ```json
 {"method": "resources/read", "params": {"uri": "tmux://capabilities"}}
 ```
+
+A tmux older than that, or one that reports no release, stops startup with one
+`libtmux-mcp: ...` line on stderr and a non-zero exit. The same condition in the
+middle of a session, such as a daemon replaced by an older one, returns the
+`UNSUPPORTED_FEATURE` error code with the same message.
 
 ## The tools
 

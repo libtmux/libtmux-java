@@ -16,11 +16,10 @@ import kotlin.annotations.jvm.ReadOnly;
 public final class Shell {
 
     /**
-     * tmux lost {@code run-shell}'s output in 3.3a and found it again in 3.5. The command exists on
-     * every release, so {@code list-commands} cannot tell the gap from the working releases.
+     * tmux lost {@code run-shell}'s output in 3.3a and found it again in 3.5; 3.3a is the first
+     * supported release, so everything below this one is the gap. The command exists on every
+     * release, so {@code list-commands} cannot tell the gap from the working releases.
      */
-    private static final TmuxVersion OUTPUT_LOST = new TmuxVersion(3, 3, "");
-
     private static final TmuxVersion OUTPUT_FOUND = new TmuxVersion(3, 5, "");
 
     private final Server server;
@@ -47,7 +46,7 @@ public final class Shell {
     public List<String> capturing(String command) {
         Objects.requireNonNull(command, "command");
         TmuxVersion running = server.version();
-        if (running.atLeast(OUTPUT_LOST) && !running.atLeast(OUTPUT_FOUND)) {
+        if (!running.atLeast(OUTPUT_FOUND)) {
             throw new UnsupportedFeatureException(
                     "reading what run-shell printed is broken between tmux 3.3a and 3.4, and this server runs "
                             + running);

@@ -15,6 +15,7 @@ import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.internal.ErrorText;
 import io.github.libtmux.internal.ProcessTree;
 import io.github.libtmux.internal.Utf8;
+import io.github.libtmux.internal.support.Versions;
 import io.github.libtmux.transport.ControlCarrier;
 import io.github.libtmux.transport.DispatchOutcome;
 import io.github.libtmux.transport.OperationObserver;
@@ -219,6 +220,13 @@ public final class ControlClient implements AutoCloseable {
         // control client's own commands travel as UTF-8 over its standard input and are unaffected,
         // but this argv is encoded by the JVM like any other.
         Utf8.requireEncodableArguments(command);
+        long started = System.nanoTime();
+        Versions.requireCarrier(carrier, config.endpointCommand(), timeout);
+        Duration remaining = timeout.minusNanos(System.nanoTime() - started);
+        if (remaining.isZero() || remaining.isNegative()) {
+            throw new DispatchException.TimedOut(
+                    "the tmux version check exceeded the attach deadline", DispatchOutcome.NOT_DISPATCHED, null);
+        }
         Process process;
         try {
             process = carrier.start(command);
@@ -228,7 +236,7 @@ public final class ControlClient implements AutoCloseable {
         ControlClient client = new ControlClient(process, config.observer());
         // Attaching produces a reply of its own. It is awaited like any other, which is also what
         // proves the client is up before the first command is written.
-        ControlWriter.Request attached = client.writer.expectInitial(timeout);
+        ControlWriter.Request attached = client.writer.expectInitial(remaining);
         client.reader.start();
         ControlReply reply;
         try {
@@ -290,7 +298,7 @@ public final class ControlClient implements AutoCloseable {
      * <p>Without this, this client's own {@code %layout-change} carries the classic string even on a
      * server new enough to write JSON elsewhere: the same window's layout then disagrees depending
      * on which kind of client read it — the mismatch a {@code watch}ed layout format or a parsed
-     * notification would otherwise hit. Measured harmless back to 3.2a: {@code refresh-client -f
+     * notification would otherwise hit. Measured harmless on every supported release: {@code refresh-client -f
      * new-layouts} completes with no error on every supported release, just with nothing to change
      * before 3.8, so this is sent unconditionally rather than gated on a version.
      */
@@ -457,7 +465,7 @@ public final class ControlClient implements AutoCloseable {
     /**
      * tmux(1) documents {@code refresh-client -B name:what:format}'s {@code what} as empty,
      * {@code %N}, {@code %*}, {@code @N} or {@code @*} only - a session id or an arbitrary word was
-     * never a spelling the manual promises, even though 3.2a and 3.7c happen to accept one leniently
+     * never a spelling the manual promises, even though some releases happen to accept one leniently
      * (confirmed against the matrix). On master the same non-empty, non-{@code %}/{@code @} target
      * is accepted by the parser but delivers nothing, silently. The empty string is the one
      * spelling confirmed to mean "the attached session" and to actually fire on every tested release,

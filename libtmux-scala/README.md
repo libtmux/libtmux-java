@@ -89,7 +89,7 @@ the daemon running.
 ## Support and status
 
 - **Scala 3.9 and JDK 25 or newer.**
-- **tmux 3.2a through 3.7c**, which the Java library supports and every tmux
+- **tmux 3.3a through 3.7c**, which the Java library supports and every tmux
   lane in CI runs these suites against.
   [Compatibility](../docs/guide/scala/compatibility.md) has the detail.
 - **Alpha.** Pin an exact version rather than a range.

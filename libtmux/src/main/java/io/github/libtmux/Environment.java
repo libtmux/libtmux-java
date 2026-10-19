@@ -47,9 +47,9 @@ public final class Environment {
      * from one read of a value tmux had stored perfectly.
      *
      * <p>{@code -s} is unambiguous instead: a value is quoted and its {@code $}, backtick, {@code "}
-     * and {@code \} are escaped, so the only unescaped quote is the one that ends it. Present since
-     * 3.2a, where the flag and the two format strings are already what they are now. One release
-     * writes it differently — see {@link #repaired}.
+     * and {@code \} are escaped, so the only unescaped quote is the one that ends it. Present on
+     * every supported release, with the flag and the two format strings the same throughout. One
+     * release writes it differently — see {@link #repaired}.
      */
     private static final List<String> SHELL_FORM = List.of("-s");
 
