@@ -8,6 +8,8 @@ API changes that require updates to calling code are recorded here. See
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+## 0.0.1-alpha.18
+
 ### tmux 3.3a is the minimum
 
 Upgrade the tmux daemon to 3.3a or newer. Installing a newer client alone does

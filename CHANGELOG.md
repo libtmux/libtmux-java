@@ -12,6 +12,13 @@ production.
 
 ## Unreleased
 
+## 0.0.1-alpha.18 — 2026-10-19
+
+tmux 3.3a is now the minimum across the JVM modules and products. Upgrade the
+running daemon as well as the client; an older one is refused with an error
+that says to upgrade tmux or use the previous release. This release also
+sections every README by task, with each API linked.
+
 ### Added
 
 - **`TmuxVersion.MINIMUM` and `UnsupportedFeatureException.belowFloor()`.**
