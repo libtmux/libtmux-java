@@ -12,6 +12,12 @@ production.
 
 ## Unreleased
 
+### Development
+
+- **CI no longer runs macOS.** macOS stays supported on a best-effort basis, and
+  CI coverage for it is highly limited. The READMEs and the contributing guide
+  say so. (#84)
+
 ## 0.0.1-alpha.18 — 2026-10-19
 
 tmux 3.3a is now the minimum across the JVM modules and products. Upgrade the

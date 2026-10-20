@@ -7,7 +7,7 @@ they meet the same gates the Java library does.
 
 Scala 3.9 only — there is no 2.13 build — compiled to JDK 25 bytecode. CI runs
 the facades' unit suites, their real-tmux suites, the documented Scala examples
-and the runnable programs on JDK 25 and 27 on Linux, and on macOS.
+and the runnable programs on JDK 25 and 27 on Linux.
 
 Every lane of the [tmux matrix][tmux-matrix] runs the real-tmux suites against
 its own tmux: `3.3a`, `3.4`, `3.5`, `3.6`, `3.7`, `3.7a`, `3.7b` and `3.7c`.

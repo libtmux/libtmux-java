@@ -251,6 +251,9 @@ lane fails unless every one of them produced a result. The 3.8 release
 candidates are preview lanes built from the commit their tag named, since
 upstream removed the tags.
 
+**CI runs Linux only.** macOS is supported on a best-effort basis, and CI
+coverage for it is highly limited.
+
 **The API carries no compatibility guarantee.** This project is alpha: releases
 carry an `-alpha` prerelease tag, any release may change or remove exported
 identifiers without a deprecation period, and only the newest release is
