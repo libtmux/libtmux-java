@@ -12,6 +12,61 @@ production.
 
 ## Unreleased
 
+### Added
+
+- **Capabilities are recorded in one registry and a `capabilities.json`
+  manifest.** The registry names each optional tmux feature and release defect
+  the library gates, with the release it needs and how it refuses or repairs.
+  The gates read it, and the manifest at the repository root is written from it
+  for the capability pages on libtmux.org. (#72)
+- **`TextOutcome.PANE_GONE`, `TextWait` and `Pane.watchText`.** `watchText`
+  waits like `Pane.awaitText` and also returns the pane's output at its last
+  read. (#72)
+
+### Changed
+
+- **Managed control now requires tmux 3.7+ and a pinned socket.** Older
+  daemons are refused before control starts; ordinary operations keep the 3.3a
+  minimum. See [migration notes](MIGRATION.md#optional-tmux-requirements). (#72)
+- **Named buffer deletion, rename and managed paste require tmux 3.4+.** On
+  3.3a a missing name can select an unrelated buffer. (#72)
+- **Invalid literal layouts are refused on tmux 3.3a.** The refusal is an
+  `UnsupportedFeatureException` before any command of the batch runs. (#72)
+- **Literal `split-window -p` is refused on exact tmux 3.4.** Typed percentage
+  splits keep working. (#72)
+- **`refresh-client -l` is refused below tmux 3.6a.** On 3.3a it ends the server
+  when a client attached from an `xterm` or `tmux-256color` terminal receives
+  the query, and on 3.4 to 3.6 it ends the server when the client leaves before
+  its terminal answers. (#72)
+- **Raw and unnamed `break-pane` is refused on exact tmux 3.7.** Named breaks
+  retain the requested name, and single-pane breaks also work without native
+  `-P` output. (#72)
+- **Exact tmux 3.7 refuses `.` and `:` in session and window names before
+  dispatch.** A batch or workspace no longer runs the commands ahead of the
+  one tmux would reject. (#72)
+- **Python extensions require optional-policy v2.** `tmux-workspace shell` and
+  extension loading need a Python libtmux with
+  `TMUX_OPTIONAL_FEATURE_POLICY_VERSION >= 2`. No released libtmux has it yet;
+  it comes with tmux-python/libtmux#780, so until then install libtmux from
+  that source or leave `shell` and extensions alone. (#72)
+- **`Pane.awaitText` answers `TextOutcome.PANE_GONE` for a pane killed
+  mid-wait** instead of throwing `CommandRejectedException`. (#72)
+- **`Server.cmd`, `batch`, `chain` and `ControlClient.send` say that nested
+  command strings are not checked.** An `if-shell` body, a hook or a
+  `source-file` keeps tmux's own behaviour, so do not nest a command the
+  library refuses. (#72)
+
+### Fixed
+
+- **`wait_for_text` and `run_shell_command` answer for a gone pane or server.**
+  A pane killed mid-wait ends the call as `PANE_GONE` and a killed server as
+  `SERVER_GONE`, both with the output seen so far, where the tool used to
+  return an error or wait out the timeout. A bounded check of the pane runs
+  on an interval while `run_shell_command` blocks, so a killed pane ends it
+  within about a quarter second; the check reads through `list-panes` and
+  `capture-pane`, so it does not run an `after-display-message` hook. `matched_line` for a match split
+  across wrapped rows is now only the rows that carry it. (#72)
+
 ### Development
 
 - **CI no longer runs macOS.** macOS stays supported on a best-effort basis, and
