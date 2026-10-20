@@ -7,6 +7,7 @@ import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.MalformedResponseException;
 import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.exception.UnsupportedFeatureException;
+import io.github.libtmux.internal.support.Capabilities;
 import io.github.libtmux.internal.support.Versions;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
@@ -24,7 +25,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** Qualifies a carrier-owned endpoint before the first control effect. */
 public final class ControlAcquisition implements AutoCloseable {
     private static final String FORMAT = "#{version},#{pid},#{start_time},'#{s/'/'\\\\''/:socket_path}'";
-    private static final TmuxVersion MINIMUM = new TmuxVersion(3, 7, "");
     private final ControlCarrier.PinnedSocket pin;
     private final Identity identity;
     private final List<String> command;
@@ -89,7 +89,7 @@ public final class ControlAcquisition implements AutoCloseable {
      * {@code 3.8-rc2} or {@code next-3.8} rank above.
      */
     public static boolean supports(TmuxVersion version) {
-        return version.compareTo(MINIMUM) >= 0;
+        return Capabilities.CONTROL_MODE.availableOn(version);
     }
 
     /**

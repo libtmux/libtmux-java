@@ -99,7 +99,13 @@ val moduleConsumer =
 
 tasks.check { dependsOn(moduleConsumer) }
 
-tasks.named<Test>("test") { useJUnitPlatform { excludeTags("carrier") } }
+tasks.named<Test>("test") {
+    useJUnitPlatform { excludeTags("carrier") }
+    // The drift test compares this file with the registry; a hand edit must rerun it, not hit the cache.
+    inputs.file(rootProject.file("capabilities.json")).withPropertyName("capabilitiesManifest")
+        .withPathSensitivity(PathSensitivity.NONE)
+    inputs.property("writeCapabilities", providers.environmentVariable("LIBTMUX_WRITE_CAPABILITIES").orElse(""))
+}
 
 // The carrier gate needs a scheduler with exactly one carrier. That is a JVM-wide setting, so it
 // gets its own fork rather than distorting every other test in the suite.

@@ -3,6 +3,7 @@ package io.github.libtmux;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.exception.MalformedResponseException;
 import io.github.libtmux.exception.UnsupportedFeatureException;
+import io.github.libtmux.internal.support.Capabilities;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -41,7 +42,14 @@ public final class Layouts {
      * anything that branch cannot parse ends the server outright on 3.3a. A JSON-shaped string is
      * therefore only something *this* tmux could have written once it is at least this version.
      */
-    private static final TmuxVersion JSON_LAYOUT_SINCE = new TmuxVersion(3, 8, "", false, "rc2");
+    private static final TmuxVersion JSON_LAYOUT_SINCE = Capabilities.LAYOUT_JSON.since();
+
+    /**
+     * A release that already reports layouts without a checksum and does not yet have the mirrored
+     * ones: the view of the built-in names that holds below {@link Capabilities#LAYOUT_MIRRORED_MAIN}.
+     * Read from the registry, so moving either release moves this check with it.
+     */
+    private static final TmuxVersion WITHOUT_MIRRORED = Capabilities.LAYOUT_WITHOUT_CHECKSUM.since();
 
     private Layouts() {}
 
@@ -142,7 +150,7 @@ public final class Layouts {
      */
     public static String require(String layout, Server server, int paneCount) {
         if (paneCount < 1) throw new IllegalArgumentException("pane count must be positive");
-        if (!isJsonShaped(layout) && named(layout, new TmuxVersion(3, 4, "")).isEmpty()) require(layout);
+        if (!isJsonShaped(layout) && named(layout, WITHOUT_MIRRORED).isEmpty()) require(layout);
         if (isJsonShaped(layout)) {
             require(layout, version(server));
             if (JsonLayout.leaves(layout) < paneCount) {
@@ -155,8 +163,8 @@ public final class Layouts {
             if (cells < paneCount) throw new IllegalArgumentException("layout has fewer cells than panes: " + layout);
             return layout;
         }
-        Optional<Layout> before = named(layout, new TmuxVersion(3, 4, ""));
-        Optional<Layout> after = named(layout, new TmuxVersion(3, 5, ""));
+        Optional<Layout> before = named(layout, WITHOUT_MIRRORED);
+        Optional<Layout> after = named(layout, Capabilities.LAYOUT_MIRRORED_MAIN.since());
         if (before.equals(after)) return before.orElseThrow().tmuxName();
         TmuxVersion running = version(server);
         for (Layout candidate : Layout.values()) {

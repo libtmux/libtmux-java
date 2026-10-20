@@ -12,6 +12,7 @@ import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.exception.UnencodableTextException;
 import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
+import io.github.libtmux.internal.support.Capabilities;
 import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
@@ -45,17 +46,6 @@ public final class Pane {
     private static final RowFormat BROKEN_OUT = RowFormat.of("session_id", "window_id", "window_index");
 
     private static final RowFormat CREATED = RowFormat.of("pane_id");
-
-    /**
-     * tmux 3.7 exactly gets break-pane's naming wrong twice: it ends the whole server — every
-     * session on the socket — when it has to choose the name itself, and it silently discards a name
-     * that is given. Both are one inverted check in {@code cmd-break-pane.c} — {@code if (name !=
-     * NULL)} where it meant {@code == NULL} - fixed by {@code 84291b02}, which {@code git tag
-     * --contains} places on 3.7a and nothing earlier, matching CHANGES' "3.7 TO 3.7a": "Fix crash in
-     * break-pane when no name is provided." Not probeable: break-pane's args are unchanged across the
-     * fix, so nothing in {@link Commands#list} distinguishes the two releases.
-     */
-    private static final TmuxVersion BREAK_PANE_NAMING_BROKEN = new TmuxVersion(3, 7, "");
 
     private final Server server;
     private final ServerSnapshot snapshot;
@@ -818,9 +808,16 @@ public final class Pane {
         return breakNamed(Optional.of(windowName));
     }
 
+    /**
+     * Breaks the pane out. Exactly tmux 3.7 gets break-pane's naming wrong twice: it ends the whole
+     * server when it has to choose the name itself, and it silently discards a name that is given. Both
+     * are one inverted check in {@code cmd-break-pane.c}, fixed by {@code 84291b02}, which {@code git
+     * tag --contains} places on 3.7a and nothing earlier. Not probeable: break-pane's args are unchanged
+     * across the fix, so nothing in {@link Commands#list} distinguishes the two releases.
+     */
     private Window breakNamed(Optional<String> wanted) {
         TmuxVersion running = server.version(snapshot);
-        if (wanted.isEmpty() && running.sameRelease(BREAK_PANE_NAMING_BROKEN)) {
+        if (wanted.isEmpty() && Capabilities.BREAK_PANE_MISNAMES_WINDOWS.affects(running)) {
             throw new UnsupportedFeatureException(
                     "unnamed break-pane is unreliable on tmux 3.7; use breakOut(name) or tmux 3.7a+");
         }
@@ -836,7 +833,7 @@ public final class Pane {
                 new SessionId(fields.get(0)),
                 new WindowIndex(Integer.parseInt(fields.get(2))),
                 new WindowId(fields.get(1)));
-        if (running.sameRelease(BREAK_PANE_NAMING_BROKEN)) {
+        if (Capabilities.BREAK_PANE_MISNAMES_WINDOWS.affects(running)) {
             // 3.7 took the name and ignored it, so the caller's choice is applied afterwards.
             wanted.ifPresent(name -> server.run(
                     snapshot, List.of("rename-window", "-t", fields.get(1), "--", TmuxFormats.literal(name))));

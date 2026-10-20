@@ -85,7 +85,7 @@ of its commands, including a preceding command that would otherwise succeed.
 | Exact named buffer deletion and rename | tmux 3.4+. On 3.3a, a missing name can select an unrelated buffer. |
 | `Pane.paste(text)` | tmux 3.4+ before creating a temporary buffer, because failure cleanup needs exact named deletion. |
 | Direct `paste-buffer -d -b name` | Retained on 3.3a; native lookup already rejects a missing name. |
-| Literal `select-layout` on 3.3a | Invalid operands are refused before every batch effect. Presets, unique prefixes and serialized layouts remain available; `-o` requires a serialized operand. |
+| Literal `select-layout` on 3.3a | Invalid operands are refused with `UnsupportedFeatureException` before every batch effect. Presets, unique prefixes and serialized layouts remain available; `-o` requires a serialized operand. |
 | Percentage splitting | Typed `SplitSpec.percent` retains `-l N%`. Literal `split-window -p` is refused on exact 3.4. |
 | Session and window names on exact 3.7 | A name containing `.` or `:` is refused before dispatch (`IllegalArgumentException`), including workspace window names; 3.7a and later keep such names. |
 | `break-pane` on exact 3.7 | Literal calls and unnamed typed calls are refused. Use `Pane.breakOut(name)` or upgrade to 3.7a+. |

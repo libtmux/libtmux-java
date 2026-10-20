@@ -1,5 +1,6 @@
 package io.github.libtmux;
 
+import io.github.libtmux.internal.support.Capabilities;
 import java.util.Objects;
 
 /**
@@ -10,8 +11,6 @@ import java.util.Objects;
  * a workspace build from running the commands ahead of the one tmux would reject.
  */
 public final class Names {
-
-    private static final TmuxVersion REFUSES = new TmuxVersion(3, 7, "");
 
     private Names() {}
 
@@ -35,7 +34,8 @@ public final class Names {
      */
     public static String require(String name, TmuxVersion running) {
         Objects.requireNonNull(name, "name");
-        if (running.sameRelease(REFUSES) && (name.indexOf('.') >= 0 || name.indexOf(':') >= 0)) {
+        if (Capabilities.NAME_SEPARATORS_REJECTED.affects(running)
+                && (name.indexOf('.') >= 0 || name.indexOf(':') >= 0)) {
             throw new IllegalArgumentException(
                     "tmux 3.7 refuses '.' and ':' in session and window names (3.7a and later keep them): " + name);
         }

@@ -31,16 +31,16 @@ final class OptionalFeatureIntegrationTest {
                     List.of("select-l", "--", "-n"),
                     List.of("select-layout", "-ot", pane.id().value(), "tile"),
                     List.of("select-layout", "0000,80x24,0,0,0"))) {
-                assertThrows(IllegalArgumentException.class, () -> server.cmd(command), command.toString());
+                assertThrows(UnsupportedFeatureException.class, () -> server.cmd(command), command.toString());
             }
             assertThrows(
-                    IllegalArgumentException.class,
+                    UnsupportedFeatureException.class,
                     () -> server.batch()
                             .add("set-option", "-g", "@layout-effect", "changed")
                             .add("select-layout", "not-a-layout")
                             .run());
             assertThrows(
-                    IllegalArgumentException.class,
+                    UnsupportedFeatureException.class,
                     () -> pane.batch()
                             .add("set-option", "-g", "@layout-effect", "changed")
                             .add("select-layout", "-o", "tiled")
