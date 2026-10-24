@@ -32,7 +32,7 @@ README.
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.18"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.19"))
 
     implementation("io.github.libtmux:libtmux")            // no version
     implementation("io.github.libtmux:libtmux-jackson")    // no version
@@ -49,7 +49,7 @@ dependencies {
     <dependency>
       <groupId>io.github.libtmux</groupId>
       <artifactId>libtmux-bom</artifactId>
-      <version>0.0.1-alpha.18</version>
+      <version>0.0.1-alpha.19</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -74,12 +74,12 @@ $ ./gradlew dependencies --configuration runtimeClasspath
 
 ```text
 runtimeClasspath
-+--- io.github.libtmux:libtmux-bom:0.0.1-alpha.18
-|    \--- io.github.libtmux:libtmux:0.0.1-alpha.18 (c)
-\--- io.github.libtmux:libtmux -> 0.0.1-alpha.18
++--- io.github.libtmux:libtmux-bom:0.0.1-alpha.19
+|    \--- io.github.libtmux:libtmux:0.0.1-alpha.19 (c)
+\--- io.github.libtmux:libtmux -> 0.0.1-alpha.19
 ```
 
-The `-> 0.0.1-alpha.18` on a coordinate you wrote without a version is the
+The `-> 0.0.1-alpha.19` on a coordinate you wrote without a version is the
 platform doing its job.
 
 ## What it manages

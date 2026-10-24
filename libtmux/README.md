@@ -41,7 +41,7 @@ Add it through the BOM. It needs JDK 25 and a tmux between 3.3a and 3.7c:
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.18"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.0.1-alpha.19"))
     implementation("io.github.libtmux:libtmux")
 }
 ```
@@ -55,7 +55,7 @@ dependencies {
     <dependency>
       <groupId>io.github.libtmux</groupId>
       <artifactId>libtmux-bom</artifactId>
-      <version>0.0.1-alpha.18</version>
+      <version>0.0.1-alpha.19</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>

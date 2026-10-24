@@ -12,6 +12,13 @@ production.
 
 ## Unreleased
 
+## 0.0.1-alpha.19 — 2026-10-24
+
+Optional tmux features that are unsafe on the connected daemon's release are
+now refused before anything is sent; ordinary operations keep the 3.3a
+minimum. A pane killed mid-wait ends as `PANE_GONE`, and `Pane.watchText`
+returns the output seen so far.
+
 ### Added
 
 - **Capabilities are recorded in one registry and a `capabilities.json`
