@@ -133,3 +133,13 @@ attached and so cannot borrow a command's slot, is started by the transport's
 `ControlCarrier`. `Server.control` uses that carrier, so the attachment lands in
 the same place as the commands. A transport that offers none makes
 `Server.control` throw rather than attach to whatever this machine calls tmux.
+
+## Nested commands
+
+The feature guards read the commands a call carries, not a tmux command string
+nested inside one: an `if-shell` body, a `run-shell -C` argument, a hook, a brace
+block or a sourced file. A service that builds those strings from input can send
+a command the library would have refused, and on some releases that ends the
+server. [Batching and chaining](batching-and-chaining.md#what-the-guards-do-not-read)
+lists the commands, the releases and the failures. On exact tmux 3.7, name every
+`break-pane`, nested or not, and upgrade to 3.7a.

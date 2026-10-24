@@ -100,3 +100,39 @@ the chain does not name.
 Neither makes several threads' commands one unit. Each call is one group; two
 threads' groups can land in either order. [Concurrency](concurrency.md) says what
 runs at once and what a pane's input hold keeps apart.
+
+## What the guards do not read
+
+The feature guards read each literal command's own words. A command carried
+inside a string that tmux parses itself is sent as written: the body of
+`if-shell`, the argument of `run-shell -C`, a brace block, a hook, a key binding
+or a sourced file. `if-shell -F 1 'break-pane -d'` passes the guard unchanged,
+and tmux runs the nested `break-pane`. These are the commands the library
+refuses when they are literal, the releases they affect, and what happens there
+when they are nested:
+
+- **`break-pane` without `-n`:** exact tmux 3.7 only. The server exits. tmux
+  3.7a fixes it ([`CHANGES`][3.7a-changes], [the inverted name test in
+  3.7][3.7-break-pane]).
+- **`select-layout` with a string tmux cannot parse:** tmux 3.3 and 3.3a. The
+  server exits. 3.4 answers "invalid layout".
+- **`refresh-client -l`:** below 3.6a, and only with an attached client. The
+  server exits on 3.3a when the client's terminal does not answer, and on 3.4 to
+  3.6 when the client leaves before it answers.
+- **`delete-buffer -b NAME`, and `set-buffer -b NAME -n`:** below 3.4. Nothing
+  crashes; a name that does not exist acts on the newest buffer instead, so the
+  wrong buffer is deleted or renamed.
+- **`split-window -p`:** exactly 3.4. tmux answers "size missing" and changes
+  nothing.
+- **Names containing `:` or `.`:** exactly 3.7. tmux answers "invalid window
+  name" and changes nothing.
+
+On exact tmux 3.7, name every `break-pane`, nested or not, and upgrade to 3.7a.
+The [default `prefix !` binding][3.7-binding] is itself a nameless
+`break-pane`, which no library check can reach. [Operating a
+service](operating-a-service.md#nested-commands) repeats the rule for a
+long-running process.
+
+[3.7a-changes]: https://github.com/tmux/tmux/blob/3.7a/CHANGES#L3
+[3.7-break-pane]: https://github.com/tmux/tmux/blob/3.7/cmd-break-pane.c#L117-L124
+[3.7-binding]: https://github.com/tmux/tmux/blob/3.7/key-bindings.c#L358
