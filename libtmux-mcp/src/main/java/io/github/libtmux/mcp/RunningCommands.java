@@ -5,6 +5,7 @@ import io.github.libtmux.PaneCommand;
 import io.github.libtmux.Server;
 import io.github.libtmux.WakeReason;
 import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.transport.DispatchOutcome;
 import java.time.Duration;
 import java.util.List;
@@ -49,7 +50,8 @@ final class RunningCommands {
 
     /**
      * @param paneId the pane it ran in
-     * @param outcome why the wait ended, which is never simply "successfully"
+     * @param outcome why the wait ended, which is never simply "successfully": SIGNALLED, TIMED_OUT,
+     *     PANE_GONE or SERVER_GONE
      * @param exitStatus the command's status, absent when it had not finished or its marker was lost
      * @param output what the command printed, plumbing removed
      * @param truncated whether older output was dropped to fit the budget
@@ -110,21 +112,45 @@ final class RunningCommands {
 
             long started = System.nanoTime();
             WakeReason wake;
+            PaneWatch watch = PaneWatch.over(freshPane, before, Trim.lineBudget(call), () -> {
+                try {
+                    server.channel(run.channel()).signal();
+                } catch (RuntimeException unsignalled) {
+                    // The wait still ends at its own deadline.
+                }
+            });
             try {
                 wake = server.channel(run.channel()).await(timeout);
             } catch (InterruptedException cancelled) {
                 throw Waits.cancelled(cancelled);
+            } finally {
+                watch.close();
             }
             double seconds = (System.nanoTime() - started) / 1_000_000_000.0;
 
-            Screen.Fresh fresh =
-                    wake == WakeReason.SERVER_GONE ? null : Screen.since(freshPane, before, Trim.lineBudget(call));
+            Screen.Fresh fresh = null;
+            Ends ended = watch.ended();
+            if (wake != WakeReason.SERVER_GONE && ended == null) {
+                try {
+                    fresh = Screen.since(freshPane, before, Trim.lineBudget(call));
+                } catch (LibTmuxException unread) {
+                    // The pane or the server went away between the signal and this read.
+                    ended = Ends.of(freshPane, unread);
+                }
+            }
+            if (fresh == null) {
+                // Nothing can be read from what is gone; the last look is the output so far.
+                fresh = watch.last();
+            }
             PaneCommand.Framed framed = fresh == null
                     ? new PaneCommand.Framed(List.of(), false, OptionalInt.empty())
                     : run.frame(fresh.lines());
-            Integer status = wake == WakeReason.SIGNALLED && framed.status().isPresent()
+            Integer status = wake == WakeReason.SIGNALLED
+                            && ended == null
+                            && framed.status().isPresent()
                     ? framed.status().getAsInt()
                     : null;
+            String outcome = ended == Ends.PANE_GONE && wake != WakeReason.SERVER_GONE ? "PANE_GONE" : wake.name();
             Trim.Trimmed trimmed = Trim.tail(framed.lines(), Trim.lineBudget(call));
             if (status == null) {
                 retained = true;
@@ -133,7 +159,7 @@ final class RunningCommands {
 
             return new Ran(
                     freshPane.id().value(),
-                    wake.name(),
+                    outcome,
                     status,
                     trimmed.lines(),
                     trimmed.truncated(),
@@ -141,7 +167,7 @@ final class RunningCommands {
                     framed.exact(),
                     Math.round(seconds * 100) / 100.0,
                     Waits.asSeconds(timeout),
-                    note(wake, framed));
+                    note(outcome, framed));
         } catch (RuntimeException failure) {
             if (possiblyDispatched.get() && !retained) {
                 retained = true;
@@ -155,16 +181,19 @@ final class RunningCommands {
         }
     }
 
-    private static @Nullable String note(WakeReason wake, PaneCommand.Framed framed) {
-        return switch (wake) {
-            case TIMED_OUT ->
+    private static @Nullable String note(String outcome, PaneCommand.Framed framed) {
+        return switch (outcome) {
+            case "TIMED_OUT" ->
                 "The command is still running; the output above is what it had printed by the "
                         + "deadline. Call wait_for_text or capture_since on this pane to keep watching, "
                         + "or send_keys with 'C-c' to stop it.";
-            case SERVER_GONE ->
+            case "PANE_GONE" ->
+                "The pane was killed or exited while the command was running, so it did not finish. The "
+                        + "output above is what it had printed by the last look at the pane.";
+            case "SERVER_GONE" ->
                 "The tmux server ended while the command was running. Nothing this call was "
                         + "waiting on can be relied on; check that this process selected the intended socket.";
-            case SIGNALLED ->
+            default ->
                 framed.exact()
                         ? null
                         : "The output could not be separated from the shell's echo exactly, so it may include the "

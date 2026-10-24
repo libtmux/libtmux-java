@@ -6,6 +6,7 @@ import io.github.libtmux.batch.BatchResult;
 import io.github.libtmux.batch.OperationResult;
 import io.github.libtmux.exception.CommandRejectedException;
 import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.transport.CommandResult;
 import java.util.ArrayList;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
@@ -109,6 +110,29 @@ final class Screen {
     }
 
     static Fresh since(Pane pane, @Nullable Cursor from, int budget, @Nullable TypedText typed) {
+        return since(pane, from, budget, typed, Screen::look);
+    }
+
+    /**
+     * What arrived since {@code from}, read so that no {@code after-display-message} hook fires.
+     *
+     * <p>{@link #since} reads through a batch, and a batch closes each operation with a
+     * {@code display-message}, which runs the user's hook for it. A caller that looks over and over
+     * while it waits would run that hook on every look. This reads the pane's position with
+     * {@code list-panes} and its content with {@code capture-pane}, as two invocations, so a pane
+     * that scrolls between them can leave the position a row off; the cost is a line withheld or
+     * delivered a look late. A cursor that moves up between the two reads can deliver a partial row
+     * once. A caller that needs an exact answer reads with {@link #since}.
+     */
+    static Fresh sinceWithoutHooks(Pane pane, Cursor from, int budget) {
+        return since(pane, from, budget, null, Screen::quietLook);
+    }
+
+    private interface Reader {
+        Look look(Pane pane, int lookback);
+    }
+
+    private static Fresh since(Pane pane, @Nullable Cursor from, int budget, @Nullable TypedText typed, Reader reader) {
         if (from == null) {
             return from(pane);
         }
@@ -117,12 +141,12 @@ final class Screen {
             throw new IllegalArgumentException(
                     "that cursor belongs to pane " + from.paneId() + ", not " + paneId + "; each pane has its own");
         }
-        Look look = look(pane, budget + SLACK_LINES);
+        Look look = reader.look(pane, budget + SLACK_LINES);
         Fresh answer = resolve(from, look);
         if (answer != null) {
             return discount(answer, look, typed);
         }
-        Look recovery = look(pane, CURSOR_RECOVERY_LINES);
+        Look recovery = reader.look(pane, CURSOR_RECOVERY_LINES);
         Fresh resumed = resolve(from, recovery);
         if (resumed != null) {
             return discount(resumed, recovery, typed);
@@ -221,13 +245,40 @@ final class Screen {
         }
         OperationResult capture = read.operations().get(0);
         OperationResult position = read.operations().get(1);
-        long[] numbers = numbers(position.stdout());
+        return place(capture.stdout(), numbers(position.stdout()), lookback);
+    }
+
+    /** {@link #look} without a batch: the position first, so a scroll in between withholds rather than invents. */
+    private static Look quietLook(Pane pane, int lookback) {
+        String id = pane.id().value();
+        boolean everything = lookback >= Integer.MAX_VALUE;
+        String start = everything ? "-" : lookback <= 0 ? "0" : String.valueOf(-lookback);
+        CommandResult position = pane.server()
+                .cmd(
+                        "list-panes",
+                        "-a",
+                        "-f",
+                        "#{==:#{pane_id}," + id + "}",
+                        "-F",
+                        "#{pid} #{history_size} #{cursor_y}");
+        if (!position.succeeded() || position.stdout().isEmpty()) {
+            throw new CommandRejectedException("pane " + id + " is not listed");
+        }
+        CommandResult capture = pane.server().cmd("capture-pane", "-p", "-t", id, "-S", start);
+        if (!capture.succeeded()) {
+            throw new CommandRejectedException("could not capture pane " + id);
+        }
+        return place(capture.stdout(), numbers(position.stdout()), lookback);
+    }
+
+    private static Look place(List<String> lines, long[] numbers, int lookback) {
+        boolean everything = lookback >= Integer.MAX_VALUE;
         long serverPid = numbers[0];
         int history = Math.toIntExact(numbers[1]);
         int cursorY = Math.toIntExact(numbers[2]);
         int first = everything || lookback > history ? 0 : lookback <= 0 ? history : history - lookback;
         // The cursor's row is the first unfinished line, and it sits that far below the history.
-        return new Look(capture.stdout(), history + cursorY - first, first == 0, serverPid);
+        return new Look(lines, history + cursorY - first, first == 0, serverPid);
     }
 
     private static long[] numbers(List<String> stdout) {

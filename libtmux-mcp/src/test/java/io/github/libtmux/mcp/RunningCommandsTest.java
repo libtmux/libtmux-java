@@ -24,7 +24,9 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -53,6 +55,137 @@ import org.junit.jupiter.params.provider.ValueSource;
 final class RunningCommandsTest {
 
     private static final Pattern NONCE = Pattern.compile("\\blt[0-9a-f]{32}\\b");
+
+    /**
+     * A pane killed under a running command ends the call at once with a failed answer and what the
+     * command had printed, not at the timeout, with or without a stopped second client on the socket.
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aPaneKilledUnderACommandEndsTheCallPromptly(boolean withStoppedClient, Server server) throws Exception {
+        server.newSession(session -> session.named("outlives"));
+        try (StoppedClient _ = StoppedClient.attach(server, "outlives", withStoppedClient)) {
+            Pane pane = server.newSession(session -> session.named("shell").running("env", "PS1=$ ", "ENV=", "/bin/sh"))
+                    .windows()
+                    .get(0)
+                    .panes()
+                    .get(0);
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                Future<RunningCommands.Ran> running = executor.submit(() -> RunningCommands.run(TestCalls.on(
+                        server,
+                        "pane_id",
+                        pane.id().value(),
+                        "command",
+                        "echo " + DyingPane.PRINTED + "; sleep 300",
+                        "timeout",
+                        60)));
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+                while (pane.capture().stream().noneMatch(line -> line.equals(DyingPane.PRINTED))
+                        && System.nanoTime() < deadline) {
+                    Thread.sleep(50);
+                }
+                Thread.sleep(300);
+                pane.kill();
+
+                RunningCommands.Ran ran = running.get(15, TimeUnit.SECONDS);
+
+                assertEquals("PANE_GONE", ran.outcome());
+                assertNull(ran.exitStatus(), "a command whose pane died did not finish");
+                assertTrue(ran.output().contains(DyingPane.PRINTED), "output so far: " + ran.output());
+                assertTrue(ran.seconds() < 10, "it must not wait out its timeout: " + ran.seconds());
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+    }
+
+    /**
+     * The look at a running command's pane runs on an interval and must not run the user's
+     * {@code after-display-message} hook each time. The control shows the hook does fire for a
+     * {@code display-message}, so a count that stays flat means the looks are silent, not that the
+     * hook is broken.
+     */
+    @Test
+    void theLookAtARunningCommandFiresNoDisplayMessageHook(Server server, @TempDir Path temporary) throws Exception {
+        Path fires = temporary.resolve("fires");
+        Files.writeString(fires, "");
+        assertTrue(server.cmd("set-hook", "-g", "after-display-message", "run-shell -b 'echo x >> " + fires + "'")
+                .succeeded());
+        Pane pane = server.newSession(session -> session.named("shell").running("env", "PS1=$ ", "ENV=", "/bin/sh"))
+                .windows()
+                .get(0)
+                .panes()
+                .get(0);
+        Thread.sleep(300);
+        int before = hookFires(fires, 0);
+        server.cmd("display-message", "-p", "control");
+        assertEquals(before + 1, hookFires(fires, before + 1), "a display-message fires the hook");
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<RunningCommands.Ran> running = executor.submit(() -> RunningCommands.run(
+                    TestCalls.on(server, "pane_id", pane.id().value(), "command", "sleep 3", "timeout", 60)));
+            Thread.sleep(1000);
+            int settled = hookFires(fires, 0);
+            Thread.sleep(1500);
+            assertEquals(
+                    settled,
+                    hookFires(fires, 0),
+                    "the watch looked at the pane several times and no look may fire the hook");
+            assertEquals("SIGNALLED", running.get(30, TimeUnit.SECONDS).outcome());
+        } finally {
+            executor.shutdownNow();
+            server.cmd("set-hook", "-gu", "after-display-message");
+        }
+    }
+
+    /** Lines in the hook's file, after giving the backgrounded hook a moment to land. */
+    private static int hookFires(Path fires, int atLeast) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+        int seen;
+        do {
+            seen = Files.readAllLines(fires).size();
+            if (seen >= atLeast) break;
+            Thread.sleep(50);
+        } while (System.nanoTime() < deadline);
+        return seen;
+    }
+
+    /** {@code kill-server} under a running command is {@code SERVER_GONE}, with the output so far. */
+    @Test
+    void aServerKilledUnderACommandKeepsTheOutputSoFar(Server server) throws Exception {
+        Pane pane = server.newSession(session -> session.named("shell").running("env", "PS1=$ ", "ENV=", "/bin/sh"))
+                .windows()
+                .get(0)
+                .panes()
+                .get(0);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<RunningCommands.Ran> running = executor.submit(() -> RunningCommands.run(TestCalls.on(
+                    server,
+                    "pane_id",
+                    pane.id().value(),
+                    "command",
+                    "echo " + DyingPane.PRINTED + "; sleep 300",
+                    "timeout",
+                    60)));
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+            while (pane.capture().stream().noneMatch(line -> line.equals(DyingPane.PRINTED))
+                    && System.nanoTime() < deadline) {
+                Thread.sleep(50);
+            }
+            Thread.sleep(300);
+            server.cmd("kill-server");
+
+            RunningCommands.Ran ran = running.get(15, TimeUnit.SECONDS);
+
+            assertEquals("SERVER_GONE", ran.outcome());
+            assertTrue(ran.output().contains(DyingPane.PRINTED), "output so far: " + ran.output());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
 
     /**
      * The signal is sent by the pane, so it is the pane's PATH that decides which tmux sends it. A
