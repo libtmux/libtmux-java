@@ -8,7 +8,7 @@
 // Declared so the source-set accessors resolve; the module already has it via the library plugin.
 plugins { java }
 
-val lanes = listOf("3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.7c")
+val lanes = listOf("3.3a", "3.4", "3.5", "3.6", "3.6a", "3.7", "3.7a", "3.7b", "3.7c")
 
 // Ahead of the supported range: previews of what tmux ships next, run so a break shows up before the
 // release that makes it real rather than after. Allowed to fail, and left out of testTmuxMatrix and
@@ -35,7 +35,13 @@ fun registerLane(lane: String, rejection: Boolean = false) =
         // "locale" joins the excludes for the same reason "carrier" is here: it needs a JVM
         // started differently — one whose platform encoding is not UTF-8 — so running it in an
         // ordinary fork asserts nothing and fails saying so.
-        useJUnitPlatform { excludeTags("fixture", "carrier", "benchmark", "locale") }
+        useJUnitPlatform {
+            excludeTags("fixture", "carrier", "benchmark", "locale")
+            // Ordinary 3.3a+ operations still run; managed control has its own 3.7 floor.
+            if (lane in listOf("3.3a", "3.4", "3.5", "3.6", "3.6a")) {
+                excludeTags("control")
+            }
+        }
 
         // By class, not by tag: the Scala suites run under another engine that ignores tags.
         if (rejection) {

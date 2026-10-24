@@ -10,7 +10,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,29 +28,16 @@ import org.junit.jupiter.params.provider.ValueSource;
 /** Drives the installed launcher as a real process, which is why the whole class is tagged. */
 @org.junit.jupiter.api.Tag("distribution")
 final class ProcessTest {
-    private static final String PTY = """
-            import errno, os, select, subprocess, time
-            def drain_pty(fd):
-                chunks = []
-                while select.select([fd], [], [], 0)[0]:
-                    try: chunk = os.read(fd, 65536)
-                    except OSError as error:
-                        if error.errno == errno.EIO: break
-                        raise
-                    if not chunk: break
-                    chunks.append(chunk)
-                return b''.join(chunks)
-            def wait_pty(child, master, timeout):
-                until = time.monotonic() + timeout
-                while child.poll() is None:
-                    drain_pty(master)
-                    remaining = until - time.monotonic()
-                    if remaining <= 0:
-                        raise subprocess.TimeoutExpired(child.args, timeout)
-                    select.select([master], [], [], min(remaining, .025))
-                drain_pty(master)
-                return child.returncode
-            """;
+    private static final String PTY = ptyHelper();
+
+    private static String ptyHelper() {
+        try (var source = ProcessTest.class.getResourceAsStream("/io/github/libtmux/fixtures/pty.py")) {
+            if (source == null) throw new IllegalStateException("missing PTY test helper");
+            return new String(source.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
+        }
+    }
 
     @TempDir
     Path directory;

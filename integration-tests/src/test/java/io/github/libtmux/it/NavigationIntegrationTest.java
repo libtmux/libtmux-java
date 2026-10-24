@@ -11,7 +11,6 @@ import io.github.libtmux.Server;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
 import io.github.libtmux.WindowId;
-import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.junit5.TmuxExtension;
 import org.junit.jupiter.api.Test;
@@ -86,8 +85,8 @@ final class NavigationIntegrationTest {
     @Test
     void detachingLeavesTheSessionRunning(Server server) throws Exception {
         Session session = server.sessions().get(0);
-        try (ControlClient attached = server.control(session)) {
-            assertTrue(attached.send("display-message", "-p", "ready").succeeded());
+        try (NativeClient attached = NativeClient.attach(session)) {
+            assertTrue(attached.isAlive());
             assertTrue(Await.until(() -> !server.clients().isEmpty()));
 
             session.detachClients();

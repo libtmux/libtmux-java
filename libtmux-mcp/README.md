@@ -246,7 +246,11 @@ One call sends the command, waits, and returns the output and the exit status:
 
 - `SIGNALLED`: the command finished. Only then is `exit_status` meaningful.
 - `TIMED_OUT`: it was still running at the deadline.
-- `SERVER_GONE`: tmux itself died underneath the wait.
+- `PANE_GONE`: the pane was killed or exited while the command ran, so it did
+  not finish. `output` holds what it had printed; the call does not wait out
+  its timeout.
+- `SERVER_GONE`: tmux itself died underneath the wait. `output` holds what the
+  last look at the pane showed.
 
 What to know about the command:
 
@@ -277,6 +281,15 @@ For a dev server, a daemon, or someone else's build, always pass `stop`:
   eight characters.
 - Text already on the screen when a cursorless call starts is not a fresh
   match. The outcome is `PRESENT_AT_ENTRY`, not `MATCHED`.
+- A pane killed mid-wait ends the call as `PANE_GONE`, and a killed server as
+  `SERVER_GONE`. Both carry the output seen so far, and a second client left
+  attached to the dying server does not change the answer. A bounded liveness
+  check runs on an interval while the wait blocks, so a killed pane ends
+  [`run_shell_command`][tool-run-shell-command] within about a quarter
+  second; tmux's answer to that check, never the elapsed time, decides the
+  outcome.
+- A match split across a wrapped row is found, and `matched_line` holds only
+  the rows that carry it.
 
 ### [`capture_since`][tool-capture-since]: watch across turns
 

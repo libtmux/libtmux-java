@@ -25,6 +25,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import io.github.libtmux.Server as JavaServer
@@ -130,7 +131,9 @@ class WaitsTest {
     }
 
     @Test
+    @Tag("control")
     fun `control attaches a working client against real tmux`(javaServer: JavaServer) = runBlocking {
+        requireControl(javaServer)
         val server = Server.open(javaServer.config())
         val session = server.sessions().first()
 
@@ -155,15 +158,17 @@ class WaitsTest {
      * wait is stalled by construction rather than by timing.
      */
     @Test
+    @Tag("control")
     fun `cancelling control ends promptly and kills the stalled process`() {
         val stall = StalledControlFixture.start()
         try {
+            requireControl(stall.javaServer)
             runBlocking {
                 val server = Server.open(stall.javaServer.config())
                 val session = Session(stall.javaSession, server)
                 val attaching = async(Dispatchers.IO) { server.control(session, 30.seconds) }
 
-                val pid = awaitControlClientPid(stall.socket, 5.seconds)
+                val pid = awaitControlClientPid(stall.controlCommand, 5.seconds)
                 assertNotNull(pid, "the wrapped control client never started")
                 assertFalse(attaching.isCompleted, "attach finished before it could be caught stalled")
 
@@ -196,7 +201,7 @@ private class StalledControlFixture private constructor(
     val javaServer: JavaServer,
     val javaSession: JavaSession,
 ) {
-    val socket: String = root.resolve("s").toString()
+    val controlCommand: String = root.resolve("wrap.sh").toString()
 
     fun close() {
         try {
@@ -255,21 +260,21 @@ private fun waiterPresent(socket: String): Boolean =
     }
 
 // A direct child of this JVM, not a system-wide scan of every process on the machine.
-private fun controlClientPid(socket: String): Long? =
+private fun controlClientPid(command: String): Long? =
     ProcessHandle.current()
         .children()
         .filter { process ->
             val argv = process.info().arguments().orElse(emptyArray())
-            "-C" in argv && "attach-session" in argv && socket in argv
+            "-C" in argv && "attach-session" in argv && command in argv
         }
         .findFirst()
         .map(ProcessHandle::pid)
         .orElse(null)
 
-private suspend fun awaitControlClientPid(socket: String, timeout: Duration): Long? {
+private suspend fun awaitControlClientPid(command: String, timeout: Duration): Long? {
     val end = System.nanoTime() + timeout.inWholeNanoseconds
     while (System.nanoTime() < end) {
-        val pid = controlClientPid(socket)
+        val pid = controlClientPid(command)
         if (pid != null) {
             return pid
         }

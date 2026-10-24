@@ -21,10 +21,12 @@ final class JavaBoundarySuite extends FunSuite {
     ()
   }
 
-  private def control(fixture: OwnedTmux): ControlClient =
+  private def control(fixture: OwnedTmux): ControlClient = {
+    assume(fixture.supportsControl, "managed control requires tmux 3.7+")
     fixture.own(
       fixture.server.control(fixture.server.sessions().get(0), deadline)
     )
+  }
 
   test("pane refresh follows physical identity across linked occurrences") {
     OwnedTmux.use { fixture =>

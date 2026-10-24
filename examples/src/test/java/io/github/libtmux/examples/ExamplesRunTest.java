@@ -3,11 +3,13 @@ package io.github.libtmux.examples;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.control.ControlEvent;
 import io.github.libtmux.control.PaneOutput;
+import io.github.libtmux.internal.ControlAcquisition;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.junit5.TmuxSocketPath;
 import java.time.Duration;
@@ -78,7 +80,8 @@ final class ExamplesRunTest {
     }
 
     @Test
-    void watchingAPaneSeesWhatItPrints(TmuxSocketPath socket) {
+    void watchingAPaneSeesWhatItPrints(Server server, TmuxSocketPath socket) {
+        assumeTrue(ControlAcquisition.supports(server.version()), "managed control needs tmux 3.7 or newer");
         List<PaneOutput> seen = WatchPaneOutput.run(socket.path(), Duration.ofSeconds(30), output -> {});
 
         assertTrue(WatchPaneOutput.sawTheEcho(seen), "attaching is what makes tmux push output: " + seen);
@@ -114,7 +117,8 @@ final class ExamplesRunTest {
     }
 
     @Test
-    void watchingAServerIsToldWhenAWindowAppears(TmuxSocketPath socket) {
+    void watchingAServerIsToldWhenAWindowAppears(Server server, TmuxSocketPath socket) {
+        assumeTrue(ControlAcquisition.supports(server.version()), "managed control needs tmux 3.7 or newer");
         List<ControlEvent> seen = WatchWhatChanges.run(socket.path(), Duration.ofSeconds(30), event -> {});
 
         assertTrue(

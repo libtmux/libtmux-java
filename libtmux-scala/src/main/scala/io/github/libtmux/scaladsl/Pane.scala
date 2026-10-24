@@ -41,7 +41,9 @@ object Pane {
     // Each blocks its thread; interrupting that thread cancels the wait with InterruptedException,
     // as the Java method declares.
 
-    /** Waits until `text` appears, or `timeout` passes first. */
+    /** Waits until `text` appears, or `timeout` passes first. A pane killed
+      * mid-wait answers `TextOutcome.PANE_GONE` rather than raising.
+      */
     def awaitText(text: String, timeout: FiniteDuration): TextOutcome =
       self.asJava.awaitText(text, timeout.toJava)
 

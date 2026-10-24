@@ -31,6 +31,10 @@ final class CatsObservationStressSuite extends FunSuite {
     "Cats: the poll/onReady fs2 bridge's gap accounting is exact, the marker survives overflow"
   ) {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       val events = new AtomicLong(0)
       val gaps = new AtomicLong(0)
       val gapMissed = new AtomicLong(0)

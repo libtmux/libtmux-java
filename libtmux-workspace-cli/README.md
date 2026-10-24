@@ -226,7 +226,11 @@ Then the agent can:
   line. A failure names one `code`, and the exit status is `0`, `1`, `2` or
   `130`. [Output][ref-output] has the full contract.
 - **Optional Python.** Only `shell`, tmuxp plugins and custom builders need
-  Python with tmuxp 1.74.0, named by `TMUX_WORKSPACE_PYTHON`.
+  Python with tmuxp 1.74.0, named by `TMUX_WORKSPACE_PYTHON`, and a Python
+  libtmux whose `TMUX_OPTIONAL_FEATURE_POLICY_VERSION` is 2 or more. No
+  released libtmux has that yet; it comes with
+  [tmux-python/libtmux#780](https://github.com/tmux-python/libtmux/pull/780),
+  so install libtmux from that source or skip those features.
 
 ## Documentation
 

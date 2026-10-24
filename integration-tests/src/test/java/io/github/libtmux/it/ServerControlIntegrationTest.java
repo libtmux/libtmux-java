@@ -13,8 +13,10 @@ import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.transport.ProcessTransport;
 import java.time.Duration;
 import java.util.List;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -70,7 +72,9 @@ final class ServerControlIntegrationTest {
     }
 
     @Test
+    @Tag("control")
     void controlAttachesToTheCapturedServer(Server server) {
+        ControlSupport.require(server);
         Session session = server.sessions().get(0);
 
         try (ControlClient client = server.control(session)) {
@@ -85,7 +89,9 @@ final class ServerControlIntegrationTest {
 
     /** A new server on the same socket reuses {@code $0}. The old handle must not attach to it. */
     @Test
+    @Tag("control")
     void controlRefusesAServerThatHasBeenReplaced(Server server) {
+        ControlSupport.require(server);
         Session session = server.sessions().get(0);
         ServerConfig config = server.config();
         server.killServer();
@@ -102,7 +108,9 @@ final class ServerControlIntegrationTest {
      * with the old one, or its next command would be answered by the replacement.
      */
     @Test
+    @Tag("control")
     void anAttachedClientEndsWhenItsServerIsReplaced(Server server) {
+        ControlSupport.require(server);
         Session session = server.sessions().get(0);
         String id = session.id().value();
         ControlClient client = server.control(session);
@@ -128,9 +136,9 @@ final class ServerControlIntegrationTest {
      * until every client has gone, so a server started straight afterwards could reach the old one.
      */
     @Test
-    void killingTheServerWaitsForItsDaemonToExit(Server server) {
+    void killingTheServerWaitsForItsDaemonToExit(Server server) throws Exception {
         long pid = Long.parseLong(server.expand("#{pid}"));
-        ControlClient client = server.control(server.sessions().get(0));
+        NativeClient client = NativeClient.attach(server.sessions().get(0));
         try {
             server.killServer();
 
@@ -142,18 +150,18 @@ final class ServerControlIntegrationTest {
         }
     }
 
-    /** The check runs after the process is up, so a lie about the pid has to detach again. */
+    /** A captured pid mismatch is refused before control acquisition. */
     @Test
+    @Tag("control")
     void controlDetachesWhenTheIncarnationDoesNotMatch(Server server) {
+        ControlSupport.require(server);
         Session session = server.sessions().get(0);
 
         assertThrows(
                 TargetGoneException.class,
                 () -> ControlClient.attach(server.config(), session.id(), 1, "0.0", Duration.ofSeconds(5)));
 
-        assertTrue(
-                Await.until(() -> noClients(server)),
-                "the control client stayed attached after the incarnation check failed");
+        assertTrue(Await.until(() -> noClients(server)), "the refused identity left an attachment");
     }
 
     /**
@@ -161,22 +169,26 @@ final class ServerControlIntegrationTest {
      * restarted on its old pid shows a capture from before the restart.
      */
     @Test
-    void controlDetachesFromAServerStartedAtAnotherTime(Server server) {
+    @Tag("control")
+    void controlRefusesAServerStartedAtAnotherTime(Server server) {
+        ControlSupport.require(server);
         Session session = server.sessions().get(0);
         var captured = server.snapshot();
         String version =
                 server.cmd("display-message", "-p", "#{version}").stdout().get(0);
 
-        assertThrows(
-                TargetGoneException.class,
-                () -> ControlClient.attach(
-                        command -> new ProcessBuilder(command).start(),
-                        server.config(),
-                        session.id(),
-                        captured.serverPid().orElseThrow(),
-                        java.util.OptionalLong.of(captured.serverStartTime().orElseThrow() - 1),
-                        version,
-                        Duration.ofSeconds(5)));
+        try (ProcessTransport transport = new ProcessTransport()) {
+            assertThrows(
+                    TargetGoneException.class,
+                    () -> ControlClient.attach(
+                            transport.controlCarrier().orElseThrow(),
+                            server.config(),
+                            session.id(),
+                            captured.serverPid().orElseThrow(),
+                            java.util.OptionalLong.of(captured.serverStartTime().orElseThrow() - 1),
+                            version,
+                            Duration.ofSeconds(5)));
+        }
 
         assertTrue(
                 Await.until(() -> noClients(server)),
@@ -220,20 +232,19 @@ final class ServerControlIntegrationTest {
         }
     }
 
-    /** The reason it is not gated: attach a client and the older releases answer too. */
     @Test
-    void anOlderReleaseAnswersOnceAClientIsAttached(Server server) throws Exception {
-        if (server.version().atLeast(MESSAGES_WITHOUT_CLIENT_SINCE)) {
-            return; // nothing to prove; it already answers without one
+    void theMessageLogIsReadableWithAnOrdinaryClientAttached(Server server) throws Exception {
+        try (NativeClient attached = NativeClient.attach(server.sessions().getFirst())) {
+            assertEquals(
+                    List.of("0"),
+                    server.cmd("list-clients", "-F", "#{client_control_mode}").stdout());
+            attached.run("display-message", "ordinary-client-log-marker");
+            assertTrue(
+                    server.messageLog().lines().stream().anyMatch(line -> line.contains("ordinary-client-log-marker")),
+                    "an ordinary client's message must remain readable");
         }
-        Session session = server.sessions().get(0);
-
-        try (ControlClient attached = server.control(session)) {
-            assertTrue(attached.send("display-message", "-p", "ready").succeeded());
-            assertTrue(Await.until(() -> !server.clients().isEmpty()), "no client ever attached");
-
-            assertTrue(!server.messageLog().lines().isEmpty(), "with a client attached the log is readable after all");
-        }
+        assertTrue(Await.until(() -> noClients(server)), "closing the PTY left an attached client");
+        assertTrue(server.isAlive(), "closing a client must preserve its server");
     }
 
     // ------------------------------------------------------------------------------ prompt history

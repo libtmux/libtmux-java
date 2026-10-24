@@ -6,8 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.libtmux.Server;
+import io.github.libtmux.internal.ControlAcquisition;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.junit5.TmuxSocketPath;
 import java.io.IOException;
@@ -84,21 +86,24 @@ final class MainsTest {
     }
 
     @Test
-    void watchPaneOutput(TmuxSocketPath socket) throws Exception {
+    void watchPaneOutput(Server server, TmuxSocketPath socket) throws Exception {
+        assumeTrue(ControlAcquisition.supports(server.version()), "managed control needs tmux 3.7 or newer");
         String out = launch("WatchPaneOutput", socket.path().toString());
 
         assertTrue(WatchPaneOutput.printedLine(out, "watched"), out);
     }
 
     @Test
-    void watchWhatChanges(TmuxSocketPath socket) throws Exception {
+    void watchWhatChanges(Server server, TmuxSocketPath socket) throws Exception {
+        assumeTrue(ControlAcquisition.supports(server.version()), "managed control needs tmux 3.7 or newer");
         String out = launch("WatchWhatChanges", socket.path().toString());
 
         assertTrue(out.contains("watched-into-existence"), out);
     }
 
     @Test
-    void watchWithFlow(TmuxSocketPath socket) throws Exception {
+    void watchWithFlow(Server server, TmuxSocketPath socket) throws Exception {
+        assumeTrue(ControlAcquisition.supports(server.version()), "managed control needs tmux 3.7 or newer");
         String out = launch("WatchWithFlowKt", socket.path().toString());
 
         assertEquals("echoed=true\ncancelled=true\n", out);

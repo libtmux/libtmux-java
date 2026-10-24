@@ -24,10 +24,14 @@ final class PythonExtensions {
     static final String CORE_PRELUDE = """
             import re as _libtmux_re
             from libtmux.common import TMUX_MIN_VERSION as _libtmux_floor
+            import libtmux.common as _libtmux_common
             _libtmux_floor = str(_libtmux_floor)
             _libtmux_release = _libtmux_re.fullmatch(r'(\\d+)\\.(\\d+)([a-z]?)', _libtmux_floor)
             if not _libtmux_release or (int(_libtmux_release[1]), int(_libtmux_release[2]), _libtmux_release[3]) < (%2$d, %3$d, '%4$s'):
                 raise RuntimeError('Python libtmux with a tmux %1$s minimum is required; install a compatible Python libtmux in TMUX_WORKSPACE_PYTHON (loaded floor: ' + _libtmux_floor + ')')
+            _libtmux_optional = getattr(_libtmux_common, 'TMUX_OPTIONAL_FEATURE_POLICY_VERSION', None)
+            if type(_libtmux_optional) is not int or _libtmux_optional < 2:
+                raise RuntimeError('Python libtmux optional feature policy v2 is required (TMUX_OPTIONAL_FEATURE_POLICY_VERSION >= 2); no released libtmux has it yet, it comes with tmux-python/libtmux#780. Install libtmux from that source in TMUX_WORKSPACE_PYTHON, or do without shell and Python extensions')
             """.formatted(
             TmuxVersion.MINIMUM, TmuxVersion.MINIMUM.major(), TmuxVersion.MINIMUM.minor(), TmuxVersion.MINIMUM.patch());
 

@@ -18,8 +18,9 @@ concurrency on virtual threads.**
 
 [`Flows.liveView`][flows] and [`Flows.subscription`][flows] turn pushed events
 into a cold `Flow`: a live view of a server, and a control client's
-subscription. The facade's handles work unchanged in an Ox `supervised`
-scope.
+subscription. Acquiring either requires tmux 3.7+ and a carrier-owned pinned
+socket; ordinary direct-style operations keep the core 3.3a minimum. The
+facade's handles work unchanged in an Ox `supervised` scope.
 
 `io.github.libtmux:libtmux-scala-ox_3` — on Maven Central, released with the
 Java artifacts.
@@ -49,7 +50,7 @@ It emits the current view of a server when the flow starts, then every newer
 one, so a change published between reading a view and collecting the flow is not
 missed. Here `config` selects an existing tmux server:
 
-<!-- snippet: scala-sync: ox-readme-live-view -->
+<!-- snippet: scala-sync-control: ox-readme-live-view -->
 ```scala
 import _root_.ox.{supervised, useCloseableInScope}
 import io.github.libtmux.scaladsl.{config => _, *}

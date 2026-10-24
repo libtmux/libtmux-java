@@ -2,6 +2,7 @@ package io.github.libtmux;
 
 import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.internal.CommandStrings;
+import io.github.libtmux.internal.TmuxFeatures;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
 import io.github.libtmux.transport.CommandResult;
@@ -66,17 +67,26 @@ final class IncarnationFence {
     }
 
     CommandResult guarded(ServerSnapshot snapshot, String command, String input) {
+        return guarded(snapshot, command, input, TmuxFeatures.Intent.literal(List.of()));
+    }
+
+    CommandResult guarded(ServerSnapshot snapshot, String command, String input, TmuxFeatures.Intent intent) {
         long pid = snapshot.serverPid()
                 .orElseThrow(() -> new IllegalStateException("a live handle has no server process identity"));
-        return guarded(pid, incarnation(pid, snapshot.serverStartTime()), command, input);
+        return guarded(pid, incarnation(pid, snapshot.serverStartTime()), command, input, intent);
     }
 
     CommandResult guarded(long pid, String condition, String command, String input) {
+        return guarded(pid, condition, command, input, TmuxFeatures.Intent.literal(List.of()));
+    }
+
+    CommandResult guarded(long pid, String condition, String command, String input, TmuxFeatures.Intent intent) {
         String stale = "libtmux-stale-handle-" + pid;
         CommandResult result = server.cmd(
                 List.of("if-shell", "-F", condition, command, stale),
                 server.config().defaultTimeout(),
-                input);
+                input,
+                intent);
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
             throw new TargetGoneException("the tmux server this handle belonged to has ended");
         }
@@ -91,8 +101,11 @@ final class IncarnationFence {
         String stale = "libtmux-stale-winlink-" + pid + "-" + expected.window().value();
         String condition = "#{&&:" + incarnation(pid, snapshot.serverStartTime()) + ",#{==:#{window_id},"
                 + expected.window().value() + "}}";
-        CommandResult result =
-                server.cmd(List.of("if-shell", "-F", "-t", target, condition, CommandStrings.stringify(argv), stale));
+        CommandResult result = server.cmd(
+                List.of("if-shell", "-F", "-t", target, condition, CommandStrings.stringify(argv), stale),
+                server.config().defaultTimeout(),
+                "",
+                TmuxFeatures.Intent.literal(List.of(argv)));
         if (!result.succeeded() && result.stderr().stream().anyMatch(line -> line.contains(stale))) {
             throw new TargetGoneException("window " + expected.window() + " no longer exists here");
         }

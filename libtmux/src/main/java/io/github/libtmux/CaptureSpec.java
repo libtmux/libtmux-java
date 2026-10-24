@@ -1,6 +1,7 @@
 package io.github.libtmux;
 
 import io.github.libtmux.exception.UnsupportedFeatureException;
+import io.github.libtmux.internal.support.Capabilities;
 import java.util.ArrayList;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
@@ -31,11 +32,11 @@ public final class CaptureSpec {
      * line, so a prober that trusted the cluster's shape alone would be reading a line tmux itself
      * gets inconsistent.
      */
-    private static final TmuxVersion TRIM_SINCE = new TmuxVersion(3, 4, "");
+    private static final TmuxVersion TRIM_SINCE = Capabilities.CAPTURE_TRIM_BLANK_CELLS.since();
 
-    private static final TmuxVersion MODE_SCREEN_SINCE = new TmuxVersion(3, 6, "");
+    private static final TmuxVersion MODE_SCREEN_SINCE = Capabilities.CAPTURE_MODE_SCREEN.since();
 
-    private static final TmuxVersion HYPERLINKS_SINCE = new TmuxVersion(3, 7, "");
+    private static final TmuxVersion HYPERLINKS_SINCE = Capabilities.CAPTURE_LINE_FLAGS.since();
 
     private final @Nullable String start;
     private final @Nullable String end;

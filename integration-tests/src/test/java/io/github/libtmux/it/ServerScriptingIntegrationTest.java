@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.Server;
 import io.github.libtmux.TmuxFormats;
 import io.github.libtmux.TmuxVersion;
-import io.github.libtmux.control.ControlClient;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
@@ -97,18 +96,12 @@ final class ServerScriptingIntegrationTest {
         Path literal = directory.resolve("literal");
         Path probe = directory.resolve("probe");
 
-        // A control for #() dispatch itself, isolated from run-shell's own argument expansion: this
-        // tmux was observed on macOS never running the job at all, which no caller can work around.
-        server.expand("#(touch " + probe + ")");
-        Assumptions.assumeTrue(Await.until(() -> Files.exists(probe)), "this tmux never dispatches a #() job");
-
-        // tmux cancels a client's asynchronous format jobs when that client disconnects.
-        // Keep the client alive through observation; a short-lived command races job cleanup.
-        try (ControlClient client = server.control(server.sessions().get(0))) {
-            assertTrue(client.send("run-shell", TmuxFormats.literal("echo '#(touch " + literal + ")' > /dev/null"))
-                    .succeeded());
-            assertTrue(client.send("run-shell", "echo '#(touch " + expanded + ")' > /dev/null")
-                    .succeeded());
+        // Keep the ordinary client alive while its asynchronous format jobs are observed.
+        try (NativeClient client = NativeClient.attach(server.sessions().getFirst())) {
+            client.run("display-message", "-p", "#(touch " + probe + ")");
+            Assumptions.assumeTrue(Await.until(() -> Files.exists(probe)), "this tmux never dispatches a #() job");
+            client.run("run-shell", TmuxFormats.literal("echo '#(touch " + literal + ")' > /dev/null"));
+            client.run("run-shell", "echo '#(touch " + expanded + ")' > /dev/null");
 
             assertTrue(Await.until(() -> Files.exists(expanded)), "tmux expands a format inside shell quotes");
             assertFalse(Files.exists(literal), "a literalized value must reach the shell as text");

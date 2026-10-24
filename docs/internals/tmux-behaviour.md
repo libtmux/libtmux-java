@@ -113,15 +113,19 @@ anything matched filters a capture instead.
 
 ## select-layout can crash the server, on 3.3a only
 
-`select-layout` given a string tmux cannot parse — an unknown built-in name or
-a malformed serialized layout — returns an error on every lane except 3.3a,
-where the server itself exits, taking every session on that socket with it.
-Both the built-in names (checked against an enum) and a serialized layout
-string (checked by recomputing tmux's own rotate-and-add checksum over the
-layout body, four hex digits at the front) are validated before dispatch, so
-this library never hands `select-layout` anything it has not already verified
-tmux itself would have written or would recognize. `main-horizontal-mirrored`
-and `main-vertical-mirrored` only exist from tmux 3.5.
+On tmux 3.3a, an unknown layout without a hexadecimal checksum prefix can
+end the server and every session on its socket. `layout_parse` leaves the
+error cause unset on that path; upstream commit
+[`f10854cf`](https://github.com/tmux/tmux/commit/f10854cfc5e43f646b02b3031bfc4bc3f5f6c513)
+initializes it, first released in 3.4. A bad checksum already reports an error
+on 3.3a.
+
+Typed layouts validate built-in names and serialized geometry and checksums.
+Literal `select-layout` commands also validate operands before every batch
+effect on 3.3a. The check accepts built-in prefixes such as `tile`, skips
+operands ignored by `-n`, `-p` or `-E`, and requires a serialized operand with
+`-o`. A missing operand keeps tmux's native selection or previous-layout
+behavior. Mirrored presets require tmux 3.5.
 
 ## %output is cut by byte count, not by character
 

@@ -225,6 +225,10 @@ withServer(config) { server ->
 [`withControl`][with-control] attaches a control client, and `output` turns a
 [`Delivery`][delivery] stream into a `Flow`:
 
+Managed control requires tmux 3.7+ and a carrier-owned pinned socket.
+Ordinary suspend operations retain the core 3.3a minimum.
+
+<!-- snippet: control: subscriptions require managed control -->
 ```kotlin
 // Given: config: ServerConfig
 import io.github.libtmux.control.Delivery
@@ -256,6 +260,7 @@ withServer(config) { server ->
 
 ### `Server.withLiveState`: the live server as a `StateFlow`
 
+<!-- snippet: control: subscriptions require managed control -->
 ```kotlin
 // Given: config: ServerConfig
 import kotlinx.coroutines.flow.first

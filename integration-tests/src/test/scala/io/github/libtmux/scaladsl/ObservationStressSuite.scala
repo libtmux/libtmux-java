@@ -35,6 +35,10 @@ final class ObservationStressSuite extends FunSuite {
     "direct style: Observation's gap accounting is exact, and the marker survives overflow"
   ) {
     OwnedTmux.use { fixture =>
+      assume(
+        fixture.supportsControl,
+        "managed control requires tmux 3.7+"
+      )
       Using.resource(Server.open(fixture.config)) { server =>
         val session = server.newSession("stress-direct")
         val pane = session.windows.head.panes.head

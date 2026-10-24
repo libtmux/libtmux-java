@@ -26,7 +26,8 @@ import org.gradle.api.tasks.TaskAction
  * Each fence carries a directive on the line before it, `<!-- snippet: scala-MODE: id | detail -->`:
  * `sync` runs the code against a fresh tmux, `io` runs a Cats `IO` to completion within the
  * 15-second deadline every documented snippet has, `reject` asserts the code fails to compile with
- * `detail` in the error, and `build` marks an sbt build fragment the consumer checks exercise
+ * `detail` in the error, `io-control` and `sync-control` also check refusal below tmux 3.7, and
+ * `build` marks an sbt build fragment the consumer checks exercise
  * instead. An unclassified fence fails the build, and so
  * does a directive no fence follows. A final inventory test pins each document's digest and fence
  * count, so a document edited after the suite was generated cannot pass on the old code.
@@ -87,7 +88,7 @@ abstract class GenerateScalaDocumentationSuite : DefaultTask() {
                         val beforeIndex = (start - 1 downTo 0).firstOrNull { lines[it].isNotBlank() }
                         val before = beforeIndex?.let { lines[it].trim() }.orEmpty()
                         val directive = requireNotNull(DIRECTIVE.matchEntire(before)) {
-                            "$where has an unclassified Scala fence; use a snippet: scala-sync, scala-io, scala-reject or scala-build directive"
+                            "$where has an unclassified Scala fence; use a snippet: scala-sync, scala-sync-control, scala-io, scala-io-control, scala-reject or scala-build directive"
                         }
                         unusedDirectives.remove(beforeIndex)
                         val (mode, id, detail) = directive.destructured
@@ -123,14 +124,30 @@ abstract class GenerateScalaDocumentationSuite : DefaultTask() {
             .joinToString(",\n") { quoted(relative(root, it)) + " -> " + quoted(digest(it.readBytes())) }
         val names = runnable.joinToString(",\n") { quoted(it.name(root)) }
         val declarations = runnable.filterNot { it.mode == "reject" }.joinToString("\n") { snippet ->
-            val body = if (snippet.mode == "sync") "DocumentationRuntime.requireUnit {\n${snippet.code}\n}" else "{\n${snippet.code}\n}"
-            val result = if (snippet.mode == "sync") "Unit" else "_root_.cats.effect.IO[Unit]"
+            val synchronous = snippet.mode == "sync" || snippet.mode == "sync-control"
+            val body = if (synchronous) "DocumentationRuntime.requireUnit {\n${snippet.code}\n}" else "{\n${snippet.code}\n}"
+            val result = if (synchronous) "Unit" else "_root_.cats.effect.IO[Unit]"
             "private[docs] object ${snippet.objectName} {\ndef run(config: io.github.libtmux.ServerConfig): $result = $body\n}\n"
         }
         val cases = runnable.joinToString("\n") { snippet ->
             val invoke = snippet.objectName + ".run(fixture.config)"
             val body = when (snippet.mode) {
                 "sync" -> "io.github.libtmux.scaladsl.fixture.OwnedTmux.use { fixture => $invoke }"
+                "sync-control" ->
+                    "io.github.libtmux.scaladsl.fixture.OwnedTmux.use { fixture =>\n" +
+                        "if (fixture.supportsControl) $invoke\n" +
+                        "else {\n" +
+                        "intercept[io.github.libtmux.exception.UnsupportedFeatureException]($invoke)\n" +
+                        "assert(fixture.server.clients().isEmpty(), \"a refused snippet attached a client\")\n" +
+                        "}\n}"
+                "io-control" ->
+                    "io.github.libtmux.scaladsl.fixture.OwnedTmux.use { fixture =>\n" +
+                        "val program = $invoke.timeout(_root_.scala.concurrent.duration.FiniteDuration(15, java.util.concurrent.TimeUnit.SECONDS))\n" +
+                        "if (fixture.supportsControl) program.unsafeRunSync()(using _root_.cats.effect.unsafe.IORuntime.global)\n" +
+                        "else {\n" +
+                        "intercept[io.github.libtmux.exception.UnsupportedFeatureException](program.unsafeRunSync()(using _root_.cats.effect.unsafe.IORuntime.global))\n" +
+                        "assert(fixture.server.clients().isEmpty(), \"a refused snippet attached a client\")\n" +
+                        "}\n}"
                 "io" ->
                     "io.github.libtmux.scaladsl.fixture.OwnedTmux.use { fixture =>\n" +
                         "val evaluated = new java.util.concurrent.atomic.AtomicBoolean(false)\n" +
@@ -175,7 +192,7 @@ $cases
         val IGNORED = setOf(".git", ".gradle", ".bsp", ".metals", ".idea", "target", "build", "node_modules")
         val OPENING = Regex("^ {0,3}(`{3,}|~{3,})[ \\t]*([^\\s`]*).*$")
         val UNSUPPORTED_SCALA_FENCE = Regex("(?i)^[ \\t>]*(?:`{3,}|~{3,})[ \\t]*(?:scala\\S*|sbt)(?:[ \\t].*)?$")
-        val DIRECTIVE = Regex("^<!--\\s*snippet:\\s*scala-(sync|io|reject|build):\\s*([a-z0-9][a-z0-9-]*)(?:\\s*\\|\\s*(.+?))?\\s*-->$")
+        val DIRECTIVE = Regex("^<!--\\s*snippet:\\s*scala-(sync|sync-control|io|io-control|reject|build):\\s*([a-z0-9][a-z0-9-]*)(?:\\s*\\|\\s*(.+?))?\\s*-->$")
 
         fun relative(root: File, file: File): String = root.toPath().relativize(file.toPath()).toString().replace('\\', '/')
 

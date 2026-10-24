@@ -9,6 +9,8 @@ import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import io.github.libtmux.Server as JavaServer
@@ -19,8 +21,12 @@ import io.github.libtmux.Server as JavaServer
  * `coroutineScope { liveState(...) }` never returns — structured concurrency waits for every child,
  * the pump included, and nothing inside it ever asks the pump to stop.
  */
+@Tag("control")
 @ExtendWith(TmuxExtension::class)
 class LiveStateTest {
+
+    @BeforeEach
+    fun control(javaServer: JavaServer) = requireControl(javaServer)
 
     @Test
     fun `the initial view is already populated, no empty window`(javaServer: JavaServer) = runBlocking {

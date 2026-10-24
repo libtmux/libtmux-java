@@ -12,6 +12,7 @@ import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.exception.UnencodableTextException;
 import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.format.RowFormat;
+import io.github.libtmux.internal.support.Capabilities;
 import io.github.libtmux.snapshot.PaneState;
 import io.github.libtmux.snapshot.ServerSnapshot;
 import io.github.libtmux.snapshot.WindowContext;
@@ -45,17 +46,6 @@ public final class Pane {
     private static final RowFormat BROKEN_OUT = RowFormat.of("session_id", "window_id", "window_index");
 
     private static final RowFormat CREATED = RowFormat.of("pane_id");
-
-    /**
-     * tmux 3.7 exactly gets break-pane's naming wrong twice: it ends the whole server — every
-     * session on the socket — when it has to choose the name itself, and it silently discards a name
-     * that is given. Both are one inverted check in {@code cmd-break-pane.c} — {@code if (name !=
-     * NULL)} where it meant {@code == NULL} - fixed by {@code 84291b02}, which {@code git tag
-     * --contains} places on 3.7a and nothing earlier, matching CHANGES' "3.7 TO 3.7a": "Fix crash in
-     * break-pane when no name is provided." Not probeable: break-pane's args are unchanged across the
-     * fix, so nothing in {@link Commands#list} distinguishes the two releases.
-     */
-    private static final TmuxVersion BREAK_PANE_NAMING_BROKEN = new TmuxVersion(3, 7, "");
 
     private final Server server;
     private final ServerSnapshot snapshot;
@@ -297,7 +287,12 @@ public final class Pane {
         return server;
     }
 
-    /** Collects commands fenced to the server incarnation that produced this pane. */
+    /**
+     * Collects commands fenced to the server incarnation that produced this pane.
+     *
+     * <p>Nested tmux command strings ({@code if-shell}, {@code run-shell -C}, hooks, brace blocks,
+     * {@code source-file}) are not checked; do not nest a command this library refuses.
+     */
     @Operation(Kind.CAPTURED)
     public Batch batch() {
         return server.batch(snapshot);
@@ -377,8 +372,9 @@ public final class Pane {
      * @param text the text to wait for, matched anywhere in a captured line
      * @param timeout how long to keep looking
      * @return why the wait ended, which tells text that appeared from text that was already there
-     * @throws LibTmuxException if a read fails while the server is still answering — most often
-     *     because this pane was killed, which is not a timeout
+     * @throws LibTmuxException if a read fails for a reason of the caller's while the server is still
+     *     answering and still lists this pane. A pane killed mid-wait is not one: that ends the wait
+     *     as {@link TextOutcome#PANE_GONE}, and {@link #watchText} also returns what it had shown
      * @throws InterruptedException if the waiting thread is interrupted, which is a cancellation
      *     rather than a timeout and so is not reported as one
      */
@@ -399,6 +395,36 @@ public final class Pane {
      */
     @Operation(Kind.WAIT)
     public TextOutcome awaitText(String text, Duration timeout, Duration every) throws InterruptedException {
+        return watchText(text, timeout, every).outcome();
+    }
+
+    /**
+     * As {@link #awaitText(String, Duration)}, and also returns what the pane showed.
+     *
+     * <p>The output is the pane at the wait's last successful read, so a pane that was killed, or a
+     * server that went away, mid-wait still leaves the caller what had been printed. Ending as
+     * {@link TextOutcome#PANE_GONE} or {@link TextOutcome#SERVER_GONE} is an answer, not an
+     * exception, and neither is decided by a timer: the server answers a probe now or it does not,
+     * and lists the pane now or does not, with or without another client attached to it.
+     *
+     * @return the outcome and the output so far
+     * @throws LibTmuxException if a read fails for a reason of the caller's while the server is still
+     *     answering and still lists this pane
+     * @throws InterruptedException if the waiting thread is interrupted
+     */
+    @Operation(Kind.WAIT)
+    public TextWait watchText(String text, Duration timeout) throws InterruptedException {
+        return watchText(text, timeout, PaneWait.POLL);
+    }
+
+    /**
+     * As {@link #watchText(String, Duration)}, looking every {@code every} rather than every 50 ms.
+     *
+     * @param every how long to leave between looks, at least 10 ms
+     * @throws IllegalArgumentException if {@code every} is shorter than 10 ms
+     */
+    @Operation(Kind.WAIT)
+    public TextWait watchText(String text, Duration timeout, Duration every) throws InterruptedException {
         Objects.requireNonNull(text, "text");
         return PaneWait.awaitText(this, text, timeout, every);
     }
@@ -696,22 +722,12 @@ public final class Pane {
     /**
      * Moves this pane into a window of its own, leaving tmux to name it.
      *
-     * <p>On tmux 3.7 the name is supplied rather than left to tmux, because letting tmux choose it
-     * there ends the server and every session on it. The name supplied is the one tmux would have
-     * chosen, so the result is the same window either way.
+     * @throws UnsupportedFeatureException on exact tmux 3.7, whose unnamed break can end the server;
+     *     use {@link #breakOut(String)} or tmux 3.7a or newer
      */
     @Operation(Kind.MUTATION)
     public Window breakOut() {
-        // The name tmux would have chosen anyway, supplied only so 3.7 does not have to choose it.
-        // Read live rather than from the capture: a pane's command changes as its shell starts, and
-        // a captured value can be older than the break by any amount.
-        return breakNamed(Optional.empty(), currentCommandNow());
-    }
-
-    /** What tmux says is running here at this moment, rather than when the capture was taken. */
-    private String currentCommandNow() {
-        String reported = expand("#{pane_current_command}");
-        return reported.isEmpty() ? state.currentCommand() : reported;
+        return breakNamed(Optional.empty());
     }
 
     /**
@@ -820,23 +836,35 @@ public final class Pane {
     @Operation(Kind.MUTATION)
     public Window breakOut(String windowName) {
         Objects.requireNonNull(windowName, "windowName");
-        return breakNamed(Optional.of(windowName), windowName);
+        return breakNamed(Optional.of(windowName));
     }
 
     /**
-     * @param wanted the name the caller asked for, if they asked
-     * @param supplied the name to hand tmux, which is never absent because 3.7 crashes without one
+     * Breaks the pane out. Exactly tmux 3.7 gets break-pane's naming wrong twice: it ends the whole
+     * server when it has to choose the name itself, and it silently discards a name that is given. Both
+     * are one inverted check in {@code cmd-break-pane.c}, fixed by {@code 84291b02}, which {@code git
+     * tag --contains} places on 3.7a and nothing earlier. Not probeable: break-pane's args are unchanged
+     * across the fix, so nothing in {@link Commands#list} distinguishes the two releases.
      */
-    private Window breakNamed(Optional<String> wanted, String supplied) {
-        List<String> argv = new ArrayList<>(List.of("break-pane", "-d", "-n", supplied));
-        argv.addAll(List.of("-s", state.id().value(), "-P", "-F", BROKEN_OUT.template()));
-        List<String> fields =
-                BROKEN_OUT.split(server.run(snapshot, argv).stdout().get(0));
+    private Window breakNamed(Optional<String> wanted) {
+        TmuxVersion running = server.version(snapshot);
+        if (wanted.isEmpty() && Capabilities.BREAK_PANE_MISNAMES_WINDOWS.affects(running)) {
+            throw new UnsupportedFeatureException(
+                    "unnamed break-pane is unreliable on tmux 3.7; use breakOut(name) or tmux 3.7a+");
+        }
+        List<String> argv = new ArrayList<>(List.of("break-pane", "-d"));
+        wanted.ifPresent(name -> argv.addAll(List.of("-n", name)));
+        argv.addAll(List.of("-s", state.id().value()));
+        List<List<String>> commands =
+                List.of(argv, List.of("display-message", "-p", "-t", state.id().value(), BROKEN_OUT.template()));
+        List<String> fields = BROKEN_OUT.split(server.runBreak(snapshot, commands, running, wanted.isPresent())
+                .stdout()
+                .getFirst());
         WindowContext created = new WindowContext(
                 new SessionId(fields.get(0)),
                 new WindowIndex(Integer.parseInt(fields.get(2))),
                 new WindowId(fields.get(1)));
-        if (server.version(snapshot).sameRelease(BREAK_PANE_NAMING_BROKEN)) {
+        if (Capabilities.BREAK_PANE_MISNAMES_WINDOWS.affects(running)) {
             // 3.7 took the name and ignored it, so the caller's choice is applied afterwards.
             wanted.ifPresent(name -> server.run(
                     snapshot, List.of("rename-window", "-t", fields.get(1), "--", TmuxFormats.literal(name))));
@@ -958,10 +986,6 @@ public final class Pane {
             if (text.indexOf('\0') >= 0) {
                 throw new IllegalArgumentException("pasted text cannot contain NUL");
             }
-            TmuxVersion running = server.version(snapshot);
-            if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-                throw new UnsupportedFeatureException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
-            }
             String buffer = "libtmux-paste-" + UUID.randomUUID();
             // Recorded before dispatch: a wait already watching this pane must never see the pasted
             // content on screen before the record that discounts it exists. Rolled back below if the
@@ -981,7 +1005,8 @@ public final class Pane {
                                         "-b",
                                         buffer,
                                         "-t",
-                                        state.id().value())));
+                                        state.id().value())),
+                        true);
             } catch (RuntimeException failure) {
                 settleFailure(recorded, failure);
                 try {
@@ -1011,25 +1036,23 @@ public final class Pane {
             if (text.indexOf('\0') >= 0) {
                 throw new IllegalArgumentException("pasted text cannot contain NUL");
             }
-            TmuxVersion running = server.version(snapshot);
-            if (!running.atLeast(Buffers.EXACT_NAMED_DELETE)) {
-                throw new UnsupportedFeatureException("pasting text", Buffers.EXACT_NAMED_DELETE, running);
-            }
             String buffer = "libtmux-paste-" + UUID.randomUUID();
             try {
-                server.runTogether(snapshot, text, List.of(List.of("load-buffer", "-b", buffer, "-")));
+                server.runTogether(snapshot, text, List.of(List.of("load-buffer", "-b", buffer, "-")), true);
                 beforePaste.run();
                 PaneEcho.Recorded recorded = server.echo().recordLiteral(identity(), state.id(), text);
                 try {
-                    server.run(
+                    server.runTogether(
                             snapshot,
-                            List.of(
+                            "",
+                            List.of(List.of(
                                     "paste-buffer",
                                     "-d",
                                     "-b",
                                     buffer,
                                     "-t",
-                                    state.id().value()));
+                                    state.id().value())),
+                            true);
                 } catch (RuntimeException failure) {
                     settleFailure(recorded, failure);
                     throw failure;

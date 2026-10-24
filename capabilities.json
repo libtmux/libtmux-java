@@ -1,0 +1,308 @@
+{
+  "capabilities": [
+    {
+      "apis": [
+        "Server.control",
+        "ControlClient.attach",
+        "ControlClient.attachUnfenced"
+      ],
+      "commands": [
+        {
+          "command": "attach-session"
+        }
+      ],
+      "error": "UnsupportedFeatureException",
+      "handling": "refuse",
+      "id": "control-mode",
+      "name": "Control mode",
+      "since": "3.7",
+      "summary": "Attach a library-managed control client and stream events."
+    },
+    {
+      "apis": [
+        "Buffers.delete",
+        "Server.cmd",
+        "Server.run",
+        "Server.batch"
+      ],
+      "commands": [
+        {
+          "command": "delete-buffer",
+          "flags": [
+            "-b"
+          ]
+        }
+      ],
+      "error": "UnsupportedFeatureException",
+      "handling": "refuse",
+      "id": "buffer-delete-named",
+      "name": "Named buffer deletion",
+      "since": "3.4",
+      "summary": "Delete one paste buffer by name without risking another buffer."
+    },
+    {
+      "apis": [
+        "Server.cmd",
+        "Server.run",
+        "Server.batch"
+      ],
+      "commands": [
+        {
+          "command": "set-buffer",
+          "flags": [
+            "-b",
+            "-n"
+          ]
+        }
+      ],
+      "error": "UnsupportedFeatureException",
+      "handling": "refuse",
+      "id": "buffer-rename",
+      "name": "Named buffer rename",
+      "since": "3.4",
+      "summary": "Rename one paste buffer by name without risking another buffer."
+    },
+    {
+      "apis": [
+        "Server.cmd",
+        "Server.run",
+        "Server.batch"
+      ],
+      "commands": [
+        {
+          "command": "select-layout"
+        }
+      ],
+      "error": "UnsupportedFeatureException",
+      "handling": "refuse",
+      "id": "layout-without-checksum",
+      "name": "Layout errors without a checksum",
+      "since": "3.4",
+      "summary": "select-layout reports a layout string that lacks the leading checksum instead of ending the server."
+    },
+    {
+      "apis": [
+        "Window.selectLayout",
+        "Layout.requireSupported"
+      ],
+      "commands": [
+        {
+          "command": "select-layout"
+        }
+      ],
+      "error": "UnsupportedFeatureException",
+      "handling": "refuse",
+      "id": "layout-mirrored-main",
+      "name": "Mirrored main layouts",
+      "since": "3.5",
+      "summary": "Apply main-horizontal-mirrored and main-vertical-mirrored with select-layout."
+    },
+    {
+      "apis": [
+        "Window.selectLayout",
+        "Layouts.require"
+      ],
+      "commands": [
+        {
+          "command": "select-layout"
+        }
+      ],
+      "error": "UnsupportedFeatureException",
+      "handling": "refuse",
+      "id": "layout-json",
+      "name": "JSON layouts",
+      "since": "3.8-rc2",
+      "summary": "Apply a layout in the JSON form that tmux reports."
+    },
+    {
+      "apis": [
+        "Pane.capture",
+        "CaptureSpec.Builder.trimmingTrailingSpace"
+      ],
+      "commands": [
+        {
+          "command": "capture-pane",
+          "flags": [
+            "-T"
+          ]
+        }
+      ],
+      "error": "UnsupportedFeatureException",
+      "handling": "refuse",
+      "id": "capture-trim-blank-cells",
+      "name": "Trim blank cells from a capture",
+      "since": "3.4",
+      "summary": "Stop a capture at the last used cell with capture-pane -T."
+    },
+    {
+      "apis": [
+        "Pane.capture",
+        "CaptureSpec.Builder.fromModeScreen"
+      ],
+      "commands": [
+        {
+          "command": "capture-pane",
+          "flags": [
+            "-M"
+          ]
+        }
+      ],
+      "error": "UnsupportedFeatureException",
+      "handling": "refuse",
+      "id": "capture-mode-screen",
+      "name": "Capture the mode screen",
+      "since": "3.6",
+      "summary": "Capture what a pane's mode, such as copy mode, is showing with capture-pane -M."
+    },
+    {
+      "apis": [
+        "Pane.capture",
+        "CaptureSpec.Builder.withHyperlinks",
+        "CaptureSpec.Builder.withLineNumbers"
+      ],
+      "commands": [
+        {
+          "command": "capture-pane",
+          "flags": [
+            "-H",
+            "-L"
+          ]
+        }
+      ],
+      "error": "UnsupportedFeatureException",
+      "handling": "refuse",
+      "id": "capture-line-flags",
+      "name": "Capture hyperlinks and line numbers",
+      "since": "3.7",
+      "summary": "Capture hyperlinks and line numbers with capture-pane -H and -L."
+    },
+    {
+      "apis": [
+        "Server.cmd",
+        "Server.run",
+        "Server.batch"
+      ],
+      "commands": [
+        {
+          "command": "refresh-client",
+          "flags": [
+            "-l"
+          ]
+        }
+      ],
+      "error": "UnsupportedFeatureException",
+      "handling": "refuse",
+      "id": "clipboard-query",
+      "name": "Clipboard query",
+      "since": "3.6a",
+      "summary": "Ask a client's terminal for its clipboard with refresh-client -l. On 3.3a the server exits when a client attached from xterm or tmux-256color receives it, and on 3.4 to 3.6 it exits when the client leaves before its terminal answers."
+    }
+  ],
+  "floor": {
+    "minimum": "3.3a"
+  },
+  "port": "java",
+  "schema": "libtmux-capabilities/1",
+  "workarounds": [
+    {
+      "apis": [
+        "Shell.capturing"
+      ],
+      "commands": [
+        {
+          "command": "run-shell"
+        }
+      ],
+      "handling": "refuse",
+      "id": "run-shell-output-in-copy-mode",
+      "name": "run-shell output goes to the pane",
+      "releases": [
+        "3.3a",
+        "3.4"
+      ],
+      "summary": "With no target pane, run-shell sends job output to a pane's view mode instead of the command's own output, so Shell.capturing refuses."
+    },
+    {
+      "apis": [
+        "Pane.breakOut",
+        "Server.cmd",
+        "Server.run",
+        "Server.batch"
+      ],
+      "commands": [
+        {
+          "command": "break-pane",
+          "flags": [
+            "-n"
+          ]
+        }
+      ],
+      "handling": "repair",
+      "id": "break-pane-misnames-windows",
+      "name": "break-pane misnames the window",
+      "releases": [
+        "3.7"
+      ],
+      "summary": "On 3.7, break-pane gives the new window the default name when -n is given, and a break with no name can end the server, so Pane.breakOut names the window afterwards and a literal or unnamed break is refused."
+    },
+    {
+      "apis": [
+        "Pane.split",
+        "Window.split",
+        "Server.cmd",
+        "Server.run",
+        "Server.batch"
+      ],
+      "commands": [
+        {
+          "command": "split-window",
+          "flags": [
+            "-p"
+          ]
+        }
+      ],
+      "handling": "refuse",
+      "id": "split-window-percent-size",
+      "name": "split-window -p reads -l",
+      "releases": [
+        "3.4"
+      ],
+      "summary": "On 3.4, split-window -p reads its value from -l, so a literal -p is refused and the typed split sends the percentage with -l."
+    },
+    {
+      "apis": [
+        "Server.newSession",
+        "Session.newWindow",
+        "Session.rename",
+        "Window.rename"
+      ],
+      "commands": [
+        {
+          "command": "new-session",
+          "flags": [
+            "-s"
+          ]
+        },
+        {
+          "command": "new-window",
+          "flags": [
+            "-n"
+          ]
+        },
+        {
+          "command": "rename-session"
+        },
+        {
+          "command": "rename-window"
+        }
+      ],
+      "handling": "refuse",
+      "id": "name-separators-rejected",
+      "name": "Names with a colon or a period",
+      "releases": [
+        "3.7"
+      ],
+      "summary": "On 3.7, new-session, new-window, rename-session and rename-window reject a name that contains a colon or a period, so the library refuses it first."
+    }
+  ]
+}

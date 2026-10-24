@@ -10,7 +10,7 @@ the facades' unit suites, their real-tmux suites, the documented Scala examples
 and the runnable programs on JDK 25 and 27 on Linux.
 
 Every lane of the [tmux matrix][tmux-matrix] runs the real-tmux suites against
-its own tmux: `3.3a`, `3.4`, `3.5`, `3.6`, `3.7`, `3.7a`, `3.7b` and `3.7c`.
+its own tmux: `3.3a`, `3.4`, `3.5`, `3.6`, `3.6a`, `3.7`, `3.7a`, `3.7b` and `3.7c`.
 The Scala fixture takes the lane's tmux the same way the Java one does. The
 facades inherit Java's version check and reject older daemons.
 
@@ -46,8 +46,15 @@ release for MiMa or `tasty-mima` to compare against.
 
 ## Inherited feature boundaries
 
-The facade preserves Java's version guards. [Named buffer deletion][buffers]
+The facade preserves Java's version guards. Managed control, FS2/Ox
+observations and live views require tmux 3.7+ and a carrier-owned
+pinned socket. Ordinary operations remain available from 3.3a. Control-positive
+cases run only on eligible lanes; lower lanes assert before-effect refusal.
+
+[Named buffer deletion][buffers]
 rejects tmux before 3.4 because those versions can delete the wrong buffer.
+The same boundary covers named rename and managed-paste cleanup. Direct named
+`paste-buffer -d` retains its native exact lookup on 3.3a.
 [`Shell.capturing`][java-shell] rejects tmux 3.3a and 3.4, which lose the
 requested output. Java's tmux matrix asserts these unsupported results rather
 than skip the contract or substitute an empty successful result.

@@ -29,13 +29,13 @@ final class NameValidationIntegrationTest {
     }
 
     /**
-     * Measured on every supported build: rewritten to {@code a_b} through 3.6, refused on 3.7, kept
+     * Measured on every supported build: rewritten to {@code a_b} through 3.6, refused on 3.7 before dispatch, kept
      * as written from 3.7a. A caller who needs one answer has to keep delimiters out of the name.
      */
     @Test
     void aDelimiterInASessionNameIsRewrittenRefusedOrKeptDependingOnTheTmux(Server server) {
         if (refuses(server)) {
-            assertThrows(LibTmuxException.class, () -> server.newSession("a:b"));
+            assertThrows(IllegalArgumentException.class, () -> server.newSession("a:b"));
             return;
         }
 
@@ -109,7 +109,7 @@ final class NameValidationIntegrationTest {
         Window window = server.sessions().get(0).windows().get(0);
 
         if (refuses(server)) {
-            assertThrows(LibTmuxException.class, () -> window.rename("w:x"));
+            assertThrows(IllegalArgumentException.class, () -> window.rename("w:x"));
             return;
         }
 

@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
 /** Polls a pane on a timer for {@link Pane#awaitText} and {@link Pane#await}. */
@@ -33,14 +34,17 @@ final class PaneWait {
 
     private PaneWait() {}
 
-    /** {@link Pane#awaitText(String, Duration, Duration)}'s implementation. */
-    static TextOutcome awaitText(Pane pane, String text, Duration timeout, Duration every) throws InterruptedException {
+    /** {@link Pane#watchText(String, Duration, Duration)}'s implementation. */
+    static TextWait awaitText(Pane pane, String text, Duration timeout, Duration every) throws InterruptedException {
         TypedText typed = TypedText.in(pane);
         boolean[] reading = {true, false};
-        WakeReason ended = awaitCondition(
+        AtomicReference<List<String>> seen = new AtomicReference<>(List.of());
+        Ended ended = awaitCondition(
                 pane,
                 bounded -> {
-                    boolean found = shown(bounded, typed).stream().anyMatch(line -> line.contains(text));
+                    List<String> lines = shown(bounded, typed);
+                    seen.set(lines);
+                    boolean found = lines.stream().anyMatch(line -> line.contains(text));
                     if (reading[0]) {
                         reading[0] = false;
                         reading[1] = found;
@@ -48,18 +52,44 @@ final class PaneWait {
                     return found;
                 },
                 timeout,
-                every);
-        return switch (ended) {
-            case SIGNALLED -> reading[1] ? TextOutcome.PRESENT_AT_ENTRY : TextOutcome.APPEARED;
-            case TIMED_OUT -> TextOutcome.TIMED_OUT;
-            case SERVER_GONE -> TextOutcome.SERVER_GONE;
-        };
+                every,
+                true);
+        TextOutcome outcome =
+                switch (ended) {
+                    case SIGNALLED -> reading[1] ? TextOutcome.PRESENT_AT_ENTRY : TextOutcome.APPEARED;
+                    case TIMED_OUT -> TextOutcome.TIMED_OUT;
+                    case SERVER_GONE -> TextOutcome.SERVER_GONE;
+                    case PANE_GONE -> TextOutcome.PANE_GONE;
+                };
+        return new TextWait(outcome, withoutTrailingBlanks(seen.get()));
+    }
+
+    private static List<String> withoutTrailingBlanks(List<String> lines) {
+        int end = lines.size();
+        while (end > 0 && lines.get(end - 1).isBlank()) {
+            end--;
+        }
+        return List.copyOf(lines.subList(0, end));
     }
 
     /** {@link Pane#await(Predicate, Duration, Duration)}'s implementation. */
     static WakeReason await(Pane pane, Predicate<Pane> settled, Duration timeout, Duration every)
             throws InterruptedException {
-        return awaitCondition(pane, bounded -> settled.test(bounded.refresh().through(pane.server())), timeout, every);
+        return switch (awaitCondition(
+                pane, bounded -> settled.test(bounded.refresh().through(pane.server())), timeout, every, false)) {
+            case SIGNALLED -> WakeReason.SIGNALLED;
+            case TIMED_OUT -> WakeReason.TIMED_OUT;
+            case SERVER_GONE -> WakeReason.SERVER_GONE;
+            case PANE_GONE -> throw new IllegalStateException("a wait that rethrows a dead pane ended as one");
+        };
+    }
+
+    /** How a wait ended, before the public wait maps it to its own outcome type. */
+    private enum Ended {
+        SIGNALLED,
+        TIMED_OUT,
+        SERVER_GONE,
+        PANE_GONE
     }
 
     /**
@@ -76,7 +106,8 @@ final class PaneWait {
      * pane" the same way, so that one gets a second look to tell {@link WakeReason#SERVER_GONE} from a
      * failure that belongs to the caller.
      */
-    private static WakeReason awaitCondition(Pane pane, Predicate<Pane> poll, Duration timeout, Duration every)
+    private static Ended awaitCondition(
+            Pane pane, Predicate<Pane> poll, Duration timeout, Duration every, boolean paneGoneIsAnAnswer)
             throws InterruptedException {
         Objects.requireNonNull(timeout, "timeout");
         Objects.requireNonNull(every, "every");
@@ -99,42 +130,47 @@ final class PaneWait {
             first = false;
             try {
                 if (poll.test(pane.through(pane.server().within(budget)))) {
-                    return WakeReason.SIGNALLED;
+                    return Ended.SIGNALLED;
                 }
             } catch (DispatchException.TimedOut expired) {
-                return WakeReason.TIMED_OUT;
+                return Ended.TIMED_OUT;
             } catch (LibTmuxException unreadable) {
-                return afterFailedRead(pane, unreadable);
+                return afterFailedRead(pane, unreadable, paneGoneIsAnAnswer);
             }
             long remaining = deadline - System.nanoTime();
             if (remaining <= 0) {
-                return WakeReason.TIMED_OUT;
+                return Ended.TIMED_OUT;
             }
             TimeUnit.NANOSECONDS.sleep(Math.min(every.toNanos(), remaining));
             if (System.nanoTime() >= deadline) {
-                return WakeReason.TIMED_OUT;
+                return Ended.TIMED_OUT;
             }
         }
     }
 
     /**
-     * Tells a server that went away from a read that failed for a reason of the caller's.
+     * Tells a server that went away, and a pane that did, from a read that failed for a reason of the
+     * caller's.
      *
      * <p>A probe that cannot get an answer in time proves nothing either way, so the original failure
-     * is what the caller sees, carrying the probe's.
+     * is what the caller sees, carrying the probe's. A pane counts as gone only when the server
+     * answers and no longer lists it; the error text is not read, because tmux words it differently
+     * across releases.
      */
-    private static WakeReason afterFailedRead(Pane pane, LibTmuxException unreadable) {
-        boolean alive;
+    private static Ended afterFailedRead(Pane pane, LibTmuxException unreadable, boolean paneGoneIsAnAnswer) {
         try {
-            alive = pane.server().isAlive(SHORTEST_READ);
+            if (!pane.server().isAlive(SHORTEST_READ)) {
+                return Ended.SERVER_GONE;
+            }
+            if (paneGoneIsAnAnswer
+                    && pane.server().within(SHORTEST_READ).panes().stream()
+                            .noneMatch(listed -> listed.id().equals(pane.id()))) {
+                return Ended.PANE_GONE;
+            }
         } catch (DispatchException.TimedOut unanswered) {
             unreadable.addSuppressed(unanswered);
-            throw unreadable;
         }
-        if (alive) {
-            throw unreadable;
-        }
-        return WakeReason.SERVER_GONE;
+        throw unreadable;
     }
 
     /**

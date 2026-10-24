@@ -82,7 +82,7 @@ public class Pane internal constructor(internal val java: JavaPane, public val s
      * @param timeout how long to keep looking, finite and not negative
      * @param every how long to leave between looks, at least 10 ms
      * @param dispatcher where the blocking wait runs
-     * @return why the wait ended
+     * @return why the wait ended; a pane killed mid-wait is [TextOutcome.PANE_GONE], not an exception
      */
     public suspend fun awaitText(
         text: String,

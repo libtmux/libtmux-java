@@ -605,7 +605,7 @@ Reference: [`Flows`][scala-ox-flows] on libtmux.org and
 [`Flows.liveView`][scala-ox-flows] emits the current view of a server when the
 flow starts, then every newer one:
 
-<!-- snippet: scala-sync: root-ox-live-view -->
+<!-- snippet: scala-sync-control: root-ox-live-view -->
 ```scala
 import _root_.ox.{supervised, useCloseableInScope}
 import io.github.libtmux.scaladsl.{config => _, *}
@@ -715,8 +715,11 @@ $ tmux-workspace load \
   named module `io.github.libtmux`, and the jars carry no OSGi bundle headers.
 - **Linux, including WSL.** CI runs on Ubuntu. macOS is supported on a
   best-effort basis, and CI coverage for it is highly limited.
-- **tmux 3.3a through 3.7c.** The whole real-tmux suite runs against every one
-  of those releases, and each lane checks it ran the tmux it is named after:
+- **tmux 3.3a through 3.7c** for ordinary operations. The whole real-tmux suite
+  runs against every one of those releases, and each lane checks it ran the tmux
+  it is named after. Managed control needs stable tmux 3.7 or newer and a
+  carrier that can pin its socket; the other feature requirements are in the
+  [migration notes](MIGRATION.md#optional-tmux-requirements):
 
   ```console
   $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds

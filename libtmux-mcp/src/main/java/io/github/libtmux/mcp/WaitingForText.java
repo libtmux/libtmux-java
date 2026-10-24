@@ -2,6 +2,7 @@ package io.github.libtmux.mcp;
 
 import io.github.libtmux.Pane;
 import io.github.libtmux.TypedText;
+import io.github.libtmux.exception.LibTmuxException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,15 +30,19 @@ import org.jspecify.annotations.Nullable;
  */
 final class WaitingForText {
 
+    /** The most rows a match is looked for across before the whole region is joined instead. */
+    private static final int WRAPPED_ROWS = 16;
+
     private WaitingForText() {}
 
     /**
-     * @param outcome MATCHED, PRESENT_AT_ENTRY, STOPPED, TIMED_OUT or SERVER_GONE
+     * @param outcome MATCHED, PRESENT_AT_ENTRY, STOPPED, TIMED_OUT, PANE_GONE or SERVER_GONE
      * @param matched the pattern that ended the wait, absent when none did
      * @param matchedLine the line it was found on
      * @param output the lines the wait saw - new ones it watched for, or, for PRESENT_AT_ENTRY, the
      *     ones already on screen when it started - newest last
-     * @param cursor where to resume watching without re-reading these lines
+     * @param cursor where to resume watching without re-reading these lines, empty when the pane or
+     *     server went away before any look
      */
     record Waited(
             String paneId,
@@ -69,23 +74,7 @@ final class WaitingForText {
         long started = System.nanoTime();
 
         Optional<String> cursorArgument = call.maybe("cursor");
-        Cursor cursor;
-        if (cursorArgument.isPresent()) {
-            cursor = Cursor.decode(cursorArgument.get());
-        } else {
-            // With no cursor to resume from, "now" is not "empty" - text the pane already
-            // printed is on screen whether it arrived a second ago or an hour ago, and a wait that
-            // only looks forward from this instant would never see it, timing out with empty output
-            // even while capture_pane shows the very thing it was asked for.
-            Screen.Fresh entry = Screen.completeOnly(pane, typed);
-            cursor = entry.cursor();
-            List<String> entryLines = entry.searchable();
-            Waited early =
-                    presentAtEntry(pane, timeout, wanted, stops, budget, entryLines, entry.lines(), cursor, started);
-            if (early != null) {
-                return early;
-            }
-        }
+        @Nullable Cursor cursor = cursorArgument.map(Cursor::decode).orElse(null);
         Trim.Trimmed retained = new Trim.Trimmed(List.of(), 0);
         long deadline = started + timeout.toNanos();
 
@@ -93,46 +82,66 @@ final class WaitingForText {
         TextPatterns.Matcher hit = null;
         String hitLine = null;
 
-        while (true) {
-            Screen.Fresh fresh = Screen.since(pane, cursor, budget, typed);
-            cursor = fresh.cursor();
-            List<String> freshLines = fresh.searchable();
-            retained = Trim.append(retained, freshLines, budget);
+        try {
+            if (cursor == null) {
+                // With no cursor to resume from, "now" is not "empty" - text the pane already
+                // printed is on screen whether it arrived a second ago or an hour ago, and a wait
+                // that only looks forward from this instant would never see it, timing out with
+                // empty output even while capture_pane shows the very thing it was asked for.
+                Screen.Fresh entry = Screen.completeOnly(pane, typed);
+                cursor = entry.cursor();
+                List<String> entryLines = entry.searchable();
+                Waited early = presentAtEntry(
+                        pane, timeout, wanted, stops, budget, entryLines, entry.lines(), cursor, started);
+                if (early != null) {
+                    return early;
+                }
+            }
 
-            // Failure first: a build that has already printed "error:" is not going to print
-            // "Listening on", and the wait that notices is the one that returns in seconds.
-            Found stopped = find(stops, freshLines, fresh.lines());
-            if (stopped != null) {
-                outcome = "STOPPED";
-                hit = stopped.matcher();
-                hitLine = stopped.line();
-                break;
+            while (true) {
+                Screen.Fresh fresh = Screen.since(pane, cursor, budget, typed);
+                cursor = fresh.cursor();
+                List<String> freshLines = fresh.searchable();
+                retained = Trim.append(retained, freshLines, budget);
+
+                // Failure first: a build that has already printed "error:" is not going to print
+                // "Listening on", and the wait that notices is the one that returns in seconds.
+                Found stopped = find(stops, freshLines, fresh.lines());
+                if (stopped != null) {
+                    outcome = "STOPPED";
+                    hit = stopped.matcher();
+                    hitLine = stopped.line();
+                    break;
+                }
+                Found found = find(wanted, freshLines, fresh.lines());
+                if (found != null) {
+                    outcome = "MATCHED";
+                    hit = found.matcher();
+                    hitLine = found.line();
+                    break;
+                }
+                if (wanted.isEmpty() && !freshLines.isEmpty()) {
+                    outcome = "MATCHED";
+                    hitLine = fresh.lines().get(freshLines.size() - 1);
+                    break;
+                }
+                if (System.nanoTime() >= deadline) {
+                    break;
+                }
+                long elapsed = System.nanoTime() - started;
+                call.progress()
+                        .report(
+                                Duration.ofNanos(elapsed),
+                                timeout,
+                                "watching " + pane.id().value() + " for "
+                                        + (wanted.isEmpty() ? "any output" : wanted.size() + " pattern(s)"));
+                if (!sleep()) {
+                    break;
+                }
             }
-            Found found = find(wanted, freshLines, fresh.lines());
-            if (found != null) {
-                outcome = "MATCHED";
-                hit = found.matcher();
-                hitLine = found.line();
-                break;
-            }
-            if (wanted.isEmpty() && !freshLines.isEmpty()) {
-                outcome = "MATCHED";
-                hitLine = fresh.lines().get(freshLines.size() - 1);
-                break;
-            }
-            if (System.nanoTime() >= deadline) {
-                break;
-            }
-            long elapsed = System.nanoTime() - started;
-            call.progress()
-                    .report(
-                            Duration.ofNanos(elapsed),
-                            timeout,
-                            "watching " + pane.id().value() + " for "
-                                    + (wanted.isEmpty() ? "any output" : wanted.size() + " pattern(s)"));
-            if (!sleep()) {
-                break;
-            }
+        } catch (LibTmuxException unread) {
+            // A pane or a server that went away mid-wait is the answer, with what was read so far.
+            outcome = Ends.of(pane, unread).name();
         }
 
         if (!pane.server().isAlive()) {
@@ -147,7 +156,7 @@ final class WaitingForText {
                 retained.lines(),
                 retained.truncated(),
                 retained.dropped(),
-                cursor.encode(),
+                cursor == null ? "" : cursor.encode(),
                 Math.round(seconds * 100) / 100.0,
                 Waits.asSeconds(timeout),
                 note(outcome, wanted, stops));
@@ -165,6 +174,10 @@ final class WaitingForText {
         }
         if ("STOPPED".equals(outcome)) {
             return "A stop pattern matched, so the wait ended early. This is a failure, not a success.";
+        }
+        if ("PANE_GONE".equals(outcome)) {
+            return "The pane was killed or exited while waiting; output holds what it printed before then, "
+                    + "and nothing more will appear. A cursor from before cannot be used on a new pane.";
         }
         if ("SERVER_GONE".equals(outcome)) {
             return "The tmux server ended while waiting; nothing this call watched can be relied on.";
@@ -255,11 +268,21 @@ final class WaitingForText {
         if (lines.size() < 2) {
             return null;
         }
-        StringBuilder joined = new StringBuilder();
-        for (String line : lines) {
-            joined.append(line);
+        // The rows that carry the match, and no others: the narrowest run of rows that matches when
+        // joined. Joining the whole region would report a second prompt and the typed command as part
+        // of one "line". A run wider than the cap is found below, whole.
+        int widest = Math.min(lines.size(), WRAPPED_ROWS);
+        for (int width = 2; width <= widest; width++) {
+            for (int start = 0; start + width <= lines.size(); start++) {
+                String text = String.join("", lines.subList(start, start + width));
+                for (TextPatterns.Matcher matcher : matchers) {
+                    if (matcher.matches(text)) {
+                        return new Found(matcher, String.join("", originals.subList(start, start + width)));
+                    }
+                }
+            }
         }
-        String text = joined.toString();
+        String text = String.join("", lines);
         for (TextPatterns.Matcher matcher : matchers) {
             if (matcher.matches(text)) {
                 return new Found(matcher, String.join("", originals));

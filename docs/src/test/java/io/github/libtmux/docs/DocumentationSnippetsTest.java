@@ -3,6 +3,7 @@ package io.github.libtmux.docs;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -10,7 +11,9 @@ import io.github.libtmux.Options;
 import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.Session;
+import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.Window;
+import io.github.libtmux.exception.UnsupportedFeatureException;
 import io.github.libtmux.junit5.TmuxExtension;
 import io.github.libtmux.junit5.TmuxSocketPath;
 import java.io.IOException;
@@ -141,7 +144,17 @@ final class DocumentationSnippetsTest {
                         snippet.where() + " failed with the wrong thing: " + thrown);
                 return;
             }
-            if (snippet.expectation() == Snippet.Expectation.RUNS) {
+            if (snippet.expectation() == Snippet.Expectation.CONTROL) {
+                TmuxVersion version = server.version();
+                if (!io.github.libtmux.internal.ControlAcquisition.supports(version)) {
+                    assertThrows(
+                            UnsupportedFeatureException.class, () -> compiler.run(compiled, bindings(server, socket)));
+                    assertTrue(server.clients().isEmpty(), "a refused snippet attached a client");
+                    return;
+                }
+            }
+            if (snippet.expectation() == Snippet.Expectation.RUNS
+                    || snippet.expectation() == Snippet.Expectation.CONTROL) {
                 compiler.run(compiled, bindings(server, socket));
             }
         } finally {

@@ -1,6 +1,7 @@
 # Streaming
 
-The Cats module adapts Java control subscriptions to FS2. Acquire an attachment,
+The Cats module adapts Java control subscriptions to FS2. Managed control
+requires tmux 3.7+ and a carrier-owned pinned socket. Acquire an attachment,
 then an observation, then start the producer. An observation has one active
 stream consumer; use FS2's explicit broadcast operations if several consumers
 need the same values. Starting another reader on the same observation fails.
@@ -11,7 +12,7 @@ Here `config` selects an existing server with a session. The subscription is
 registered before the rename. Evaluating the returned `IO` performs the work;
 constructing it alone does not.
 
-<!-- snippet: scala-io: streaming-session-rename -->
+<!-- snippet: scala-io-control: streaming-session-rename -->
 ```scala
 import _root_.cats.effect.IO
 import io.github.libtmux.control.Notification

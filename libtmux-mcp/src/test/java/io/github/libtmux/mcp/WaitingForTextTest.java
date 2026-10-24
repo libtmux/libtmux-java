@@ -9,8 +9,14 @@ import io.github.libtmux.Pane;
 import io.github.libtmux.Server;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Waiting for output nobody here started.
@@ -45,6 +51,10 @@ final class WaitingForTextTest {
                 TestCalls.on(server, "pane_id", pane, "patterns", List.of(marker), "timeout", 20));
 
         assertEquals("MATCHED", waited.outcome(), "output the wait saw: " + waited.output());
+        String line = String.valueOf(waited.matchedLine());
+        assertTrue(line.endsWith(marker), "the rows that carry the match: " + line);
+        assertTrue(!line.contains("echo ") && !line.contains("sleep"), "not the typed command: " + line);
+        assertTrue(line.length() < marker.length() + 80, "not the region around it: " + line);
     }
 
     @Test
@@ -281,6 +291,69 @@ final class WaitingForTextTest {
 
         assertEquals("TIMED_OUT", waited.outcome());
         assertTrue(waited.effectiveTimeout() <= Waits.CEILING.toSeconds());
+    }
+
+    /**
+     * A pane killed mid-wait is an answer, not a transport error: the wait ends as {@code PANE_GONE}
+     * with what it had read, with or without a stopped second client on the socket.
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aPaneKilledMidWaitEndsThroughAnAnswerWithTheOutputSoFar(boolean withStoppedClient, Server server)
+            throws Exception {
+        try (DyingPane dying = DyingPane.start(server, withStoppedClient)) {
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                Future<WaitingForText.Waited> waiting = executor.submit(() -> WaitingForText.waitFor(TestCalls.on(
+                        server,
+                        "pane_id",
+                        dying.pane.id().value(),
+                        "patterns",
+                        List.of("never-appears"),
+                        "timeout",
+                        60)));
+                dying.awaitPrinted();
+                dying.pane.kill();
+
+                WaitingForText.Waited waited = waiting.get(15, TimeUnit.SECONDS);
+
+                assertEquals("PANE_GONE", waited.outcome());
+                assertTrue(waited.output().contains(DyingPane.PRINTED), "output so far: " + waited.output());
+                assertTrue(waited.seconds() < 10, "no timer decides this: " + waited.seconds());
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+    }
+
+    /** As above for {@code kill-server}: the documented {@code SERVER_GONE}, with the output so far. */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aServerKilledMidWaitEndsAsServerGoneWithTheOutputSoFar(boolean withStoppedClient, Server server)
+            throws Exception {
+        try (DyingPane dying = DyingPane.start(server, withStoppedClient)) {
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                Future<WaitingForText.Waited> waiting = executor.submit(() -> WaitingForText.waitFor(TestCalls.on(
+                        server,
+                        "pane_id",
+                        dying.pane.id().value(),
+                        "patterns",
+                        List.of("never-appears"),
+                        "timeout",
+                        60)));
+                dying.awaitPrinted();
+                server.cmd("kill-server");
+
+                WaitingForText.Waited waited = waiting.get(15, TimeUnit.SECONDS);
+
+                assertEquals("SERVER_GONE", waited.outcome());
+                assertTrue(waited.output().contains(DyingPane.PRINTED), "output so far: " + waited.output());
+                assertTrue(waited.seconds() < 10, "no timer decides this: " + waited.seconds());
+            } finally {
+                executor.shutdownNow();
+            }
+        }
     }
 
     private static boolean onScreen(Server server, String pane, String text) {

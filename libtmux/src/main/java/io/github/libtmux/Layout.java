@@ -1,6 +1,7 @@
 package io.github.libtmux;
 
 import io.github.libtmux.exception.UnsupportedFeatureException;
+import io.github.libtmux.internal.support.Capabilities;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
@@ -62,7 +63,8 @@ public enum Layout {
      */
     Optional<TmuxVersion> since() {
         return switch (this) {
-            case MAIN_HORIZONTAL_MIRRORED, MAIN_VERTICAL_MIRRORED -> Optional.of(new TmuxVersion(3, 5, ""));
+            case MAIN_HORIZONTAL_MIRRORED, MAIN_VERTICAL_MIRRORED ->
+                Optional.of(Capabilities.LAYOUT_MIRRORED_MAIN.since());
             case EVEN_HORIZONTAL, EVEN_VERTICAL, MAIN_HORIZONTAL, MAIN_VERTICAL, TILED -> Optional.empty();
         };
     }

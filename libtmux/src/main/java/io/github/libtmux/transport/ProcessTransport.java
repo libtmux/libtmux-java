@@ -3,6 +3,7 @@ package io.github.libtmux.transport;
 import io.github.libtmux.exception.DispatchException;
 import io.github.libtmux.exception.ServerClosedException;
 import io.github.libtmux.internal.CommandStrings;
+import io.github.libtmux.internal.LocalSocketPin;
 import io.github.libtmux.internal.ProcessTree;
 import io.github.libtmux.internal.Utf8;
 import java.io.ByteArrayOutputStream;
@@ -182,10 +183,21 @@ public final class ProcessTransport implements TmuxTransport {
     }
 
     @Override
+    @SuppressWarnings("ReferenceEquality") // Only this starter owns the local filesystem.
     public Optional<ControlCarrier> controlCarrier() {
-        return Optional.of(command -> {
-            requireOpen();
-            return starter.start(command);
+        return Optional.of(new ControlCarrier() {
+            @Override
+            public Process start(List<String> command) throws IOException {
+                requireOpen();
+                return starter.start(command);
+            }
+
+            @Override
+            public PinnedSocket pinSocket(String socketPath, Duration timeout) throws IOException {
+                requireOpen();
+                if (starter != SYSTEM_STARTER) return ControlCarrier.super.pinSocket(socketPath, timeout);
+                return LocalSocketPin.retain(socketPath);
+            }
         });
     }
 

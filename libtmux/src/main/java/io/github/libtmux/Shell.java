@@ -3,6 +3,7 @@ package io.github.libtmux;
 import io.github.libtmux.catalog.Kind;
 import io.github.libtmux.catalog.Operation;
 import io.github.libtmux.exception.UnsupportedFeatureException;
+import io.github.libtmux.internal.support.Capabilities;
 import java.util.List;
 import java.util.Objects;
 import kotlin.annotations.jvm.ReadOnly;
@@ -14,13 +15,6 @@ import kotlin.annotations.jvm.ReadOnly;
  * value through {@link TmuxFormats#literal} unless that expansion is what you want.
  */
 public final class Shell {
-
-    /**
-     * tmux lost {@code run-shell}'s output in 3.3a and found it again in 3.5; 3.3a is the first
-     * supported release, so everything below this one is the gap. The command exists on every
-     * release, so {@code list-commands} cannot tell the gap from the working releases.
-     */
-    private static final TmuxVersion OUTPUT_FOUND = new TmuxVersion(3, 5, "");
 
     private final Server server;
 
@@ -46,7 +40,8 @@ public final class Shell {
     public List<String> capturing(String command) {
         Objects.requireNonNull(command, "command");
         TmuxVersion running = server.version();
-        if (!running.atLeast(OUTPUT_FOUND)) {
+        // The command exists on every release, so list-commands cannot tell the gap from the working ones.
+        if (Capabilities.RUN_SHELL_OUTPUT_IN_COPY_MODE.affects(running)) {
             throw new UnsupportedFeatureException(
                     "reading what run-shell printed is broken between tmux 3.3a and 3.4, and this server runs "
                             + running);

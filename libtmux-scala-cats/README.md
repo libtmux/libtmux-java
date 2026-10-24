@@ -67,10 +67,11 @@ suite. It prints the current command of each active pane.
 
 ### [`Control.attach`][control]: observe a session rename
 
-Register the subscription and start its reader before changing tmux state, and
-match the typed [`Notification`][notification] before acting on it:
+Managed control requires tmux 3.7+ and a carrier-owned pinned socket. Register
+the subscription and start its reader before changing tmux state, and match the
+typed [`Notification`][notification] before acting on it:
 
-<!-- snippet: scala-io: cats-observe-session-rename -->
+<!-- snippet: scala-io-control: cats-observe-session-rename -->
 ```scala
 import _root_.cats.effect.IO
 import _root_.cats.syntax.all._

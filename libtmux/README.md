@@ -340,6 +340,7 @@ where the buffer overflowed. Reference:
 [javadoc.io][javadoc-control]
 and [libtmux.org][controlclient].
 
+<!-- snippet: control: subscriptions require managed control -->
 ```java
 // Given: Server server, Session session
 try (ControlClient client = server.control(session);
