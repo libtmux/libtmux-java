@@ -717,7 +717,8 @@ $ tmux-workspace load \
   best-effort basis, and CI coverage for it is highly limited.
 - **tmux 3.3a through 3.7c** for ordinary operations. The whole real-tmux suite
   runs against every one of those releases, and each lane checks it ran the tmux
-  it is named after. Managed control needs stable tmux 3.7 or newer and a
+  it is named after. tmux 3.8 and master run as experimental preview lanes, not
+  supported releases. Managed control needs stable tmux 3.7 or newer and a
   carrier that can pin its socket; the other feature requirements are in the
   [migration notes](MIGRATION.md#optional-tmux-requirements):
 
