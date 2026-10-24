@@ -175,6 +175,27 @@
       "name": "Capture hyperlinks and line numbers",
       "since": "3.7",
       "summary": "Capture hyperlinks and line numbers with capture-pane -H and -L."
+    },
+    {
+      "apis": [
+        "Server.cmd",
+        "Server.run",
+        "Server.batch"
+      ],
+      "commands": [
+        {
+          "command": "refresh-client",
+          "flags": [
+            "-l"
+          ]
+        }
+      ],
+      "error": "UnsupportedFeatureException",
+      "handling": "refuse",
+      "id": "clipboard-query",
+      "name": "Clipboard query",
+      "since": "3.6a",
+      "summary": "Ask a client's terminal for its clipboard with refresh-client -l. On 3.3a the server exits when a client attached from xterm or tmux-256color receives it, and on 3.4 to 3.6 it exits when the client leaves before its terminal answers."
     }
   ],
   "floor": {

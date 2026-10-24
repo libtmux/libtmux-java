@@ -20,6 +20,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 @ExtendWith(TmuxExtension.class)
 final class OptionalFeatureIntegrationTest {
     private static final TmuxVersion BUFFER = new TmuxVersion(3, 4, "");
+    // Mirrors Capabilities.CLIPBOARD_QUERY.since(), which this module cannot reach; the registry
+    // test pins that value.
+    private static final TmuxVersion CLIPBOARD = new TmuxVersion(3, 6, "a");
 
     @Test
     void malformedLiteralLayoutsCannotApplyAnEarlierBatchCommand(Server server) {
@@ -52,6 +55,86 @@ final class OptionalFeatureIntegrationTest {
             assertFalse(server.cmd("select-layout", "not-a-layout").succeeded());
         }
         assertTrue(server.isAlive());
+    }
+
+    /**
+     * {@code refresh-client -l} asks the attached terminal for its clipboard, and on 3.3a the server
+     * exits when the terminal answers. A pty client is attached because without one the command only
+     * says there is no current client. The positive control runs only where the query is safe, and
+     * the client leaves right after it: before 3.6a that departure ends the daemon too.
+     */
+    @Test
+    void clipboardQueryIsRefusedBelowItsReleaseAndTheDaemonStaysUp(Server server) throws Exception {
+        try (NativeClient client = NativeClient.attach(server.sessions().getFirst())) {
+            String name = server.clients().getFirst().name();
+            List<List<String>> spellings = List.of(
+                    List.of("refresh-client", "-t", name, "-l"),
+                    List.of("refresh-client", "-l"),
+                    List.of("refresh", "-l"),
+                    List.of("refresh-c", "-l"),
+                    List.of("ref", "-lt", name),
+                    List.of("refresh-client", "-l", "--"));
+            if (!server.version().atLeast(CLIPBOARD)) {
+                for (List<String> command : spellings) {
+                    assertThrows(UnsupportedFeatureException.class, () -> server.cmd(command), command.toString());
+                    assertThrows(
+                            UnsupportedFeatureException.class,
+                            () -> server.batch()
+                                    .add("list-sessions")
+                                    .add(command)
+                                    .run(),
+                            "batch " + command);
+                    assertTrue(server.isAlive(), command.toString());
+                    assertTrue(client.isAlive(), command.toString());
+                }
+                assertThrows(
+                        UnsupportedFeatureException.class,
+                        () -> server.chain()
+                                .then("list-sessions")
+                                .then("refresh", "-l")
+                                .run());
+                // The valued flag swallows -l, so this is not a clipboard query and stays allowed.
+                assertTrue(server.cmd("refresh-client", "-t", name).succeeded());
+                assertTrue(server.cmd("refresh", "-S", "-t", name).succeeded());
+            } else {
+                assertTrue(server.cmd("refresh-client", "-t", name, "-l").succeeded());
+            }
+            assertTrue(server.isAlive());
+            assertTrue(client.isAlive());
+        }
+    }
+
+    /**
+     * The failure on 3.4 to 3.6 is a race between the query and its client leaving, so the query and
+     * the client's detach travel in one tmux invocation, which leaves the terminal no time to answer.
+     * Below 3.6a the batch is refused whole; from 3.6a it runs, and either way the daemon is read
+     * afterwards. Without the refusal the daemon of a 3.5 or 3.6 server does not survive this.
+     */
+    @Test
+    void aClientLeavingAfterTheQueryCannotEndTheDaemon(Server server) throws Exception {
+        try (NativeClient client = NativeClient.attach(server.sessions().getFirst())) {
+            String name = server.clients().getFirst().name();
+            if (server.version().atLeast(CLIPBOARD)) {
+                server.batch()
+                        .add("refresh-client", "-t", name, "-l")
+                        .add("detach-client", "-t", name)
+                        .run();
+            } else {
+                assertThrows(
+                        UnsupportedFeatureException.class,
+                        () -> server.batch()
+                                .add("refresh-client", "-t", name, "-l")
+                                .add("detach-client", "-t", name)
+                                .run());
+                assertTrue(client.isAlive(), "a refused batch must not have detached the client");
+                server.cmd("detach-client", "-t", name);
+            }
+            assertTrue(Await.until(() -> !client.isAlive()));
+        }
+        // The server ends a moment after the client is gone, not while it leaves.
+        Thread.sleep(1000);
+        assertTrue(server.isAlive());
+        assertTrue(server.cmd("list-sessions").succeeded());
     }
 
     @Test

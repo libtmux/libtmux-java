@@ -54,6 +54,18 @@ public final class TmuxFeatures {
                     && !intent.repairedBreak()) {
                 throw new UnsupportedFeatureException(
                         "literal break-pane and unnamed breaks are unreliable on tmux 3.7; use Pane.breakOut(name) or tmux 3.7a+");
+            } else if (matches(verb, "refresh-client", "refresh", 3)) {
+                // -l asks the attached terminal for its clipboard; 3.3a ends the server on the reply, and
+                // 3.4 to 3.6 end it when the client leaves before the reply.
+                // The valued flags are those of the command's own argument table, so a value such as
+                // "-t -l" is never read as the flag.
+                if (!Capabilities.CLIPBOARD_QUERY.availableOn(version)
+                        && flags(command, "ABCfFrt").contains('l')) {
+                    throw new UnsupportedFeatureException(
+                            "querying the clipboard with refresh-client -l",
+                            Capabilities.CLIPBOARD_QUERY.since(),
+                            version);
+                }
             } else if (matches(verb, "new-session", "new", 3)) {
                 names(version, command, "cefFnstxy", "ns");
             } else if (matches(verb, "new-window", "neww", 5)) {

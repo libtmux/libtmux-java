@@ -198,6 +198,19 @@ public final class Capabilities {
             List.of("Pane.capture", "CaptureSpec.Builder.withHyperlinks", "CaptureSpec.Builder.withLineNumbers"),
             List.of(new Command("capture-pane", List.of("H", "L"))));
 
+    public static final Capability CLIPBOARD_QUERY = new Capability(
+            "clipboard-query",
+            "Clipboard query",
+            "Ask a client's terminal for its clipboard with refresh-client -l. On 3.3a the server exits when a"
+                    + " client attached from xterm or tmux-256color receives it, and on 3.4 to 3.6 it exits"
+                    + " when the client leaves before its terminal answers.",
+            new TmuxVersion(3, 6, "a"),
+            List.of(),
+            Handling.REFUSE,
+            REFUSAL,
+            List.of("Server.cmd", "Server.run", "Server.batch"),
+            List.of(new Command("refresh-client", List.of("l"))));
+
     public static final Capability CAPTURE_TRIM_BLANK_CELLS = new Capability(
             "capture-trim-blank-cells",
             "Trim blank cells from a capture",
@@ -267,7 +280,8 @@ public final class Capabilities {
             LAYOUT_JSON,
             CAPTURE_TRIM_BLANK_CELLS,
             CAPTURE_MODE_SCREEN,
-            CAPTURE_LINE_FLAGS);
+            CAPTURE_LINE_FLAGS,
+            CLIPBOARD_QUERY);
 
     private static final List<Workaround> WORKAROUNDS = List.of(
             RUN_SHELL_OUTPUT_IN_COPY_MODE,

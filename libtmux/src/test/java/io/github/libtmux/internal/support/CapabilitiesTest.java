@@ -132,6 +132,34 @@ final class CapabilitiesTest {
     }
 
     @Test
+    void clipboardQueryIsRefusedUnderEveryNameBelowItsRelease() {
+        assertEquals(TmuxVersion.parse("3.6a"), Capabilities.CLIPBOARD_QUERY.since());
+        // 3.3a ends the server on the reply; 3.4 to 3.6 end it when the client leaves unanswered.
+        for (String release : List.of("3.3a", "3.4", "3.5a", "3.6")) {
+            TmuxVersion before = TmuxVersion.parse(release);
+            clipboardQueryIsRefusedOn(before);
+        }
+    }
+
+    private static void clipboardQueryIsRefusedOn(TmuxVersion before) {
+        for (List<String> command : List.of(
+                List.of("refresh-client", "-l"),
+                List.of("refresh", "-l"),
+                List.of("refresh-c", "-t", "/dev/pts/1", "-l"),
+                List.of("ref", "-lt/dev/pts/1"),
+                List.of("refresh-client", "-Sl"))) {
+            assertThrows(
+                    UnsupportedFeatureException.class,
+                    () -> TmuxFeatures.require(before, TmuxFeatures.Intent.literal(List.of(command))),
+                    command.toString());
+            TmuxFeatures.require(Capabilities.CLIPBOARD_QUERY.since(), TmuxFeatures.Intent.literal(List.of(command)));
+        }
+        // A value that merely looks like the flag is not the flag.
+        TmuxFeatures.require(before, TmuxFeatures.Intent.literal(List.of(List.of("refresh-client", "-t", "-l"))));
+        TmuxFeatures.require(before, TmuxFeatures.Intent.literal(List.of(List.of("refresh-client", "-S"))));
+    }
+
+    @Test
     void literalPercentSplitAndLiteralBreakAreRefusedOnTheirExactReleases() {
         List<List<String>> split = List.of(List.of("split-window", "-p", "30"));
         List<List<String>> breakOut = List.of(List.of("break-pane", "-s", "%1"));

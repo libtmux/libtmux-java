@@ -86,6 +86,7 @@ of its commands, including a preceding command that would otherwise succeed.
 | `Pane.paste(text)` | tmux 3.4+ before creating a temporary buffer, because failure cleanup needs exact named deletion. |
 | Direct `paste-buffer -d -b name` | Retained on 3.3a; native lookup already rejects a missing name. |
 | Literal `select-layout` on 3.3a | Invalid operands are refused with `UnsupportedFeatureException` before every batch effect. Presets, unique prefixes and serialized layouts remain available; `-o` requires a serialized operand. |
+| Clipboard query | Literal `refresh-client -l`, under any name tmux resolves to it, is refused below tmux 3.6a: on 3.3a it ends the server when a client attached from an `xterm` or `tmux-256color` terminal receives the query, and on 3.4 to 3.6 it ends the server when the client leaves before its terminal answers. |
 | Percentage splitting | Typed `SplitSpec.percent` retains `-l N%`. Literal `split-window -p` is refused on exact 3.4. |
 | Session and window names on exact 3.7 | A name containing `.` or `:` is refused before dispatch (`IllegalArgumentException`), including workspace window names; 3.7a and later keep such names. |
 | `break-pane` on exact 3.7 | Literal calls and unnamed typed calls are refused. Use `Pane.breakOut(name)` or upgrade to 3.7a+. |
