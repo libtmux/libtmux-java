@@ -105,36 +105,34 @@ final class OptionalFeatureIntegrationTest {
     }
 
     /**
-     * The failure on 3.4 to 3.6 is a race between the query and its client leaving, so the query and
-     * the client's detach travel in one tmux invocation, which leaves the terminal no time to answer.
-     * Below 3.6a the batch is refused whole; from 3.6a it runs, and either way the daemon is read
-     * afterwards. Without the refusal the daemon of a 3.5 or 3.6 server does not survive this.
+     * The failure on 3.4 to 3.6 is a race between the query and its client leaving: the query reaches
+     * the client's terminal, the client leaves before the terminal answers, and the daemon ends. The
+     * query is sent as its own command and the client then detaches, the order that ends an ungated
+     * daemon on those releases.
+     *
+     * <p>The refusal is the deterministic assertion. The leave step ends an ungated daemon on most
+     * runs but not on every one, so the daemon check backs the refusal and cannot replace it: a
+     * pass there alone says nothing about the gate.
      */
     @Test
     void aClientLeavingAfterTheQueryCannotEndTheDaemon(Server server) throws Exception {
         try (NativeClient client = NativeClient.attach(server.sessions().getFirst())) {
             String name = server.clients().getFirst().name();
-            if (server.version().atLeast(CLIPBOARD)) {
-                server.batch()
-                        .add("refresh-client", "-t", name, "-l")
-                        .add("detach-client", "-t", name)
-                        .run();
-            } else {
-                assertThrows(
-                        UnsupportedFeatureException.class,
-                        () -> server.batch()
-                                .add("refresh-client", "-t", name, "-l")
-                                .add("detach-client", "-t", name)
-                                .run());
-                assertTrue(client.isAlive(), "a refused batch must not have detached the client");
-                server.cmd("detach-client", "-t", name);
+            boolean refused = false;
+            try {
+                server.cmd("refresh-client", "-t", name, "-l");
+            } catch (UnsupportedFeatureException refusal) {
+                refused = true;
             }
+            assertTrue(client.isAlive(), "a query must not have detached the client");
+            server.cmd("detach-client", "-t", name);
             assertTrue(Await.until(() -> !client.isAlive()));
+            // The daemon ends a moment after the client is gone, not while it leaves.
+            Thread.sleep(1000);
+            assertTrue(server.isAlive(), "the daemon ended after the client left");
+            assertTrue(server.cmd("list-sessions").succeeded());
+            assertEquals(!server.version().atLeast(CLIPBOARD), refused, "the clipboard query's refusal");
         }
-        // The server ends a moment after the client is gone, not while it leaves.
-        Thread.sleep(1000);
-        assertTrue(server.isAlive());
-        assertTrue(server.cmd("list-sessions").succeeded());
     }
 
     @Test
