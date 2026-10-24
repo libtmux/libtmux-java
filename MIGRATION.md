@@ -536,6 +536,11 @@ screen wait can end a way a channel never does:
 | `TIMED_OUT` | `TextOutcome.TIMED_OUT` |
 | `SERVER_GONE` | `TextOutcome.SERVER_GONE` |
 
+A pane killed mid-wait is `TextOutcome.PANE_GONE` instead of a
+`CommandRejectedException` from the failed read. `Pane.watchText` takes the
+same arguments and also returns the output so far as a `TextWait`. A
+condition passed to `Pane.await` still raises for a pane that is gone.
+
 `PRESENT_AT_ENTRY` says only that the text was there on the first look. It may
 be output from a command that finished before the wait read, or it may have been
 on the pane for an hour; a screen cannot tell those apart. What it replaces is

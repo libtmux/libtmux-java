@@ -96,6 +96,8 @@ Generated from `@Operation`-annotated methods by the operation-catalog Doclet; d
 | `io.github.libtmux.Pane` | `noteTyped(java.lang.String)` | MUTATION | Notes text that reached this pane without going through this handle, so a wait discounts its echo the way it discounts text sent through {@link #sendLiteral}. |
 | `io.github.libtmux.Pane` | `awaitText(java.lang.String, java.time.Duration)` | WAIT | Waits until this pane's text contains something, and says why the wait ended. |
 | `io.github.libtmux.Pane` | `awaitText(java.lang.String, java.time.Duration, java.time.Duration)` | WAIT | As {@link #awaitText(String, Duration)}, looking every {@code every} rather than every 50 ms. |
+| `io.github.libtmux.Pane` | `watchText(java.lang.String, java.time.Duration)` | WAIT | As {@link #awaitText(String, Duration)}, and also returns what the pane showed. |
+| `io.github.libtmux.Pane` | `watchText(java.lang.String, java.time.Duration, java.time.Duration)` | WAIT | As {@link #watchText(String, Duration)}, looking every {@code every} rather than every 50 ms. |
 | `io.github.libtmux.Pane` | `run(java.lang.String, java.time.Duration)` | WAIT | Runs a shell command in this pane to its end, and answers with its exit status and output. |
 | `io.github.libtmux.Pane` | `await(java.util.function.Predicate<io.github.libtmux.Pane>, java.time.Duration)` | WAIT | Waits until a condition holds for this pane as tmux reports it, and says why the wait ended. |
 | `io.github.libtmux.Pane` | `await(java.util.function.Predicate<io.github.libtmux.Pane>, java.time.Duration, java.time.Duration)` | WAIT | As {@link #await(Predicate, Duration)}, looking every {@code every} rather than every 50 ms. |

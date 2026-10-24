@@ -372,8 +372,9 @@ public final class Pane {
      * @param text the text to wait for, matched anywhere in a captured line
      * @param timeout how long to keep looking
      * @return why the wait ended, which tells text that appeared from text that was already there
-     * @throws LibTmuxException if a read fails while the server is still answering — most often
-     *     because this pane was killed, which is not a timeout
+     * @throws LibTmuxException if a read fails for a reason of the caller's while the server is still
+     *     answering and still lists this pane. A pane killed mid-wait is not one: that ends the wait
+     *     as {@link TextOutcome#PANE_GONE}, and {@link #watchText} also returns what it had shown
      * @throws InterruptedException if the waiting thread is interrupted, which is a cancellation
      *     rather than a timeout and so is not reported as one
      */
@@ -394,6 +395,36 @@ public final class Pane {
      */
     @Operation(Kind.WAIT)
     public TextOutcome awaitText(String text, Duration timeout, Duration every) throws InterruptedException {
+        return watchText(text, timeout, every).outcome();
+    }
+
+    /**
+     * As {@link #awaitText(String, Duration)}, and also returns what the pane showed.
+     *
+     * <p>The output is the pane at the wait's last successful read, so a pane that was killed, or a
+     * server that went away, mid-wait still leaves the caller what had been printed. Ending as
+     * {@link TextOutcome#PANE_GONE} or {@link TextOutcome#SERVER_GONE} is an answer, not an
+     * exception, and neither is decided by a timer: the server answers a probe now or it does not,
+     * and lists the pane now or does not, with or without another client attached to it.
+     *
+     * @return the outcome and the output so far
+     * @throws LibTmuxException if a read fails for a reason of the caller's while the server is still
+     *     answering and still lists this pane
+     * @throws InterruptedException if the waiting thread is interrupted
+     */
+    @Operation(Kind.WAIT)
+    public TextWait watchText(String text, Duration timeout) throws InterruptedException {
+        return watchText(text, timeout, PaneWait.POLL);
+    }
+
+    /**
+     * As {@link #watchText(String, Duration)}, looking every {@code every} rather than every 50 ms.
+     *
+     * @param every how long to leave between looks, at least 10 ms
+     * @throws IllegalArgumentException if {@code every} is shorter than 10 ms
+     */
+    @Operation(Kind.WAIT)
+    public TextWait watchText(String text, Duration timeout, Duration every) throws InterruptedException {
         Objects.requireNonNull(text, "text");
         return PaneWait.awaitText(this, text, timeout, every);
     }

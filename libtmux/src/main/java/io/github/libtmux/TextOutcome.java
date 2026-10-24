@@ -34,6 +34,14 @@ public enum TextOutcome {
     PRESENT_AT_ENTRY,
     /** The deadline passed with the text absent. */
     TIMED_OUT,
+    /**
+     * The pane was killed, or its process exited and closed it, while the wait was running, and the
+     * server is still answering.
+     *
+     * <p>The wait cannot succeed and no timeout will change that. {@link Pane#watchText} carries what
+     * the pane had shown.
+     */
+    PANE_GONE,
     /** The server went away underneath the wait, so nothing it was guarding can be relied on. */
     SERVER_GONE
 }
