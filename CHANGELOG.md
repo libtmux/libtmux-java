@@ -14,9 +14,12 @@ production.
 
 ### Documented
 
-- **The batching guide states the nested-command limit.** It lists the refused
-  commands, the tmux releases and the failure each causes, and the advice to
-  name every `break-pane` on exact 3.7 or upgrade to 3.7a. (#90)
+- **The batching guide states the nested-command limit.** It lists the
+  commands the guards do not read when nested, with the releases and failures.
+  (#90)
+- **The guides say exact 3.7 refuses every literal `break-pane`,** with or
+  without `-n`, and keep the "name it or upgrade to 3.7a" advice for nested
+  and key-bound `break-pane`. (#91)
 
 ## 0.0.1-alpha.19 — 2026-10-24
 
