@@ -141,5 +141,5 @@ nested inside one: an `if-shell` body, a `run-shell -C` argument, a hook, a brac
 block or a sourced file. A service that builds those strings from input can send
 a command the library would have refused, and on some releases that ends the
 server. [Batching and chaining](batching-and-chaining.md#what-the-guards-do-not-read)
-lists the commands, the releases and the failures. On exact tmux 3.7, name every
-`break-pane`, nested or not, and upgrade to 3.7a.
+lists the commands, the releases and the failures. On exact tmux 3.7, name
+every nested or key-bound `break-pane`, or upgrade to 3.7a.
