@@ -2,7 +2,7 @@
 
 **The library's real-tmux suite. Not published.**
 
-244 tests that start actual tmux servers and drive them. They live outside every
+Tests that start actual tmux servers and drive them. They live outside every
 published module on purpose: a suite inside one artifact's test source set makes
 that artifact's dependencies and lifecycle answerable for how the whole library
 is tested.
