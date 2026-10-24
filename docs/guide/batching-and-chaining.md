@@ -111,8 +111,11 @@ and tmux runs the nested `break-pane`. These are the commands the library
 refuses when they are literal, the releases they affect, and what happens there
 when they are nested:
 
-- **`break-pane` without `-n`:** exact tmux 3.7 only. The server exits. tmux
-  3.7a fixes it ([`CHANGES`][3.7a-changes], [the inverted name test in
+- **`break-pane`:** exact tmux 3.7 only. A literal `break-pane` is refused with
+  or without `-n`, because 3.7 ignores the name; call `Pane.breakOut(name)`
+  instead. Nested without `-n`, the server exits. Nested with `-n`, the server
+  survives but the window is still misnamed. tmux 3.7a fixes both
+  ([`CHANGES`][3.7a-changes], [the inverted name test in
   3.7][3.7-break-pane]).
 - **`select-layout` with a string tmux cannot parse:** tmux 3.3 and 3.3a. The
   server exits. 3.4 answers "invalid layout".
@@ -127,8 +130,8 @@ when they are nested:
 - **Names containing `:` or `.`:** exactly 3.7. tmux answers "invalid window
   name" and changes nothing.
 
-On exact tmux 3.7, name every `break-pane`, nested or not, and upgrade to 3.7a.
-The [default `prefix !` binding][3.7-binding] is itself a nameless
+On exact tmux 3.7, name every nested or key-bound `break-pane`, or upgrade to
+3.7a. The [default `prefix !` binding][3.7-binding] is itself a nameless
 `break-pane`, which no library check can reach. [Operating a
 service](operating-a-service.md#nested-commands) repeats the rule for a
 long-running process.
