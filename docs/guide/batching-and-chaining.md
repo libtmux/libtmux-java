@@ -120,8 +120,9 @@ when they are nested:
 - **`select-layout` with a string tmux cannot parse:** tmux 3.3 and 3.3a. The
   server exits. 3.4 answers "invalid layout".
 - **`refresh-client -l`:** below 3.6a, and only with an attached client. The
-  server exits on 3.3a when the client's terminal does not answer, and on 3.4 to
-  3.6 when the client leaves before it answers.
+  server exits at once on 3.3a when the client's terminal has the `Ms` clipboard
+  capability, such as `xterm-256color` or `tmux-256color`, and on 3.4 to 3.6
+  when the client leaves before its terminal answers.
 - **`delete-buffer -b NAME`, and `set-buffer -b NAME -n`:** below 3.4. Nothing
   crashes; a name that does not exist acts on the newest buffer instead, so the
   wrong buffer is deleted or renamed.
