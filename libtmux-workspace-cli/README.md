@@ -24,7 +24,11 @@ Flags follow tmuxp 1.74.0, and every command can answer in JSON or NDJSON.
 Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace-cli).
 Reference: the [command manual][cli-manual] on libtmux.org.
 
-> **Alpha.** Commands, flags and output records will change without notice.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is
+> not settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
+>
+> Commands, flags and output records are part of the API.
 
 **Contents** — [Quick start](#quick-start) · [Find, convert, and
 import](#find-convert-and-import) · [Inspect a loaded workspace through
@@ -220,8 +224,11 @@ Then the agent can:
 - **JDK 25 or newer**, and **tmux 3.3a or newer**.
 - **Linux, including WSL.** CI runs on Ubuntu. macOS is supported on a
   best-effort basis, and CI coverage for it is highly limited.
-- **Alpha.** Commands, flags and output records change without notice. Pin an
-  exact version.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments
+  `N`. The API is not settled: any release may change or remove exported
+  identifiers, and the changelog marks each break. Pin an exact version to
+  avoid one.
+  Commands, flags and output records are part of the API.
 - **Machine output.** `--json` is one document and `--ndjson` one record per
   line. A failure names one `code`, and the exit status is `0`, `1`, `2` or
   `130`. [Output][ref-output] has the full contract.

@@ -26,7 +26,9 @@ API reference: [libtmux.org][reference] for the current trunk,
 [javadoc.io][javadoc] for a released version. For a command line, see
 [`libtmux-workspace-cli`][cli].
 
-> **Alpha.** The API will change without notice.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is
+> not settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
 
 **Contents** — [Quick start](#quick-start) · [What you get
 back](#what-you-get-back) · [Read first](#read-first-build-second) · [The
@@ -162,7 +164,10 @@ A window with no panes stated still gets the one tmux makes for it.
 
 ## Support and status
 
-- **Alpha.** The API will change without notice. Pin an exact version.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments
+  `N`. The API is not settled: any release may change or remove exported
+  identifiers, and the changelog marks each break. Pin an exact version to
+  avoid one.
 - **Layouts follow tmux.** Every layout name tmux accepts is accepted, and
   nothing else is.
 

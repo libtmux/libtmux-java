@@ -254,11 +254,11 @@ upstream removed the tags.
 **CI runs Linux only.** macOS is supported on a best-effort basis, and CI
 coverage for it is highly limited.
 
-**The API carries no compatibility guarantee.** This project is alpha: releases
-carry an `-alpha` prerelease tag, any release may change or remove exported
-identifiers without a deprecation period, and only the newest release is
-supported. Pin an exact version.
+**The API carries no compatibility guarantee.** Releases are numbered `0.1.N`,
+and each release increments `N`. Any release may change or remove exported
+identifiers without a deprecation period, the changelog marks each break, and
+only the newest release is supported. Pin an exact version.
 
 That is a statement about the Java API, not about tmux correctness. Behaviour
 against the supported tmux range is gated on every push, and a change there is a
-bug rather than a liberty the alpha terms allow.
+bug rather than a liberty the release terms allow.

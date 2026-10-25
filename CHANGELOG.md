@@ -1,16 +1,23 @@
 # Changelog
 
-Notable changes, newest first. Versions follow [semantic versioning][semver].
+Notable changes, newest first.
 
-**This project is alpha.** Releases carry an `-alpha` prerelease tag. The API is
-not settled, and any release may change or remove exported identifiers without a
-deprecation period. Only the newest release is supported, and there are no
-backports. Pin an exact version rather than a range. Not recommended for
-production.
-
-[semver]: https://semver.org/spec/v2.0.0.html
+Releases are numbered `0.1.N`, and each release increments `N`. The API is not
+settled: any release may change or remove exported identifiers, and the
+changelog marks each break. Pin an exact version to avoid one. Only the newest
+release is supported, and there are no backports.
 
 ## Unreleased
+
+### Changed
+
+- **Releases are numbered `0.1.N` from now on, with no `-alpha` tag.** The
+  first is `0.1.0`, then `0.1.1`, `0.1.2` and so on, each incrementing `N`, so
+  update tools no longer treat a release as a prerelease. A range such as
+  `0.1.+` accepts every `0.1.N`, breaking releases included, so keep pinning an
+  exact version. The README banners, the module READMEs and the POM
+  description carry the new terms. Releases before this one keep their
+  `0.0.1-alpha.N` numbers.
 
 ### Documented
 
