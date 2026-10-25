@@ -17,17 +17,21 @@ val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
 val apiBaselineVersion = providers.gradleProperty("libtmuxApiBaseline")
 
 val japicmpTool = configurations.create("japicmpTool") { isCanBeConsumed = false }
+
+// Detached, because a configuration of this project resolves io.github.libtmux:<project.name> to
+// the project itself whenever the project's version sorts above the baseline, as every 0.1.N does
+// above the alphas and above the 0.1.N before it.
 val apiBaselineJar =
-    configurations.create("apiBaselineJar") {
-        isCanBeConsumed = false
-        isTransitive = false
-    }
+    configurations.detachedConfiguration(
+        *listOfNotNull(
+            apiBaselineVersion.orNull?.let { project.dependencies.create("io.github.libtmux:${project.name}:$it") }
+        ).toTypedArray()
+    ).apply { isTransitive = false }
 
 dependencies {
     "japicmpTool"(
         "com.github.siom79.japicmp:japicmp:${libs.findVersion("japicmp").orElseThrow().requiredVersion}:jar-with-dependencies"
     )
-    apiBaselineVersion.orNull?.let { "apiBaselineJar"("io.github.libtmux:${project.name}:$it") }
 }
 
 // Lenient: an unresolvable baseline (no network, or a version not yet published) is reported by the
