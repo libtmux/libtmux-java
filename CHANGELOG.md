@@ -9,6 +9,8 @@ release is supported, and there are no backports.
 
 ## Unreleased
 
+## 0.1.0 — 2026-10-25
+
 ### Changed
 
 - **Releases are numbered `0.1.N` from now on, with no `-alpha` tag.** The
