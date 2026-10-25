@@ -43,11 +43,12 @@ Four things near the top are compatibility claims, and they move together:
 
 - **The title is `libtmux for Java`.** Every port titles its README the same
   way.
-- **The alpha notice states the terms in full.** Releases carry an `-alpha`
-  prerelease tag, the API is not settled, any release may change or remove
-  exported identifiers without a deprecation period, pin an exact version, not
-  recommended for production. `CHANGELOG.md` and the `Support and status`
-  section say the same thing in the same words.
+- **The status notice is the shared sentence, word for word.** "Releases are
+  numbered `0.1.N`, and each release increments `N`. The API is not settled:
+  any release may change or remove exported identifiers, and the changelog
+  marks each break. Pin an exact version to avoid one." Every port words it
+  identically. `CHANGELOG.md` and the `Support and status` section say the same
+  thing in the same words.
 - **The requirements are JDK 25 or newer, and tmux 3.3a through 3.7c.** The tmux
   range is not a claim — the matrix runs every lane of it — so it may not drift
   from `workflows/tmux-matrix.yml`.
@@ -129,7 +130,7 @@ reliability". Do not describe effort, and never write "various fixes" — a set 
 changes too small to enumerate is reported as no user-visible behaviour having
 changed. A refactor nothing can observe is not an entry at all.
 
-This project is alpha, so an incompatibility is expected rather than
+The API is not settled, so an incompatibility is expected rather than
 exceptional. It still gets stated plainly, with what to write instead.
 
 ## Release notes

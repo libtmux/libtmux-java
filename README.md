@@ -21,13 +21,13 @@ servers and typed query fields.
 [![tmux matrix](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux.svg)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#support-and-status)
+[![Status: 0.1.N](https://img.shields.io/badge/status-0.1.N-orange.svg)](#support-and-status)
 
 </div>
 
-> **Alpha.** Releases carry an `-alpha` prerelease tag. The API is not
-> settled, and any release may change or remove exported identifiers without a
-> deprecation period. Pin an exact version. Not recommended for production.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is not
+> settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
 
 [`Create`][server-newsession] sessions, windows and panes,
 [`find and filter`][window_] what a [`Server`][server] holds, and
@@ -730,9 +730,10 @@ $ tmux-workspace load \
   so names and typed text arrive intact under `LANG=C`
   ([details](MIGRATION.md#non-ascii-text-reaches-tmux-on-any-locale)). Only
   [`Pane.currentPath()`][pane] needs a UTF-8 locale.
-- **Alpha.** Any release may change or remove exported identifiers without a
-  deprecation period, including in ways that do not compile. Pin an exact
-  version. Not recommended for production.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments
+  `N`. The API is not settled: any release may change or remove exported
+  identifiers, and the changelog marks each break. Pin an exact version to
+  avoid one.
 - **Tested against real tmux.** The real-tmux suite runs against every
   supported release on every push.
 

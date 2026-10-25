@@ -51,7 +51,7 @@ mavenPublishing {
 
     pom {
         name = project.name
-        description = "Typed tmux access for the JVM. Alpha: the API is not stable and will change without notice."
+        description = "Typed tmux access for the JVM. The API is not settled: any release may change or remove exported identifiers, so pin an exact version."
         // This port's home, for the same reason the scm below is: a consumer who follows the
         // homepage in this POM should arrive at the source of the artifact they are holding.
         // https://libtmux.git-pull.com/ documents the Python library, which shipped here in

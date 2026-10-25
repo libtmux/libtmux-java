@@ -1,34 +1,50 @@
 # Releasing
 
-`0.0.1-alpha.1` is on Maven Central, published 16 August 2026. Both gates below
-are done, so cutting the next release is a tag and someone pressing publish.
+Releases are numbered `0.1.N`: `0.1.0`, then `0.1.1`, `0.1.2` and so on, each
+incrementing `N`. No release carries an `-alpha` or other prerelease qualifier
+unless the maintainer asks for one. The `0.0.1-alpha.N` releases stay on Maven
+Central as they were published. Gates 1 and 2 below are done, so cutting a
+release is a tag, a green run on the tagged commit, and someone pressing publish
+in the Central Portal.
 
 ## Versions
 
-`alpha` is the lowest qualifier Maven's comparator knows. Its full order is
-
-```
-alpha < beta < milestone < rc < snapshot < (release) < sp
-```
-
-so `0.0.1-alpha.1` sorts below everything this project could publish later, and
-`0.0.1-alpha.1-SNAPSHOT` — the value in `gradle.properties` — sorts below the
-release it precedes.
-
-Write the qualifier after a hyphen and the increment after a dot:
-`0.0.1-alpha.1`, never `0.0.1.alpha.1`. Maven treats a version that does not
-match `major[.minor[.increment]][-qualifier]` as one long qualifier string, and
-then nothing orders the way it looks like it should.
-
-Cut a release by tagging. The workflow reads the version from the tag, refuses a
-snapshot, and refuses anything that is not a shape this project publishes:
+Cut a release by tagging the commit, with a `v` before the version:
 
 ```console
-$ git tag v0.0.1-alpha.1 && git push origin v0.0.1-alpha.1
+$ git tag v0.1.N && git push origin v0.1.N
 ```
 
-Nothing is ever committed with a release version in it — `gradle.properties`
-stays on the `-SNAPSHOT` value and the release overrides it.
+The workflow reads the version from the tag, refuses a snapshot, and refuses
+anything that is not a shape this project publishes. It then stages one Central
+Portal deployment for every module. Nothing publishes by itself: the
+maintainer publishes the deployment by hand in the Portal, as in the last step
+of [the order below](#the-order-to-do-this-in).
+
+Write the qualifier, if there ever is one, after a hyphen: `0.1.0-rc.1`, never
+`0.1.0.rc.1`. Maven treats a version that does not match
+`major[.minor[.increment]][-qualifier]` as one long qualifier string, and then
+nothing orders the way it looks like it should.
+
+### `libtmuxVersion` and `libtmuxApiBaseline`
+
+Two properties in `gradle.properties` name versions, and they answer different
+questions.
+
+- **`libtmuxVersion`** is the version this checkout is building toward. It
+  always ends in `-SNAPSHOT`, as in `0.1.N-SNAPSHOT`, and a snapshot sorts below
+  the release it precedes. The release workflow overrides it with the version
+  taken from the tag, so nothing is ever committed with a release version in
+  it. The `Tag v0.1.N` commit sets it to the `-SNAPSHOT` of the version being
+  tagged, and moves the documented install pins to match, because
+  `DocumentationFactsTest` checks them against it.
+- **`libtmuxApiBaseline`** is the last version actually published. The core's
+  API-diff gate compares every change against that jar, not against
+  `libtmuxVersion`. It stays on the previous release while the next one is being
+  prepared, and is bumped by hand only after the new release is published.
+
+So on the `0.1.N` line, while `0.1.2` is being prepared, `libtmuxVersion` is
+`0.1.2-SNAPSHOT` and `libtmuxApiBaseline` is `0.1.1`.
 
 ## Gate 1 — own the namespace — **done**
 
@@ -243,18 +259,20 @@ Two behaviours worth knowing:
 4. Create the `release` environment and move the four secrets into it, per
    [Gate 3](#gate-3--an-environment-the-secrets-live-behind). **Not done.**
 5. Dry-run locally, which needs no key and no token:
-   `./gradlew publishToMavenLocal -PlibtmuxVersion=0.0.1-alpha.1`.
-6. Wait for CI and the tmux matrix to pass on the commit, then tag it. The
-   Release workflow refuses a commit without both, then runs `check`, uploads,
-   and attests every published jar and the BOM pom. The attestation names the commit and workflow
-   that built them. A release refused for a run still in progress is started
+   `./gradlew publishToMavenLocal -PlibtmuxVersion=0.1.N`.
+6. Wait for CI and the tmux matrix to pass on the `Tag v0.1.N` commit, then tag
+   it. The Release workflow refuses a commit without both, then runs `check`,
+   uploads, and attests every published jar and the BOM pom. The attestation
+   names the commit and workflow that built them. A release refused for a run still in progress is started
    again from the Actions tab once it has passed.
 7. Open [the Portal](https://central.sonatype.com/publishing/deployments) and
    publish the deployment, or drop it.
 8. Bump `libtmuxApiBaseline` in `gradle.properties` to the version just
-   released. The core's API-diff gate compares every later change against that
-   property, not against `libtmuxVersion`, so the next round of development
-   starts measured against what was actually shipped. Move the entries under
+   released, in a follow-up commit once the deployment is published. The core's
+   API-diff gate compares every later change against that property, not against
+   `libtmuxVersion`, so the next round of development starts measured against
+   what was actually shipped. Update that version's checksums in
+   `gradle/verification-metadata.xml` in the same commit. Move the entries under
    `MIGRATION.md`'s `## Next release` beneath a heading for the version they
    shipped in, so the gate starts the next round from an empty section.
 

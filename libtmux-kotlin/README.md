@@ -27,7 +27,9 @@ API reference: [libtmux.org][reference] for the current trunk,
 [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-kotlin) for a
 released version.
 
-> **Alpha.** The API will change without notice.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is
+> not settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
 
 **Contents** — [Quick start](#quick-start) · [Declare a
 session](#declare-a-session-its-windows-and-their-splits) · [Send
@@ -303,7 +305,10 @@ withServer(config) { server ->
   server by
   [`ReadmeExamplesTest`](src/test/kotlin/io/github/libtmux/kotlin/ReadmeExamplesTest.kt),
   one test per section.
-- **Alpha.** The API will change without notice. Pin an exact version.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments
+  `N`. The API is not settled: any release may change or remove exported
+  identifiers, and the changelog marks each break. Pin an exact version to
+  avoid one.
 
 ## Documentation
 

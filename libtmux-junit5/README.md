@@ -26,7 +26,9 @@ Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-junit5)
 API reference: [`TmuxExtension`][tmux-extension] and [`FakeTmux`][fake-tmux] on
 libtmux.org for the current trunk, [javadoc.io][javadoc] for a released version.
 
-> **Alpha.** The API will change without notice.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is
+> not settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
 
 **Contents** — [Quick start](#quick-start) · [What the fixture hands
 you](#what-the-fixture-hands-you) · [Choosing the
@@ -210,7 +212,10 @@ try (Server server = tmux.server();
 - **Another tmux-using suite?** Give each suite a socket root that names it, and
   never use the default socket. [`CONTRIBUTING.md`](../.github/CONTRIBUTING.md)
   has this repository's own rule and the failure modes behind it.
-- **Alpha.** The API will change without notice. Pin an exact version.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments
+  `N`. The API is not settled: any release may change or remove exported
+  identifiers, and the changelog marks each break. Pin an exact version to
+  avoid one.
 
 ## Documentation
 

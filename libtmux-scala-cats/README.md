@@ -26,9 +26,9 @@ Java artifacts. Use the same version as `libtmux-scala`.
 API reference: [libtmux.org][reference] for the current trunk,
 [javadoc.io][javadoc] for a released version.
 
-> **Alpha.** The API is not settled, and a release may change or remove
-> exported identifiers without a deprecation period. Pin an exact version
-> rather than a range. Not recommended for production.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is
+> not settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
 
 **Contents** — [Quick start](#quick-start) · [Observe](#observe-tmux-change) ·
 [What it leaves out](#what-it-leaves-out) · [Support](#support-and-status)
@@ -149,7 +149,10 @@ block.
 
 - **Scala 3.9**, and the same JDK and tmux range as
   [`libtmux-scala`](../libtmux-scala/README.md).
-- **Alpha.** Pin an exact version rather than a range.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments
+  `N`. The API is not settled: any release may change or remove exported
+  identifiers, and the changelog marks each break. Pin an exact version to
+  avoid one.
 
 ## Documentation
 

@@ -27,9 +27,9 @@ Java artifacts.
 API reference: [`Flows`][flows] on libtmux.org for the current trunk,
 [javadoc.io][javadoc] for a released version.
 
-> **Alpha.** Releases carry an `-alpha` prerelease tag. The API is not settled,
-> and any release may change or remove exported identifiers without a
-> deprecation period. Pin an exact version. Not recommended for production.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is
+> not settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
 
 **Contents** — [Quick start](#quick-start) · [What it leaves
 out](#what-it-leaves-out) · [Support](#support-and-status) ·
@@ -92,7 +92,10 @@ event it kept, or a gap naming how many were lost.
 
 - **Scala 3 on virtual threads**, with the same JDK and tmux range as
   [`libtmux-scala`](../libtmux-scala/README.md).
-- **Alpha.** Pin an exact version rather than a range.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments
+  `N`. The API is not settled: any release may change or remove exported
+  identifiers, and the changelog marks each break. Pin an exact version to
+  avoid one.
 
 ## Documentation
 

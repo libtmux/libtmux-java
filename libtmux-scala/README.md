@@ -24,9 +24,9 @@ and release with the Java ones.
 API reference: [libtmux.org][reference] for the current trunk,
 [javadoc.io][javadoc] for a released version.
 
-> **Alpha.** Releases carry an `-alpha` prerelease tag. The API is not settled,
-> and any release may change or remove exported identifiers without a
-> deprecation period. Pin an exact version. Not recommended for production.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is
+> not settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
 
 **Contents** — [Quick start](#quick-start) ·
 [What it leaves out](#what-it-leaves-out) · [Support](#support-and-status) ·
@@ -92,7 +92,10 @@ the daemon running.
 - **tmux 3.3a through 3.7c**, which the Java library supports and every tmux
   lane in CI runs these suites against.
   [Compatibility](../docs/guide/scala/compatibility.md) has the detail.
-- **Alpha.** Pin an exact version rather than a range.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments
+  `N`. The API is not settled: any release may change or remove exported
+  identifiers, and the changelog marks each break. Pin an exact version to
+  avoid one.
 
 ## Documentation
 

@@ -107,7 +107,9 @@ A test checks that list:
 
 ## Support and status
 
-- **Alpha.** Pin an exact version, not a range.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments
+  `N`. Pin an exact version, not a range: any release may change or remove
+  exported identifiers.
 - **Checked.** The version in every install block is held to the version this
   build publishes.
 

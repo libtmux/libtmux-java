@@ -28,7 +28,11 @@ tool][mcp-tools] for the current trunk,
 [javadoc.io](https://javadoc.io/doc/io.github.libtmux/libtmux-mcp) for a
 released version.
 
-> **Alpha.** Tool names and shapes will change without notice.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is
+> not settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
+>
+> Tool names and shapes are part of the API.
 
 **Contents** — [Quick start](#quick-start) · [Read
 panes](#find-your-way-and-read-panes) · [Run a command](#run-a-command-and-wait)
@@ -564,7 +568,11 @@ the stdio launcher, and reads its selection from the process environment.
 - **JDK 25 or newer.** It depends on [`libtmux`][libtmux] and the MCP Java SDK.
 - **Linux, including WSL.** CI runs on Ubuntu. macOS is supported on a
   best-effort basis, and CI coverage for it is highly limited.
-- **Alpha.** Tool names and shapes change without notice; pin an exact version.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments
+  `N`. The API is not settled: any release may change or remove exported
+  identifiers, and the changelog marks each break. Pin an exact version to
+  avoid one.
+  Tool names and shapes are part of the API.
 - **Optional siblings.** [`libtmux-jackson`][jackson] and
   [`libtmux-workspace`][workspace] stay available to Java applications that
   need filter documents or declarative workspace building.

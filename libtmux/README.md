@@ -26,7 +26,9 @@ status, and [hear changes][controlclient] as tmux makes them.
 API reference: [libtmux.org][reference] for the current trunk,
 [javadoc.io][javadoc-libtmux] for a released version.
 
-> **Alpha.** The API will change without notice. Pin an exact version.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is
+> not settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
 
 **Contents** — [Quick start](#quick-start) · [Read](#read-what-tmux-has) ·
 [Filter](#filter-and-select) · [Batch](#send-several-commands) ·
@@ -437,15 +439,18 @@ rename.getAnnotation(io.github.libtmux.catalog.Operation.class).value();   // �
 - **Runtime dependencies.** The library has none; the adapters depend on it.
 - **Live objects.** A handle reads from one capture, and
   [`refresh()`][window] looks again.
-- **A stable API.** It is alpha, so any release may change it. Pin an exact
-  version.
+- **A settled API.** Any release may change or remove exported identifiers.
+  Pin an exact version.
 
 ## Support and status
 
 - **JDK 25 or newer**, and **tmux 3.3a through 3.7c**.
 - **Linux, including WSL.** CI runs on Ubuntu. macOS is supported on a
   best-effort basis, and CI coverage for it is highly limited.
-- **Alpha.** The API will change without notice.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments
+  `N`. The API is not settled: any release may change or remove exported
+  identifiers, and the changelog marks each break. Pin an exact version to
+  avoid one.
 - **Reference.** [libtmux.org][reference] for the current trunk,
   [javadoc.io][javadoc-libtmux] for a released version.
 

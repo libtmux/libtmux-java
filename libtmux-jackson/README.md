@@ -24,8 +24,12 @@ Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-jackson
 API reference: [`FilterJson`][filter-json] on libtmux.org for the current trunk,
 [javadoc.io][javadoc] for a released version.
 
-> **Alpha.** The API will change without notice. The `libtmux.filter/1` wire
-> format is versioned separately and will not change under that name.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is
+> not settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
+>
+> The `libtmux.filter/1` wire format is versioned separately and will not
+> change under that name.
 
 **Contents** — [Quick start](#quick-start) · [The document](#the-document) ·
 [Why the names look like that](#why-the-names-look-like-that) ·
@@ -160,8 +164,11 @@ answers a different question, so writing it throws `SchemaException`.
 
 ## Support and status
 
-- **Alpha.** The API will change without notice. The `libtmux.filter/1` format
-  is versioned separately.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments
+  `N`. The API is not settled: any release may change or remove exported
+  identifiers, and the changelog marks each break. Pin an exact version to
+  avoid one.
+  The `libtmux.filter/1` format is versioned separately.
 - **Versioned fail-closed reading.** An unknown schema version is refused, not
   guessed at.
 
