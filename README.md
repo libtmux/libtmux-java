@@ -22,6 +22,17 @@ servers and typed query fields.
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux.svg)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Status: 0.1.N](https://img.shields.io/badge/status-0.1.N-orange.svg)](#support-and-status)
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/java/)
+[![libtmux-bom](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-bom)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-bom)
+[![libtmux-jackson](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-jackson)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-jackson)
+[![libtmux-junit5](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-junit5)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-junit5)
+[![libtmux-kotlin](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-kotlin)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin)
+[![libtmux-mcp](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-mcp)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-mcp)
+[![libtmux-scala_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala_3)
+[![libtmux-scala-cats_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala-cats_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala-cats_3)
+[![libtmux-scala-ox_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala-ox_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala-ox_3)
+[![libtmux-workspace](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-workspace)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace)
+[![libtmux-workspace-cli](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-workspace-cli)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace-cli)
 
 </div>
 

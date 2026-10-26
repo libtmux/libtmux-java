@@ -13,6 +13,9 @@
 
 **Typed, blocking access to a tmux server. No runtime dependencies.**
 
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/java/)
+[![libtmux](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux)
+
 </div>
 
 This is the whole library. Everything else in the repository is an adapter to

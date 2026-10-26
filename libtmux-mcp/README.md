@@ -13,6 +13,9 @@
 
 **A tmux server, exposed to a model over the Model Context Protocol.**
 
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/java/)
+[![libtmux-mcp](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-mcp)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-mcp)
+
 </div>
 
 Point Claude Code, Claude Desktop, Codex, or any MCP client at a tmux socket. It
