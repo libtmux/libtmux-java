@@ -15,7 +15,7 @@
 concurrency on virtual threads.**
 
 [![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/scala/)
-[![libtmux-scala-ox_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala-ox_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala-ox_3)
+[![libtmux-scala-ox_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala-ox_3?label=libtmux-scala-ox_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala-ox_3)
 
 </div>
 

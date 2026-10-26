@@ -14,7 +14,7 @@
 **A tmux server, exposed to a model over the Model Context Protocol.**
 
 [![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/java/latest/mcp/)
-[![libtmux-mcp](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-mcp)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-mcp)
+[![libtmux-mcp](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-mcp?label=libtmux-mcp)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-mcp)
 
 </div>
 

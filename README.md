@@ -18,21 +18,9 @@ practical parity. It uses Java types: `Optional` for absence, `AutoCloseable`
 servers and typed query fields.
 
 [![CI](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/ci.yml)
-[![tmux matrix](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml/badge.svg)](https://github.com/libtmux/libtmux-java/actions/workflows/tmux-matrix.yml)
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux.svg)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Status: 0.1.N](https://img.shields.io/badge/status-0.1.N-orange.svg)](#support-and-status)
+[![libtmux](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux?label=libtmux)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux)
 [![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/java/)
-[![libtmux-bom](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-bom)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-bom)
-[![libtmux-jackson](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-jackson)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-jackson)
-[![libtmux-junit5](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-junit5)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-junit5)
-[![libtmux-kotlin](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-kotlin)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin)
-[![libtmux-mcp](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-mcp)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-mcp)
-[![libtmux-scala_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala_3)
-[![libtmux-scala-cats_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala-cats_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala-cats_3)
-[![libtmux-scala-ox_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala-ox_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala-ox_3)
-[![libtmux-workspace](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-workspace)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace)
-[![libtmux-workspace-cli](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-workspace-cli)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace-cli)
+[![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/libtmux/libtmux-java/blob/master/LICENSE)
 
 </div>
 
@@ -394,41 +382,51 @@ the Scala artifacts suffixed `_3`.
 
 - **[`libtmux-bom`](libtmux-bom/)** — name one BOM version, and every
   BOM-managed coordinate below follows it.
+[![libtmux-bom](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-bom?label=libtmux-bom)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-bom)
 
 - **[`libtmux-mcp`](libtmux-mcp/)** — give a model a tmux server, over the
   [Model Context Protocol](https://modelcontextprotocol.io/). Finds its way
   around, reads what a pane shows, runs a command and waits for its exit status,
   and has bounded waits for text, a channel or new output in place of pushed
   notifications.
+[![libtmux-mcp](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-mcp?label=libtmux-mcp)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-mcp)
 
 - **[`libtmux-junit5`](libtmux-junit5/)** — test *your* code against real tmux.
   One server per test. A JVM killed outright leaves its server for the next
   run sharing the fixture root to reap.
+[![libtmux-junit5](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-junit5?label=libtmux-junit5)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-junit5)
 
 - **[`libtmux-kotlin`](libtmux-kotlin/)** — Kotlin ergonomics. Optional: the core
   is already null-safe from Kotlin without it.
+[![libtmux-kotlin](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-kotlin?label=libtmux-kotlin)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin)
 
 - **[`libtmux-scala`](libtmux-scala/)** — Scala 3 collections, opaque handles
   over the Java ones, and the typed query DSL.
+[![libtmux-scala_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala_3?label=libtmux-scala_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala_3)
 
 - **[`libtmux-scala-cats`](libtmux-scala-cats/)** — optional Cats Effect
   resources and FS2 observations.
+[![libtmux-scala-cats_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala-cats_3?label=libtmux-scala-cats_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala-cats_3)
 
 - **[`libtmux-scala-ox`](libtmux-scala-ox/)** — an optional Ox `Flow` over
   subscriptions and live views.
+[![libtmux-scala-ox_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala-ox_3?label=libtmux-scala-ox_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala-ox_3)
 
 - **[`libtmux-jackson`](libtmux-jackson/)** — a filter expression as a versioned
   JSON document, so it can be stored, sent, or written by something that is not
   a Java program.
+[![libtmux-jackson](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-jackson?label=libtmux-jackson)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-jackson)
 
 - **[`libtmux-workspace`](libtmux-workspace/)** — build a session from a
   tmuxp-shaped YAML file.
+[![libtmux-workspace](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-workspace?label=libtmux-workspace)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace)
 
 - **[`libtmux-workspace-cli`](libtmux-workspace-cli/)** — the `tmux-workspace`
   command: load, capture, convert and import workspaces, with tmuxp's command
   names and JSON or NDJSON output. A separate implementation from
   `libtmux-workspace`, whose package documentation states how their document
   shapes and building behaviour diverge.
+[![libtmux-workspace-cli](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-workspace-cli?label=libtmux-workspace-cli)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace-cli)
 
 Not published, and part of how the library is built:
 [`examples/`](examples/) · [`integration-tests/`](integration-tests/) ·
