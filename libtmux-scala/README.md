@@ -14,7 +14,7 @@
 **Scala 3 collections and opaque handles over libtmux for Java.**
 
 [![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/scala/)
-[![libtmux-scala_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala_3)
+[![libtmux-scala_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala_3?label=libtmux-scala_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala_3)
 
 </div>
 

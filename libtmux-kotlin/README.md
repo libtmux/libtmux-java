@@ -15,7 +15,7 @@
 bridges over the Java API.**
 
 [![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/kotlin/)
-[![libtmux-kotlin](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-kotlin)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin)
+[![libtmux-kotlin](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-kotlin?label=libtmux-kotlin)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin)
 
 </div>
 
