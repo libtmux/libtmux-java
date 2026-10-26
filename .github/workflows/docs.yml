@@ -1,8 +1,8 @@
 name: docs
 
 # Publishes the library family to libtmux.org. Each language owns its
-# prefix, with trunk at latest and each release tag at its own version
-# plus next (prerelease) or stable (release).
+# prefix, with trunk at latest and each release tag at its own version,
+# which is the default. A prerelease tag also publishes next.
 #
 # libtmux/docs builds and publishes the tree, through two reusable workflows
 # pinned to one commit: port-docs.yml decides which versions an event builds

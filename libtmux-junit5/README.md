@@ -14,6 +14,9 @@
 **A JUnit 5 extension that gives each test its own tmux server, and guarantees
 it is gone afterwards.**
 
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/java/)
+[![libtmux-junit5](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-junit5)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-junit5)
+
 </div>
 
 For testing your own code against a real tmux. Put

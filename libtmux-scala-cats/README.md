@@ -13,6 +13,9 @@
 
 **Cats Effect resources and FS2 observations for `libtmux-scala`.**
 
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/scala/)
+[![libtmux-scala-cats_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala-cats_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala-cats_3)
+
 </div>
 
 [`Server.resource`][server] owns a client for the length of a `use`, and

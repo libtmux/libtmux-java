@@ -13,6 +13,9 @@
 
 **Name one BOM version. Every BOM-managed libtmux coordinate follows it.**
 
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/java/)
+[![libtmux-bom](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-bom)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-bom)
+
 </div>
 
 Import it as a platform and leave the version off every module it manages.

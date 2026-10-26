@@ -14,6 +14,9 @@
 **An Ox `Flow` over libtmux subscriptions and live views, for structured
 concurrency on virtual threads.**
 
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/scala/)
+[![libtmux-scala-ox_3](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-scala-ox_3)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-scala-ox_3)
+
 </div>
 
 [`Flows.liveView`][flows] and [`Flows.subscription`][flows] turn pushed events

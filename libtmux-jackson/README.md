@@ -13,6 +13,9 @@
 
 **A filter expression, as a versioned JSON document.**
 
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/java/)
+[![libtmux-jackson](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-jackson)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-jackson)
+
 </div>
 
 [`FilterJson`][filter-json] writes a [`FilterExpr`][filterexpr] as a
