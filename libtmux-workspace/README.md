@@ -13,7 +13,7 @@
 
 **Builds a session from a tmuxp-shaped YAML description.**
 
-[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/java/)
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/java/latest/workspace/)
 [![libtmux-workspace](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-workspace)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace)
 
 </div>
