@@ -39,8 +39,8 @@ jobs:
         # apart. This is also what DocumentationFactsTest reads the README's claimed range from, so a
         # preview lane belongs in `include` below and never here.
         tmux: ['3.3a', '3.4', '3.5', '3.6', '3.6a', '3.7', '3.7a', '3.7b', '3.7c']
-        # Ahead of the supported range, matching the plugin's `previewLanes` list: 3.8-rc2 is a
-        # candidate for a release not yet cut, and master is upstream's development branch, not a
+        # Ahead of the supported range, matching the plugin's `previewLanes` list: 3.8 is released
+        # but not yet in the claimed range, and master is upstream's development branch, not a
         # version. Both may fail and neither moves the README's claimed range.
         include:
           # Below the floor, matching the plugin's `rejectionLanes`: the real binary must refuse
@@ -60,12 +60,6 @@ jobs:
             client: '3.3a'
           - tmux: '3.8'
             experimental: true
-          - tmux: '3.8-rc2'
-            experimental: true
-            commit: 17d32ae40d28f1548d4d75b32161ffdc69305482
-          - tmux: '3.8-rc3'
-            experimental: true
-            commit: 331611b632ae3b9306d57dc44f21ca05f567b878
           - tmux: master
             experimental: true
     steps:
@@ -90,7 +84,7 @@ jobs:
       # master has no release tarball to build from a tag, so it is checked out and autoreconf'd
       # instead. autoconf and automake are needed only for that.
       - name: Build dependencies for a git checkout
-        if: matrix.tmux == 'master' || matrix.commit
+        if: matrix.tmux == 'master'
         run: sudo apt-get install --no-install-recommends -y autoconf automake
 
       # Keyed by version alone: a released tarball does not change, so a hit is the same binary the
@@ -105,7 +99,7 @@ jobs:
           key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
 
       - name: Build tmux ${{ matrix.tmux }}
-        if: matrix.tmux != 'master' && !matrix.commit && steps.tmux-cache.outputs.cache-hit != 'true'
+        if: matrix.tmux != 'master' && steps.tmux-cache.outputs.cache-hit != 'true'
         env:
           LANE: ${{ matrix.tmux }}
         run: |
@@ -115,24 +109,6 @@ jobs:
             "https://github.com/tmux/tmux/releases/download/$LANE/tmux-$LANE.tar.gz"
           tar -xzf "$work/tmux.tar.gz" -C "$work"
           cd "$work/tmux-$LANE"
-          ./configure --prefix="$HOME/tmux-builds/$LANE"
-          make -j"$(nproc)"
-          make install
-
-      # The 3.8 release candidates have no tarball and their tags are gone upstream, so each is
-      # fetched by the commit it was tagged at.
-      - name: Build tmux ${{ matrix.tmux }} from its commit
-        if: matrix.commit && steps.tmux-cache.outputs.cache-hit != 'true'
-        env:
-          LANE: ${{ matrix.tmux }}
-          COMMIT: ${{ matrix.commit }}
-        run: |
-          set -eux
-          git init "$HOME/tmux-src-$LANE"
-          cd "$HOME/tmux-src-$LANE"
-          git fetch --depth 1 https://github.com/tmux/tmux.git "$COMMIT"
-          git checkout --detach FETCH_HEAD
-          sh autogen.sh
           ./configure --prefix="$HOME/tmux-builds/$LANE"
           make -j"$(nproc)"
           make install
