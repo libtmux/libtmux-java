@@ -77,6 +77,7 @@ final class ManageTools {
                 "Select a layout",
                 "Applies a named tmux layout, a unique abbreviation or a checksummed saved layout. "
                         + "Names follow the running daemon's version; mirrored main layouts require tmux 3.5. "
+                        + "JSON layouts need tmux 3.8; a server below 3.8 refuses one before anything is sent. "
                         + "Malformed syntax is refused before window lookup; tmux validates geometry.",
                 List.of(
                         required("window_id", "The window ID, such as @1."),

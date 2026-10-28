@@ -9,6 +9,12 @@ release is supported, and there are no backports.
 
 ## Unreleased
 
+### Changed
+
+- **JSON layouts are floored at tmux 3.8.** tmux 3.8 applies a JSON layout; a
+  server below 3.8 gets an `UnsupportedFeatureException` naming 3.8 before
+  anything is sent. Installed releases behave as before. (#106)
+
 ## 0.1.0 — 2026-10-25
 
 ### Changed

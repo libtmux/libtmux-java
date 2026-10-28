@@ -413,8 +413,9 @@ windows and choose a layout.
 - A checksummed layout that tmux returned earlier.
 
 Layout names follow the running tmux version; mirrored main layouts need tmux
-3.5. Malformed layout syntax is refused before the window is looked up, and tmux
-still decides geometry and pruning.
+3.5. JSON layouts need tmux 3.8; a server below 3.8 refuses one before anything
+is sent. Malformed layout syntax is refused before the window is looked up, and
+tmux still decides geometry and pruning.
 
 These tools accept no command or environment payload. Start the process first,
 then use [`run_shell_command`][tool-run-shell-command],

@@ -247,9 +247,7 @@ and whether it is a rejection lane (`libtmux.tmux.rejection`), and the version
 check fails when the binary reports another release or the wrong side of the
 floor; the workflow step that prints each version fails the same way. A module
 lists the classes its rejection lanes run in `libtmuxRejectionTests`, and the
-lane fails unless every one of them produced a result. The 3.8 release
-candidates are preview lanes built from the commit their tag named, since
-upstream removed the tags.
+lane fails unless every one of them produced a result.
 
 **CI runs Linux only.** macOS is supported on a best-effort basis, and CI
 coverage for it is highly limited.

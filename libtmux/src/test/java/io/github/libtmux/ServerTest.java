@@ -610,10 +610,9 @@ final class ServerTest {
     }
 
     /**
-     * The defect this pins: a release candidate reports its version as {@code 3.8-rc}, the parsed
-     * version printed as {@code 3.8}, and the fence compared the two — so every capture of a tmux
-     * 3.8 release candidate looked like a server replaced mid-read, and failed. Found by the first
-     * matrix lane ever to run one.
+     * The defect this pins: a version with an {@code -rcN} suffix, such as {@code 3.8-rc}, that the
+     * server prints differently from how it was parsed must still pass the fence. Compared as
+     * strings, the two looked like a server replaced mid-read, and every capture failed.
      */
     @Test
     void aReleaseCandidateIsTheServerItSaysItIs(@TempDir Path directory) throws IOException {

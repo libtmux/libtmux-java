@@ -13,6 +13,7 @@ import io.github.libtmux.control.ControlEvent;
 import io.github.libtmux.control.Delivery;
 import io.github.libtmux.control.EventSubscription;
 import io.github.libtmux.control.Notification;
+import io.github.libtmux.internal.support.Capabilities;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.time.Duration;
 import java.util.Optional;
@@ -155,7 +156,7 @@ final class ControlWatchIntegrationTest {
     void aLayoutChangeCarriesJsonOnceThisClientAskedForIt(Server server) throws Exception {
         Session session = server.sessions().get(0);
         Window window = session.windows().get(0);
-        if (!server.version().atLeast(new TmuxVersion(3, 8, "", false, "rc2"))) {
+        if (!server.version().atLeast(Capabilities.LAYOUT_JSON.since())) {
             return; // classic-only releases have no JSON layout to disagree about
         }
 

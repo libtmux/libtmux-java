@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.exception.UnsupportedFeatureException;
+import io.github.libtmux.internal.support.Capabilities;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.TmuxTransport;
@@ -21,27 +22,21 @@ final class LayoutsTest {
     private static final TmuxVersion V3_7C = new TmuxVersion(3, 7, "c");
     private static final TmuxVersion V3_3A = new TmuxVersion(3, 3, "a");
     private static final TmuxVersion V3_8 = new TmuxVersion(3, 8, "");
-    private static final TmuxVersion NEXT_3_9 = TmuxVersion.parse("next-3.9");
 
     private static final String JSON_LAYOUT = "{\"V\":2,\"L\":{\"t\":\"v\",\"w\":80,\"h\":24,\"i\":\"0\"}}";
 
     // ------------------------------------------------------------------------------ JSON
 
-    @Test
-    void aJsonLayoutIsAcceptedFromTheVersionThatWritesIt() {
-        assertEquals(JSON_LAYOUT, Layouts.require(JSON_LAYOUT, V3_8));
-        assertEquals(JSON_LAYOUT, Layouts.require(JSON_LAYOUT, NEXT_3_9));
-    }
-
+    // 3.8a is an ordering sample (the patch-letter order), not an upstream release.
     @ParameterizedTest
-    @ValueSource(strings = {"3.8-rc2", "3.8-rc3", "3.8", "next-3.9"})
-    void aJsonLayoutIsAcceptedFromTheEarliestBuildMeasuredToWriteIt(String version) {
+    @ValueSource(strings = {"3.8", "3.8a", "next-3.9"})
+    void aJsonLayoutIsAcceptedFromTheFirstStableRelease(String version) {
         assertEquals(JSON_LAYOUT, Layouts.require(JSON_LAYOUT, TmuxVersion.parse(version)));
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"3.7c", "next-3.8", "3.8-rc", "3.8-rc1"})
-    void aJsonLayoutIsRefusedBeforeTheEarliestBuildMeasuredToWriteIt(String version) {
+    @ValueSource(strings = {"3.3a", "3.7", "3.7c"})
+    void aJsonLayoutIsRefusedBeforeTheFirstStableRelease(String version) {
         assertThrows(UnsupportedFeatureException.class, () -> Layouts.require(JSON_LAYOUT, TmuxVersion.parse(version)));
     }
 
@@ -54,7 +49,9 @@ final class LayoutsTest {
         UnsupportedFeatureException refused =
                 assertThrows(UnsupportedFeatureException.class, () -> Layouts.require(JSON_LAYOUT, V3_7C));
 
-        assertTrue(String.valueOf(refused.getMessage()).contains("3.8"), refused.getMessage());
+        assertEquals(V3_8, Capabilities.LAYOUT_JSON.since());
+        assertEquals("3.8", Capabilities.LAYOUT_JSON.since().toString());
+        assertTrue(String.valueOf(refused.getMessage()).contains("requires tmux 3.8,"), refused.getMessage());
     }
 
     @Test
@@ -249,7 +246,7 @@ final class LayoutsTest {
     @Test
     void workspaceJsonPreflightCountsCellsAndRejectsNativeGrammarErrors() {
         String layout = "{\"V\":2,\"L\":{\"t\":\"p\",\"w\":80,\"h\":24,\"x\":0,\"y\":0,\"i\":0}}";
-        try (VersionTransport transport = new VersionTransport(new CommandResult(0, List.of("3.8-rc2"), List.of()));
+        try (VersionTransport transport = new VersionTransport(new CommandResult(0, List.of("3.8"), List.of()));
                 Server server = server(transport)) {
             assertEquals(layout, Layouts.require(layout, server, 1));
             assertThrows(IllegalArgumentException.class, () -> Layouts.require(layout, server, 2));

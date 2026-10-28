@@ -12,9 +12,9 @@ val lanes = listOf("3.3a", "3.4", "3.5", "3.6", "3.6a", "3.7", "3.7a", "3.7b", "
 
 // Ahead of the supported range: previews of what tmux ships next, run so a break shows up before the
 // release that makes it real rather than after. Allowed to fail, and left out of testTmuxMatrix and
-// the README's claimed range on purpose — 3.8-rc2 is a candidate for a release not yet cut, and master
-// is upstream's development branch, not a version at all.
-val previewLanes = listOf("3.8", "3.8-rc2", "3.8-rc3", "master")
+// the README's claimed range on purpose — 3.8 is released but not yet in that range, and master is
+// upstream's development branch, not a version at all.
+val previewLanes = listOf("3.8", "master")
 
 // Below the floor: these run only the version check cases against the real binary, which must refuse
 // every call and leave a sentinel session, option and buffer as it was. They are part of the matrix

@@ -86,7 +86,7 @@ public final class ControlAcquisition implements AutoCloseable {
     /**
      * Whether control clients are qualified on this daemon: tmux 3.7 or newer, where a development
      * or candidate build of 3.7 itself ranks below it ({@code next-3.7 < 3.7-rc < 3.7}) and
-     * {@code 3.8-rc2} or {@code next-3.8} rank above.
+     * {@code 3.8} or {@code next-3.8} rank above.
      */
     public static boolean supports(TmuxVersion version) {
         return Capabilities.CONTROL_MODE.availableOn(version);

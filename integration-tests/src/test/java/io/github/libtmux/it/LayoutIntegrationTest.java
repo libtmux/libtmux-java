@@ -16,6 +16,7 @@ import io.github.libtmux.Window;
 import io.github.libtmux.WindowLayout;
 import io.github.libtmux.exception.LibTmuxException;
 import io.github.libtmux.exception.UnsupportedFeatureException;
+import io.github.libtmux.internal.support.Capabilities;
 import io.github.libtmux.junit5.TmuxExtension;
 import java.util.StringJoiner;
 import org.junit.jupiter.api.Test;
@@ -111,7 +112,7 @@ final class LayoutIntegrationTest {
 
         WindowLayout layout = window.refresh().layout();
 
-        if (server.version().atLeast(new TmuxVersion(3, 8, "", false, "rc2"))) {
+        if (server.version().atLeast(JSON_LAYOUT_FLOOR)) {
             assertInstanceOf(WindowLayout.Json.class, layout, "tmux 3.8 and later write JSON: " + layout);
         } else {
             assertInstanceOf(
@@ -136,7 +137,7 @@ final class LayoutIntegrationTest {
     @Test
     void workspacePreflightAcceptsCapturedJsonAndRefusesTooFewCells(Server server) {
         String leaf = "{\"V\":2,\"L\":{\"t\":\"p\",\"w\":80,\"h\":24,\"x\":0,\"y\":0,\"i\":0}}";
-        if (!server.version().atLeast(new TmuxVersion(3, 8, "", false, "rc2"))) {
+        if (!server.version().atLeast(JSON_LAYOUT_FLOOR)) {
             assertThrows(UnsupportedFeatureException.class, () -> Layouts.require(leaf, server, 1));
             return;
         }
@@ -260,7 +261,7 @@ final class LayoutIntegrationTest {
         assertTrue(server.isAlive(), "tmux must reject a fake JSON layout without dying");
     }
 
-    private static final TmuxVersion JSON_LAYOUT_FLOOR = new TmuxVersion(3, 8, "", false, "rc2");
+    private static final TmuxVersion JSON_LAYOUT_FLOOR = Capabilities.LAYOUT_JSON.since();
 
     private static void assumeTmuxOlderThanJsonLayouts(Server server) {
         assumeFalse(server.version().atLeast(JSON_LAYOUT_FLOOR), "needs a tmux older than JSON layouts");

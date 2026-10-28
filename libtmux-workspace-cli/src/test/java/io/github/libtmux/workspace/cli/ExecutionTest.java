@@ -14,6 +14,7 @@ import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.SplitSpec;
 import io.github.libtmux.WakeReason;
+import io.github.libtmux.internal.support.Capabilities;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -1344,7 +1345,7 @@ final class ExecutionTest {
                         "--json");
                 assertEquals(1, result.code(), result.toString());
                 assertEquals(
-                        json && !server.version().atLeast(io.github.libtmux.TmuxVersion.parse("3.8-rc2"))
+                        json && !server.version().atLeast(Capabilities.LAYOUT_JSON.since())
                                 ? "tmux_failed"
                                 : "invalid_workspace",
                         Documents.JSON.readTree(result.err()).path("code").asText());

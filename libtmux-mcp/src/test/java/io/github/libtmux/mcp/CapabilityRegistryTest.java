@@ -324,6 +324,7 @@ final class CapabilityRegistryTest {
         assertTrue(byName("set_synchronize_panes").description().contains("inherited window default"));
         assertTrue(byName("set_synchronize_panes").description().contains("pane-level overrides"));
         assertTrue(byName("paste_text").description().contains("does not fan out"));
+        assertTrue(byName("select_layout").description().contains("JSON layouts need tmux 3.8"));
         assertTrue(byName("run_shell_command").description().contains("two preflights"));
         assertTrue(byName("run_shell_command").description().contains("trusted pane shell"));
         assertTrue(byName("run_shell_command").description().contains("command aliases and hooks"));

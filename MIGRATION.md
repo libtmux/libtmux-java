@@ -80,6 +80,7 @@ preceding command that would otherwise succeed.
 | Exact named buffer deletion and rename | tmux 3.4+. On 3.3a, a missing name can select an unrelated buffer. |
 | `Pane.paste(text)` | tmux 3.4+ before creating a temporary buffer, because failure cleanup needs exact named deletion. |
 | Direct `paste-buffer -d -b name` | Retained on 3.3a; native lookup already rejects a missing name. |
+| Applying a JSON layout | tmux 3.8+. Older daemons are refused with `UnsupportedFeatureException` before dispatch. |
 | Literal `select-layout` on 3.3a | Invalid operands are refused with `UnsupportedFeatureException` before every batch effect. Presets, unique prefixes and serialized layouts remain available; `-o` requires a serialized operand. |
 | Clipboard query | Literal `refresh-client -l`, under any name tmux resolves to it, is refused below tmux 3.6a: on 3.3a it ends the server when a client attached from an `xterm` or `tmux-256color` terminal receives the query, and on 3.4 to 3.6 it ends the server when the client leaves before its terminal answers. |
 | Percentage splitting | Typed `SplitSpec.percent` retains `-l N%`. Literal `split-window -p` is refused on exact 3.4. |
@@ -169,10 +170,9 @@ command-level version check.
 so it agrees with `equals`; a candidate no longer compares equal to its
 release. `atLeast` follows that order: `3.8-rc` and `next-3.8` no longer meet a
 gate on `3.8`, which the 0.0.1-alpha.14 notes below describe the other way
-round. Gate a behaviour that a candidate already ships on the earliest build
-measured to have it, such as `new TmuxVersion(3, 8, "", false, "rc2")` for JSON
-layouts and an empty dead-pane pid. Use `sameRelease` for a gate on one
-release's own defect.
+round. Gate a behaviour on the release that ships it, such as
+`new TmuxVersion(3, 8, "")` for JSON layouts and an empty dead-pane pid. Use
+`sameRelease` for a gate on one release's own defect.
 
 `TmuxVersion.parse` accepts only what tmux has reported (`3.3a`, `3.8-rc2`,
 `next-3.9`), with numbers of up to four digits, and throws
