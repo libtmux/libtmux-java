@@ -169,7 +169,7 @@ public final class Capabilities {
             "layout-json",
             "JSON layouts",
             "Apply a layout in the JSON form that tmux reports.",
-            TmuxVersion.parse("3.8-rc2"),
+            new TmuxVersion(3, 8, ""),
             List.of(),
             Handling.REFUSE,
             REFUSAL,

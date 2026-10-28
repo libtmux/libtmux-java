@@ -18,11 +18,11 @@ import java.util.regex.Pattern;
  *
  * <p>A release candidate, {@code 3.8-rc}, orders below the release it names ({@code next-3.8 <
  * 3.8-rc < 3.8-rc2 < 3.8 < 3.8a}), so {@link #compareTo} agrees with {@link #equals}, and {@link
- * #atLeast} follows the same order. A candidate that already ships a behaviour is gated by the
- * earliest build measured to have it, such as {@code 3.8-rc2} for JSON layouts. A gate on one
- * release's own bug asks {@link #sameRelease}. The version is written back exactly as tmux wrote
- * it, which matters beyond display: every capture is fenced on the version tmux reports, and a
- * candidate printed as {@code 3.8} failed that fence on every read.
+ * #atLeast} follows the same order. A gate names the release that ships the behaviour, such as
+ * {@code 3.8} for JSON layouts. A gate on one release's own bug asks {@link #sameRelease}. The
+ * version is written back exactly as tmux wrote it, which matters beyond display: every capture is
+ * fenced on the version tmux reports, and a version printed in any other spelling fails that fence
+ * on every read.
  *
  * @param major the major number
  * @param minor the minor number
@@ -90,9 +90,9 @@ public record TmuxVersion(int major, int minor, String patch, boolean developmen
      * Whether this is the named release, a release candidate for it included. {@code next-} builds
      * and other releases are not. For a gate on one release's own bug.
      *
-     * <p>Counting a candidate is an assumption, not a measurement: the gated bugs were measured on
-     * the release itself, and a candidate's build is no longer available to check whether it had
-     * them. Leaving candidates out would skip the workaround on a build that very likely needs it.
+     * <p>A suffixed build counts as its release: the gated bugs were measured on the release itself,
+     * and leaving the suffixed build out would skip the workaround on a build that very likely needs
+     * it.
      */
     public boolean sameRelease(TmuxVersion other) {
         return major == other.major

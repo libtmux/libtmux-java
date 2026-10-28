@@ -32,7 +32,7 @@ final class PaneProcessIntegrationTest {
     private static final TmuxVersion REMAIN_ON_EXIT_SINCE = new TmuxVersion(3, 7, "");
 
     /** tmux 3.8 stopped reporting a dead pane's stale {@code #{pane_pid}}. */
-    private static final TmuxVersion EMPTY_DEAD_PID_SINCE = new TmuxVersion(3, 8, "", false, "rc2");
+    private static final TmuxVersion EMPTY_DEAD_PID_SINCE = new TmuxVersion(3, 8, "");
 
     // ------------------------------------------------------------------------------- dead panes
 
