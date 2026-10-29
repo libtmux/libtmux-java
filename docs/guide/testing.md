@@ -41,6 +41,10 @@ Teardown runs whether the test passed, failed or errored. That is checked by
 running a deliberately failing test in a nested engine and inspecting what it
 left behind — a test cannot watch its own teardown.
 
+A shutdown hook also cleans up on normal JVM termination. A hard kill such as
+`SIGKILL` skips it and can leave tmux running. Before its first fixture starts,
+a later run sharing the fixture root sweeps servers whose owning JVM is gone.
+
 ## Isolation from your own tmux
 
 Every test task runs with a short `TMUX_TMPDIR` under

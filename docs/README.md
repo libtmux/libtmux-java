@@ -31,7 +31,7 @@ Task-oriented. Start here.
 - [Driving tmux from a model](guide/mcp.md) — the `libtmux-mcp` server, for any
   MCP client.
 - [Testing with real tmux](guide/testing.md) — `libtmux-junit5`: one tmux server
-  per test, always cleaned up.
+  per test, with checked teardown and later-run cleanup after a hard JVM kill.
 - [tmux-workspace](guide/workspace-cli.md) — the rules `load`, `convert`, `import`
   and the machine output follow.
 - [Kotlin](guide/kotlin.md) — why the core is already null-safe from Kotlin, and
