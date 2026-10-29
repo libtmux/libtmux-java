@@ -736,6 +736,10 @@ $ tmux-workspace load \
   $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds
   ```
 
+- **No release candidates.** tmux release candidates are not supported: a
+  feature can require one only until its release ships, and a candidate such as
+  `X.Y-rcN` parses and ranks below `X.Y`. See
+  [Release candidates][tmux-release-candidates].
 - **Any locale.** Text the JVM cannot encode reaches tmux over standard input,
   so names and typed text arrive intact under `LANG=C`
   ([details](MIGRATION.md#non-ascii-text-reaches-tmux-on-any-locale)). Only
@@ -850,6 +854,7 @@ MIT. See [`LICENSE`](LICENSE).
 [session]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-session-session/
 [system-logger]: https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/System.Logger.html
 [tmux-extension]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-junit5-tmuxextension-tmuxextension/
+[tmux-release-candidates]: https://libtmux.org/en/tmux/guides/tmux-support/#release-candidates
 [tmuxenvironment]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-tmuxenvironment-tmuxenvironment/
 [tmuxtransport]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-transport-tmuxtransport-tmuxtransport/
 [window]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-window-window/

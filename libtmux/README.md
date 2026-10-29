@@ -447,7 +447,10 @@ rename.getAnnotation(io.github.libtmux.catalog.Operation.class).value();   // â†
 
 ## Support and status
 
-- **JDK 25 or newer**, and **tmux 3.3a through 3.7c**.
+- **JDK 25 or newer**, and **tmux 3.3a through 3.7c**. tmux release candidates
+  are not supported: a feature can require one only until its release ships,
+  and a candidate such as `X.Y-rcN` parses and ranks below `X.Y`. See
+  [Release candidates][tmux-release-candidates].
 - **Linux, including WSL.** CI runs on Ubuntu. macOS is supported on a
   best-effort basis, and CI coverage for it is highly limited.
 - **Releases.** Releases are numbered `0.1.N`, and each release increments
@@ -514,6 +517,7 @@ rename.getAnnotation(io.github.libtmux.catalog.Operation.class).value();   // â†
 [serversnapshot]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-snapshot-serversnapshot-serversnapshot/
 [session]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-session-session/
 [session_]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-session_-session_/
+[tmux-release-candidates]: https://libtmux.org/en/tmux/guides/tmux-support/#release-candidates
 [tmuxtransport]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-transport-tmuxtransport-tmuxtransport/
 [window]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-window-window/
 [window_]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-window_-window_/
