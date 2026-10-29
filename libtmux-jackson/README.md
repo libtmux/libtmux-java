@@ -128,8 +128,8 @@ Operators: `equals`, `not_equals`, `contains`, `starts_with`, `ends_with`,
 - **`matches` is Java's.** Its pattern syntax and numeric flags are those of
   `java.util.regex.Pattern`, so a non-Java consumer must reproduce those
   semantics or reject that operator.
-- **A non-Java caller already exists.** [`libtmux-mcp`][mcp] accepts these
-  documents directly.
+- **MCP has its own tool schemas.** [`libtmux-mcp`][mcp] does not accept these
+  `libtmux.filter/1` documents. Applications can use this module independently.
 
 ## What it refuses
 
@@ -178,7 +178,7 @@ answers a different question, so writing it throws `SchemaException`.
 ## Documentation
 
 - [Filtering guide](../docs/guide/filtering.md)
-- [`libtmux-mcp`][mcp] — the worked example of a non-Java caller
+- [`libtmux-mcp`][mcp] — the separate MCP tool surface
 - [Root README](../README.md)
 
 [filter-json]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-jackson-filterjson-filterjson/

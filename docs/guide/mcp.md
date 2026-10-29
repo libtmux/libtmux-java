@@ -145,11 +145,12 @@ pane ids prove neither actual recipients nor delivery.
 plus the next one. The tenth look at a build log costs the few lines it added,
 not the nine screens already read.
 
-It is one look, and it answers two questions at once. The look reaches back past
-the line already delivered: if that line still hashes to what it did, everything
-after it is new. If it does not, the pane was cleared or its output has outrun the
-history tmux keeps — and the answer says `continuous: false` rather than stitching
-two unrelated screens together.
+It matches hashes of sampled finished lines from the previous read against a
+new capture, retrying with a wider capture when needed. A unique context match
+identifies the following lines. When continuity cannot be recovered, the answer
+says `continuous: false` rather than stitching unrelated screens together.
+Cleared or rewritten text, exhausted history and repeated context can prevent
+recovery; the flag does not identify which happened.
 
 Handing back lines that do not follow the ones before them, without saying so, is
 worse than handing back nothing. Which is why two things about that look are not
@@ -250,13 +251,17 @@ is malformed or unprovable; read metadata does not claim an uncertain match.
 
 ## Reading costs context
 
-Every read is capped, keeps the **newest** lines, and reports how many it dropped.
+Capture and wait results cap terminal content, keep the **newest** lines, and
+report how many they dropped.
 The tail is what matters: the reason to look at a terminal is almost always what
 it just did. `snapshot_pane` returns that pane's metadata and bounded content
 together, so a model does not spend a turn on `list_panes` and another on
 `capture_pane` for one pane. `capture_pane`, `capture_since`, `wait_for_text`,
-`run_shell_command`, and `search_panes` all report a cut through the same field,
-`truncated`, so one check works across every read tool.
+and `run_shell_command` report a cut through `truncated`.
+
+`search_panes` returns bounded matches. Its `truncated` flag reports a fixed
+work-budget limit. Reaching `max_matches_per_pane` or trimming collected matches
+can omit matches without setting that flag; it reports no dropped-match count.
 
 There is a character budget as well as a line budget, because a line has no length
 limit — a pane showing minified JavaScript is one line of half a megabyte, and a

@@ -216,8 +216,10 @@ uses the bounded RE2 dialect:
 }
 ```
 
-The answer's `truncated` field says when a limit stopped the search. Argument
-defaults are on the [`search_panes`][tool-search-panes] page.
+The answer's `truncated` field reports a fixed work-budget limit. Reaching
+`max_matches_per_pane` or trimming collected matches can omit matches without
+setting that flag. Argument defaults are on the
+[`search_panes`][tool-search-panes] page.
 
 ### [`call_read_tools_batch`][tool-call-read-tools-batch]: several reads in one call
 
@@ -413,9 +415,10 @@ windows and choose a layout.
 - A checksummed layout that tmux returned earlier.
 
 Layout names follow the running tmux version; mirrored main layouts need tmux
-3.5. JSON layouts need tmux 3.8; a server below 3.8 refuses one before anything
-is sent. Malformed layout syntax is refused before the window is looked up, and
-tmux still decides geometry and pruning.
+3.5. JSON layouts need tmux 3.8; a server below 3.8 refuses one before
+`select-layout` is sent. A version probe may run first. Malformed layout syntax
+is refused before the window is looked up; tmux still decides geometry and
+pruning.
 
 These tools accept no command or environment payload. Start the process first,
 then use [`run_shell_command`][tool-run-shell-command],
@@ -537,18 +540,24 @@ The tools are separate from the protocol wiring, because what a tool does to
 tmux is worth testing against real tmux and attaching it to a transport is not.
 [`TmuxMcpServer`][mcp-server] is the entry point:
 
-<!-- snippet: compile-only: overStdio reads standard input until the client closes it -->
+This API preview wires the protocol and returns immediately. Keep both servers
+open while the host waits for shutdown, then close the returned MCP server
+before closing the library's [`Server`][server]:
+
+<!-- snippet: compile-only: the embedding host owns the process lifetime and closes both servers -->
 ```java
 // Given: ServerConfig config
 Server server = Server.open(config);
 
-// Serves on stdin and stdout, reading until the client closes the stream.
-TmuxMcpServer.overStdio(server);
+var mcp = TmuxMcpServer.overStdio(server);
 ```
 
 `TmuxMcpServer.serving(server, transport)` takes an MCP transport of your own,
 which is how this is tested. It registers the same startup-frozen manifest as
 the stdio launcher, and reads its selection from the process environment.
+It owns the supplied transport, including on startup failure, and borrows the
+library's [`Server`][server]. The [complete embedding example][embedding-example]
+shows their close order; use the launcher above for a standalone stdio process.
 
 ## What it leaves out
 
@@ -592,6 +601,8 @@ the stdio launcher, and reads its selection from the process environment.
   applications.
 - [`libtmux`][libtmux] — the library underneath, and the [root README][root].
 
+[embedding-example]:
+  ../examples/src/main/java/io/github/libtmux/examples/ServeTmuxOverMcp.java
 [filter-schema]: ../libtmux-jackson/src/main/resources/io/github/libtmux/jackson/filter-expr-v1.schema.json
 [filtering]: ../docs/guide/filtering.md
 [jackson]: ../libtmux-jackson/README.md
@@ -603,6 +614,7 @@ the stdio launcher, and reads its selection from the process environment.
 [mcp-topics]: https://libtmux.org/en/java/latest/mcp/topics/
 [migration]: ../MIGRATION.md#libtmux-mcp-toolsets-tool-names-and-resources-replace-the-earlier-surface
 [root]: ../README.md
+[server]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server/
 [streaming]: ../docs/guide/streaming.md
 [tool-call-read-tools-batch]: https://libtmux.org/en/java/latest/mcp/tools/call_read_tools_batch/
 [tool-capture-pane]: https://libtmux.org/en/java/latest/mcp/tools/capture_pane/
