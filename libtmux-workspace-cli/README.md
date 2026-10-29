@@ -73,7 +73,8 @@ windows:
 ### [`tmux-workspace load`][cli-load]: build a session
 
 [`load`][cli-load] builds the workspace as a session. `-d` leaves it detached
-and `-S` names the tmux socket, so a tmux you have open is untouched:
+and `-S` selects the tmux socket. Choose an unused socket path for this example;
+an existing server on that path would receive the load:
 
 ```console
 $ mkdir -p /tmp/libtmux-java-dev
@@ -86,9 +87,9 @@ $ tmux-workspace load ./workspace.yaml \
     --ndjson
 ```
 
-It starts a tmux server on that socket and prints one JSON event per line. The
-last is a `completed` event with `status` `ok`, and the session `dev` now holds
-two panes.
+It starts a tmux server on the unused socket and prints one JSON event per line.
+The last is a `completed` event with `status` `ok`, and the session `dev` now
+holds two panes.
 
 Without `-S` or `-L`, `LIBTMUX_SOCKET_PATH` and then `LIBTMUX_SOCKET` choose the
 server. With neither set, no socket is passed and tmux picks: the server in
