@@ -71,8 +71,9 @@ workspace lookup: supported tmux releases removed 88-color mode.
   problem is that a shell owns its terminal only once it has drawn: a command
   sent before that is echoed by the tty and then redrawn by the line editor, so
   the pane shows it twice.
-- The check waits up to two seconds for the pane cursor to move from its origin
-  before sending commands.
+- Readiness polling uses a two-second budget for the pane cursor to move from
+  its origin before commands are sent. A probe and the polling pause can extend
+  the elapsed wait beyond that budget.
 - Cursor movement is a heuristic, not a guarantee that the shell is ready.
 - A timeout warns and continues.
 - Blank panes and explicit launch commands never wait.
