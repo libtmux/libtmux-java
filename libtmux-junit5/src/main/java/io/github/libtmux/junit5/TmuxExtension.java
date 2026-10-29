@@ -29,7 +29,10 @@ import org.junit.jupiter.api.extension.ParameterContext;
 import org.junit.jupiter.api.extension.ParameterResolver;
 
 /**
- * Gives each test its own tmux server and guarantees it is gone afterwards.
+ * Gives each test its own tmux server and checks its exit during teardown.
+ *
+ * <p>A shutdown hook also cleans up on JVM termination. A hard kill skips it; a later fixture run
+ * sharing the root reaps servers whose owning JVM is gone.
  *
  * <p>All state lives in the extension store, never in fields. JUnit reuses one declaratively
  * registered extension instance for every test in a class, so a field is shared state the moment
