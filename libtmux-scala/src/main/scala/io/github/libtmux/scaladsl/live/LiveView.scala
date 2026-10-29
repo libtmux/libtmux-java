@@ -79,21 +79,19 @@ object LiveView {
       */
     def cause: Option[Throwable] = self.cause().toScala
 
-    /** The current view, then every newer one, one per notification, blocking
-      * between them: as a `StateFlow` or an fs2 `Signal` does. A change made
-      * before this call is in the first view rather than lost between reading
-      * [[current]] and starting to iterate. Ends when this view is closed, and
-      * throws [[cause]] when its anchor or server has gone.
+    /** The current view, then the latest newer view available at each read,
+      * blocking between them. Intermediate views may coalesce. The first
+      * element is the mirror's current published view. Ends when this view is
+      * closed, and throws [[cause]] when its anchor or server has gone.
       */
     def snapshots: Iterator[JavaServerMirror.View] = {
       val now = self.current()
       Iterator.single(now) ++ snapshotsAfter(now.epoch())
     }
 
-    /** Every view newer than `epoch`, one per notification, blocking between
-      * them. A view already published after `epoch` comes first, so nothing is
-      * missed between reading a view and starting to iterate. Ends and throws
-      * as [[snapshots]] does.
+    /** The latest view newer than `epoch`, then the latest newer view at each
+      * read, blocking between them. Intermediate views may coalesce. Ends and
+      * throws as [[snapshots]] does.
       */
     def snapshotsAfter(epoch: Long): Iterator[JavaServerMirror.View] =
       Iterator.unfold(epoch)(previous => LiveView.following(self, previous))

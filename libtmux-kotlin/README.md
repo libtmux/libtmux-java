@@ -22,7 +22,10 @@ bridges over the Java API.**
 Drive tmux from Kotlin: [`withServer`][with-server] opens a server and closes
 it, the [`newSession`][server-newsession] DSL declares a session with its
 windows and splits, and [`Pane.run`][pane] runs a command to its exit status.
-Every operation that reaches tmux is `suspend`.
+Wrapper reads and mutations that reach tmux are `suspend`.
+
+[`Server.channel`][server] returns Java's [`Channel`][channel]; its `signal()`
+and `drain()` calls block the caller. Closing a wrapper is synchronous too.
 
 `io.github.libtmux:libtmux-kotlin` — [on Maven
 Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin).
@@ -320,6 +323,7 @@ withServer(config) { server ->
 - [Root README](../README.md)
 
 [cardinality]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-exception-cardinalityexception-cardinalityexception/
+[channel]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-channel-channel/
 [client]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-client/
 [control-client]: https://libtmux.org/en/kotlin/latest/reference/io-github-libtmux-kotlin-controlclient/
 [delivery]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-control-delivery-delivery/

@@ -253,8 +253,9 @@ try (ControlClient client = server.control(session);
 Control-mode requests are independent: a failure discards nothing behind it, and
 every reply carries the request that produced it. Attaching is what makes tmux
 push output at all. The bounded subscription reports overflow through
-`droppedCount()` and never runs caller code on the reply reader. A full buffer's
-next read is a `Delivery.Gap` before the events that remain. `Delivery.kept`
+`droppedCount()`. An `onReady` callback can run on the reply reader and must
+not block it. A full buffer's next read is a `Delivery.Gap` before the events
+that remain. `Delivery.kept`
 fails that read. Match on `Delivery.Gap` to continue. A subscription does
 not reconnect.
 

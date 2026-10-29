@@ -91,9 +91,11 @@ second, overlapping `read` on the same instance with a scoped CAS — the
 direct-style analogue of the Cats module's stream ownership.
 
 Raw `Control.acknowledge` calls use bounded, supervised admission. Their
-timeout begins after Scala admission. Canceling a genuinely dispatched request
-can close the attachment and affect queued requests and observations. Use a
-separate attachment when an observation must survive command cancellation.
+timeout begins after Scala admission. Canceling one call interrupts only that
+caller; a dispatched request stays with the writer until its reply or deadline.
+A deadline after dispatch, or releasing the control resource, can end the
+attachment and affect queued requests and observations. Use a separate
+attachment when those lifetimes must be independent.
 An accepted reply is an acknowledgement, not proof that deferred tmux work
 finished. See [execution](execution.md) for completion signals and uncertainty.
 
