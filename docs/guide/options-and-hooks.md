@@ -16,8 +16,9 @@ pane.options().set("remain-on-exit", "on");
 
 ## Narrow and wide
 
-`all()` lists what this scope sets. `effective()` lists what tmux will act on,
-including what the scope inherits:
+`all()` lists what this scope sets. `effective()` includes inherited built-in
+options. tmux omits inherited user-option names from that listing; `get(name)`
+still reads their effective values:
 
 ```java
 // Given: Session session
