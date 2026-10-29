@@ -4,8 +4,10 @@ Every snippet here is run by `DocumentationSnippetsTest`, except one marked
 compile-only, which says why. If one stops working the build fails, rather
 than the page quietly going stale.
 
-Every Java block in this guide runs against a real tmux server when the build
-runs, and every value shown after a `→` is asserted.
+These API previews use independent fixtures and shared imports. Each
+`// Given:` names an input the fixture supplies. The [common API
+programs](../../examples/api/README.md) include imports and owned server setup.
+Every value shown after a `→` is asserted.
 
 ## Reaching a server
 
@@ -27,7 +29,8 @@ try (Server server = Server.open(config)) {
 }
 ```
 
-And what it leaves behind:
+This separate example uses a fresh fixture; it creates `demo` again before
+reading it back:
 
 ```java
 // Given: Server server

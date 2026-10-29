@@ -79,6 +79,10 @@ dependencies {
 [`Server.newSession(String)`][server-newsession] creates a [`Session`][session].
 A session makes [`Window`][window]s, and a window splits into [`Pane`][pane]s:
 
+These API previews use independent documentation fixtures and shared imports.
+Each `// Given:` names an input the fixture supplies. The [common API
+programs](../examples/api/README.md) include imports and owned server setup.
+
 ```java
 // Given: Path socket
 ServerConfig config = ServerConfig.builder()
@@ -95,7 +99,8 @@ try (Server server = Server.open(config)) {
 }
 ```
 
-What that leaves, read back:
+This separate example uses a fresh fixture; it creates `demo` again before
+reading it back:
 
 ```java
 // Given: Server server
