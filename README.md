@@ -623,7 +623,8 @@ Reference: [`Flows`][scala-ox-flows] on libtmux.org and
 [javadoc.io][javadoc-scala-ox].
 
 [`Flows.liveView`][scala-ox-flows] emits the current view of a server when the
-flow starts, then every newer one:
+flow starts, then the latest newer view available at each read. Intermediate
+views can be coalesced:
 
 <!-- snippet: scala-sync-control: root-ox-live-view -->
 ```scala

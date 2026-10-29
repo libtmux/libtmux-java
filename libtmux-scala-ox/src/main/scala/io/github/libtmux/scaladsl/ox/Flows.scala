@@ -28,9 +28,10 @@ object Flows {
       finally steps.close()
     }
 
-  /** The current view when the flow starts, then every newer one, one per
-    * notification. Completes when the view is closed, and fails with its cause
-    * when the anchor session or server has gone.
+  /** The current view when collection starts, then the latest newer view
+    * available at each read. Intermediate views may coalesce. Completes when
+    * the view is closed, and fails with its cause when the anchor session or
+    * server has gone.
     */
   def liveView(view: LiveView): Flow[ServerMirror.View] =
     Flow.usingEmit { emit =>

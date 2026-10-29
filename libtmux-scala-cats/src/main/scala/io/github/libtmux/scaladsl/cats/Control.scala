@@ -14,9 +14,10 @@ import java.time.Duration
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.jdk.CollectionConverters._
 
-/** Owns an attached Java control client. Canceling an active request can end
-  * this attachment and its queued requests and observations. Use separate
-  * attachments for commands and observations that must survive that failure.
+/** Owns an attached Java control client. Canceling one call interrupts only its
+  * caller. A deadline after dispatch or releasing this resource can end the
+  * attachment and its queued requests and observations. Use separate
+  * attachments when those lifetimes must be independent.
   */
 final class Control[F[_]] private[cats] (
     private[scaladsl] val underlying: ControlClient,

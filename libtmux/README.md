@@ -350,6 +350,9 @@ where the buffer overflowed. Reference:
 [javadoc.io][javadoc-control]
 and [libtmux.org][controlclient].
 
+Managed control requires tmux 3.7+ and a carrier-owned pinned socket. Ordinary
+operations retain the core 3.3a minimum.
+
 <!-- snippet: control: subscriptions require managed control -->
 ```java
 // Given: Server server, Session session
