@@ -610,7 +610,7 @@ final class ServerTest {
     }
 
     /**
-     * The defect this pins: a version with an {@code -rcN} suffix, such as {@code 3.8-rc}, that the
+     * The defect this pins: a version with an {@code -rcN} suffix, such as {@code X.Y-rc}, that the
      * server prints differently from how it was parsed must still pass the fence. Compared as
      * strings, the two looked like a server replaced mid-read, and every capture failed.
      */
@@ -633,7 +633,7 @@ final class ServerTest {
         };
 
         try (Server server = Server.using(config(directory), transport)) {
-            assertEquals(List.of(), server.sessions(), "a 3.8-rc server with nothing in it reads as that");
+            assertEquals(List.of(), server.sessions(), "a release-candidate server with nothing in it reads as that");
             assertEquals("3.8-rc", server.version().toString());
         }
     }

@@ -16,8 +16,8 @@ import java.util.regex.Pattern;
  * nothing later's patches guarantee, so it sorts strictly between the two — above every patch of the
  * release before it, below the release it names and every patch of that.
  *
- * <p>A release candidate, {@code 3.8-rc}, orders below the release it names ({@code next-3.8 <
- * 3.8-rc < 3.8-rc2 < 3.8 < 3.8a}), so {@link #compareTo} agrees with {@link #equals}, and {@link
+ * <p>A release candidate, {@code X.Y-rc}, orders below the release it names ({@code next-X.Y <
+ * X.Y-rc < X.Y-rc2 < X.Y < X.Ya}), so {@link #compareTo} agrees with {@link #equals}, and {@link
  * #atLeast} follows the same order. A gate names the release that ships the behaviour, such as
  * {@code 3.8} for JSON layouts. A gate on one release's own bug asks {@link #sameRelease}. The
  * version is written back exactly as tmux wrote it, which matters beyond display: every capture is
