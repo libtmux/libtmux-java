@@ -28,6 +28,51 @@ import kotlin.annotations.jvm.ReadOnly;
  *
  * <p>A method named for a captured field returns what {@link #info()} holds and does no I/O;
  * {@link #refresh()} reads again. Every other method asks tmux now.
+ *
+ * <h2>What is on here</h2>
+ *
+ * <p>The methods fall into a few groups:
+ *
+ * <p><strong>Reading the capture.</strong> Read what this capture stored about the session, and the
+ * {@link Server} it lives on, with no call to tmux. The id is stable, the name is state a user may
+ * change at any time, and a rename or an attach after the capture does not show in it.
+ *
+ * <p>{@link #info}, {@link #id}, {@link #name}, {@link #attached}, {@link #server()}
+ *
+ * <p><strong>Windows and panes.</strong> List the session's windows in tmux's order, or ask for the
+ * window tmux had active and the active pane of that window, each as an {@link Optional}. These are
+ * pure reads of the capture and issue no command. Make a window the active one, step to the next or
+ * previous with wrap-around, or go back to the one that was active before, which throws when nothing
+ * else has been active yet.
+ *
+ * <ul>
+ *   <li>Read: {@link #windows}, {@link #activeWindow}, {@link #activePane}
+ *   <li>Move: {@link #selectWindow}, {@link #nextWindow}, {@link #previousWindow},
+ *       {@link #lastWindow}
+ * </ul>
+ *
+ * <p><strong>Changing the session.</strong> Create a window by name, from a callback that fills in a
+ * builder, or from a {@link WindowSpec} that can be reused across sessions, and get back the window
+ * made, from a fresh capture; a spec that reuses an existing window gets the one with that name,
+ * found by a lookup. Renaming returns a replacement capture, because this handle keeps its original
+ * state; setting the history limit sets the scrollback retained by panes created in this session.
+ * Detaching clients leaves the session running, and killing it takes every window with it.
+ *
+ * <p>{@link #newWindow}, {@link #rename}, {@link #setHistoryLimit}, {@link #detachClients},
+ * {@link #kill}
+ *
+ * <p><strong>Options, environment, and hooks.</strong> These reach what is set on this session alone:
+ * its own options, its own hooks, and its own environment, which a process started in it is given on
+ * top of the server's. The {@link Server} holds the global ones, which a session inherits.
+ *
+ * <p>{@link #options}, {@link #environment}, {@link #hooks}
+ *
+ * <p><strong>Formats and refreshing.</strong> Expand a tmux format in this session's context, or take
+ * a new capture to see the session as it is now. Refreshing leaves this handle unchanged and returns
+ * the new one, and throws {@link TargetGoneException} if the session is gone from a server that still
+ * answers.
+ *
+ * <p>{@link #expand}, {@link #refresh}
  */
 public final class Session {
 
