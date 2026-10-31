@@ -612,7 +612,10 @@ final class McpLauncherTest {
                 .build());
     }
 
+    /** The quarantine directory, once nothing could route a bare tmux client to a real server. */
     private static String tmuxTmpDir() {
+        assertNull(System.getenv("TMUX"), "the suite is running inside tmux, so a bare client would follow it");
+        assertNull(System.getenv("TMUX_PANE"), "the suite is running inside a pane, so a bare client would follow it");
         String configured = System.getenv("TMUX_TMPDIR");
         assertTrue(configured != null && !configured.isEmpty(), "the build did not quarantine TMUX_TMPDIR");
         return configured;

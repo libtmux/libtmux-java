@@ -53,6 +53,9 @@ final class SocketSelectionTest {
      * process, not the map handed to the CLI.
      */
     private Result invoke(Map<String, String> overrides, String... arguments) {
+        // A rule broken here sends a command to the default server, so the quarantine is checked
+        // before any command can reach one.
+        requirePrivateDefaultSocket();
         Map<String, String> environment = new HashMap<>(System.getenv());
         for (String name : List.of("TMUX", "TMUX_PANE", "LIBTMUX_SOCKET", "LIBTMUX_SOCKET_PATH")) {
             environment.remove(name);
@@ -162,62 +165,89 @@ final class SocketSelectionTest {
 
     // ------------------------------------------------------------------------- against real tmux
 
+    /** A handle on the default server, made only once the quarantine is known to hold. */
+    private static Server privateDefaultServer() {
+        requirePrivateDefaultSocket();
+        return serverOn(ServerEndpoint.defaultSocket());
+    }
+
+    /**
+     * Stops every server a test named, the default one included. A broken rule sends a command
+     * somewhere else, and a server left running there outlives the test and its directory.
+     */
+    private static void stopAll(Server... servers) {
+        RuntimeException failure = null;
+        for (Server server : servers) {
+            try (server) {
+                if (server.isAlive()) server.killServer();
+            } catch (RuntimeException stopping) {
+                if (failure == null) failure = stopping;
+                else failure.addSuppressed(stopping);
+            }
+        }
+        if (failure != null) throw failure;
+    }
+
+    private static Map<String, String> inherited(Server server, Path socket) {
+        return Map.of(
+                "TMUX",
+                socket + "," + server.expand("#{pid}") + ",0",
+                "TMUX_PANE",
+                server.panes().getFirst().id().value());
+    }
+
     @Test
     void loadBuildsOnTheServerLibtmuxSocketPathNames() throws Exception {
         Path socket = directory.resolve("variable-path");
-        Result result = invoke(
-                Map.of("LIBTMUX_SOCKET_PATH", socket.toString()),
-                "load",
-                source("by-path").toString(),
-                "-d",
-                "--json");
+        Server stray = privateDefaultServer();
+        Server named = serverOn(ServerEndpoint.socketPath(socket));
+        try {
+            Result result = invoke(
+                    Map.of("LIBTMUX_SOCKET_PATH", socket.toString()),
+                    "load",
+                    source("by-path").toString(),
+                    "-d",
+                    "--json");
 
-        assertEquals(0, result.code(), result.err());
-        try (Server server = serverOn(ServerEndpoint.socketPath(socket))) {
-            try {
-                assertTrue(server.hasSession("by-path"), result.out());
-            } finally {
-                if (server.isAlive()) server.killServer();
-            }
+            assertEquals(0, result.code(), result.err());
+            assertTrue(named.hasSession("by-path"), result.out());
+        } finally {
+            stopAll(named, stray);
         }
     }
 
     /** A name resolves under {@code TMUX_TMPDIR}, so the build's quarantine is what keeps this private. */
     @Test
     void loadBuildsOnTheServerLibtmuxSocketNames() throws Exception {
-        requirePrivateDefaultSocket();
         String name = "ws-" + UUID.randomUUID().toString().substring(0, 8);
-        Result result =
-                invoke(Map.of("LIBTMUX_SOCKET", name), "load", source("by-name").toString(), "-d", "--json");
+        Server stray = privateDefaultServer();
+        Server named = serverOn(ServerEndpoint.namedSocket(name));
+        try {
+            Result result = invoke(
+                    Map.of("LIBTMUX_SOCKET", name), "load", source("by-name").toString(), "-d", "--json");
 
-        assertEquals(0, result.code(), result.err());
-        try (Server server = serverOn(ServerEndpoint.namedSocket(name))) {
-            try {
-                assertTrue(server.hasSession("by-name"), result.out());
-            } finally {
-                if (server.isAlive()) server.killServer();
-            }
+            assertEquals(0, result.code(), result.err());
+            assertTrue(named.hasSession("by-name"), result.out());
+        } finally {
+            stopAll(named, stray);
         }
     }
 
     @Test
     void loadWithNothingSetReachesTheServerTmuxPicksAndNoOther() throws Exception {
-        requirePrivateDefaultSocket();
         Path elsewhere = directory.resolve("not-chosen");
-        try (Server chosen = serverOn(ServerEndpoint.defaultSocket());
-                Server other = serverOn(ServerEndpoint.socketPath(elsewhere))) {
-            try {
-                // An environment that only describes a pane on another server must not redirect it.
-                Map<String, String> inside = Map.of("TMUX", elsewhere + ",1,0", "TMUX_PANE", "%0");
-                Result result = invoke(inside, "load", source("by-default").toString(), "-d", "--json");
+        Server chosen = privateDefaultServer();
+        Server other = serverOn(ServerEndpoint.socketPath(elsewhere));
+        try {
+            // An environment that only describes a pane on another server must not redirect it.
+            Map<String, String> inside = Map.of("TMUX", elsewhere + ",1,0", "TMUX_PANE", "%0");
+            Result result = invoke(inside, "load", source("by-default").toString(), "-d", "--json");
 
-                assertEquals(0, result.code(), result.err());
-                assertTrue(chosen.hasSession("by-default"), result.out());
-                assertFalse(Files.exists(elsewhere), "the TMUX socket was started as a server");
-            } finally {
-                if (chosen.isAlive()) chosen.killServer();
-                if (other.isAlive()) other.killServer();
-            }
+            assertEquals(0, result.code(), result.err());
+            assertTrue(chosen.hasSession("by-default"), result.out());
+            assertFalse(Files.exists(elsewhere), "the TMUX socket was started as a server");
+        } finally {
+            stopAll(chosen, other);
         }
     }
 
@@ -225,20 +255,65 @@ final class SocketSelectionTest {
     void aFlagStillBeatsTheVariablesAgainstRealTmux() throws Exception {
         Path flagged = directory.resolve("flagged");
         Path variable = directory.resolve("variable");
-        Result result = invoke(
-                Map.of("LIBTMUX_SOCKET_PATH", variable.toString()),
-                "load",
-                source("by-flag").toString(),
-                "-d",
-                "-S",
-                flagged.toString(),
-                "--json");
+        Server stray = privateDefaultServer();
+        Server flaggedServer = serverOn(ServerEndpoint.socketPath(flagged));
+        Server variableServer = serverOn(ServerEndpoint.socketPath(variable));
+        try {
+            Result result = invoke(
+                    Map.of("LIBTMUX_SOCKET_PATH", variable.toString()),
+                    "load",
+                    source("by-flag").toString(),
+                    "-d",
+                    "-S",
+                    flagged.toString(),
+                    "--json");
 
-        assertEquals(0, result.code(), result.err());
-        assertTrue(Files.exists(flagged), "the flagged socket was not used");
-        assertFalse(Files.exists(variable), "the variable chose a server over the flag");
-        try (Server server = serverOn(ServerEndpoint.socketPath(flagged))) {
-            if (server.isAlive()) server.killServer();
+            assertEquals(0, result.code(), result.err());
+            assertTrue(flaggedServer.hasSession("by-flag"), "the flagged socket was not used");
+            assertFalse(Files.exists(variable), "the variable chose a server over the flag");
+        } finally {
+            stopAll(flaggedServer, variableServer, stray);
+        }
+    }
+
+    /**
+     * A variable beats {@code TMUX}, so with one naming another server an attached load or an
+     * {@code --append} from inside tmux is refused before it builds. The same variable naming the
+     * pane's own server is accepted.
+     */
+    @Test
+    void aVariableNamingAnotherServerThanTheTmuxOneIsRefusedBeforeAnythingIsBuilt() throws Exception {
+        Path paneSocket = directory.resolve("pane");
+        Path otherSocket = directory.resolve("other");
+        Server stray = privateDefaultServer();
+        Server pane = serverOn(ServerEndpoint.socketPath(paneSocket));
+        Server other = serverOn(ServerEndpoint.socketPath(otherSocket));
+        try {
+            pane.newSession("host");
+            other.newSession("elsewhere");
+            Map<String, String> environment = new HashMap<>(inherited(pane, paneSocket));
+            environment.put("LIBTMUX_SOCKET_PATH", otherSocket.toString());
+            Path refused = source("refused");
+
+            Result attached = invoke(environment, "load", refused.toString());
+            Result appended = invoke(environment, "load", refused.toString(), "--append", "--json");
+
+            assertEquals(2, attached.code(), attached.toString());
+            assertTrue(attached.err().contains("server"), attached.err());
+            assertEquals(2, appended.code(), appended.toString());
+            assertTrue(appended.err().contains("server"), appended.err());
+            assertEquals(1, pane.windows().size(), "the pane's server was built on");
+            assertEquals(1, other.windows().size(), "the variable's server was built on");
+            assertFalse(pane.hasSession("refused") || other.hasSession("refused"));
+
+            environment.put("LIBTMUX_SOCKET_PATH", paneSocket.toString());
+            Result accepted = invoke(environment, "load", source("accepted").toString(), "--append", "--json");
+
+            assertEquals(0, accepted.code(), accepted.err());
+            assertEquals(2, pane.windows().size());
+            assertEquals(1, other.windows().size());
+        } finally {
+            stopAll(pane, other, stray);
         }
     }
 
