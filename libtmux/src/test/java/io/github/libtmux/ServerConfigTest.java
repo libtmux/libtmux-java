@@ -5,13 +5,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.ProcessTransport;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** What a server needs to know before it runs anything. */
 final class ServerConfigTest {
@@ -211,24 +217,72 @@ final class ServerConfigTest {
 
     /**
      * The process environment is what {@code build()} reads, which no injected map can show: a child
-     * JVM is given the variables and prints the command its default config would run.
+     * JVM is given the variables and prints the command each default builder would run.
      */
     @Test
     void buildReadsTheProcessEnvironmentWhenNoEndpointWasGiven() throws Exception {
-        assertEquals("[tmux, -u]", childConfig(Map.of()));
-        assertEquals("[tmux, -u, -L, from-process]", childConfig(Map.of("LIBTMUX_SOCKET", "from-process")));
+        assertEquals(both("[tmux, -u]"), child(DefaultConfigMain.class, Map.of()));
         assertEquals(
-                "[tmux, -u, -S, /tmp/libtmux-java-test/env/s]",
-                childConfig(Map.of(
-                        "LIBTMUX_SOCKET", "from-process", "LIBTMUX_SOCKET_PATH", "/tmp/libtmux-java-test/env/s")));
+                both("[tmux, -u, -L, from-process]"),
+                child(DefaultConfigMain.class, Map.of("LIBTMUX_SOCKET", "from-process")));
+        assertEquals(
+                both("[tmux, -u, -S, /tmp/libtmux-java-test/env/s]"),
+                child(
+                        DefaultConfigMain.class,
+                        Map.of(
+                                "LIBTMUX_SOCKET",
+                                "from-process",
+                                "LIBTMUX_SOCKET_PATH",
+                                "/tmp/libtmux-java-test/env/s")));
     }
 
-    private static String childConfig(Map<String, String> variables) throws IOException, InterruptedException {
-        ProcessBuilder builder = new ProcessBuilder(
+    /**
+     * tmux follows {@code TMUX} when it is given no socket, so a command with none has to leave it in
+     * the environment and add no {@code -S} of its own. The test JVM has no {@code TMUX}, so a child
+     * is given one and a fake tmux records whether it arrived and what it was asked.
+     */
+    @Test
+    void aCommandWithNoSocketReachesTmuxWithTmuxStillSet(@TempDir Path directory) throws Exception {
+        Path record = directory.resolve("record");
+        Path tmux = directory.resolve("fake-tmux");
+        Files.writeString(tmux, """
+                #!/bin/sh
+                if [ "$TMUX" = "/tmp/libtmux-java-test/inside/s,1,0" ]; then
+                  echo inherits_tmux=yes >> "$FAKE_RECORD"
+                else
+                  echo inherits_tmux=no >> "$FAKE_RECORD"
+                fi
+                printf 'argv:' >> "$FAKE_RECORD"
+                printf ' %s' "$@" >> "$FAKE_RECORD"
+                echo >> "$FAKE_RECORD"
+                """);
+        Files.setPosixFilePermissions(tmux, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
+
+        child(
+                SocketlessCommandMain.class,
+                Map.of(
+                        "TMUX", "/tmp/libtmux-java-test/inside/s,1,0",
+                        "TMUX_PANE", "%0",
+                        "FAKE_RECORD", record.toString()),
+                tmux.toString());
+
+        assertEquals(List.of("inherits_tmux=yes", "argv: -u list-sessions"), Files.readAllLines(record));
+    }
+
+    private static String both(String command) {
+        return "config=" + command + "\nserver=" + command;
+    }
+
+    /** Runs a main in a JVM of its own, with no socket variable but the ones given, and returns what it printed. */
+    private static String child(Class<?> main, Map<String, String> variables, String... arguments)
+            throws IOException, InterruptedException {
+        List<String> command = new ArrayList<>(List.of(
                 Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                 "-cp",
                 System.getProperty("java.class.path"),
-                DefaultConfigMain.class.getName());
+                main.getName()));
+        command.addAll(List.of(arguments));
+        ProcessBuilder builder = new ProcessBuilder(command);
         builder.environment().remove("LIBTMUX_SOCKET");
         builder.environment().remove("LIBTMUX_SOCKET_PATH");
         builder.environment().putAll(variables);
@@ -244,12 +298,28 @@ final class ServerConfigTest {
         }
     }
 
-    /** Builds a config with nothing said and prints the command prefix it would run. */
+    /** Builds each default builder with nothing said and prints the command prefix it would run. */
     public static final class DefaultConfigMain {
         private DefaultConfigMain() {}
 
         public static void main(String[] args) {
-            System.out.println(ServerConfig.builder().build().endpointCommand());
+            System.out.println("config=" + ServerConfig.builder().build().endpointCommand());
+            try (Server server = Server.builder().build()) {
+                System.out.println("server=" + server.config().endpointCommand());
+            }
+        }
+    }
+
+    /** Sends one command, with no socket said, through the process transport to the tmux named first. */
+    public static final class SocketlessCommandMain {
+        private SocketlessCommandMain() {}
+
+        public static void main(String[] args) {
+            ServerConfig config = ServerConfig.builder().binary(args[0]).build();
+            try (ProcessTransport transport = new ProcessTransport()) {
+                transport.execute(
+                        CommandRequest.of(config.endpointCommand(), List.of("list-sessions"), Duration.ofSeconds(30)));
+            }
         }
     }
 }

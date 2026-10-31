@@ -1032,10 +1032,12 @@ final class ServerTest {
 
     @Test
     void aServerCanBeBuiltWithoutSayingAnything() {
-        try (Server server = Server.builder().build()) {
+        try (Server unnamed = Server.builder().build(java.util.Map.of());
+                Server named = Server.builder().build(java.util.Map.of("LIBTMUX_SOCKET", "from-environment"))) {
+            assertEquals(ServerEndpoint.defaultSocket(), unnamed.config().endpoint());
             assertEquals(
-                    ServerEndpoint.fromEnvironment(System.getenv()),
-                    server.config().endpoint());
+                    ServerEndpoint.namedSocket("from-environment"),
+                    named.config().endpoint());
         }
     }
 
