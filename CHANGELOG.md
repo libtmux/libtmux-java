@@ -15,6 +15,13 @@ release is supported, and there are no backports.
   server below 3.8 gets an `UnsupportedFeatureException` naming 3.8 before
   anything is sent. Installed releases behave as before. (#106)
 
+### Documented
+
+- **The `Session` Javadoc groups its methods by task.** A "What is on here"
+  section pairs each group's guidance with links to its methods. The `Server`
+  groups gain the same paired guidance and link lists, and a group for
+  checking the server and one for running a command.
+
 ## 0.1.0 — 2026-10-25
 
 ### Changed

@@ -77,56 +77,95 @@ import org.jspecify.annotations.Nullable;
  * <p>A tmux server does a great many things, so this class has a great many methods. They fall into
  * a few groups:
  *
- * <p><strong>Connecting.</strong> {@link #open} makes a server over a transport it owns and
- * {@link #using} borrows one; {@link #builder} configures either, and {@link #toBuilder} starts
- * from this server's choices. {@link #config()} says how it was configured, {@link #identity} which
- * server it is, and {@link #version} which tmux. {@link #isAlive} and {@link #requireAlive} answer
- * whether anything is listening. {@link #within} bounds every command by a deadline,
- * {@link #admissionBound} says how many commands run at once, {@link #control} attaches a control
- * client, and {@link #close} releases what the server owns.
+ * <p><strong>Connecting.</strong> Open a server over a transport it owns or one the caller keeps;
+ * closing releases only what it owns, and never kills tmux. A {@link Builder} configures either, and
+ * a built server starts a new builder from its own choices. A derived server bounds every command by
+ * a deadline of the caller's choosing, and a control client attaches through a session this server
+ * captured.
  *
- * <p><strong>Finding one thing.</strong> {@link #session} takes a name, an id, or a filter;
- * {@link #pane} takes an id or a filter; {@link #window} takes a filter or a window's
- * {@link WindowContext}. Each returns an {@link Optional} that is empty when tmux does not have it,
- * and a filter that matches several throws. {@link #hasSession} answers by name without returning
- * the session.
+ * <ul>
+ *   <li>Open: {@link #open}, {@link #using}, {@link #builder}, {@link #toBuilder}
+ *   <li>Describe: {@link #config()}, {@link #identity}, {@link #admissionBound}
+ *   <li>Derive and attach: {@link #within}, {@link #control}
+ *   <li>Release: {@link #close}
+ * </ul>
  *
- * <p><strong>Listing everything.</strong> {@link #sessions}, {@link #windows}, {@link #panes},
- * {@link #clients}, and {@link #attachedSessions}, each captured now and returned in tmux's order.
- * A failed read throws, so an outage does not read as an empty server. {@link #windows} also takes
- * a {@link WindowId} and answers every link to that window. {@link #snapshot} captures the whole
- * tree with one listing per kind of object rather than one command per object.
+ * <p><strong>Checking the server.</strong> Ask whether the server answers, or require it and get a
+ * {@link ServerUnavailableException} when no daemon is running. The boolean form answers false when
+ * tmux refuses the probe, though a transport failure still throws, and a probe can take a deadline of
+ * its own. Report which tmux the running server is, or require a compatible tmux, which starts no
+ * daemon.
  *
- * <p><strong>Querying things and getting around.</strong> Hand {@link #sessions}, {@link #windows},
- * {@link #panes}, {@link #session}, {@link #window}, or {@link #pane} a
- * {@link io.github.libtmux.query.FilterExpr} built from the typed fields of {@link Session_},
- * {@link Window_}, and {@link Pane_}, and tmux does the filtering through {@code -f} when it can.
- * {@link io.github.libtmux.query.Selections} takes exactly one from a list. To move between levels,
- * go down with {@link Session#windows} and {@link Window#panes}, up with {@link Pane#window} and
- * {@link Window#session}, and across to the focused child with {@link Session#activeWindow} and
- * {@link Window#activePane}. Each is a pure read of the capture, so none asks tmux again.
+ * <p>{@link #isAlive}, {@link #requireAlive}, {@link #version}, {@link #requireCompatibleTmux}
  *
- * <p><strong>Changing things.</strong> {@link #newSession} creates a detached session from a name,
- * a callback on a builder, or a {@link SessionSpec}, and returns exactly the one tmux made.
- * {@link #killSession} matches the name exactly. {@link #killServer} ends the tmux server and every
- * session on it, which {@link #close} deliberately does not. {@link #lock} locks every attached
- * client.
+ * <p><strong>Finding one thing.</strong> Look up a session by name, id, or filter, a pane by id or
+ * filter, and a window by filter or by its {@link WindowContext}. Each returns an {@link Optional}
+ * that is empty when tmux does not have it; a name is matched exactly, and a filter that matches
+ * several throws. A session can also be checked for by name without fetching it.
  *
- * <p><strong>Options and hooks.</strong> {@link #options} holds the server-wide options,
- * {@link #globalOptions} the session options every session inherits unless it sets its own,
- * {@link #hooks} the global hooks, and {@link #environment} the variables every new process is
- * given.
+ * <p>{@link #session}, {@link #pane}, {@link #window}, {@link #hasSession}
  *
- * <p><strong>Everything else tmux keeps.</strong> Paste buffers ({@link #buffers}), key bindings
- * ({@link #keys}), a file of tmux commands to run ({@link #sourceFile}), shell commands
- * ({@link #shell}), the command list ({@link #commands}), the message log ({@link #messageLog}),
- * prompt history ({@link #prompt}), and wait-for channels ({@link #channel}). {@link #expand}
- * expands a format against the server, {@link #variables} reads named variables in one expansion,
- * and {@link #paneFields} reads chosen fields of every pane from one listing.
+ * <p><strong>Listing everything.</strong> List every session, window, pane, or client, or only the
+ * sessions a client is attached to, each captured now and in tmux's order. A failed read throws, so
+ * an outage does not read as an empty server. Listing windows by window id returns every link of a
+ * window shared between sessions, and a snapshot captures the whole tree as a {@link ServerSnapshot}
+ * with one listing per kind of object rather than one command per object.
  *
- * <p>Anything tmux can do that is not here is reachable through {@link #cmd}, which runs one
- * command and hands back its result, {@link #run}, which throws when tmux reports a nonzero exit,
- * or {@link #batch} and {@link #chain}, which run several in one invocation.
+ * <p>{@link #sessions}, {@link #windows}, {@link #panes}, {@link #clients},
+ * {@link #attachedSessions}, {@link #snapshot}
+ *
+ * <p><strong>Querying things and getting around.</strong> Hand a listing method, or a finder that
+ * returns one match, a filter built from the typed fields of {@link Session_}, {@link Window_}, and
+ * {@link Pane_}, and tmux does the filtering through {@code -f} when it can.
+ * {@link io.github.libtmux.query.Selections} takes exactly one, or one-or-none, from a list, and
+ * throws when several match. Moving between levels is a pure read of the capture, so none of it asks
+ * tmux again.
+ *
+ * <ul>
+ *   <li>Narrow: {@link Session_}, {@link Window_}, {@link Pane_},
+ *       {@link io.github.libtmux.query.FilterExpr}, {@link io.github.libtmux.query.Selections}
+ *   <li>Down: {@link Session#windows}, {@link Window#panes}
+ *   <li>Focused: {@link Session#activeWindow}, {@link Session#activePane}, {@link Window#activePane}
+ *   <li>Up: {@link Pane#window}, {@link Window#session}
+ * </ul>
+ *
+ * <p><strong>Changing things.</strong> Create a detached session from a name, from a callback that
+ * fills in a builder, or from a {@link SessionSpec} that can be reused across servers, and get back
+ * exactly the one tmux made. Killing a session matches its name exactly, where tmux would take a
+ * prefix, and throws when no session carries it. Killing the server ends every session on it, which
+ * closing deliberately does not, and a lock reaches every attached client.
+ *
+ * <p>{@link #newSession}, {@link #killSession}, {@link #killServer}, {@link #lock}
+ *
+ * <p><strong>Options, hooks, and environment.</strong> These return a handle on what tmux keeps for
+ * the whole server: the options it keeps once per server, the session options every session inherits
+ * unless it sets its own, the hooks every session inherits, and the environment every new process is
+ * given. Setting the environment changes what a pane opened later sees; a pane already running has
+ * its own copy.
+ *
+ * <p>{@link #options}, {@link #globalOptions}, {@link #hooks}, {@link #environment}
+ *
+ * <p><strong>Everything else tmux keeps.</strong> Paste buffers, key bindings, the command list, the
+ * message log, and the command prompt's history each have a handle of their own, as do the shell
+ * commands tmux runs and its wait-for channels. A file of tmux commands can be run as a configuration
+ * file would be. A format expands against the server, whether as one expression, as named variables
+ * in one expansion, or as chosen fields of every pane from one listing.
+ *
+ * <ul>
+ *   <li>Kept by tmux: {@link #buffers}, {@link #keys}, {@link #commands}, {@link #messageLog},
+ *       {@link #prompt}
+ *   <li>Shell and channels: {@link #shell}, {@link #channel}
+ *   <li>Configuration: {@link #sourceFile}
+ *   <li>Formats: {@link #expand}, {@link #variables}, {@link #paneFields}
+ * </ul>
+ *
+ * <p><strong>Running a command.</strong> Anything tmux can do that is not above is reachable by
+ * running a command directly. Run one command and get its result back, with a nonzero exit as data,
+ * or run one that is expected to work and get an exception on a nonzero exit. Several commands can be
+ * collected to run in one tmux invocation, each with its own outcome, or chained so each acts on what
+ * the last one made.
+ *
+ * <p>{@link #cmd}, {@link #run}, {@link #batch}, {@link #chain}
  */
 public final class Server implements AutoCloseable {
 
