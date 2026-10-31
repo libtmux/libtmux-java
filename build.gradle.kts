@@ -104,6 +104,6 @@ tasks.register("check") {
     dependsOn(platformCoversEveryPublishedModule, kotlinStaysDownstream)
     // An included build's tasks are not this build's subprojects, so its tests would otherwise
     // never run in the gate: the generators every facade compiles against, the conventions' own
-    // helpers, and the Doclet's lint.
-    dependsOn(listOf("codegen", "conventions", "catalog-doclet").map { gradle.includedBuild("build-logic").task(":$it:check") })
+    // helpers, the Doclet's lint, and the refusal every module's tests start under.
+    dependsOn(listOf("codegen", "conventions", "catalog-doclet", "test-sandbox").map { gradle.includedBuild("build-logic").task(":$it:check") })
 }

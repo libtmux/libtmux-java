@@ -161,6 +161,8 @@ class PrepareQuarantine(private val root: String, private val checkout: String) 
         val options = task as ProcessForkOptions
         ServerSelectors.clear(options)
         options.environment("TMUX_TMPDIR", directory.toString())
+        // What the test JVM's refusal compares TMUX_TMPDIR with.
+        if (task is Test) task.systemProperty("libtmux.test.sandbox", directory.toString())
     }
 
     private fun directoryFor(taskPath: String): Path {

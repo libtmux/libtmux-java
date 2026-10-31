@@ -50,6 +50,8 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(kotlin("test"))
     testRuntimeOnly(libs.junit.platform.launcher)
+    // Refuses a test run that could reach a tmux server it was not given.
+    testRuntimeOnly("io.github.libtmux.build:test-sandbox")
     // The exhaustiveness compile-test drives a real kotlinc against a fixture, in-process.
     testImplementation(libs.kotlin.compiler.embeddable)
 }

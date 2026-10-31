@@ -33,6 +33,8 @@ dependencies {
     testImplementation(platform(libs.findLibrary("junit-bom").orElseThrow()))
     testImplementation(libs.findLibrary("junit-jupiter").orElseThrow())
     testRuntimeOnly(libs.findLibrary("junit-platform-launcher").orElseThrow())
+    // Refuses a test run that could reach a tmux server it was not given.
+    testRuntimeOnly("io.github.libtmux.build:test-sandbox")
 }
 
 tasks.withType<JavaCompile>().configureEach {
