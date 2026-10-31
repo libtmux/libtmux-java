@@ -38,6 +38,11 @@ session.name();                            // → demo
 window.name();                             // → build
 ```
 
+A config with no `endpoint` reads `LIBTMUX_SOCKET_PATH` and then `LIBTMUX_SOCKET`
+when it is built. With neither set it passes tmux no socket, so tmux picks the
+server: the one in `TMUX` inside a pane, and its default socket otherwise. Name
+an endpoint, as above, wherever a program must not reach the wrong server.
+
 Each command runs through one tmux process. Use a batch or chain when several
 commands should share an invocation.
 

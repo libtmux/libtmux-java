@@ -50,7 +50,8 @@ import org.jspecify.annotations.Nullable;
  * Manages sessions, windows, and panes on a tmux server.
  *
  * <p>Use {@link #open} with a {@link ServerConfig} to select a server by socket name or path.
- * From this object, create sessions or query the server's existing sessions, windows, and panes.
+ * A config that names none reads {@code LIBTMUX_SOCKET_PATH} and {@code LIBTMUX_SOCKET}, and with
+ * neither set leaves the choice to tmux. From this object, create sessions or query the server's existing sessions, windows, and panes.
  * Each {@link Session} contains windows, and each {@link Window} contains panes.
  *
  * <p>Ownership is decided at construction and never inferred. {@link #open} creates a transport this

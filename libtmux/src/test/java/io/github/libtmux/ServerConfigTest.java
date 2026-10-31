@@ -5,9 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 /** What a server needs to know before it runs anything. */
@@ -15,7 +18,7 @@ final class ServerConfigTest {
 
     @Test
     void theDefaultsAreUsableWithoutSayingAnything() {
-        ServerConfig config = ServerConfig.builder().build();
+        ServerConfig config = ServerConfig.builder().build(Map.of());
 
         assertEquals("tmux", config.binary());
         assertEquals(ServerEndpoint.defaultSocket(), config.endpoint());
@@ -130,7 +133,10 @@ final class ServerConfigTest {
 
     @Test
     void colorChoiceSurvivesCopiesAndCanReturnToDetection() {
-        try (Server server = Server.builder().force256Colors(true).build()) {
+        try (Server server = Server.builder()
+                .endpoint(ServerEndpoint.defaultSocket())
+                .force256Colors(true)
+                .build()) {
             ServerConfig config = server.config();
             assertTrue(config.force256Colors());
             assertEquals(java.util.List.of("tmux", "-u", "-2"), config.endpointCommand());
@@ -155,5 +161,95 @@ final class ServerConfigTest {
                 () -> ServerConfig.builder()
                         .defaultTimeout(Duration.ofSeconds(-1))
                         .build());
+    }
+
+    // ------------------------------------------------------------------------------ environment
+
+    @Test
+    void aConfigGivenNoEndpointTakesTheServerTheEnvironmentNames() {
+        assertEquals(
+                ServerEndpoint.namedSocket("work"),
+                ServerConfig.builder().build(Map.of("LIBTMUX_SOCKET", "work")).endpoint());
+        assertEquals(
+                ServerEndpoint.socketPath(Path.of("/tmp/libtmux-java-test/env/s")),
+                ServerConfig.builder()
+                        .build(Map.of("LIBTMUX_SOCKET_PATH", "/tmp/libtmux-java-test/env/s"))
+                        .endpoint());
+        assertEquals(
+                "[tmux, -u]",
+                ServerConfig.builder().build(Map.of()).endpointCommand().toString());
+    }
+
+    @Test
+    void anEndpointTheCallerGaveBeatsTheEnvironment() {
+        ServerEndpoint given = ServerEndpoint.namedSocket("given");
+
+        ServerConfig config = ServerConfig.builder()
+                .endpoint(given)
+                .build(Map.of("LIBTMUX_SOCKET", "work", "LIBTMUX_SOCKET_PATH", "/tmp/libtmux-java-test/env/s"));
+
+        assertEquals(given, config.endpoint());
+        assertEquals("[tmux, -u, -L, given]", config.endpointCommand().toString());
+    }
+
+    /** A derived config that re-read the environment could land on a different server than its source. */
+    @Test
+    void aDerivedConfigKeepsTheServerItsSourceNamed() {
+        ServerConfig source = ServerConfig.builder().build(Map.of("LIBTMUX_SOCKET", "first"));
+
+        ServerConfig derived = source.toBuilder().build(Map.of("LIBTMUX_SOCKET", "second"));
+
+        assertEquals(ServerEndpoint.namedSocket("first"), derived.endpoint());
+    }
+
+    @Test
+    void anEnvironmentThatNamesNoValidSocketFailsAtBuildNotAtFirstCommand() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ServerConfig.builder().build(Map.of("LIBTMUX_SOCKET", "nested/name")));
+    }
+
+    /**
+     * The process environment is what {@code build()} reads, which no injected map can show: a child
+     * JVM is given the variables and prints the command its default config would run.
+     */
+    @Test
+    void buildReadsTheProcessEnvironmentWhenNoEndpointWasGiven() throws Exception {
+        assertEquals("[tmux, -u]", childConfig(Map.of()));
+        assertEquals("[tmux, -u, -L, from-process]", childConfig(Map.of("LIBTMUX_SOCKET", "from-process")));
+        assertEquals(
+                "[tmux, -u, -S, /tmp/libtmux-java-test/env/s]",
+                childConfig(Map.of(
+                        "LIBTMUX_SOCKET", "from-process", "LIBTMUX_SOCKET_PATH", "/tmp/libtmux-java-test/env/s")));
+    }
+
+    private static String childConfig(Map<String, String> variables) throws IOException, InterruptedException {
+        ProcessBuilder builder = new ProcessBuilder(
+                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp",
+                System.getProperty("java.class.path"),
+                DefaultConfigMain.class.getName());
+        builder.environment().remove("LIBTMUX_SOCKET");
+        builder.environment().remove("LIBTMUX_SOCKET_PATH");
+        builder.environment().putAll(variables);
+        builder.redirectError(ProcessBuilder.Redirect.INHERIT);
+        Process child = builder.start();
+        try {
+            String printed = new String(child.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(child.waitFor(30, TimeUnit.SECONDS), "the child JVM did not exit");
+            assertEquals(0, child.exitValue());
+            return printed.strip();
+        } finally {
+            child.destroyForcibly();
+        }
+    }
+
+    /** Builds a config with nothing said and prints the command prefix it would run. */
+    public static final class DefaultConfigMain {
+        private DefaultConfigMain() {}
+
+        public static void main(String[] args) {
+            System.out.println(ServerConfig.builder().build().endpointCommand());
+        }
     }
 }

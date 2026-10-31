@@ -2,6 +2,7 @@ package io.github.libtmux;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import kotlin.annotations.jvm.ReadOnly;
 
@@ -22,9 +23,47 @@ public sealed interface ServerEndpoint {
     @ReadOnly
     List<String> flags();
 
-    /** tmux's own default server, wherever tmux decides that is. */
+    /**
+     * tmux's own default server, wherever tmux decides that is.
+     *
+     * <p>That is the server in {@code TMUX} when this process runs inside a tmux pane, and the
+     * default socket under {@code TMUX_TMPDIR} otherwise. To read {@code LIBTMUX_SOCKET} and
+     * {@code LIBTMUX_SOCKET_PATH} first, use {@link #fromEnvironment}.
+     */
     static ServerEndpoint defaultSocket() {
         return new Default();
+    }
+
+    /**
+     * The server an environment names, or tmux's own default when it names none.
+     *
+     * <p>{@code LIBTMUX_SOCKET_PATH} names a socket path and selects it with {@code -S};
+     * {@code LIBTMUX_SOCKET} names a socket and selects it with {@code -L}. When both are set the
+     * path wins, as it does in the Python libtmux and in tmux itself, which ignores {@code -L}
+     * beside {@code -S}. A variable that is empty or blank counts as unset, each one on its own.
+     * With neither set the result is {@link #defaultSocket()}.
+     *
+     * <p>{@code TMUX} is never read. tmux follows it by itself when no socket is selected, and
+     * {@link TmuxEnvironment#config()} is the way to ask for that server by path.
+     *
+     * @param environment the variables to read, typically {@code System.getenv()}
+     * @throws IllegalArgumentException if {@code LIBTMUX_SOCKET} holds a path separator; the message
+     *     names the variable and leaves its value out
+     */
+    static ServerEndpoint fromEnvironment(Map<String, String> environment) {
+        String path = environment.get("LIBTMUX_SOCKET_PATH");
+        if (path != null && !path.isBlank()) {
+            return socketPath(Path.of(path));
+        }
+        String name = environment.get("LIBTMUX_SOCKET");
+        if (name != null && !name.isBlank()) {
+            if (name.indexOf('/') >= 0) {
+                throw new IllegalArgumentException(
+                        "LIBTMUX_SOCKET holds a path separator; use LIBTMUX_SOCKET_PATH for a socket path");
+            }
+            return namedSocket(name);
+        }
+        return defaultSocket();
     }
 
     /** A server named with {@code -L}, resolved by tmux under its own socket directory. */

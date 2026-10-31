@@ -23,6 +23,10 @@ import org.jspecify.annotations.Nullable;
  * }
  * }</pre>
  *
+ * <p>{@link #config()} selects the server in {@code TMUX} by its path. A {@link ServerConfig} built
+ * with no endpoint does not: it passes tmux no socket unless {@code LIBTMUX_SOCKET_PATH} or
+ * {@code LIBTMUX_SOCKET} is set, and tmux then follows {@code TMUX} by itself.
+ *
  * <p>Reading is separated from the environment itself, so the parsing is testable without a process
  * ever having to be started inside tmux: {@link #of} takes the variables, {@link #current} is the
  * one-line wrapper that fetches them.

@@ -1033,7 +1033,9 @@ final class ServerTest {
     @Test
     void aServerCanBeBuiltWithoutSayingAnything() {
         try (Server server = Server.builder().build()) {
-            assertEquals(ServerEndpoint.defaultSocket(), server.config().endpoint());
+            assertEquals(
+                    ServerEndpoint.fromEnvironment(System.getenv()),
+                    server.config().endpoint());
         }
     }
 

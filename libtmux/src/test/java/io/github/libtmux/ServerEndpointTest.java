@@ -1,14 +1,18 @@
 package io.github.libtmux;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Which tmux server to talk to, decided before any process runs. */
 final class ServerEndpointTest {
@@ -80,5 +84,83 @@ final class ServerEndpointTest {
         ServerEndpoint endpoint = ServerEndpoint.socketPath(overlong);
 
         assertEquals(2, endpoint.flags().size(), "the length check belongs at dispatch, not construction");
+    }
+
+    // ------------------------------------------------------------------------------ environment
+
+    @Test
+    void anEnvironmentThatNamesNoServerLeavesTheChoiceToTmux() {
+        assertEquals(ServerEndpoint.defaultSocket(), ServerEndpoint.fromEnvironment(Map.of()));
+    }
+
+    /**
+     * {@code TMUX} names the server of the pane this process runs in, and tmux follows it when it is
+     * given no socket. Turning it into {@code -S} here would make "no socket" mean "the pane's
+     * server" for every caller, which only {@link TmuxEnvironment#config()} is meant to say.
+     */
+    @Test
+    void theTmuxVariableIsNotReadAsASocket() {
+        Map<String, String> inside = Map.of("TMUX", "/tmp/libtmux-java-test/inside/s,1,0", "TMUX_PANE", "%0");
+
+        assertEquals(ServerEndpoint.defaultSocket(), ServerEndpoint.fromEnvironment(inside));
+    }
+
+    @Test
+    void libtmuxSocketSelectsAServerByName() {
+        assertEquals(
+                ServerEndpoint.namedSocket("work"), ServerEndpoint.fromEnvironment(Map.of("LIBTMUX_SOCKET", "work")));
+    }
+
+    @Test
+    void libtmuxSocketPathSelectsAServerByPath() {
+        assertEquals(
+                ServerEndpoint.socketPath(Path.of("/tmp/libtmux-java-test/env/s")),
+                ServerEndpoint.fromEnvironment(Map.of("LIBTMUX_SOCKET_PATH", "/tmp/libtmux-java-test/env/s")));
+    }
+
+    /**
+     * The Python libtmux builds {@code Server(socket_name, socket_path)} from the two variables, keeps
+     * only the path when it is given both, and tmux ignores {@code -L} beside {@code -S} in any case.
+     */
+    @Test
+    void thePathWinsWhenBothVariablesAreSet() {
+        ServerEndpoint chosen = ServerEndpoint.fromEnvironment(
+                Map.of("LIBTMUX_SOCKET", "work", "LIBTMUX_SOCKET_PATH", "/tmp/libtmux-java-test/env/s"));
+
+        assertEquals(List.of("-S", "/tmp/libtmux-java-test/env/s"), chosen.flags());
+    }
+
+    /** Each variable is judged alone, so a blank path does not hide a name that is set. */
+    @ParameterizedTest
+    @ValueSource(strings = {"", " ", "\t"})
+    void aBlankVariableCountsAsUnsetOnItsOwn(String blank) {
+        assertEquals(
+                List.of("-L", "work"),
+                ServerEndpoint.fromEnvironment(Map.of("LIBTMUX_SOCKET_PATH", blank, "LIBTMUX_SOCKET", "work"))
+                        .flags());
+        assertEquals(
+                List.of("-S", "/tmp/libtmux-java-test/env/s"),
+                ServerEndpoint.fromEnvironment(
+                                Map.of("LIBTMUX_SOCKET_PATH", "/tmp/libtmux-java-test/env/s", "LIBTMUX_SOCKET", blank))
+                        .flags());
+        assertEquals(
+                ServerEndpoint.defaultSocket(),
+                ServerEndpoint.fromEnvironment(Map.of("LIBTMUX_SOCKET_PATH", blank, "LIBTMUX_SOCKET", blank)));
+    }
+
+    /**
+     * The value is the operator's and the message goes to logs, so it names the variable and the way
+     * forward and leaves what was in it out.
+     */
+    @Test
+    void aSocketNameThatIsAPathIsRefusedWithoutEchoingIt() {
+        IllegalArgumentException refused = assertThrows(
+                IllegalArgumentException.class,
+                () -> ServerEndpoint.fromEnvironment(Map.of("LIBTMUX_SOCKET", "nested/distinctive")));
+
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains("LIBTMUX_SOCKET"), message);
+        assertTrue(message.contains("LIBTMUX_SOCKET_PATH"), message);
+        assertFalse(message.contains("distinctive"), message);
     }
 }
