@@ -8,6 +8,41 @@ API changes that require updates to calling code are recorded here. See
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### With no socket chosen, tmux picks the server
+
+The core, `tmux-workspace` and `libtmux-mcp` now take the same steps to find a
+server: an explicit option or flag, then `LIBTMUX_SOCKET_PATH` (passed as `-S`),
+then `LIBTMUX_SOCKET` (`-L`), and else no socket at all, which leaves the choice
+to tmux. The path wins when both variables are set, and a blank variable counts
+as unset. `TMUX` is never turned into a socket; tmux follows it by itself.
+
+**Core.** `ServerConfig.builder().build()` and `Server.builder().build()` read
+the two variables from the process environment once, when they build. A program
+that must not follow its operator's environment states a server:
+`ServerEndpoint.socketPath(path)`, `ServerEndpoint.namedSocket(name)`, or
+`ServerEndpoint.defaultSocket()` for tmux's own pick. A `LIBTMUX_SOCKET` that
+holds a `/` now makes `build()` throw `IllegalArgumentException`; use
+`LIBTMUX_SOCKET_PATH` for a path. `ServerEndpoint.fromEnvironment(Map)` applies
+the same rules to any map, and `TmuxEnvironment.config()` is still the way to
+select the server in `TMUX` by its path.
+
+**`tmux-workspace`.** `-S` and `-L` come first, then the variables, and with none
+of them no socket is passed. It used to pass the `TMUX` socket as `-S`. Inside a
+tmux pane a plain `tmux-workspace load -d` still reaches the pane's server,
+because tmux follows `TMUX`; a variable now wins over it. An attached `load`
+and `--append` still refuse a server other than the one in `TMUX`, so with a
+variable set, pass `-S` or `-L` of the pane's server or unset the variable to
+use them.
+
+**`libtmux-mcp`.** It no longer starts a server on the socket `libtmux-mcp` with
+its minimal configuration, and it enables `inspect`, `manage` and `execute`
+whichever server it reaches. To serve the old socket, pass
+`--socket-name libtmux-mcp` and `LIBTMUX_TOOLSETS=inspect,manage,execute,teardown`.
+The launcher no longer starts that server, so start it yourself with the
+configuration you want; the one it wrote set `exit-empty off` and `status off`.
+It accepts `LIBTMUX_SOCKET` and `LIBTMUX_SOCKET_PATH` together, with the path
+winning, and treats either one as unset when it is empty.
+
 ## 0.0.1-alpha.19
 
 Upgrading from alpha.18 keeps the 3.3a core floor: ordinary subprocess

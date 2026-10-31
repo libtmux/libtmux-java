@@ -218,9 +218,9 @@ $ LIBTMUX_TOOLSETS=inspect,execute \
 
 `inspect`, `manage`, `execute`, and `teardown` are independent capabilities, not
 increasing trust levels. Exact names can add tools, exclusions remove them last,
-and an empty toolset selection starts with none. A newly created dedicated
-minimal daemon defaults to all four; existing or operator-selected daemons omit
-teardown unless it is requested explicitly.
+and an empty toolset selection starts with none. The default is `inspect`,
+`manage` and `execute`; `teardown` is left out unless it is requested
+explicitly.
 
 The selection filters the catalog; it does not confine effects. `execute`
 includes authored shell commands, key input, and pasted text, so it can run

@@ -67,12 +67,9 @@ final class DocumentedCommandsTest {
                 problems.add(name + " is not read by libtmux-mcp");
             }
         }
-        // A configuration file the launcher would otherwise write to the temp directory.
-        Map<String, String> effective = new HashMap<>(environment);
-        effective.putIfAbsent(LaunchConfiguration.CONFIG_ENV, "/dev/null");
         try {
-            ToolSurface.resolve(effective);
-            LaunchConfiguration.resolve(arguments, effective);
+            ToolSurface.resolve(environment);
+            LaunchConfiguration.resolve(arguments, environment);
         } catch (IllegalArgumentException refused) {
             problems.add(refused.getMessage());
         }

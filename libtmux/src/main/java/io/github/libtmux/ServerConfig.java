@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import kotlin.annotations.jvm.ReadOnly;
@@ -21,7 +22,8 @@ import org.jspecify.annotations.Nullable;
  * binary compatibility for anyone who had constructed one.
  *
  * <p>Nothing here contacts tmux. A config can be built, stored and compared on a machine that has
- * no tmux installed.
+ * no tmux installed. The one thing it reads is the process environment, once, when a config with no
+ * endpoint is built: see {@link Builder#endpoint}.
  */
 public final class ServerConfig {
 
@@ -36,9 +38,9 @@ public final class ServerConfig {
     private final OperationObserver observer;
     private final int maxConcurrentCommands;
 
-    private ServerConfig(Builder builder) {
+    private ServerConfig(Builder builder, ServerEndpoint endpoint) {
         this.binary = builder.binary;
-        this.endpoint = builder.endpoint;
+        this.endpoint = endpoint;
         this.configFile = builder.configFile;
         this.defaultTimeout = builder.defaultTimeout;
         this.force256Colors = builder.force256Colors;
@@ -84,7 +86,7 @@ public final class ServerConfig {
         return binary;
     }
 
-    /** Which tmux server to talk to. */
+    /** Which tmux server to talk to, as chosen when this config was built. */
     public ServerEndpoint endpoint() {
         return endpoint;
     }
@@ -164,7 +166,7 @@ public final class ServerConfig {
     public static final class Builder {
 
         private String binary = "tmux";
-        private ServerEndpoint endpoint = ServerEndpoint.defaultSocket();
+        private @Nullable ServerEndpoint endpoint;
         private @Nullable Path configFile;
         private Duration defaultTimeout = DEFAULT_TIMEOUT;
         private boolean force256Colors;
@@ -179,7 +181,13 @@ public final class ServerConfig {
             return this;
         }
 
-        /** Sets which server to talk to. */
+        /**
+         * Sets which server to talk to, which takes precedence over the environment.
+         *
+         * <p>Without it, {@link #build()} reads {@code LIBTMUX_SOCKET_PATH} and
+         * {@code LIBTMUX_SOCKET} through {@link ServerEndpoint#fromEnvironment}, and passes tmux no
+         * socket when neither is set.
+         */
         public Builder endpoint(ServerEndpoint endpoint) {
             this.endpoint = Objects.requireNonNull(endpoint, "endpoint");
             return this;
@@ -225,16 +233,26 @@ public final class ServerConfig {
         /**
          * Builds an immutable config, rejecting choices that could only fail later.
          *
-         * @throws IllegalArgumentException if a choice would only fail later
+         * <p>A builder that was given no endpoint reads the process environment here, so the
+         * config keeps the server it named even if the environment changes afterwards.
+         *
+         * @throws IllegalArgumentException if a choice would only fail later, including a
+         *     {@code LIBTMUX_SOCKET} that is not a socket name
          */
         public ServerConfig build() {
+            return build(System.getenv());
+        }
+
+        /** {@link #build()} with the environment passed in, so a test needs no process of its own. */
+        ServerConfig build(Map<String, String> environment) {
             if (binary.isEmpty()) {
                 throw new IllegalArgumentException("binary is empty");
             }
             if (defaultTimeout.isZero() || defaultTimeout.isNegative()) {
                 throw new IllegalArgumentException("defaultTimeout is not positive");
             }
-            return new ServerConfig(this);
+            ServerEndpoint chosen = endpoint != null ? endpoint : ServerEndpoint.fromEnvironment(environment);
+            return new ServerConfig(this, chosen);
         }
     }
 }

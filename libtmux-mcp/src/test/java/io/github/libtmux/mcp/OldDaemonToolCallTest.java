@@ -62,8 +62,7 @@ final class OldDaemonToolCallTest {
                         "existing",
                         "unknown",
                         socket.toString(),
-                        "tmux -N -S '" + socket + "' attach",
-                        false));
+                        "tmux -N -S '" + socket + "' attach"));
         Wire output = new Wire();
         try (Server server = Server.open(config);
                 PipedInputStream input = new PipedInputStream();

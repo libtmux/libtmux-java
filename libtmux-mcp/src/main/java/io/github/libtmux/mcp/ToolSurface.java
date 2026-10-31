@@ -72,7 +72,7 @@ final class ToolSurface {
 
         Set<ToolSpec.Toolset> selected = environment.containsKey(TOOLSETS_ENV)
                 ? parseToolsets(environment.get(TOOLSETS_ENV))
-                : defaults(socketProfile);
+                : INHERITED_DEFAULTS;
         Set<String> included = parseToolNames(environment.get(TOOLS_ENV), TOOLS_ENV);
         Set<String> excluded = parseToolNames(environment.get(EXCLUDE_TOOLS_ENV), EXCLUDE_TOOLS_ENV);
 
@@ -214,13 +214,6 @@ final class ToolSurface {
         connection.put("configurationProvenance", socket.get("configurationProvenance"));
         connection.put("attachCommand", SocketProfile.attachCommand(server.config(), path));
         return Collections.unmodifiableMap(connection);
-    }
-
-    private static Set<ToolSpec.Toolset> defaults(@Nullable SocketProfile socketProfile) {
-        if (socketProfile == null || !socketProfile.defaultTeardown()) {
-            return INHERITED_DEFAULTS;
-        }
-        return Collections.unmodifiableSet(EnumSet.allOf(ToolSpec.Toolset.class));
     }
 
     private static Set<ToolSpec.Toolset> parseToolsets(String configured) {

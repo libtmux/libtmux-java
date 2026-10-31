@@ -5,17 +5,26 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.ProcessTransport;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** What a server needs to know before it runs anything. */
 final class ServerConfigTest {
 
     @Test
     void theDefaultsAreUsableWithoutSayingAnything() {
-        ServerConfig config = ServerConfig.builder().build();
+        ServerConfig config = ServerConfig.builder().build(Map.of());
 
         assertEquals("tmux", config.binary());
         assertEquals(ServerEndpoint.defaultSocket(), config.endpoint());
@@ -130,7 +139,10 @@ final class ServerConfigTest {
 
     @Test
     void colorChoiceSurvivesCopiesAndCanReturnToDetection() {
-        try (Server server = Server.builder().force256Colors(true).build()) {
+        try (Server server = Server.builder()
+                .endpoint(ServerEndpoint.defaultSocket())
+                .force256Colors(true)
+                .build()) {
             ServerConfig config = server.config();
             assertTrue(config.force256Colors());
             assertEquals(java.util.List.of("tmux", "-u", "-2"), config.endpointCommand());
@@ -155,5 +167,159 @@ final class ServerConfigTest {
                 () -> ServerConfig.builder()
                         .defaultTimeout(Duration.ofSeconds(-1))
                         .build());
+    }
+
+    // ------------------------------------------------------------------------------ environment
+
+    @Test
+    void aConfigGivenNoEndpointTakesTheServerTheEnvironmentNames() {
+        assertEquals(
+                ServerEndpoint.namedSocket("work"),
+                ServerConfig.builder().build(Map.of("LIBTMUX_SOCKET", "work")).endpoint());
+        assertEquals(
+                ServerEndpoint.socketPath(Path.of("/tmp/libtmux-java-test/env/s")),
+                ServerConfig.builder()
+                        .build(Map.of("LIBTMUX_SOCKET_PATH", "/tmp/libtmux-java-test/env/s"))
+                        .endpoint());
+        assertEquals(
+                "[tmux, -u]",
+                ServerConfig.builder().build(Map.of()).endpointCommand().toString());
+    }
+
+    @Test
+    void anEndpointTheCallerGaveBeatsTheEnvironment() {
+        ServerEndpoint given = ServerEndpoint.namedSocket("given");
+
+        ServerConfig config = ServerConfig.builder()
+                .endpoint(given)
+                .build(Map.of("LIBTMUX_SOCKET", "work", "LIBTMUX_SOCKET_PATH", "/tmp/libtmux-java-test/env/s"));
+
+        assertEquals(given, config.endpoint());
+        assertEquals("[tmux, -u, -L, given]", config.endpointCommand().toString());
+    }
+
+    /** A derived config that re-read the environment could land on a different server than its source. */
+    @Test
+    void aDerivedConfigKeepsTheServerItsSourceNamed() {
+        ServerConfig source = ServerConfig.builder().build(Map.of("LIBTMUX_SOCKET", "first"));
+
+        ServerConfig derived = source.toBuilder().build(Map.of("LIBTMUX_SOCKET", "second"));
+
+        assertEquals(ServerEndpoint.namedSocket("first"), derived.endpoint());
+    }
+
+    @Test
+    void anEnvironmentThatNamesNoValidSocketFailsAtBuildNotAtFirstCommand() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ServerConfig.builder().build(Map.of("LIBTMUX_SOCKET", "nested/name")));
+    }
+
+    /**
+     * The process environment is what {@code build()} reads, which no injected map can show: a child
+     * JVM is given the variables and prints the command each default builder would run.
+     */
+    @Test
+    void buildReadsTheProcessEnvironmentWhenNoEndpointWasGiven() throws Exception {
+        assertEquals(both("[tmux, -u]"), child(DefaultConfigMain.class, Map.of()));
+        assertEquals(
+                both("[tmux, -u, -L, from-process]"),
+                child(DefaultConfigMain.class, Map.of("LIBTMUX_SOCKET", "from-process")));
+        assertEquals(
+                both("[tmux, -u, -S, /tmp/libtmux-java-test/env/s]"),
+                child(
+                        DefaultConfigMain.class,
+                        Map.of(
+                                "LIBTMUX_SOCKET",
+                                "from-process",
+                                "LIBTMUX_SOCKET_PATH",
+                                "/tmp/libtmux-java-test/env/s")));
+    }
+
+    /**
+     * tmux follows {@code TMUX} when it is given no socket, so a command with none has to leave it in
+     * the environment and add no {@code -S} of its own. The test JVM has no {@code TMUX}, so a child
+     * is given one and a fake tmux records whether it arrived and what it was asked.
+     */
+    @Test
+    void aCommandWithNoSocketReachesTmuxWithTmuxStillSet(@TempDir Path directory) throws Exception {
+        Path record = directory.resolve("record");
+        Path tmux = directory.resolve("fake-tmux");
+        Files.writeString(tmux, """
+                #!/bin/sh
+                if [ "$TMUX" = "/tmp/libtmux-java-test/inside/s,1,0" ]; then
+                  echo inherits_tmux=yes >> "$FAKE_RECORD"
+                else
+                  echo inherits_tmux=no >> "$FAKE_RECORD"
+                fi
+                printf 'argv:' >> "$FAKE_RECORD"
+                printf ' %s' "$@" >> "$FAKE_RECORD"
+                echo >> "$FAKE_RECORD"
+                """);
+        Files.setPosixFilePermissions(tmux, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
+
+        child(
+                SocketlessCommandMain.class,
+                Map.of(
+                        "TMUX", "/tmp/libtmux-java-test/inside/s,1,0",
+                        "TMUX_PANE", "%0",
+                        "FAKE_RECORD", record.toString()),
+                tmux.toString());
+
+        assertEquals(List.of("inherits_tmux=yes", "argv: -u list-sessions"), Files.readAllLines(record));
+    }
+
+    private static String both(String command) {
+        return "config=" + command + "\nserver=" + command;
+    }
+
+    /** Runs a main in a JVM of its own, with no socket variable but the ones given, and returns what it printed. */
+    private static String child(Class<?> main, Map<String, String> variables, String... arguments)
+            throws IOException, InterruptedException {
+        List<String> command = new ArrayList<>(List.of(
+                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp",
+                System.getProperty("java.class.path"),
+                main.getName()));
+        command.addAll(List.of(arguments));
+        ProcessBuilder builder = new ProcessBuilder(command);
+        builder.environment().remove("LIBTMUX_SOCKET");
+        builder.environment().remove("LIBTMUX_SOCKET_PATH");
+        builder.environment().putAll(variables);
+        builder.redirectError(ProcessBuilder.Redirect.INHERIT);
+        Process child = builder.start();
+        try {
+            String printed = new String(child.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(child.waitFor(30, TimeUnit.SECONDS), "the child JVM did not exit");
+            assertEquals(0, child.exitValue());
+            return printed.strip();
+        } finally {
+            child.destroyForcibly();
+        }
+    }
+
+    /** Builds each default builder with nothing said and prints the command prefix it would run. */
+    public static final class DefaultConfigMain {
+        private DefaultConfigMain() {}
+
+        public static void main(String[] args) {
+            System.out.println("config=" + ServerConfig.builder().build().endpointCommand());
+            try (Server server = Server.builder().build()) {
+                System.out.println("server=" + server.config().endpointCommand());
+            }
+        }
+    }
+
+    /** Sends one command, with no socket said, through the process transport to the tmux named first. */
+    public static final class SocketlessCommandMain {
+        private SocketlessCommandMain() {}
+
+        public static void main(String[] args) {
+            ServerConfig config = ServerConfig.builder().binary(args[0]).build();
+            try (ProcessTransport transport = new ProcessTransport()) {
+                transport.execute(
+                        CommandRequest.of(config.endpointCommand(), List.of("list-sessions"), Duration.ofSeconds(30)));
+            }
+        }
     }
 }

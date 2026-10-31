@@ -14,8 +14,7 @@ record SocketProfile(
         String serverState,
         String configurationProvenance,
         String resolvedSocketPath,
-        String attachCommand,
-        boolean defaultTeardown) {
+        String attachCommand) {
 
     /** Tokens a POSIX shell reads as themselves, so quoting them only makes the command harder to read. */
     private static final Pattern ALREADY_SAFE = Pattern.compile("[\\w@%+=:,./-]+");

@@ -300,6 +300,11 @@ In a real pane those variables are already set, so
 when there is no pane to describe. This README is not running inside one, so the
 example supplies them.
 
+A [`ServerConfig`][serverconfig] with no endpoint does not use that socket. It
+passes tmux none and tmux follows `TMUX` itself, unless `LIBTMUX_SOCKET_PATH` or
+`LIBTMUX_SOCKET` names another server. To ask for the pane's server by path, use
+[`TmuxEnvironment.config()`][tmuxenvironment].
+
 ### [`Server.environment`][environment]: what a later pane will see
 
 tmux keeps an environment per server and per session, and gives it to every

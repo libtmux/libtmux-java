@@ -50,8 +50,10 @@ import org.jspecify.annotations.Nullable;
  * Manages sessions, windows, and panes on a tmux server.
  *
  * <p>Use {@link #open} with a {@link ServerConfig} to select a server by socket name or path.
- * From this object, create sessions or query the server's existing sessions, windows, and panes.
- * Each {@link Session} contains windows, and each {@link Window} contains panes.
+ * A config that names none reads {@code LIBTMUX_SOCKET_PATH} and {@code LIBTMUX_SOCKET}, and with
+ * neither set leaves the choice to tmux. From this object, create sessions or query the server's
+ * existing sessions, windows, and panes. Each {@link Session} contains windows, and each
+ * {@link Window} contains panes.
  *
  * <p>Ownership is decided at construction and never inferred. {@link #open} creates a transport this
  * server closes exactly once; {@link #using} borrows one the caller keeps, so several servers can
@@ -1523,7 +1525,12 @@ public final class Server implements AutoCloseable {
 
         /** Builds the server, owning a new transport unless one was borrowed. */
         public Server build() {
-            ServerConfig built = config.build();
+            return build(System.getenv());
+        }
+
+        /** {@link #build()} with the environment passed in, so a test needs no process of its own. */
+        Server build(Map<String, String> environment) {
+            ServerConfig built = config.build(environment);
             return transport == null ? open(built) : using(built, transport);
         }
     }

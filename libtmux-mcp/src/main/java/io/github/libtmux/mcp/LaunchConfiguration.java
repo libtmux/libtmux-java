@@ -4,9 +4,6 @@ import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.transport.CommandResult;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
@@ -14,25 +11,22 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
-/** Resolves the process-wide socket and tmux configuration before any transport opens. */
+/**
+ * Resolves the process-wide socket and tmux configuration before any transport opens.
+ *
+ * <p>The socket is, in order, {@code --socket}, {@code --socket-name}, {@code LIBTMUX_SOCKET_PATH},
+ * {@code LIBTMUX_SOCKET}, and else none: tmux then picks the server itself, which is the one in
+ * {@code TMUX} when the launcher runs inside a pane. No server is started or configured on the
+ * operator's behalf.
+ */
 record LaunchConfiguration(
-        ServerConfig config,
-        String selector,
-        String selectionProvenance,
-        String declaredConfigurationProvenance,
-        boolean defaultDedicated,
-        @Nullable String ownerNonce) {
+        ServerConfig config, String selector, String selectionProvenance, String declaredConfigurationProvenance) {
 
     static final String SOCKET_ENV = "LIBTMUX_SOCKET";
     static final String SOCKET_PATH_ENV = "LIBTMUX_SOCKET_PATH";
     static final String CONFIG_ENV = "LIBTMUX_TMUX_CONFIG";
-    private static final String DEFAULT_SOCKET = "libtmux-mcp";
-    private static final String MINIMAL_CONFIG_RESOURCE = "/io/github/libtmux/mcp/minimal.conf";
-    private static final String OWNER_OPTION = "@libtmux_mcp_owner";
-    private static final String OWNER_PLACEHOLDER = "__LIBTMUX_MCP_OWNER_NONCE__";
 
     static LaunchConfiguration resolve(List<String> args, Map<String, String> environment) {
         @Nullable Path flaggedPath = null;
@@ -58,39 +52,27 @@ record LaunchConfiguration(
             throw new IllegalArgumentException("--socket and --socket-name are mutually exclusive");
         }
         SocketChoice socket = flaggedPath != null
-                ? new SocketChoice(
-                        ServerEndpoint.socketPath(flaggedPath), "path:" + flaggedPath, "operator-current", false)
+                ? new SocketChoice(ServerEndpoint.socketPath(flaggedPath), "path:" + flaggedPath, "operator-current")
                 : flaggedName != null
                         ? new SocketChoice(
-                                ServerEndpoint.namedSocket(flaggedName),
-                                "name:" + flaggedName,
-                                "operator-current",
-                                false)
+                                ServerEndpoint.namedSocket(flaggedName), "name:" + flaggedName, "operator-current")
                         : socket(environment);
 
-        ConfigChoice configured = configuration(environment.get(CONFIG_ENV), socket.defaultDedicated());
+        ConfigChoice configured = configuration(environment.get(CONFIG_ENV));
         ServerConfig.Builder config = ServerConfig.builder().binary(binary).endpoint(socket.endpoint());
         if (configured.path() != null) {
             config.configFile(configured.path());
         }
         return new LaunchConfiguration(
-                config.build(),
-                socket.selector(),
-                socket.selectionProvenance(),
-                configured.provenance(),
-                socket.defaultDedicated(),
-                configured.ownerNonce());
+                config.build(), socket.selector(), socket.selectionProvenance(), configured.provenance());
     }
 
     SocketProfile profile(Server server) {
         Objects.requireNonNull(server, "server");
-        if (defaultDedicated) {
-            return dedicatedProfile(server);
-        }
         CommandResult metadata = server.cmd("display-message", "-p", "#{socket_path}");
         if (!metadata.succeeded()) {
             if (serverAbsent(metadata)) {
-                return socketProfile("absent", declaredConfigurationProvenance, false, fallbackSocketPath());
+                return socketProfile("absent", declaredConfigurationProvenance, fallbackSocketPath());
             }
             throw new IllegalStateException(
                     "could not establish explicit tmux socket provenance: " + String.join("; ", metadata.stderr()));
@@ -99,27 +81,7 @@ record LaunchConfiguration(
         if (socketPath.isBlank()) {
             throw new IllegalStateException("tmux returned an empty socket path during startup");
         }
-        return socketProfile("existing", "unknown", false, reported(socketPath));
-    }
-
-    private SocketProfile dedicatedProfile(Server server) {
-        CommandResult started = server.cmd("start-server");
-        if (!started.succeeded()) {
-            throw new IllegalStateException(
-                    "could not start or reach the dedicated tmux server: " + String.join("; ", started.stderr()));
-        }
-        CommandResult metadata = server.cmd("display-message", "-p", "#{" + OWNER_OPTION + "}\t#{socket_path}");
-        if (!metadata.succeeded()) {
-            throw new IllegalStateException(
-                    "could not read dedicated tmux startup metadata: " + String.join("; ", metadata.stderr()));
-        }
-        String[] fields = oneLine(metadata, "dedicated tmux startup metadata").split("\t", 2);
-        if (fields.length != 2 || fields[1].isBlank()) {
-            throw new IllegalStateException("tmux returned malformed dedicated startup metadata");
-        }
-        boolean created = Objects.requireNonNull(ownerNonce, "ownerNonce").equals(fields[0]);
-        return socketProfile(
-                created ? "created" : "existing", created ? "minimal" : "unknown", created, reported(fields[1]));
+        return socketProfile("existing", "unknown", reported(socketPath));
     }
 
     /**
@@ -144,8 +106,7 @@ record LaunchConfiguration(
         throw new IllegalStateException("tmux reported a socket path that names no file during startup");
     }
 
-    private SocketProfile socketProfile(
-            String serverState, String configurationProvenance, boolean defaultTeardown, String resolvedSocketPath) {
+    private SocketProfile socketProfile(String serverState, String configurationProvenance, String resolvedSocketPath) {
         RouteValue.requireSafe(resolvedSocketPath, "resolved tmux socket path");
         return new SocketProfile(
                 selector,
@@ -153,57 +114,38 @@ record LaunchConfiguration(
                 serverState,
                 configurationProvenance,
                 resolvedSocketPath,
-                SocketProfile.attachCommand(config, resolvedSocketPath),
-                defaultTeardown);
+                SocketProfile.attachCommand(config, resolvedSocketPath));
     }
 
     private static SocketChoice socket(Map<String, String> environment) {
-        @Nullable String configuredName = environment.get(SOCKET_ENV);
-        @Nullable String configuredPath = environment.get(SOCKET_PATH_ENV);
-        if (configuredName != null && configuredPath != null) {
-            throw new IllegalArgumentException(SOCKET_ENV + " and " + SOCKET_PATH_ENV + " are mutually exclusive");
-        }
-        if (configuredName == null && configuredPath == null) {
-            return new SocketChoice(
-                    ServerEndpoint.namedSocket(DEFAULT_SOCKET), "name:" + DEFAULT_SOCKET, "default-dedicated", true);
-        }
+        @Nullable String configuredPath = unlessBlank(environment.get(SOCKET_PATH_ENV));
         if (configuredPath != null) {
             Path path = absolute(RouteValue.requireSafe(configuredPath, SOCKET_PATH_ENV), SOCKET_PATH_ENV);
-            return new SocketChoice(ServerEndpoint.socketPath(path), "path:" + path, "operator-current", false);
+            return new SocketChoice(ServerEndpoint.socketPath(path), "path:" + path, "operator-current");
         }
-        String name = nonempty(
-                RouteValue.requireSafe(Objects.requireNonNull(configuredName, SOCKET_ENV), SOCKET_ENV), SOCKET_ENV);
-        return new SocketChoice(ServerEndpoint.namedSocket(name), "name:" + name, "operator-current", false);
+        @Nullable String configuredName = unlessBlank(environment.get(SOCKET_ENV));
+        if (configuredName != null) {
+            String name = RouteValue.requireSafe(configuredName, SOCKET_ENV);
+            if (name.indexOf('/') >= 0) {
+                throw new IllegalArgumentException(
+                        SOCKET_ENV + " holds a path separator; use " + SOCKET_PATH_ENV + " for a socket path");
+            }
+            return new SocketChoice(ServerEndpoint.namedSocket(name), "name:" + name, "operator-current");
+        }
+        return new SocketChoice(ServerEndpoint.defaultSocket(), "inherit", "inherited");
     }
 
-    private static ConfigChoice configuration(@Nullable String configured, boolean defaultDedicated) {
-        if (configured == null && defaultDedicated) {
-            return materializeMinimalConfig();
-        }
+    /** A blank variable counts as unset, as it does for the core and the Python libtmux. */
+    private static @Nullable String unlessBlank(@Nullable String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private static ConfigChoice configuration(@Nullable String configured) {
         if (configured == null) {
-            return new ConfigChoice(null, "unknown", null);
+            return new ConfigChoice(null, "unknown");
         }
         String value = nonempty(configured, CONFIG_ENV);
-        return new ConfigChoice(absolute(value, CONFIG_ENV), "user-configured", null);
-    }
-
-    private static ConfigChoice materializeMinimalConfig() {
-        String nonce = UUID.randomUUID().toString();
-        try (InputStream resource = LaunchConfiguration.class.getResourceAsStream(MINIMAL_CONFIG_RESOURCE)) {
-            if (resource == null) {
-                throw new IllegalStateException("shipped minimal tmux configuration is missing");
-            }
-            Path path = Files.createTempFile("libtmux-mcp-", ".conf");
-            String template = new String(resource.readAllBytes(), StandardCharsets.UTF_8);
-            if (!template.contains(OWNER_PLACEHOLDER)) {
-                throw new IllegalStateException("shipped minimal tmux configuration has no owner placeholder");
-            }
-            Files.writeString(path, template.replace(OWNER_PLACEHOLDER, nonce), StandardCharsets.UTF_8);
-            path.toFile().deleteOnExit();
-            return new ConfigChoice(path, "minimal", nonce);
-        } catch (IOException failure) {
-            throw new IllegalStateException("could not materialize the shipped minimal tmux configuration", failure);
-        }
+        return new ConfigChoice(absolute(value, CONFIG_ENV), "user-configured");
     }
 
     private String fallbackSocketPath() {
@@ -247,11 +189,7 @@ record LaunchConfiguration(
         return args.get(index);
     }
 
-    private record SocketChoice(
-            ServerEndpoint endpoint, String selector, String selectionProvenance, boolean defaultDedicated) {}
+    private record SocketChoice(ServerEndpoint endpoint, String selector, String selectionProvenance) {}
 
-    private record ConfigChoice(
-            @Nullable Path path,
-            String provenance,
-            @Nullable String ownerNonce) {}
+    private record ConfigChoice(@Nullable Path path, String provenance) {}
 }

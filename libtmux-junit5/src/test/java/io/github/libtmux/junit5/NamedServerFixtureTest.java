@@ -18,7 +18,10 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -303,6 +306,27 @@ final class NamedServerFixtureTest {
         return Path.of(rows.getFirst());
     }
 
+    /**
+     * The guard is what stands between a failed assertion and the developer's own server, so it is
+     * shown to refuse each way a {@code TMUX_TMPDIR} can point outside the test root, a link planted
+     * inside it included, and to accept one below it.
+     */
+    @Test
+    void theQuarantineGuardRefusesATmuxTmpDirOutsideTheTestRoot(@TempDir Path directory) throws Exception {
+        Path escape = Files.createSymbolicLink(directory.resolve("escape"), Path.of("/usr"));
+        Path missing = TEST_ROOT.resolve("never-created-" + System.nanoTime());
+
+        assertThrows(AssertionError.class, () -> requireBelowTestRoot(null));
+        for (String outside :
+                List.of("", "/", "/tmp", "/usr", TEST_ROOT.toString(), escape.toString(), missing.toString())) {
+            assertThrows(AssertionError.class, () -> requireBelowTestRoot(outside), outside);
+        }
+
+        Assumptions.assumeTrue(
+                directory.toRealPath().startsWith(TEST_ROOT.toRealPath()), "the build puts temporary directories here");
+        requireBelowTestRoot(directory.toString());
+    }
+
     private static ProcessHandle reportedProcess(Server server) {
         List<String> rows = server.cmd("display-message", "-p", "#{pid}").stdout();
         assertEquals(1, rows.size(), "tmux did not report one process id");
@@ -312,8 +336,33 @@ final class NamedServerFixtureTest {
 
     private static Path quarantine() {
         String configured = System.getenv("TMUX_TMPDIR");
-        assertTrue(configured != null && !configured.isEmpty(), "the build did not quarantine TMUX_TMPDIR");
-        return Path.of(configured);
+        requireBelowTestRoot(configured);
+        return Path.of(Objects.requireNonNull(configured));
+    }
+
+    /** Where the build quarantines every tmux server this suite starts. */
+    private static final Path TEST_ROOT = Path.of("/tmp/libtmux-java-test");
+
+    /**
+     * Refuses a {@code TMUX_TMPDIR} that does not resolve to a directory below the test root. A bare
+     * client under any other one reaches a server this build does not own, and these tests stop what
+     * they find.
+     */
+    static void requireBelowTestRoot(@Nullable String tmuxTmpDir) {
+        if (tmuxTmpDir == null || tmuxTmpDir.isEmpty()) {
+            throw new AssertionError("the build did not quarantine TMUX_TMPDIR");
+        }
+        Path root;
+        Path quarantine;
+        try {
+            root = TEST_ROOT.toRealPath();
+            quarantine = Path.of(tmuxTmpDir).toRealPath();
+        } catch (IOException unresolved) {
+            throw new AssertionError("TMUX_TMPDIR or the test root does not resolve to a directory", unresolved);
+        }
+        assertTrue(
+                quarantine.startsWith(root) && !quarantine.equals(root),
+                "TMUX_TMPDIR is not below the test root, so a bare client would reach a server this build does not own");
     }
 
     private static void awaitExit(ProcessHandle process) throws Exception {
