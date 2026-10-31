@@ -780,6 +780,13 @@ current trunk; each released version's Javadoc is on
 | [`MIGRATION.md`](MIGRATION.md) | What to change when upgrading |
 | [`docs/README.md`](docs/README.md) | Every guide, reference and decision, one line each |
 
+## AI policy
+
+Use these packages with AI tools as you like. When contributing, check what you
+submit and wait for a maintainer's invitation before preparing a pull request.
+See the [AI policy](https://libtmux.org/en/meta/ai-policy/), also kept as
+[AI_POLICY.md](https://github.com/libtmux/.github/blob/HEAD/AI_POLICY.md).
+
 ## Attribution
 
 Please use the following BibTeX template to cite libtmux-java in scientific
