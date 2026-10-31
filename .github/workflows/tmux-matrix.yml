@@ -40,6 +40,11 @@ on:
         description: 'Comma-separated JDKs the tests run on, for example 25,27. Empty is 25.'
         type: string
         default: ''
+      tmate:
+        description: 'Open a tmate session on the one lane. Needs scope custom with a single tmux-ref.'
+        type: choice
+        options: [off, before-tests, on-failure]
+        default: off
 
 # Cancel a superseded run only on a pull request, where a new push genuinely replaces the answer.
 # On master every commit's run stands on its own: grouping them all together meant re-running an
@@ -77,10 +82,11 @@ jobs:
           SCOPE: ${{ inputs.scope }}
           TMUX_REF: ${{ inputs.tmux-ref }}
           JDK: ${{ inputs.jdk }}
+          TMATE: ${{ inputs.tmate }}
         run: |
           python3 -B -m tools.ci.plan matrix \
             --event "$EVENT" --ref-type "$REF_TYPE" --scope "$SCOPE" \
-            --tmux-ref "$TMUX_REF" --jdk "$JDK" \
+            --tmux-ref "$TMUX_REF" --jdk "$JDK" --tmate "$TMATE" \
             --github-output "$GITHUB_OUTPUT"
 
   lanes:
@@ -211,6 +217,15 @@ jobs:
           echo "PYTHONPATH=$RUNNER_TEMP/python-libtmux-core/src" >> "$GITHUB_ENV"
           echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
 
+      # Pinned by commit: v3.24, https://github.com/mxschmitt/action-tmate/commit/35b54af.
+      # Only a dispatch gets here, and the plan allows one lane to.
+      - name: Debug session before the tests
+        if: github.event_name == 'workflow_dispatch' && matrix.tmate == 'before-tests'
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        timeout-minutes: 30
+        with:
+          limit-access-to-actor: true
+
       # One lane rather than testTmuxMatrix: each version builds and runs on its own runner, so the
       # lanes take the time of the slowest instead of the sum. A tmux the plugin's lists do not
       # name runs as the ad hoc lane, in the directory named for it.
@@ -223,6 +238,13 @@ jobs:
           args=(-PlibtmuxMatrix="$HOME/tmux-builds" "-Plibtmux.testJdk=$JDK")
           if [ -n "$ADHOC" ]; then args+=("-PlibtmuxAdHoc=$ADHOC"); fi
           ./gradlew "$TASK" "${args[@]}" --stacktrace
+
+      - name: Debug session after a failure
+        if: failure() && github.event_name == 'workflow_dispatch' && matrix.tmate == 'on-failure'
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        timeout-minutes: 30
+        with:
+          limit-access-to-actor: true
 
       - name: No tmux server outlived the suite
         if: always()
