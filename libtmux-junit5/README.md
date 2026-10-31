@@ -11,8 +11,8 @@
 
 # libtmux-junit5
 
-**A JUnit 5 extension that gives each test its own tmux server, and guarantees
-it is gone afterwards.**
+**A JUnit 5 extension that gives each test its own tmux server and checks its
+exit during teardown.**
 
 [![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/java/)
 [![libtmux-junit5](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-junit5?label=libtmux-junit5)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-junit5)
@@ -21,7 +21,7 @@ it is gone afterwards.**
 
 For testing your own code against a real tmux. Put
 [`@ExtendWith(TmuxExtension.class)`][tmux-extension] on a test class and each
-test gets a [`Server`][server] of its own, gone afterwards. With
+test gets a [`Server`][server] of its own, released during teardown. With
 [`FakeTmux`][fake-tmux] there is no tmux at all.
 
 `io.github.libtmux:libtmux-junit5` — [on Maven
@@ -128,10 +128,11 @@ socket.getFileName().toString();                           // → s
 - **A server per test, never shared.** All state lives in the extension store,
   never in fields. JUnit reuses one extension instance for every test in a
   class, so a field would be shared the moment tests run in parallel.
-- **No server outlives the run, even one killed outright.** The socket path
-  names the owning JVM's pid, and a shutdown hook ends this JVM's own servers.
-- **A killed run is swept.** Before making its first server, a run sweeps
-  servers whose owner is gone. It finds them in the process table, since a
+- **A shutdown hook handles JVM termination.** A hard kill such as `SIGKILL`
+  skips the hook and can leave servers running until a later fixture run.
+- **A killed run is swept by a later run sharing the fixture root.** Before
+  making its first server, a run sweeps servers whose owner is gone. It finds
+  them in the process table, since a
   killed run never updates a registry. A live owner is never touched.
 - **Cleanup failures fail the test.** If a fixture's tmux will not die, the
   test fails and the socket stays, because a live daemon still owns it.

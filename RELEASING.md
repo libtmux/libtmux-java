@@ -224,8 +224,7 @@ perform for itself.
    Actions → Repository secrets** into this environment's own secrets, then
    delete the repository-level copies. A repository secret is in scope for
    every workflow in this repository; an environment secret is in scope only
-   for a job that names the environment, which after this file's changes is
-   exactly the two publishing jobs.
+   for a job that names the environment: `publish` in `release.yml`.
 
 Not done. Until it is, the workflow-level `if:` conditions are the only
 gate, and they are not a substitute for this.

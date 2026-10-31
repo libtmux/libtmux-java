@@ -114,9 +114,10 @@ config.endpoint() match {
 }
 ```
 
-Timeouts are `scala.concurrent.duration.FiniteDuration` at every public entry
-point, converted once at the boundary: `pane.awaitText("$", 5.seconds)`
-never surfaces `java.time.Duration` to the caller.
+Pane waits accept `scala.concurrent.duration.FiniteDuration`, converted at the
+boundary: `pane.awaitText("$", 5.seconds)`. Java `ServerConfig`, direct-style
+live-view waits, and Cats control attachment and acknowledgement parameters
+use `java.time.Duration`.
 
 Follow with [queries](query.md), [ownership](ownership.md), then
 [execution](execution.md). For immediate access without the facade, use the

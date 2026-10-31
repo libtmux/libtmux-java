@@ -9,9 +9,9 @@ shadowed by a Java member with only a compiler warning, so a member on a real
 wrapper class is what makes a generated suspend mirror safe to add later
 without an accidental collision.
 
-Every operation that may contact tmux is `suspend`. Captured state — an id, a
-name, a size — is a plain, non-suspending property. Query fields live on the
-handle type's companion (`Pane.command`), never as an instance member, so
+Wrapper reads and mutations that contact tmux are `suspend`. Captured state —
+an id, a name, a size — is a plain, non-suspending property. Query fields live
+on the handle type's companion (`Pane.command`), never as an instance member, so
 `Pane.command` (the field) and `pane.currentCommand` (the captured value)
 never collide.
 
@@ -40,9 +40,8 @@ file that needs both imports one under an alias:
 
 ## `ExecutionPolicy`: two independently sized pools
 
-`ExecutionPolicy.commands` backs every `suspend` operation this module
-generates or hand-writes, sized from `ServerConfig.maxConcurrentCommands()` —
-the transport's real admission bound, not a guessed constant.
+`ExecutionPolicy.commands` backs wrapper command operations. Its size comes
+from `ServerConfig.maxConcurrentCommands()`, the transport's admission bound.
 `ExecutionPolicy.streamReads` backs only what still genuinely blocks a
 thread: `Server.liveState`'s background pump. `ControlClient.output`/`events`
 hold no thread from either pool; they are built on the non-blocking
@@ -70,16 +69,21 @@ inside the subscription's own buffer, which is exactly what turns into a
 
 ## Blocking calls from a coroutine
 
-Every libtmux call blocks its thread until tmux answers. This module already
-wraps each one in `runInterruptible`, dispatched on `ExecutionPolicy.commands`
-or `.streamReads`, so cancelling the coroutine interrupts the wait rather than
-leaving it running past the point nothing is listening for its result.
+Wrapper command calls use `runInterruptible` on `ExecutionPolicy.commands`, so
+cancelling the coroutine interrupts the caller's wait. Live-state pumping uses
+`.streamReads`; idle output flows suspend without holding a thread.
 
 - An ordinary suspend call — `newSession`, `capture`, `sendLine` — already
   runs on `policy.commands`, sized from the server's own admission bound.
 - `Server.liveState`'s background pump runs on `policy.streamReads`.
 - `ControlClient.output`/`events` hold no thread at all; only collecting the
   returned `Flow` reads.
+
+`Server.channel` returns the raw Java `Channel`. Its `signal()` and `drain()`
+methods block, so call them on a suitable dispatcher such as `Dispatchers.IO`.
+The suspend `Channel.await` and `awaitReservingCapacity` extensions take their
+own dispatcher, defaulting to `Dispatchers.IO`, independently of
+`ExecutionPolicy`. Closing a wrapper is synchronous too.
 
 ## The DSL, and the compile error the first draft had
 
