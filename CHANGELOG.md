@@ -20,6 +20,7 @@ release is supported, and there are no backports.
   follows `TMUX` itself when no socket is chosen. `shell` hands tmuxp a socket a
   variable chose. See the
   [migration notes](MIGRATION.md#with-no-socket-chosen-tmux-picks-the-server).
+  (#117)
 
 - **`libtmux-mcp` no longer starts a server of its own on the socket
   `libtmux-mcp`.** With no `--socket`, `--socket-name`, `LIBTMUX_SOCKET_PATH` or
@@ -29,7 +30,8 @@ release is supported, and there are no backports.
   together no longer fails startup: the path wins. An empty `LIBTMUX_SOCKET` or
   `LIBTMUX_SOCKET_PATH` is unset where it used to fail. Pass
   `--socket-name libtmux-mcp` to keep the old socket. See the
-  [migration notes][migration-socket].
+  [migration notes](MIGRATION.md#with-no-socket-chosen-tmux-picks-the-server).
+  (#117)
 
 - **JSON layouts are floored at tmux 3.8.** tmux 3.8 applies a JSON layout; a
   server below 3.8 gets an `UnsupportedFeatureException` naming 3.8 before
