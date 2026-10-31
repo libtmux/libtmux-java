@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerConfig;
 import io.github.libtmux.ServerEndpoint;
-import io.github.libtmux.junit5.NamedServerFixture;
 import io.github.libtmux.transport.CommandRequest;
 import io.github.libtmux.transport.CommandResult;
 import io.github.libtmux.transport.TmuxTransport;
@@ -21,13 +20,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Which server the launcher was told to expose. A client passes these once and never sees them
@@ -35,15 +33,30 @@ import org.junit.jupiter.params.provider.CsvSource;
  */
 final class MainTest {
 
+    /**
+     * The launcher once started a server of its own on the socket {@code libtmux-mcp}, which sent an
+     * agent started from inside tmux to a server nobody was looking at. Saying nothing now passes
+     * tmux no socket and no configuration file, so tmux picks the server.
+     */
     @Test
-    void nothingSaidPinsTheDedicatedMinimalServer() throws IOException {
-        ServerConfig config = Main.configure(List.of());
+    void nothingSaidPassesTmuxNoSocketAndNoConfigurationFile() {
+        LaunchConfiguration launch = LaunchConfiguration.resolve(List.of(), Map.of());
 
-        assertEquals(ServerEndpoint.namedSocket("libtmux-mcp"), config.endpoint());
-        Path minimal = config.configFile().orElseThrow();
-        assertTrue(!minimal.equals(Path.of("/dev/null")));
-        assertTrue(Files.readString(minimal).contains("libtmux-mcp"));
-        assertEquals("tmux", config.binary());
+        assertEquals(ServerEndpoint.defaultSocket(), launch.config().endpoint());
+        assertEquals(List.of("tmux", "-u"), launch.config().endpointCommand());
+        assertTrue(launch.config().configFile().isEmpty());
+        assertEquals("inherit", launch.selector());
+        assertEquals("inherited", launch.selectionProvenance());
+        assertEquals("unknown", launch.declaredConfigurationProvenance());
+    }
+
+    /** {@code TMUX} is tmux's to follow, so it is never read into a socket here. */
+    @Test
+    void theTmuxVariableIsNotReadAsASocket() {
+        LaunchConfiguration launch = LaunchConfiguration.resolve(
+                List.of(), Map.of("TMUX", "/tmp/libtmux-java-test/inside/s,1,0", "TMUX_PANE", "%0"));
+
+        assertEquals(ServerEndpoint.defaultSocket(), launch.config().endpoint());
     }
 
     /**
@@ -250,7 +263,6 @@ final class MainTest {
         assertEquals(ServerEndpoint.namedSocket("work"), named.config().endpoint());
         assertTrue(named.config().configFile().isEmpty());
         assertEquals("unknown", named.declaredConfigurationProvenance());
-        assertEquals(false, named.defaultDedicated());
 
         LaunchConfiguration path = LaunchConfiguration.resolve(
                 List.of(),
@@ -269,81 +281,123 @@ final class MainTest {
         SocketProfile absent = absentProfile(path);
         assertEquals("absent", absent.serverState());
         assertEquals("user-configured", absent.configurationProvenance());
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> LaunchConfiguration.resolve(
-                        List.of(),
-                        Map.of(
-                                LaunchConfiguration.SOCKET_ENV,
-                                "work",
-                                LaunchConfiguration.SOCKET_PATH_ENV,
-                                "/tmp/libtmux-java-dev/probe/s")));
     }
 
+    /**
+     * The Python libtmux builds {@code Server(socket_name, socket_path)} from the two variables and
+     * keeps only the path when it is given both. The launcher used to refuse the pair.
+     */
     @Test
-    void onlyANewDefaultMinimalSocketEnablesTeardownByDefault() {
-        LaunchConfiguration launch = LaunchConfiguration.resolve(List.of(), Map.of());
+    void thePathVariableWinsWhenBothAreSet() {
+        LaunchConfiguration launch = LaunchConfiguration.resolve(
+                List.of(),
+                Map.of(
+                        LaunchConfiguration.SOCKET_ENV,
+                        "work",
+                        LaunchConfiguration.SOCKET_PATH_ENV,
+                        "/tmp/libtmux-java-dev/probe/s"));
 
-        SocketProfile created = profile(launch, Objects.requireNonNull(launch.ownerNonce()));
-        SocketProfile existing = profile(launch, "another-launch");
-        assertEquals(true, created.defaultTeardown());
-        assertEquals("minimal", created.configurationProvenance());
-        assertEquals("created", created.serverState());
-        assertEquals(false, existing.defaultTeardown());
-        assertEquals("unknown", existing.configurationProvenance());
-        assertEquals("existing", existing.serverState());
-
-        assertEquals(45, ToolSurface.resolve(Map.of(), created).tools().size());
-        assertEquals(41, ToolSurface.resolve(Map.of(), existing).tools().size());
-        assertEquals(false, ToolSurface.resolve(Map.of(), existing).tools().containsKey("kill_session"));
         assertEquals(
-                List.of("kill_pane", "kill_window", "kill_session"),
-                ToolSurface.resolve(Map.of(ToolSurface.TOOLSETS_ENV, "teardown"), existing).tools().keySet().stream()
-                        .filter(name -> name.startsWith("kill_"))
-                        .toList());
+                ServerEndpoint.socketPath(Path.of("/tmp/libtmux-java-dev/probe/s")),
+                launch.config().endpoint());
+        assertEquals("path:/tmp/libtmux-java-dev/probe/s", launch.selector());
+    }
+
+    /** Each variable is judged alone, and an empty one is the Python libtmux's falsy value: unset. */
+    @ParameterizedTest
+    @ValueSource(strings = {"", " "})
+    void aBlankVariableCountsAsUnset(String blank) {
+        assertEquals(
+                ServerEndpoint.defaultSocket(),
+                LaunchConfiguration.resolve(
+                                List.of(),
+                                Map.of(
+                                        LaunchConfiguration.SOCKET_ENV,
+                                        blank,
+                                        LaunchConfiguration.SOCKET_PATH_ENV,
+                                        blank))
+                        .config()
+                        .endpoint());
+        assertEquals(
+                ServerEndpoint.namedSocket("work"),
+                LaunchConfiguration.resolve(
+                                List.of(),
+                                Map.of(
+                                        LaunchConfiguration.SOCKET_ENV,
+                                        "work",
+                                        LaunchConfiguration.SOCKET_PATH_ENV,
+                                        blank))
+                        .config()
+                        .endpoint());
     }
 
     @Test
-    void aPrivateLaunchNonceProvesCreationWithoutEnteringTheTmuxEnvironment() throws IOException {
-        LaunchConfiguration launch = LaunchConfiguration.resolve(List.of(), Map.of());
-        String config = Files.readString(launch.config().configFile().orElseThrow());
+    void aFlagBeatsBothVariables() {
+        Map<String, String> both = Map.of(
+                LaunchConfiguration.SOCKET_ENV,
+                "work",
+                LaunchConfiguration.SOCKET_PATH_ENV,
+                "/tmp/libtmux-java-dev/env/s");
 
-        assertTrue(config.contains(launch.ownerNonce()));
-        assertTrue(config.contains("set -g exit-empty off"));
-        assertTrue(!config.contains("set-environment"));
-        assertTrue(!config.contains("LIBTMUX_"));
+        assertEquals(
+                ServerEndpoint.namedSocket("flagged"),
+                LaunchConfiguration.resolve(List.of("--socket-name", "flagged"), both)
+                        .config()
+                        .endpoint());
+        assertEquals(
+                ServerEndpoint.socketPath(Path.of("/tmp/libtmux-java-dev/flag/s")),
+                LaunchConfiguration.resolve(List.of("--socket", "/tmp/libtmux-java-dev/flag/s"), both)
+                        .config()
+                        .endpoint());
     }
 
+    /**
+     * A new default server used to enable all four toolsets, because the launcher had created it. The
+     * launcher creates nothing now, so every launch leaves {@code teardown} out until it is asked for.
+     */
     @Test
-    void onlyTheLaunchWhosePrivateConfigCreatedTheDaemonOwnsIt() throws IOException {
-        Path root = Path.of("/tmp/libtmux-java-test");
-        Files.createDirectories(root);
-        Path socket = root.resolve("mcp-owner-" + UUID.randomUUID());
-        LaunchConfiguration first = dedicatedOn(LaunchConfiguration.resolve(List.of(), Map.of()), socket);
-        LaunchConfiguration second = dedicatedOn(LaunchConfiguration.resolve(List.of(), Map.of()), socket);
+    void noLaunchEnablesTeardownByDefault() {
+        SocketProfile inherited = profile(LaunchConfiguration.resolve(List.of(), Map.of()));
+        SocketProfile chosen =
+                profile(LaunchConfiguration.resolve(List.of(), Map.of(LaunchConfiguration.SOCKET_ENV, "work")));
 
-        try (Server firstServer = Server.open(first.config())) {
-            SocketProfile created = first.profile(firstServer);
-            assertEquals("created", created.serverState());
-            assertTrue(created.defaultTeardown());
-
-            try (NamedServerFixture fixture = NamedServerFixture.own(firstServer, socket, root)) {
-                // tmux answers -S literally, but the quarantine root itself may sit through a system
-                // ancestor link (macOS's /tmp), so the fixture reports the real path.
-                assertEquals(socket.toRealPath(), fixture.socket());
-                try (Server secondServer = Server.open(second.config())) {
-                    SocketProfile existing = second.profile(secondServer);
-                    assertEquals("existing", existing.serverState());
-                    assertTrue(!existing.defaultTeardown());
-                    CommandResult environment = secondServer.cmd("show-environment", "-g");
-                    assertTrue(environment.succeeded(), environment.stderr().toString());
-                    assertTrue(environment.stdout().stream()
-                            .noneMatch(line -> line.contains(Objects.requireNonNull(first.ownerNonce()))
-                                    || line.contains(Objects.requireNonNull(second.ownerNonce()))));
-                }
-            }
+        for (SocketProfile profile : List.of(inherited, chosen)) {
+            assertEquals(41, ToolSurface.resolve(Map.of(), profile).tools().size());
+            assertEquals(false, ToolSurface.resolve(Map.of(), profile).tools().containsKey("kill_session"));
+            assertEquals(
+                    List.of("kill_pane", "kill_window", "kill_session"),
+                    ToolSurface.resolve(Map.of(ToolSurface.TOOLSETS_ENV, "teardown"), profile).tools().keySet().stream()
+                            .filter(name -> name.startsWith("kill_"))
+                            .toList());
         }
-        assertFalse(Files.exists(socket), "the launcher ownership socket survived teardown");
+    }
+
+    /** The launcher does not start tmux or write to it; it only asks which socket it reached. */
+    @Test
+    void startupOnlyAsksTheServerWhereItsSocketIs() {
+        LaunchConfiguration launch = LaunchConfiguration.resolve(List.of(), Map.of());
+        List<String> sent = new java.util.ArrayList<>();
+        Path socket = reportableSocket();
+        TmuxTransport recording = new TmuxTransport() {
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                if (VersionProbes.is(request)) {
+                    return VersionProbes.reply(request, "3.6");
+                }
+                sent.add(request.commands().getLast().getFirst());
+                return new CommandResult(0, List.of(socket.toString()), List.of());
+            }
+
+            @Override
+            public void close() {}
+        };
+        try (Server server = Server.using(launch.config(), recording)) {
+            SocketProfile profile = launch.profile(server);
+
+            assertEquals(List.of("display-message"), sent);
+            assertEquals("existing", profile.serverState());
+            assertEquals("unknown", profile.configurationProvenance());
+        }
     }
 
     @Test
@@ -355,10 +409,7 @@ final class MainTest {
                 if (VersionProbes.is(request)) {
                     return VersionProbes.reply(request, "3.6");
                 }
-                List<String> command = request.commands().getLast();
-                return command.getFirst().equals("start-server")
-                        ? new CommandResult(0, List.of(), List.of())
-                        : new CommandResult(1, List.of(), List.of("metadata unavailable"));
+                return new CommandResult(1, List.of(), List.of("metadata unavailable"));
             }
 
             @Override
@@ -491,7 +542,7 @@ final class MainTest {
         }
     }
 
-    private static SocketProfile profile(LaunchConfiguration launch, String marker) {
+    private static SocketProfile profile(LaunchConfiguration launch) {
         // Startup refuses a reported path that names no file, so the double has to name one.
         Path socket = reportableSocket();
         TmuxTransport transport = new TmuxTransport() {
@@ -501,11 +552,8 @@ final class MainTest {
                     return VersionProbes.reply(request, "3.6");
                 }
                 List<String> command = request.commands().getLast();
-                if (command.getFirst().equals("start-server")) {
-                    return new CommandResult(0, List.of(), List.of());
-                }
                 if (command.getFirst().equals("display-message")) {
-                    return new CommandResult(0, List.of(marker + "\t" + socket), List.of());
+                    return new CommandResult(0, List.of(socket.toString()), List.of());
                 }
                 throw new AssertionError(command);
             }
@@ -526,18 +574,6 @@ final class MainTest {
         } catch (IOException failure) {
             throw new java.io.UncheckedIOException(failure);
         }
-    }
-
-    private static LaunchConfiguration dedicatedOn(LaunchConfiguration launch, Path socket) {
-        return new LaunchConfiguration(
-                launch.config().toBuilder()
-                        .endpoint(ServerEndpoint.socketPath(socket))
-                        .build(),
-                "path:" + socket,
-                "default-dedicated",
-                launch.declaredConfigurationProvenance(),
-                true,
-                launch.ownerNonce());
     }
 
     private static SocketProfile absentProfile(LaunchConfiguration launch) {

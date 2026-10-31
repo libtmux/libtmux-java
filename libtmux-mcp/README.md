@@ -119,12 +119,14 @@ way. There is nothing to configure but the path and the flags.
 | `--socket-name <name>` | which tmux server, by name under tmux's own directory |
 | `--tmux <binary>` | which tmux to run |
 
-With no socket flag the launcher uses the socket named `libtmux-mcp`. If that
-socket does not exist, it starts tmux with the package's minimal configuration
-and enables all four toolsets. The choice is made once, when the server starts.
+With no socket flag the launcher reads `LIBTMUX_SOCKET_PATH`, then
+`LIBTMUX_SOCKET`. With neither set it passes tmux no socket, so tmux picks the
+server: the one in `TMUX` when the launcher starts inside a tmux pane, and
+tmux's default socket otherwise. The choice is made once, when the server
+starts.
 
-An existing or explicitly selected server may not have been configured by this
-launcher, so `teardown` is left out of its default.
+The launcher never creates a server or configures one, so `teardown` is left
+out of the default toolsets whichever server it reaches.
 
 ### Launcher check: see what a selection serves
 
@@ -521,8 +523,8 @@ The same tools by what they do:
 
 | environment | what it chooses |
 | --- | --- |
-| `LIBTMUX_SOCKET` | one socket name, mutually exclusive with the path |
-| `LIBTMUX_SOCKET_PATH` | one absolute socket path |
+| `LIBTMUX_SOCKET` | one socket name, used when no flag is given and the path is unset |
+| `LIBTMUX_SOCKET_PATH` | one absolute socket path, used when no flag is given and chosen over the name |
 | `LIBTMUX_TMUX_CONFIG` | one nonempty absolute tmux configuration path |
 | `LIBTMUX_TOOLSETS` | any unordered subset of `inspect,manage,execute,teardown` |
 | `LIBTMUX_TOOLS` | exact tool names to add |

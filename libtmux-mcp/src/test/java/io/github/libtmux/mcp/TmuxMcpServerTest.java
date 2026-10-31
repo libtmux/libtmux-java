@@ -283,8 +283,7 @@ final class TmuxMcpServerTest {
                         "existing",
                         "unknown",
                         "/tmp/libtmux-java-test/s",
-                        "tmux -N -S '/tmp/libtmux-java-test/s' attach",
-                        false));
+                        "tmux -N -S '/tmp/libtmux-java-test/s' attach"));
         WireOutput output = new WireOutput();
 
         try (Server oldServer = Server.using(ServerConfig.builder().build(), old);

@@ -70,13 +70,7 @@ final class InstructionsTest {
 
     private static SocketProfile profile(String path) {
         return new SocketProfile(
-                "path:" + path,
-                "operator-current",
-                "existing",
-                "unknown",
-                path,
-                "tmux -N -S '" + path + "' attach",
-                false);
+                "path:" + path, "operator-current", "existing", "unknown", path, "tmux -N -S '" + path + "' attach");
     }
 
     private static TmuxTransport noOpTransport() {

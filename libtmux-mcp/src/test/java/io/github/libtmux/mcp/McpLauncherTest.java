@@ -478,6 +478,58 @@ final class McpLauncherTest {
         }
     }
 
+    /** No socket flag at all: the variable alone points the launcher at the fixture's server. */
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void aLauncherGivenOnlyLibtmuxSocketPathServesThatServer(Server server, TmuxSocketPath socket) {
+        server.newSession("by-variable");
+
+        try (McpSyncClient client =
+                launch(Map.of("LIBTMUX_SOCKET_PATH", socket.path().toString()))) {
+            client.initialize();
+
+            String listed = textOf(client.callTool(
+                    McpSchema.CallToolRequest.builder("list_sessions").build()));
+
+            assertTrue(listed.contains("by-variable"), "the launcher did not follow the variable: " + listed);
+        }
+    }
+
+    /**
+     * Nothing said: the launcher passes tmux no socket, so the server is whichever one tmux reaches.
+     * The build's {@code TMUX_TMPDIR} puts that in a directory of this suite's own, and the blank
+     * variables stand in for an environment that sets them.
+     */
+    @Test
+    @Timeout(PATIENCE_SECONDS)
+    void aLauncherGivenNothingServesTheServerTmuxPicks(@TempDir Path directory) throws Exception {
+        String quarantined = tmuxTmpDir();
+        Path config = directory.resolve("default.conf");
+        Files.writeString(config, "");
+        try (Server picked = Server.open(ServerConfig.builder()
+                .binary(TMUX)
+                .endpoint(ServerEndpoint.defaultSocket())
+                .configFile(config)
+                .build())) {
+            try {
+                picked.newSession("by-default");
+
+                Map<String, String> environment =
+                        Map.of("TMUX_TMPDIR", quarantined, "LIBTMUX_SOCKET", "", "LIBTMUX_SOCKET_PATH", "");
+                try (McpSyncClient client = launch(environment)) {
+                    client.initialize();
+
+                    String listed = textOf(client.callTool(
+                            McpSchema.CallToolRequest.builder("list_sessions").build()));
+
+                    assertTrue(listed.contains("by-default"), "the launcher did not reach tmux's own pick: " + listed);
+                }
+            } finally {
+                if (picked.isAlive()) picked.killServer();
+            }
+        }
+    }
+
     private static String textOf(McpSchema.CallToolResult result) {
         return result.content().stream()
                 .filter(McpSchema.TextContent.class::isInstance)
@@ -496,18 +548,19 @@ final class McpLauncherTest {
      */
     private static McpSyncClient launch(
             String endpoint, String value, Map<String, String> environment, String... extra) {
+        List<String> flags = new java.util.ArrayList<>(List.of(endpoint, value));
+        flags.addAll(List.of(extra));
+        return launch(environment, flags.toArray(String[]::new));
+    }
+
+    /** The launcher with whatever flags it is given, so a test can leave the socket to the environment. */
+    private static McpSyncClient launch(Map<String, String> environment, String... flags) {
         assertNull(System.getenv("TMUX"), "the suite is running inside tmux, so a child could inherit it");
         assertNull(System.getenv("TMUX_PANE"), "the suite is running inside a pane, so a child could inherit it");
 
-        List<String> args = new java.util.ArrayList<>(List.of(
-                "-classpath",
-                System.getProperty("java.class.path"),
-                Main.class.getName(),
-                endpoint,
-                value,
-                "--tmux",
-                TMUX));
-        args.addAll(List.of(extra));
+        List<String> args = new java.util.ArrayList<>(
+                List.of("-classpath", System.getProperty("java.class.path"), Main.class.getName(), "--tmux", TMUX));
+        args.addAll(List.of(flags));
         ServerParameters launcher = ServerParameters.builder(
                         Path.of(System.getProperty("java.home"), "bin", "java").toString())
                 .args(args)

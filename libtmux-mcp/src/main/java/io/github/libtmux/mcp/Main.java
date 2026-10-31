@@ -18,7 +18,9 @@ import java.util.concurrent.CountDownLatch;
  * client is free to log or discard.
  *
  * <p>Which tmux server to expose is chosen the same way the library chooses it: a socket path, a
- * socket name, or tmux's own default.
+ * socket name, or tmux's own default. {@code LIBTMUX_SOCKET_PATH} and {@code LIBTMUX_SOCKET} stand
+ * in for the flags when none is given, and with neither set tmux picks the server itself, which
+ * is the one in {@code TMUX} when the launcher runs inside a pane.
  *
  * <pre>{@code
  * libtmux-mcp --socket /run/user/1000/tmux/default
