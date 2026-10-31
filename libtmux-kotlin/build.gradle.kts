@@ -9,6 +9,7 @@ plugins {
     id("libtmux.publication")
     id("libtmux.sbom")
     id("libtmux.tmux-matrix")
+    id("libtmux.tmux-quarantine")
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.dokka)
 }
