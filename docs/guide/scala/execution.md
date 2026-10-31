@@ -97,9 +97,11 @@ from its owner can instead produce an ordinary Java `UNKNOWN` failure.
 
 `Control.acknowledge` reports a [protocol reply][control]. `accepted` means a
 successful reply frame arrived; deferred tmux work can still be running. Use a
-separate completion signal for that work. Canceling an active control request
-can close its attachment and affect queued requests and observations, so use
-separate attachments when their lifetimes must be independent.
+separate completion signal for that work. Canceling one call interrupts only
+that caller; a dispatched request remains with the writer until its reply or
+deadline. A deadline after dispatch, or releasing the control resource, can
+end the attachment and its queued requests and observations. Use separate
+attachments when their lifetimes must be independent.
 
 `Control.isAlive` reports whether that process is still running.
 `Control.standardError` is the text that process wrote to its error stream,

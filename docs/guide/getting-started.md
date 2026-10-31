@@ -4,8 +4,10 @@ Every snippet here is run by `DocumentationSnippetsTest`, except one marked
 compile-only, which says why. If one stops working the build fails, rather
 than the page quietly going stale.
 
-Every Java block in this guide runs against a real tmux server when the build
-runs, and every value shown after a `→` is asserted.
+These API previews use independent fixtures and shared imports. Each
+`// Given:` names an input the fixture supplies. The [common API
+programs](../../examples/api/README.md) include imports and owned server setup.
+Every value shown after a `→` is asserted.
 
 ## Reaching a server
 
@@ -27,7 +29,8 @@ try (Server server = Server.open(config)) {
 }
 ```
 
-And what it leaves behind:
+This separate example uses a fresh fixture; it creates `demo` again before
+reading it back:
 
 ```java
 // Given: Server server
@@ -255,8 +258,9 @@ try (ControlClient client = server.control(session);
 Control-mode requests are independent: a failure discards nothing behind it, and
 every reply carries the request that produced it. Attaching is what makes tmux
 push output at all. The bounded subscription reports overflow through
-`droppedCount()` and never runs caller code on the reply reader. A full buffer's
-next read is a `Delivery.Gap` before the events that remain. `Delivery.kept`
+`droppedCount()`. An `onReady` callback can run on the reply reader and must
+not block it. A full buffer's next read is a `Delivery.Gap` before the events
+that remain. `Delivery.kept`
 fails that read. Match on `Delivery.Gap` to continue. A subscription does
 not reconnect.
 

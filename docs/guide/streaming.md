@@ -119,7 +119,9 @@ sees no output, however long it waits.
 
 tmux decides where one push ends and the next begins, so what a caller wants can
 arrive split across several: read until you have it rather than testing the
-first one. The loop above is bounded by the timeout each `next` carries.
+first one. Each `next` waits up to five seconds, but repeated nonmatching
+deliveries can keep the loop running without a total deadline. The stream
+form below uses a separate close timer to bound collection.
 
 tmux cuts pushes by byte count, not by character, and a pane written to in large
 blocks has some of its characters cut in two. `data()` is decoded per pane, so a
@@ -160,9 +162,10 @@ total. `cause()` is empty when the caller closed the subscription and set when
 the control client ended it. Closing discards what is still buffered; a client
 that ends leaves it to be read first. A subscription does not reconnect: attach again
 with `server.control(session)` and read a snapshot. Nothing already missed is
-replayed. The control reader only fills those buffers; caller code runs on the
-thread that calls `next()`. `standardError()` is the bounded text the tmux
-process wrote to its error stream.
+replayed. Values are read on the consumer's thread. An `onReady` callback can
+run on the control reader, so it must only wake the consumer and return.
+`standardError()` is the bounded text the tmux process wrote to its error
+stream.
 
 `publisher()` reads the same steps as a `java.util.concurrent.Flow.Publisher`,
 for a reactive caller — Reactor, RxJava, Mutiny, Spring — through

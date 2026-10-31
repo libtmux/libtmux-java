@@ -88,6 +88,11 @@ takes a [`ServerConfig`][serverconfig] that describes the server to reach, and
 [`Server.newSession(String)`][server-newsession] creates a [`Session`][session].
 A session holds [`Window`][window]s, and a window splits into [`Pane`][pane]s:
 
+These API previews use independent documentation fixtures and shared imports.
+Each `// Given:` names an input the fixture supplies. For complete programs
+with imports and owned server setup, see the [common API
+programs](examples/api/README.md).
+
 ```java
 // Given: Path socket
 ServerConfig config = ServerConfig.builder()
@@ -103,7 +108,8 @@ try (Server server = Server.open(config)) {
 }
 ```
 
-That leaves a session behind on a tmux server of its own. Read it back:
+Closing the client leaves the created session running. This separate example
+uses a fresh fixture; it creates `demo` again before reading it back:
 
 ```java
 // Given: Server server
@@ -617,7 +623,8 @@ Reference: [`Flows`][scala-ox-flows] on libtmux.org and
 [javadoc.io][javadoc-scala-ox].
 
 [`Flows.liveView`][scala-ox-flows] emits the current view of a server when the
-flow starts, then every newer one:
+flow starts, then the latest newer view available at each read. Intermediate
+views can be coalesced:
 
 <!-- snippet: scala-sync-control: root-ox-live-view -->
 ```scala

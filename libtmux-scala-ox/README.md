@@ -47,11 +47,14 @@ libraryDependencies += "io.github.libtmux" %% "libtmux-scala-ox" % "<version>"
 
 From Gradle or Maven the coordinate is `io.github.libtmux:libtmux-scala-ox_3`.
 
-### [`Flows.liveView`][flows]: the current view, then every newer one
+<a id="flowsliveview-the-current-view-then-every-newer-one"></a>
 
-It emits the current view of a server when the flow starts, then every newer
-one, so a change published between reading a view and collecting the flow is not
-missed. Here `config` selects an existing tmux server:
+### [`Flows.liveView`][flows]: the current view, then newer views
+
+It emits the current view when collection starts, then the latest newer view
+available at each read. Several publications can coalesce while the consumer
+is busy; this is a live state view, not a history of every change. Here
+`config` selects an existing tmux server:
 
 <!-- snippet: scala-sync-control: ox-readme-live-view -->
 ```scala
