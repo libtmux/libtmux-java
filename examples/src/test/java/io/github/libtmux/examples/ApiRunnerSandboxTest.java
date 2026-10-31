@@ -8,9 +8,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -43,12 +45,35 @@ final class ApiRunnerSandboxTest {
               ls -ld "$TMUX_TMPDIR" | cut -c1-10 | sed 's/^/MODE /'
             } > "$OUT"
             "$1" -S "$2" display-message -p '#{pid}' > "$OWNED_PID"
-            if [ "${CHILD:-}" = leak ]; then
-              "$1" -f /dev/null new-session -d -s leak cat
-              "$1" display-message -p '#{pid}' > "$LEAK_PID"
-            fi
-            if [ "${CHILD:-}" = wait ]; then sleep 30; fi
+            serve() {
+              "$1" -S "$2" -f /dev/null new-session -d -s leak cat
+              "$1" -S "$2" display-message -p '#{pid}' > "$LEAK_PID"
+            }
+            case "${CHILD:-}" in
+              leak)
+                "$1" -f /dev/null new-session -d -s leak cat
+                "$1" display-message -p '#{pid}' > "$LEAK_PID" ;;
+              leak-custom) serve "$1" "$TMUX_TMPDIR/custom.sock" ;;
+              leak-nested) mkdir "$TMUX_TMPDIR/sub"; serve "$1" "$TMUX_TMPDIR/sub/x.sock" ;;
+              stale)
+                serve "$1" "$TMUX_TMPDIR/stale.sock"
+                kill -9 "$(cat "$LEAK_PID")"
+                attempts=0
+                while kill -0 "$(cat "$LEAK_PID")" 2>/dev/null && [ "$attempts" -lt 100 ]; do
+                  sleep 0.05; attempts=$((attempts + 1))
+                done
+                [ -S "$TMUX_TMPDIR/stale.sock" ] && echo yes > "$STALE_REMAINS" ;;
+              link) ln -s "$OUTSIDE" "$TMUX_TMPDIR/link.sock" ;;
+              wait) sleep 30 ;;
+            esac
             """;
+
+    // The tmux the launcher is told to use; a test swaps in a wrapper to make kill-server do nothing.
+    private String tmuxBin = TMUX;
+
+    private Path outside() {
+        return directory.resolve("outside.sock");
+    }
 
     private Path root() {
         return directory.resolve("r");
@@ -81,14 +106,16 @@ final class ApiRunnerSandboxTest {
             environment.remove("TMUX_TMPDIR");
         }
         environment.putAll(Map.of(
-                "TMUX_BIN", TMUX,
+                "TMUX_BIN", tmuxBin,
                 "API_RUN_ROOT", root.toString(),
                 "DECOY", directory.resolve("decoy-tmpdir").toString(),
                 "ROOT", root.toString(),
                 "OUT", directory.resolve("out").toString(),
                 "OWNED_PID", directory.resolve("owned.pid").toString(),
                 "LEAK_PID", directory.resolve("leak.pid").toString(),
-                "CHILD", child));
+                "CHILD", child,
+                "OUTSIDE", outside().toString(),
+                "STALE_REMAINS", directory.resolve("stale-remains").toString()));
         return launcher.start();
     }
 
@@ -105,6 +132,25 @@ final class ApiRunnerSandboxTest {
 
     private List<String> report() throws IOException {
         return Files.readAllLines(directory.resolve("out"));
+    }
+
+    private String realTmux() {
+        if (TMUX.contains("/")) return TMUX;
+        for (String entry : System.getenv("PATH").split(":", -1)) {
+            Path candidate = Path.of(entry, TMUX);
+            if (Files.isExecutable(candidate)) return candidate.toString();
+        }
+        throw new AssertionError("no tmux on PATH");
+    }
+
+    /** Runs the real tmux on its own and returns its exit status; used only on sockets this test owns. */
+    private int runTmux(String... arguments) throws Exception {
+        List<String> command = new ArrayList<>(List.of(realTmux()));
+        command.addAll(List.of(arguments));
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        process.getInputStream().readAllBytes();
+        assertTrue(process.waitFor(30, TimeUnit.SECONDS), "tmux did not exit");
+        return process.exitValue();
     }
 
     private boolean rootIsEmpty() throws IOException {
@@ -175,13 +221,108 @@ final class ApiRunnerSandboxTest {
 
             assertTrue(ran.status() != 0, "the launcher passed with a server left running");
             assertTrue(
-                    ran.output().contains("The program left a tmux server running: default"),
+                    Pattern.compile("The program left a tmux server running: tmux-\\d+/default")
+                            .matcher(ran.output())
+                            .find(),
                     "the launcher did not name the socket");
             assertTrue(awaitStopped("leak.pid"), "the server the program left was not stopped");
             assertTrue(rootIsEmpty(), "the launcher left its directories behind");
         } finally {
             stop("leak.pid");
             stop("owned.pid");
+        }
+    }
+
+    @Test
+    void aServerOnASocketTheProgramNamedInsideTheQuarantineFailsTheRunAndIsStopped() throws Exception {
+        try {
+            Result ran = run("leak-custom", root());
+
+            assertTrue(ran.status() != 0, "the launcher passed with a server left running");
+            assertTrue(
+                    ran.output().contains("The program left a tmux server running: custom.sock"),
+                    "the launcher did not name the socket");
+            assertTrue(awaitStopped("leak.pid"), "the server the program left was not stopped");
+            assertTrue(rootIsEmpty(), "the launcher left its directories behind");
+        } finally {
+            stop("leak.pid");
+            stop("owned.pid");
+        }
+    }
+
+    @Test
+    void aServerOnASocketInASubdirectoryIsFoundToo() throws Exception {
+        try {
+            Result ran = run("leak-nested", root());
+
+            assertTrue(ran.status() != 0, "the launcher passed with a server left running");
+            assertTrue(
+                    ran.output().contains("The program left a tmux server running: sub/x.sock"),
+                    "the launcher did not name the socket");
+            assertTrue(awaitStopped("leak.pid"), "the server the program left was not stopped");
+        } finally {
+            stop("leak.pid");
+            stop("owned.pid");
+        }
+    }
+
+    @Test
+    void aSocketFileNothingAnswersOnIsNotALeak() throws Exception {
+        try {
+            Result ran = run("stale", root());
+
+            assertTrue(Files.exists(directory.resolve("stale-remains")), "no stale socket was left");
+            assertEquals(0, ran.status(), "the launcher failed: " + ran.output());
+            assertFalse(ran.output().contains("left a tmux server"), "a socket nothing answers on was reported");
+            assertTrue(rootIsEmpty(), "the launcher left its directories behind");
+        } finally {
+            stop("leak.pid");
+            stop("owned.pid");
+        }
+    }
+
+    @Test
+    void aLinkToASocketOutsideTheQuarantineIsNeitherFollowedNorStopped() throws Exception {
+        runTmux("-S", outside().toString(), "-f", "/dev/null", "new-session", "-d", "-s", "outside", "cat");
+        try {
+            Result ran = run("link", root());
+
+            assertEquals(0, ran.status(), "the launcher failed: " + ran.output());
+            assertFalse(ran.output().contains("left a tmux server"), "a link was followed to a server it does not own");
+            assertEquals(
+                    0,
+                    runTmux("-S", outside().toString(), "display-message", "-p", "ok"),
+                    "the outside server was stopped");
+            assertTrue(rootIsEmpty(), "the launcher left its directories behind");
+        } finally {
+            runTmux("-S", outside().toString(), "kill-server");
+            stop("owned.pid");
+        }
+    }
+
+    @Test
+    void theDirectoriesAreKeptAndTheRunFailsWhenKillServerDoesNotStopTheServer() throws Exception {
+        Path noop = Files.writeString(
+                directory.resolve("tmux-noop"),
+                "#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = kill-server ] && exit 0; done\nexec " + realTmux()
+                        + " \"$@\"\n");
+        Files.setPosixFilePermissions(noop, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+        tmuxBin = noop.toString();
+        try {
+            Result ran = run("leak-custom", root());
+
+            assertTrue(ran.status() != 0, "the launcher passed with a server it could not stop");
+            assertTrue(ran.output().contains("still answers on"), "the launcher did not say a server still answers");
+            assertTrue(ran.output().contains("custom.sock"), "the launcher did not name the socket");
+            assertTrue(alive("leak.pid"), "the control never left a server running");
+            assertFalse(rootIsEmpty(), "the launcher removed a directory a server still answers on");
+        } finally {
+            stop("leak.pid");
+            stop("owned.pid");
+            try (Stream<Path> left = Files.walk(root())) {
+                left.sorted(java.util.Comparator.reverseOrder())
+                        .forEach(path -> path.toFile().delete());
+            }
         }
     }
 
