@@ -61,7 +61,7 @@ jobs:
   plan:
     # The lanes for this event, read from the plugin's lists. The plan also fails a dispatch that
     # asks for something CI will not do before any runner is spent on it, and the tooling's own
-    # tests run here because they take seconds.
+    # tests and drift check run here because they take seconds.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -71,8 +71,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: The plan is sound
-        run: python3 -B -m unittest tools.ci.test_plan tools.ci.test_tmux_ref
+      - name: The plan and the docs are sound
+        run: |
+          python3 -B -m unittest tools.ci.test_plan tools.ci.test_tmux_ref tools.ci.test_check
+          python3 -B -m tools.ci.check
 
       - name: Plan the lanes
         id: plan

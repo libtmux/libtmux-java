@@ -266,8 +266,9 @@ the default branch. This prints the lanes a dispatch would run, without a runner
 $ python3 -m tools.ci.plan matrix --event workflow_dispatch --scope custom --tmux-ref 3.6b,master
 ```
 
-Each dispatch is its own run: it does not cancel the push run on its branch, and
-another dispatch does not cancel it.
+`python3 -m tools.ci.check` fails when the README, this page or the workflows
+disagree with the plugin's lists. Each dispatch is its own run: it does not
+cancel the push run on its branch, and another dispatch does not cancel it.
 `ci.yml` has no tmux axis, so it takes no inputs.
 
 ## Compatibility
