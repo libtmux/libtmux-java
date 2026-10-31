@@ -170,6 +170,16 @@ class CheckTest(unittest.TestCase):
         )
         self.assertFlags("takes more than a scope when called")
 
+    def test_a_bare_off_in_the_tmate_input_is_flagged(self) -> None:
+        """A bare off is false to GitHub, which breaks every default dispatch."""
+        self.edit(check.MATRIX, "options: ['off',", "options: [off,")
+        self.assertFlags("must quote 'off'")
+
+    def test_a_bare_off_default_is_flagged(self) -> None:
+        """The default has to be the same string as the option it names."""
+        self.edit(check.MATRIX, "default: 'off'", "default: off")
+        self.assertFlags("must quote 'off'")
+
     def test_an_unpinned_tmate_is_flagged(self) -> None:
         """The action is pinned by commit."""
         self.edit(

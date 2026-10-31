@@ -153,6 +153,17 @@ def check_matrix(text: str) -> list[str]:
             "a release runs the table as it is"
         )
 
+    # GitHub reads a bare `off` as false, in the options and in the default. A
+    # default that is not one of the options refuses every dispatch that sets
+    # nothing, and a bare pair reaches the plan as `false`.
+    if (
+        "options: ['off', before-tests, on-failure]" not in text
+        or "default: 'off'" not in text
+    ):
+        problems.append(
+            "the tmate input must quote 'off': GitHub reads a bare off as false"
+        )
+
     jobs = _jobs(text)
     if "matrix: ${{ fromJSON(needs.plan.outputs.lanes) }}" not in jobs.get("lanes", ""):
         problems.append("the lanes job does not take its matrix from the plan")
