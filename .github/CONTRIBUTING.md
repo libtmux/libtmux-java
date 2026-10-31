@@ -57,6 +57,31 @@ port.** Use one of:
 Never `/tmp/libtmux-…` on its own, and never the default socket. `libtmux-` is
 the prefix a sibling port is also using, which is the whole problem.
 
+A client that names no socket follows `TMUX` to the server you are working in,
+and otherwise lands on the default socket. So every `Test` task, and each `run`
+in the builds under [`module-tests/`](../module-tests/), starts without `TMUX`,
+`TMUX_PANE` and `LIBTMUX_SOCKET*`, and with a private `TMUX_TMPDIR` of its own
+under `/tmp/libtmux-java-test/`. The convention plugin `libtmux.tmux-quarantine`
+does this for every module, and the module-tests builds apply the same file by
+path and opt their runs in.
+
+Development runs are not quarantined. `runDevelopment`, the `run` tasks of
+`libtmux-mcp` and `mcp-swap`, the benchmarks and every other `JavaExec` task
+keep the environment Gradle was started in, so they follow your `TMUX`. Pass
+`-S` to aim one elsewhere.
+
+When a quarantined task ends, even by failing, its `<task>QuarantineCheck`
+finalizer looks for sockets anywhere in the task's quarantine, without following
+links, and stops the server on each one that answers. It fails the build naming
+them even when the tests passed. It keeps the directory, and says so, while a
+server still answers after `kill-server`. A socket file nothing answers on is
+not a leak. `examples/api/run.sh` does the same for the program it starts.
+
+The test JVM also checks the quarantine before its first test and refuses to
+start when it was not launched that way, which is what happens to a run from an
+IDE. Run tests through `./gradlew`. `./gradlew everyTestModuleIsQuarantined` fails when a
+module with tests lacks the plugin or the check.
+
 Sibling libtmux ports — Python, Go, Rust, TypeScript, C#, C++, Swift — are
 worked on in parallel on the same machine, and every one of them starts real
 tmux servers in `/tmp`. Their debris outlives their test runs: servers from an
