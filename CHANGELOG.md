@@ -11,6 +11,26 @@ release is supported, and there are no backports.
 
 ### Changed
 
+- **With no socket chosen, tmux picks the server, and `LIBTMUX_SOCKET_PATH` or
+  `LIBTMUX_SOCKET` chooses another.** A `ServerConfig` built without an endpoint
+  reads `LIBTMUX_SOCKET_PATH` (passed as `-S`), then `LIBTMUX_SOCKET` (`-L`), and
+  passes tmux no socket when neither is set. The path wins when both are set, and
+  a blank variable counts as unset. `tmux-workspace` takes `-S` and `-L` first,
+  then the same variables, and no longer passes the `TMUX` socket as `-S`; tmux
+  follows `TMUX` itself when no socket is chosen. `shell` hands tmuxp a socket a
+  variable chose. See the
+  [migration notes](MIGRATION.md#with-no-socket-chosen-tmux-picks-the-server).
+
+- **`libtmux-mcp` no longer starts a server of its own on the socket
+  `libtmux-mcp`.** With no `--socket`, `--socket-name`, `LIBTMUX_SOCKET_PATH` or
+  `LIBTMUX_SOCKET` it passes tmux no socket and serves the server tmux picks. It
+  no longer writes the minimal configuration, and `teardown` is out of the default
+  toolsets for every launch. Setting `LIBTMUX_SOCKET` and `LIBTMUX_SOCKET_PATH`
+  together no longer fails startup: the path wins. An empty `LIBTMUX_SOCKET` or
+  `LIBTMUX_SOCKET_PATH` is unset where it used to fail. Pass
+  `--socket-name libtmux-mcp` to keep the old socket. See the
+  [migration notes][migration-socket].
+
 - **JSON layouts are floored at tmux 3.8.** tmux 3.8 applies a JSON layout; a
   server below 3.8 gets an `UnsupportedFeatureException` naming 3.8 before
   anything is sent. Installed releases behave as before. (#106)
