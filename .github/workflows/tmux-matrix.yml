@@ -1,7 +1,12 @@
 name: tmux matrix
 
-# The README claims tmux 3.3a through 3.7c, and says that range is not a claim because the suite runs
+# The README claims a range of tmux releases and says that range is not a claim because the suite runs
 # against every one of them. This is where that stops depending on someone running it locally.
+#
+# A push or pull request runs the oldest and newest release of the range. The weekly schedule, a
+# dispatch with `scope: full` and the release workflow, which calls this with `scope: full`, run all
+# of it, the releases below the floor and the previews. The list is the Gradle plugin's, and `plan`
+# turns it into the matrix below.
 
 on:
   push:
@@ -11,69 +16,111 @@ on:
     # Weekly, so a break that arrives from outside this repository — a runner image, a libevent, a
     # JDK — is found by the schedule rather than by the next person to open a pull request.
     - cron: '0 6 * * 1'
+  # release.yml calls this with `scope: full`, so a release proves the whole table itself instead
+  # of relying on a run somebody remembered to start. It takes the scope and nothing else: a release
+  # cannot open a tmate session or narrow the table.
+  workflow_call:
+    inputs:
+      scope:
+        description: 'edges, full or custom'
+        type: string
+        default: edges
   workflow_dispatch:
+    inputs:
+      scope:
+        description: 'edges: the oldest and newest supported tmux. full: the whole table, the refusal lanes and the previews. custom: the tmux-ref and jdk below.'
+        type: choice
+        options: [edges, full, custom]
+        default: edges
+      tmux-ref:
+        description: 'With scope custom: comma-separated tmux releases, tags, branches or 40-hex commits from github.com/tmux/tmux, for example 3.6b,master.'
+        type: string
+        default: ''
+      jdk:
+        description: 'Comma-separated JDKs the tests run on, for example 25,27. Empty is 25.'
+        type: string
+        default: ''
+      tmate:
+        description: 'Open a tmate session on the one lane. Needs scope custom with a single tmux-ref.'
+        type: choice
+        options: [off, before-tests, on-failure]
+        default: off
 
 # Cancel a superseded run only on a pull request, where a new push genuinely replaces the answer.
 # On master every commit's run stands on its own: grouping them all together meant re-running an
-# older commit cancelled the newest one, which is the opposite of what a green history needs.
+# older commit cancelled the newest one, which is the opposite of what a green history needs. A
+# dispatch asks for one particular permutation, so each is its own group too.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.ref || github.event_name == 'workflow_dispatch' && github.run_id || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
-  lanes:
-    # Preview lanes carry their own label: this is the only place a reader sees which entries the
-    # supported range does not include, since the README and the matrix property list only the rest.
-    name: tmux ${{ matrix.tmux }}${{ matrix.experimental && ' (preview, not supported)' || '' }}${{ matrix.rejection && ' (must be refused)' || '' }}
+  plan:
+    # The lanes for this event, read from the plugin's lists. The plan also fails a dispatch that
+    # asks for something CI will not do before any runner is spent on it, and the tooling's own
+    # tests and drift check run here because they take seconds.
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.tmux == 'master' && 25 || 15 }}
-    continue-on-error: ${{ matrix.experimental == true }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # Must match the required lanes in build-logic/conventions/src/main/kotlin/libtmux.tmux-matrix.gradle.kts
-        # (its `lanes` list), which is the source of truth. The agree step below fails if they drift
-        # apart. This is also what DocumentationFactsTest reads the README's claimed range from, so a
-        # preview lane belongs in `include` below and never here.
-        tmux: ['3.3a', '3.4', '3.5', '3.6', '3.6a', '3.7', '3.7a', '3.7b', '3.7c']
-        # Ahead of the supported range, matching the plugin's `previewLanes` list: 3.8 is released
-        # but not yet in the claimed range, and master is upstream's development branch, not a
-        # version. Both may fail and neither moves the README's claimed range.
-        include:
-          # Below the floor, matching the plugin's `rejectionLanes`: the real binary must refuse
-          # every call and leave a sentinel session, option and buffer untouched. Each also runs
-          # as the daemon behind a 3.3a client, the only way a 3.0a or 3.1c answer reaches the library.
-          - tmux: '3.0a'
-            rejection: true
-            client: '3.3a'
-          - tmux: '3.1c'
-            rejection: true
-            client: '3.3a'
-          - tmux: '3.2a'
-            rejection: true
-            client: '3.3a'
-          - tmux: '3.3'
-            rejection: true
-            client: '3.3a'
-          - tmux: '3.8'
-            experimental: true
-          - tmux: master
-            experimental: true
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.plan.outputs.scope }}
+      lanes: ${{ steps.plan.outputs.lanes }}
+      jobs: ${{ steps.plan.outputs.jobs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: This lane is one the build knows about
-        env:
-          LANE: ${{ matrix.tmux }}
+      - name: The plan and the docs are sound
         run: |
-          plugin=build-logic/conventions/src/main/kotlin/libtmux.tmux-matrix.gradle.kts
-          grep -q "\"$LANE\"" "$plugin" || {
-            echo "::error::tmux $LANE is not a lane in $plugin"
-            exit 1
-          }
+          python3 -B -m unittest tools.ci.test_plan tools.ci.test_tmux_ref tools.ci.test_check
+          python3 -B -m tools.ci.check
+
+      - name: Plan the lanes
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          SCOPE: ${{ inputs.scope }}
+          TMUX_REF: ${{ inputs.tmux-ref }}
+          JDK: ${{ inputs.jdk }}
+          TMATE: ${{ inputs.tmate }}
+        run: |
+          python3 -B -m tools.ci.plan matrix \
+            --event "$EVENT" --ref-type "$REF_TYPE" --scope "$SCOPE" \
+            --tmux-ref "$TMUX_REF" --jdk "$JDK" --tmate "$TMATE" \
+            --github-output "$GITHUB_OUTPUT"
+
+  lanes:
+    # Preview lanes carry their own label: this is the only place a reader sees which entries the
+    # supported range does not include, since the README and the matrix property list only the rest.
+    name: tmux ${{ matrix.tmux }}, jdk ${{ matrix.jdk }}${{ matrix.experimental && ' (preview, not supported)' || '' }}${{ matrix.rejection && ' (must be refused)' || '' }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout }}
+    continue-on-error: ${{ matrix.experimental == true }}
+    strategy:
+      fail-fast: false
+      # Which tmux releases, and which JDKs, come from `plan`. A release below the floor runs only
+      # the version check cases: the real binary must refuse every call and leave a sentinel session,
+      # option and buffer untouched. Each also runs as the daemon behind a client at the floor, the
+      # only way a 3.0a or 3.1c answer reaches the library. A preview may fail and moves nothing in
+      # the README's claimed range.
+      matrix: ${{ fromJSON(needs.plan.outputs.lanes) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # A release is keyed by its version alone: a released tarball does not change, so a hit is the
+      # same binary the miss would have built. Anything else is keyed by the commit it resolves to,
+      # so master is rebuilt when upstream moves and not before.
+      - name: Resolve tmux ${{ matrix.tmux }}
+        id: ref
+        env:
+          SOURCE: ${{ matrix.source }}
+          TMUX_REF: ${{ matrix.tmux }}
+        run: |
+          python3 -B -m tools.ci.tmux_ref resolve --source "$SOURCE" "$TMUX_REF" \
+            --github-output "$GITHUB_OUTPUT"
 
       - name: Build dependencies
         run: |
@@ -81,37 +128,28 @@ jobs:
           sudo apt-get install --no-install-recommends -y \
             build-essential libevent-dev libncurses-dev bison pkg-config
 
-      # master has no release tarball to build from a tag, so it is checked out and autoreconf'd
-      # instead. autoconf and automake are needed only for that.
+      # Only a build from a commit needs autoconf and automake, to generate the files a tarball
+      # ships pre-built.
       - name: Build dependencies for a git checkout
-        if: matrix.tmux == 'master'
+        if: matrix.source == 'git'
         run: sudo apt-get install --no-install-recommends -y autoconf automake
 
-      # Keyed by version alone: a released tarball does not change, so a hit is the same binary the
-      # miss would have built. master has no such tarball and is never cached: it is upstream's
-      # development head, which moves on every commit.
       - name: Restore tmux ${{ matrix.tmux }}
-        if: matrix.tmux != 'master'
         id: tmux-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: ~/tmux-builds/${{ matrix.tmux }}
-          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
+          path: ~/tmux-builds/${{ matrix.slug }}
+          key: tmux-${{ steps.ref.outputs.key }}-${{ runner.os }}-${{ runner.arch }}
 
       - name: Build tmux ${{ matrix.tmux }}
-        if: matrix.tmux != 'master' && steps.tmux-cache.outputs.cache-hit != 'true'
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
         env:
-          LANE: ${{ matrix.tmux }}
+          SOURCE: ${{ matrix.source }}
+          BUILD_REF: ${{ steps.ref.outputs.sha || matrix.tmux }}
+          SLUG: ${{ matrix.slug }}
         run: |
-          set -eux
-          work="$(mktemp -d)"
-          curl -fsSL -o "$work/tmux.tar.gz" \
-            "https://github.com/tmux/tmux/releases/download/$LANE/tmux-$LANE.tar.gz"
-          tar -xzf "$work/tmux.tar.gz" -C "$work"
-          cd "$work/tmux-$LANE"
-          ./configure --prefix="$HOME/tmux-builds/$LANE"
-          make -j"$(nproc)"
-          make install
+          python3 -B -m tools.ci.tmux_ref build --source "$SOURCE" --ref "$BUILD_REF" \
+            --prefix "$HOME/tmux-builds/$SLUG"
 
       # The daemon of a 3.0a or 3.1c lane is reached by this client.
       - name: Restore tmux ${{ matrix.client }} for the client
@@ -127,51 +165,38 @@ jobs:
         env:
           CLIENT: ${{ matrix.client }}
         run: |
-          set -eux
-          work="$(mktemp -d)"
-          curl -fsSL -o "$work/tmux.tar.gz" \
-            "https://github.com/tmux/tmux/releases/download/$CLIENT/tmux-$CLIENT.tar.gz"
-          tar -xzf "$work/tmux.tar.gz" -C "$work"
-          cd "$work/tmux-$CLIENT"
-          ./configure --prefix="$HOME/tmux-builds/$CLIENT"
-          make -j"$(nproc)"
-          make install
-
-      # No release, no tag even: master is a moving branch, so it is built the way a contributor
-      # without a dist tarball would, generating the files a tarball normally ships pre-built.
-      - name: Build tmux master from a git checkout
-        if: matrix.tmux == 'master'
-        run: |
-          set -eux
-          git clone --depth 1 https://github.com/tmux/tmux.git "$HOME/tmux-src-master"
-          cd "$HOME/tmux-src-master"
-          sh autogen.sh
-          ./configure --prefix="$HOME/tmux-builds/master"
-          make -j"$(nproc)"
-          make install
+          python3 -B -m tools.ci.tmux_ref build --source release --ref "$CLIENT" \
+            --prefix "$HOME/tmux-builds/$CLIENT"
 
       - name: The lane runs the tmux it is named after
         env:
-          LANE: ${{ matrix.tmux }}
+          SLUG: ${{ matrix.slug }}
+          TMUX_REF: ${{ matrix.tmux }}
+          VERIFY: ${{ matrix.verify }}
           CLIENT: ${{ matrix.client }}
         run: |
           check() {
             reported="$("$HOME/tmux-builds/$1/bin/tmux" -V)"
-            echo "$1: $reported"
-            if [ "$1" = master ]; then
-              case "$reported" in "tmux next-"*) ;; *) echo "::error::$1 reports $reported"; exit 1 ;; esac
-            elif [ "${reported#* }" != "$1" ]; then
-              echo "::error::the $1 build reports $reported"
-              exit 1
-            fi
+            echo "$2: $reported"
+            case "$3" in
+              release)
+                if [ "${reported#* }" != "$2" ]; then
+                  echo "::error::the $2 build reports $reported"
+                  exit 1
+                fi
+                ;;
+              development)
+                case "$reported" in "tmux next-"*) ;; *) echo "::error::$2 reports $reported"; exit 1 ;; esac
+                ;;
+            esac
           }
-          check "$LANE"
-          if [ -n "$CLIENT" ]; then check "$CLIENT"; fi
+          check "$SLUG" "$TMUX_REF" "$VERIFY"
+          if [ -n "$CLIENT" ]; then check "$CLIENT" "$CLIENT" release; fi
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: ${{ matrix.jdks }}
 
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
@@ -194,12 +219,34 @@ jobs:
           echo "PYTHONPATH=$RUNNER_TEMP/python-libtmux-core/src" >> "$GITHUB_ENV"
           echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
 
+      # Pinned by commit: v3.24, https://github.com/mxschmitt/action-tmate/commit/35b54af.
+      # Only a dispatch gets here, and the plan allows one lane to.
+      - name: Debug session before the tests
+        if: github.event_name == 'workflow_dispatch' && matrix.tmate == 'before-tests'
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        timeout-minutes: 30
+        with:
+          limit-access-to-actor: true
+
       # One lane rather than testTmuxMatrix: each version builds and runs on its own runner, so the
-      # lanes take the time of the slowest instead of the sum.
+      # lanes take the time of the slowest instead of the sum. A tmux the plugin's lists do not
+      # name runs as the ad hoc lane, in the directory named for it.
       - name: Run the real-tmux suite
         env:
-          LANE: ${{ matrix.tmux }}
-        run: ./gradlew "test-tmux-$LANE" -PlibtmuxMatrix="$HOME/tmux-builds" --stacktrace
+          TASK: ${{ matrix.task }}
+          ADHOC: ${{ matrix.adhoc }}
+          JDK: ${{ matrix.jdk }}
+        run: |
+          args=(-PlibtmuxMatrix="$HOME/tmux-builds" "-Plibtmux.testJdk=$JDK")
+          if [ -n "$ADHOC" ]; then args+=("-PlibtmuxAdHoc=$ADHOC"); fi
+          ./gradlew "$TASK" "${args[@]}" --stacktrace
+
+      - name: Debug session after a failure
+        if: failure() && github.event_name == 'workflow_dispatch' && matrix.tmate == 'on-failure'
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        timeout-minutes: 30
+        with:
+          limit-access-to-actor: true
 
       - name: No tmux server outlived the suite
         if: always()
@@ -215,6 +262,24 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: reports-tmux-${{ matrix.tmux }}
+          name: reports-tmux-${{ matrix.slug }}-jdk${{ matrix.jdk }}
           path: '**/build/reports/**'
           retention-days: 7
+
+  required:
+    # The one check that means "the tmux matrix passed". A preview lane may fail without failing
+    # `lanes`, so it cannot fail this either. Naming every lane in a branch protection rule would
+    # mean editing it whenever the table changes.
+    if: always()
+    needs:
+      - plan
+      - lanes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Every planned lane succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 -B -m tools.ci.plan verify --needs "$NEEDS"

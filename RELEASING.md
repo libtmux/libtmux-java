@@ -260,8 +260,9 @@ Two behaviours worth knowing:
    [Gate 3](#gate-3--an-environment-the-secrets-live-behind). **Not done.**
 5. Dry-run locally, which needs no key and no token:
    `./gradlew publishToMavenLocal -PlibtmuxVersion=0.1.N`.
-6. Wait for CI and the tmux matrix to pass on the `Tag v0.1.N` commit, then tag
-   it. The Release workflow refuses a commit without both, then runs `check`,
+6. Wait for CI to pass on the `Tag v0.1.N` commit, then tag it. The Release
+   workflow refuses a commit without a passing CI run and runs the whole tmux
+   matrix itself, which a push does not, then runs `check`,
    uploads, and attests every published jar and the BOM pom. The attestation
    names the commit and workflow that built them. A release refused for a run still in progress is started
    again from the Actions tab once it has passed.

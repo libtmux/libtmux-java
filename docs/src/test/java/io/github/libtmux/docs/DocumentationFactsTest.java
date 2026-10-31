@@ -157,15 +157,19 @@ final class DocumentationFactsTest {
      * The supported range is the README's strongest claim, and the only one a reader cannot check.
      *
      * <p>"That range is not a claim" is true exactly while the matrix runs its ends. A release
-     * added to the workflow and not to the README understates what is tested; one removed from the
-     * workflow and left in the README is a promise nothing keeps. A spelled-out count drifts as
-     * lanes are added, so prose says "every supported release" and the ends are checked here.
+     * added to the build and not to the README understates what is tested; one removed from the
+     * build and left in the README is a promise nothing keeps. A spelled-out count drifts as lanes
+     * are added, so prose says "every supported release" and the ends are checked here.
+     *
+     * <p>The build's {@code lanes} are the list. The workflow carries none of its own: it plans the
+     * matrix from them, so a second list there would be the one thing that could disagree.
      */
     @Test
     void theReadmeNamesTheEndsOfTheMatrixItClaims() {
-        Matcher lanes = Pattern.compile("tmux:\\s*\\[([^\\]]+)]").matcher(read(".github/workflows/tmux-matrix.yml"));
-        assertTrue(lanes.find(), "the matrix workflow names no tmux versions");
-        List<String> running = Pattern.compile("'([^']+)'")
+        Matcher lanes = Pattern.compile("(?m)^val lanes = listOf\\((.*)\\)$")
+                .matcher(read("build-logic/conventions/src/main/kotlin/libtmux.tmux-matrix.gradle.kts"));
+        assertTrue(lanes.find(), "the tmux matrix plugin declares no lanes");
+        List<String> running = Pattern.compile("\"([^\"]+)\"")
                 .matcher(lanes.group(1))
                 .results()
                 .map(found -> found.group(1))
@@ -181,6 +185,11 @@ final class DocumentationFactsTest {
                         .matcher(readme)
                         .find(),
                 "the README spells out a release count, which drifts the moment a lane is added");
+        assertFalse(
+                Pattern.compile("tmux:\\s*\\[")
+                        .matcher(read(".github/workflows/tmux-matrix.yml"))
+                        .find(),
+                "the matrix workflow lists tmux versions of its own; it plans them from the plugin's lanes");
     }
 
     /**

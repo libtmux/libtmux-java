@@ -25,8 +25,16 @@ val clientLane = "3.3a"
 
 val matrix = providers.gradleProperty("libtmuxMatrix")
 
-fun registerLane(lane: String, rejection: Boolean = false) =
-    tasks.register<Test>("test-tmux-$lane") {
+// A tmux the lists above do not name: a release outside the table, a tag, a branch or a commit. A
+// dispatch builds it under a directory of its own, named by the argument, and this registers one
+// more lane for that run. The lists stay the table: nothing here adds a release to it.
+val adHocLane = providers.gradleProperty("libtmuxAdHoc").orNull?.also {
+    require(Regex("[A-Za-z0-9._-]{1,64}").matches(it)) { "libtmuxAdHoc names a directory, not $it" }
+}
+val releaseName = Regex("""(\d+)\.(\d+)[a-z]?""")
+
+fun registerLane(lane: String, rejection: Boolean = false, adHoc: Boolean = false) =
+    tasks.register<Test>(if (adHoc) "test-tmux-adhoc" else "test-tmux-$lane") {
         group = "verification"
         description = "Runs the real-tmux tests against tmux $lane."
         val tests = sourceSets.test.get()
@@ -37,8 +45,17 @@ fun registerLane(lane: String, rejection: Boolean = false) =
         // ordinary fork asserts nothing and fails saying so.
         useJUnitPlatform {
             excludeTags("fixture", "carrier", "benchmark", "locale")
-            // Ordinary 3.3a+ operations still run; managed control has its own 3.7 floor.
-            if (lane in listOf("3.3a", "3.4", "3.5", "3.6", "3.6a")) {
+            // Ordinary 3.3a+ operations still run; managed control has its own 3.7 floor. An ad hoc
+            // name that is not a release cannot say which side it is on, so it runs them.
+            val before37 = if (adHoc) {
+                releaseName.matchEntire(lane)?.let { found ->
+                    val (major, minor) = found.destructured
+                    major.toInt() < 3 || (major.toInt() == 3 && minor.toInt() < 7)
+                } ?: false
+            } else {
+                lane in listOf("3.3a", "3.4", "3.5", "3.6", "3.6a")
+            }
+            if (before37) {
                 excludeTags("control")
             }
         }
@@ -65,7 +82,11 @@ fun registerLane(lane: String, rejection: Boolean = false) =
         systemProperty("libtmux.tmux", binary.getOrElse("tmux-matrix-not-configured"))
         // Declared so the suite can check it got the tmux this lane is named after. Without it a
         // lane that ignored the binary would run against whatever is on PATH and still be green.
-        systemProperty("libtmux.tmux.expected", lane)
+        // An ad hoc name that is not a release has no version to check, and a lane that declares
+        // none is treated as the ordinary suite on that binary.
+        if (!adHoc || releaseName.matches(lane)) {
+            systemProperty("libtmux.tmux.expected", lane)
+        }
         // Whether this lane's binary is below the floor, so the version check suite can require the
         // outcome the lane was built for instead of accepting whichever branch the binary takes.
         systemProperty("libtmux.tmux.rejection", rejection.toString())
@@ -95,6 +116,7 @@ fun registerLane(lane: String, rejection: Boolean = false) =
 val laneTasks = lanes.map { registerLane(it) }
 previewLanes.forEach { registerLane(it) }
 val rejectionTasks = rejectionLanes.map { registerLane(it, rejection = true) }
+adHocLane?.let { registerLane(it, adHoc = true) }
 
 rootProject.tasks.maybeCreate("testTmuxMatrix").apply {
     group = "verification"

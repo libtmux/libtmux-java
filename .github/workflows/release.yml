@@ -19,11 +19,25 @@ permissions:
   contents: read
   id-token: write
   attestations: write
-  # To read whether this commit's CI and tmux matrix passed.
+  # To read whether this commit's CI passed.
   actions: read
 
 jobs:
+  tmux-matrix:
+    # A release proves the whole tmux table: the supported releases, the releases below the floor,
+    # and the previews, which may fail without failing the run. A push to master runs only the oldest
+    # and newest supported release, so its run cannot stand in for this one. The tagged commit is
+    # tested here at full scope, and nothing publishes until it passes. Like publish, it is refused
+    # for a branch.
+    if: github.event_name == 'push' || startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/tmux-matrix.yml
+    with:
+      scope: full
+
   publish:
+    needs: [tmux-matrix]
     # A tag push is already a tag ref by construction; a dispatch is refused unless the ref it runs
     # against is one too, so signing and Central secrets are never reachable from a branch.
     if: github.event_name == 'push' || startsWith(github.ref, 'refs/tags/v')
@@ -39,23 +53,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # This job checks on one JDK and one tmux. The commit is released on what it proved everywhere:
-      # CI on JDK 25 and 27, and every supported tmux lane, each for exactly this commit.
-      # Nothing is re-run here: a workflow still running, or never run for this commit, refuses the
-      # release, which is started again once it has passed.
-      - name: Require this commit's CI and tmux matrix to have passed
+      # CI on JDK 25 and 27 for exactly this commit, and every supported tmux lane, which the job
+      # above ran. CI is not re-run here: a run still in progress, or never made for this commit,
+      # refuses the release, which is started again once it has passed.
+      - name: Require this commit's CI to have passed
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          for workflow in ci.yml tmux-matrix.yml; do
-            passed=$(gh run list --workflow "$workflow" --commit "$GITHUB_SHA" --limit 50 \
-              --json conclusion --jq 'map(select(.conclusion == "success")) | length')
-            if [ "$passed" -lt 1 ]; then
-              echo "::error::$workflow has no successful run for $GITHUB_SHA; let it pass, then release again"
-              exit 1
-            fi
-            echo "$workflow passed on $GITHUB_SHA"
-          done
+          passed=$(gh run list --workflow ci.yml --commit "$GITHUB_SHA" --limit 50 \
+            --json conclusion --jq 'map(select(.conclusion == "success")) | length')
+          if [ "$passed" -lt 1 ]; then
+            echo "::error::ci.yml has no successful run for $GITHUB_SHA; let it pass, then release again"
+            exit 1
+          fi
+          echo "ci.yml passed on $GITHUB_SHA"
 
       - name: Install tmux
         run: |
