@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.libtmux.Server;
 import io.github.libtmux.ServerEndpoint;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,6 +19,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -69,9 +72,33 @@ final class SocketSelectionTest {
         return new Result(code, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
     }
 
+    /** Where the build quarantines every tmux server this suite starts. */
+    private static final Path TEST_ROOT = Path.of("/tmp/libtmux-java-test");
+
+    /**
+     * Refuses a {@code TMUX_TMPDIR} that does not resolve to a directory below the test root. A bare
+     * client under any other one reaches a server this build does not own, and these tests stop what
+     * they find.
+     */
+    static void requireBelowTestRoot(@Nullable String tmuxTmpDir) {
+        if (tmuxTmpDir == null || tmuxTmpDir.isEmpty()) {
+            throw new AssertionError("the build did not quarantine TMUX_TMPDIR");
+        }
+        Path root;
+        Path quarantine;
+        try {
+            root = TEST_ROOT.toRealPath();
+            quarantine = Path.of(tmuxTmpDir).toRealPath();
+        } catch (IOException unresolved) {
+            throw new AssertionError("TMUX_TMPDIR or the test root does not resolve to a directory", unresolved);
+        }
+        assertTrue(
+                quarantine.startsWith(root) && !quarantine.equals(root),
+                "TMUX_TMPDIR is not below the test root, so a bare client would reach a server this build does not own");
+    }
+
     private static void requirePrivateDefaultSocket() {
-        String quarantine = System.getenv("TMUX_TMPDIR");
-        assertTrue(quarantine != null && !quarantine.isEmpty(), "the build did not quarantine TMUX_TMPDIR");
+        requireBelowTestRoot(System.getenv("TMUX_TMPDIR"));
         assertNull(System.getenv("TMUX"), "the suite is running inside tmux, so a child could inherit it");
     }
 
@@ -87,6 +114,27 @@ final class SocketSelectionTest {
                 .binary(System.getProperty("libtmux.tmux", "tmux"))
                 .configFile(Path.of("/dev/null"))
                 .build();
+    }
+
+    /**
+     * The guard is what stands between a failed assertion and the developer's own server, so it is
+     * shown to refuse each way a {@code TMUX_TMPDIR} can point outside the test root, a link planted
+     * inside it included, and to accept one below it.
+     */
+    @Test
+    void theQuarantineGuardRefusesATmuxTmpDirOutsideTheTestRoot(@TempDir Path directory) throws Exception {
+        Path escape = Files.createSymbolicLink(directory.resolve("escape"), Path.of("/usr"));
+        Path missing = TEST_ROOT.resolve("never-created-" + System.nanoTime());
+
+        assertThrows(AssertionError.class, () -> requireBelowTestRoot(null));
+        for (String outside :
+                List.of("", "/", "/tmp", "/usr", TEST_ROOT.toString(), escape.toString(), missing.toString())) {
+            assertThrows(AssertionError.class, () -> requireBelowTestRoot(outside), outside);
+        }
+
+        Assumptions.assumeTrue(
+                directory.toRealPath().startsWith(TEST_ROOT.toRealPath()), "the build puts temporary directories here");
+        requireBelowTestRoot(directory.toString());
     }
 
     // ------------------------------------------------------------------------------- resolution
@@ -299,9 +347,9 @@ final class SocketSelectionTest {
             Result appended = invoke(environment, "load", refused.toString(), "--append", "--json");
 
             assertEquals(2, attached.code(), attached.toString());
-            assertTrue(attached.err().contains("server"), attached.err());
+            assertTrue(attached.err().contains("is not the server selected to load onto"), attached.err());
             assertEquals(2, appended.code(), appended.toString());
-            assertTrue(appended.err().contains("server"), appended.err());
+            assertTrue(appended.err().contains("does not match the inherited tmux daemon"), appended.err());
             assertEquals(1, pane.windows().size(), "the pane's server was built on");
             assertEquals(1, other.windows().size(), "the variable's server was built on");
             assertFalse(pane.hasSession("refused") || other.hasSession("refused"));
