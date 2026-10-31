@@ -224,6 +224,52 @@ A release commit subject is plain and short: `Tag v<version>`.
 How a release is actually cut — the version property, the signing key, the order
 to do things in — is in [`RELEASING.md`](../RELEASING.md).
 
+## Running CI against any tmux
+
+A push and a pull request run the oldest and newest supported tmux, 3.3a and
+3.7c. Any other tmux runs on demand: dispatch `tmux-matrix.yml` from any branch
+with `scope=custom` and a comma-separated `tmux-ref`, each item a release, a
+tag, a branch or a 40-hex commit from
+[github.com/tmux/tmux](https://github.com/tmux/tmux).
+
+```console
+$ gh workflow run tmux-matrix.yml --ref my-branch -f scope=custom -f tmux-ref=3.6b,master
+```
+
+A name in the plugin's lists runs its own Gradle task. Anything else runs as
+the ad hoc lane, `./gradlew test-tmux-adhoc -PlibtmuxAdHoc=<name>`, with the
+build in `~/tmux-builds/<name>`; a commit is shortened to 12 characters. A
+branch or commit has no release to check, and its control-mode tests run. A
+preview or ad hoc lane in a custom run fails the run when it fails.
+`scope=full` runs the whole table, the refusal lanes and the previews, as the
+weekly schedule and the release workflow do, and `jdk` repeats each lane once per JDK the tests run on.
+
+```console
+$ gh workflow run tmux-matrix.yml --ref my-branch -f scope=custom -f tmux-ref=3.8 -f jdk=25,27
+```
+
+`tmate=on-failure` opens an
+[`action-tmate`](https://github.com/mxschmitt/action-tmate) SSH session after a
+failing lane, and `tmate=before-tests` opens one before the suite. Only the
+account that dispatched the run can connect, so it needs a public SSH key on its
+GitHub profile. The plan accepts a session on exactly one lane, which means one
+`tmux-ref` and at most one `jdk`.
+
+```console
+$ gh workflow run tmux-matrix.yml --ref my-branch -f scope=custom -f tmux-ref=3.7b -f tmate=on-failure
+```
+
+The dispatch form is only available once `tmux-matrix.yml` carries the inputs on
+the default branch. This prints the lanes a dispatch would run, without a runner:
+
+```console
+$ python3 -m tools.ci.plan matrix --event workflow_dispatch --scope custom --tmux-ref 3.6b,master
+```
+
+Each dispatch is its own run: it does not cancel the push run on its branch, and
+another dispatch does not cancel it.
+`ci.yml` has no tmux axis, so it takes no inputs.
+
 ## Compatibility
 
 **JDK 25 is the floor.** Three places state it and all three have to agree: the
@@ -233,9 +279,12 @@ version matrix in the CI workflow, which builds on 25 and 27, and the claim
 `README.md` makes under `Requirements`.
 
 **tmux 3.3a through 3.7c is the supported range**, and it is not a claim: the
-whole real-tmux suite runs against every one of those releases, and each lane
-checks it really ran the tmux it is named after. Moving the range means moving
-`workflows/tmux-matrix.yml` and the README together.
+whole real-tmux suite runs against every one of those releases each week and
+before a release, and against the oldest and newest of them, 3.3a and 3.7c, on
+every push and pull request. Each lane checks it really ran the tmux it is
+named after. The range is the `lanes` list in
+`libtmux.tmux-matrix.gradle.kts`, which the workflow plans its matrix from, so
+moving the range means moving that list and the README together.
 
 Releases below the floor have rejection lanes that run only the version check
 against the real binary. Each lane also puts a 3.3a client in front of the old

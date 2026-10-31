@@ -15,6 +15,13 @@ release is supported, and there are no backports.
   server below 3.8 gets an `UnsupportedFeatureException` naming 3.8 before
   anything is sent. Installed releases behave as before. (#106)
 
+- **CI tests the oldest and newest supported tmux on a push and a pull
+  request.** 3.3a and 3.7c run on every push. The weekly schedule and a
+  `workflow_dispatch` with `scope: full` run every supported release, the
+  refusal lanes and the 3.8 and master previews, and the release workflow runs
+  the whole matrix itself before it publishes. A dispatch also takes `tmux-ref` (a release, tag, branch or commit), `jdk` and
+  `tmate`. (#114)
+
 ### Documented
 
 - **The `Session` Javadoc groups its methods by task.** A "What is on here"
