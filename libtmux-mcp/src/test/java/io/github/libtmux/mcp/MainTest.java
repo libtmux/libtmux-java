@@ -331,6 +331,23 @@ final class MainTest {
                         .endpoint());
     }
 
+    /**
+     * The launcher prints this message on stderr for a client to log, so it names the variable and the
+     * way forward and leaves what the variable held out.
+     */
+    @Test
+    void aSocketNameThatIsAPathIsRefusedWithoutEchoingIt() {
+        IllegalArgumentException refused = assertThrows(
+                IllegalArgumentException.class,
+                () -> LaunchConfiguration.resolve(
+                        List.of(), Map.of(LaunchConfiguration.SOCKET_ENV, "nested/distinctive")));
+
+        String message = String.valueOf(refused.getMessage());
+        assertTrue(message.contains(LaunchConfiguration.SOCKET_ENV), message);
+        assertTrue(message.contains(LaunchConfiguration.SOCKET_PATH_ENV), message);
+        assertFalse(message.contains("distinctive"), message);
+    }
+
     @Test
     void aFlagBeatsBothVariables() {
         Map<String, String> both = Map.of(

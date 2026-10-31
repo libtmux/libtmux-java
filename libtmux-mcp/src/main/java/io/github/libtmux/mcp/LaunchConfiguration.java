@@ -126,6 +126,10 @@ record LaunchConfiguration(
         @Nullable String configuredName = unlessBlank(environment.get(SOCKET_ENV));
         if (configuredName != null) {
             String name = RouteValue.requireSafe(configuredName, SOCKET_ENV);
+            if (name.indexOf('/') >= 0) {
+                throw new IllegalArgumentException(
+                        SOCKET_ENV + " holds a path separator; use " + SOCKET_PATH_ENV + " for a socket path");
+            }
             return new SocketChoice(ServerEndpoint.namedSocket(name), "name:" + name, "operator-current");
         }
         return new SocketChoice(ServerEndpoint.defaultSocket(), "inherit", "inherited");
