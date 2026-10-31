@@ -2,6 +2,7 @@ package io.github.libtmux.workspace.cli;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.libtmux.Dimensions;
+import io.github.libtmux.ServerEndpoint;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -367,6 +368,16 @@ final class Children {
             if (args.hasMatchedOption(option)) {
                 command.add(option);
                 command.add(args.matchedOptionValue(option, ""));
+            }
+        }
+        // tmuxp reads neither variable, and follows TMUX when handed no flag, so a socket a variable
+        // chose has to reach it as the flag it understands.
+        if (!args.hasMatchedOption("-S") && !args.hasMatchedOption("-L")) {
+            switch (Execution.endpoint(bridge, args)) {
+                case ServerEndpoint.SocketPath chosen ->
+                    command.addAll(List.of("-S", chosen.path().toString()));
+                case ServerEndpoint.NamedSocket chosen -> command.addAll(List.of("-L", chosen.name()));
+                case ServerEndpoint.Default _ -> {}
             }
         }
         for (String option :

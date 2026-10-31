@@ -33,19 +33,32 @@ final class Execution {
     private Execution() {}
 
     static Server server(Main.Context context, ParseResult args) {
-        var server = Server.builder().force256Colors(Main.flag(args, "-2")).binary(tmuxExecutable(context));
-        String socket = args.matchedOptionValue("-S", "");
-        String name = args.matchedOptionValue("-L", "");
-        if (!socket.isEmpty())
-            server.endpoint(ServerEndpoint.socketPath(context.directory().resolve(Catalog.expand(context, socket))));
-        else if (!name.isEmpty()) server.endpoint(ServerEndpoint.namedSocket(name));
-        else
-            io.github.libtmux.TmuxEnvironment.of(context.environment())
-                    .ifPresent(inherited -> server.endpoint(ServerEndpoint.socketPath(inherited.socket())));
+        var server = Server.builder()
+                .force256Colors(Main.flag(args, "-2"))
+                .binary(tmuxExecutable(context))
+                .endpoint(endpoint(context, args));
         String config = args.matchedOptionValue("-f", "");
         if (args.commandSpec().name().equals("load") && !config.isEmpty())
             server.configFile(context.directory().resolve(config));
         return server.build();
+    }
+
+    /**
+     * The server {@code -S} or {@code -L} names, else the one {@code LIBTMUX_SOCKET_PATH} or
+     * {@code LIBTMUX_SOCKET} names, else none: tmux then picks the server itself, which is the one
+     * in {@code TMUX} from inside a pane.
+     */
+    static ServerEndpoint endpoint(Main.Context context, ParseResult args) {
+        String socket = args.matchedOptionValue("-S", "");
+        String name = args.matchedOptionValue("-L", "");
+        if (!socket.isEmpty())
+            return ServerEndpoint.socketPath(context.directory().resolve(Catalog.expand(context, socket)));
+        if (!name.isEmpty()) return ServerEndpoint.namedSocket(name);
+        try {
+            return ServerEndpoint.fromEnvironment(context.environment());
+        } catch (IllegalArgumentException invalid) {
+            throw Main.usage(java.util.Objects.toString(invalid.getMessage(), "LIBTMUX_SOCKET is not a socket name"));
+        }
     }
 
     /** A missing tmux is its own answer, not the shared code the PATH lookup reports. */

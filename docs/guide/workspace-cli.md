@@ -21,6 +21,18 @@ development](#generated-reference-and-development)
   it.
 - Mapping keys are never expanded.
 
+### Choosing the server
+
+- `-S` names a socket path and `-L` a socket name. `-S` wins when both are given.
+- Without either, `LIBTMUX_SOCKET_PATH` and then `LIBTMUX_SOCKET` choose, and
+  the path wins when both are set. A blank variable counts as unset.
+- With neither flag nor variable, no socket is passed and tmux picks the server:
+  the one in `TMUX` from inside a pane, and its default socket otherwise.
+- `shell` hands tmuxp the `-S` or `-L` a variable chose, because tmuxp reads
+  neither variable. With none chosen, tmuxp follows `TMUX` itself.
+- An attached `load` and `--append` from inside tmux still require the selected
+  server to be the one in `TMUX`, and refuse otherwise.
+
 ### Creating, reusing and appending
 
 - Ordinary loading creates or reuses a session.

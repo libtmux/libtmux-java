@@ -183,8 +183,10 @@ final class Arguments {
     }
 
     private static void sockets(CommandSpec command) {
-        command.addOption(value("Explicit tmux socket path; takes precedence over -L.", "-S"));
-        command.addOption(value("Named tmux socket.", "-L"));
+        command.addOption(
+                value("Explicit tmux socket path; takes precedence over -L. Default: $LIBTMUX_SOCKET_PATH.", "-S"));
+        command.addOption(
+                value("Named tmux socket. Default: $LIBTMUX_SOCKET; with neither variable set, tmux picks.", "-L"));
     }
 
     /** @param asks whether the command confirms before writing; one that never asks takes -y for tmuxp's sake */
