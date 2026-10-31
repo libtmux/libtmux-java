@@ -1,9 +1,17 @@
 // Runs tmux-workspace from the staged jar and what its POM names, nothing else: a runtime dependency
 // the POM leaves out fails here as a missing class, not in a user's launcher.
+import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createTempDirectory
 
 plugins { java }
+
+// A build of its own, so the quarantine is applied by path rather than as a plugin.
+apply(from = rootProject.file("../../build-logic/conventions/src/main/kotlin/libtmux.tmux-quarantine.gradle.kts"))
+@Suppress("UNCHECKED_CAST")
+val withoutServerSelectors = extra["withoutServerSelectors"] as (ProcessForkOptions) -> Unit
+@Suppress("UNCHECKED_CAST")
+val stopLeakedServers = extra["stopLeakedServers"] as (Path, String) -> Pair<List<String>, List<String>>
 
 // The version the root build staged. Required, so a launcher that resolved some other release
 // cannot pass for this one.
@@ -19,12 +27,16 @@ tasks.register("run") {
     doLast {
         val directory = createTempDirectory(File("/tmp/libtmux-java-test").toPath().createDirectories(), "cli-")
         val socket = directory.resolve("s").toString()
+        // A client given no -S would otherwise follow the caller's TMUX, or its default socket.
+        val tmuxTmpDir = directory.resolve("t").createDirectories().toString()
         fun cli(vararg arguments: String): String {
             val ran = providers.javaexec {
                 classpath(classpath)
                 mainClass = "io.github.libtmux.workspace.cli.Main"
                 args(*arguments)
                 isIgnoreExitValue = true
+                withoutServerSelectors(this)
+                environment("TMUX_TMPDIR", tmuxTmpDir)
             }
             val status = ran.result.get().exitValue
             check(status == 0) {
@@ -44,7 +56,12 @@ tasks.register("run") {
                 commandLine("tmux", "-S", socket, "kill-server")
                 isIgnoreExitValue = true
             }.result.get()
-            directory.toFile().deleteRecursively()
+            val (stopped, stuck) = stopLeakedServers(Path.of(tmuxTmpDir), "tmux")
+            // Kept while a server still answers, so it can be found and ended.
+            if (stuck.isEmpty()) directory.toFile().deleteRecursively()
+            check(stopped.isEmpty() && stuck.isEmpty()) {
+                "tmux-workspace left a tmux server running: ${(stopped + stuck).sorted().joinToString(", ")}"
+            }
         }
     }
 }
