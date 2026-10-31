@@ -43,8 +43,8 @@ on:
       tmate:
         description: 'Open a tmate session on the one lane. Needs scope custom with a single tmux-ref.'
         type: choice
-        options: [off, before-tests, on-failure]
-        default: off
+        options: ['off', before-tests, on-failure]
+        default: 'off'
 
 # Cancel a superseded run only on a pull request, where a new push genuinely replaces the answer.
 # On master every commit's run stands on its own: grouping them all together meant re-running an
