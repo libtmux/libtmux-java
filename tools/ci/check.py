@@ -131,6 +131,59 @@ def _check_tmate_step(step: str) -> str:
     return ""
 
 
+YAML11_BOOLEANS = {
+    **dict.fromkeys(("y", "yes", "true", "on"), "true"),
+    **dict.fromkeys(("n", "no", "false", "off"), "false"),
+}
+
+
+def _bare_boolean(token: str) -> str | None:
+    """Return the boolean YAML 1.1 reads `token` as, or None if it is quoted or not one."""
+    token = token.strip()
+    if token[:1] in "'\"":
+        return None
+    return YAML11_BOOLEANS.get(token.lower())
+
+
+def dispatch_booleans(text: str) -> list[tuple[str, str, str]]:
+    """Return each input default or option that YAML 1.1 reads as a boolean.
+
+    GitHub reads a workflow's inputs as YAML 1.1, where a bare `off` is false.
+    A default that is not one of the options refuses every dispatch that sets
+    nothing, and a bare pair reaches the plan as `false`. Python has no YAML 1.1
+    parser in its library, so this reads the `on:` block's lines.
+    """
+    block = re.search(r"(?ms)^on:\n(.*?)(?=^\S)", text)
+    found: list[tuple[str, str, str]] = []
+    name = "an input"
+    in_options = False
+    for line in (block[1] if block else "").splitlines():
+        stripped = line.split(" #", 1)[0].rstrip()
+        if not stripped.strip():
+            continue
+        indent = len(stripped) - len(stripped.lstrip())
+        if indent == 6 and stripped.endswith(":"):
+            name = stripped.strip()[:-1]
+        item = re.match(r"\s*-\s+(.+)$", stripped)
+        if in_options and item:
+            options = [item[1]]
+        elif (flow := re.match(r"\s*options:\s*\[(.*)]$", stripped)) is not None:
+            options = flow[1].split(",")
+            in_options = False
+        else:
+            options = []
+            in_options = stripped.strip() == "options:"
+        found += [
+            (f"option {value.strip()} of {name}", value.strip(), truth)
+            for value in options
+            if (truth := _bare_boolean(value))
+        ]
+        default = re.match(r"\s*default:\s*(.+)$", stripped)
+        if default and (truth := _bare_boolean(default[1])):
+            found.append((f"the default of {name}", default[1].strip(), truth))
+    return found
+
+
 def check_matrix(text: str) -> list[str]:
     """Return what is wrong with tmux-matrix.yml."""
     code = _code(text)
@@ -153,16 +206,11 @@ def check_matrix(text: str) -> list[str]:
             "a release runs the table as it is"
         )
 
-    # GitHub reads a bare `off` as false, in the options and in the default. A
-    # default that is not one of the options refuses every dispatch that sets
-    # nothing, and a bare pair reaches the plan as `false`.
-    if (
-        "options: ['off', before-tests, on-failure]" not in text
-        or "default: 'off'" not in text
-    ):
-        problems.append(
-            "the tmate input must quote 'off': GitHub reads a bare off as false"
-        )
+    problems += [
+        f"tmux-matrix.yml: {where} is a bare {value}, which GitHub reads as the boolean "
+        f"{truth}; quote it"
+        for where, value, truth in dispatch_booleans(text)
+    ]
 
     jobs = _jobs(text)
     if "matrix: ${{ fromJSON(needs.plan.outputs.lanes) }}" not in jobs.get("lanes", ""):

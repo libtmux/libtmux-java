@@ -170,15 +170,33 @@ class CheckTest(unittest.TestCase):
         )
         self.assertFlags("takes more than a scope when called")
 
-    def test_a_bare_off_in_the_tmate_input_is_flagged(self) -> None:
+    def test_a_bare_off_option_is_flagged(self) -> None:
         """A bare off is false to GitHub, which breaks every default dispatch."""
         self.edit(check.MATRIX, "options: ['off',", "options: [off,")
-        self.assertFlags("must quote 'off'")
+        self.assertFlags("option off of tmate is a bare off")
 
     def test_a_bare_off_default_is_flagged(self) -> None:
         """The default has to be the same string as the option it names."""
         self.edit(check.MATRIX, "default: 'off'", "default: off")
-        self.assertFlags("must quote 'off'")
+        self.assertFlags("the default of tmate is a bare off")
+
+    def test_another_yaml_boolean_is_flagged(self) -> None:
+        """Yes, no, on and the rest are booleans to GitHub too."""
+        self.edit(check.MATRIX, "default: 'off'", "default: No")
+        self.assertFlags("the default of tmate is a bare No")
+
+    def test_a_block_list_of_options_is_read(self) -> None:
+        """An option written as a block item is as bare as one in a flow list."""
+        self.edit(
+            check.MATRIX,
+            "        options: ['off', before-tests, on-failure]\n",
+            "        options:\n          - off\n          - before-tests\n",
+        )
+        self.assertFlags("option off of tmate is a bare off")
+
+    def test_quoted_values_are_not_flagged(self) -> None:
+        """The workflow as written has none."""
+        self.assertEqual(check.dispatch_booleans((ROOT / check.MATRIX).read_text()), [])
 
     def test_an_unpinned_tmate_is_flagged(self) -> None:
         """The action is pinned by commit."""
