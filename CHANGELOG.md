@@ -20,7 +20,7 @@ release is supported, and there are no backports.
   `workflow_dispatch` with `scope: full` run every supported release, the
   refusal lanes and the 3.8 and master previews, and the release workflow runs
   the whole matrix itself before it publishes. A dispatch also takes `tmux-ref` (a release, tag, branch or commit), `jdk` and
-  `tmate`. (#114)
+  `tmate`. (#115)
 
 ### Documented
 
