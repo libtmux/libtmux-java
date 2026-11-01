@@ -24,6 +24,8 @@ release that first shipped the module.
 
 ## Unreleased
 
+## 0.1.2 — 2026-11-01
+
 ### Development
 
 - **Test runs stay away from the tmux server a developer works in.** Since

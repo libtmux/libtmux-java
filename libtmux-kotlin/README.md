@@ -51,7 +51,7 @@ Add it through the BOM, which names one version for every module:
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.1.1"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.1.2"))
     implementation("io.github.libtmux:libtmux-kotlin")
 }
 ```

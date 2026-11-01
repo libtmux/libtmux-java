@@ -14,6 +14,10 @@ changelog](../CHANGELOG.md).
 
 ## Unreleased
 
+## 0.1.2 — 2026-11-01
+
+No entries for `libtmux-junit5`.
+
 ## 0.1.1 — 2026-11-01
 
 No entries for `libtmux-junit5`.

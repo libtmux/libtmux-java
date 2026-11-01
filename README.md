@@ -49,7 +49,7 @@ for every BOM-managed coordinate. It needs JDK 25 or newer:
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.1.1"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.1.2"))
 
     implementation("io.github.libtmux:libtmux")
     testImplementation("io.github.libtmux:libtmux-junit5")
@@ -65,7 +65,7 @@ dependencies {
     <dependency>
       <groupId>io.github.libtmux</groupId>
       <artifactId>libtmux-bom</artifactId>
-      <version>0.1.1</version>
+      <version>0.1.2</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -488,7 +488,7 @@ Import the platform, and leave the version off the module:
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.1.1"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.1.2"))
     implementation("io.github.libtmux:libtmux-jackson")   // no version
 }
 ```
