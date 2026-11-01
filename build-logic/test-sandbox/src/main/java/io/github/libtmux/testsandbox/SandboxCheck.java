@@ -11,10 +11,10 @@ import org.jspecify.annotations.Nullable;
  * <p>A finding names a variable and never prints its value, because an environment holds secrets and
  * a failure message is copied into logs.
  */
-public final class SandboxCheck {
+final class SandboxCheck {
 
     /** The system property the build sets to the directory it exported as {@code TMUX_TMPDIR}. */
-    public static final String SANDBOX_PROPERTY = "libtmux.test.sandbox";
+    static final String SANDBOX_PROPERTY = "libtmux.test.sandbox";
 
     private SandboxCheck() {}
 
@@ -25,7 +25,7 @@ public final class SandboxCheck {
      * @param sandbox the directory the build prepared for this task, or {@code null} when it did not
      * @return one sentence per finding, empty when the process is sandboxed
      */
-    public static List<String> findings(Map<String, String> environment, @Nullable String sandbox) {
+    static List<String> findings(Map<String, String> environment, @Nullable String sandbox) {
         List<String> found = new ArrayList<>();
         if (environment.containsKey("TMUX")) {
             found.add("TMUX is set, and a bare tmux command follows it to the server its caller sits in");
@@ -55,7 +55,7 @@ public final class SandboxCheck {
      * @param sandbox the directory the build prepared for this task, or {@code null} when it did not
      * @throws IllegalStateException naming each finding, when there is one
      */
-    public static void require(Map<String, String> environment, @Nullable String sandbox) {
+    static void require(Map<String, String> environment, @Nullable String sandbox) {
         List<String> found = findings(environment, sandbox);
         if (!found.isEmpty()) {
             throw new IllegalStateException(refusal(found));
