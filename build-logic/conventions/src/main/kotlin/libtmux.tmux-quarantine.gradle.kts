@@ -186,7 +186,13 @@ class PrepareQuarantine(private val root: String, private val checkout: String) 
                 "tmux quarantine is not a directory: $directory"
             }
             val entries = Files.walk(directory).use { paths -> paths.toList() }
-            val stale = entries.firstOrNull { it != directory && !Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS) }
+            // A socket may still have a server behind it, and deleting it would hide that server. A plain
+            // file is debris, such as the temporary files of a run that was cancelled.
+            val stale = entries.firstOrNull {
+                it != directory &&
+                    !Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS) &&
+                    !Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS)
+            }
             require(stale == null) { "tmux quarantine contains a stale entry: $stale" }
             entries.asReversed().filter { it != directory }.forEach(Files::delete)
             Files.setPosixFilePermissions(directory, ownerOnly)

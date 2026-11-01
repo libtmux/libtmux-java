@@ -1,5 +1,8 @@
 package io.github.libtmux.buildlogic
 
+import java.net.StandardProtocolFamily
+import java.net.UnixDomainSocketAddress
+import java.nio.channels.ServerSocketChannel
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.tools.ToolProvider
@@ -177,6 +180,32 @@ class TmuxQuarantineTest {
     }
 
     @Test
+    fun `temporary files a cancelled run left are cleared before the next run`(@TempDir project: Path) {
+        writeProbe(project, applyPlugin = true, optIn = true)
+        val directory = leftBehindByAnEarlierRun(project)
+        Files.writeString(Files.createDirectories(directory.resolve("junit-1")).resolve("file"), "x")
+
+        val third = run(project)
+
+        assumeTrue("name=${directory.fileName}" in third.text, "the build ran in another daemon")
+        assertTrue(!Files.exists(directory), "the quarantine was not removed after the run")
+    }
+
+    @Test
+    fun `a socket a cancelled run left is refused, not silently cleared`(@TempDir project: Path) {
+        writeProbe(project, applyPlugin = true, optIn = true)
+        val directory = leftBehindByAnEarlierRun(project)
+        val left = directory.resolve("left.sock")
+        ServerSocketChannel.open(StandardProtocolFamily.UNIX).use { it.bind(UnixDomainSocketAddress.of(left)) }
+
+        val output = runEither(project)
+
+        val refused = "contains a stale entry: $left" in output
+        assumeTrue(refused || "name=${directory.fileName}" in output, "the build ran in another daemon")
+        assertTrue(refused, "the build did not name the socket it should have refused")
+    }
+
+    @Test
     fun `a socket file nothing answers on is not a leak`(@TempDir project: Path) {
         assumeTmux()
         writeProbe(project, applyPlugin = true, optIn = true, leak = "stale")
@@ -242,6 +271,22 @@ class TmuxQuarantineTest {
         } finally {
             stopServer(pidFile)
         }
+    }
+
+    // A quarantine an earlier run of the same task in this daemon left. Where it is depends on the daemon, so
+    // a build that landed in another one has nothing to find and the case is skipped, not passed.
+    private fun leftBehindByAnEarlierRun(project: Path): Path {
+        val first = run(project).report.getValue("TMUX_TMPDIR").getValue("name")
+        val directory = socketRoot.resolve(first)
+        val again = run(project).report.getValue("TMUX_TMPDIR").getValue("name")
+        assumeTrue(first == again, "the two builds ran in different daemons")
+        Files.createDirectories(
+            directory,
+            java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"),
+            ),
+        )
+        return directory
     }
 
     private fun assertQuarantined(seen: Map<String, Map<String, String>>) {
@@ -360,7 +405,8 @@ class TmuxQuarantineTest {
                         }
                         System.out.println("PROBE TMUX_TMPDIR under-root=" + tmpdir.startsWith("$socketRoot")
                             + " mode=" + mode
-                            + " is-java-tmpdir=" + tmpdir.equals(System.getProperty("java.io.tmpdir")));
+                            + " is-java-tmpdir=" + tmpdir.equals(System.getProperty("java.io.tmpdir"))
+                            + " name=" + Path.of(tmpdir).getFileName());
                     }
                 }
             }
@@ -382,6 +428,15 @@ class TmuxQuarantineTest {
             """.trimIndent(),
         )
     }
+
+    private fun runEither(project: Path): String =
+        GradleRunner.create()
+            .withProjectDir(project.toFile())
+            .withPluginClasspath()
+            .withEnvironment(System.getenv() + inAPane)
+            .withArguments("probe", "-PlibtmuxSocketRoot=$socketRoot", "--console=plain")
+            .run()
+            .output
 
     private fun runAndFail(project: Path, vararg arguments: String): String =
         GradleRunner.create()
