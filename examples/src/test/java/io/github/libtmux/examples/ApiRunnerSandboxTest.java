@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -64,6 +65,8 @@ final class ApiRunnerSandboxTest {
             esac
             """;
 
+    private static final AtomicInteger ROOTS = new AtomicInteger();
+
     // The tmux the launcher is told to use; a test swaps in a wrapper to make kill-server do nothing.
     private String tmuxBin = TMUX;
 
@@ -71,8 +74,11 @@ final class ApiRunnerSandboxTest {
         return directory.resolve("outside.sock");
     }
 
+    // Short, because the runner refuses a root whose default socket path would pass 100 bytes.
+    private final Path root = Path.of(System.getProperty("java.io.tmpdir")).resolve("r" + ROOTS.incrementAndGet());
+
     private Path root() {
-        return directory.resolve("r");
+        return root;
     }
 
     private record Result(int status, String output) {}
