@@ -149,7 +149,7 @@ final class SandboxCanaryTest {
         try {
             startBareServer(tmux, Map.of("TMUX_TMPDIR", elsewhere.toString()));
 
-            assertFalse(Files.exists(inside), "the control's server appeared in the quarantine");
+            assertFalse(answers(tmux, inside), "the control's server appeared in the quarantine");
             assertTrue(Files.exists(outside), "the control's server is not where it was told to start");
             assertEquals(0, stopServer(tmux, outside), "no server was listening where the control started one");
         } finally {
@@ -195,6 +195,16 @@ final class SandboxCanaryTest {
         started.getInputStream().readAllBytes();
         assertTrue(started.waitFor(30, TimeUnit.SECONDS), "the bare client did not exit");
         assertEquals(0, started.exitValue(), "the bare client could not start a server");
+    }
+
+    /** Whether a server answers on {@code socket}; a socket file a stopped server left does not. */
+    private static boolean answers(String tmux, Path socket) throws Exception {
+        Process ask = new ProcessBuilder(tmux, "-S", socket.toString(), "display-message", "-p", "ok")
+                .redirectErrorStream(true)
+                .start();
+        ask.getInputStream().readAllBytes();
+        assertTrue(ask.waitFor(30, TimeUnit.SECONDS), "display-message did not exit");
+        return ask.exitValue() == 0;
     }
 
     /** Stops the server on {@code socket} with {@code -S}, and returns the client's exit status. */
@@ -277,13 +287,7 @@ final class SandboxCanaryTest {
         assertTrue(started.waitFor(30, TimeUnit.SECONDS), "the recording tmux did not exit");
     }
 
-    /**
-     * A tmux that appends its argv, the names of the variables that choose a server, and whether
-     * {@code TMUX_TMPDIR} is {@code sandbox} to {@code record}, and answers the version probe.
-     *
-     * <p>It reads the environment only to test names, and writes no value. Everything else exits 0
-     * silently, which a server with no sessions also does.
-     */
+    /** A tmux that records argv, the names of the selector variables and whether TMUX_TMPDIR is the sandbox. */
     private static Path recordingTmux(Path record, String sandbox) throws IOException {
         Path script = record.resolveSibling(record.getFileName() + "-tmux");
         Files.writeString(script, """
