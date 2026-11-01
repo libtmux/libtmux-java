@@ -88,7 +88,8 @@ not a leak. `examples/api/run.sh` does the same for the program it starts.
 The finalizer cannot see a server whose socket lies elsewhere. A
 [`TmuxExtension`](../libtmux-junit5/) fixture, and the Scala `OwnedTmux` beside
 it, make a directory of their own under `/tmp/libtmux-java-test/`, named for the
-JVM that owns it, and end their server themselves.
+JVM that owns it. So do a few tests that name a path under that root. All of
+them end their servers themselves, and nothing checks that they did.
 
 The test JVM also checks the quarantine before its first test and refuses to
 start when it was not launched that way, which is what happens to a run from an

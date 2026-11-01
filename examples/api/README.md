@@ -74,5 +74,7 @@ api-line
 ```
 
 Set `TMUX_BIN` to an absolute executable path to choose a particular tmux
-release. Each invocation starts a fresh fixture, so none of the programs
-requires an earlier example to run first.
+release. Set `API_RUN_ROOT` to move the runner's directories from
+`/tmp/libtmux-java-dev`; the default socket path under it must fit in 100
+bytes. Each invocation starts a fresh fixture, so none of the programs requires
+an earlier example to run first.
