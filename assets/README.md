@@ -18,4 +18,4 @@ Clojure and its core.async companion use the Clojure cog in their module-local
 source revision and file digests independently of the Java artwork above.
 
 The sharing card comes from `assets/java/library/opengraph-light.png`
-at kit revision `c9688d9db25e4c522ff1255d0f3badaf27d780dd`.
+at kit revision `4b86a9d9158d7c6d52cd635d59c92a04b48b960f`.
