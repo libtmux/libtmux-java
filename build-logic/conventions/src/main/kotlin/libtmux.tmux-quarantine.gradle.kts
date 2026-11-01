@@ -177,13 +177,13 @@ class PrepareQuarantine(private val root: String, private val checkout: String) 
     }
 
     private fun directoryFor(taskPath: String): Path {
-        require(root.length <= 40) { "libtmuxSocketRoot is $root, too long to leave room for a socket under it" }
+        require(root.length <= 40) { "libtmuxSocketRoot is too long to leave room for a socket under it" }
         val directory = QuarantineLocation.of(root, checkout, taskPath)
 
         Files.createDirectories(Path.of(root))
         if (Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) {
             require(Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
-                "tmux quarantine is not a directory: $directory"
+                "tmux quarantine ${directory.fileName} is not a directory"
             }
             val entries = Files.walk(directory).use { paths -> paths.toList() }
             // A socket may still have a server behind it, and deleting it would hide that server. A plain
@@ -193,7 +193,7 @@ class PrepareQuarantine(private val root: String, private val checkout: String) 
                     !Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS) &&
                     !Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS)
             }
-            require(stale == null) { "tmux quarantine contains a stale entry: $stale" }
+            require(stale == null) { "tmux quarantine contains a stale entry: ${stale?.let(directory::relativize)}" }
             entries.asReversed().filter { it != directory }.forEach(Files::delete)
             Files.setPosixFilePermissions(directory, ownerOnly)
         } else {
