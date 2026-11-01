@@ -34,12 +34,18 @@ import scala.jdk.DurationConverters._
   * builder from this server's choices, and [[Server.asJava]] reaches the
   * underlying Java server.
   *
+  * [[Server.open]], [[Server.fromJava]], [[config]], [[Server.identity]],
+  * [[version]], [[isAlive]], [[requireAlive]], [[Server.within]],
+  * [[admissionBound]], [[Server.control]], [[toBuilder]] and [[Server.asJava]]
+  *
   * **Finding one thing.** [[session]] takes a name, an id, or an expression;
   * [[pane]] takes an id or an expression; [[window]] takes an expression or a
   * `WindowContext`. Each returns an `Option` that is empty when tmux does not
   * have it, and an expression that matches several throws
   * `CardinalityException.MultipleMatches`. [[hasSession]] answers by name
   * without returning the session.
+  *
+  * [[session]], [[pane]], [[window]] and [[hasSession]]
   *
   * **Listing everything.** [[sessions]], [[windows]], [[panes]], [[clients]],
   * and [[attachedSessions]] each return a `Vector` captured now. A failed read
@@ -48,6 +54,9 @@ import scala.jdk.DurationConverters._
   * captures the whole tree with one listing per kind of object rather than one
   * command per object, and [[io.github.libtmux.scaladsl.live.LiveView]] keeps
   * that tree current as tmux announces changes.
+  *
+  * [[sessions]], [[windows]], [[panes]], [[clients]], [[attachedSessions]] and
+  * [[snapshot]]
   *
   * **Querying things and getting around.** Build an
   * [[io.github.libtmux.scaladsl.query.Expr Expr]] from the fields on the
@@ -60,16 +69,24 @@ import scala.jdk.DurationConverters._
   * [[Window.activePane]]. Each is a pure read of the capture, so none asks tmux
   * again.
   *
+  * [[sessions]], [[windows]], [[panes]], [[session]], [[window]], [[pane]],
+  * [[Session.windows]], [[Window.panes]], [[Pane.window]], [[Window.session]],
+  * [[Session.activeWindow]] and [[Window.activePane]]
+  *
   * **Changing things.** [[newSession]] creates a detached session from a name,
   * a callback on a builder, or a `SessionSpec`, and returns the session tmux
   * made. [[killSession]] ends a session by name, [[killServer]] ends the tmux
   * server and every session on it, which `close()` deliberately does not, and
   * [[lock]] locks every attached client.
   *
+  * [[newSession]], [[killSession]], [[killServer]] and [[lock]]
+  *
   * **Options and hooks.** [[options]] holds the server-wide options,
   * [[globalOptions]] the session options every session inherits unless it sets
   * its own, [[hooks]] the global hooks, and [[environment]] the variables every
   * new process is given.
+  *
+  * [[options]], [[globalOptions]], [[hooks]] and [[environment]]
   *
   * **Everything else tmux keeps.** Paste buffers ([[buffers]]), key bindings
   * ([[keys]]), a file of tmux commands to run ([[sourceFile]]), shell commands
@@ -79,10 +96,16 @@ import scala.jdk.DurationConverters._
   * reads named variables in one expansion, and [[paneFields]] reads chosen
   * fields of every pane from one listing.
   *
-  * Anything tmux can do that is not here is reachable through [[cmd]], which
-  * runs one command and hands back its result, [[run]], which throws when tmux
-  * reports a nonzero exit, or [[batch]] and [[chain]], which run several in one
-  * invocation.
+  * [[buffers]], [[keys]], [[sourceFile]], [[shell]], [[commands]],
+  * [[messageLog]], [[prompt]], [[channel]], [[expand]], [[variables]] and
+  * [[paneFields]]
+  *
+  * **Running a command.** Anything tmux can do that is not here is reachable
+  * through [[cmd]], which runs one command and hands back its result, [[run]],
+  * which throws when tmux reports a nonzero exit, or [[batch]] and [[chain]],
+  * which run several in one invocation.
+  *
+  * [[cmd]], [[run]], [[batch]] and [[chain]]
   */
 opaque type Server <: AutoCloseable = JavaServer
 
