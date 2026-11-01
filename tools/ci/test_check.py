@@ -36,7 +36,18 @@ class CheckTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = pathlib.Path(self.temporary.name)
-        for name in COPIED:
+        modules = check.published_modules(ROOT)
+        changelog_files = [
+            "settings.gradle.kts",
+            check.PUBLICATION,
+            "libtmux-bom/build.gradle.kts",
+            *(
+                f"{module}/{name}"
+                for module in modules
+                for name in ("build.gradle.kts", "README.md", "CHANGELOG.md")
+            ),
+        ]
+        for name in (*COPIED, *changelog_files):
             target = self.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(ROOT / name, target)
@@ -350,6 +361,65 @@ class CheckTest(unittest.TestCase):
             ".github/actions/setup/action.yml:6 (step Install) runs apt-get "
             "directly; run it through tools/apt-get.sh"
         )
+
+    def test_every_published_module_is_checked_for_a_changelog(self) -> None:
+        """The guard finds all ten jars, and not the BOM, which has none."""
+        self.assertEqual(
+            check.published_modules(self.root),
+            [
+                "libtmux",
+                "libtmux-jackson",
+                "libtmux-junit5",
+                "libtmux-kotlin",
+                "libtmux-mcp",
+                "libtmux-scala",
+                "libtmux-scala-cats",
+                "libtmux-scala-ox",
+                "libtmux-workspace",
+                "libtmux-workspace-cli",
+            ],
+        )
+
+    def test_a_module_without_a_changelog_is_flagged(self) -> None:
+        """Deleting a module's changelog names the module."""
+        (self.root / "libtmux-mcp/CHANGELOG.md").unlink()
+        self.assertFlags("libtmux-mcp/CHANGELOG.md is missing")
+
+    def test_a_new_published_module_needs_a_changelog(self) -> None:
+        """A module added to the build without one is flagged."""
+        self.append("settings.gradle.kts", 'include("libtmux-new")\n')
+        new = self.root / "libtmux-new"
+        new.mkdir()
+        (new / "build.gradle.kts").write_text('plugins { id("libtmux.published-library") }\n')
+        (new / "README.md").write_text("# libtmux-new\n")
+        self.assertFlags("libtmux-new/CHANGELOG.md is missing")
+
+    def test_another_modules_changelog_is_flagged(self) -> None:
+        """A changelog pasted over another module's fails where it was pasted."""
+        shutil.copy(ROOT / "libtmux/CHANGELOG.md", self.root / "libtmux-mcp/CHANGELOG.md")
+        self.assertFlags('libtmux-mcp/CHANGELOG.md does not open with "Notable changes to `libtmux-mcp`."')
+
+    def test_a_changelog_without_an_unreleased_section_is_flagged(self) -> None:
+        """The next release needs a section to land under."""
+        self.edit("libtmux-mcp/CHANGELOG.md", "\n## Unreleased\n", "\n## Next\n")
+        self.assertFlags('libtmux-mcp/CHANGELOG.md has no "## Unreleased" section')
+
+    def test_an_unreleased_heading_in_a_fence_does_not_count(self) -> None:
+        """Only a heading outside a code block is a section."""
+        self.edit("libtmux-mcp/CHANGELOG.md", "\n## Unreleased\n", "\n```markdown\n## Unreleased\n```\n")
+        self.assertFlags('libtmux-mcp/CHANGELOG.md has no "## Unreleased" section')
+
+    def test_a_readme_that_does_not_link_its_changelog_is_flagged(self) -> None:
+        """A reader of the module page has to be able to find the history."""
+        self.edit("libtmux-mcp/README.md", "[Changelog](CHANGELOG.md)", "Changelog")
+        self.assertFlags("libtmux-mcp/README.md does not link its CHANGELOG.md")
+
+    def test_a_publication_that_stops_shipping_the_changelog_is_flagged(self) -> None:
+        """The jar is where the file travels, so the convention has to copy it."""
+        path = self.root / check.PUBLICATION
+        text = path.read_text()
+        path.write_text(text.replace('from(layout.projectDirectory.file("CHANGELOG.md"))', '// from(layout.projectDirectory.file("CHANGELOG.md"))'))
+        self.assertFlags("does not ship CHANGELOG.md in the jar")
 
 
 if __name__ == "__main__":

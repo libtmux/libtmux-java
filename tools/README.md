@@ -52,8 +52,9 @@ $ ./tools/verify-staged-release.sh 0.1.1
 
 It names each artifact the Central Portal would refuse: one the BOM manages
 that was not staged, a missing jar, sources or javadoc jar, a signature or
-checksum that does not match, or a POM without the metadata Central requires.
-The signing key's public half has to be in the keyring.
+checksum that does not match, a jar without its module's changelog, or a POM
+without the metadata Central requires. The signing key's public half has to be
+in the keyring.
 
 ## Try the MCP server in a real agent
 

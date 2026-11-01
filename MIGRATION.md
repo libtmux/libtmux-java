@@ -1,7 +1,8 @@
 # Migration notes
 
 API changes that require updates to calling code are recorded here. See
-[CHANGELOG.md](CHANGELOG.md) for the full change history.
+[CHANGELOG.md](CHANGELOG.md), and the changelog beside each module, for the
+full change history.
 
 ## Next release
 

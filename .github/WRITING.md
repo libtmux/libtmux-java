@@ -106,6 +106,19 @@ observe.
 Entries land under `## Unreleased`. The maintainer assigns the version when
 cutting a release, so nothing written here predicts one.
 
+Each published module keeps its own `CHANGELOG.md` beside its README, and an
+entry goes in the file of the module it changes: `libtmux-mcp/CHANGELOG.md` for
+the MCP server, `libtmux/CHANGELOG.md` for the core, and likewise for the other
+eight. The root `CHANGELOG.md` holds what belongs to no single module: a change
+that spans modules, and documentation, CI, tests, build and release tooling and
+`libtmux-bom`, whichever module they concern. An entry lives in exactly one
+file. The modules are released together, so a release heading appears in each
+module's file from the release that first shipped the module, and a release with
+nothing for it says ``No entries for `libtmux-mcp`.`` under that heading, and
+the root file says `No entries that span modules.` under a release with none.
+A link into the repository is relative to the file that holds it, so one in a
+module's changelog starts with `../`.
+
 Group under `Added`, `Changed`, `Fixed`, `Removed`, `Documented`, or `Security`,
 newest release first, dated `YYYY-MM-DD`.
 

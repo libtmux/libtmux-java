@@ -26,6 +26,10 @@ PLUGIN = "build-logic/conventions/src/main/kotlin/libtmux.tmux-matrix.gradle.kts
 MATRIX = ".github/workflows/tmux-matrix.yml"
 RELEASE = ".github/workflows/release.yml"
 CONTRIBUTING = ".github/CONTRIBUTING.md"
+PUBLICATION = "build-logic/conventions/src/main/kotlin/libtmux.publication.gradle.kts"
+PUBLISHING = re.compile(
+    r'id\("libtmux\.(?:publication|published-library|published-scala-library)"\)'
+)
 EDGE_PAGES = ("README.md", CONTRIBUTING)
 
 RANGE_CLAIM = re.compile(r"tmux (\d+\.\d+[a-z]?) through (\d+\.\d+[a-z]?)")
@@ -307,10 +311,76 @@ def check_release(text: str) -> list[str]:
     return problems
 
 
+def published_modules(root: pathlib.Path) -> list[str]:
+    """Return the modules whose jar is published, which is what a changelog ships in.
+
+    The BOM is published too, but it is a platform with no jar to carry a file.
+    """
+    settings = (root / "settings.gradle.kts").read_text()
+    modules = []
+    for module in re.findall(r'^include\("([^":]+)"\)', settings, re.MULTILINE):
+        build = root / module / "build.gradle.kts"
+        if not build.is_file():
+            continue
+        text = build.read_text()
+        if PUBLISHING.search(text) and "java-platform" not in text:
+            modules.append(module)
+    return sorted(modules)
+
+
+def check_changelogs(root: pathlib.Path) -> list[str]:
+    """Return every published module that lacks a changelog it ships and links.
+
+    A module is released at the same version as the rest, and a reader of one
+    should not have to read the others' history. Each keeps a `CHANGELOG.md`
+    beside its README, opening with its own name and holding an Unreleased
+    section, the README links it, and the publication convention puts it in the
+    jar, where `tools/verify-staged-release.sh` looks for it.
+    """
+    problems = []
+    modules = published_modules(root)
+    if not modules:
+        return ["settings.gradle.kts names no published module"]
+    if not re.search(
+        r'^\s*from\(layout\.projectDirectory\.file\("CHANGELOG\.md"\)\)',
+        (root / PUBLICATION).read_text(),
+        re.MULTILINE,
+    ):
+        problems.append(f"{PUBLICATION} does not ship CHANGELOG.md in the jar")
+    for module in modules:
+        path = root / module / "CHANGELOG.md"
+        label = f"{module}/CHANGELOG.md"
+        if not path.is_file():
+            problems.append(f"{label} is missing; every published module keeps a changelog")
+            continue
+        lines = _outside_fences(path.read_text())
+        if f"Notable changes to `{module}`." not in lines:
+            problems.append(f"{label} does not open with \"Notable changes to `{module}`.\"")
+        if "## Unreleased" not in lines:
+            problems.append(f'{label} has no "## Unreleased" section')
+        readme = root / module / "README.md"
+        if "](CHANGELOG.md)" not in readme.read_text():
+            problems.append(f"{module}/README.md does not link its CHANGELOG.md")
+    return problems
+
+
+def _outside_fences(text: str) -> list[str]:
+    """Return the lines of `text` that are not inside a fenced code block."""
+    kept = []
+    fenced = False
+    for line in text.splitlines():
+        if re.match(r"^ {0,3}(```|~~~)", line):
+            fenced = not fenced
+        elif not fenced:
+            kept.append(line)
+    return kept
+
+
 def check(root: pathlib.Path) -> list[str]:
     """Return every disagreement between the plugin, the docs and the workflows."""
     manifest = load_manifest(root / PLUGIN)
     problems = check_docs(root, manifest)
+    problems += check_changelogs(root)
     problems += check_matrix((root / MATRIX).read_text())
     problems += check_release((root / RELEASE).read_text())
     problems += [

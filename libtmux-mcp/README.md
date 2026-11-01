@@ -602,6 +602,7 @@ shows their close order; use the launcher above for a standalone stdio process.
 - [Streaming guide][streaming] — the lower-level control client used by Java
   applications.
 - [`libtmux`][libtmux] — the library underneath, and the [root README][root].
+- [Changelog](CHANGELOG.md) — what each release of this module changed
 
 [embedding-example]:
   ../examples/src/main/java/io/github/libtmux/examples/ServeTmuxOverMcp.java

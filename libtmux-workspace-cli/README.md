@@ -255,6 +255,7 @@ Then the agent can:
   [configuration][configuration] and [output][output-reference] references.
 - [`libtmux-workspace`](../libtmux-workspace/README.md) — the library that
   builds a workspace from Java.
+- [Changelog](CHANGELOG.md) — what each release of this module changed
 
 [cli-completion]: https://libtmux.org/en/java/latest/workspace/cli/completion/
 [cli-convert]: https://libtmux.org/en/java/latest/workspace/cli/convert/

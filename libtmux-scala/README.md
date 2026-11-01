@@ -116,6 +116,7 @@ the daemon running.
   what CI runs.
 - [Examples](../examples/): runnable programs, each executed against a real
   tmux.
+- [Changelog](CHANGELOG.md) — what each release of this module changed
 
 The [Java guide](../docs/guide/scala.md) shows direct Java use without the
 facade. Source contracts live beside [direct-style operations][source-server]

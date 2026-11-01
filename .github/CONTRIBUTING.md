@@ -193,7 +193,12 @@ What a change is expected to carry:
   decision the measurement forced belongs in
   [`docs/decisions/`](../docs/decisions/) as a short ADR.
 - **A changelog entry, when a caller can observe the change.** It goes under
-  `## Unreleased`. Nothing enforces this, which is why it is written down.
+  `## Unreleased` in the `CHANGELOG.md` of the module it changes, or in the root
+  file when it spans modules; [`WRITING.md`](WRITING.md#changelog) says which.
+  Nothing enforces that an entry exists, which is why it is written down. What
+  is enforced is the file: `python3 -m tools.ci.check` fails when a published
+  module loses its changelog or its `## Unreleased` section, and
+  `tools/verify-staged-release.sh` refuses a jar that does not carry it.
 - **Nothing generated-looking.** Names that say what a thing is for, comments
   that say why rather than what, no abstraction without a second caller.
 

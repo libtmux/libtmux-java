@@ -110,6 +110,7 @@ event it kept, or a gap naming how many were lost.
 - [Streaming](../docs/guide/scala/streaming.md) covers subscriptions, loss and
   cancellation.
 - Source: [`Flows`][flows-source].
+- [Changelog](CHANGELOG.md) — what each release of this module changed
 
 [example]:
   ../examples/src/main/scala/io/github/libtmux/scaladsl/examples/WatchWithOx.scala

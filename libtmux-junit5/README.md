@@ -226,6 +226,7 @@ try (Server server = tmux.server();
 - [Testing with real tmux](../docs/guide/testing.md)
 - [`libtmux`](../libtmux/README.md) — the library this gives you a server for
 - [Root README](../README.md)
+- [Changelog](CHANGELOG.md) — what each release of this module changed
 
 [control-client]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-control-controlclient-controlclient/
 [fake-tmux]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-junit5-faketmux-faketmux/

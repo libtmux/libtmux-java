@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Checks a staged release against what the Central Portal refuses: every artifact the BOM manages
-# is staged with its jar, sources and javadoc, each file signed and checksummed, and each POM carries
-# the metadata Central requires. The signing key's public half must be in the keyring.
+# is staged with its jar, sources and javadoc, each file signed and checksummed, each jar carries its
+# module's changelog, and each POM carries the metadata Central requires. The signing key's public
+# half must be in the keyring.
 set -euo pipefail
 
 version=${1:?usage: verify-staged-release.sh <version> [staging-repository]}
@@ -48,6 +49,17 @@ for artifact in $artifacts; do
     if [ -f "$dir/$artifact-$version-javadoc.jar" ]; then
         grep -qx 'index.html' <<< "$(unzip -Z1 "$dir/$artifact-$version-javadoc.jar")" \
             || problem "$artifact: javadoc jar has no index.html"
+    fi
+    if [ -f "$dir/$artifact-$version.jar" ]; then
+        # The jar carries its module's changelog beside the artwork. A Scala artifact's id ends in
+        # the binary version it was compiled for; its module does not.
+        module=${artifact%_3}
+        changelog="META-INF/libtmux/$module/CHANGELOG.md"
+        if ! grep -qxF "$changelog" <<< "$(unzip -Z1 "$dir/$artifact-$version.jar")"; then
+            problem "$artifact: jar has no $changelog"
+        elif ! grep -qxF "Notable changes to \`$module\`." <<< "$(unzip -p "$dir/$artifact-$version.jar" "$changelog")"; then
+            problem "$artifact: $changelog does not open with \"Notable changes to \`$module\`.\""
+        fi
     fi
     if [ -f "$dir/$artifact-$version-sources.jar" ]; then
         grep -qE '\.(java|kt|scala)$' <<< "$(unzip -Z1 "$dir/$artifact-$version-sources.jar")" \

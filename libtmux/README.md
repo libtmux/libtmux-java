@@ -481,6 +481,7 @@ rename.getAnnotation(io.github.libtmux.catalog.Operation.class).value();   // â†
 - Testing your own code against real tmux:
   [`libtmux-junit5`](../libtmux-junit5/)
 - The [root README](../README.md), with every module
+- [Changelog](CHANGELOG.md) â€” what each release of this module changed
 
 [batch]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-batch-batch-batch/
 [batchresult]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-batch-batchresult-batchresult/

@@ -180,6 +180,7 @@ answers a different question, so writing it throws `SchemaException`.
 - [Filtering guide](../docs/guide/filtering.md)
 - [`libtmux-mcp`][mcp] — the separate MCP tool surface
 - [Root README](../README.md)
+- [Changelog](CHANGELOG.md) — what each release of this module changed
 
 [filter-json]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-jackson-filterjson-filterjson/
 [filterexpr]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-query-filterexpr-filterexpr/
