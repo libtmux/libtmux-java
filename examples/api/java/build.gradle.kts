@@ -5,7 +5,7 @@ plugins {
 repositories { mavenCentral() }
 
 dependencies {
-    implementation("io.github.libtmux:libtmux:0.1.0-SNAPSHOT")
+    implementation("io.github.libtmux:libtmux:0.1.1-SNAPSHOT")
 }
 
 java { toolchain { languageVersion.set(JavaLanguageVersion.of(25)) } }

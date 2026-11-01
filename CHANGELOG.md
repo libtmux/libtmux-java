@@ -9,6 +9,8 @@ release is supported, and there are no backports.
 
 ## Unreleased
 
+## 0.1.1 — 2026-11-01
+
 ### Changed
 
 - **With no socket chosen, tmux picks the server, and `LIBTMUX_SOCKET_PATH` or

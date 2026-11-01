@@ -46,7 +46,7 @@ lives:
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
 dependencies {
-    implementation(platform("io.github.libtmux:libtmux-bom:0.1.0"))
+    implementation(platform("io.github.libtmux:libtmux-bom:0.1.1"))
     implementation("io.github.libtmux:libtmux-jackson")
 }
 ```
