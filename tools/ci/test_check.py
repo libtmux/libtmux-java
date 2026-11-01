@@ -303,6 +303,54 @@ class CheckTest(unittest.TestCase):
         )
         self.assertFlags("trusts an earlier tmux matrix run")
 
+    def test_a_raw_apt_get_is_flagged(self) -> None:
+        """Every spelling of a direct apt call names its job, step and the fix."""
+        path = ".github/workflows/ci.yml"
+        original = (self.root / path).read_text()
+        for script, tool in (
+            ("sudo apt-get update", "apt-get"),
+            ("apt-get install -y tmux", "apt-get"),
+            ("sudo -E apt install tmux", "apt"),
+            ("echo go && sudo apt-get update", "apt-get"),
+        ):
+            with self.subTest(script=script):
+                self.append(
+                    path,
+                    "\n  raw:\n    runs-on: ubuntu-latest\n    steps:\n"
+                    f"      - name: Install\n        run: |\n          {script}\n",
+                )
+                self.assertFlags(f"{path}:")
+                self.assertFlags(
+                    f"(job raw, step Install) runs {tool} directly; "
+                    "run it through tools/apt-get.sh"
+                )
+                (self.root / path).write_text(original)
+
+    def test_the_apt_wrapper_and_comments_are_not_flagged(self) -> None:
+        """The wrapper is the fix, and a comment is not a call."""
+        self.append(
+            ".github/workflows/ci.yml",
+            "\n  wrapped:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: ./tools/apt-get.sh update\n"
+            "      - run: |\n"
+            "          # sudo apt-get update\n"
+            "          ./tools/apt-get.sh install -y tmux\n",
+        )
+        self.assertEqual(self.problems(), [])
+
+    def test_a_raw_apt_get_in_an_action_is_flagged(self) -> None:
+        """A composite action's script is held to the same rule."""
+        action = self.root / ".github/actions/setup/action.yml"
+        action.parent.mkdir(parents=True)
+        action.write_text(
+            "runs:\n  using: composite\n  steps:\n"
+            "    - name: Install\n      shell: bash\n      run: sudo apt-get update\n"
+        )
+        self.assertFlags(
+            ".github/actions/setup/action.yml:6 (step Install) runs apt-get "
+            "directly; run it through tools/apt-get.sh"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
