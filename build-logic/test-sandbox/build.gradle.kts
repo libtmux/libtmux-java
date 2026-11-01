@@ -1,9 +1,5 @@
-// The in-process half of the tmux quarantine: a JUnit Platform listener that stops a test run whose
-// environment could reach a tmux server the run was not given, such as one an IDE started. Modules
-// put it on their test runtime classpath; the root build fails when one with tests does not.
-//
-// Held to the product modules' compiler bar. Those settings live in libtmux.java-library, which a
-// project inside this build cannot apply to itself, so the few that matter are repeated here.
+// The in-process half of the tmux quarantine: a JUnit Platform listener that refuses an unsandboxed run.
+// Held to the product modules' compiler bar, whose settings a project in this build cannot apply to itself.
 import net.ltgt.gradle.errorprone.CheckSeverity
 import net.ltgt.gradle.errorprone.errorprone
 

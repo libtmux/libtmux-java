@@ -17,12 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.platform.launcher.LauncherSession;
 import org.junit.platform.launcher.LauncherSessionListener;
 
-/**
- * The JUnit Platform stops a run that could reach a server it was not given.
- *
- * <p>The refusal is exercised in a child JVM that is handed an environment, because this JVM's own
- * cannot be changed. The child prints which way it ended and never a value.
- */
+/** The JUnit Platform stops a run that could reach a server it was not given, exercised in a child JVM. */
 class SandboxSessionListenerTest {
 
     private static final String SANDBOX = "/tmp/libtmux-java-test/0123456789abcdef";

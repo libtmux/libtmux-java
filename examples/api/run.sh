@@ -66,7 +66,8 @@ cleanup() {
     set +f
     IFS=$old_ifs
     if [ -n "$stuck" ]; then
-        printf 'tmux still answers on%s after kill-server; kept %s and %s under the runner root\n' "$stuck" "${directory##*/}" "${tmpdir##*/}" >&2
+        printf 'tmux still answers on%s after kill-server; kept %s and %s under the runner root\n' \
+            "$stuck" "${directory##*/}" "${tmpdir##*/}" >&2
         exit 1
     fi
     rm -rf "$directory" "$tmpdir" || exit 1
