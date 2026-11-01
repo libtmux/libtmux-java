@@ -164,6 +164,7 @@ block.
   [execution](../docs/guide/scala/execution.md) and
   [streaming](../docs/guide/scala/streaming.md).
 - The [direct-style facade](../libtmux-scala/README.md) introduces the handles.
+- [Changelog](CHANGELOG.md) — what each release of this module changed
 
 [buffers]: https://libtmux.org/en/scala/latest/reference/io-github-libtmux-scaladsl-cats-buffers/
 [commands]: https://libtmux.org/en/scala/latest/reference/io-github-libtmux-scaladsl-cats-commands/

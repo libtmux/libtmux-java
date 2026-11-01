@@ -179,6 +179,7 @@ A window with no panes stated still gets the one tmux makes for it.
 - [`libtmux`](../libtmux/README.md) — the API this builds on
 - [`libtmux-workspace-cli`][cli] — the command line
 - [Root README](../README.md)
+- [Changelog](CHANGELOG.md) — what each release of this module changed
 
 [build]: https://libtmux.org/en/java/latest/workspace/reference/io-github-libtmux-workspace-workspacebuilder-workspacebuilder-build/
 [cli]: ../libtmux-workspace-cli/README.md

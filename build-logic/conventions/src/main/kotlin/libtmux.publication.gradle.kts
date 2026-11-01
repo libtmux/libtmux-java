@@ -12,10 +12,15 @@
 // service that is gone.
 plugins { id("com.vanniktech.maven.publish") }
 
-// Ship each JVM package's artwork alongside its classes. The BOM has no JAR.
+// Ship each JVM package's artwork and its changelog alongside its classes, so the jar a consumer
+// holds says what changed in that module. The BOM has no JAR, and the staged-release check refuses a
+// jar that lacks the changelog, which `from` would otherwise skip without a word.
 plugins.withId("java") {
     tasks.named<ProcessResources>("processResources") {
         from(layout.projectDirectory.dir("assets")) {
+            into("META-INF/libtmux/${project.name}")
+        }
+        from(layout.projectDirectory.file("CHANGELOG.md")) {
             into("META-INF/libtmux/${project.name}")
         }
     }

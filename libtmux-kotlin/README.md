@@ -321,6 +321,7 @@ withServer(config) { server ->
 - [Kotlin guide](../docs/guide/kotlin.md)
 - [`libtmux`](../libtmux/README.md) — the API this wraps
 - [Root README](../README.md)
+- [Changelog](CHANGELOG.md) — what each release of this module changed
 
 [cardinality]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-exception-cardinalityexception-cardinalityexception/
 [channel]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-channel-channel/
