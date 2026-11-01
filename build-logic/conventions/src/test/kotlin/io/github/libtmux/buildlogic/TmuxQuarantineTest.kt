@@ -17,8 +17,7 @@ import org.junit.jupiter.api.io.TempDir
 /** What a task hands its child under libtmux.tmux-quarantine; the child reports names and booleans, never values. */
 class TmuxQuarantineTest {
 
-    private val socketRoot: Path =
-        Path.of(System.getProperty("java.io.tmpdir")).resolve("tq" + ProcessHandle.current().pid())
+    private val socketRoot: Path = Path.of("/tmp/libtmux-java-test").resolve("tq" + ProcessHandle.current().pid())
 
     // The decoys sit under the test's own root, so a scrub that failed would start a server there and
     // nowhere else.
@@ -246,7 +245,7 @@ class TmuxQuarantineTest {
     @Test
     fun `a link to a socket outside the quarantine is neither followed nor stopped`(@TempDir project: Path) {
         requireTmux()
-        val outside = project.resolve("outside.sock")
+        val outside = Files.createDirectories(socketRoot).resolve("outside.sock")
         val tmux = realTmux()
         ProcessBuilder(tmux, "-S", outside.toString(), "-f", "/dev/null", "new-session", "-d", "-s", "outside", "cat")
             .redirectErrorStream(true)
@@ -344,7 +343,8 @@ class TmuxQuarantineTest {
                     val directory = Path.of(environment.getValue("TMUX_TMPDIR").toString())
                     val socket = Files.createDirectories(directory.resolve("j")).resolve("x.sock")
                     val start = listOf("tmux", "-S", socket.toString(), "-f", "/dev/null")
-                    ProcessBuilder(start + listOf("new-session", "-d", "-s", "leak", "cat")).inheritIO().start().waitFor()
+                    val create = start + listOf("new-session", "-d", "-s", "leak", "cat")
+                    ProcessBuilder(create).inheritIO().start().waitFor()
                     val ask = ProcessBuilder("tmux", "-S", socket.toString(), "display-message", "-p", "#{pid}").start()
                     Files.writeString(Path.of("$pidFile"), String(ask.inputStream.readAllBytes()).trim())
                 }
@@ -475,7 +475,8 @@ class TmuxQuarantineTest {
                             + " mode=" + mode
                             + " is-java-tmpdir=" + tmpdir.equals(System.getProperty("java.io.tmpdir"))
                             + " name=" + Path.of(tmpdir).getFileName()
-                            + " entries=" + (Files.isDirectory(Path.of(tmpdir)) ? Files.list(Path.of(tmpdir)).count() : -1));
+                            + " entries=" + (Files.isDirectory(Path.of(tmpdir))
+                                ? Files.list(Path.of(tmpdir)).count() : -1));
                     }
                 }
             }

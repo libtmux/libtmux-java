@@ -14,14 +14,15 @@ class ModuleTestsQuarantineTest {
 
     private val moduleTests: Path = Path.of(System.getProperty("user.dir"), "../../module-tests").normalize()
 
-    private fun script(module: String): String = Files.readString(moduleTests.resolve(module).resolve("build.gradle.kts"))
+    private fun script(module: String): String =
+        Files.readString(moduleTests.resolve(module).resolve("build.gradle.kts"))
 
     @Test
     fun `the java, kotlin and scala builds apply the quarantine and opt their run in`() {
         for (module in listOf("java", "kotlin", "scala")) {
             val text = script(module)
 
-            assertTrue("libtmux.tmux-quarantine.gradle.kts" in text, "module-tests/$module does not apply the quarantine")
+            assertTrue("libtmux.tmux-quarantine.gradle.kts" in text, "module-tests/$module applies no quarantine")
             assertTrue(
                 "quarantineTmux(tasks.named<JavaExec>(\"run\")" in text,
                 "module-tests/$module does not quarantine its run",
