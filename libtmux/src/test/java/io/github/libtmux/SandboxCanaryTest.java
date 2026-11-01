@@ -13,21 +13,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * A client built the way a test that forgot its socket builds one still lands inside the build's
- * quarantine.
- *
- * <p>A recording tmux stands in for the real one, so what is asserted is what the library handed a
- * child process, not what a server did with it. The controls feed the same reader a client that was
- * given a pane's environment, so a reader that stopped looking would fail here.
- *
- * <p>The recording tmux writes argv and variable names, never a value, and no message here prints
- * one: an environment holds secrets, and a failure is copied into logs.
+ * A client built the way a test that forgot its socket builds one still lands inside the build's quarantine.
+ * The recording tmux writes argv and variable names, never a value.
  */
 final class SandboxCanaryTest {
+
+    private static final List<Path> SEEN = new ArrayList<>();
 
     @TempDir
     Path directory;
@@ -63,11 +60,16 @@ final class SandboxCanaryTest {
                 "java.io.tmpdir is not the quarantine, so a socket named there is not swept");
     }
 
-    @Test
-    void aTempDirOutlivesItsTestSoTheFinalizerCanFindWhatItsServerLeft() {
+    @BeforeEach
+    void rememberTempDir() {
+        SEEN.add(directory);
+    }
+
+    @AfterAll
+    static void tempDirsOutliveTheirTestsSoTheFinalizerCanLookInThem() {
+        assertFalse(SEEN.isEmpty(), "no test ran, so nothing was observed");
         assertTrue(
-                "never".equals(System.getProperty("junit.jupiter.tempdir.cleanup.mode.default")),
-                "a @TempDir is removed with its socket before the finalizer looks");
+                SEEN.stream().allMatch(Files::isDirectory), "a @TempDir was removed before the finalizer could look");
     }
 
     @Test
@@ -259,7 +261,7 @@ final class SandboxCanaryTest {
         return calls;
     }
 
-    /** Starts the recording tmux as a child whose environment is {@code PATH} and {@code extra}, whatever this JVM holds. */
+    /** Starts the recording tmux with an environment of {@code PATH} and {@code extra}, whatever this JVM holds. */
     private static void run(Path tmux, Map<String, String> extra, String... argv) throws Exception {
         List<String> command = new ArrayList<>();
         command.add(tmux.toString());
