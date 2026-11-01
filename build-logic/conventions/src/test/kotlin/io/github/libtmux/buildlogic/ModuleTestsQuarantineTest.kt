@@ -38,6 +38,7 @@ class ModuleTestsQuarantineTest {
         assertTrue("libtmux.tmux-quarantine.gradle.kts" in text, "module-tests/cli does not apply the quarantine")
         assertTrue("withoutServerSelectors(this)" in text, "module-tests/cli does not scrub its children")
         assertTrue("environment(\"TMUX_TMPDIR\"" in text, "module-tests/cli gives its children no TMUX_TMPDIR")
+        assertTrue("stopServer(" in text, "module-tests/cli does not await the server it started")
         assertTrue("stopLeakedServers(" in text, "module-tests/cli does not stop the servers its children leave")
     }
 }

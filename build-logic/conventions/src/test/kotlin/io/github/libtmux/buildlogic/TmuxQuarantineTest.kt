@@ -199,6 +199,25 @@ class TmuxQuarantineTest {
     }
 
     @Test
+    fun `a server still exiting after kill-server is awaited, not swept as a leak`(@TempDir project: Path) {
+        requireTmux()
+        val slow = slowKillServer(project)
+        val pidFile = project.resolve("server.pid")
+        writeAwaitProbe(project, slow, socketRoot.resolve("await"), pidFile)
+
+        try {
+            val output = run(project).text
+
+            assertTrue(
+                "PROBE swept own=true stopped=0 stuck=0" in output,
+                "the sweep took a server that was exiting for a leak",
+            )
+        } finally {
+            stopServer(pidFile)
+        }
+    }
+
+    @Test
     fun `temporary files a cancelled run left are cleared before the next run`(@TempDir project: Path) {
         writeProbe(project, applyPlugin = true, optIn = true)
         val directory = leftBehindByAnEarlierRun(project)
@@ -318,6 +337,49 @@ class TmuxQuarantineTest {
         )
         Files.setPosixFilePermissions(noop, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
         return noop
+    }
+
+    // A tmux whose kill-server returns at once and takes effect 0.4 s later, as a server still exiting looks.
+    private fun slowKillServer(project: Path): Path {
+        val slow = Files.writeString(
+            project.resolve("tmux-slow"),
+            "#!/bin/sh\nfor a in \"$@\"; do\n  if [ \"\$a\" = kill-server ]; then\n" +
+                "    ( sleep 0.4; exec ${realTmux()} \"$@\" ) >/dev/null 2>&1 &\n    exit 0\n  fi\ndone\n" +
+                "exec ${realTmux()} \"$@\"\n",
+        )
+        Files.setPosixFilePermissions(slow, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
+        return slow
+    }
+
+    /** A build whose task starts a server, stops it as the cli build does, and sweeps the directory it lives in. */
+    private fun writeAwaitProbe(project: Path, tmux: Path, directory: Path, pidFile: Path) {
+        Files.writeString(project.resolve("settings.gradle.kts"), "rootProject.name = \"probe\"\n")
+        Files.writeString(
+            project.resolve("build.gradle.kts"),
+            """
+            import java.nio.file.Files
+            import java.nio.file.Path
+
+            plugins { id("libtmux.tmux-quarantine") }
+            @Suppress("UNCHECKED_CAST")
+            val stopServer = extra["stopServer"] as (Path, String, Path) -> Boolean
+            @Suppress("UNCHECKED_CAST")
+            val sweep = extra["stopLeakedServers"] as (Path, String) -> Pair<List<String>, List<String>>
+            tasks.register("probe") {
+                doLast {
+                    val directory = Files.createDirectories(Path.of("$directory"))
+                    val socket = directory.resolve("s")
+                    val start = listOf("$tmux", "-S", socket.toString(), "-f", "/dev/null")
+                    ProcessBuilder(start + listOf("new-session", "-d", "-s", "x", "cat")).inheritIO().start().waitFor()
+                    val ask = ProcessBuilder(start + listOf("display-message", "-p", "#{pid}")).start()
+                    Files.writeString(Path.of("$pidFile"), String(ask.inputStream.readAllBytes()).trim())
+                    val awaited = stopServer(directory, "$tmux", socket)
+                    val (stopped, stuck) = sweep(directory, "$tmux")
+                    println("PROBE swept own=" + awaited + " stopped=" + stopped.size + " stuck=" + stuck.size)
+                }
+            }
+            """.trimIndent(),
+        )
     }
 
     /** A build whose Test task starts a server on a socket in the JVM's temporary directory and leaves it. */

@@ -11,6 +11,8 @@ apply(from = rootProject.file("../../build-logic/conventions/src/main/kotlin/lib
 @Suppress("UNCHECKED_CAST")
 val withoutServerSelectors = extra["withoutServerSelectors"] as (ProcessForkOptions) -> Unit
 @Suppress("UNCHECKED_CAST")
+val stopServer = extra["stopServer"] as (Path, String, Path) -> Boolean
+@Suppress("UNCHECKED_CAST")
 val stopLeakedServers = extra["stopLeakedServers"] as (Path, String) -> Pair<List<String>, List<String>>
 
 // The version the root build staged. Required, so a launcher that resolved some other release
@@ -56,10 +58,8 @@ tasks.register("run") {
             failure = thrown
             throw thrown
         } finally {
-            providers.exec {
-                commandLine("tmux", "-S", socket, "kill-server")
-                isIgnoreExitValue = true
-            }.result.get()
+            // kill-server returns before the server has exited; the sweep must not take it for a leak.
+            stopServer(directory, "tmux", Path.of(socket))
             val (stopped, stuck) = stopLeakedServers(directory, "tmux")
             // Kept while a server still answers, so it can be found and ended.
             if (stuck.isEmpty()) directory.toFile().deleteRecursively()
