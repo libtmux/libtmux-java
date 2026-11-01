@@ -8,7 +8,8 @@ import org.junit.jupiter.api.Test
 /**
  * Each module-tests build keeps its run away from the developer's tmux.
  *
- * These builds resolve nothing from this one, so the root gate cannot see them; this reads the lines that wire them.
+ * These builds resolve nothing from this one, so the root gate cannot see them, and running them needs a staged
+ * repository. This reads the lines that wire them, which a comment could satisfy.
  */
 class ModuleTestsQuarantineTest {
 
