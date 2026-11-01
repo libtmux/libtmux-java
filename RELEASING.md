@@ -46,6 +46,16 @@ questions.
 So on the `0.1.N` line, while `0.1.2` is being prepared, `libtmuxVersion` is
 `0.1.2-SNAPSHOT` and `libtmuxApiBaseline` is `0.1.1`.
 
+### The changelogs
+
+The root `CHANGELOG.md` and the `CHANGELOG.md` of each published module are
+dated together. The `Tag v0.1.N` commit renames `## Unreleased` in every one of
+them to the version heading and keeps an empty `## Unreleased` above it; a
+module with nothing under the new heading says ``No entries for `<module>`.``
+Each jar carries its module's file, and
+[`tools/verify-staged-release.sh`](tools/verify-staged-release.sh) refuses a
+staged jar without it.
+
 ## Gate 1 — own the namespace — **done**
 
 `io.github.libtmux` is verified on the Central Portal, against the `libtmux`

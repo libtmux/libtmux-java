@@ -25,9 +25,10 @@ These hold for every change, whatever it touches:
 This file routes; it does not restate. Read the policy that governs the change
 being made:
 
-- Documentation and user-facing prose — `README.md`, `CHANGELOG.md`, release
-  notes, commit messages, CLI and help text, API documentation, and source
-  comments: [`.github/WRITING.md`](.github/WRITING.md)
+- Documentation and user-facing prose — `README.md`, `CHANGELOG.md` (the root
+  file and the one beside each module), release notes, commit messages, CLI and
+  help text, API documentation, and source comments:
+  [`.github/WRITING.md`](.github/WRITING.md)
 - Contribution workflow, building, testing, and pull requests:
   [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)
 - Security-sensitive changes: [`SECURITY.md`](SECURITY.md)

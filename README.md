@@ -764,8 +764,9 @@ $ tmux-workspace load \
 - **Tested against real tmux.** The real-tmux suite runs against every
   supported release on every push.
 
-Changes are recorded in [`CHANGELOG.md`](CHANGELOG.md); how a release is cut is
-in [`RELEASING.md`](RELEASING.md).
+Changes that span modules are recorded in [`CHANGELOG.md`](CHANGELOG.md), and
+each module keeps a changelog of its own beside its README, linked from it; how
+a release is cut is in [`RELEASING.md`](RELEASING.md).
 
 ## Documentation
 
