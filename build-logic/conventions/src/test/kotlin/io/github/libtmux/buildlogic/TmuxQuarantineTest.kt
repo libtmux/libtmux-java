@@ -180,6 +180,33 @@ class TmuxQuarantineTest {
     }
 
     @Test
+    fun `a Test task is finalized by the check, with the tmux its libtmux tmux property names`(@TempDir project: Path) {
+        assumeTmux()
+        val noop = noopKillServer(project)
+        val pidFile = project.resolve("server.pid")
+        writeTestTaskProbe(project, noop, pidFile)
+
+        try {
+            val failure =
+                GradleRunner.create()
+                    .withProjectDir(project.toFile())
+                    .withPluginClasspath()
+                    .withEnvironment(System.getenv() + inAPane)
+                    .withArguments("test", "-PlibtmuxSocketRoot=$socketRoot", "--console=plain")
+                    .buildAndFail()
+                    .output
+
+            assertTrue(
+                "j/x.sock still answers after kill-server, so its quarantine was kept" in failure,
+                "the finalizer did not run the tmux the Test task named",
+            )
+            assertTrue(serverAlive(pidFile), "the control never left a server running")
+        } finally {
+            stopServer(pidFile)
+        }
+    }
+
+    @Test
     fun `temporary files a cancelled run left are cleared before the next run`(@TempDir project: Path) {
         writeProbe(project, applyPlugin = true, optIn = true)
         val directory = leftBehindByAnEarlierRun(project)
@@ -251,11 +278,7 @@ class TmuxQuarantineTest {
         @TempDir project: Path,
     ) {
         assumeTmux()
-        val noop = Files.writeString(
-            project.resolve("tmux-noop"),
-            "#!/bin/sh\nfor a in \"$@\"; do [ \"\$a\" = kill-server ] && exit 0; done\nexec ${realTmux()} \"$@\"\n",
-        )
-        Files.setPosixFilePermissions(noop, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
+        val noop = noopKillServer(project)
         writeProbe(project, applyPlugin = true, optIn = true, leak = "custom")
         val pidFile = project.resolve("server.pid")
 
@@ -287,6 +310,48 @@ class TmuxQuarantineTest {
             ),
         )
         return directory
+    }
+
+    // A tmux that answers kill-server with success and does nothing, so a server it was told to stop stays up.
+    private fun noopKillServer(project: Path): Path {
+        val noop = Files.writeString(
+            project.resolve("tmux-noop"),
+            "#!/bin/sh\nfor a in \"$@\"; do [ \"\$a\" = kill-server ] && exit 0; done\nexec ${realTmux()} \"$@\"\n",
+        )
+        Files.setPosixFilePermissions(noop, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
+        return noop
+    }
+
+    /** A build whose Test task starts a server on a socket in the JVM's temporary directory and leaves it. */
+    private fun writeTestTaskProbe(project: Path, tmux: Path, pidFile: Path) {
+        val classes = Files.createDirectories(project.resolve("classes"))
+        val source = Files.writeString(project.resolve("Dummy.java"), "public class Dummy {}\n")
+        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, "-d", classes.toString(), source.toString()))
+        Files.writeString(project.resolve("settings.gradle.kts"), "rootProject.name = \"probe\"\n")
+        Files.writeString(
+            project.resolve("build.gradle.kts"),
+            """
+            import java.nio.file.Files
+            import java.nio.file.Path
+
+            plugins { java; id("libtmux.tmux-quarantine") }
+            tasks.test {
+                testClassesDirs = files("classes")
+                classpath = files("classes")
+                systemProperty("libtmux.tmux", "$tmux")
+                failOnNoDiscoveredTests = false
+                // After the plugin's doFirst, which gives the task its environment.
+                doLast {
+                    val directory = Path.of(environment.getValue("TMUX_TMPDIR").toString())
+                    val socket = Files.createDirectories(directory.resolve("j")).resolve("x.sock")
+                    ProcessBuilder("tmux", "-S", socket.toString(), "-f", "/dev/null", "new-session", "-d", "-s", "leak", "cat")
+                        .inheritIO().start().waitFor()
+                    val ask = ProcessBuilder("tmux", "-S", socket.toString(), "display-message", "-p", "#{pid}").start()
+                    Files.writeString(Path.of("$pidFile"), String(ask.inputStream.readAllBytes()).trim())
+                }
+            }
+            """.trimIndent(),
+        )
     }
 
     private fun assertQuarantined(seen: Map<String, Map<String, String>>) {
