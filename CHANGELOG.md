@@ -14,13 +14,14 @@ release is supported, and there are no backports.
 - **Test runs stay away from the tmux server a developer works in.** Since
   #117 a server handle with no socket lets tmux pick the server, which is the
   one in `TMUX` or the default socket, so a test that forgot its socket could
-  kill the developer's own session. Every `Test` task, and each `run` in the
-  `module-tests` builds, now starts without `TMUX`, `TMUX_PANE` and
-  `LIBTMUX_SOCKET*`, in a private `TMUX_TMPDIR` that is also the JVM's temporary
-  directory. A test JVM that was not started that way, such as an IDE run,
-  refuses to start. When a task ends, a finalizer stops any server on a socket
-  in that directory and fails the build naming it. `examples/api/run.sh` does
-  the same for the program it starts. (#123)
+  kill the developer's own session. Every `Test` task of a library module, and
+  each `run` in the `module-tests` builds, now starts without `TMUX`,
+  `TMUX_PANE` and `LIBTMUX_SOCKET*`, in a private `TMUX_TMPDIR`. A test JVM
+  uses that directory as its temporary directory, and refuses to start when it
+  was not launched that way, as an IDE run is not. When a task ends, a
+  finalizer stops any server on a socket in the directory and fails the build
+  naming it. `examples/api/run.sh` does the same for the program it starts.
+  (#123)
 
 ## 0.1.1 — 2026-11-01
 

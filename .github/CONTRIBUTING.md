@@ -58,21 +58,25 @@ Never `/tmp/libtmux-…` on its own, and never the default socket. `libtmux-` is
 the prefix a sibling port is also using, which is the whole problem.
 
 A client that names no socket follows `TMUX` to the server you are working in,
-and otherwise lands on the default socket. So every `Test` task, and each `run`
-in the builds under [`module-tests/`](../module-tests/), starts without `TMUX`,
-`TMUX_PANE` and `LIBTMUX_SOCKET*`, and with a private `TMUX_TMPDIR` of its own
-under `/tmp/libtmux-java-test/`. The convention plugin `libtmux.tmux-quarantine`
-does this for every module, and the module-tests builds apply the same file by
-path and opt their runs in.
+and otherwise lands on the default socket. So every `Test` task of a library
+module, and each `run` in the builds under [`module-tests/`](../module-tests/),
+starts without `TMUX`, `TMUX_PANE` and `LIBTMUX_SOCKET*`, and with a private
+`TMUX_TMPDIR` of its own under `/tmp/libtmux-java-test/`. The convention plugin
+`libtmux.tmux-quarantine` does this for every module, and the module-tests
+builds apply the same file by path and opt their runs in. `module-tests/cli`
+starts its children from a task action, with the same scrub and a
+`TMUX_TMPDIR` of its own. The tests of `build-logic` are outside the gate: they
+start tmux only inside probe builds that apply the plugin, or on a socket they
+name.
 
 Development runs are not quarantined. `runDevelopment`, the `run` tasks of
-`libtmux-mcp` and `mcp-swap`, the benchmarks and every other `JavaExec` task
-keep the environment Gradle was started in, so they follow your `TMUX`. Pass
-`-S` to aim one elsewhere.
+`libtmux-mcp` and `mcp-swap`, `scalaModeBenchmark` and every other `JavaExec`
+task keep the environment Gradle was started in, so they follow your `TMUX`.
+Pass `-S` to aim one elsewhere.
 
-The quarantine is also the JVM's `java.io.tmpdir`, and a `Test` task keeps each
-`@TempDir` until the finalizer has looked, so a socket a test names under a
-temporary directory is inside it too.
+A quarantined task's JVM also gets the quarantine as its `java.io.tmpdir`, and a
+`Test` task keeps each `@TempDir` until the finalizer has looked, so a socket a
+test names under a temporary directory is inside it too.
 
 When a quarantined task ends, even by failing, its `<task>QuarantineCheck`
 finalizer looks for sockets anywhere in the task's quarantine, without following
