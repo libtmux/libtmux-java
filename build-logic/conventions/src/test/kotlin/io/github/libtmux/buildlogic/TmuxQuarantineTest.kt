@@ -227,9 +227,9 @@ class TmuxQuarantineTest {
 
         val output = runEither(project)
 
-        val refused = "contains a stale entry: left.sock" in output
-        assumeTrue(refused || "name=${directory.fileName}" in output, "the build ran in another daemon")
-        assertTrue(refused, "the build did not name the socket it should have refused")
+        val inThisDaemon = "contains a stale entry" in output || "name=${directory.fileName}" in output
+        assumeTrue(inThisDaemon, "the build ran in another daemon")
+        assertTrue("contains a stale entry: left.sock" in output, "the build did not name the socket it refused")
     }
 
     @Test
