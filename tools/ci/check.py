@@ -40,6 +40,12 @@ SPLICED = re.compile(
 RUN_KEY = re.compile(r"^(\s*)(?:- )?run:\s*(.*)$")
 MATRIX_KEY = re.compile(r"(?m)^\s*-?\s*(?:tmux|client):")
 QUOTED_RELEASE = re.compile(r"'\d+\.\d+[a-z]?'")
+APT_CALL = re.compile(
+    r"(?:^|[;&|(`]|\$\()\s*(?:sudo\s+(?:-\S+\s+)*)?(apt-get|apt)(?=\s|$)"
+)
+STEP_START = re.compile(r"^( *)- [\w-]+:")
+JOB_START = re.compile(r"^  ([\w-]+):\s*$")
+APT_FIX = "run it through tools/apt-get.sh"
 
 
 def _squash(text: str) -> str:
@@ -84,6 +90,45 @@ def _jobs(text: str) -> dict[str, str]:
 
 def _steps(job: str) -> list[str]:
     return re.split(r"(?m)^      - ", job)[1:]
+
+
+def _where(lines: list[str], number: int) -> str:
+    """Name the job and step that hold the 1-based line `number`."""
+    start = number - 1
+    while start > 0 and not STEP_START.match(lines[start]):
+        start -= 1
+    stop = start + 1
+    while stop < len(lines) and not STEP_START.match(lines[stop]):
+        stop += 1
+    column = len(lines[start]) - len(lines[start].lstrip()) + 2
+    key = re.compile(f"^ {{{column}}}name:\\s*(.+)$")
+    block = [lines[start].replace("- ", "  ", 1), *lines[start + 1 : stop]]
+    name = next((m[1] for line in block if (m := key.match(line))), "")
+    name = name or f"at line {start + 1}"
+    if "jobs:" not in lines:
+        return f"step {name}"
+    job = next(
+        (m[1] for line in reversed(lines[:start]) if (m := JOB_START.match(line))),
+        "?",
+    )
+    return f"job {job}, step {name}"
+
+
+def check_apt(name: str, text: str) -> list[str]:
+    """Return each `run` script line that calls apt-get or apt directly.
+
+    The wrapper bounds a hung mirror only while every call goes through it.
+    """
+    lines = text.splitlines()
+    problems: list[str] = []
+    for number, body in _run_bodies(text):
+        call = APT_CALL.search(body)
+        if call and not body.lstrip().startswith("#"):
+            problems.append(
+                f"{name}:{number} ({_where(lines, number)}) runs {call[1]} "
+                f"directly; {APT_FIX}"
+            )
+    return problems
 
 
 def check_docs(root: pathlib.Path, manifest: Manifest) -> list[str]:
@@ -273,6 +318,12 @@ def check(root: pathlib.Path) -> list[str]:
         for path in sorted((root / ".github/workflows").glob("*.yml"))
         if path.name != "tmux-matrix.yml" and TMATE.search(path.read_text())
     ]
+    scripts = [
+        *(root / ".github/workflows").glob("*.yml"),
+        *(root / ".github/actions").glob("*/action.yml"),
+    ]
+    for path in sorted(scripts):
+        problems += check_apt(path.relative_to(root).as_posix(), path.read_text())
     return problems
 
 

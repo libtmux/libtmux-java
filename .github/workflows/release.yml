@@ -71,8 +71,8 @@ jobs:
 
       - name: Install tmux
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y tmux
+          ./tools/apt-get.sh update
+          ./tools/apt-get.sh install --no-install-recommends -y tmux
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
