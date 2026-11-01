@@ -14,14 +14,7 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
-/**
- * What a JavaExec task hands its child under libtmux.tmux-quarantine, with and without opting in.
- *
- * The child is a compiled program that reports on its own environment, and the build that runs it
- * starts from the environment of a pane, so the first case would fail on a plugin that did not scrub.
- * The child prints whether a variable is present and whether it still holds the value the build was
- * given, never a value: an environment holds secrets, and a failure is copied into logs.
- */
+/** What a task hands its child under libtmux.tmux-quarantine; the child reports names and booleans, never values. */
 class TmuxQuarantineTest {
 
     private val socketRoot: Path =
@@ -82,7 +75,7 @@ class TmuxQuarantineTest {
     fun `a quarantined task that leaves a server running fails the build and the server is stopped`(
         @TempDir project: Path,
     ) {
-        assumeTmux()
+        requireTmux()
         writeProbe(project, applyPlugin = true, optIn = true, leak = "leak")
         val pidFile = project.resolve("server.pid")
 
@@ -101,7 +94,7 @@ class TmuxQuarantineTest {
 
     @Test
     fun `the check still runs when the task itself fails`(@TempDir project: Path) {
-        assumeTmux()
+        requireTmux()
         writeProbe(project, applyPlugin = true, optIn = true, leak = "leak-and-fail")
         val pidFile = project.resolve("server.pid")
 
@@ -122,7 +115,7 @@ class TmuxQuarantineTest {
     fun `a server on a socket the program named inside the quarantine fails the build and is stopped`(
         @TempDir project: Path,
     ) {
-        assumeTmux()
+        requireTmux()
         writeProbe(project, applyPlugin = true, optIn = true, leak = "custom")
         val pidFile = project.resolve("server.pid")
 
@@ -138,7 +131,7 @@ class TmuxQuarantineTest {
 
     @Test
     fun `a server on a socket in a subdirectory of the quarantine is found too`(@TempDir project: Path) {
-        assumeTmux()
+        requireTmux()
         writeProbe(project, applyPlugin = true, optIn = true, leak = "nested")
         val pidFile = project.resolve("server.pid")
 
@@ -154,7 +147,7 @@ class TmuxQuarantineTest {
 
     @Test
     fun `a server on a socket in the temporary directory the JVM was given is found too`(@TempDir project: Path) {
-        assumeTmux()
+        requireTmux()
         writeProbe(project, applyPlugin = true, optIn = true, leak = "javatmp")
         val pidFile = project.resolve("server.pid")
 
@@ -181,7 +174,7 @@ class TmuxQuarantineTest {
 
     @Test
     fun `a Test task is finalized by the check, with the tmux its libtmux tmux property names`(@TempDir project: Path) {
-        assumeTmux()
+        requireTmux()
         val noop = noopKillServer(project)
         val pidFile = project.resolve("server.pid")
         writeTestTaskProbe(project, noop, pidFile)
@@ -215,6 +208,7 @@ class TmuxQuarantineTest {
         val third = run(project)
 
         assumeTrue("name=${directory.fileName}" in third.text, "the build ran in another daemon")
+        assertEquals("0", third.report.getValue("TMUX_TMPDIR").getValue("entries"), "the task started on old debris")
         assertTrue(!Files.exists(directory), "the quarantine was not removed after the run")
     }
 
@@ -234,7 +228,7 @@ class TmuxQuarantineTest {
 
     @Test
     fun `a socket file nothing answers on is not a leak`(@TempDir project: Path) {
-        assumeTmux()
+        requireTmux()
         writeProbe(project, applyPlugin = true, optIn = true, leak = "stale")
         val pidFile = project.resolve("server.pid")
 
@@ -251,7 +245,7 @@ class TmuxQuarantineTest {
 
     @Test
     fun `a link to a socket outside the quarantine is neither followed nor stopped`(@TempDir project: Path) {
-        assumeTmux()
+        requireTmux()
         val outside = project.resolve("outside.sock")
         val tmux = realTmux()
         ProcessBuilder(tmux, "-S", outside.toString(), "-f", "/dev/null", "new-session", "-d", "-s", "outside", "cat")
@@ -277,7 +271,7 @@ class TmuxQuarantineTest {
     fun `the quarantine is kept and the build fails when kill-server does not stop the server`(
         @TempDir project: Path,
     ) {
-        assumeTmux()
+        requireTmux()
         val noop = noopKillServer(project)
         writeProbe(project, applyPlugin = true, optIn = true, leak = "custom")
         val pidFile = project.resolve("server.pid")
@@ -312,6 +306,11 @@ class TmuxQuarantineTest {
         return directory
     }
 
+    private fun compile(source: Path, classes: Path) {
+        val compiler = ToolProvider.getSystemJavaCompiler()
+        assertEquals(0, compiler.run(null, null, null, "-d", classes.toString(), source.toString()))
+    }
+
     // A tmux that answers kill-server with success and does nothing, so a server it was told to stop stays up.
     private fun noopKillServer(project: Path): Path {
         val noop = Files.writeString(
@@ -326,7 +325,7 @@ class TmuxQuarantineTest {
     private fun writeTestTaskProbe(project: Path, tmux: Path, pidFile: Path) {
         val classes = Files.createDirectories(project.resolve("classes"))
         val source = Files.writeString(project.resolve("Dummy.java"), "public class Dummy {}\n")
-        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, "-d", classes.toString(), source.toString()))
+        compile(source, classes)
         Files.writeString(project.resolve("settings.gradle.kts"), "rootProject.name = \"probe\"\n")
         Files.writeString(
             project.resolve("build.gradle.kts"),
@@ -344,8 +343,8 @@ class TmuxQuarantineTest {
                 doLast {
                     val directory = Path.of(environment.getValue("TMUX_TMPDIR").toString())
                     val socket = Files.createDirectories(directory.resolve("j")).resolve("x.sock")
-                    ProcessBuilder("tmux", "-S", socket.toString(), "-f", "/dev/null", "new-session", "-d", "-s", "leak", "cat")
-                        .inheritIO().start().waitFor()
+                    val start = listOf("tmux", "-S", socket.toString(), "-f", "/dev/null")
+                    ProcessBuilder(start + listOf("new-session", "-d", "-s", "leak", "cat")).inheritIO().start().waitFor()
                     val ask = ProcessBuilder("tmux", "-S", socket.toString(), "display-message", "-p", "#{pid}").start()
                     Files.writeString(Path.of("$pidFile"), String(ask.inputStream.readAllBytes()).trim())
                 }
@@ -367,23 +366,27 @@ class TmuxQuarantineTest {
         assertEquals("true", seen.getValue("LIBTMUX_TOOLSETS").getValue("unchanged"), "an unrelated variable changed")
     }
 
-    private fun assumeTmux() {
+    private fun requireTmux() {
         val found = System.getenv("PATH").orEmpty().split(':').any { Files.isExecutable(Path.of(it, "tmux")) }
-        assumeTrue(found, "no tmux on PATH")
+        assertTrue(found, "no tmux on PATH, so the finalizer cases cannot run")
     }
 
     private fun realTmux(): String =
-        System.getenv("PATH").orEmpty().split(':').map { Path.of(it, "tmux") }.first { Files.isExecutable(it) }.toString()
+        System.getenv("PATH").orEmpty().split(':').map { Path.of(it, "tmux") }.first(Files::isExecutable).toString()
 
     // The exit status of asking a server on this socket whether it is there.
     private fun askServer(tmux: String, socket: Path): Int =
-        ProcessBuilder(tmux, "-S", socket.toString(), "display-message", "-p", "ok").redirectErrorStream(true).start().let {
-            it.inputStream.readAllBytes()
-            it.waitFor()
-        }
+        ProcessBuilder(tmux, "-S", socket.toString(), "display-message", "-p", "ok")
+            .redirectErrorStream(true)
+            .start()
+            .let {
+                it.inputStream.readAllBytes()
+                it.waitFor()
+            }
 
     private fun serverAlive(pidFile: Path): Boolean =
-        Files.isRegularFile(pidFile) && ProcessHandle.of(Files.readString(pidFile).trim().toLong()).map { it.isAlive }.orElse(false)
+        Files.isRegularFile(pidFile) &&
+            ProcessHandle.of(Files.readString(pidFile).trim().toLong()).map { it.isAlive }.orElse(false)
 
     // A server this test started, stopped by its pid so a failing case leaves nothing behind.
     private fun stopServer(pidFile: Path) {
@@ -471,23 +474,34 @@ class TmuxQuarantineTest {
                         System.out.println("PROBE TMUX_TMPDIR under-root=" + tmpdir.startsWith("$socketRoot")
                             + " mode=" + mode
                             + " is-java-tmpdir=" + tmpdir.equals(System.getProperty("java.io.tmpdir"))
-                            + " name=" + Path.of(tmpdir).getFileName());
+                            + " name=" + Path.of(tmpdir).getFileName()
+                            + " entries=" + (Files.isDirectory(Path.of(tmpdir)) ? Files.list(Path.of(tmpdir)).count() : -1));
                     }
                 }
             }
             """.trimIndent(),
         )
-        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, "-d", classes.toString(), source.toString()))
+        compile(source, classes)
         Files.writeString(project.resolve("settings.gradle.kts"), "rootProject.name = \"probe\"\n")
+        val plugins = if (applyPlugin) "plugins { id(\"libtmux.tmux-quarantine\") }" else ""
+        val optInFunction =
+            if (applyPlugin) {
+                "@Suppress(\"UNCHECKED_CAST\") " +
+                    "val quarantineTmux = extra[\"quarantineTmux\"] as (TaskProvider<JavaExec>) -> Unit"
+            } else {
+                ""
+            }
+        val link = if (outside != null) ", \"$outside\"" else ""
+        val arguments = if (leak.isNotEmpty()) "args(\"$leak\", \"${project.resolve("server.pid")}\"$link)" else ""
         Files.writeString(
             project.resolve("build.gradle.kts"),
             """
-            ${if (applyPlugin) "plugins { id(\"libtmux.tmux-quarantine\") }" else ""}
-            ${if (applyPlugin) "@Suppress(\"UNCHECKED_CAST\") val quarantineTmux = extra[\"quarantineTmux\"] as (TaskProvider<JavaExec>) -> Unit" else ""}
+            $plugins
+            $optInFunction
             val probe = tasks.register<JavaExec>("probe") {
                 classpath = files("classes")
                 mainClass = "Probe"
-                ${if (leak.isNotEmpty()) "args(\"$leak\", \"${project.resolve("server.pid")}\"${if (outside != null) ", \"$outside\"" else ""})" else ""}
+                $arguments
             }
             ${if (optIn) "quarantineTmux(probe)" else ""}
             """.trimIndent(),

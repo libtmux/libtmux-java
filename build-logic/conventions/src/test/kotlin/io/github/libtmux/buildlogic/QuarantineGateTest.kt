@@ -54,7 +54,7 @@ class QuarantineGateTest {
             project.resolve("settings.gradle.kts"),
             "rootProject.name = \"gate\"\ninclude(${modules.joinToString { "\"${it.first}\"" }})\n",
         )
-        val gate = Path.of(System.getProperty("user.dir")).resolve("src/main/kotlin/libtmux.tmux-quarantine-gate.gradle.kts")
+        val gate = Path.of(System.getProperty("user.dir"), "src/main/kotlin/libtmux.tmux-quarantine-gate.gradle.kts")
         Files.writeString(project.resolve("build.gradle.kts"), "apply(from = \"${gate}\")\n")
         for ((name, module) in modules) {
             val directory = Files.createDirectories(project.resolve(name))
