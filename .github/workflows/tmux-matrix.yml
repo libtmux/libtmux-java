@@ -124,15 +124,15 @@ jobs:
 
       - name: Build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
+          ./tools/apt-get.sh update
+          ./tools/apt-get.sh install --no-install-recommends -y \
             build-essential libevent-dev libncurses-dev bison pkg-config
 
       # Only a build from a commit needs autoconf and automake, to generate the files a tarball
       # ships pre-built.
       - name: Build dependencies for a git checkout
         if: matrix.source == 'git'
-        run: sudo apt-get install --no-install-recommends -y autoconf automake
+        run: ./tools/apt-get.sh install --no-install-recommends -y autoconf automake
 
       - name: Restore tmux ${{ matrix.tmux }}
         id: tmux-cache
