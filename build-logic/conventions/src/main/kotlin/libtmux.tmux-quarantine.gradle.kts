@@ -53,13 +53,18 @@ object LeakedServers {
         val stopped = mutableListOf<String>()
         val stuck = mutableListOf<String>()
         for (socket in sockets.filter(::answers)) {
-            kill(tmux, directory, socket)
-            (if (stillAnswers(socket)) stuck else stopped).add(directory.relativize(socket).toString())
+            (if (stop(tmux, directory, socket)) stopped else stuck).add(directory.relativize(socket).toString())
         }
         if (stuck.isEmpty()) {
             Files.walk(directory).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach(Files::delete) }
         }
         return Swept(stopped.sorted(), stuck.sorted())
+    }
+
+    /** Tells the server on [socket] to stop and waits for it to; false if it still answers. */
+    fun stop(tmux: String, tmpdir: Path, socket: Path): Boolean {
+        kill(tmux, tmpdir, socket)
+        return !stillAnswers(socket)
     }
 
     // A socket file itself: a link to one is not, and is left for whoever owns what it points at.
@@ -192,6 +197,7 @@ extra["quarantineTmux"] = { run: TaskProvider<JavaExec> ->
     run.configure { quarantine() }
     checkAfter(run.name)
 }
+extra["stopServer"] = { directory: Path, tmux: String, socket: Path -> LeakedServers.stop(tmux, directory, socket) }
 extra["stopLeakedServers"] = { directory: Path, tmux: String ->
     LeakedServers.sweep(directory, tmux).let { it.stopped to it.stuck }
 }
