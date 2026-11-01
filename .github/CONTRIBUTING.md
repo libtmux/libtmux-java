@@ -70,6 +70,10 @@ Development runs are not quarantined. `runDevelopment`, the `run` tasks of
 keep the environment Gradle was started in, so they follow your `TMUX`. Pass
 `-S` to aim one elsewhere.
 
+The quarantine is also the JVM's `java.io.tmpdir`, and a `Test` task keeps each
+`@TempDir` until the finalizer has looked, so a socket a test names under a
+temporary directory is inside it too.
+
 When a quarantined task ends, even by failing, its `<task>QuarantineCheck`
 finalizer looks for sockets anywhere in the task's quarantine, without following
 links, and stops the server on each one that answers. It fails the build naming
@@ -77,10 +81,15 @@ them even when the tests passed. It keeps the directory, and says so, while a
 server still answers after `kill-server`. A socket file nothing answers on is
 not a leak. `examples/api/run.sh` does the same for the program it starts.
 
+The finalizer cannot see a server whose socket lies elsewhere. A
+[`TmuxExtension`](../libtmux-junit5/) fixture, and the Scala `OwnedTmux` beside
+it, make a directory of their own under `/tmp/libtmux-java-test/`, named for the
+JVM that owns it, and end their server themselves.
+
 The test JVM also checks the quarantine before its first test and refuses to
 start when it was not launched that way, which is what happens to a run from an
-IDE. Run tests through `./gradlew`. `./gradlew everyTestModuleIsQuarantined` fails when a
-module with tests lacks the plugin or the check.
+IDE. Run tests through `./gradlew`. `./gradlew everyTestModuleIsQuarantined`
+fails when a module with tests lacks the plugin or the check.
 
 Sibling libtmux ports — Python, Go, Rust, TypeScript, C#, C++, Swift — are
 worked on in parallel on the same machine, and every one of them starts real

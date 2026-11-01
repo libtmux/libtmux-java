@@ -6,8 +6,10 @@
 // language enforces it, and a command that omits it silently addresses a real server and can kill it.
 //
 // A JavaExec task is left alone unless it calls quarantineTmux: `run` and `runDevelopment` follow the
-// developer's TMUX on purpose. When a quarantined task ends, even a failed one, a finalizer stops any
-// server it left on a socket anywhere in its quarantine and fails the build naming the sockets.
+// developer's TMUX on purpose. A quarantined task's TMUX_TMPDIR and its JVM's java.io.tmpdir are the
+// same directory, so the sockets a program names itself, in a temporary directory or beside the default
+// one, are in the tree the finalizer sweeps. When the task ends, even a failed one, the finalizer stops
+// any server on a socket anywhere in that tree and fails the build naming the sockets.
 //
 // No plugins block, so module-tests, which resolve nothing from this build, apply this file by path.
 import java.io.IOException
@@ -24,11 +26,11 @@ import java.security.MessageDigest
 import java.util.HexFormat
 import java.util.concurrent.TimeUnit
 
-// Where a test puts the sockets it names explicitly, which TMUX_TMPDIR does not govern. Sibling
-// libtmux ports run on this machine at the same time and start their own tmux servers under /tmp; a
-// server of theirs left behind by an exited run holds a pty and answers to a name this suite might
-// have chosen, which turns their debris into this suite's intermittent failures. So this port takes a
-// root of its own, and everything a task creates lands under it.
+// Where each task's quarantine is made. Sibling libtmux ports run on this machine at the same time and
+// start their own tmux servers under /tmp; a server of theirs left behind by an exited run holds a pty
+// and answers to a name this suite might have chosen, which turns their debris into this suite's
+// intermittent failures. So this port takes a root of its own, and everything a task creates lands
+// under it. The root is shared by every task and checkout, so no finalizer sweeps it whole.
 //
 // Short on purpose: a unix socket path cannot exceed about 104 bytes, which rules out the build
 // directory and is why this is not derived from one.
@@ -158,11 +160,20 @@ class PrepareQuarantine(private val root: String, private val checkout: String) 
 
     override fun execute(task: Task) {
         val directory = directoryFor(task.path)
-        val options = task as ProcessForkOptions
+        val options = task as JavaForkOptions
         ServerSelectors.clear(options)
         options.environment("TMUX_TMPDIR", directory.toString())
-        // What the test JVM's refusal compares TMUX_TMPDIR with.
-        if (task is Test) task.systemProperty("libtmux.test.sandbox", directory.toString())
+        // A socket a test names under its temporary directory lands in the tree the finalizer sweeps,
+        // not in the root every concurrent task and checkout shares.
+        options.systemProperty("java.io.tmpdir", directory.toString())
+        if (task is Test) {
+            // What the test JVM's refusal compares TMUX_TMPDIR with.
+            task.systemProperty("libtmux.test.sandbox", directory.toString())
+            // JUnit removes a @TempDir when its test ends, and the socket of a server the test left
+            // goes with it. -S cannot reach a server whose socket is gone, so the finalizer would find
+            // nothing. It removes the whole quarantine itself once it has looked.
+            task.systemProperty("junit.jupiter.tempdir.cleanup.mode.default", "never")
+        }
     }
 
     private fun directoryFor(taskPath: String): Path {
@@ -186,7 +197,7 @@ class PrepareQuarantine(private val root: String, private val checkout: String) 
     }
 }
 
-fun <T> T.quarantine() where T : Task, T : ProcessForkOptions {
+fun <T> T.quarantine() where T : Task, T : JavaForkOptions {
     ServerSelectors.clear(this)
     doFirst(PrepareQuarantine(socketRoot, checkoutIdentity))
 }
@@ -215,8 +226,5 @@ extra["stopLeakedServers"] = { directory: Path, tmux: String ->
     LeakedServers.sweep(directory, tmux).let { it.stopped to it.stuck }
 }
 
-tasks.withType<Test>().configureEach {
-    systemProperty("java.io.tmpdir", socketRoot)
-    quarantine()
-}
+tasks.withType<Test>().configureEach { quarantine() }
 afterEvaluate { tasks.withType<Test>().names.forEach(::checkAfter) }

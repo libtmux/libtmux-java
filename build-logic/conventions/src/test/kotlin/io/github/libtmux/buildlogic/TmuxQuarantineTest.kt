@@ -150,6 +150,22 @@ class TmuxQuarantineTest {
     }
 
     @Test
+    fun `a server on a socket in the temporary directory the JVM was given is found too`(@TempDir project: Path) {
+        assumeTmux()
+        writeProbe(project, applyPlugin = true, optIn = true, leak = "javatmp")
+        val pidFile = project.resolve("server.pid")
+
+        try {
+            val failure = runAndFail(project)
+
+            assertTrue("left a tmux server running: j/x.sock" in failure, "the build did not name the socket")
+            assertTrue(!serverAlive(pidFile), "the server was left running")
+        } finally {
+            stopServer(pidFile)
+        }
+    }
+
+    @Test
     fun `a socket file nothing answers on is not a leak`(@TempDir project: Path) {
         assumeTmux()
         writeProbe(project, applyPlugin = true, optIn = true, leak = "stale")
@@ -226,6 +242,7 @@ class TmuxQuarantineTest {
         assertEquals("false", tmpdir.getValue("unchanged"), "TMUX_TMPDIR was inherited")
         assertEquals("true", tmpdir.getValue("under-root"), "TMUX_TMPDIR is off the socket root")
         assertEquals("rwx------", tmpdir.getValue("mode"), "TMUX_TMPDIR is readable by others")
+        assertEquals("true", tmpdir.getValue("is-java-tmpdir"), "the JVM's temporary directory is outside TMUX_TMPDIR")
         assertEquals("true", seen.getValue("LIBTMUX_TOOLSETS").getValue("unchanged"), "an unrelated variable changed")
     }
 
@@ -288,6 +305,9 @@ class TmuxQuarantineTest {
                     Path socket = switch (mode) {
                         case "custom" -> tmpdir.resolve("custom.sock");
                         case "nested" -> Files.createDirectories(tmpdir.resolve("sub")).resolve("x.sock");
+                        case "javatmp" ->
+                            Files.createDirectories(Path.of(System.getProperty("java.io.tmpdir")).resolve("j"))
+                                .resolve("x.sock");
                         case "stale" -> tmpdir.resolve("stale.sock");
                         default -> null;
                     };
@@ -328,7 +348,8 @@ class TmuxQuarantineTest {
                             mode = PosixFilePermissions.toString(Files.getPosixFilePermissions(Path.of(tmpdir)));
                         }
                         System.out.println("PROBE TMUX_TMPDIR under-root=" + tmpdir.startsWith("$socketRoot")
-                            + " mode=" + mode);
+                            + " mode=" + mode
+                            + " is-java-tmpdir=" + tmpdir.equals(System.getProperty("java.io.tmpdir")));
                     }
                 }
             }

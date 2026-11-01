@@ -51,15 +51,24 @@ final class SandboxCanaryTest {
     }
 
     @Test
-    void theQuarantineIsADirectoryUnderTheRootTheBuildNamed() {
+    void theQuarantineIsADirectoryAndTheJvmsTemporaryDirectory() {
         Path quarantine = Path.of(sandbox());
-        Path root = Path.of(Objects.requireNonNull(System.getProperty("java.io.tmpdir")));
+        Path temporary = Path.of(Objects.requireNonNull(System.getProperty("java.io.tmpdir")));
 
         assertTrue(Files.isDirectory(quarantine), "the build's quarantine is not a directory");
         assertTrue(
                 quarantine.toString().equals(System.getenv("TMUX_TMPDIR")),
                 "TMUX_TMPDIR is not the directory the build prepared");
-        assertTrue(quarantine.startsWith(root), "the quarantine is outside java.io.tmpdir");
+        assertTrue(
+                quarantine.equals(temporary),
+                "java.io.tmpdir is not the quarantine, so a socket named there is not swept");
+    }
+
+    @Test
+    void aTempDirOutlivesItsTestSoTheFinalizerCanFindWhatItsServerLeft() {
+        assertTrue(
+                "never".equals(System.getProperty("junit.jupiter.tempdir.cleanup.mode.default")),
+                "a @TempDir is removed with its socket before the finalizer looks");
     }
 
     @Test
