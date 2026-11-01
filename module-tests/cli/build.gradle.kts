@@ -60,12 +60,13 @@ tasks.register("run") {
                 commandLine("tmux", "-S", socket, "kill-server")
                 isIgnoreExitValue = true
             }.result.get()
-            val (stopped, stuck) = stopLeakedServers(Path.of(tmuxTmpDir), "tmux")
+            val (stopped, stuck) = stopLeakedServers(directory, "tmux")
             // Kept while a server still answers, so it can be found and ended.
             if (stuck.isEmpty()) directory.toFile().deleteRecursively()
             val left = (stopped + stuck).sorted()
             if (left.isNotEmpty()) {
-                val leak = IllegalStateException("tmux-workspace left a tmux server running: ${left.joinToString(", ")}")
+                val leak =
+                    IllegalStateException("tmux-workspace left a tmux server running: ${left.joinToString(", ")}")
                 // The failure that ended the run stays the one reported.
                 failure?.addSuppressed(leak) ?: throw leak
             }
