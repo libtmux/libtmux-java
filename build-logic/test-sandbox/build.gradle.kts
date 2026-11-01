@@ -28,7 +28,7 @@ dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testCompileOnly(libs.jspecify)
-    testRuntimeOnly(libs.junit.platform.launcher)
+    testImplementation(libs.junit.platform.launcher)
 }
 
 tasks.withType<JavaCompile>().configureEach {

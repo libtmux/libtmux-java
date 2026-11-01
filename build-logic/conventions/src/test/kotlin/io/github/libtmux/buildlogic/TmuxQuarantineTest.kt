@@ -166,6 +166,17 @@ class TmuxQuarantineTest {
     }
 
     @Test
+    fun `a socket root too long to leave room for a socket is refused before the task runs`(@TempDir project: Path) {
+        writeProbe(project, applyPlugin = true, optIn = true)
+        val tooLong = socketRoot.resolve("r".repeat(41))
+
+        val failure = runAndFail(project, "-PlibtmuxSocketRoot=$tooLong")
+
+        assertTrue("too long to leave room for a socket under it" in failure, "the build did not refuse the root")
+        assertTrue(!Files.exists(tooLong), "a directory was made under a root that was refused")
+    }
+
+    @Test
     fun `a socket file nothing answers on is not a leak`(@TempDir project: Path) {
         assumeTmux()
         writeProbe(project, applyPlugin = true, optIn = true, leak = "stale")
