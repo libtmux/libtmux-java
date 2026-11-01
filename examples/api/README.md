@@ -20,6 +20,11 @@ $ ./gradlew :examples:test --tests '*ApiProgramsTest'
 two panes and a `logs` window containing one pane. It also starts `work-two`
 with one `editor` pane. Every fixture pane runs `/bin/cat`.
 
+The program starts without `TMUX`, `TMUX_PANE` or `LIBTMUX_SOCKET*`, and with a
+`TMUX_TMPDIR` of its own, so a client that names no socket cannot reach another
+server. The run fails, after stopping it, when the program leaves a server
+running there.
+
 Each program receives the tmux executable, socket path, and configuration file
 as three arguments. It opens an ordinary client connected to that server.
 Closing the client releases its transport; the launcher owns server shutdown.
@@ -69,5 +74,7 @@ api-line
 ```
 
 Set `TMUX_BIN` to an absolute executable path to choose a particular tmux
-release. Each invocation starts a fresh fixture, so none of the programs
-requires an earlier example to run first.
+release. Set `API_RUN_ROOT` to move the runner's directories from
+`/tmp/libtmux-java-dev`; the default socket path under it must fit in 100
+bytes. Each invocation starts a fresh fixture, so none of the programs requires
+an earlier example to run first.

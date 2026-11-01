@@ -15,3 +15,4 @@ rootProject.name = "build-logic"
 include("conventions")
 include("codegen")
 include("catalog-doclet")
+include("test-sandbox")

@@ -57,6 +57,46 @@ port.** Use one of:
 Never `/tmp/libtmux-…` on its own, and never the default socket. `libtmux-` is
 the prefix a sibling port is also using, which is the whole problem.
 
+A client that names no socket follows `TMUX` to the server you are working in,
+and otherwise lands on the default socket. So every `Test` task of a library
+module, and each `run` in the builds under [`module-tests/`](../module-tests/),
+starts without `TMUX`, `TMUX_PANE` and `LIBTMUX_SOCKET*`, and with a private
+`TMUX_TMPDIR` of its own under `/tmp/libtmux-java-test/`. The convention plugin
+`libtmux.tmux-quarantine` does this for every module, and the module-tests
+builds apply the same file by path and opt their runs in. `module-tests/cli`
+starts its children from a task action, with the same scrub and a
+`TMUX_TMPDIR` of its own. The tests of `build-logic` are outside the gate: they
+start tmux only inside probe builds that apply the plugin, or on a socket they
+name.
+
+Development runs are not quarantined. `runDevelopment`, the `run` tasks of
+`libtmux-mcp` and `mcp-swap`, `scalaModeBenchmark` and every other `JavaExec`
+task keep the environment Gradle was started in, so they follow your `TMUX`.
+Pass `-S` to aim one elsewhere.
+
+A quarantined task's JVM also gets the quarantine as its `java.io.tmpdir`, and a
+`Test` task keeps each `@TempDir` until the finalizer has looked, so a socket a
+test names under a temporary directory is inside it too.
+
+When a quarantined task ends, even by failing, its `<task>QuarantineCheck`
+finalizer looks for sockets anywhere in the task's quarantine, without following
+links, and stops the server on each one that answers. It fails the build naming
+them even when the tests passed. It keeps the directory, and says so, while a
+server still answers after `kill-server`. A socket file nothing answers on is
+not a leak. `examples/api/run.sh` does the same for the program it starts.
+
+The finalizer cannot see a server whose socket lies elsewhere. A
+[`TmuxExtension`](../libtmux-junit5/) fixture, and the Scala `OwnedTmux` beside
+it, make a directory of their own under `/tmp/libtmux-java-test/`, named for the
+JVM that owns it. So do a few tests that name a path under that root. All of
+them end their servers themselves, and the finalizer does not check that they
+did.
+
+The test JVM also checks the quarantine before its first test and refuses to
+start when it was not launched that way, which is what happens to a run from an
+IDE. Run tests through `./gradlew`. `./gradlew everyTestModuleIsQuarantined`
+fails when a module with tests lacks the plugin or the check.
+
 Sibling libtmux ports — Python, Go, Rust, TypeScript, C#, C++, Swift — are
 worked on in parallel on the same machine, and every one of them starts real
 tmux servers in `/tmp`. Their debris outlives their test runs: servers from an

@@ -5,6 +5,11 @@ val libtmuxVersion = providers.gradleProperty("libtmuxVersion").get()
 subprojects {
     apply(plugin = "scala")
     apply(plugin = "application")
+    // A build of its own, so the quarantine is applied by path rather than as a plugin.
+    apply(from = rootProject.file("../../build-logic/conventions/src/main/kotlin/libtmux.tmux-quarantine.gradle.kts"))
+    @Suppress("UNCHECKED_CAST")
+    val quarantineTmux = extra["quarantineTmux"] as (TaskProvider<JavaExec>) -> Unit
+    quarantineTmux(tasks.named<JavaExec>("run"))
 
     extensions.configure<JavaPluginExtension> { toolchain { languageVersion = JavaLanguageVersion.of(25) } }
 

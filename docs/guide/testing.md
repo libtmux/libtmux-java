@@ -47,15 +47,20 @@ a later run sharing the fixture root sweeps servers whose owning JVM is gone.
 
 ## Isolation from your own tmux
 
-Every test task runs with a short `TMUX_TMPDIR` under
-`/tmp/libtmux-java-test/`, and with `TMUX` and `TMUX_PANE` removed. Its
-16-character hexadecimal namespace hashes the canonical worktree, task path,
-and Gradle daemon process. That separates concurrent invocations without
-spending the socket path's limited bytes. Before use, the task prunes empty
-directory scaffolding but refuses to remove a stale file or socket. A command
-that omits its `-S` therefore cannot reach the tmux you are working in.
-Explicitly named-socket tests capture the server process and reported inode,
-then reclaim only that inode after the process has exited.
+Every test task runs with `TMUX`, `TMUX_PANE` and `LIBTMUX_SOCKET*` removed, and
+with a short `TMUX_TMPDIR` under `/tmp/libtmux-java-test/` that is also the
+JVM's temporary directory. Its 16-character hexadecimal namespace hashes the
+canonical worktree, task path, and Gradle daemon process. That separates
+concurrent invocations without spending the socket path's limited bytes. Before
+use, the task clears the plain files a cancelled run left but refuses a stale
+socket. A command that omits its `-S` therefore cannot reach the tmux you are
+working in.
+
+When a task ends, even by failing, a finalizer stops each server that answers on
+a socket anywhere in that directory and fails the build naming it. A test JVM
+that was not started this way, such as an IDE run, refuses to start. Explicitly
+named-socket tests capture the server process and reported inode, then reclaim
+only that inode after the process has exited.
 
 This is enforced by the build rather than by every test remembering, because the
 code under test is exactly what is allowed to be wrong. The suite asserts the

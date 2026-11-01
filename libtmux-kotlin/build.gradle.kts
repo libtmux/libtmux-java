@@ -9,6 +9,7 @@ plugins {
     id("libtmux.publication")
     id("libtmux.sbom")
     id("libtmux.tmux-matrix")
+    id("libtmux.tmux-quarantine")
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.dokka)
 }
@@ -49,6 +50,8 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(kotlin("test"))
     testRuntimeOnly(libs.junit.platform.launcher)
+    // Refuses a test run that could reach a tmux server it was not given.
+    testRuntimeOnly("io.github.libtmux.build:test-sandbox")
     // The exhaustiveness compile-test drives a real kotlinc against a fixture, in-process.
     testImplementation(libs.kotlin.compiler.embeddable)
 }
