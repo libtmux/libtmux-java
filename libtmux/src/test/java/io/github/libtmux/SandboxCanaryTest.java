@@ -3,7 +3,6 @@ package io.github.libtmux;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -172,7 +171,7 @@ final class SandboxCanaryTest {
         } catch (IOException missing) {
             runs = false;
         }
-        assumeTrue(runs, "no tmux to start");
+        assertTrue(runs, "no tmux to start the canary with");
         return tmux;
     }
 
