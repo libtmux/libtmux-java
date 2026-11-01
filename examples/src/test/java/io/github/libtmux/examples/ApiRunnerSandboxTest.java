@@ -19,11 +19,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * What {@code api/run.sh} hands the program it starts, and what it does when the program leaves a server.
- *
- * <p>The program is a shell script that reports on its own environment, and the runner starts from the
- * environment of a pane, so each case fails on a runner that stopped scrubbing, giving a private
- * {@code TMUX_TMPDIR}, refusing a long root, or cleaning up. The program reports names and booleans,
- * never a value: an environment holds secrets, and a failure is copied into logs.
+ * The program reports names and booleans, never a value.
  */
 final class ApiRunnerSandboxTest {
 
@@ -187,7 +183,7 @@ final class ApiRunnerSandboxTest {
         try {
             Result ran = run("", root());
 
-            assertEquals(0, ran.status(), "the launcher failed: " + ran.output());
+            assertEquals(0, ran.status(), "the launcher failed");
             assertEquals(
                     List.of("TMPDIR under-root", "MODE drwx------"),
                     report(),
@@ -204,7 +200,7 @@ final class ApiRunnerSandboxTest {
         try {
             Result ran = run("", root(), false);
 
-            assertEquals(0, ran.status(), "the launcher failed: " + ran.output());
+            assertEquals(0, ran.status(), "the launcher failed");
             assertEquals(
                     List.of("TMPDIR under-root", "MODE drwx------"),
                     report(),
@@ -272,7 +268,7 @@ final class ApiRunnerSandboxTest {
             Result ran = run("stale", root());
 
             assertTrue(Files.exists(directory.resolve("stale-remains")), "no stale socket was left");
-            assertEquals(0, ran.status(), "the launcher failed: " + ran.output());
+            assertEquals(0, ran.status(), "the launcher failed");
             assertFalse(ran.output().contains("left a tmux server"), "a socket nothing answers on was reported");
             assertTrue(rootIsEmpty(), "the launcher left its directories behind");
         } finally {
@@ -287,7 +283,7 @@ final class ApiRunnerSandboxTest {
         try {
             Result ran = run("link", root());
 
-            assertEquals(0, ran.status(), "the launcher failed: " + ran.output());
+            assertEquals(0, ran.status(), "the launcher failed");
             assertFalse(ran.output().contains("left a tmux server"), "a link was followed to a server it does not own");
             assertEquals(
                     0,
