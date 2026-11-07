@@ -14,10 +14,19 @@ CI, and release tooling, are in the [main changelog](../CHANGELOG.md).
 
 ### Fixed
 
+- **Closing the events channel inside `dosync` now rejects I/O before
+  changing adapter state.** A later close outside the transaction still
+  releases the owned subscription.
+
 - **Stopping preserves the subscription's final loss and trailing text.**
   A blocked channel put no longer replaces known upstream loss with zero.
   `:upstream/terminal` retains the original end reason, cause, and pending
   UTF-8 tail; `:adapter/events` stays separate from upstream counters.
+
+### Changed
+
+- **Raw adapter constructors are private.** Use `observe!` to obtain a
+  closeable adapter with an owned worker and subscription.
 
 ### Added
 

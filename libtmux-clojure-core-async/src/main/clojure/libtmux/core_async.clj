@@ -15,13 +15,18 @@
   (take! [_ handler] (protocols/take! channel handler))
   protocols/Channel
   (close! [_]
-    (stop-fn)
-    (protocols/close! channel))
+    (io!
+     (stop-fn)
+     (protocols/close! channel)))
   (closed? [_] (protocols/closed? channel)))
 
-(deftype Adapter [events terminal subscription stop-channel stopped worker limits]
+(alter-meta! #'->EventsPort assoc :private true)
+
+(deftype ^:private Adapter [events terminal subscription stop-channel stopped worker limits]
   AutoCloseable
   (close [this] (stop! this)))
+
+(alter-meta! #'->Adapter assoc :private true)
 
 (defn events
   "Returns the read-only events channel. Closing it stops the adapter."
