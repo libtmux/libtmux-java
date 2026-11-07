@@ -6,14 +6,12 @@ core.async dependency.
 
 ## Install
 
-This adapter ships with the façade's first release; it has no released
-coordinate yet. Its Maven coordinate will be
-`io.github.libtmux:libtmux-clojure-core-async`. Its future Clojure CLI
-dependency is:
+This adapter has not shipped. Its Maven coordinate is
+`io.github.libtmux:libtmux-clojure-core-async`; there is no public release to
+install yet. Build and verify it from this checkout:
 
-```edn
-{:deps {io.github.libtmux/libtmux-clojure-core-async
-        {:mvn/version "<exact-release>"}}}
+```console
+$ ./gradlew :libtmux-clojure-core-async:check
 ```
 
 ## Ownership and backpressure
