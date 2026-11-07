@@ -3,6 +3,7 @@ package io.github.libtmux.control;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -176,6 +177,10 @@ final class ControlClientTest {
             assertEquals(DispatchOutcome.UNKNOWN, failure.outcome());
             assertFalse(client.isAlive(), "a missing reply leaves command attribution uncertain");
             assertTrue(events.isClosed(), "a subscriber cannot wait forever on an unusable client");
+            assertEquals(
+                    EventSubscription.EndReason.TRANSPORT_FAILURE,
+                    events.termination().orElseThrow().reason());
+            assertSame(failure, events.cause().orElseThrow());
             assertThrows(IllegalStateException.class, () -> client.send("list-panes"));
         }
     }
@@ -357,6 +362,70 @@ final class ControlClientTest {
 
             assertFalse(aliveAtTheEnd.get(5, TimeUnit.SECONDS), "the subscription ended before the client did");
             assertInstanceOf(ControlEndedException.class, output.cause().orElseThrow());
+        }
+    }
+
+    @Test
+    void anExitNotificationAndUnexplainedEofHaveDistinctTerminalCauses(@TempDir Path directory) throws Exception {
+        for (boolean notified : new boolean[] {true, false}) {
+            Path scratch = Files.createDirectory(directory.resolve(notified ? "exit" : "eof"));
+            String ending = notified ? "printf '%%exit detached\\n'\n" : "";
+            ServerConfig config = fakeTmux(scratch, """
+                    printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                    read_request
+                    answer
+                    read_request
+                    answer
+                    printf '%%output %%1 final\n'
+                    """ + ending);
+            try (ControlClient client = attachFake(config);
+                    EventSubscription<PaneOutput> output = client.subscribeOutput(4, 32);
+                    EventSubscription<ControlEvent> events = client.subscribeEvents(4)) {
+                client.send(List.of("display-message"), Duration.ofMillis(900));
+                assertEquals(
+                        "final",
+                        Delivery.kept(output.next(Duration.ofMillis(900)).orElseThrow())
+                                .data());
+                assertEquals(Optional.empty(), output.next(Duration.ofMillis(900)));
+                var termination = output.termination().orElseThrow();
+                assertEquals(
+                        notified ? EventSubscription.EndReason.CONTROL_EXIT : EventSubscription.EndReason.UNKNOWN,
+                        termination.reason());
+                assertSame(output.cause().orElseThrow(), termination.cause().orElseThrow());
+                if (notified) {
+                    assertEquals(
+                            Optional.of("exit"),
+                            events.next(Duration.ofMillis(900))
+                                    .map(Delivery::kept)
+                                    .map(ControlEvent::kind));
+                    var original = assertInstanceOf(
+                            java.io.IOException.class,
+                            termination.cause().orElseThrow().getCause());
+                    assertEquals("%exit detached", original.getMessage());
+                }
+            }
+        }
+    }
+
+    @Test
+    void aMalformedPaneNotificationPreservesItsProtocolCause(@TempDir Path directory) throws Exception {
+        ServerConfig config = fakeTmux(directory, """
+                printf '%%begin 100 1 0\n%%end 100 1 0\n'
+                read_request
+                answer
+                read_request
+                answer
+                printf '%%output invalid final\n'
+                """);
+        try (ControlClient client = attachFake(config);
+                EventSubscription<PaneOutput> output = client.subscribeOutput(1)) {
+            client.send(List.of("display-message"), Duration.ofMillis(900));
+            assertEquals(Optional.empty(), output.next(Duration.ofMillis(900)));
+            var termination = output.termination().orElseThrow();
+            assertEquals(EventSubscription.EndReason.PROTOCOL_FAILURE, termination.reason());
+            assertInstanceOf(
+                    IllegalArgumentException.class,
+                    termination.cause().orElseThrow().getCause());
         }
     }
 

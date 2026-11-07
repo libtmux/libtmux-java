@@ -9,6 +9,26 @@ full change history.
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### Output subscriptions bound payload bytes
+
+`ControlClient.subscribeOutput(int)` now bounds queued unescaped payload at
+16 MiB as well as the requested event count. Use
+`ControlClient.subscribeOutput(int, long)` to choose another byte limit.
+Oldest events are discarded until both limits fit; a chunk larger than the
+byte limit discards the buffered prefix and itself. Read `Delivery.Gap`
+before processing the retained suffix. `droppedBytes()` counts payload loss,
+while `retainedBytes()` excludes JVM object overhead and bytes already read.
+
+For text that follows one subscriber's observed bytes, pass each `PaneOutput`
+to a `PaneOutputDecoder`, call `reset()` after every gap, and call `finish()`
+at termination. This prevents bytes on opposite sides of a subscriber gap
+from forming a character. Decoder capacity eviction increments `resetCount()`.
+The existing `PaneOutput.data()` remains the client's predecoded view.
+
+`EventSubscription.termination()` records the first end classification and
+original cause. A control exit describes that client, not daemon death;
+bare EOF remains unknown. Later close does not replace that record.
+
 ### With no socket chosen, tmux picks the server
 
 The core, `tmux-workspace` and `libtmux-mcp` now take the same steps to find a

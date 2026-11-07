@@ -12,6 +12,14 @@ import org.jspecify.annotations.Nullable;
 /** Reads bounded physical lines from a control client's byte stream. */
 final class ControlLineReader implements Closeable {
 
+    static final class LimitExceeded extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        LimitExceeded(int maxBytes) {
+            super("control line exceeded the " + maxBytes + " byte limit");
+        }
+    }
+
     private final BufferedInputStream source;
     private final int maxBytes;
 
@@ -39,7 +47,7 @@ final class ControlLineReader implements Closeable {
                 return line(bytes);
             }
             if (bytes.size() == maxBytes) {
-                throw new IOException("control line exceeded the " + maxBytes + " byte limit");
+                throw new LimitExceeded(maxBytes);
             }
             bytes.write(next);
         }

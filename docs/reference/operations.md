@@ -276,6 +276,7 @@ Generated from `@Operation`-annotated methods by the operation-catalog Doclet; d
 | `io.github.libtmux.control.ControlClient` | `send(java.util.List<java.lang.String>, java.time.Duration)` | MUTATION | Runs one command and waits for its reply. |
 | `io.github.libtmux.control.ControlClient` | `isAlive()` | CAPTURED | Whether the client is still running. |
 | `io.github.libtmux.control.ControlClient` | `subscribeOutput(int)` | STREAM | Subscribes to terminal output tmux pushes. |
+| `io.github.libtmux.control.ControlClient` | `subscribeOutput(int, long)` | STREAM | Subscribes to output bounded by event count and unescaped payload bytes. |
 | `io.github.libtmux.control.ControlClient` | `subscribeEvents(int)` | STREAM | Subscribes to state changes tmux volunteers. |
 | `io.github.libtmux.control.ControlClient` | `watch(java.lang.String, java.lang.String, java.lang.String)` | MUTATION | Asks tmux to report a format whenever its value changes. |
 | `io.github.libtmux.control.ControlClient` | `unwatch(java.lang.String)` | MUTATION | Stops a watch. |
@@ -283,7 +284,10 @@ Generated from `@Operation`-annotated methods by the operation-catalog Doclet; d
 | `io.github.libtmux.control.ControlClient` | `standardError()` | CAPTURED | The error text captured from this control process, at most 4096 bytes. |
 | `io.github.libtmux.control.ControlClient` | `standardErrorTruncated()` | CAPTURED | Whether {@link #standardError()} stopped before the process finished writing it. |
 | `io.github.libtmux.control.EventSubscription` | `droppedCount()` | CAPTURED | Returns the exact number of events discarded because this subscription's buffer was full. |
+| `io.github.libtmux.control.EventSubscription` | `droppedBytes()` | CAPTURED | Unescaped payload bytes discarded by the event or byte limit; excludes intentional close. |
+| `io.github.libtmux.control.EventSubscription` | `retainedBytes()` | CAPTURED | Unescaped payload bytes still queued, excluding JVM object overhead; zero for unweighted events. |
 | `io.github.libtmux.control.EventSubscription` | `cause()` | CAPTURED | Why this subscription ended, when the control client ended it. |
+| `io.github.libtmux.control.EventSubscription` | `termination()` | CAPTURED | The first recorded terminal classification, empty while the subscription is open. |
 | `io.github.libtmux.control.EventSubscription` | `next()` | WAIT | Waits until the next step arrives or this subscription closes. |
 | `io.github.libtmux.control.EventSubscription` | `next(java.time.Duration)` | WAIT | Waits up to a deadline for the next step. |
 | `io.github.libtmux.control.EventSubscription` | `poll()` | CAPTURED | Returns the next step if one is waiting, without blocking. |
