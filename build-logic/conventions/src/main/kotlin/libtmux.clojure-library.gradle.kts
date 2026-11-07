@@ -1,8 +1,16 @@
+import com.vanniktech.maven.publish.JavaLibrary
+import com.vanniktech.maven.publish.JavadocJar
+import com.vanniktech.maven.publish.SourcesJar
+import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.jvm.toolchain.JavaToolchainService
 
 plugins { id("libtmux.published-library") }
+
+mavenPublishing {
+    configure(JavaLibrary(javadocJar = JavadocJar.None(), sourcesJar = SourcesJar.Sources()))
+}
 
 val clojureLibraries = extensions.getByType<VersionCatalogsExtension>().named("libs")
 val clojureSourceSets = extensions.getByType<SourceSetContainer>()
@@ -168,25 +176,45 @@ val updateClojureApiReference = tasks.register<JavaExec>("updateClojureApiRefere
     outputs.file(clojureApiReference)
 }
 checkClojureApiReference.configure { mustRunAfter(updateClojureApiReference) }
-listOf(checkClojureApiReference to "check", updateClojureApiReference to "write").forEach { (task, mode) ->
+val nativeApiDirectory = layout.buildDirectory.dir("docs/clojure")
+val clojureApiSite = tasks.register<JavaExec>("clojureApiSite") {
+    group = "documentation"
+    description = "Generates native Clojure HTML and its offline source browser."
+    outputs.dir(nativeApiDirectory)
+    doFirst { delete(nativeApiDirectory) }
+}
+listOf(checkClojureApiReference to "check", updateClojureApiReference to "write",
+    clojureApiSite to "html").forEach { (task, mode) ->
     task.configure {
         dependsOn(tasks.named("testClasses"))
         classpath = clojureSourceSets.named("test").get().runtimeClasspath
         mainClass.set("clojure.main")
-        args("-m", "libtmux.internal.api-reference", mode, clojureApiReference.asFile.path)
+        args("-m", "libtmux.internal.api-reference", mode,
+            if (mode == "html") nativeApiDirectory.get().asFile.path else clojureApiReference.asFile.path)
         systemProperty("libtmux.clojure.reference.module", project.name)
         jvmArgs("-XX:+UseSerialGC", "-XX:ActiveProcessorCount=2", "-XX:TieredStopAtLevel=1")
         javaLauncher.set(clojureJavaToolchains.launcherFor {
             languageVersion.set(JavaLanguageVersion.of(clojureJavaVersion))
         })
         inputs.dir("src/main/clojure")
+        inputs.property("documentedNamespaces", provider {
+            systemProperties["libtmux.clojure.main-namespaces"]
+        })
         inputs.file(rootProject.file("gradle/clojure-runner/libtmux/internal/api_reference.clj"))
     }
 }
 
+val clojureApiJar = tasks.register<Jar>("clojureApiJar") {
+    group = "documentation"
+    description = "Packages the native reference as the Maven javadoc classifier."
+    archiveClassifier.set("javadoc")
+    from(clojureApiSite)
+}
+the<PublishingExtension>().publications.withType<MavenPublication>().configureEach { artifact(clojureApiJar) }
+
 tasks.named("check") {
     dependsOn(clojureNamespaceLoad, clojureNamespaceGuardTest, clojureTest, clojureTestInventory,
-        checkClojureApiReference)
+        checkClojureApiReference, clojureApiJar)
 }
 
 tasks.withType<AbstractArchiveTask>().configureEach {

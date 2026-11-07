@@ -34,6 +34,9 @@ The [complete core.async program][program] includes imports, a CLI entry point,
 the optional dependency alias, private-server setup and cleanup. It closes its
 events consumer, reads the terminal outcome, and reuses the borrowed connection.
 
+The `javadoc` classifier contains native reference HTML and an offline source
+browser, generated from this module's var metadata.
+
 [api]: ../docs/guide/clojure-core-async-api.md
 [core-async]: https://clojure.github.io/core.async/
 [guide]: ../docs/guide/clojure.md

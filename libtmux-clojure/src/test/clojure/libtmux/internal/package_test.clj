@@ -2,6 +2,8 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :as test :refer [deftest is]]
+            [libtmux.core :as tmux]
+            [libtmux.internal.api-reference :as reference]
             [libtmux.internal.test-runner :as runner])
   (:import [clojure.lang Compiler DynamicClassLoader]
            [java.io File StringWriter]
@@ -9,6 +11,41 @@
 
 (deftest core-does-not-pull-the-optional-adapter
   (is (nil? (io/resource "clojure/core/async.clj"))))
+
+(deftest native-documentation-contains-functions-and-escaped-source
+  (let [directory (.toFile (Files/createTempDirectory "clj-native-docs-"
+                                                     (make-array java.nio.file.attribute.FileAttribute 0)))
+        properties {"libtmux.clojure.reference.module" "libtmux-clojure"
+                    "libtmux.clojure.main-namespaces" "libtmux.core,libtmux.data,libtmux.async,libtmux.control"}
+        previous (into {} (map (fn [[key _]] [key (System/getProperty key)])) properties)
+        before (meta #'tmux/open!)]
+    (try
+      (doseq [[key value] properties] (System/setProperty key value))
+      (alter-meta! #'tmux/open! assoc :doc "Escapes <script> and & in documentation.")
+      (let [failure (try (reference/-main "html" (str directory)) nil
+                         (catch clojure.lang.ExceptionInfo error error))
+            index (io/file directory "index.html")]
+        (is (nil? failure) (when failure (.getMessage ^Throwable failure)))
+        (is (.isFile index))
+        (when (.isFile index)
+          (let [html (slurp index)]
+            (doseq [function ["libtmux.core/open!" "libtmux.data/matching"
+                              "libtmux.async/submit!" "libtmux.control/next!"]]
+              (is (str/includes? html function)))
+            (is (str/includes? html "&lt;script&gt;"))
+            (is (not (str/includes? html "<script>")))
+            (is (str/includes? html "source/libtmux/core.clj.html"))))
+        (let [source (io/file directory "source/libtmux/core.clj.html")]
+          (is (.isFile source))
+          (when (.isFile source)
+            (is (str/includes? (slurp source) "id=\"L1\""))
+            (is (str/includes? (slurp source) "&lt;")))))
+      (finally
+        (reset-meta! #'tmux/open! before)
+        (doseq [[key value] previous]
+          (if value (System/setProperty key value) (System/clearProperty key)))
+        (doseq [^File file (reverse (file-seq directory))]
+          (Files/deleteIfExists (.toPath file)))))))
 
 (defn- with-test-sources [body]
   (let [directory (.toFile (Files/createTempDirectory "clj-runner-"

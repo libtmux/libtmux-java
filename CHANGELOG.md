@@ -28,6 +28,10 @@ release that first shipped the module.
 
 ### Documented
 
+- **Clojure documentation classifiers contain native API reference HTML.**
+  Both modules include namespace/var documentation and an offline source
+  browser. The staged-release verifier recognizes `.clj` source archives.
+
 - **Clojure has complete common API and capability programs.** Source files
   cover connecting, captured traversal, creation, Java predicate interop, and
   verified input/capture. Native tests execute their CLI entry points against

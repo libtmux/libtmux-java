@@ -65,6 +65,10 @@ $ ./gradlew :libtmux-clojure:updateClojureApiReference \
     :libtmux-clojure-core-async:updateClojureApiReference
 ```
 
+Each Clojure module also generates native HTML and an offline source browser
+for its Maven `javadoc` classifier. Module checks build that archive; the
+reference generator is build tooling and does not ship in the runtime JAR.
+
 ## Decisions
 
 Short ADRs for decisions still in force, each citing the tmux (or JDK, Gradle,
