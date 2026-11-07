@@ -118,7 +118,9 @@ def _probe(binary: pathlib.Path, version: str) -> None:
         raise ValueError(msg)
     env = {k: v for k, v in os.environ.items() if k not in {"TMUX", "TMUX_PANE"}}
     env.update({"SHELL": "/bin/sh", "TERM": "xterm-256color", "LC_ALL": "C.UTF-8"})
-    with tempfile.TemporaryDirectory(prefix="lt-ci-") as temporary:
+    scratch = pathlib.Path("/tmp/libtmux-java-test")
+    scratch.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="ci-cache-", dir=scratch) as temporary:
         socket = pathlib.Path(temporary) / "socket"
         command = [str(binary), "-f", "/dev/null", "-S", str(socket)]
         try:

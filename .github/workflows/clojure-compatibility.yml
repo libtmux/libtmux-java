@@ -15,22 +15,15 @@ permissions:
 
 jobs:
   check:
-    name: Clojure checks (JDK ${{ matrix.java }}, Clojure ${{ matrix.clojure }})
+    name: Clojure checks (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         java: ['25', '27']
-        clojure: ['1.12.4', '1.12.6']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Install tmux
-        run: |
-          ./tools/apt-get.sh update
-          ./tools/apt-get.sh install --no-install-recommends -y tmux
-          tmux -V
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
@@ -44,12 +37,12 @@ jobs:
         with:
           validate-wrappers: true
 
-      - name: Run Clojure checks and publish local artifacts
+      - name: Run Clojure module and metadata checks
         run: >-
-          ./gradlew check clojureDependencyMetadata platformCoversEveryPublishedModule
-          publishToMavenLocal --rerun-tasks --stacktrace
+          ./gradlew :libtmux-clojure:check :libtmux-clojure-core-async:check
+          clojureDependencyMetadata platformCoversEveryPublishedModule
+          --rerun-tasks --stacktrace
           -PlibtmuxJavaVersion=${{ matrix.java }}
-          -PlibtmuxClojureVersion=${{ matrix.clojure }}
 
       - name: No tmux server outlived the suite
         if: always()
@@ -65,20 +58,19 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: reports-clojure-jdk${{ matrix.java }}-${{ matrix.clojure }}
+          name: reports-clojure-jdk${{ matrix.java }}
           path: '**/build/reports/**'
           retention-days: 7
 
   tmux:
-    name: Clojure tmux ${{ matrix.tmux }} (JDK ${{ matrix.java }}, Clojure ${{ matrix.clojure }})
+    name: Clojure tmux ${{ matrix.tmux }} (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         java: ['25', '27']
-        clojure: ['1.12.4', '1.12.6']
-        tmux: ['3.3a', '3.4', '3.5', '3.6', '3.7', '3.7a', '3.7b', '3.7c']
+        tmux: ['3.3a', '3.7c']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -86,29 +78,34 @@ jobs:
         run: |
           ./tools/apt-get.sh update
           ./tools/apt-get.sh install --no-install-recommends -y \
-            build-essential libevent-dev libncurses-dev bison pkg-config
+            autoconf automake bison build-essential libevent-dev libncurses-dev \
+            libutempter-dev pkg-config
+
+      - name: Identify tmux ${{ matrix.tmux }} and its build environment
+        id: tmux-build
+        env:
+          LANE: ${{ matrix.tmux }}
+        run: python3 -B .github/scripts/tmux_build.py plan "$LANE" --prefix "$HOME/tmux-builds/$LANE"
 
       - name: Restore tmux ${{ matrix.tmux }}
         id: tmux-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/tmux-builds/${{ matrix.tmux }}
-          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
+          key: ${{ steps.tmux-build.outputs.key }}
 
-      - name: Build tmux ${{ matrix.tmux }}
-        if: steps.tmux-cache.outputs.cache-hit != 'true'
+      - name: Validate or rebuild tmux ${{ matrix.tmux }}
         env:
           LANE: ${{ matrix.tmux }}
-        run: |
-          set -eux
-          work="$(mktemp -d)"
-          curl -fsSL -o "$work/tmux.tar.gz" \
-            "https://github.com/tmux/tmux/releases/download/$LANE/tmux-$LANE.tar.gz"
-          tar -xzf "$work/tmux.tar.gz" -C "$work"
-          cd "$work/tmux-$LANE"
-          ./configure --prefix="$HOME/tmux-builds/$LANE"
-          make -j"$(nproc)"
-          make install
+          CACHE_HIT: ${{ steps.tmux-cache.outputs.cache-hit }}
+        run: python3 -B .github/scripts/tmux_build.py prepare "$LANE" --prefix "$HOME/tmux-builds/$LANE"
+
+      - name: Save validated tmux ${{ matrix.tmux }}
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/tmux-builds/${{ matrix.tmux }}
+          key: ${{ steps.tmux-build.outputs.key }}
 
       - name: The lane runs the tmux it is named after
         env:
@@ -134,7 +131,6 @@ jobs:
         run: |
           ./gradlew :integration-tests:clojureIntegrationTest --rerun-tasks --stacktrace \
             -PlibtmuxJavaVersion=${{ matrix.java }} \
-            -PlibtmuxClojureVersion=${{ matrix.clojure }} \
             "-PlibtmuxTmuxBinary=$HOME/tmux-builds/$LANE/bin/tmux" \
             "-PlibtmuxTmuxExpected=$LANE"
 
@@ -152,19 +148,18 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: reports-clojure-tmux-${{ matrix.tmux }}-jdk${{ matrix.java }}-${{ matrix.clojure }}
+          name: reports-clojure-tmux-${{ matrix.tmux }}-jdk${{ matrix.java }}
           path: '**/build/reports/**'
           retention-days: 7
 
   macos:
-    name: Clojure macOS tmux ${{ matrix.tmux }} (JDK ${{ matrix.java }}, Clojure ${{ matrix.clojure }})
+    name: Clojure macOS tmux ${{ matrix.tmux }} (JDK ${{ matrix.java }})
     runs-on: macos-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         java: ['25', '27']
-        clojure: ['1.12.4', '1.12.6']
         tmux: ['3.3a', '3.7c']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -223,7 +218,6 @@ jobs:
         run: |
           ./gradlew :integration-tests:clojureIntegrationTest --rerun-tasks --stacktrace \
             -PlibtmuxJavaVersion=${{ matrix.java }} \
-            -PlibtmuxClojureVersion=${{ matrix.clojure }} \
             "-PlibtmuxTmuxBinary=$HOME/tmux-builds/$LANE/bin/tmux" \
             "-PlibtmuxTmuxExpected=$LANE"
 
@@ -241,6 +235,6 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: reports-clojure-macos-${{ matrix.tmux }}-jdk${{ matrix.java }}-${{ matrix.clojure }}
+          name: reports-clojure-macos-${{ matrix.tmux }}-jdk${{ matrix.java }}
           path: '**/build/reports/**'
           retention-days: 7

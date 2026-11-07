@@ -1,5 +1,5 @@
 {:paths ["libtmux-clojure/src/main/clojure"]
- :deps {org.clojure/clojure {:mvn/version "1.12.4"}
+ :deps {org.clojure/clojure {:mvn/version "1.12.6"}
         io.github.libtmux/libtmux {:mvn/version "0.1.2-SNAPSHOT"}}
  :aliases
  {:test
