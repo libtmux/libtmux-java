@@ -249,8 +249,8 @@ final class SplitIntegrationTest {
         };
         try (Server observed = Server.using(server.config(), transport)) {
             Pane original = onlyPane(observed);
-            TargetGoneException raced = assertThrows(
-                    TargetGoneException.class, () -> original.split(s -> s.running("/bin/cat")));
+            TargetGoneException raced =
+                    assertThrows(TargetGoneException.class, () -> original.split(s -> s.running("/bin/cat")));
 
             assertEquals("the pane just created is already gone", raced.getMessage());
         }
