@@ -38,6 +38,6 @@ The `javadoc` classifier contains native reference HTML and an offline source
 browser, generated from this module's var metadata.
 
 [api]: ../docs/guide/clojure-core-async-api.md
-[core-async]: https://clojure.github.io/core.async/
+[core-async]: https://clojure.github.io/core.async/clojure.core.async.html
 [guide]: ../docs/guide/clojure.md
 [program]: ../examples/api/README.md#clojure-programs
