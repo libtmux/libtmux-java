@@ -280,6 +280,10 @@ blocking observation work in a core.async `go` block. Add the optional
 `io.github.libtmux/libtmux-clojure-core-async` dependency only for
 `libtmux.core-async`.
 
+Stopping the channel adapter preserves the owned subscription's final outcome
+under `:upstream/terminal`, including loss, cause, and trailing partial text.
+Its `:adapter/events` loss counter stays separate from upstream counters.
+
 An empty slow stream reports a timeout without becoming terminal. A later event
 remains readable from the same owned stream.
 
