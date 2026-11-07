@@ -3,9 +3,9 @@
   Control needs tmux 3.7 or newer; an older daemon is refused before
   any client is attached, with :tmux/error :tmux/unsupported-feature."
   (:require [libtmux.core :as tmux])
-  (:import [io.github.libtmux Session Server]
+  (:import [io.github.libtmux PaneId Session Server]
            [io.github.libtmux.control ControlClient ControlReply Delivery$Event Delivery$Gap
-            EventSubscription PaneOutput]
+            EventSubscription EventSubscription$Termination PaneOutput PaneOutputDecoder]
            [io.github.libtmux.exception DispatchException DispatchException$TimedOut
             LibTmuxException UnsupportedFeatureException]
            [java.lang AutoCloseable]
@@ -106,42 +106,65 @@
 
 (defn subscribe!
   "Creates a closeable output subscription borrowing its connection.
-  :encoding is :bytes (caller-owned byte arrays) or :utf-8 (text decoded per
-  pane by the Java client, so a character cut between two chunks arrives whole
-  and a byte that is not UTF-8 is written \\xHH). :capacity bounds queued
-  events; when full the oldest is dropped and the next read is a :gap.
+  :encoding is :bytes (caller-owned byte arrays) or :utf-8 (incremental text
+  per pane, reset after this subscription's gaps; malformed bytes use \\xHH).
+  :decoder-capacity bounds partial-pane state (default 1024); an eviction is
+  reported with :decoder/reset :capacity and a cumulative :decoder/resets.
+  :capacity bounds queued events; :max-bytes bounds their unescaped payload
+  (default 16 MiB).
+  Oldest events are dropped until both bounds fit; an oversized event drops
+  the queued prefix and itself. The next read is a :gap with byte/event loss.
   Readers compete; create separate subscriptions for independent fan-out."
   ([connection] (subscribe! connection {}))
   ([connection options]
    (when-not (and (instance? Connection connection) (map? options)
-                  (every? #{:encoding :capacity} (keys options)))
+                  (every? #{:encoding :capacity :max-bytes :decoder-capacity} (keys options)))
      (invalid! :control/subscribe))
-   (let [options (merge {:encoding :bytes :capacity 256} options)
-         {:keys [encoding capacity]} options]
-     (when-not (and (#{:bytes :utf-8} encoding) (positive? capacity Integer/MAX_VALUE))
+   (let [options (merge {:encoding :bytes :capacity 256 :max-bytes 16777216
+                         :decoder-capacity 1024} options)
+         {:keys [encoding capacity max-bytes decoder-capacity]} options]
+     (when-not (and (#{:bytes :utf-8} encoding) (positive? capacity Integer/MAX_VALUE)
+                    (positive? max-bytes Long/MAX_VALUE)
+                    (positive? decoder-capacity Integer/MAX_VALUE))
        (invalid! :control/subscribe))
      (perform! :control/subscribe
                #(OutputStream.
-                 (.subscribeOutput ^ControlClient (.-client ^Connection connection) (int capacity))
+                 (.subscribeOutput ^ControlClient (.-client ^Connection connection) (int capacity) (long max-bytes))
                  (.-identity ^Connection connection) options
-                 (atom {:sequence 0}) (ReentrantLock.))))))
+                 (atom (cond-> {:sequence 0}
+                         (= encoding :utf-8) (assoc :decoder (PaneOutputDecoder. (int decoder-capacity)))))
+                 (ReentrantLock.))))))
 
 (defn- loss-data [^EventSubscription subscription]
-  {:upstream/events (.droppedCount subscription)})
+  {:upstream/events (.droppedCount subscription)
+   :upstream/bytes (.droppedBytes subscription)})
 
 (defn terminal
   "Returns the single recorded stream outcome, or nil until a reader drains it.
-  :reason is :closed after an intentional close, or :ended with the original
-  :cause when the control client ended; the cause may contain sensitive
-  information."
+  :reason is :closed, :completed, :control-exit, :transport-failure,
+  :protocol-failure, or :unknown. A control exit does not prove daemon death;
+  :cause preserves the original exception and may contain sensitive content.
+  Text streams include :trailing-text keyed by pane ID for
+  incomplete final bytes rendered as \\xHH."
   [^OutputStream stream]
   (:terminal @(.-state stream)))
 
 (defn- end! [^OutputStream stream]
   (let [^EventSubscription subscription (.-subscription stream)
-        cause (.orElse (.cause subscription) nil)
-        outcome (cond-> {:reason (if cause :ended :closed)
+        ^EventSubscription$Termination ended (.orElseThrow (.termination subscription))
+        cause (.orElse (.cause ended) nil)
+        ^PaneOutputDecoder decoder (:decoder @(.-state stream))
+        outcome (cond-> {:reason (case (.name (.reason ended))
+                                  "CLOSED" :closed "COMPLETED" :completed
+                                  "CONTROL_EXIT" :control-exit
+                                  "TRANSPORT_FAILURE" :transport-failure
+                                  "PROTOCOL_FAILURE" :protocol-failure
+                                  :unknown)
                          :loss (loss-data subscription)}
+                  decoder (assoc :trailing-text
+                                 (into {} (map (fn [[pane text]] [(.value ^PaneId pane) text]))
+                                       (.finish decoder))
+                                 :decoder/resets (.resetCount decoder))
                   cause (assoc :cause cause))]
     (:terminal (swap! (.-state stream)
                       #(if (:terminal %) % (assoc % :terminal outcome))))))
@@ -154,20 +177,27 @@
 
 (defn- delivery-data [^OutputStream stream delivery]
   (let [state (.-state stream)
-        ^EventSubscription subscription (.-subscription stream)]
+        ^EventSubscription subscription (.-subscription stream)
+        ^PaneOutputDecoder decoder (:decoder @state)]
     (if (instance? Delivery$Gap delivery)
-      {:stream/status :gap
-       :gap/events (.missed ^Delivery$Gap delivery)
-       :loss (loss-data subscription)}
+      (do
+        (when decoder (.reset decoder))
+        (cond-> {:stream/status :gap
+                 :gap/events (.missed ^Delivery$Gap delivery)
+                 :loss (loss-data subscription)}
+          decoder (assoc :decoder/reset :gap :decoder/resets (.resetCount decoder))))
       (let [^PaneOutput output (.value ^Delivery$Event delivery)
-            utf-8? (= :utf-8 (:encoding (.-options stream)))
+            before (when decoder (.resetCount decoder))
+            payload (if decoder (.decode decoder output) (bytes-of output))
             current (swap! state update :sequence inc)]
-        {:stream/status :event
-         :event/sequence (:sequence current)
-         :tmux/identity (assoc (.-identity stream) :tmux/kind :pane :tmux/id (.value (.pane output)))
-         :pane/id (.value (.pane output))
-         (if utf-8? :output/text :output/bytes) (if utf-8? (.data output) (bytes-of output))
-         :loss (loss-data subscription)}))))
+        (cond-> {:stream/status :event
+                 :event/sequence (:sequence current)
+                 :tmux/identity (assoc (.-identity stream) :tmux/kind :pane :tmux/id (.value (.pane output)))
+                 :pane/id (.value (.pane output))
+                 (if decoder :output/text :output/bytes) payload
+                 :loss (loss-data subscription)}
+          decoder (assoc :decoder/resets (.resetCount decoder))
+          (and decoder (> (.resetCount decoder) before)) (assoc :decoder/reset :capacity))))))
 
 (defn next!
   "Reads one event, gap, timeout, or terminal map; never uses nil for termination.

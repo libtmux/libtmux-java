@@ -14,6 +14,9 @@
 
 (defn- shell-quote [s] (str "'" (string/replace (str s) "'" "'\\''") "'"))
 
+(defn- quiet-initial-pane! [server]
+  (tmux/raw! server ["respawn-pane" "-k" "-t" (:pane/id (first (tmux/panes! server))) "exec cat"]))
+
 (defn- pane-event! [stream pane]
   (let [deadline (+ (System/nanoTime) (.toNanos limit))]
     (loop []
@@ -45,7 +48,9 @@
 (deftest stream-preserves-split-utf8-bytes-and-text
   (gate/with-control-server
    (fn [{:keys [server]}]
+     (quiet-initial-pane! server)
      (with-open [^AutoCloseable connection (control/attach! (:tmux/ref (first (tmux/sessions! server))))
+                 ^AutoCloseable gapped (control/subscribe! connection {:encoding :utf-8 :capacity 1})
                  ^AutoCloseable raw (control/subscribe! connection {:capacity 32})
                  ^AutoCloseable text (control/subscribe! connection {:encoding :utf-8 :capacity 32})]
        (let [reply (control/send! connection
@@ -54,8 +59,14 @@
              pane (first (:reply/lines reply))]
          (is (= "READY" (String. ^bytes (:output/bytes (pane-event! raw pane)) "UTF-8")))
          (is (= "READY" (:output/text (pane-event! text pane))))
+         (is (= "READY" (:output/text (pane-event! gapped pane))))
          (control/send! connection ["send-keys" "-t" pane "Enter"])
          (is (= [195] (mapv #(bit-and 255 %) (:output/bytes (pane-event! raw pane)))))
+         (is (= "" (:output/text (pane-event! gapped pane))))
+         (let [other (first (:reply/lines
+                            (control/send! connection ["new-window" "-P" "-F" "#{pane_id}"
+                                                       "printf x; read stop"])))]
+           (is (= "x" (String. ^bytes (:output/bytes (pane-event! raw other)) "UTF-8"))))
          (control/send! connection ["send-keys" "-t" pane "Enter"])
          (is (= [169 255] (mapv #(bit-and 255 %) (:output/bytes (pane-event! raw pane)))))
          ;; The text subscription decodes per pane: the cut character is withheld, then arrives
@@ -64,6 +75,11 @@
          (let [event (pane-event! text pane)]
            (is (= "é\\xff" (:output/text event)))
            (is (= pane (get-in event [:tmux/identity :tmux/id]))))
+         (let [gap (control/next! gapped limit)
+               event (pane-event! gapped pane)]
+           (is (= :gap (:stream/status gap)))
+           (is (= :gap (:decoder/reset gap)))
+           (is (= "\\xa9\\xff" (:output/text event))))
          (control/close! text)
          (is (= :closed (get-in (control/next! text limit) [:stream/terminal :reason])))
          (is (= :complete (:reply/status (control/send! connection ["display-message" "-p" "alive"])))))))))
@@ -93,9 +109,10 @@
 (deftest stalled-subscription-reports-a-gap-and-keeps-the-newest-events
   (gate/with-control-server
    (fn [{:keys [server socket binary]}]
+     (quiet-initial-pane! server)
      (with-open [^AutoCloseable connection (control/attach! (:tmux/ref (first (tmux/sessions! server))))
-                 ^AutoCloseable anchor (control/subscribe! connection {:capacity 16})
-                 ^AutoCloseable stalled (control/subscribe! connection {:capacity 2})]
+                 ^AutoCloseable stalled (control/subscribe! connection {:capacity 2 :max-bytes 4})
+                 ^AutoCloseable anchor (control/subscribe! connection {:capacity 16})]
        (let [tmux-command (str (shell-quote binary) " -S " (shell-quote socket))
              script (str "stty -echo; printf aa; " tmux-command " wait-for one; "
                          "printf bbb; " tmux-command " wait-for two; "
@@ -103,30 +120,18 @@
                          "printf 12345; " tmux-command " wait-for four; printf z; read stop")
              pane (first (:reply/lines
                           (control/send! connection ["new-window" "-P" "-F" "#{pane_id}" script])))]
-         ;; Reading the anchor after every release proves each push reached the
-         ;; control reader before the next one can be emitted.
+         ;; The anchor is offered last, so reading it fences the stalled buffer.
          (is (= "aa" (String. ^bytes (:output/bytes (pane-event! anchor pane)) "UTF-8")))
          (doseq [[gate expected] [["one" "bbb"] ["two" "cccc"]
                                   ["three" "12345"] ["four" "z"]]]
            (control/send! connection ["wait-for" "-S" gate])
            (is (= expected (String. ^bytes (:output/bytes (pane-event! anchor pane)) "UTF-8"))))
-         ;; The stalled reader missed the oldest events: first the gap, then what remains.
          (let [gap (control/next! stalled limit)]
            (is (= :gap (:stream/status gap)))
-           (is (pos? (:gap/events gap))))
-         ;; What the buffer kept is the newest events: drain it, and the last is the final write.
-         (let [drained (loop [out []]
-                         (let [event (control/next! stalled (Duration/ofMillis 100))]
-                           (if (= :event (:stream/status event))
-                             (recur (conj out event))
-                             out)))
-               text (mapv #(String. ^bytes (:output/bytes %) "UTF-8")
-                          (filter #(= pane (:pane/id %)) drained))]
-           ;; The timed drain can observe output from another pane that arrives
-           ;; after the gap. Capacity bounds the retained target-pane events,
-           ;; not every later event the consumer receives while draining.
-           (is (<= (count text) 2))
-           (is (= "z" (last text)) "the newest event is kept")))))))
+           (is (= 4 (:gap/events gap)))
+           (is (= {:upstream/events 4 :upstream/bytes 14} (:loss gap))))
+         (is (= "z" (String. ^bytes (:output/bytes (pane-event! stalled pane)) "UTF-8")))
+         (is (= :timeout (:stream/status (control/next! stalled Duration/ZERO)))))))))
 
 (deftest pane-death-does-not-end-session-output-stream
   (gate/with-control-server
@@ -171,7 +176,7 @@
          (tmux/raw! server ["kill-server"])
          (is (= "buffered" (String. ^bytes (:output/bytes (pane-event! buffered pane)) "UTF-8")))
          (let [terminal (:stream/terminal (control/next! buffered limit))]
-           (is (= :ended (:reason terminal)))
+           (is (= :control-exit (:reason terminal)))
            (is (some? (:cause terminal)))
            (is (= terminal (control/terminal buffered)))))))))
 
@@ -259,7 +264,7 @@
                (is (apply < 0 (map :event/sequence (:events reader)))))
              (is (= (:terminal (first finished)) (:terminal (second finished))))
              (is (= (control/terminal shared) (:terminal (first finished))))
-             (is (= :ended (:reason (:terminal (first finished))))))
+             (is (= :control-exit (:reason (:terminal (first finished))))))
            (finally
              (.countDown start)
              (control/close! shared)
