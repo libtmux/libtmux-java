@@ -13,7 +13,12 @@ import io.github.libtmux.TmuxVersion;
 import io.github.libtmux.Window;
 import io.github.libtmux.exception.TargetGoneException;
 import io.github.libtmux.exception.UnsupportedFeatureException;
+import io.github.libtmux.format.RowFormat;
 import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.transport.CommandRequest;
+import io.github.libtmux.transport.CommandResult;
+import io.github.libtmux.transport.ProcessTransport;
+import io.github.libtmux.transport.TmuxTransport;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -216,21 +221,39 @@ final class SplitIntegrationTest {
         }
     }
 
-    /**
-     * A command with no {@link SplitSpec.Builder#keepOnExit} that exits fast enough races
-     * the read-back {@link Pane#split} uses to confirm the new pane. tmux still makes the pane and
-     * runs the command in it — this pins the documented failure ({@link
-     * SplitSpec.Builder#running}) rather than a behaviour change, so a future edit that started
-     * swallowing the race instead of reporting it would be caught here.
-     */
+    /** The creating reply alone does not prove the pane survives {@link Pane#split}'s confirming read. */
     @Test
-    void aFastExitingCommandWithNoRemainOnExitCanLoseTheReadBackRace(Server server) {
-        Pane original = onlyPane(server);
+    void aPaneRemovedBeforeReadBackReportsTheLostTarget(Server server) {
+        TmuxTransport transport = new TmuxTransport() {
+            private final ProcessTransport delegate = new ProcessTransport();
 
-        TargetGoneException raced = assertThrows(
-                TargetGoneException.class, () -> original.split(s -> s.running("sh", "-c", "echo dying; exit 3")));
+            @Override
+            public CommandResult execute(CommandRequest request) {
+                CommandResult result = delegate.execute(request);
+                if (request.commands().stream().flatMap(List::stream).anyMatch(word -> word.contains("split-window"))) {
+                    String created = result.stdout().stream()
+                            .filter(line -> line.startsWith("%"))
+                            .map(line -> RowFormat.of("pane_id").split(line).getFirst())
+                            .findFirst()
+                            .orElseThrow();
+                    // Remove the reported pane before the library can read it back.
+                    assertTrue(server.cmd(List.of("kill-pane", "-t", created)).succeeded());
+                }
+                return result;
+            }
 
-        assertEquals("the pane just created is already gone", raced.getMessage());
+            @Override
+            public void close() {
+                delegate.close();
+            }
+        };
+        try (Server observed = Server.using(server.config(), transport)) {
+            Pane original = onlyPane(observed);
+            TargetGoneException raced = assertThrows(
+                    TargetGoneException.class, () -> original.split(s -> s.running("/bin/cat")));
+
+            assertEquals("the pane just created is already gone", raced.getMessage());
+        }
     }
 
     @Test
