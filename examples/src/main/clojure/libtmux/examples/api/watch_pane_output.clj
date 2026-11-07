@@ -19,8 +19,9 @@
         (try
           (with-open [^AutoCloseable runtime (async/runtime! {:max-running 2 :queue-limit 2})
                       ^AutoCloseable connection (control/attach! (:tmux/ref session) (Duration/ofMillis 900))
+                      ;; One terminal line can arrive as many separate output events.
                       ^AutoCloseable stream (control/subscribe! connection
-                                                               {:encoding :utf-8 :capacity 8 :max-bytes 8192})]
+                                                               {:encoding :utf-8 :max-bytes 8192})]
             (let [observed
                   (async/submit! runtime {:kind :wait :timeout-ms 900}
                                  #(loop [suffix ""]

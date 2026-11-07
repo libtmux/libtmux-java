@@ -19,9 +19,9 @@
             marker "channel-ready"]
         (try
           (with-open [^AutoCloseable connection (control/attach! (:tmux/ref session) (Duration/ofMillis 900))]
+            ;; Retain the default upstream bound for fragmented terminal output.
             (with-open [^AutoCloseable owner (adapter/observe! connection
-                                                              {:event-capacity 1 :upstream-capacity 8
-                                                               :encoding :utf-8})]
+                                                              {:event-capacity 1 :encoding :utf-8})]
               (let [deadline (channel/timeout 900)]
                 (tm/send-literal! (:tmux/ref pane) "printf 'channel-%s\\n' ready")
                 (tm/send-keys! (:tmux/ref pane) ["Enter"])
