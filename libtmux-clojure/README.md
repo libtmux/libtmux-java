@@ -7,18 +7,9 @@ leaves ordinary Clojure collection processing local and unconstrained.
 
 ## Install
 
-The Clojure façade is not in a released `libtmux` artifact yet. Its Maven
-coordinate will be `io.github.libtmux:libtmux-clojure`. Do not depend on the
-former `0.0.1-alpha.*` coordinates: they do not describe this API.
-
-The first release will use the normal Clojure CLI shape and an exact version:
-
-```edn
-{:deps {io.github.libtmux/libtmux-clojure
-        {:mvn/version "<exact-release>"}}}
-```
-
-Until then, build and verify it from this checkout:
+The Clojure façade has not shipped. Its Maven coordinate is
+`io.github.libtmux:libtmux-clojure`; there is no public release to install yet.
+Build and verify it from this checkout:
 
 ```console
 $ ./gradlew :libtmux-clojure:check :integration-tests:clojureIntegrationTest
@@ -55,6 +46,17 @@ walks below read that graph; they do not issue another tmux command.
 Use `with-open` for every client, runtime, control connection, and
 subscription that this program owns. Closing a `Server` releases client
 resources; it does not kill the tmux server.
+
+## Namespaces
+
+- [`libtmux.core`][core-source] — acquisition, effects, options, and command
+  groups.
+- [`libtmux.data`][data-source] — captured traversal, projections, identity,
+  cardinality, and Java predicate adapters.
+- [`libtmux.async`][async-source] — bounded tasks, deadlines, cancellation, and
+  CompletionStage interop.
+- [`libtmux.control`][control-source] — explicit control replies and owned
+  output subscriptions.
 
 ## What it leaves out
 
@@ -103,8 +105,12 @@ tmux server in `:integration-tests:clojureIntegrationTest`; no snippet is
 illustrative pseudocode.
 
 [benchmarks]: ../benchmarks/README.md
+[async-source]: src/main/clojure/libtmux/async.clj
 [contributing]: ../.github/CONTRIBUTING.md
+[control-source]: src/main/clojure/libtmux/control.clj
+[core-source]: src/main/clojure/libtmux/core.clj
 [core-async]: ../libtmux-clojure-core-async/README.md
+[data-source]: src/main/clojure/libtmux/data.clj
 [guide]: ../docs/guide/clojure.md
 [guide-streaming]: ../docs/guide/clojure.md
 [java-core]: ../libtmux/README.md
