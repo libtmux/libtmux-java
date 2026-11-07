@@ -116,6 +116,10 @@ Every Clojure snippet in this README and the guide runs against an isolated
 tmux server in `:integration-tests:clojureIntegrationTest`; no snippet is
 illustrative pseudocode.
 
+The module's `javadoc` classifier contains native Clojure reference HTML and
+an offline source browser. Build it with `:libtmux-clojure:clojureApiJar`;
+the generated site starts at `build/docs/clojure/index.html` in this module.
+
 [benchmarks]: ../benchmarks/README.md
 [api]: ../docs/guide/clojure-api.md
 [async-api]: ../docs/guide/clojure-api.md#libtmuxasync

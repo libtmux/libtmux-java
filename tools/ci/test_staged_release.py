@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -121,6 +122,25 @@ class StagedReleaseTest(unittest.TestCase):
         """The fixture is clean, so each failure below is the break's."""
         done = self.verify()
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
+    def test_clojure_source_archives_are_supported(self) -> None:
+        """A source-only Clojure module needs no Java stub in its sources jar."""
+        with patch.dict(ARTIFACTS, {"libtmux-clojure": "libtmux-clojure"}):
+            self.stage()
+            source = (self.repo / "io/github/libtmux/libtmux-clojure" / VERSION
+                      / f"libtmux-clojure-{VERSION}-sources.jar")
+            self.jar(source, {"libtmux/core.clj": "(ns libtmux.core)"})
+            done = self.verify()
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
+    def test_a_source_archive_with_only_resources_is_refused(self) -> None:
+        """Accepting Clojure source must not make an empty classifier pass."""
+        source = (self.repo / "io/github/libtmux/libtmux" / VERSION
+                  / f"libtmux-{VERSION}-sources.jar")
+        self.jar(source, {"README.md": "No source."})
+        done = self.verify()
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn("libtmux: sources jar holds no source", done.stdout)
 
     def test_a_jar_without_its_changelog_is_refused(self) -> None:
         """Dropping the file from a Scala jar names the module, not the artifact id."""

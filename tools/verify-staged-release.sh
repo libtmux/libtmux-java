@@ -62,7 +62,7 @@ for artifact in $artifacts; do
         fi
     fi
     if [ -f "$dir/$artifact-$version-sources.jar" ]; then
-        grep -qE '\.(java|kt|scala)$' <<< "$(unzip -Z1 "$dir/$artifact-$version-sources.jar")" \
+        grep -qE '\.(java|kt|scala|clj)$' <<< "$(unzip -Z1 "$dir/$artifact-$version-sources.jar")" \
             || problem "$artifact: sources jar holds no source"
     fi
 done
