@@ -30,6 +30,11 @@ including terminal outcomes and shutdown. See this module's
 [native API reference][api] for function arities and ownership contracts,
 and its [changelog](CHANGELOG.md) for release history.
 
+The [complete core.async program][program] includes imports, a CLI entry point,
+the optional dependency alias, private-server setup and cleanup. It closes its
+events consumer, reads the terminal outcome, and reuses the borrowed connection.
+
 [api]: ../docs/guide/clojure-core-async-api.md
 [core-async]: https://clojure.github.io/core.async/
 [guide]: ../docs/guide/clojure.md
+[program]: ../examples/api/README.md#clojure-programs

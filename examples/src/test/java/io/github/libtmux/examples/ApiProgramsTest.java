@@ -55,6 +55,12 @@ final class ApiProgramsTest {
                     "Capture")) {
                 expected.add(variant + "-" + program);
             }
+            if (variant.equals("clojure")) {
+                for (String program : Set.of(
+                        "Workspace", "CaptureConcurrently", "WatchPaneOutput", "RunACommand", "ObserveWithAsync")) {
+                    expected.add(variant + "-" + program);
+                }
+            }
         }
         Set<String> actual = new HashSet<>();
         Set<String> paths = new HashSet<>();

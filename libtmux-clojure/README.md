@@ -64,7 +64,9 @@ The [Clojure API programs][programs] include their imports, entry points,
 consumer dependencies, and private-server launcher. Start with captured
 session/window/pane traversal, then compare native and Java predicates, create
 a detached window, or send literal input and verify its captured output.
-CI executes every program and checks its displayed result.
+The capability programs add layout/movement, bounded capture and cancellation,
+control output, and Java command exit results. CI executes every program and
+checks its displayed result.
 
 ## What it leaves out
 

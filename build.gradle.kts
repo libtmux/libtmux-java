@@ -125,6 +125,7 @@ val clojureDependencyMetadata =
                 mapOf(
                     "org.clojure/clojure" to clojureVersion,
                     "io.github.libtmux/libtmux-clojure" to developmentVersion,
+                    "io.github.libtmux/libtmux-clojure-core-async" to developmentVersion,
                 )
             listOf(depsEdn to expected, exampleDepsEdn to examplesExpected).forEach { (source, baseline) ->
                 val declared = source.asFile.readText()

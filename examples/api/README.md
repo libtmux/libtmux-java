@@ -97,9 +97,30 @@ setup and teardown. No program depends on a repository test helper.
 | Compare native and Java filters | [query.clj][query] |
 | Send input and verify capture | [capture.clj][capture] |
 
+The capability programs use the same fixture and consumer:
+
+| Task | Complete program |
+| --- | --- |
+| Build a layout and move a window | [workspace.clj][workspace] |
+| Bound capture work and cancel a wait | [capture_concurrently.clj][concurrent] |
+| Observe output on an owned worker | [watch_pane_output.clj][watch] |
+| Read a command's actual exit status | [run_a_command.clj][run] |
+| Stop a core.async consumer | [observe_with_async.clj][observe] |
+
+Workspace saves tmux's serialized layout after a split, reapplies it, renames
+the window, and moves it to another session. It acquires the new placement
+after movement; the earlier observation retains its original placement.
+
+Control programs require tmux 3.7+. On older supported tmux they check refusal
+before client attachment and print `requires tmux 3.7+`. WatchPaneOutput runs
+observation on an owned wait worker; gaps or termination fail the pending
+marker read. RunACommand calls Java `Pane.run` directly and checks completion
+before reading an exit status. Keep that blocking Java call outside STM and
+`go` blocks.
+
 The Clojure package has not shipped. Rehearse a consumer from this checkout
-with JDK 25+, [Clojure CLI][cli], and tmux on PATH. Prepare a separate consumer
-folder:
+with JDK 25+, [Clojure CLI][cli], and tmux on PATH. Prepare a separate
+consumer folder:
 
 ```console
 $ mkdir -p build/clojure-api-consumer/src/main && \
@@ -119,16 +140,37 @@ $ ./gradlew :libtmux:publishToMavenLocal \
 Run a full program through the private-server launcher:
 
 ```console
-$ cd build/clojure-api-consumer && \
+$ (cd build/clojure-api-consumer && \
     sh run.sh clojure \
       -M \
-      -m libtmux.examples.api.capture
+      -m libtmux.examples.api.capture)
 ```
 
 It prints `api-keys` and `api-line` on separate lines after verifying actual
 shell output. The consumer classpath uses the installed library JARs and its
 copied program sources. It does not use this checkout's library source paths.
 Choose another namespace from the table to run a different task.
+
+The core.async program uses the optional artifact. Install it into the same
+isolated repository:
+
+```console
+$ ./gradlew :libtmux-clojure-core-async:publishToMavenLocal \
+    -Dmaven.repo.local="$PWD/build/clojure-api-consumer/m2"
+```
+
+From the repository root, select the consumer's optional dependency alias:
+
+```console
+$ (cd build/clojure-api-consumer && \
+    sh run.sh clojure \
+      -M:core-async \
+      -m libtmux.examples.api.observe-with-async)
+```
+
+It closes the events consumer, waits for cleanup, and verifies that the
+borrowed control connection still accepts requests. Blocking channel reads run
+on the caller; the adapter owns its observation worker. No I/O runs in `go`.
 
 The native integration suite discovers every Clojure program in the manifest,
 checks its public API targets, loads it without reflection warnings, and
@@ -142,9 +184,14 @@ $ ./gradlew :integration-tests:clojureIntegrationTest \
 [capture]: ../src/main/clojure/libtmux/examples/api/capture.clj
 [cli]: https://clojure.org/guides/install_clojure
 [connect]: ../src/main/clojure/libtmux/examples/api/connect.clj
+[concurrent]: ../src/main/clojure/libtmux/examples/api/capture_concurrently.clj
 [new-session]: ../src/main/clojure/libtmux/examples/api/new_session.clj
 [new-window]: ../src/main/clojure/libtmux/examples/api/new_window.clj
+[observe]: ../src/main/clojure/libtmux/examples/api/observe_with_async.clj
 [panes]: ../src/main/clojure/libtmux/examples/api/list_panes.clj
 [query]: ../src/main/clojure/libtmux/examples/api/query.clj
+[run]: ../src/main/clojure/libtmux/examples/api/run_a_command.clj
 [sessions]: ../src/main/clojure/libtmux/examples/api/list_sessions.clj
 [windows]: ../src/main/clojure/libtmux/examples/api/list_windows.clj
+[watch]: ../src/main/clojure/libtmux/examples/api/watch_pane_output.clj
+[workspace]: ../src/main/clojure/libtmux/examples/api/workspace.clj
