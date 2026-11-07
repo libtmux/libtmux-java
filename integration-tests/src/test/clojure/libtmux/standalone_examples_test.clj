@@ -86,6 +86,7 @@
         command ["sh" (str (.resolve (root) "examples/api/run.sh"))
                  (str (System/getProperty "java.home") "/bin/java")
                  "-Xmx384m" "-XX:+UseSerialGC" "-XX:ActiveProcessorCount=2" "-XX:TieredStopAtLevel=1"
+                 "-Dclojure.main.report=stderr"
                  "-cp" classpath "clojure.main" "-m" mainNamespace]
         builder (doto (ProcessBuilder. ^java.util.List command)
                   (.directory (.toFile (root)))
