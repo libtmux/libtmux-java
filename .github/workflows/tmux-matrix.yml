@@ -111,63 +111,88 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      # A release is keyed by its version alone: a released tarball does not change, so a hit is the
-      # same binary the miss would have built. Anything else is keyed by the commit it resolves to,
-      # so master is rebuilt when upstream moves and not before.
-      - name: Resolve tmux ${{ matrix.tmux }}
-        id: ref
-        env:
-          SOURCE: ${{ matrix.source }}
-          TMUX_REF: ${{ matrix.tmux }}
-        run: |
-          python3 -B -m tools.ci.tmux_ref resolve --source "$SOURCE" "$TMUX_REF" \
-            --github-output "$GITHUB_OUTPUT"
-
+      # The runner's own libraries decide whether a built tmux starts: a build restored from another
+      # image failed on `NCURSES6_TINFO_6.4.current`. Every dependency the script records in a
+      # build's identity is installed before it plans, so a hit and a miss see the same packages.
       - name: Build dependencies
         run: |
           ./tools/apt-get.sh update
           ./tools/apt-get.sh install --no-install-recommends -y \
-            build-essential libevent-dev libncurses-dev bison pkg-config
+            autoconf automake bison build-essential libevent-dev libncurses-dev \
+            libutempter-dev pkg-config
 
-      # Only a build from a commit needs autoconf and automake, to generate the files a tarball
-      # ships pre-built.
-      - name: Build dependencies for a git checkout
-        if: matrix.source == 'git'
-        run: ./tools/apt-get.sh install --no-install-recommends -y autoconf automake
+      # `tmux_build.py` needs Python 3.11 for the standard-library TOML reader, which the runner's
+      # `python3` has. A release is pinned by checksum in `.github/tmux-releases.toml`; any other
+      # ref is resolved to the commit it names. The key names the runner image, so a build made on
+      # one image is not restored onto another, and `prepare` rebuilds a restore that fails to start.
+      - name: Identify tmux ${{ matrix.tmux }} and its build environment
+        id: tmux-build
+        env:
+          TMUX_REF: ${{ matrix.tmux }}
+          SLUG: ${{ matrix.slug }}
+        run: python3 -B .github/scripts/tmux_build.py plan "$TMUX_REF" --prefix "$HOME/tmux-builds/$SLUG"
 
       - name: Restore tmux ${{ matrix.tmux }}
         id: tmux-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/tmux-builds/${{ matrix.slug }}
-          key: tmux-${{ steps.ref.outputs.key }}-${{ runner.os }}-${{ runner.arch }}
+          key: ${{ steps.tmux-build.outputs.key }}
 
-      - name: Build tmux ${{ matrix.tmux }}
-        if: steps.tmux-cache.outputs.cache-hit != 'true'
+      - name: Validate or rebuild tmux ${{ matrix.tmux }}
         env:
-          SOURCE: ${{ matrix.source }}
-          BUILD_REF: ${{ steps.ref.outputs.sha || matrix.tmux }}
+          TMUX_REF: ${{ matrix.tmux }}
+          SLUG: ${{ matrix.slug }}
+          CACHE_HIT: ${{ steps.tmux-cache.outputs.cache-hit }}
+        run: python3 -B .github/scripts/tmux_build.py prepare "$TMUX_REF" --prefix "$HOME/tmux-builds/$SLUG"
+
+      - name: Save validated tmux ${{ matrix.tmux }}
+        if: steps.tmux-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/tmux-builds/${{ matrix.slug }}
+          key: ${{ steps.tmux-build.outputs.key }}
+
+      # The script's own regressions run against the tmux this lane just validated, in a venv so
+      # pytest stays off the system Python.
+      - name: Test native cache recovery
+        env:
           SLUG: ${{ matrix.slug }}
         run: |
-          python3 -B -m tools.ci.tmux_ref build --source "$SOURCE" --ref "$BUILD_REF" \
-            --prefix "$HOME/tmux-builds/$SLUG"
+          python3 -m venv "$RUNNER_TEMP/tmux-build-test"
+          "$RUNNER_TEMP/tmux-build-test/bin/python" -m pip install --quiet pytest==8.4.2
+          PATH="$HOME/tmux-builds/$SLUG/bin:$PATH" \
+            "$RUNNER_TEMP/tmux-build-test/bin/python" -m pytest .github/scripts/test_tmux_build.py
 
       # The daemon of a 3.0a or 3.1c lane is reached by this client.
+      - name: Identify tmux ${{ matrix.client }} for the client
+        if: matrix.client
+        id: client-build
+        env:
+          CLIENT: ${{ matrix.client }}
+        run: python3 -B .github/scripts/tmux_build.py plan "$CLIENT" --prefix "$HOME/tmux-builds/$CLIENT"
+
       - name: Restore tmux ${{ matrix.client }} for the client
         if: matrix.client
         id: client-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/tmux-builds/${{ matrix.client }}
-          key: tmux-${{ matrix.client }}-${{ runner.os }}-${{ runner.arch }}
+          key: ${{ steps.client-build.outputs.key }}
 
-      - name: Build tmux ${{ matrix.client }} for the client
-        if: matrix.client && steps.client-cache.outputs.cache-hit != 'true'
+      - name: Validate or rebuild tmux ${{ matrix.client }} for the client
+        if: matrix.client
         env:
           CLIENT: ${{ matrix.client }}
-        run: |
-          python3 -B -m tools.ci.tmux_ref build --source release --ref "$CLIENT" \
-            --prefix "$HOME/tmux-builds/$CLIENT"
+          CACHE_HIT: ${{ steps.client-cache.outputs.cache-hit }}
+        run: python3 -B .github/scripts/tmux_build.py prepare "$CLIENT" --prefix "$HOME/tmux-builds/$CLIENT"
+
+      - name: Save validated tmux ${{ matrix.client }} for the client
+        if: matrix.client && steps.client-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/tmux-builds/${{ matrix.client }}
+          key: ${{ steps.client-build.outputs.key }}
 
       - name: The lane runs the tmux it is named after
         env:
