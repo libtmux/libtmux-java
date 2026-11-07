@@ -3,7 +3,8 @@
   (:require [clojure.core.async :as async]
             [clojure.core.async.impl.protocols :as protocols]
             [libtmux.control :as control])
-  (:import [java.lang AutoCloseable]))
+  (:import [java.lang AutoCloseable]
+           [java.time Duration]))
 
 (set! *warn-on-reflection* true)
 
@@ -48,17 +49,24 @@
      (control/close! (.-subscription ^Adapter adapter)))
    nil))
 
-(defn- stopped-outcome []
+(defn- stopped-outcome [upstream]
   {:reason :adapter-stopped
    :cause nil
-   :loss {:upstream/events 0 :adapter/events 0}})
+   :upstream/terminal upstream
+   :loss (assoc (:loss upstream) :adapter/events 0)})
 
 (defn- terminal-outcome [stopped result]
   (if @stopped
-    (stopped-outcome)
-    (case (:stream/status result)
-      :terminal (:stream/terminal result)
-      (stopped-outcome))))
+    (stopped-outcome (:stream/terminal result))
+    (update (:stream/terminal result) :loss assoc :adapter/events 0)))
+
+(defn- closed-terminal! [subscription]
+  (let [step (control/next! subscription Duration/ZERO)
+        step (if (= :gap (:stream/status step))
+               (control/next! subscription Duration/ZERO) step)]
+    (when-not (= :terminal (:stream/status step))
+      (throw (IllegalStateException. "Closed subscription did not provide a terminal outcome")))
+    step))
 
 (defn observe!
   "Starts an owned virtual worker over a borrowed control connection.
@@ -67,7 +75,9 @@
   a fixed buffer retains that many more. `:upstream-capacity` bounds the Java
   subscription, which reports overflow as a :gap value ahead of the events that
   remain; `:encoding` is :bytes or :utf-8. Closing the events channel or
-  adapter stops blocked reads and puts. The borrowed connection remains open."
+  adapter stops blocked reads and puts. A stopped outcome retains the final
+  :upstream/terminal, including loss, cause and trailing text. Adapter loss
+  stays separate under :adapter/events. The borrowed connection remains open."
   ([connection] (observe! connection {}))
   ([connection options]
    (when-not (map? options)
@@ -112,16 +122,18 @@
                         (catch Throwable failure
                           (reset! outcome
                                   {:reason :adapter-failure :cause failure
-                                   :loss {:upstream/events 0 :adapter/events 0}}))
+                                   :loss {:adapter/events 0}}))
                         (finally
-                          (try (control/close! subscription)
-                               (catch Throwable cleanup
-                                 (if-let [^Throwable failure (:cause @outcome)]
-                                   (.addSuppressed failure cleanup)
-                                   (reset! outcome {:reason :cleanup-failure :cause cleanup}))))
+                          (try
+                            (control/close! subscription)
+                            (when-not @outcome
+                              (reset! outcome (terminal-outcome stopped (closed-terminal! subscription))))
+                            (catch Throwable cleanup
+                              (if-let [^Throwable failure (:cause @outcome)]
+                                (.addSuppressed failure cleanup)
+                                (reset! outcome {:reason :cleanup-failure :cause cleanup}))))
                           (async/close! raw-events)
-                          (async/>!! terminal-channel
-                                     (or @outcome (terminal-outcome stopped {:stream/status :stopped})))
+                          (async/>!! terminal-channel @outcome)
                           (async/close! terminal-channel)))))]
         (Adapter. public-events terminal-channel subscription stop-channel stopped worker
                   {:events (inc event-capacity)}))))))

@@ -12,6 +12,13 @@ CI, and release tooling, are in the [main changelog](../CHANGELOG.md).
 
 ## Unreleased
 
+### Fixed
+
+- **Stopping preserves the subscription's final loss and trailing text.**
+  A blocked channel put no longer replaces known upstream loss with zero.
+  `:upstream/terminal` retains the original end reason, cause, and pending
+  UTF-8 tail; `:adapter/events` stays separate from upstream counters.
+
 ### Added
 
 - **The initial optional core.async adapter observes bounded control streams.**

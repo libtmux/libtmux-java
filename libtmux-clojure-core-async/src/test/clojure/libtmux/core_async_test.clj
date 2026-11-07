@@ -45,12 +45,15 @@
 
 (deftest consumer-close-stops-worker-blocked-on-event-put
   (let [read-count (atom 0)
+        closed (atom false)
         cleaned (CountDownLatch. 1)]
     (with-redefs [control/subscribe! (fn [_ _] ::subscription)
-                  control/next! (fn [_]
-                                  (swap! read-count inc)
-                                  {:stream/status :event :output/bytes (byte-array [1])})
-                  control/close! (fn [_] (.countDown cleaned))]
+                  control/next! (fn [_ & _]
+                                  (if @closed
+                                    {:stream/status :terminal :stream/terminal {:reason :closed}}
+                                    (do (swap! read-count inc)
+                                        {:stream/status :event :output/bytes (byte-array [1])})))
+                  control/close! (fn [_] (reset! closed true) (.countDown cleaned))]
       (let [owner (adapter/observe! ::connection)]
         ;; No consumer receives the unbuffered event; close must win the alts!!.
         (async/close! (adapter/events owner))
@@ -59,16 +62,44 @@
         (is (<= @read-count 1))))))
 
 (deftest owner-stop-wins-a-blocked-event-put
-  (let [offered (CountDownLatch. 1)]
+  (let [offered (CountDownLatch. 1)
+        closed (atom false)]
     (with-redefs [control/subscribe! (fn [_ _] ::subscription)
-                  control/next! (fn [_]
-                                  (.countDown offered)
-                                  {:stream/status :event :output/bytes (byte-array [1])})
-                  control/close! (fn [_])]
+                  control/next! (fn [_ & _]
+                                  (if @closed
+                                    {:stream/status :terminal :stream/terminal {:reason :closed}}
+                                    (do (.countDown offered)
+                                        {:stream/status :event :output/bytes (byte-array [1])})))
+                  control/close! (fn [_] (reset! closed true))]
       (let [owner (adapter/observe! ::connection)]
         (is (.await offered 500 TimeUnit/MILLISECONDS))
         (adapter/stop! owner)
         (is (= :adapter-stopped (:reason (take-within (adapter/terminal owner)))))))))
+
+(deftest owner-stop-preserves-upstream-loss-and-trailing-text
+  (doseq [gap? [false true]]
+  (let [offered (CountDownLatch. 1)
+        closed (atom false)
+        closed-reads (atom 0)
+        upstream {:reason :closed :loss {:upstream/events 3 :upstream/bytes 14}
+                  :trailing-text (if gap? {} {"%1" "\\xc3"})}]
+    (with-redefs [control/subscribe! (fn [_ _] ::subscription)
+                  control/next! (fn [_ & _]
+                                  (if @closed
+                                    (if (and gap? (= 1 (swap! closed-reads inc)))
+                                      {:stream/status :gap :gap/events 3}
+                                      {:stream/status :terminal :stream/terminal upstream})
+                                    (do (.countDown offered)
+                                        {:stream/status :event :output/text "pending"
+                                         :loss {:upstream/events 3 :upstream/bytes 14}})))
+                  control/close! (fn [_] (reset! closed true))]
+      (let [owner (adapter/observe! ::connection)]
+        (is (.await offered 500 TimeUnit/MILLISECONDS))
+        (adapter/stop! owner)
+        (let [outcome (take-within (adapter/terminal owner))]
+          (is (= :adapter-stopped (:reason outcome)))
+          (is (= {:upstream/events 3 :upstream/bytes 14 :adapter/events 0} (:loss outcome)))
+          (is (= upstream (:upstream/terminal outcome)))))))))
 
 (deftest worker-failure-is-terminal-and-does-not-close-borrowed-connection
   (let [subscription-closes (atom 0)]
