@@ -122,7 +122,10 @@
                              out)))
                text (mapv #(String. ^bytes (:output/bytes %) "UTF-8")
                           (filter #(= pane (:pane/id %)) drained))]
-           (is (<= (count drained) 2))
+           ;; The timed drain can observe output from another pane that arrives
+           ;; after the gap. Capacity bounds the retained target-pane events,
+           ;; not every later event the consumer receives while draining.
+           (is (<= (count text) 2))
            (is (= "z" (last text)) "the newest event is kept")))))))
 
 (deftest pane-death-does-not-end-session-output-stream
