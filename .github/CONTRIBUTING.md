@@ -311,6 +311,38 @@ the default branch. This prints the lanes a dispatch would run, without a runner
 $ python3 -m tools.ci.plan matrix --event workflow_dispatch --scope custom --tmux-ref 3.6b,master
 ```
 
+### Native tmux in CI
+
+Each lane builds the tmux it is named after with `.github/scripts/tmux_build.py`.
+A release uses the official archive and the SHA256 pin in
+`.github/tmux-releases.toml`; the selected checksum is part of its cache
+identity. To add a release to the plugin's lists, add its pin there first: the
+script refuses a release with none. Any other ref resolves once to a commit,
+and the build fetches that exact commit. Only the installed prefix,
+`~/tmux-builds/<name>`, is cached. Each build uses a fresh source tree and up to
+four available processors.
+
+Cache keys include the actual runner image and image version, architecture,
+compiler and dependency versions, source identity, and the build script.
+Dependencies are installed before validation on hits and misses. Every restored
+executable must match its recorded hash and version, start a private daemon,
+and report the same connected version. A failed check discards that job's
+prefix and rebuilds it.
+
+The workflow saves a validated installation before the suite runs. GitHub
+caches are immutable: repairing an invalid exact hit fixes the current job, but
+cannot overwrite that entry. A build-script change invalidates its key for later
+jobs. Never add a broad restore-key fallback for native binaries.
+
+The script needs Python 3.11 for the standard-library TOML reader, which the
+runner's `python3` has. Run its regressions against an installed tmux:
+
+```console
+$ python3 -m venv /tmp/tmux-build-test
+$ /tmp/tmux-build-test/bin/python -m pip install pytest==8.4.2
+$ /tmp/tmux-build-test/bin/python -m pytest .github/scripts/test_tmux_build.py
+```
+
 `python3 -m tools.ci.check` fails when the README, this page or the workflows
 disagree with the plugin's lists. Each dispatch is its own run: it does not
 cancel the push run on its branch, and another dispatch does not cancel it.
