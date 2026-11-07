@@ -15,6 +15,9 @@ The native API references list every documented public var in
 They derive arities and docstrings from source; module checks reject stale
 output. [Captured values](clojure-reference.md) documents the maps separately.
 
+For complete files with their own entry points and a private-server launcher,
+use the [Clojure API programs](../../examples/api/README.md#clojure-programs).
+
 Every Clojure fence in reader-facing documentation is discovered and run against
 an owned tmux server. A fence must open and close its own client with
 `with-open` and end with one `;; =>` EDN result. The test fixture supplies

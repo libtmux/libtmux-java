@@ -113,7 +113,7 @@
 (defn- duration? [x] (and (instance? Duration x) (not (.isNegative ^Duration x))
                                 (not (.isZero ^Duration x))))
 
-(defn open!
+(defn ^Server open!
   "Opens local resources for an explicit :socket-path or :socket-name endpoint.
   Supply exactly one endpoint. Paths accept String or java.nio.file.Path.
   Optional :binary is a command name or path; :config-file is a path;

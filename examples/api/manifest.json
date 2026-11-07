@@ -441,6 +441,118 @@
       ],
       "expectedOutput": "api-keys\napi-line\n",
       "path": "src/main/scala/Capture.scala"
+    },
+    {
+      "id": "clojure-Connect",
+      "variant": "clojure",
+      "language": "clojure",
+      "description": "Connect to a private tmux server.",
+      "sourceFile": "examples/src/main/clojure/libtmux/examples/api/connect.clj",
+      "mainNamespace": "libtmux.examples.api.connect",
+      "targets": [
+        "libtmux.core/open!",
+        "libtmux.core/snapshot!"
+      ],
+      "expectedOutput": "connected=true\n",
+      "path": "src/main/clojure/libtmux/examples/api/connect.clj"
+    },
+    {
+      "id": "clojure-ListSessions",
+      "variant": "clojure",
+      "language": "clojure",
+      "description": "List sessions from one capture.",
+      "sourceFile": "examples/src/main/clojure/libtmux/examples/api/list_sessions.clj",
+      "mainNamespace": "libtmux.examples.api.list-sessions",
+      "targets": [
+        "libtmux.core/sessions!"
+      ],
+      "expectedOutput": "sessions=work-one,work-two\n",
+      "path": "src/main/clojure/libtmux/examples/api/list_sessions.clj"
+    },
+    {
+      "id": "clojure-ListWindows",
+      "variant": "clojure",
+      "language": "clojure",
+      "description": "Traverse root and session windows in one captured graph.",
+      "sourceFile": "examples/src/main/clojure/libtmux/examples/api/list_windows.clj",
+      "mainNamespace": "libtmux.examples.api.list-windows",
+      "targets": [
+        "libtmux.core/snapshot!",
+        "libtmux.data/windows"
+      ],
+      "expectedOutput": "windows=editor,editor,logs\nsession-windows=editor,logs\n",
+      "path": "src/main/clojure/libtmux/examples/api/list_windows.clj"
+    },
+    {
+      "id": "clojure-ListPanes",
+      "variant": "clojure",
+      "language": "clojure",
+      "description": "Traverse root, session, window and pane observations.",
+      "sourceFile": "examples/src/main/clojure/libtmux/examples/api/list_panes.clj",
+      "mainNamespace": "libtmux.examples.api.list-panes",
+      "targets": [
+        "libtmux.core/snapshot!",
+        "libtmux.data/panes"
+      ],
+      "expectedOutput": "panes=4\nwindow-panes=2\n",
+      "path": "src/main/clojure/libtmux/examples/api/list_panes.clj"
+    },
+    {
+      "id": "clojure-NewSession",
+      "variant": "clojure",
+      "language": "clojure",
+      "description": "Create a session running cat.",
+      "sourceFile": "examples/src/main/clojure/libtmux/examples/api/new_session.clj",
+      "mainNamespace": "libtmux.examples.api.new-session",
+      "targets": [
+        "libtmux.core/new-session!"
+      ],
+      "expectedOutput": "created=api-session\n",
+      "path": "src/main/clojure/libtmux/examples/api/new_session.clj"
+    },
+    {
+      "id": "clojure-NewWindow",
+      "variant": "clojure",
+      "language": "clojure",
+      "description": "Create a detached window and refresh its parent.",
+      "sourceFile": "examples/src/main/clojure/libtmux/examples/api/new_window.clj",
+      "mainNamespace": "libtmux.examples.api.new-window",
+      "targets": [
+        "libtmux.core/new-window!",
+        "libtmux.core/refresh!"
+      ],
+      "expectedOutput": "created=api-window\nwindows=api-window,editor,logs\n",
+      "path": "src/main/clojure/libtmux/examples/api/new_window.clj"
+    },
+    {
+      "id": "clojure-Query",
+      "variant": "clojure",
+      "language": "clojure",
+      "description": "Evaluate native and Java predicates over the same capture.",
+      "sourceFile": "examples/src/main/clojure/libtmux/examples/api/query.clj",
+      "mainNamespace": "libtmux.examples.api.query",
+      "targets": [
+        "libtmux.data/matching",
+        "libtmux.data/exactly-one"
+      ],
+      "expectedOutput": "matches=work-one\n",
+      "path": "src/main/clojure/libtmux/examples/api/query.clj"
+    },
+    {
+      "id": "clojure-Capture",
+      "variant": "clojure",
+      "language": "clojure",
+      "description": "Send literal shell input and wait for actual output before capture.",
+      "sourceFile": "examples/src/main/clojure/libtmux/examples/api/capture.clj",
+      "mainNamespace": "libtmux.examples.api.capture",
+      "targets": [
+        "libtmux.core/send-literal!",
+        "libtmux.core/send-keys!",
+        "libtmux.core/await-text!",
+        "libtmux.core/capture!"
+      ],
+      "expectedOutput": "api-keys\napi-line\n",
+      "path": "src/main/clojure/libtmux/examples/api/capture.clj"
     }
   ],
   "variants": {
@@ -532,6 +644,20 @@
           "sourceFile": "examples/api/gradle.properties",
           "path": "gradle.properties",
           "language": "properties"
+        },
+        {
+          "sourceFile": "examples/api/run.sh",
+          "path": "run.sh",
+          "language": "bash"
+        }
+      ]
+    },
+    "clojure": {
+      "files": [
+        {
+          "sourceFile": "examples/api/clojure/deps.edn",
+          "path": "deps.edn",
+          "language": "clojure"
         },
         {
           "sourceFile": "examples/api/run.sh",
