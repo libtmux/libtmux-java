@@ -189,6 +189,24 @@ final class EventSubscriptionTest {
     }
 
     @Test
+    void closingAnEndedSubscriptionDiscardsItsBufferWithoutReplacingItsCause() throws Exception {
+        var subscription = new EventSubscription<String>(1, 8, String::length, ignored -> {});
+        var cause = new java.io.IOException("ended");
+        subscription.offer("aaaa");
+        subscription.offer("bbb");
+        subscription.end(cause, EventSubscription.EndReason.PROTOCOL_FAILURE);
+        var first = subscription.termination().orElseThrow();
+        subscription.close();
+
+        assertEquals(0, subscription.retainedBytes());
+        assertEquals(4, subscription.droppedBytes());
+        assertSame(first, subscription.termination().orElseThrow());
+        assertSame(cause, subscription.cause().orElseThrow());
+        assertEquals(Optional.of(new Delivery.Gap<>(1)), subscription.next(Duration.ZERO));
+        assertEquals(Optional.empty(), subscription.next(Duration.ZERO));
+    }
+
+    @Test
     void nextWaitsUntilAValueArrives() throws Exception {
         try (var subscription = new EventSubscription<String>(1, ignored -> {})) {
             CountDownLatch entered = new CountDownLatch(1);

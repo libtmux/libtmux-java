@@ -801,6 +801,10 @@ public final class EventSubscription<T> implements AutoCloseable {
         lock.lock();
         try {
             if (closed) {
+                if (discard) {
+                    events.clear();
+                    retainedBytes = 0;
+                }
                 return;
             }
             termination = new Termination(reason, Optional.ofNullable(failure));
