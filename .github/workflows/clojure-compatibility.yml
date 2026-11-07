@@ -166,14 +166,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Build tmux dependencies
-        run: brew install libevent ncurses bison pkg-config
+        run: brew install libevent ncurses jemalloc bison pkg-config
 
       - name: Restore tmux ${{ matrix.tmux }}
         id: tmux-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/tmux-builds/${{ matrix.tmux }}
-          key: tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}
+          key: clojure-tmux-${{ matrix.tmux }}-${{ runner.os }}-${{ runner.arch }}-jemalloc
 
       - name: Build tmux ${{ matrix.tmux }}
         if: steps.tmux-cache.outputs.cache-hit != 'true'
@@ -188,7 +188,8 @@ jobs:
           cd "$work/tmux-$LANE"
           libevent_prefix="$(brew --prefix libevent)"
           ncurses_prefix="$(brew --prefix ncurses)"
-          export PKG_CONFIG_PATH="$libevent_prefix/lib/pkgconfig:$ncurses_prefix/lib/pkgconfig"
+          jemalloc_prefix="$(brew --prefix jemalloc)"
+          export PKG_CONFIG_PATH="$libevent_prefix/lib/pkgconfig:$ncurses_prefix/lib/pkgconfig:$jemalloc_prefix/lib/pkgconfig"
           export CPPFLAGS="-I$ncurses_prefix/include"
           export LDFLAGS="-L$ncurses_prefix/lib"
           ./configure --prefix="$HOME/tmux-builds/$LANE" --disable-utf8proc

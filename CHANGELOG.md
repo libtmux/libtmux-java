@@ -30,7 +30,8 @@ release that first shipped the module.
 
 - **Clojure compatibility tests use the newest stable Clojure and the two
   supported tmux endpoints.** The runtime version comes from the Gradle
-  catalog. Linux tmux builds use the shared validated native cache.
+  catalog. Linux tmux builds use the shared validated native cache; macOS
+  supplies jemalloc for tmux releases that require an allocator choice.
 
 - **CI rebuilds incompatible cached tmux installations before running
   tests.** The tmux matrix restored a build made on another runner image and
