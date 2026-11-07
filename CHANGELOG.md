@@ -28,6 +28,10 @@ release that first shipped the module.
 
 ### Development
 
+- **Clojure compatibility tests use the newest stable Clojure and the two
+  supported tmux endpoints.** The runtime version comes from the Gradle
+  catalog. Linux tmux builds use the shared validated native cache.
+
 - **CI rebuilds incompatible cached tmux installations before running
   tests.** The tmux matrix restored a build made on another runner image and
   failed at `tmux -V` on Ubuntu 26.04 with `NCURSES6_TINFO_6.4.current` missing

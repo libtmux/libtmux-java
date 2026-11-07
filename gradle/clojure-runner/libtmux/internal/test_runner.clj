@@ -116,6 +116,7 @@
               (.waitFor process 900 TimeUnit/MILLISECONDS))))))))
 
 (defn -main [& [mode & roots]]
+  (println "Clojure" (clojure-version) "on JDK" (System/getProperty "java.version"))
   (case mode
     "load" (guarded-load!
             (configured-namespaces "libtmux.clojure.main-namespaces"))

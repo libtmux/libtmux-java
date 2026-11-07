@@ -80,8 +80,8 @@ not settled: any release may change or remove exported identifiers, and the
 changelog marks each break. Pin an exact version to avoid one.
 
 Only the newest release is supported, with no backports. The Clojure façade
-is currently pre-release; its checked-in matrix targets Clojure 1.12.4 and
-1.12.6 on JDK 25 and 27. [Report a defect or propose a change][contributing]
+is currently pre-release; CI tests Clojure 1.12.6 on JDK 25 and 27 against
+the supported tmux endpoints, 3.3a and 3.7c. [Report a defect][contributing]
 with the tmux version, endpoint choice, and the smallest reproducer.
 
 ## Documentation
