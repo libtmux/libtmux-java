@@ -1,9 +1,22 @@
+<!-- libtmux-logo -->
+<div align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Clojure">
+  </picture>
+</div>
+<!-- /libtmux-logo -->
+
+<div align="center">
+
 # libtmux-clojure
 
 **libtmux for Clojure:** a data-first façade over
 [libtmux-java][java-core]. It acquires tmux state as persistent maps and
 vectors, retains a Java handle at `:tmux/ref` for an explicit operation, and
 leaves ordinary Clojure collection processing local and unconstrained.
+
+</div>
 
 ## Install
 

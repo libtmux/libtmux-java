@@ -12,3 +12,7 @@ symbol comes from the [upstream logo](https://github.com/modelcontextprotocol/mo
 Package-specific artwork sits beside its README where the package format
 supports it. `.github/social-preview.png` is the cog sharing card, ready to
 upload under the repository's **Settings → Social preview**.
+
+Clojure and its core.async companion use the Clojure cog in their module-local
+`assets/` directories. [Clojure provenance](clojure-source.json) records the
+source revision and file digests independently of the Java artwork above.
