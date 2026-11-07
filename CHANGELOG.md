@@ -24,6 +24,13 @@ release that first shipped the module.
 
 ## Unreleased
 
+### Development
+
+- **CI rebuilds incompatible cached tmux installations before running
+  tests.** The tmux matrix restored a build made on another runner image and
+  failed at `tmux -V` on Ubuntu 26.04 with `NCURSES6_TINFO_6.4.current` missing
+  (#137). Release downloads use checksum pins in `.github/tmux-releases.toml`.
+
 ## 0.1.2 — 2026-11-01
 
 ### Development
