@@ -1,9 +1,10 @@
 # Common API programs
 
 Each program has its own imports, entry point, client lifetime, and error
-handling. The manifest connects a complete source file and its expected output
-to the public API declarations it demonstrates. Java, Kotlin, Scala Direct,
-Scala Cats, and Clojure have separate programs and consumer dependencies.
+handling. The [JVM catalog](manifest.json) and
+[native Clojure catalog](clojure/manifest.json) connect complete source files
+and expected output to the public APIs they demonstrate. Each language has
+separate programs and consumer dependencies.
 
 The programs cover connecting to a server, listing sessions, windows and panes,
 creating sessions and windows, typed queries, and sending and capturing input.
@@ -81,8 +82,8 @@ an earlier example to run first.
 
 ## Clojure programs
 
-The Clojure variant uses Tools.deps and a `mainNamespace` entry point in the
-manifest. Each file imports its public namespaces, closes its client, and
+The Clojure catalog uses Tools.deps and a `mainNamespace` entry point for each
+program. Each file imports its public namespaces, closes its client, and
 prints the manifest's expected output. The same private-server launcher owns
 setup and teardown. No program depends on a repository test helper.
 
