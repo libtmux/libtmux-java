@@ -260,8 +260,21 @@ and `:tmux/dispatch` `:not-dispatched`; the rest of the façade keeps the 3.3a
 minimum. Control observations have an explicit owner and terminal result. A
 bounded consumer can lose events: the next read is a `:gap` naming how many were
 dropped, ahead of the events that remain, and an adapter loss stays distinct
-from it. Text subscriptions are decoded per pane by the Java client, so a
-character cut between two chunks arrives whole.
+from it. `:capacity` bounds queued events; `:max-bytes` bounds their unescaped
+payload, defaulting to 16 MiB. An oversized event drops the buffered prefix
+and itself. `:loss` reports cumulative upstream event and byte counts.
+
+Text subscriptions decode preserved bytes independently per pane and reset
+after their own gaps. Malformed bytes become `\\xHH`; partial characters at
+termination appear in `:trailing-text`, keyed by pane ID. `:decoder-capacity`
+bounds panes with partial characters, defaulting to 1024. A reset reports
+`:decoder/reset` as `:gap` or `:capacity` and increments `:decoder/resets`.
+
+The terminal `:reason` distinguishes `:closed`, `:completed`, `:control-exit`,
+`:transport-failure`, `:protocol-failure`, and `:unknown`. A `%exit` notification
+ends the client; it does not prove daemon death. An unexplained EOF stays
+unknown. `:cause` retains the original exception, including any sensitive text.
+
 Do not model a subscription as an unbounded lazy sequence, and do not perform
 blocking observation work in a core.async `go` block. Add the optional
 `io.github.libtmux/libtmux-clojure-core-async` dependency only for
@@ -286,7 +299,8 @@ remains readable from the same owned stream.
               connection (control/attach!
                           (:tmux/ref (first (tm/sessions! server)))
                           (Duration/ofSeconds 2))
-              stream (control/subscribe! connection)]
+              stream (control/subscribe! connection {:capacity 64
+                                                      :max-bytes 65536})]
     (let [initial (control/next! stream (Duration/ofMillis 25))
           pane (first (:reply/lines
                        (control/send! connection

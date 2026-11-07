@@ -3,23 +3,37 @@
             [libtmux.control :as control])
   (:import [io.github.libtmux PaneId]
            [io.github.libtmux.batch OperationOutcome]
-           [io.github.libtmux.control ControlReply EventSubscription PaneOutput]
+           [io.github.libtmux.control ControlReply EventSubscription PaneOutput PaneOutputDecoder]
            [java.lang AutoCloseable]
            [java.nio ByteBuffer]
            [java.time Duration]
            [java.util.concurrent CountDownLatch TimeUnit]
            [java.util.concurrent.locks ReentrantLock]
-           [java.util.function Consumer]))
+           [java.util.function Consumer ToLongFunction]))
 
-(defn- test-stream [encoding capacity]
+(defn- test-stream
+  ([encoding capacity] (test-stream encoding capacity 16777216))
+  ([encoding capacity max-bytes]
   (let [constructor (.getDeclaredConstructor EventSubscription
-                                             (into-array Class [Integer/TYPE Consumer]))
+                                             (into-array Class [Integer/TYPE Long/TYPE ToLongFunction Consumer]))
         _ (.setAccessible constructor true)
         subscription (.newInstance constructor
-                                   (object-array [(int capacity) (reify Consumer (accept [_ _]))]))]
+                                   (object-array [(int capacity) (long max-bytes)
+                                                  (reify ToLongFunction
+                                                    (applyAsLong [_ output]
+                                                      (.remaining (.bytes ^PaneOutput output))))
+                                                  (reify Consumer (accept [_ _]))]))]
     (libtmux.control.OutputStream.
      subscription {:tmux/endpoint :test} {:encoding encoding :capacity capacity}
-     (atom {:sequence 0}) (ReentrantLock.))))
+     (atom (cond-> {:sequence 0}
+             (= encoding :utf-8) (assoc :decoder (PaneOutputDecoder. 1)))) (ReentrantLock.)))))
+
+(defn- offer-bytes! [^libtmux.control.OutputStream stream pane octets]
+  (let [method (.getDeclaredMethod EventSubscription "offer" (into-array Class [Object]))]
+    (.setAccessible method true)
+    (.invoke method (.-subscription stream)
+             (object-array [(PaneOutput. (PaneId. pane) "unrelated predecoded text"
+                                         (ByteBuffer/wrap (byte-array (map unchecked-byte octets))))]))))
 
 (defn- offer! [^libtmux.control.OutputStream stream pane text]
   (let [method (.getDeclaredMethod EventSubscription "offer" (into-array Class [Object]))]
@@ -70,10 +84,51 @@
           event (control/next! stream Duration/ZERO)]
       (is (= :gap (:stream/status gap)))
       (is (= 2 (:gap/events gap)))
-      (is (= {:upstream/events 2} (:loss gap)))
+      (is (= {:upstream/events 2 :upstream/bytes 2} (:loss gap)))
       (is (= "c" (:output/text event)))
-      (is (= {:upstream/events 2} (:loss event)))
+      (is (= {:upstream/events 2 :upstream/bytes 2} (:loss event)))
       (is (= {:stream/status :timeout} (control/next! stream Duration/ZERO))))))
+
+(deftest byte-bound-reports-the-exact-loss-before-the-retained-suffix
+  (with-open [^AutoCloseable stream (test-stream :bytes 8 4)]
+    (doseq [text ["aa" "bbb" "cccc" "12345" "z"]] (offer! stream "%1" text))
+    (let [gap (control/next! stream Duration/ZERO)
+          event (control/next! stream Duration/ZERO)]
+      (is (= :gap (:stream/status gap)))
+      (is (= 4 (:gap/events gap)))
+      (is (= {:upstream/events 4 :upstream/bytes 14} (:loss gap)))
+      (is (= [122] (vec (:output/bytes event))))
+      (is (= (:loss gap) (:loss event)))
+      (is (= {:stream/status :timeout} (control/next! stream Duration/ZERO))))))
+
+(deftest text-is-decoded-after-this-subscribers-gap
+  (with-open [^AutoCloseable stream (test-stream :utf-8 1)]
+    (offer-bytes! stream "%1" [195])
+    (is (= "" (:output/text (control/next! stream Duration/ZERO))))
+    (offer-bytes! stream "%2" [33])
+    (offer-bytes! stream "%1" [169 255])
+    (let [gap (control/next! stream Duration/ZERO)
+          event (control/next! stream Duration/ZERO)]
+      (is (= :gap (:stream/status gap)))
+      (is (= :gap (:decoder/reset gap)))
+      (is (= 1 (:decoder/resets gap)))
+      (is (= "\\xa9\\xff" (:output/text event)))
+      (is (= 1 (:decoder/resets event))))))
+
+(deftest decoder-eviction-is-visible-and-terminal-flush-is-published-once
+  (with-open [^AutoCloseable stream (test-stream :utf-8 4)]
+    (offer-bytes! stream "%1" [195])
+    (is (= "" (:output/text (control/next! stream Duration/ZERO))))
+    (offer-bytes! stream "%2" [195])
+    (let [event (control/next! stream Duration/ZERO)]
+      (is (= :capacity (:decoder/reset event)))
+      (is (= 1 (:decoder/resets event))))
+    (control/close! stream)
+    (let [outcome (:stream/terminal (control/next! stream Duration/ZERO))]
+      (is (= {"%2" "\\xc3"} (:trailing-text outcome)))
+      (is (= 1 (:decoder/resets outcome)))
+      (is (identical? outcome (control/terminal stream)))
+      (is (identical? outcome (:stream/terminal (control/next! stream Duration/ZERO)))))))
 
 (deftest timed-read-includes-waiting-for-another-reader
   (with-open [^libtmux.control.OutputStream stream (test-stream :bytes 2)]
@@ -105,7 +160,7 @@
       (is (= [65 66] (mapv (fn [_] (first (:output/bytes (control/next! stream Duration/ZERO))))
                            (range 2))))
       (let [outcome (:stream/terminal (control/next! stream Duration/ZERO))]
-        (is (= :ended (:reason outcome)))
+        (is (= :unknown (:reason outcome)))
         (is (identical? cause (:cause outcome)))
         (is (identical? outcome (:stream/terminal (control/next! stream Duration/ZERO))))))))
 
@@ -118,7 +173,9 @@
       (is (not (contains? outcome :cause))))))
 
 (deftest competing-readers-deliver-each-event-once
-  (with-open [^AutoCloseable stream (test-stream :bytes 16)]
+  (with-open [^AutoCloseable stream (test-stream :utf-8 16)]
+    (offer-bytes! stream "%2" [195])
+    (is (= "" (:output/text (control/next! stream Duration/ZERO))))
     (doseq [octet (range 16)] (offer! stream "%1" (str (char (+ 65 octet)))))
     (end! stream (java.io.IOException. "done"))
     (let [ready (CountDownLatch. 2)
@@ -141,9 +198,10 @@
         (is (.await finished 900 TimeUnit/MILLISECONDS))
         (let [events (sort-by :event/sequence (filter #(= :event (:stream/status %)) @results))
               outcomes (map :stream/terminal (filter #(= :terminal (:stream/status %)) @results))]
-          (is (= (range 1 17) (map :event/sequence events)))
-          (is (= (range 65 81) (map #(first (:output/bytes %)) events)))
+          (is (= (range 2 18) (map :event/sequence events)))
+          (is (= (map #(str (char %)) (range 65 81)) (map :output/text events)))
           (is (= 2 (count outcomes)))
+          (is (= {"%2" "\\xc3"} (:trailing-text (first outcomes))))
           (is (every? #(identical? (control/terminal stream) %) outcomes)))
         (finally
           (.countDown release)

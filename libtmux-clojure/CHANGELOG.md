@@ -12,6 +12,16 @@ CI, and release tooling, are in the [main changelog](../CHANGELOG.md).
 
 ## Unreleased
 
+### Fixed
+
+- **Text subscriptions reset their own decoder after reported gaps.**
+  Decoder eviction is visible, trailing incomplete bytes survive in the
+  terminal outcome, and malformed bytes remain recoverable as `\\xHH`.
+- **Control streams bound queued payload bytes and classify termination.**
+  `:max-bytes` defaults to 16 MiB. Loss includes byte counts; terminal
+  `:reason` distinguishes control exit, transport/protocol failure, and
+  unknown EOF from intentional closure.
+
 ### Added
 
 - **The initial Clojure façade exposes captured data and explicit operations.**
