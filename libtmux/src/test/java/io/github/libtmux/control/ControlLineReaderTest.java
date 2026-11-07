@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -17,7 +16,7 @@ final class ControlLineReaderTest {
     void aLineCannotGrowPastItsByteLimit() throws Exception {
         byte[] input = "12345\n".getBytes(StandardCharsets.UTF_8);
         try (var lines = new ControlLineReader(new ByteArrayInputStream(input), 4)) {
-            assertThrows(IOException.class, lines::readLine);
+            assertThrows(ControlLineReader.LimitExceeded.class, lines::readLine);
         }
     }
 

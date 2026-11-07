@@ -14,6 +14,23 @@ changelog](../CHANGELOG.md).
 
 ## Unreleased
 
+### Added
+
+- **`PaneOutputDecoder` decodes a subscriber's bytes after its own gaps.**
+  Partial-pane state is bounded, resets are counted, and `finish()` preserves
+  trailing incomplete bytes as escapes.
+- **`EventSubscription.termination()` preserves the first observed cause.**
+  Control exit, transport failure, protocol failure and unknown EOF remain
+  distinct; the original exception is retained.
+
+### Changed
+
+- **Output subscriptions retain at most 16 MiB of payload by default.**
+  `ControlClient.subscribeOutput(int, long)` selects a byte limit alongside
+  the event limit. Oversized chunks are reported as loss; subscriptions expose
+  retained and dropped payload-byte counts. See the
+  [migration notes](../MIGRATION.md#output-subscriptions-bound-payload-bytes).
+
 ## 0.1.2 — 2026-11-01
 
 No entries for `libtmux`.
