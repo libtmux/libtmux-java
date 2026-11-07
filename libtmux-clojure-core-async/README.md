@@ -27,7 +27,9 @@ Do not run blocking control I/O in a `go` block.
 
 The [Clojure guide][guide] contains executable control and core.async examples,
 including terminal outcomes and shutdown. See this module's
-[changelog](CHANGELOG.md) for its release history.
+[native API reference][api] for function arities and ownership contracts,
+and its [changelog](CHANGELOG.md) for release history.
 
+[api]: ../docs/guide/clojure-core-async-api.md
 [core-async]: https://clojure.github.io/core.async/
 [guide]: ../docs/guide/clojure.md

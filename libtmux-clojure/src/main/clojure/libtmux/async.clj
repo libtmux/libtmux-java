@@ -1,4 +1,5 @@
 (ns libtmux.async
+  "Bounded owned workers, cancellable tasks, and CompletionStage interop."
   (:require [libtmux.core :as core])
   (:import [java.lang AutoCloseable]
            [java.util.concurrent ArrayBlockingQueue Callable CompletableFuture CountDownLatch Executor ExecutorService
@@ -8,7 +9,7 @@
 
 (declare cancel! close-runtime!)
 
-(deftype Task [state started worker deadline stage kind runtime cancellation permits publication-permit]
+(deftype ^:private Task [state started worker deadline stage kind runtime cancellation permits publication-permit]
   clojure.lang.IDeref
   (deref [_]
     (try (.get ^CompletableFuture stage)
@@ -21,7 +22,9 @@
   clojure.lang.IPending
   (isRealized [_] (.isDone ^CompletableFuture stage)))
 
-(deftype AsyncRuntime [^ExecutorService ordinary ^ExecutorService waits
+(alter-meta! #'->Task assoc :private true)
+
+(deftype ^:private AsyncRuntime [^ExecutorService ordinary ^ExecutorService waits
                        ^ExecutorService callbacks ^ExecutorService completions
                        ^ScheduledExecutorService deadlines
                        ^Semaphore admission ^Semaphore wait-admission ^Semaphore callback-admission
@@ -30,6 +33,8 @@
                        closed close-timeout-ms]
   AutoCloseable
   (close [this] (close-runtime! this)))
+
+(alter-meta! #'->AsyncRuntime assoc :private true)
 
 (defn- virtual-factory [prefix]
   (.factory (.name (Thread/ofVirtual) (str prefix "-") 0)))
@@ -51,7 +56,11 @@
   (.execute executor task))
 
 (defn runtime!
-  "Creates an owned bounded runtime. Close it to reclaim every owned executor."
+  "Creates a closeable runtime owning bounded work, wait and callback lanes.
+  Options are :max-running (default 4, minimum 2), :queue-limit (default 64,
+  positive), and :close-timeout-ms (default 900, positive). One running slot is
+  reserved for waits so ordinary work can release them. Closing cancels owned
+  work and waits within the close budget; it never closes borrowed servers."
   ([] (runtime! {}))
   ([options]
    (when-not (map? options)
@@ -78,9 +87,18 @@
                      (Semaphore. (+ max-running queue-limit))
                      (atom #{}) (atom #{}) (Object.) (atom false) close-timeout-ms)))))
 
-(defn task-kind [^Task task] (.-kind task))
-(defn task-state [^Task task] @(.-state task))
-(defn completion-stage [^Task task] (.minimalCompletionStage ^CompletableFuture (.-stage task)))
+(defn task-kind
+  "Returns the declared :ordinary or :wait lane without waiting for the task."
+  [^Task task] (.-kind task))
+(defn task-state
+  "Reads task progress: :queued, :running, :cancelling, :cleanup-pending,
+  or :terminal. A cancellation request is not proof cleanup has finished."
+  [^Task task] @(.-state task))
+(defn completion-stage
+  "Returns a read-only CompletionStage completed after worker cleanup.
+  Completing or cancelling a derived CompletableFuture does not control the
+  task; use cancel!. Caller-attached callbacks follow Java stage scheduling."
+  [^Task task] (.minimalCompletionStage ^CompletableFuture (.-stage task)))
 
 (defn- failure [reason certainty]
   (ex-info (if (= reason :timeout) "task deadline expired" "task cancelled")
@@ -164,7 +182,12 @@
   (io! (request-cancel! task :cancelled)))
 
 (defn submit!
-  "Submits a zero-argument function, returning a Task or a :busy result."
+  "Submits a zero-argument function with the caller's dynamic bindings.
+  Options are :kind (:ordinary by default, or :wait) and a positive
+  :timeout-ms deadline including queue time. Returns a dereferenceable Task
+  or {:status :busy :kind kind} when admission is full. Timed deref does not
+  cancel a task; cancel! or its deadline interrupts owned work. Effects that
+  wait require :wait. Exceptions retain dispatch certainty and partial results."
   ([runtime thunk] (submit! runtime {} thunk))
   ([^AsyncRuntime runtime options thunk]
    (when-not (and (instance? AsyncRuntime runtime) (map? options) (ifn? thunk))
@@ -253,7 +276,12 @@
               (do (reject! task) {:status :busy :kind kind})
               task)))))))))
 
-(defn then! [^AsyncRuntime runtime ^Task task f]
+(defn then!
+  "Returns a read-only CompletionStage applying f after successful task cleanup.
+  Runs on the runtime's bounded callback lane with the caller's dynamic
+  bindings. Full callback admission throws ex-info with :tmux/error :busy.
+  Closing the runtime cancels queued callbacks and interrupts active ones."
+  [^AsyncRuntime runtime ^Task task f]
   (when-not (and (instance? AsyncRuntime runtime) (instance? Task task) (ifn? f))
     (throw (IllegalArgumentException. "then! requires a runtime, task, and function")))
   (io!
@@ -286,7 +314,12 @@
                (empty? @(.-callback-stages runtime)))
       (.shutdown ^ExecutorService (.-completions runtime)))))
 
-(defn close-runtime! [^AsyncRuntime runtime]
+(defn close-runtime!
+  "Cancels owned tasks and callbacks and shuts down the runtime's executors.
+  Waits within :close-timeout-ms. Interruption-resistant work can outlive that
+  budget; it cannot be forcibly stopped. Pending cleanup throws ex-info with
+  :tmux/error :cleanup-pending. Safe to call again; returns nil after cleanup."
+  [^AsyncRuntime runtime]
   (when-not (instance? AsyncRuntime runtime)
     (throw (IllegalArgumentException. "close-runtime! requires a runtime")))
   (io!

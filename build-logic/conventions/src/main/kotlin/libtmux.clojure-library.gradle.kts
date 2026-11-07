@@ -154,8 +154,39 @@ val prepareClojureTestClasspath = tasks.register("prepareClojureTestClasspath") 
     }
 }
 
+val clojureApiReference = rootProject.layout.projectDirectory.file(
+    "docs/guide/${project.name.removePrefix("libtmux-")}-api.md",
+)
+val checkClojureApiReference = tasks.register<JavaExec>("checkClojureApiReference") {
+    group = "verification"
+    description = "Checks the native Clojure reference against public var metadata."
+    inputs.file(clojureApiReference)
+}
+val updateClojureApiReference = tasks.register<JavaExec>("updateClojureApiReference") {
+    group = "documentation"
+    description = "Regenerates the native Clojure API reference from public var metadata."
+    outputs.file(clojureApiReference)
+}
+checkClojureApiReference.configure { mustRunAfter(updateClojureApiReference) }
+listOf(checkClojureApiReference to "check", updateClojureApiReference to "write").forEach { (task, mode) ->
+    task.configure {
+        dependsOn(tasks.named("testClasses"))
+        classpath = clojureSourceSets.named("test").get().runtimeClasspath
+        mainClass.set("clojure.main")
+        args("-m", "libtmux.internal.api-reference", mode, clojureApiReference.asFile.path)
+        systemProperty("libtmux.clojure.reference.module", project.name)
+        jvmArgs("-XX:+UseSerialGC", "-XX:ActiveProcessorCount=2", "-XX:TieredStopAtLevel=1")
+        javaLauncher.set(clojureJavaToolchains.launcherFor {
+            languageVersion.set(JavaLanguageVersion.of(clojureJavaVersion))
+        })
+        inputs.dir("src/main/clojure")
+        inputs.file(rootProject.file("gradle/clojure-runner/libtmux/internal/api_reference.clj"))
+    }
+}
+
 tasks.named("check") {
-    dependsOn(clojureNamespaceLoad, clojureNamespaceGuardTest, clojureTest, clojureTestInventory)
+    dependsOn(clojureNamespaceLoad, clojureNamespaceGuardTest, clojureTest, clojureTestInventory,
+        checkClojureApiReference)
 }
 
 tasks.withType<AbstractArchiveTask>().configureEach {
