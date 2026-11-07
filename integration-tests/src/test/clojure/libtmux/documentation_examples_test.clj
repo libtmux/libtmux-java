@@ -184,6 +184,13 @@
     (is (= #{"libtmux-clojure/README.md" "docs/guide/clojure.md"}
            (set (map :document snippets))))))
 
+(deftest clojure-readme-has-first-visit-navigation
+  (let [^Path root (document-root)
+        readme (slurp (str (.resolve root "libtmux-clojure/README.md")))]
+    (doseq [heading ["Install" "Quick start" "What it leaves out"
+                     "Support and status" "Documentation"]]
+      (is (str/includes? readme (str "## " heading)) heading))))
+
 (deftest captured-field-reference-matches-the-projection
   (let [documented (documented-fields! (document-root))
         projected (projected-fields!)]

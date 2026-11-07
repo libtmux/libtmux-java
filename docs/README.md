@@ -36,6 +36,8 @@ Task-oriented. Start here.
   and the machine output follow.
 - [Kotlin](guide/kotlin.md) — why the core is already null-safe from Kotlin, and
   what `libtmux-kotlin` adds.
+- [Clojure](guide/clojure.md) — captured persistent values, explicit effects,
+  bounded asynchronous work, control streams, and optional core.async.
 - [Scala](guide/scala.md) — the direct-Java path and the separate Scala facade,
   with their runnable examples.
 

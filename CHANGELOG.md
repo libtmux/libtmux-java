@@ -9,6 +9,8 @@ whole release. A change to one module is in that module's changelog:
 - [`libtmux-workspace`](libtmux-workspace/CHANGELOG.md)
 - [`libtmux-workspace-cli`](libtmux-workspace-cli/CHANGELOG.md)
 - [`libtmux-kotlin`](libtmux-kotlin/CHANGELOG.md)
+- [`libtmux-clojure`](libtmux-clojure/CHANGELOG.md)
+- [`libtmux-clojure-core-async`](libtmux-clojure-core-async/CHANGELOG.md)
 - [`libtmux-scala`](libtmux-scala/CHANGELOG.md)
 - [`libtmux-scala-cats`](libtmux-scala-cats/CHANGELOG.md)
 - [`libtmux-scala-ox`](libtmux-scala-ox/CHANGELOG.md)
