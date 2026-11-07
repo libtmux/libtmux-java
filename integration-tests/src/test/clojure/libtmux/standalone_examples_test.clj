@@ -14,28 +14,39 @@
   (.toAbsolutePath (Path/of (System/getProperty "libtmux.docs.root" ".")
                             (make-array String 0))))
 
-(defn- programs []
-  (let [^JsonNode manifest (.readTree (ObjectMapper.)
-                                     (.toFile (.resolve (root) "examples/api/manifest.json")))]
+(defn- ^JsonNode catalog []
+  (.readTree (ObjectMapper.)
+             (.toFile (.resolve (root) "examples/api/clojure/manifest.json"))))
+
+(defn- programs [^JsonNode manifest]
     (mapv (fn [^JsonNode node]
             {:id (.asText (.path node "id"))
+             :language (.asText (.path node "language"))
              :sourceFile (.asText (.path node "sourceFile"))
+             :path (.asText (.path node "path"))
              :mainNamespace (.asText (.path node "mainNamespace"))
              :expectedOutput (.asText (.path node "expectedOutput"))
              :requiresControl (.asBoolean (.path node "requiresControl"))
              :unsupportedOutput (.asText (.path node "unsupportedOutput"))
              :targets (mapv #(.asText ^JsonNode %) (seq (.path node "targets")))})
           (filter #(= "clojure" (.asText (.path ^JsonNode % "variant")))
-                  (seq (.path manifest "examples"))))))
+                  (seq (.path manifest "examples")))))
 
 (deftest manifest-covers-every-clojure-program
-  (let [examples (programs)
+  (let [manifest (catalog)
+        examples (programs manifest)
+        setup (seq (.. manifest (path "variants") (path "clojure") (path "files")))
         source-root (.resolve (root) "examples/src/main/clojure")
         sources (into #{}
                       (comp (filter #(.isFile ^File %))
                             (filter #(str/ends-with? (.getName ^File %) ".clj"))
                             (map #(str (.relativize (root) (.toPath ^File %)))))
                       (file-seq (.toFile source-root)))]
+    (is (= 1 (.asInt (.path manifest "schemaVersion"))))
+    (is (= 2 (count setup)))
+    (is (= #{"deps.edn" "run.sh"} (set (map #(.asText (.path ^JsonNode % "path")) setup))))
+    (doseq [^JsonNode file setup]
+      (is (.isFile (.toFile (.resolve (root) (.asText (.path file "sourceFile")))))))
     (is (= 13 (count examples)))
     (is (= (set (map #(str "clojure-" %)
                      ["Connect" "ListSessions" "ListWindows" "ListPanes"
@@ -44,7 +55,9 @@
                       "ObserveWithAsync"]))
            (set (map :id examples))))
     (is (= sources (set (map :sourceFile examples))))
-    (doseq [{:keys [sourceFile mainNamespace targets requiresControl unsupportedOutput]} examples]
+    (doseq [{:keys [sourceFile path language mainNamespace targets requiresControl unsupportedOutput]} examples]
+      (is (= "clojure" language))
+      (is (= sourceFile (str "examples/" path)))
       (when requiresControl (is (not (str/blank? unsupportedOutput))))
       (is (str/ends-with? sourceFile
                          (str (-> mainNamespace (str/replace "." "/")
@@ -101,7 +114,7 @@
   programs-run-their-displayed-entry-points
   (let [supported (delay (fixture/with-owned-server
                          (fn [{:keys [server]}] (gate/supported? server))))]
-    (doseq [{:keys [id expectedOutput requiresControl unsupportedOutput] :as program} (programs)]
+    (doseq [{:keys [id expectedOutput requiresControl unsupportedOutput] :as program} (programs (catalog))]
       (testing id
         (println "Standalone Clojure program:" id)
         (let [{:keys [exit output elapsed-ms]} (launch! program)
