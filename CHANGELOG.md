@@ -28,10 +28,12 @@ release that first shipped the module.
 
 ### Documented
 
-- **Clojure has complete common API programs.** Eight source files cover
-  connecting, captured traversal, creation, Java predicate interop, and
+- **Clojure has complete common API and capability programs.** Source files
+  cover connecting, captured traversal, creation, Java predicate interop, and
   verified input/capture. Native tests execute their CLI entry points against
-  private tmux servers and check the source-owned manifest's output.
+  private tmux servers and check the source-owned manifest's output. Capability
+  programs add layout and movement, bounded workers and cancellation, control
+  output, core.async ownership, and Java command completion.
 
 - **Clojure namespaces have a native API reference.** Public var arities
   and docstrings generate the core and optional adapter references; module

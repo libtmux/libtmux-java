@@ -1,7 +1,9 @@
 (ns libtmux.standalone-examples-test
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is testing]])
+            [clojure.test :refer [deftest is testing]]
+            [libtmux.internal.control-gate :as gate]
+            [libtmux.internal.fixture :as fixture])
   (:import [com.fasterxml.jackson.databind JsonNode ObjectMapper]
            [java.io File StringWriter]
            [java.lang ProcessHandle]
@@ -20,6 +22,8 @@
              :sourceFile (.asText (.path node "sourceFile"))
              :mainNamespace (.asText (.path node "mainNamespace"))
              :expectedOutput (.asText (.path node "expectedOutput"))
+             :requiresControl (.asBoolean (.path node "requiresControl"))
+             :unsupportedOutput (.asText (.path node "unsupportedOutput"))
              :targets (mapv #(.asText ^JsonNode %) (seq (.path node "targets")))})
           (filter #(= "clojure" (.asText (.path ^JsonNode % "variant")))
                   (seq (.path manifest "examples"))))))
@@ -32,13 +36,16 @@
                             (filter #(str/ends-with? (.getName ^File %) ".clj"))
                             (map #(str (.relativize (root) (.toPath ^File %)))))
                       (file-seq (.toFile source-root)))]
-    (is (= 8 (count examples)))
+    (is (= 13 (count examples)))
     (is (= (set (map #(str "clojure-" %)
                      ["Connect" "ListSessions" "ListWindows" "ListPanes"
-                      "NewSession" "NewWindow" "Query" "Capture"]))
+                      "NewSession" "NewWindow" "Query" "Capture" "Workspace"
+                      "CaptureConcurrently" "WatchPaneOutput" "RunACommand"
+                      "ObserveWithAsync"]))
            (set (map :id examples))))
     (is (= sources (set (map :sourceFile examples))))
-    (doseq [{:keys [sourceFile mainNamespace targets]} examples]
+    (doseq [{:keys [sourceFile mainNamespace targets requiresControl unsupportedOutput]} examples]
+      (when requiresControl (is (not (str/blank? unsupportedOutput))))
       (is (str/ends-with? sourceFile
                          (str (-> mainNamespace (str/replace "." "/")
                                   (str/replace "-" "_")) ".clj")))
@@ -55,7 +62,8 @@
         (is (contains? (ns-publics namespace) (symbol (name qualified))) target)))))
 
 (defn- launch! [{:keys [mainNamespace]}]
-  (let [base (io/file "/tmp/libtmux-java-test")
+  (let [started (System/nanoTime)
+        base (io/file "/tmp/libtmux-java-test")
         _ (.mkdirs base)
         directory (Files/createTempDirectory (.toPath base) "clojure-api-"
                                               (make-array java.nio.file.attribute.FileAttribute 0))
@@ -64,7 +72,7 @@
                        File/pathSeparator (System/getProperty "java.class.path"))
         command ["sh" (str (.resolve (root) "examples/api/run.sh"))
                  (str (System/getProperty "java.home") "/bin/java")
-                 "-XX:+UseSerialGC" "-XX:ActiveProcessorCount=2" "-XX:TieredStopAtLevel=1"
+                 "-Xmx384m" "-XX:+UseSerialGC" "-XX:ActiveProcessorCount=2" "-XX:TieredStopAtLevel=1"
                  "-cp" classpath "clojure.main" "-m" mainNamespace]
         builder (doto (ProcessBuilder. ^java.util.List command)
                   (.directory (.toFile (root)))
@@ -77,7 +85,8 @@
       (.close (.getOutputStream process))
       (try
         (.get (.onExit process) 20 TimeUnit/SECONDS)
-        {:exit (.exitValue process) :output (slurp (.toFile output))}
+        {:exit (.exitValue process) :output (slurp (.toFile output))
+         :elapsed-ms (/ (- (System/nanoTime) started) 1000000.0)}
         (finally
           (when (.isAlive process)
             (with-open [children (.descendants process)]
@@ -90,9 +99,14 @@
 
 (deftest ^{:slow true :reason "Fresh CLI processes with owned real tmux servers; outer loop only."}
   programs-run-their-displayed-entry-points
-  (doseq [{:keys [id expectedOutput] :as program} (programs)]
-    (testing id
-      (println "Standalone Clojure program:" id)
-      (let [{:keys [exit output]} (launch! program)]
-        (is (zero? exit) output)
-        (is (= expectedOutput output))))))
+  (let [supported (delay (fixture/with-owned-server
+                         (fn [{:keys [server]}] (gate/supported? server))))]
+    (doseq [{:keys [id expectedOutput requiresControl unsupportedOutput] :as program} (programs)]
+      (testing id
+        (println "Standalone Clojure program:" id)
+        (let [{:keys [exit output elapsed-ms]} (launch! program)
+              expected (if (and requiresControl (not @supported))
+                         unsupportedOutput expectedOutput)]
+          (println "CLI milliseconds:" id (long elapsed-ms))
+          (is (zero? exit) output)
+          (is (= expected output)))))))
