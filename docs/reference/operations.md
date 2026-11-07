@@ -142,7 +142,9 @@ Generated from `@Operation`-annotated methods by the operation-catalog Doclet; d
 | `io.github.libtmux.Server` | `killServer()` | MUTATION | Ends the tmux server and every session on it. |
 | `io.github.libtmux.Server` | `killServer(java.time.Duration)` | MUTATION | Ends the tmux server and every session on it, within a deadline of the caller's choosing. |
 | `io.github.libtmux.Server` | `batch()` | CAPTURED | Collects several commands to run in one tmux invocation. |
+| `io.github.libtmux.Server` | `batchReservingCapacity()` | CAPTURED | Collects a group that may wait for a release through this server's transport. |
 | `io.github.libtmux.Server` | `chain()` | CAPTURED | Starts a chain of commands where each one acts on what the last one made. |
+| `io.github.libtmux.Server` | `chainReservingCapacity()` | CAPTURED | Starts an implicit-target chain while reserving transport capacity for its release. |
 | `io.github.libtmux.Server` | `expand(java.lang.String)` | READ | Expands a tmux format against the server, and answers with what it came to. |
 | `io.github.libtmux.Server` | `shell()` | CAPTURED | Shell commands run by tmux, and tmux commands chosen by a shell exit status. |
 | `io.github.libtmux.Server` | `commands()` | CAPTURED | The commands this tmux knows. |
@@ -174,6 +176,7 @@ Generated from `@Operation`-annotated methods by the operation-catalog Doclet; d
 | `io.github.libtmux.Server` | `control(io.github.libtmux.Session, java.time.Duration)` | LIFECYCLE | As {@link #control(Session)}, with the caller's deadline for the attach and the identity read. |
 | `io.github.libtmux.Server` | `snapshot()` | READ | Captures the whole hierarchy in at most four listings, retrying once if the server is replaced. |
 | `io.github.libtmux.Server` | `sessions(io.github.libtmux.query.FilterExpr<io.github.libtmux.Session>)` | READ | The sessions this expression matches, captured now. |
+| `io.github.libtmux.Server` | `captureServer()` | READ | Captures metadata and entity handles from one observed hierarchy. |
 | `io.github.libtmux.Server` | `sessions()` | READ | Every session, captured now. |
 | `io.github.libtmux.Server` | `windows()` | READ | Captures every winlink, preserving each session and index placement. |
 | `io.github.libtmux.Server` | `windows(io.github.libtmux.query.FilterExpr<io.github.libtmux.Window>)` | READ | The winlinks this expression matches, captured now. |

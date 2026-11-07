@@ -38,7 +38,7 @@ final class CapturedServerIntegrationTest {
             };
             try (Server measured = Server.using(server.config(), counting)) {
                 CapturedServer captured = measured.captureServer();
-                assertEquals(2, commands.get());
+                assertEquals(3, commands.get(), "one admission probe and two capture requests");
                 Window first = captured.sessions().stream()
                         .filter(session -> session.name().equals("libtmux"))
                         .findFirst()
@@ -63,7 +63,7 @@ final class CapturedServerIntegrationTest {
                         captured.snapshot().clients().size(), captured.clients().size());
                 captured.clients().forEach(client -> client.attachment());
                 captured.panes().forEach(pane -> pane.window().session().windows());
-                assertEquals(2, commands.get(), "captured clients and relations issue no further commands");
+                assertEquals(3, commands.get(), "captured clients and relations issue no further commands");
                 assertEquals(
                         "changed-after-capture",
                         server.window(first.context()).orElseThrow().name());

@@ -1079,7 +1079,7 @@ public final class Server implements AutoCloseable {
      * <p>Accessing the returned view or its captured relations issues no commands. Acquisition
      * uses the same consistency checks and replacement retry as {@link #snapshot()}.
      *
-     * @throws ServerNotRunningException if no daemon is running
+     * @throws ServerUnavailableException if no daemon is running
      * @throws LibTmuxException if the capture otherwise fails
      */
     @Operation(Kind.READ)
