@@ -43,6 +43,30 @@
         (async/close! (adapter/events owner))
         (is (= :adapter-stopped (:reason (take-within (adapter/terminal owner)))))))))
 
+(deftest transactional-consumer-close-does-not-consume-the-stop
+  (let [entered (CountDownLatch. 1)
+        release (CountDownLatch. 1)
+        closes (atom 0)]
+    (with-redefs [control/subscribe! (fn [_ _] ::subscription)
+                  control/next! (fn [_]
+                                  (.countDown entered)
+                                  (.await release)
+                                  {:stream/status :terminal
+                                   :stream/terminal {:reason :closed
+                                                     :loss {:upstream/events 0 :upstream/bytes 0}}})
+                  control/close! (fn [_]
+                                   (io! (swap! closes inc) (.countDown release)))]
+      (let [owner (adapter/observe! ::connection)]
+        (try
+          (is (.await entered 500 TimeUnit/MILLISECONDS))
+          (is (thrown? IllegalStateException
+                       (dosync (async/close! (adapter/events owner)))))
+          (adapter/stop! owner)
+          (is (pos? @closes) "a rejected transaction must leave ordinary stop effective")
+          (finally
+            (.countDown release)
+            (is (= :adapter-stopped (:reason (take-within (adapter/terminal owner)))))))))))
+
 (deftest consumer-close-stops-worker-blocked-on-event-put
   (let [read-count (atom 0)
         closed (atom false)
