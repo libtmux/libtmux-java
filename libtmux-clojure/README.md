@@ -58,6 +58,14 @@ resources; it does not kill the tmux server.
 - [`libtmux.control`][control-api] — explicit control replies and owned
   output subscriptions.
 
+## Run complete programs
+
+The [Clojure API programs][programs] include their imports, entry points,
+consumer dependencies, and private-server launcher. Start with captured
+session/window/pane traversal, then compare native and Java predicates, create
+a detached window, or send literal input and verify its captured output.
+CI executes every program and checks its displayed result.
+
 ## What it leaves out
 
 - **No hidden refreshes.** Acquisition and mutation end in `!`; captured
@@ -118,4 +126,5 @@ illustrative pseudocode.
 [guide-streaming]: ../docs/guide/clojure.md
 [java-core]: ../libtmux/README.md
 [mcp-guide]: ../docs/guide/mcp.md
+[programs]: ../examples/api/README.md#clojure-programs
 [reference]: ../docs/guide/clojure-reference.md

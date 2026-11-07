@@ -3,7 +3,7 @@
 Each program has its own imports, entry point, client lifetime, and error
 handling. The manifest connects a complete source file and its expected output
 to the public API declarations it demonstrates. Java, Kotlin, Scala Direct,
-and Scala Cats have separate programs and consumer dependencies.
+Scala Cats, and Clojure have separate programs and consumer dependencies.
 
 The programs cover connecting to a server, listing sessions, windows and panes,
 creating sessions and windows, typed queries, and sending and capturing input.
@@ -78,3 +78,73 @@ release. Set `API_RUN_ROOT` to move the runner's directories from
 `/tmp/libtmux-java-dev`; the default socket path under it must fit in 100
 bytes. Each invocation starts a fresh fixture, so none of the programs requires
 an earlier example to run first.
+
+## Clojure programs
+
+The Clojure variant uses Tools.deps and a `mainNamespace` entry point in the
+manifest. Each file imports its public namespaces, closes its client, and
+prints the manifest's expected output. The same private-server launcher owns
+setup and teardown. No program depends on a repository test helper.
+
+| Task | Complete program |
+| --- | --- |
+| Connect and capture | [connect.clj][connect] |
+| List sessions | [list_sessions.clj][sessions] |
+| Traverse session windows | [list_windows.clj][windows] |
+| Traverse window panes | [list_panes.clj][panes] |
+| Create a session | [new_session.clj][new-session] |
+| Create and refresh a window | [new_window.clj][new-window] |
+| Compare native and Java filters | [query.clj][query] |
+| Send input and verify capture | [capture.clj][capture] |
+
+The Clojure package has not shipped. Rehearse a consumer from this checkout
+with JDK 25+, [Clojure CLI][cli], and tmux on PATH. Prepare a separate consumer
+folder:
+
+```console
+$ mkdir -p build/clojure-api-consumer/src/main && \
+    cp examples/api/clojure/deps.edn examples/api/run.sh \
+      build/clojure-api-consumer/ && \
+    cp -R examples/src/main/clojure build/clojure-api-consumer/src/main/
+```
+
+Install the two local artifacts in that consumer's isolated Maven repository:
+
+```console
+$ ./gradlew :libtmux:publishToMavenLocal \
+    :libtmux-clojure:publishToMavenLocal \
+    -Dmaven.repo.local="$PWD/build/clojure-api-consumer/m2"
+```
+
+Run a full program through the private-server launcher:
+
+```console
+$ cd build/clojure-api-consumer && \
+    sh run.sh clojure \
+      -M \
+      -m libtmux.examples.api.capture
+```
+
+It prints `api-keys` and `api-line` on separate lines after verifying actual
+shell output. The consumer classpath uses the installed library JARs and its
+copied program sources. It does not use this checkout's library source paths.
+Choose another namespace from the table to run a different task.
+
+The native integration suite discovers every Clojure program in the manifest,
+checks its public API targets, loads it without reflection warnings, and
+executes its own CLI entry point. Both supported tmux endpoints run this gate:
+
+```console
+$ ./gradlew :integration-tests:clojureIntegrationTest \
+    -PlibtmuxClojureTestNamespaces=libtmux.standalone-examples-test
+```
+
+[capture]: ../src/main/clojure/libtmux/examples/api/capture.clj
+[cli]: https://clojure.org/guides/install_clojure
+[connect]: ../src/main/clojure/libtmux/examples/api/connect.clj
+[new-session]: ../src/main/clojure/libtmux/examples/api/new_session.clj
+[new-window]: ../src/main/clojure/libtmux/examples/api/new_window.clj
+[panes]: ../src/main/clojure/libtmux/examples/api/list_panes.clj
+[query]: ../src/main/clojure/libtmux/examples/api/query.clj
+[sessions]: ../src/main/clojure/libtmux/examples/api/list_sessions.clj
+[windows]: ../src/main/clojure/libtmux/examples/api/list_windows.clj

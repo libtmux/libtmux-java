@@ -104,10 +104,10 @@ val clojureDependencyMetadata =
         group = "verification"
         description = "Checks deps.edn against the checked-in development dependency baseline."
         val depsEdn = layout.projectDirectory.file("deps.edn")
+        val exampleDepsEdn = layout.projectDirectory.file("examples/api/clojure/deps.edn")
         val gradleProperties = layout.projectDirectory.file("gradle.properties")
-        inputs.files(depsEdn, gradleProperties)
+        inputs.files(depsEdn, exampleDepsEdn, gradleProperties)
         doLast {
-            val declared = depsEdn.asFile.readText()
             val clojureVersion = libs.versions.clojure.get()
             val coreAsyncVersion = libs.versions.core.async.get()
             val developmentVersion =
@@ -120,18 +120,28 @@ val clojureDependencyMetadata =
                     "org.clojure/core.async" to coreAsyncVersion,
                     "io.github.libtmux/libtmux" to developmentVersion,
                     "io.github.libtmux/libtmux-junit5" to developmentVersion,
-            )
-            expected.forEach { (coordinate, version) ->
-                val declaredVersions =
-                    Regex("${Regex.escape(coordinate)}\\s+\\{:mvn/version\\s+\"([^\"]+)\"")
-                        .findAll(declared)
-                        .map { it.groupValues[1] }
-                        .toList()
-                require(declaredVersions.isNotEmpty()) {
-                    "deps.edn must declare $coordinate at the development baseline $version"
-                }
-                require(declaredVersions.all { it == version }) {
-                    "every deps.edn declaration of $coordinate must use the development baseline $version; found $declaredVersions"
+                )
+            val examplesExpected =
+                mapOf(
+                    "org.clojure/clojure" to clojureVersion,
+                    "io.github.libtmux/libtmux-clojure" to developmentVersion,
+                )
+            listOf(depsEdn to expected, exampleDepsEdn to examplesExpected).forEach { (source, baseline) ->
+                val declared = source.asFile.readText()
+                val location = source.asFile.relativeTo(projectDir)
+                baseline.forEach { (coordinate, version) ->
+                    val declaredVersions =
+                        Regex("${Regex.escape(coordinate)}\\s+\\{:mvn/version\\s+\"([^\"]+)\"")
+                            .findAll(declared)
+                            .map { it.groupValues[1] }
+                            .toList()
+                    require(declaredVersions.isNotEmpty()) {
+                        "$location must declare $coordinate at the development baseline $version"
+                    }
+                    require(declaredVersions.all { it == version }) {
+                        "every declaration of $coordinate in $location must use " +
+                            "the development baseline $version; found $declaredVersions"
+                    }
                 }
             }
         }

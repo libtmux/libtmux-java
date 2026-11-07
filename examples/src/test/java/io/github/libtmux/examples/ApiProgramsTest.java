@@ -19,7 +19,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
-/** Complete common API programs, executed by their displayed {@code api/run.sh} launcher. */
+/** Common API inventory; the native Clojure suite runs its mains through the same launcher. */
 final class ApiProgramsTest {
     private static final Path ROOT = Path.of("..");
 
@@ -29,6 +29,7 @@ final class ApiProgramsTest {
 
     static Stream<Arguments> cases() throws IOException {
         return programs()
+                .filter(program -> !program.required("language").asText().equals("clojure"))
                 .map(program -> Arguments.of(named(program.required("id").asText(), program)));
     }
 
@@ -40,7 +41,7 @@ final class ApiProgramsTest {
     void manifestCoversEveryWholeProgramAndSetupFile() throws Exception {
         JsonNode catalog = manifest();
         assertEquals(1, catalog.required("schemaVersion").asInt());
-        Set<String> variants = Set.of("java", "kotlin", "scala-direct", "scala-cats");
+        Set<String> variants = Set.of("java", "kotlin", "scala-direct", "scala-cats", "clojure");
         Set<String> expected = new HashSet<>();
         for (String variant : variants) {
             for (String program : Set.of(
@@ -64,7 +65,11 @@ final class ApiProgramsTest {
             assertFalse(path.contains(".."), path);
             assertTrue(paths.add(path), "a whole program must have its own source file");
             assertTrue(Files.isRegularFile(ROOT.resolve(path)), path);
-            Class.forName(program.required("mainClass").asText()).getMethod("main", String[].class);
+            if (program.required("language").asText().equals("clojure")) {
+                assertFalse(program.required("mainNamespace").asText().isBlank());
+            } else {
+                Class.forName(program.required("mainClass").asText()).getMethod("main", String[].class);
+            }
             assertFalse(program.required("description").asText().isBlank());
             assertFalse(program.required("expectedOutput").asText().isBlank());
             assertFalse(program.required("targets").isEmpty());
@@ -72,8 +77,11 @@ final class ApiProgramsTest {
         }
         assertEquals(expected, actual);
         Set<String> sources = new HashSet<>();
-        for (String language : Set.of("java", "kotlin", "scala")) {
-            Path sourceRoot = Path.of("src/main", language, "io/github/libtmux/examples/api");
+        for (String language : Set.of("java", "kotlin", "scala", "clojure")) {
+            Path sourceRoot = Path.of(
+                    "src/main",
+                    language,
+                    language.equals("clojure") ? "libtmux/examples/api" : "io/github/libtmux/examples/api");
             try (Stream<Path> files = Files.walk(sourceRoot)) {
                 files.filter(Files::isRegularFile).forEach(path -> sources.add("examples/" + path));
             }
@@ -82,15 +90,18 @@ final class ApiProgramsTest {
         Set<String> describedVariants = new HashSet<>();
         catalog.required("variants").fieldNames().forEachRemaining(describedVariants::add);
         assertEquals(variants, describedVariants);
-        for (JsonNode variant : catalog.required("variants")) {
+        for (var entry : catalog.required("variants").properties()) {
+            JsonNode variant = entry.getValue();
             Set<String> destinations = new HashSet<>();
             for (JsonNode file : variant.required("files")) {
                 assertTrue(Files.isRegularFile(
                         ROOT.resolve(file.required("sourceFile").asText())));
                 assertTrue(destinations.add(file.required("path").asText()), "duplicate setup file");
             }
-            assertEquals(
-                    Set.of("settings.gradle.kts", "build.gradle.kts", "gradle.properties", "run.sh"), destinations);
+            Set<String> expectedFiles = entry.getKey().equals("clojure")
+                    ? Set.of("deps.edn", "run.sh")
+                    : Set.of("settings.gradle.kts", "build.gradle.kts", "gradle.properties", "run.sh");
+            assertEquals(expectedFiles, destinations);
         }
     }
 

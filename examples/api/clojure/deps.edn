@@ -1,0 +1,4 @@
+{:paths ["src/main/clojure"]
+ :mvn/local-repo "m2"
+ :deps {org.clojure/clojure {:mvn/version "1.12.6"}
+        io.github.libtmux/libtmux-clojure {:mvn/version "0.1.2-SNAPSHOT"}}}
