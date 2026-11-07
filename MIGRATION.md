@@ -28,6 +28,8 @@ The existing `PaneOutput.data()` remains the client's predecoded view.
 `EventSubscription.termination()` records the first end classification and
 original cause. A control exit describes that client, not daemon death;
 bare EOF remains unknown. Later close does not replace that record.
+Explicitly closing a subscription discards its queued payload even after a
+remote end; it preserves the recorded cause and loss counts.
 
 ### With no socket chosen, tmux picks the server
 

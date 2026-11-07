@@ -14,6 +14,11 @@ changelog](../CHANGELOG.md).
 
 ## Unreleased
 
+### Fixed
+
+- **Closing an ended subscription releases its queued payload.** Its first
+  terminal classification and original cause remain available.
+
 ### Added
 
 - **`PaneOutputDecoder` decodes a subscriber's bytes after its own gaps.**
