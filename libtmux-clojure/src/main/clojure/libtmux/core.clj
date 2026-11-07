@@ -1,5 +1,6 @@
 (ns libtmux.core
-  "Explicit tmux effects. Captured maps retain opaque Java references."
+  "Explicit tmux effects through [[open!]] and [[snapshot!]].
+  Captured maps retain opaque Java references; [[libtmux.data]] traverses them locally."
   (:require [libtmux.data :as data])
   (:import [io.github.libtmux Server ServerEndpoint Session Window Pane Client
             SessionSpec SessionSpec$Builder WindowSpec WindowSpec$Builder
@@ -99,7 +100,8 @@
 
 (defn error-summary
   "Returns fixed error metadata without arguments or cause messages.
-  Printing the original exception and its cause chain is not sanitized."
+  Printing the original exception and its cause chain is not sanitized.
+  Use this summary when handling failures from [[new-session!]] or [[batch!]]."
   [failure]
   (select-keys (ex-data failure)
                [:tmux/error :tmux/operation :tmux/phase :tmux/dispatch :tmux/effects]))
@@ -114,11 +116,12 @@
                                 (not (.isZero ^Duration x))))
 
 (defn ^Server open!
-  "Opens local resources for an explicit :socket-path or :socket-name endpoint.
+  "Opens local resources for an explicit `:socket-path` or `:socket-name` endpoint.
   Supply exactly one endpoint. Paths accept String or java.nio.file.Path.
-  Optional :binary is a command name or path; :config-file is a path;
-  :timeout is a positive java.time.Duration. Unknown keys are rejected.
-  Returns a Server for with-open; closing it does not kill tmux."
+  Optional `:binary` is a command name or path; `:config-file` is a path;
+  `:timeout` is a positive java.time.Duration. Unknown keys are rejected.
+  Returns a Server for with-open; closing it does not kill tmux.
+  Use [[snapshot!]] to acquire state and [[close!]] to release this client."
   [options]
   (closed! :open options {:socket-path path? :socket-name string? :binary string?
                           :config-file path? :timeout duration?})
@@ -136,21 +139,27 @@
                (when-let [x (:timeout options)] (.defaultTimeout builder x))
                (.build builder)))))
 
-(defn snapshot! "Acquires an eager captured graph from an explicit server."
+(defn snapshot! "Acquires an eager captured graph from an explicit server.
+  Traverse one observation with [[libtmux.data/windows]] and [[libtmux.data/panes]]."
   [server]
   (let [^Server server (ref! :snapshot server [Server])]
     (execute! :snapshot :read #(data/from-capture (.captureServer server)))))
 
-(defn sessions! "Acquires captured sessions; acquisition failure throws." [server]
+(defn sessions! "Acquires captured sessions; acquisition failure throws.
+  [[libtmux.data/windows]] traverses each session without another acquisition." [server]
   (:tmux/sessions (snapshot! server)))
-(defn windows! "Acquires captured window occurrences." [server]
+(defn windows! "Acquires captured window occurrences.
+  [[libtmux.data/panes]] traverses these occurrences without another acquisition." [server]
   (:tmux/windows (snapshot! server)))
-(defn panes! "Acquires captured pane occurrences." [server]
+(defn panes! "Acquires captured pane occurrences.
+  Use [[capture!]] for terminal contents or [[libtmux.data/data]] for detached EDN." [server]
   (:tmux/panes (snapshot! server)))
-(defn clients! "Acquires captured clients." [server]
+(defn clients! "Acquires captured clients.
+  [[detach-client!]] acts on a selected client reference." [server]
   (:tmux/clients (snapshot! server)))
 
-(defn find-session! "Finds a session by exact name; absence returns nil." [server name]
+(defn find-session! "Finds a session by exact name; absence returns `nil`.
+  Use [[sessions!]] when the selection needs ordinary Clojure predicates." [server name]
   (require! :find-session (string? name))
   (data/one-or-none (filter #(= name (:session/name %)) (sessions! server))))
 
@@ -172,7 +181,8 @@
 
 (defn refresh!
   "Reacquires an explicit reference, retaining window and pane placement.
-  Returns nil if that occurrence disappeared; server failure throws."
+  Returns `nil` if that occurrence disappeared; server failure throws.
+  Compare identity with [[libtmux.data/same-entity?]]; map equality compares observations."
   [entry]
   (let [reference (ref! :refresh entry [Server Session Window Pane Client])]
     (execute! :refresh :read #(refresh-reference! reference))))
@@ -225,9 +235,9 @@
 
 (defn new-session!
   "Creates a detached session and returns a fresh captured session map.
-  Options are :name, :window-name, :command (nonempty argv vector), :directory
-  (path), and :environment (string keys and values). Unknown keys are rejected.
-  A recapture failure can occur after creation; inspect error-summary before
+  Options are `:name`, `:window-name`, `:command` (nonempty argv vector), `:directory`
+  (path), and `:environment` (string keys and values). Unknown keys are rejected.
+  A recapture failure can occur after creation; inspect [[error-summary]] before
   retrying a mutation."
   [server options]
   (let [^Server server (ref! :new-session server [Server])
@@ -237,8 +247,9 @@
 
 (defn new-window!
   "Creates a window and returns a fresh captured window occurrence.
-  Takes a Session ref and :name, :command (argv), :directory, :environment,
-  :index (nonnegative integer), and :detached? options."
+  Takes a Session ref and `:name`, `:command` (argv), `:directory`, `:environment`,
+  `:index` (nonnegative integer), and `:detached?` options.
+  Use [[split-pane!]] to add panes within the new window."
   [session options]
   (let [^Session session (ref! :new-window session [Session])
         ^WindowSpec spec (build-spec :new-window options (WindowSpec/builder)
@@ -247,10 +258,11 @@
 
 (defn split-pane!
   "Splits a Pane ref and returns a fresh captured pane occurrence.
-  Options are :command (argv), :directory, :environment, :direction
-  (:below, :above, :right, :left), :cells or :percent (mutually exclusive),
-  :detached?, :empty?, :full-window?, and :zoomed?. :empty? excludes :command.
-  A single argv element is executed literally, without shell interpolation."
+  Options are `:command` (argv), `:directory`, `:environment`, `:direction`
+  (`:below`, `:above`, `:right`, `:left`), `:cells` or `:percent` (mutually exclusive),
+  `:detached?`, `:empty?`, `:full-window?`, and `:zoomed?.` `:empty?` excludes `:command.`
+  A single argv element is executed literally, without shell interpolation.
+  Use [[apply-layout!]] to arrange the resulting window."
   [pane options]
   (let [^Pane pane (ref! :split-pane pane [Pane])
         ^SplitSpec spec (build-spec :split-pane options (SplitSpec/builder)
@@ -266,15 +278,17 @@
   (let [reference (ref! :rename value [Session Window])]
     (execute! :rename :mutation #(capture-after-mutation! :rename (call reference rename [Session Window] name)))))
 
-(defn select! "Selects the preserved window or pane occurrence." [value]
+(defn select! "Selects the preserved window or pane occurrence.
+  [[refresh!]] acquires the resulting selection state." [value]
   (let [reference (ref! :select value [Window Pane])]
     (execute! :select :mutation #(call reference select [Window Pane]))))
 
-(defn kill! "Kills the explicitly supplied session, window, or pane." [value]
+(defn kill! "Kills the explicitly supplied session, window, or pane.
+  [[close!]] releases a client; [[kill-server!]] ends its entire tmux daemon." [value]
   (let [reference (ref! :kill value [Session Window Pane])]
     (execute! :kill :mutation #(call reference kill [Session Window Pane]))))
 
-(defn kill-server! "Kills the explicit tmux server; close only releases local resources." [server]
+(defn kill-server! "Kills the explicit tmux server; [[close!]] only releases local resources." [server]
   (let [^Server server (ref! :kill-server server [Server])]
     (execute! :kill-server :mutation #(.killServer server))))
 
@@ -282,41 +296,50 @@
   (let [^Server server (ref! :close server [Server])]
     (execute! :close :read #(.close server))))
 
-(defn link-window! "Links a window into a session." [window session]
+(defn link-window! "Links a window into a session.
+  [[unlink-window!]] removes a placement; [[move-window!]] relocates one." [window session]
   (let [^Window window (ref! :link-window window [Window])
         ^Session session (ref! :link-window session [Session])]
     (execute! :link-window :mutation #(.linkTo window session))))
-(defn unlink-window! "Unlinks the preserved window occurrence." [window]
+(defn unlink-window! "Unlinks the preserved window occurrence.
+  [[libtmux.data/same-link?]] distinguishes contextual placements." [window]
   (let [^Window window (ref! :unlink-window window [Window])]
     (execute! :unlink-window :mutation #(.unlink window))))
-(defn move-window! "Moves a window to a session and explicit index." [window session index]
+(defn move-window! "Moves a window to a session and explicit index.
+  Use [[snapshot!]] to find the new placement after moving." [window session index]
   (require! :move-window (nonnegative-int? index))
   (let [^Window window (ref! :move-window window [Window])
         ^Session session (ref! :move-window session [Session])]
     (execute! :move-window :mutation #(.moveTo window session (int index)))))
-(defn join-pane! "Joins a pane to a window." [pane window]
+(defn join-pane! "Joins a pane to a window.
+  [[split-pane!]] creates a new pane instead of relocating an existing one." [pane window]
   (let [^Pane pane (ref! :join-pane pane [Pane]) ^Window window (ref! :join-pane window [Window])]
     (execute! :join-pane :mutation #(.joinTo pane window))))
-(defn resize! "Resizes a window or pane to positive cell dimensions." [value width height]
+(defn resize! "Resizes a window or pane to positive cell dimensions.
+  [[apply-layout!]] arranges all panes in a window." [value width height]
   (require! :resize (and (positive-int? width) (positive-int? height)))
   (let [reference (ref! :resize value [Window Pane])]
     (execute! :resize :mutation #(call reference resizeTo [Window Pane] (Dimensions. (int width) (int height))))))
-(defn apply-layout! "Applies an explicit tmux layout string." [window layout]
+(defn apply-layout! "Applies an explicit tmux layout string.
+  [[resize!]] sets explicit cell dimensions." [window layout]
   (require! :apply-layout (string? layout))
   (let [^Window window (ref! :apply-layout window [Window])]
     (execute! :apply-layout :mutation #(.applyLayout window ^String layout))))
 
-(defn send-literal! "Sends literal text; completion does not mean application readiness." [pane text]
+(defn send-literal! "Sends literal text; completion does not mean application readiness.
+  [[send-keys!]] sends key names; [[await-text!]] checks observed output." [pane text]
   (require! :send-literal (string? text))
   (let [^Pane pane (ref! :send-literal pane [Pane])]
     (execute! :send-literal :mutation #(.sendLiteral pane [text]))))
-(defn send-keys! "Sends an explicit vector of tmux key names." [pane keys]
+(defn send-keys! "Sends an explicit vector of tmux key names.
+  Use [[send-literal!]] for text and [[await-text!]] for observed output." [pane keys]
   (require! :send-keys (argv? keys))
   (let [^Pane pane (ref! :send-keys pane [Pane])]
     (execute! :send-keys :mutation #(.sendKeys pane keys))))
 
 (defn capture!
-  "Captures pane lines; :from :history includes scrollback."
+  "Captures pane lines; `:from` `:history` includes scrollback.
+  [[await-text!]] waits for text; [[libtmux.control/subscribe!]] observes new output."
   ([pane] (capture! pane {}))
   ([pane options]
    (closed! :capture options {:from #(or (= :history %) (and (integer? %) (<= Integer/MIN_VALUE % Integer/MAX_VALUE)))
@@ -329,23 +352,27 @@
      (when (:escape-sequences? options) (.withEscapeSequences builder))
      (let [spec (.build builder)] (execute! :capture :read #(vec (.capture pane spec)))))))
 
-(defn expand! "Evaluates an explicit tmux format at the supplied scope." [value format]
+(defn expand! "Evaluates an explicit tmux format at the supplied scope.
+  [[capture!]] reads terminal lines rather than evaluating a tmux format." [value format]
   (require! :expand (string? format))
   (let [reference (ref! :expand value [Server Session Window Pane])]
     (execute! :expand :read #(call reference expand [Server Session Window Pane] format))))
 
-(defn raw! "Runs explicit tmux argv and returns exit status and streams; no shell." [server argv]
+(defn raw! "Runs explicit tmux argv and returns exit status and streams; no shell.
+  Use [[batch!]] for independent commands or [[chain!]] for dependent targets." [server argv]
   (require! :raw (argv? argv))
   (let [^Server server (ref! :raw server [Server])]
     (execute! :raw :mutation #(let [result (.cmd server ^java.util.List argv)]
                                {:exit-code (.exitCode result) :stdout (vec (.stdout result)) :stderr (vec (.stderr result))}))))
 
-(defn run-shell! "Runs an explicitly requested shell command on the server." [server command]
+(defn run-shell! "Runs an explicitly requested shell command on the server.
+  [[raw!]] accepts tmux argv; [[await-channel!]] can gate an explicit completion signal." [server command]
   (require! :run-shell (string? command))
   (let [^Server server (ref! :run-shell server [Server])]
     (execute! :run-shell :mutation #(.run (.shell server) command))))
 
-(defn await-text! "Waits within a positive Duration; returns a keyword describing the outcome." [pane text timeout]
+(defn await-text! "Waits within a positive Duration; returns a keyword describing the outcome.
+  Use [[capture!]] to read lines after the wait; [[send-keys!]] alone proves no completion." [pane text timeout]
   (require! :await-text (and (string? text) (duration? timeout)))
   (let [^Pane pane (ref! :await-text pane [Pane])]
     (execute! :await-text :wait
@@ -355,10 +382,12 @@
                  "TIMED_OUT" :timed-out
                  "SERVER_GONE" :server-gone))))
 
-(defn detach-client! "Detaches the explicit client." [client]
+(defn detach-client! "Detaches the explicit client.
+  [[clients!]] acquires available clients; [[switch-client!]] changes their session." [client]
   (let [^Client client (ref! :detach-client client [Client])]
     (execute! :detach-client :mutation #(.detach client))))
-(defn switch-client! "Switches an explicit client to a session." [client session]
+(defn switch-client! "Switches an explicit client to a session.
+  [[detach-client!]] disconnects a client instead of switching its session." [client session]
   (let [^Client client (ref! :switch-client client [Client]) ^Session session (ref! :switch-client session [Session])]
     (execute! :switch-client :mutation #(.switchTo client session))))
 
@@ -370,7 +399,8 @@
   (call reference hooks [Server Session Window Pane]))
 
 (defn options!
-  "Reads :local options by default, or :effective inherited options."
+  "Reads `:local` options by default, or `:effective` inherited options.
+  [[set-option!]] sets an override; [[unset-option!]] restores inheritance."
   ([value] (options! value :local))
   ([value scope]
    (require! :options (#{:local :effective} scope))
@@ -378,17 +408,20 @@
      (execute! :options :read
                #(into {} (let [^Options options (call reference options [Server Session Window Pane])]
                            (if (= scope :local) (.all options) (.effective options))))))))
-(defn set-option! "Sets a literal option value at the explicit scope." [value name text]
+(defn set-option! "Sets a literal option value at the explicit scope.
+  Read it with [[options!]]; remove the override with [[unset-option!]]." [value name text]
   (require! :set-option (and (string? name) (string? text)))
   (let [reference (ref! :set-option value [Server Session Window Pane])]
     (execute! :set-option :mutation #(.set (options-reference reference) ^String name ^String text))))
-(defn unset-option! "Removes a local option override." [value name]
+(defn unset-option! "Removes a local option override.
+  [[options!]] can read the resulting effective value." [value name]
   (require! :unset-option (string? name))
   (let [reference (ref! :unset-option value [Server Session Window Pane])]
     (execute! :unset-option :mutation #(.unset (options-reference reference) name))))
 
 (defn environment!
-  "Returns values and explicitly removed names, preserving removal versus absence."
+  "Returns values and explicitly removed names, preserving removal versus absence.
+  [[unset-environment!]] allows inheritance; [[remove-environment!]] masks a name."
   ([value] (environment! value :local))
   ([value scope]
    (require! :environment (#{:local :effective} scope))
@@ -397,55 +430,67 @@
                #(let [^Environment environment (call reference environment [Server Session])]
                   {:values (into {} (if (= scope :local) (.all environment) (.effective environment)))
                    :removed (set (.removed environment))})))))
-(defn set-environment! "Sets a literal environment value." [value name text]
+(defn set-environment! "Sets a literal environment value.
+  [[environment!]] reads values and explicitly removed names." [value name text]
   (require! :set-environment (and (string? name) (string? text)))
   (let [reference (ref! :set-environment value [Server Session])]
     (execute! :set-environment :mutation #(.set (environment-reference reference) name text))))
-(defn unset-environment! "Removes the local environment entry, allowing inheritance." [value name]
+(defn unset-environment! "Removes the local environment entry, allowing inheritance.
+  [[remove-environment!]] masks a name instead of allowing inheritance." [value name]
   (require! :unset-environment (string? name))
   (let [reference (ref! :unset-environment value [Server Session])]
     (execute! :unset-environment :mutation #(.unset (environment-reference reference) name))))
-(defn remove-environment! "Marks an environment name removed for new child processes." [value name]
+(defn remove-environment! "Marks an environment name removed for new child processes.
+  [[unset-environment!]] removes that local marker and allows inheritance." [value name]
   (require! :remove-environment (string? name))
   (let [reference (ref! :remove-environment value [Server Session])]
     (execute! :remove-environment :mutation #(.remove (environment-reference reference) name))))
 
-(defn hooks! "Returns hook names and their ordered command vectors." [value]
+(defn hooks! "Returns hook names and their ordered command vectors.
+  [[set-hook!]] replaces commands; [[append-hook!]] preserves their order." [value]
   (let [reference (ref! :hooks value [Server Session Window Pane])]
     (execute! :hooks :read #(into {} (map (fn [[k v]] [k (vec v)]))
                                   (.all (hooks-reference reference))))))
-(defn set-hook! "Replaces a hook with one explicit tmux argv command." [value event argv]
+(defn set-hook! "Replaces a hook with one explicit tmux argv command.
+  [[append-hook!]] adds a command; [[unset-hook!]] removes the hook." [value event argv]
   (require! :set-hook (and (string? event) (argv? argv)))
   (let [reference (ref! :set-hook value [Server Session Window Pane])]
     (execute! :set-hook :mutation #(.set (hooks-reference reference) ^String event ^java.util.List argv))))
-(defn append-hook! "Appends one explicit tmux argv command to a hook." [value event argv]
+(defn append-hook! "Appends one explicit tmux argv command to a hook.
+  [[hooks!]] returns the ordered command vectors." [value event argv]
   (require! :append-hook (and (string? event) (argv? argv)))
   (let [reference (ref! :append-hook value [Server Session Window Pane])]
     (execute! :append-hook :mutation #(.append (hooks-reference reference) ^String event ^java.util.List argv))))
-(defn unset-hook! "Removes an explicit hook." [value event]
+(defn unset-hook! "Removes an explicit hook.
+  [[hooks!]] reads the remaining hooks." [value event]
   (require! :unset-hook (string? event))
   (let [reference (ref! :unset-hook value [Server Session Window Pane])]
     (execute! :unset-hook :mutation #(.unset (hooks-reference reference) event))))
 
-(defn set-buffer! "Stores literal buffer contents." [server name text]
+(defn set-buffer! "Stores literal buffer contents.
+  [[show-buffer!]] reads the text; [[paste-buffer!]] sends it to a pane." [server name text]
   (require! :set-buffer (and (string? name) (string? text)))
   (let [^Server server (ref! :set-buffer server [Server])]
     (execute! :set-buffer :mutation #(.set (.buffers server) name text))))
-(defn show-buffer! "Reads literal buffer contents." [server name]
+(defn show-buffer! "Reads literal buffer contents.
+  [[buffers!]] lists names and sizes without reading their contents." [server name]
   (require! :show-buffer (string? name))
   (let [^Server server (ref! :show-buffer server [Server])]
     (execute! :show-buffer :read #(.show (.buffers server) name))))
-(defn delete-buffer! "Deletes an explicit buffer." [server name]
+(defn delete-buffer! "Deletes an explicit buffer.
+  [[buffers!]] lists the remaining buffers." [server name]
   (require! :delete-buffer (string? name))
   (let [^Server server (ref! :delete-buffer server [Server])]
     (execute! :delete-buffer :mutation #(.delete (.buffers server) name))))
-(defn paste-buffer! "Pastes an explicit buffer into a pane." [pane name]
+(defn paste-buffer! "Pastes an explicit buffer into a pane.
+  [[set-buffer!]] supplies contents; [[await-text!]] observes pane output." [pane name]
   (require! :paste-buffer (string? name))
   (let [^Pane pane (ref! :paste-buffer pane [Pane])]
     (execute! :paste-buffer :mutation #(.pasteBuffer pane name))))
 
 
-(defn buffers! "Lists captured buffer names and byte sizes." [server]
+(defn buffers! "Lists captured buffer names and byte sizes.
+  [[show-buffer!]] reads an individual buffer." [server]
   (let [^Server server (ref! :buffers server [Server])]
     (execute! :buffers :read
               #(mapv (fn [^BufferInfo buffer]
@@ -455,7 +500,8 @@
 
 (defn await-channel!
   "Waits on an explicit tmux channel while reserving capacity for its release.
-  Returns :signalled, :timed-out, or :server-gone; interruption propagates."
+  Returns `:signalled`, `:timed-out`, or `:server-gone`; interruption propagates.
+  [[signal-channel!]] releases this wait; declare [[libtmux.async/submit!]] work as `:wait`."
   [server name timeout]
   (require! :await-channel (and (string? name) (duration? timeout)))
   (let [^Server server (ref! :await-channel server [Server])]
@@ -465,7 +511,8 @@
                  "TIMED_OUT" :timed-out
                  "SERVER_GONE" :server-gone))))
 
-(defn signal-channel! "Signals an explicit tmux channel." [server name]
+(defn signal-channel! "Signals an explicit tmux channel.
+  Releases a corresponding [[await-channel!]] wait." [server name]
   (require! :signal-channel (string? name))
   (let [^Server server (ref! :signal-channel server [Server])]
     (execute! :signal-channel :mutation #(.signal (.channel server name)))))
@@ -521,16 +568,18 @@
 (defn batch!
   "Runs independent argv commands using a fresh Java Batch and returns positions.
   Supply explicit targets. Failed/skipped outcomes are data; transport failure
-  throws with :tmux/results. Use {:kind :wait} for groups needing a release,
-  including blocking shell commands. No rollback or retry safety is promised."
+  throws with `:tmux/results.` Use `{:kind :wait}` for groups needing a release,
+  including blocking shell commands. No rollback or retry safety is promised.
+  [[chain!]] carries an implicit target between dependent commands."
   ([server operations] (batch! server operations {}))
   ([server operations options] (group! :batch server operations options)))
 
 (defn chain!
   "Runs dependent argv commands with tmux's implicit target between positions.
   Uses a fresh Java CommandChain. Failed/skipped outcomes are data; transport
-  failure throws with :tmux/results. Use {:kind :wait} for groups needing a
+  failure throws with `:tmux/results.` Use `{:kind :wait}` for groups needing a
   release, including blocking shell commands. No rollback or retry safety is
-  promised."
+  promised.
+  [[batch!]] runs commands with explicit independent targets."
   ([server operations] (chain! server operations {}))
   ([server operations options] (group! :chain server operations options)))

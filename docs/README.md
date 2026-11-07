@@ -68,6 +68,9 @@ $ ./gradlew :libtmux-clojure:updateClojureApiReference \
 Each Clojure module also generates native HTML and an offline source browser
 for its Maven `javadoc` classifier. Module checks build that archive; the
 reference generator is build tooling and does not ship in the runtime JAR.
+Docstrings use Clojure `[[var]]` and `[[namespace/var]]` links. Both reference
+formats validate public targets; HTML bundles linked dependency namespaces for
+offline navigation.
 
 ## Decisions
 

@@ -21,7 +21,8 @@
         before (meta #'tmux/open!)]
     (try
       (doseq [[key value] properties] (System/setProperty key value))
-      (alter-meta! #'tmux/open! assoc :doc "Escapes <script> and & in documentation.")
+      (alter-meta! #'tmux/open! assoc :doc
+                   "Escapes <script> and &. Use [[snapshot!]], [[libtmux.data/panes]], and [[libtmux.control]] with `:tmux/ref`.")
       (let [failure (try (reference/-main "html" (str directory)) nil
                          (catch clojure.lang.ExceptionInfo error error))
             index (io/file directory "index.html")]
@@ -34,12 +35,32 @@
               (is (str/includes? html function)))
             (is (str/includes? html "&lt;script&gt;"))
             (is (not (str/includes? html "<script>")))
+            (doseq [[target label] [["libtmux.core/snapshot!" "snapshot!"]
+                                    ["libtmux.data/panes" "libtmux.data/panes"]
+                                    ["libtmux.control" "libtmux.control"]]]
+              (is (true? (str/includes? html (str "<a href=\"#" target "\"><code>" label "</code></a>")))
+                  (str "Rendered docstring link: " label)))
+            (is (true? (str/includes? html "<code>:tmux/ref</code>")))
+            (is (true? (not (str/includes? html "[[snapshot!]]"))))
             (is (str/includes? html "source/libtmux/core.clj.html"))))
         (let [source (io/file directory "source/libtmux/core.clj.html")]
           (is (.isFile source))
           (when (.isFile source)
             (is (str/includes? (slurp source) "id=\"L1\""))
             (is (str/includes? (slurp source) "&lt;")))))
+      (let [markdown (io/file directory "api.md")]
+        (reference/-main "write" (str markdown))
+        (is (true? (str/includes? (slurp markdown)
+                                  "[`snapshot!`][api:libtmux.core/snapshot!]")))
+        (is (true? (str/includes? (slurp markdown)
+                                  "[api:libtmux.core/snapshot!],")))
+        (is (true? (str/includes? (slurp markdown)
+                                  "[api:libtmux.data/panes]:\n  #libtmuxdatapanes"))))
+      (alter-meta! #'tmux/open! assoc :doc "See [[missing-public-var]].")
+      (let [failure (try (reference/-main "html" (str directory)) nil
+                         (catch clojure.lang.ExceptionInfo error error))]
+        (is (= {:namespace 'libtmux.core :reference "missing-public-var"}
+               (select-keys (ex-data failure) [:namespace :reference]))))
       (finally
         (reset-meta! #'tmux/open! before)
         (doseq [[key value] previous]

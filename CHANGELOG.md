@@ -28,6 +28,9 @@ release that first shipped the module.
 
 ### Documented
 
+- **Clojure docstrings link related public functions and namespaces.** Native
+  Markdown and offline HTML resolve the same links and reject unknown targets.
+
 - **Clojure documentation classifiers contain native API reference HTML.**
   Both modules include namespace/var documentation and an offline source
   browser. The staged-release verifier recognizes `.clj` source archives.
