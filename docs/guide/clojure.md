@@ -4,6 +4,11 @@
 encoding, transport, server identity and compatibility in Java, while exposing
 captured persistent Clojure values and ordinary collection operations.
 
+Start with the package [README](../../libtmux-clojure/README.md) for the
+install boundary and one capture. This guide explains the choices that matter
+after the first program: what is captured, what can perform I/O, who owns
+workers and streams, and where model-facing MCP tooling begins.
+
 Every Clojure fence in reader-facing documentation is discovered and run against
 an owned tmux server. A fence must open and close its own client with
 `with-open`
@@ -361,11 +366,28 @@ explicitly when ownership requires it.
 
 ## Compatibility and Java interop
 
-The façade supports JDK 25 or newer, the floor of the Java core it wraps, and the repository's tmux 3.3a through 3.7c
-matrix; control needs tmux 3.7 or newer. It is JVM-only: it does not run in ClojureScript, Babashka or a native
-image. Existing Java handles, `FilterExpr`, the optional Jackson codec and Java
-async types remain directly usable when the Clojure functions do not cover an
-operation.
+The façade supports JDK 25 or newer, the floor of the Java core it wraps, and
+the repository's tmux 3.3a through 3.7c matrix; control needs tmux 3.7 or
+newer. It is JVM-only: it does not run in ClojureScript, Babashka, or a native
+image. Existing Java handles, `FilterExpr`, the optional Jackson codec, and
+Java async types remain directly usable when the Clojure functions do not cover
+an operation.
 
 [`clojure-reference.md`](clojure-reference.md) lists every captured key and
 relation, its availability, identity meaning and Java filter support.
+
+## MCP boundary and measurement
+
+This façade is for a Clojure process that owns its own tmux decisions. It does
+not turn arbitrary persistent maps, predicates, or Clojure functions into MCP
+tools. For an MCP client such as Codex or Claude Code, use
+[libtmux-mcp](mcp.md): it has named tools, endpoint selection, toolsets, and
+bounded reads. A Clojure application can use both libraries, but their
+contracts remain separate.
+
+The [operation benchmark](../benchmarks/operation-costs.md) measures Java
+operations under documented conditions. It is useful when a Clojure program
+changes its acquisition pattern, but it is not a Clojure façade benchmark.
+There is no published façade throughput or allocation claim. Measure the
+application's capture count, filtering/projection allocation, and any owned
+runtime queue under its real tmux workload before setting a capacity.
