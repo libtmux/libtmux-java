@@ -47,6 +47,9 @@ Generated; do not edit by hand.
 
 - [Operation catalog](reference/operations.md) — every `@Operation`, generated
   from its annotation.
+- [Clojure API](guide/clojure-api.md) and
+  [core.async API](guide/clojure-core-async-api.md) — native namespaces,
+  var arities, docstrings, and current source links.
 - [Operation costs](benchmarks/operation-costs.md) — measured wall-clock and
   tmux-process cost for one-at-a-time, batched, and chained calls; regenerated
   by `./gradlew operationBenchmark`.
@@ -54,6 +57,13 @@ Generated; do not edit by hand.
   blocking and Cats Effect facades against the Java core on one live tmux, as
   raw samples with allocation and latency percentiles; a run describes its
   machine, so none is committed.
+
+Regenerate the Clojure references after editing public arities or docstrings:
+
+```console
+$ ./gradlew :libtmux-clojure:updateClojureApiReference \
+    :libtmux-clojure-core-async:updateClojureApiReference
+```
 
 ## Decisions
 

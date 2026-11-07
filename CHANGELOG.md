@@ -26,6 +26,12 @@ release that first shipped the module.
 
 ## Unreleased
 
+### Documented
+
+- **Clojure namespaces have a native API reference.** Public var arities
+  and docstrings generate the core and optional adapter references; module
+  checks reject stale output and each entry links to its Clojure source.
+
 ### Development
 
 - **Clojure compatibility tests use the newest stable Clojure and the two

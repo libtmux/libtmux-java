@@ -115,7 +115,10 @@
 
 (defn open!
   "Opens local resources for an explicit :socket-path or :socket-name endpoint.
-  The returned Server supports with-open; close does not kill tmux."
+  Supply exactly one endpoint. Paths accept String or java.nio.file.Path.
+  Optional :binary is a command name or path; :config-file is a path;
+  :timeout is a positive java.time.Duration. Unknown keys are rejected.
+  Returns a Server for with-open; closing it does not kill tmux."
   [options]
   (closed! :open options {:socket-path path? :socket-name string? :binary string?
                           :config-file path? :timeout duration?})
@@ -220,20 +223,35 @@
            (throw (translate operation true failure true))
            (throw failure)))))
 
-(defn new-session! "Creates a detached session and returns fresh captured data."
+(defn new-session!
+  "Creates a detached session and returns a fresh captured session map.
+  Options are :name, :window-name, :command (nonempty argv vector), :directory
+  (path), and :environment (string keys and values). Unknown keys are rejected.
+  A recapture failure can occur after creation; inspect error-summary before
+  retrying a mutation."
   [server options]
   (let [^Server server (ref! :new-session server [Server])
         ^SessionSpec spec (build-spec :new-session options (SessionSpec/builder)
                                       (assoc creation-schema :window-name string?))]
     (execute! :new-session :mutation #(capture-after-mutation! :new-session (.newSession server spec)))))
 
-(defn new-window! "Creates a window and returns fresh captured data." [session options]
+(defn new-window!
+  "Creates a window and returns a fresh captured window occurrence.
+  Takes a Session ref and :name, :command (argv), :directory, :environment,
+  :index (nonnegative integer), and :detached? options."
+  [session options]
   (let [^Session session (ref! :new-window session [Session])
         ^WindowSpec spec (build-spec :new-window options (WindowSpec/builder)
                                      (assoc creation-schema :index nonnegative-int? :detached? boolean?))]
     (execute! :new-window :mutation #(capture-after-mutation! :new-window (.newWindow session spec)))))
 
-(defn split-pane! "Splits a pane using argv, never implicit shell interpolation." [pane options]
+(defn split-pane!
+  "Splits a Pane ref and returns a fresh captured pane occurrence.
+  Options are :command (argv), :directory, :environment, :direction
+  (:below, :above, :right, :left), :cells or :percent (mutually exclusive),
+  :detached?, :empty?, :full-window?, and :zoomed?. :empty? excludes :command.
+  A single argv element is executed literally, without shell interpolation."
+  [pane options]
   (let [^Pane pane (ref! :split-pane pane [Pane])
         ^SplitSpec spec (build-spec :split-pane options (SplitSpec/builder)
                                    (merge (dissoc creation-schema :name)
@@ -511,7 +529,8 @@
 (defn chain!
   "Runs dependent argv commands with tmux's implicit target between positions.
   Uses a fresh Java CommandChain. Failed/skipped outcomes are data; transport
-  failure throws with :tmux/results. Use {:kind :wait} for groups needing a release,
-  including blocking shell commands. No rollback or retry safety is promised."
+  failure throws with :tmux/results. Use {:kind :wait} for groups needing a
+  release, including blocking shell commands. No rollback or retry safety is
+  promised."
   ([server operations] (chain! server operations {}))
   ([server operations options] (group! :chain server operations options)))

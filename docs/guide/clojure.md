@@ -9,10 +9,15 @@ install boundary and one capture. This guide explains the choices that matter
 after the first program: what is captured, what can perform I/O, who owns
 workers and streams, and where model-facing MCP tooling begins.
 
+The native API references list every documented public var in
+[the core façade](clojure-api.md) and
+[the optional adapter](clojure-core-async-api.md).
+They derive arities and docstrings from source; module checks reject stale
+output. [Captured values](clojure-reference.md) documents the maps separately.
+
 Every Clojure fence in reader-facing documentation is discovered and run against
 an owned tmux server. A fence must open and close its own client with
-`with-open`
-and end with one `;; =>` EDN result. The test fixture supplies
+`with-open` and end with one `;; =>` EDN result. The test fixture supplies
 `libtmux.docs.socket` and `libtmux.docs.binary`; applications supply their
 socket path and use their selected binary or the default `tmux` command.
 
@@ -271,9 +276,10 @@ bounds panes with partial characters, defaulting to 1024. A reset reports
 `:decoder/reset` as `:gap` or `:capacity` and increments `:decoder/resets`.
 
 The terminal `:reason` distinguishes `:closed`, `:completed`, `:control-exit`,
-`:transport-failure`, `:protocol-failure`, and `:unknown`. A `%exit` notification
-ends the client; it does not prove daemon death. An unexplained EOF stays
-unknown. `:cause` retains the original exception, including any sensitive text.
+`:transport-failure`, `:protocol-failure`, and `:unknown`. A `%exit`
+notification ends the client; it does not prove daemon death. An unexplained
+EOF stays unknown. `:cause` retains the original exception, including any
+sensitive text.
 
 Do not model a subscription as an unbounded lazy sequence, and do not perform
 blocking observation work in a core.async `go` block. Add the optional

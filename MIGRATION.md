@@ -9,6 +9,13 @@ full change history.
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### Create Clojure resources through ownership APIs
+
+The unreleased Clojure façade keeps raw task, runtime, adapter, and events-port
+constructor vars private. Use `libtmux.async/runtime!`, `submit!`, and
+`libtmux.core-async/observe!`; these establish bounded workers and cleanup.
+Returned resource classes remain usable in type hints and `with-open`.
+
 ### Output subscriptions bound payload bytes
 
 `ControlClient.subscribeOutput(int)` now bounds queued unescaped payload at

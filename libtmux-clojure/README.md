@@ -49,13 +49,13 @@ resources; it does not kill the tmux server.
 
 ## Namespaces
 
-- [`libtmux.core`][core-source] — acquisition, effects, options, and command
+- [`libtmux.core`][core-api] — acquisition, effects, options, and command
   groups.
-- [`libtmux.data`][data-source] — captured traversal, projections, identity,
+- [`libtmux.data`][data-api] — captured traversal, projections, identity,
   cardinality, and Java predicate adapters.
-- [`libtmux.async`][async-source] — bounded tasks, deadlines, cancellation, and
+- [`libtmux.async`][async-api] — bounded tasks, deadlines, cancellation, and
   CompletionStage interop.
-- [`libtmux.control`][control-source] — explicit control replies and owned
+- [`libtmux.control`][control-api] — explicit control replies and owned
   output subscriptions.
 
 ## What it leaves out
@@ -92,6 +92,8 @@ with the tmux version, endpoint choice, and the smallest reproducer.
   streams, `core.async`, cancellation, and Java interop.
 - [Captured-data reference][reference] — every map key, relation, identity
   rule, and Java filter boundary.
+- [Native API reference][api] — public namespaces, arities, and docstrings,
+  generated from the Clojure source and linked to it.
 - [Optional `core.async` adapter][core-async] — ownership, capacity, loss, and
   terminal outcomes.
 - [MCP guide][mcp-guide] — the model-facing server and its explicit boundary
@@ -105,12 +107,13 @@ tmux server in `:integration-tests:clojureIntegrationTest`; no snippet is
 illustrative pseudocode.
 
 [benchmarks]: ../benchmarks/README.md
-[async-source]: src/main/clojure/libtmux/async.clj
+[api]: ../docs/guide/clojure-api.md
+[async-api]: ../docs/guide/clojure-api.md#libtmuxasync
 [contributing]: ../.github/CONTRIBUTING.md
-[control-source]: src/main/clojure/libtmux/control.clj
-[core-source]: src/main/clojure/libtmux/core.clj
+[control-api]: ../docs/guide/clojure-api.md#libtmuxcontrol
+[core-api]: ../docs/guide/clojure-api.md#libtmuxcore
 [core-async]: ../libtmux-clojure-core-async/README.md
-[data-source]: src/main/clojure/libtmux/data.clj
+[data-api]: ../docs/guide/clojure-api.md#libtmuxdata
 [guide]: ../docs/guide/clojure.md
 [guide-streaming]: ../docs/guide/clojure.md
 [java-core]: ../libtmux/README.md

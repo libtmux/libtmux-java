@@ -12,6 +12,11 @@ CI, and release tooling, are in the [main changelog](../CHANGELOG.md).
 
 ## Unreleased
 
+### Changed
+
+- **Raw task and runtime constructors are private.** Create owned workers
+  with `runtime!` and submit work through `submit!`.
+
 ### Fixed
 
 - **Text subscriptions reset their own decoder after reported gaps.**

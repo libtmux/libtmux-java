@@ -7,6 +7,10 @@
 
 (def ^:dynamic *submitted-value* nil)
 
+(deftest resource-constructors-are-private
+  (is (empty? (select-keys (ns-publics 'libtmux.async)
+                           '[->Task ->AsyncRuntime]))))
+
 (defn- await-uninterruptibly [^CountDownLatch latch]
   (loop []
     (when-not (try (.await latch) true
