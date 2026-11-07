@@ -1,7 +1,8 @@
 (ns libtmux.control
-  "Explicit control replies and owned, bounded pane-output subscriptions.
+  "Explicit control replies through [[attach!]] and [[send!]].
+  [[subscribe!]], [[next!]], and [[terminal]] expose owned bounded output streams.
   Control needs tmux 3.7 or newer; an older daemon is refused before
-  any client is attached, with :tmux/error :tmux/unsupported-feature."
+  any client is attached, with `:tmux/error` `:tmux/unsupported-feature`."
   (:require [libtmux.core :as tmux])
   (:import [io.github.libtmux PaneId Session Server]
            [io.github.libtmux.control ControlClient ControlReply Delivery$Event Delivery$Gap
@@ -59,7 +60,8 @@
 (defn attach!
   "Attaches an owned control client to an explicit captured Session reference.
   Close releases this client, never its server. Use a dedicated connection
-  when cancellation must not affect other requests and subscriptions."
+  when cancellation must not affect other requests and subscriptions.
+  [[send!]] sends protocol argv; [[subscribe!]] observes output on this connection."
   ([session] (attach! session (Duration/ofSeconds 10)))
   ([session timeout]
    (when-not (and (instance? Session session) (duration? timeout)
@@ -86,7 +88,8 @@
 (defn send!
   "Sends argv and returns protocol status, lines, and unverified completion.
   A complete reply does not prove deferred work finished. Cancelling an active
-  send can end this connection and its other requests and subscriptions."
+  send can end this connection and its other requests and subscriptions.
+  [[libtmux.core/raw!]] uses process execution; [[subscribe!]] observes unsolicited output."
   ([connection argv] (send! connection argv (Duration/ofMillis 900)))
   ([connection argv timeout]
    (when-not (and (instance? Connection connection)
@@ -106,15 +109,16 @@
 
 (defn subscribe!
   "Creates a closeable output subscription borrowing its connection.
-  :encoding is :bytes (caller-owned byte arrays) or :utf-8 (incremental text
+  `:encoding` is `:bytes` (caller-owned byte arrays) or `:utf-8` (incremental text
   per pane, reset after this subscription's gaps; malformed bytes use \\xHH).
-  :decoder-capacity bounds partial-pane state (default 1024); an eviction is
-  reported with :decoder/reset :capacity and a cumulative :decoder/resets.
-  :capacity bounds queued events; :max-bytes bounds their unescaped payload
+  `:decoder-capacity` bounds partial-pane state (default 1024); an eviction is
+  reported with `:decoder/reset` `:capacity` and a cumulative `:decoder/resets.`
+  `:capacity` bounds queued events; `:max-bytes` bounds their unescaped payload
   (default 16 MiB).
   Oldest events are dropped until both bounds fit; an oversized event drops
-  the queued prefix and itself. The next read is a :gap with byte/event loss.
-  Readers compete; create separate subscriptions for independent fan-out."
+  the queued prefix and itself. The next read is a `:gap` with byte/event loss.
+  Readers compete; create separate subscriptions for independent fan-out.
+  [[next!]] reads deliveries; [[terminal]] reports the drained end; [[close!]] stops locally."
   ([connection] (subscribe! connection {}))
   ([connection options]
    (when-not (and (instance? Connection connection) (map? options)
@@ -140,12 +144,13 @@
    :upstream/bytes (.droppedBytes subscription)})
 
 (defn terminal
-  "Returns the single recorded stream outcome, or nil until a reader drains it.
-  :reason is :closed, :completed, :control-exit, :transport-failure,
-  :protocol-failure, or :unknown. A control exit does not prove daemon death;
-  :cause preserves the original exception and may contain sensitive content.
-  Text streams include :trailing-text keyed by pane ID for
-  incomplete final bytes rendered as \\xHH."
+  "Returns the single recorded stream outcome, or `nil` until a reader drains it.
+  `:reason` is `:closed`, `:completed`, `:control-exit`, `:transport-failure`,
+  `:protocol-failure`, or `:unknown.` A control exit does not prove daemon death;
+  `:cause` preserves the original exception and may contain sensitive content.
+  Text streams include `:trailing-text` keyed by pane ID for
+  incomplete final bytes rendered as \\xHH.
+  [[next!]] records this outcome after buffered deliveries have drained."
   [^OutputStream stream]
   (:terminal @(.-state stream)))
 
@@ -200,12 +205,13 @@
           (and decoder (> (.resetCount decoder) before)) (assoc :decoder/reset :capacity))))))
 
 (defn next!
-  "Reads one event, gap, timeout, or terminal map; never uses nil for termination.
-  A :gap names the events dropped since the previous read and precedes the
+  "Reads one event, gap, timeout, or terminal map; never uses `nil` for termination.
+  A `:gap` names the events dropped since the previous read and precedes the
   events that remain. The optional nonnegative Duration includes waiting for
   another reader. Sequence numbers order the events of this stream. Close wakes
   a reader. Termination by the client keeps already delivered events readable;
-  an intentional close discards them."
+  an intentional close discards them.
+  [[subscribe!]] sets bounds; [[close!]] wakes a blocked reader."
   ([stream] (next! stream nil))
   ([stream timeout]
    (when-not (and (instance? OutputStream stream) (or (nil? timeout) (duration? timeout)))
@@ -239,7 +245,8 @@
 
 (defn close!
   "Closes a connection or subscription. Closing a subscription leaves its
-  borrowed connection open; closing a connection affects all its subscribers."
+  borrowed connection open; closing a connection affects all its subscribers.
+  [[terminal]] inspects a drained subscription; [[attach!]] opens another connection."
   [resource]
   (when-not (or (instance? Connection resource) (instance? OutputStream resource))
     (invalid! :control/close))

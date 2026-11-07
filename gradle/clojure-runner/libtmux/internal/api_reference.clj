@@ -25,6 +25,70 @@
                                  {:namespace namespace :var name})))
                metadata))))
 
+(def ^:private api-documents
+  {'libtmux.core "clojure-api.md" 'libtmux.data "clojure-api.md"
+   'libtmux.async "clojure-api.md" 'libtmux.control "clojure-api.md"
+   'libtmux.core-async "clojure-core-async-api.md"})
+
+(defn- linked-target [namespace text]
+  (let [target (symbol text)
+        owner (symbol (or (clojure.core/namespace target) (str namespace)))
+        namespace-link? (contains? api-documents target)
+        owner (if namespace-link? target owner)]
+    (when (and (contains? api-documents owner) (not (find-ns owner))
+               (io/resource (str (-> (str owner) (str/replace "." "/")
+                                     (str/replace "-" "_")) ".clj")))
+      (require owner))
+    (let [metadata (when (find-ns owner)
+                     (meta (get (ns-publics owner) (symbol (name target)))))]
+      (when-not (and (contains? api-documents owner)
+                     (or namespace-link?
+                         (and (:file metadata) (:doc metadata) (not (:no-doc metadata)))))
+        (throw (ex-info "Unknown public Clojure documentation reference"
+                        {:namespace namespace :reference text})))
+      {:namespace owner :anchor (if namespace-link? (str owner) (str owner "/" (name target)))})))
+
+(defn- escape-html [text]
+  (str/escape (str text) {\& "&amp;" \< "&lt;" \> "&gt;" \" "&quot;" \' "&#39;"}))
+
+(defn- doc-prose [namespace text format]
+  (let [text (prose text)
+        matcher (re-matcher #"\[\[([^\]\r\n]+)\]\]|`([^`\r\n]+)`" text)
+        encode (if (= :html format) escape-html identity)]
+    (loop [offset 0 result ""]
+      (if (.find matcher)
+        (let [reference (.group matcher 1)
+              code (.group matcher 2)
+              rendered
+              (if reference
+                (let [{:keys [anchor]} (linked-target namespace reference)]
+                  (if (= :html format)
+                    (str "<a href=\"#" (escape-html anchor) "\"><code>"
+                         (escape-html reference) "</code></a>")
+                    (str "[`" reference "`][api:" anchor "]")))
+                (if (= :html format) (str "<code>" (escape-html code) "</code>")
+                    (str "`" code "`")))]
+          (recur (.end matcher) (str result (encode (subs text offset (.start matcher))) rendered)))
+        (str result (encode (subs text offset)))))))
+
+(defn- markdown-prose [namespace text]
+  (str/join "\n"
+            (mapcat
+             (fn [line]
+               (loop [words (re-seq #"(?:\[`[^`]+`\]\[api:[^\]]+\]|`[^`]+`|\S)+" line)
+                      current "" lines []]
+                 (if-let [word (first words)]
+                   (if (and (seq current) (> (+ (count current) 1 (count word)) 80))
+                     (recur (next words) word (conj lines current))
+                     (recur (next words) (str current (when (seq current) " ") word) lines))
+                   (conj lines current))))
+             (str/split-lines (doc-prose namespace text :markdown)))))
+
+(defn- namespace-links [namespace]
+  (for [doc (cons (:doc (meta (the-ns namespace))) (map :doc (public-functions namespace)))
+        [_ reference] (re-seq #"\[\[([^\]\r\n]+)\]\]" doc)]
+    (linked-target namespace reference)))
+
 (defn- namespace-section [namespace]
   (let [description (:doc (meta (the-ns namespace)))
         functions (public-functions namespace)]
@@ -32,14 +96,14 @@
       (throw (ex-info "Public Clojure namespaces need documentation and functions"
                       {:namespace namespace})))
     (str "## [`" namespace "`][" namespace "]\n\n"
-         (prose description) "\n\n"
+         (markdown-prose namespace description) "\n\n"
          (apply str
                 (for [{:keys [name doc arglists]} functions]
                   (str "### [`" namespace "/" name "`][" namespace "]\n\n"
                        (str/join "\n\n"
                                  (for [arguments arglists]
                                    (str "`" (pr-str (cons name arguments)) "`")))
-                       "\n\n" (prose doc) "\n\n"))))))
+                       "\n\n" (markdown-prose namespace doc) "\n\n"))))))
 
 (defn- reference [module namespaces]
   (doseq [namespace namespaces] (require namespace))
@@ -56,10 +120,13 @@
        "\n\n" (apply str (map namespace-section namespaces))
        (str/join "\n" (for [namespace namespaces]
                         (str "[" namespace "]:\n  " (source-link module namespace))))
+       "\n"
+       (str/join "\n" (for [{owner :namespace anchor :anchor}
+                               (sort-by :anchor (distinct (mapcat namespace-links namespaces)))]
+                        (str "[api:" anchor "]:\n  "
+                             (when-not ((set namespaces) owner) (api-documents owner))
+                             "#" (str/replace anchor #"[^\p{L}\p{N}_-]" ""))))
        "\n"))
-
-(defn- escape-html [text]
-  (str/escape (str text) {\& "&amp;" \< "&lt;" \> "&gt;" \" "&quot;" \' "&#39;"}))
 
 (defn- html-page [title body]
   (str "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
@@ -95,13 +162,22 @@
                                   (str/split-lines (slurp source))))
                           "</pre>")))))
 
+(defn- linked-namespaces [namespaces]
+  (loop [pending (seq namespaces) ordered (vec namespaces)]
+    (if-let [namespace (first pending)]
+      (let [targets (map :namespace (namespace-links namespace))
+            additional (remove (set ordered) (distinct targets))]
+        (recur (concat (rest pending) additional) (into ordered additional)))
+      ordered)))
+
 (defn- html-reference! [module namespaces directory]
   (.mkdirs (io/file directory))
-  (let [sections
+  (let [namespaces (linked-namespaces namespaces)
+        sections
         (for [namespace namespaces
               :let [functions (public-functions namespace)]]
           (str "<h2 id=\"" namespace "\">" namespace "</h2><p class=\"doc\">"
-               (escape-html (prose (:doc (meta (the-ns namespace))))) "</p><ul>"
+               (doc-prose namespace (:doc (meta (the-ns namespace))) :html) "</p><ul>"
                (apply str (for [{:keys [name]} functions]
                             (str "<li><a href=\"#" namespace "/" name "\">"
                                  (escape-html name) "</a></li>"))) "</ul>"
@@ -111,7 +187,7 @@
                              (escape-html (str namespace "/" name)) "</h3><pre>"
                              (str/join "\n" (for [arguments arglists]
                                                (escape-html (pr-str (cons name arguments)))))
-                             "</pre><p class=\"doc\">" (escape-html (prose doc)) "</p>"
+                             "</pre><p class=\"doc\">" (doc-prose namespace doc :html) "</p>"
                              "<p><a href=\"source/" file ".html#L" line "\">Source</a></p></section>")))))]
     (doseq [file (distinct (for [namespace namespaces
                                 function (public-functions namespace)] (:file function)))]
@@ -120,6 +196,7 @@
           (html-page (str module " API")
                      (str "<h1>" (escape-html module) " API</h1>"
                           "<p>Native Clojure namespaces, function arities and docstrings. "
+                          "Linked dependency namespaces are included for offline navigation. "
                           "Source links open the code packaged with this reference.</p><nav><ul>"
                           (apply str (for [namespace namespaces]
                                        (str "<li><a href=\"#" namespace "\">" namespace "</a></li>")))

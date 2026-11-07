@@ -1,5 +1,6 @@
 (ns libtmux.data
-  "Pure captured values, identity, EDN projection, and local selection."
+  "Pure captured values from [[libtmux.core/snapshot!]].
+  Traverse with [[windows]] and [[panes]], select with [[matching]], or detach with [[data]]."
   (:import [io.github.libtmux CapturedServer Client Pane ServerIdentity Session Window]
            [io.github.libtmux.query FilterExpr]
            [io.github.libtmux.snapshot WindowContext]
@@ -17,9 +18,10 @@
             :cardinality/reason reason}))
 
 (defn one-or-none
-  "Returns the only value, nil for none, or throws for multiple values.
+  "Returns the only value, `nil` for none, or throws for multiple values.
   Stops requesting matches once ambiguity is known. Finding zero or one may
-  scan all input; chunked producers may realize more. Nil and false are values."
+  scan all input; chunked producers may realize more. `nil` and `false` are values.
+  Use [[exactly-one]] when zero matches must also fail."
   [values]
   (when-let [items (seq values)]
     (when (next items)
@@ -27,9 +29,10 @@
     (first items)))
 
 (defn exactly-one
-  "Returns the only value or throws ex-info for zero or multiple values.
+  "Returns the only value or throws `ex-info` for zero or multiple values.
   Stops requesting matches once ambiguity is known. Finding zero or one may
-  scan all input; chunked producers may realize more. Nil and false are values."
+  scan all input; chunked producers may realize more. `nil` and `false` are values.
+  [[one-or-none]] accepts an empty selection; establish cardinality before effects."
   [values]
   (let [items (seq values)]
     (when-not items
@@ -39,9 +42,10 @@
     (first items)))
 
 (defn data
-  "Projects captured data to EDN, removing :tmux/ref at every map level.
+  "Projects captured data to EDN, removing `:tmux/ref` at every map level.
   Instants become ISO-8601 strings; sequences and Java lists become vectors.
-  Unsupported JVM objects throw rather than producing unreadable EDN."
+  Unsupported JVM objects throw rather than producing unreadable EDN.
+  Detached results cannot be used by [[predicate]]; [[entity-key]] remains explicit data."
   [value]
   (cond
     (map? value) (into {} (comp (remove #(= :tmux/ref (key %)))
@@ -59,7 +63,8 @@
 
 (defn entity-key
   "Returns a captured physical identity, qualified by endpoint and server PID.
-  PID reuse is not a stronger daemon-incarnation guarantee."
+  PID reuse is not a stronger daemon-incarnation guarantee.
+  [[link-key]] also includes placement; [[same-entity?]] compares physical identities."
   [entry]
   (or (:tmux/identity entry)
       (throw (ex-info "Value has no captured entity identity"
@@ -70,7 +75,8 @@
 
 (defn link-key
   "Returns the physical identity and contextual window placement.
-  Only window and pane occurrences carry a link; missing context throws."
+  Only window and pane occurrences carry a link; missing context throws.
+  [[entity-key]] omits placement; [[same-link?]] compares contextual occurrences."
   [entry]
   (let [identity (entity-key entry)]
     (if-let [link (:tmux/link entry)]
@@ -82,19 +88,22 @@
                        :tmux/dispatch :not-dispatched})))))
 
 (defn same-entity?
-  "Compares physical entity identities without acquiring current state."
+  "Compares physical entity identities without acquiring current state.
+  Uses [[entity-key]]; [[same-link?]] also checks placement."
   [left right]
   (= (entity-key left) (entity-key right)))
 
 (defn same-link?
-  "Compares occurrences, including the session, window ID, and index."
+  "Compares occurrences, including the session, window ID, and index.
+  Uses [[link-key]]; [[same-entity?]] ignores placement."
   [left right]
   (= (link-key left) (link-key right)))
 
 (defn predicate
   "Adapts a Java FilterExpr to a predicate over captured entries.
-  Evaluates the preserved :tmux/ref, including Java relation semantics;
-  editing fields in an entry does not change the reference being queried."
+  Evaluates the preserved `:tmux/ref`, including Java relation semantics;
+  editing fields in an entry does not change the reference being queried.
+  [[matching]] provides transducer and sequence arities; [[data]] removes refs."
   [^FilterExpr expression]
   (when-not (instance? FilterExpr expression)
     (throw (IllegalArgumentException. "Expected a Java FilterExpr")))
@@ -110,18 +119,21 @@
 (defn matching
   "Filters captured entries using a Java FilterExpr over their preserved refs.
   One argument returns a transducer; two return a lazy sequence. Both are local
-  and preserve order and multiplicity. Detached maps have no query reference."
+  and preserve order and multiplicity. Detached maps have no query reference.
+  Delegates to [[predicate]]; [[exactly-one]] checks the resulting cardinality."
   ([expression] (filter (predicate expression)))
   ([expression entries] (filter (predicate expression) entries)))
 
 (defn windows
-  "Returns the captured window occurrences in a snapshot or session."
+  "Returns the captured window occurrences in a snapshot or session.
+  Use [[libtmux.core/windows!]] for a new acquisition; [[panes]] stays local."
   [value]
   (or (:tmux/windows value) (:session/windows value)
       (throw (IllegalArgumentException. "Expected a snapshot or session"))))
 
 (defn panes
-  "Returns captured pane occurrences in a snapshot, session, or window."
+  "Returns captured pane occurrences in a snapshot, session, or window.
+  Use [[libtmux.core/panes!]] for a new acquisition; [[active-pane]] selects locally."
   [value]
   (or (:tmux/panes value) (:window/panes value)
       (when-let [ws (:session/windows value)]
@@ -129,12 +141,14 @@
       (throw (IllegalArgumentException. "Expected a snapshot, session, or window"))))
 
 (defn active-window
-  "Returns the captured active window of a session, or nil."
+  "Returns the captured active window of a session, or `nil`.
+  [[windows]] returns all captured occurrences; [[active-pane]] follows the active one."
   [session]
   (one-or-none (filter :window/active? (windows session))))
 
 (defn active-pane
-  "Returns the captured active pane of a window or session, or nil."
+  "Returns the captured active pane of a window or session, or `nil`.
+  [[panes]] returns all captured occurrences; [[libtmux.core/select!]] changes selection."
   [value]
   (if (contains? value :session/windows)
     (some-> (active-window value) active-pane)
@@ -208,7 +222,8 @@
 (defn from-capture
   "Converts an authenticated Java CapturedServer to eager persistent values.
   Reads no live getters and issues no commands. Relations share these values;
-  window links and pane occurrences retain their captured order and placement."
+  window links and pane occurrences retain their captured order and placement.
+  [[libtmux.core/snapshot!]] acquires this Java capture and projects it for callers."
   [^CapturedServer capture]
   (let [^ServerIdentity server-identity (.identity capture)
         pid (.processId server-identity)

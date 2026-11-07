@@ -1,5 +1,7 @@
 (ns libtmux.core-async
-  "Closeable core.async observation adapter for libtmux control streams."
+  "Closeable core.async observation through [[observe!]].
+  [[events]] carries deliveries; [[terminal]] reports local subscription cleanup.
+  Borrow an explicit connection from [[libtmux.control/attach!]]."
   (:require [clojure.core.async :as async]
             [clojure.core.async.impl.protocols :as protocols]
             [libtmux.control :as control])
@@ -29,22 +31,26 @@
 (alter-meta! #'->Adapter assoc :private true)
 
 (defn events
-  "Returns the read-only events channel. Closing it stops the adapter."
+  "Returns the read-only events channel. Closing it stops the adapter.
+  Created by [[observe!]]; [[terminal]] delivers the final cleanup outcome."
   [^Adapter adapter]
   (.-events adapter))
 
 (defn terminal
-  "Returns a buffered channel that delivers one outcome after cleanup."
+  "Returns a buffered channel that delivers one outcome after cleanup.
+  [[events]] carries deliveries; [[stop!]] requests local shutdown."
   [^Adapter adapter]
   (.-terminal adapter))
 
 (defn limits
-  "Returns the adapter's exact retained-event bound."
+  "Returns the adapter's exact retained-event bound.
+  [[observe!]] defines upstream and adapter capacity separately."
   [^Adapter adapter]
   (.-limits adapter))
 
 (defn stop!
-  "Stops observation and closes only the owned subscription and worker."
+  "Stops observation and closes only the owned subscription and worker.
+  [[terminal]] reports completion; the connection supplied to [[observe!]] stays open."
   [adapter]
   (when-not (instance? Adapter adapter)
     (throw (IllegalArgumentException. "stop! requires a core.async adapter")))
@@ -78,11 +84,12 @@
 
   `:event-capacity` defaults to zero. The worker can retain one pending event;
   a fixed buffer retains that many more. `:upstream-capacity` bounds the Java
-  subscription, which reports overflow as a :gap value ahead of the events that
-  remain; `:encoding` is :bytes or :utf-8. Closing the events channel or
+  subscription, which reports overflow as a `:gap` value ahead of the events that
+  remain; `:encoding` is `:bytes` or `:utf-8.` Closing the events channel or
   adapter stops blocked reads and puts. A stopped outcome retains the final
-  :upstream/terminal, including loss, cause and trailing text. Adapter loss
-  stays separate under :adapter/events. The borrowed connection remains open."
+  `:upstream/terminal`, including loss, cause and trailing text. Adapter loss
+  stays separate under `:adapter/events.` The borrowed connection remains open.
+  Borrow a connection from [[libtmux.control/attach!]]; read [[events]] and [[terminal]]."
   ([connection] (observe! connection {}))
   ([connection options]
    (when-not (map? options)
