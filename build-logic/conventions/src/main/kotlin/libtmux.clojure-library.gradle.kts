@@ -25,7 +25,7 @@ val namespaceGuardAsm = configurations.create("clojureNamespaceGuardAsm") {
     isCanBeConsumed = false
     isCanBeResolved = true
 }
-dependencies { add(namespaceGuardAsm.name, "org.ow2.asm:asm:9.9.1") }
+dependencies { add(namespaceGuardAsm.name, clojureLibraries.findLibrary("asm").orElseThrow()) }
 val compileNamespaceGuard = tasks.register<JavaCompile>("compileClojureNamespaceGuard") {
     source(rootProject.fileTree("gradle/clojure-runner/agent") { include("**/*.java") })
     classpath = namespaceGuardAsm
