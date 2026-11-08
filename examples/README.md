@@ -31,8 +31,9 @@ pinned socket. Other examples retain the core 3.3a minimum.
 
 The [common API programs](api/README.md) provide separate complete Java,
 Kotlin, Scala Direct, and Scala Cats examples for construction, listings,
-creation, queries, and pane input and capture. Their consumer build files and
-private-server launcher are included alongside the source-owned manifest.
+creation, queries, and pane input and capture. Each starts its own private
+server with `Server.start`; their consumer build files are included alongside
+the source-owned manifest.
 
 ```console
 $ ./gradlew :examples:test

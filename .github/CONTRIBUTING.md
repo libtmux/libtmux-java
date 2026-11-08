@@ -83,7 +83,8 @@ finalizer looks for sockets anywhere in the task's quarantine, without following
 links, and stops the server on each one that answers. It fails the build naming
 them even when the tests passed. It keeps the directory, and says so, while a
 server still answers after `kill-server`. A socket file nothing answers on is
-not a leak. `examples/api/run.sh` does the same for the program it starts.
+not a leak. `Server.start` does the same for the directory it makes, when the
+server it returns is closed.
 
 The finalizer cannot see a server whose socket lies elsewhere. A
 [`TmuxExtension`](../libtmux-junit5/) fixture, and the Scala `OwnedTmux` beside

@@ -460,11 +460,6 @@
           "sourceFile": "examples/api/gradle.properties",
           "path": "gradle.properties",
           "language": "properties"
-        },
-        {
-          "sourceFile": "examples/api/run.sh",
-          "path": "run.sh",
-          "language": "bash"
         }
       ]
     },
@@ -484,11 +479,6 @@
           "sourceFile": "examples/api/gradle.properties",
           "path": "gradle.properties",
           "language": "properties"
-        },
-        {
-          "sourceFile": "examples/api/run.sh",
-          "path": "run.sh",
-          "language": "bash"
         }
       ]
     },
@@ -508,11 +498,6 @@
           "sourceFile": "examples/api/gradle.properties",
           "path": "gradle.properties",
           "language": "properties"
-        },
-        {
-          "sourceFile": "examples/api/run.sh",
-          "path": "run.sh",
-          "language": "bash"
         }
       ]
     },
@@ -532,11 +517,6 @@
           "sourceFile": "examples/api/gradle.properties",
           "path": "gradle.properties",
           "language": "properties"
-        },
-        {
-          "sourceFile": "examples/api/run.sh",
-          "path": "run.sh",
-          "language": "bash"
         }
       ]
     }

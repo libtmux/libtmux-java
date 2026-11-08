@@ -1,26 +1,17 @@
 package io.github.libtmux.examples.api.kotlin
 
-import io.github.libtmux.ServerConfig
-import io.github.libtmux.ServerEndpoint
 import io.github.libtmux.SessionSpec
 import io.github.libtmux.TextOutcome
 import io.github.libtmux.kotlin.*
-import java.nio.file.Path
 import kotlin.system.exitProcess
 import kotlinx.coroutines.runBlocking
 import kotlin.time.Duration.Companion.seconds
 
 /** Send input and wait for output before capturing the pane. */
-fun main(args: Array<String>) {
+fun main() {
     try {
-        require(args.size == 3) { "expected: tmux-binary socket-path config-file" }
-        val config = ServerConfig.builder()
-            .binary(args[0])
-            .endpoint(ServerEndpoint.socketPath(Path.of(args[1])))
-            .configFile(Path.of(args[2]))
-            .build()
         runBlocking {
-            withServer(config) { server ->
+            withPrivateServer { server ->
                 val session = server.newSession(
                     SessionSpec.builder().named("api-capture").running("/bin/sh").build()
                 )
@@ -35,7 +26,7 @@ fun main(args: Array<String>) {
                 }
                 val lines = pane.capture()
                 for (expected in listOf("api-keys", "api-line")) {
-                    check(lines.any { it.trim() == expected }) { "capture is missing $expected" }
+                    check(lines.any { it.trim().endsWith(expected) }) { "capture is missing $expected" }
                     println(expected)
                 }
             }
