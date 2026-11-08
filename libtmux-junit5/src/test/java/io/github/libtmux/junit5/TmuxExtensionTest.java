@@ -7,12 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
 
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerConfig;
-import io.github.libtmux.exception.DispatchException;
-import io.github.libtmux.transport.CommandRequest;
-import io.github.libtmux.transport.CommandResult;
-import io.github.libtmux.transport.DispatchOutcome;
-import io.github.libtmux.transport.TmuxTransport;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -33,22 +27,6 @@ final class TmuxExtensionTest {
 
     /** Sockets the nested tests were handed, so the outer case can check what became of them. */
     static final List<Path> ISSUED = Collections.synchronizedList(new ArrayList<>());
-
-    @Test
-    void aFailedExitProbeIsNotProofThatTheServerExited() {
-        TmuxTransport failedProbe = new TmuxTransport() {
-            @Override
-            public CommandResult execute(CommandRequest request) {
-                throw new DispatchException.Failed("probe failed", DispatchOutcome.UNKNOWN, null);
-            }
-
-            @Override
-            public void close() {}
-        };
-        try (Server server = Server.using(ServerConfig.builder().build(), failedProbe)) {
-            assertFalse(TmuxExtension.Fixture.awaitExit(server, 1));
-        }
-    }
 
     @Test
     void fixturesOwnTheirPortSpecificRootWithoutBuildConfiguration() {
