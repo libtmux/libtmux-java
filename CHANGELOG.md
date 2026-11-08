@@ -9,6 +9,8 @@ whole release. A change to one module is in that module's changelog:
 - [`libtmux-workspace`](libtmux-workspace/CHANGELOG.md)
 - [`libtmux-workspace-cli`](libtmux-workspace-cli/CHANGELOG.md)
 - [`libtmux-kotlin`](libtmux-kotlin/CHANGELOG.md)
+- [`libtmux-clojure`](libtmux-clojure/CHANGELOG.md)
+- [`libtmux-clojure-core-async`](libtmux-clojure-core-async/CHANGELOG.md)
 - [`libtmux-scala`](libtmux-scala/CHANGELOG.md)
 - [`libtmux-scala-cats`](libtmux-scala-cats/CHANGELOG.md)
 - [`libtmux-scala-ox`](libtmux-scala-ox/CHANGELOG.md)
@@ -24,7 +26,18 @@ release that first shipped the module.
 
 ## Unreleased
 
+### Documented
+
+- **Clojure has native API references and runnable examples.** The module
+  READMEs and guides cover captured data, tmux operations, cancellation and
+  streaming, with source links and examples checked against real tmux. (#20)
+
 ### Development
+
+- **Clojure uses the existing Gradle build and publication workflow.** The
+  core and optional adapter join the BOM and release checks. Compatibility
+  jobs cover the newest Clojure and the oldest and newest supported tmux on
+  Linux and macOS. (#20)
 
 - **CI rebuilds incompatible cached tmux installations before running
   tests.** The tmux matrix restored a build made on another runner image and
