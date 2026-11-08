@@ -75,8 +75,9 @@ an earlier example to run first.
 
 The Clojure catalog uses Tools.deps and a `mainNamespace` entry point for each
 program. Each file imports its public namespaces, closes its client, and
-prints the manifest's expected output. The same private-server launcher owns
-setup and teardown. No program depends on a repository test helper.
+prints the manifest's expected output. Each starts its own private server with
+`tm/start!` and creates the fixture sessions it reads. No program depends on a
+repository test helper.
 
 | Task | Complete program |
 | --- | --- |
@@ -89,7 +90,7 @@ setup and teardown. No program depends on a repository test helper.
 | Compare native and Java filters | [query.clj][query] |
 | Send input and verify capture | [capture.clj][capture] |
 
-The capability programs use the same fixture and consumer:
+The capability programs use the same consumer:
 
 | Task | Complete program |
 | --- | --- |
@@ -116,8 +117,7 @@ consumer folder:
 
 ```console
 $ mkdir -p build/clojure-api-consumer/src/main && \
-    cp examples/api/clojure/deps.edn examples/api/run.sh \
-      build/clojure-api-consumer/ && \
+    cp examples/api/clojure/deps.edn build/clojure-api-consumer/ && \
     cp -R examples/src/main/clojure build/clojure-api-consumer/src/main/
 ```
 
@@ -129,13 +129,11 @@ $ ./gradlew :libtmux:publishToMavenLocal \
     -Dmaven.repo.local="$PWD/build/clojure-api-consumer/m2"
 ```
 
-Run a full program through the private-server launcher:
+Run a full program; it starts and stops its own private server:
 
 ```console
 $ (cd build/clojure-api-consumer && \
-    sh run.sh clojure \
-      -M \
-      -m libtmux.examples.api.capture)
+    clojure -M -m libtmux.examples.api.capture)
 ```
 
 It prints `api-keys` and `api-line` on separate lines after verifying actual
@@ -155,9 +153,7 @@ From the repository root, select the consumer's optional dependency alias:
 
 ```console
 $ (cd build/clojure-api-consumer && \
-    sh run.sh clojure \
-      -M:core-async \
-      -m libtmux.examples.api.observe-with-async)
+    clojure -M:core-async -m libtmux.examples.api.observe-with-async)
 ```
 
 It closes the events consumer, waits for cleanup, and verifies that the
