@@ -26,6 +26,14 @@ release that first shipped the module.
 
 ## Unreleased
 
+### Changed
+
+- **The API examples start their own tmux server.** The Java, Kotlin, Scala
+  Direct, Scala Cats and Clojure programs under `examples/api/` call
+  `Server.start` (`start!` in Clojure), create `work-one` and `work-two`
+  themselves where they read them, and take no arguments.
+  `examples/api/run.sh` is removed. (#142)
+
 ### Fixed
 
 - **`tools/mcp-swap` adds a server inside an inline `mcp_servers` table.** A

@@ -14,6 +14,12 @@ changelog](../CHANGELOG.md).
 
 ## Unreleased
 
+### Added
+
+- **`Server.start` and `withPrivateServer` scope a private tmux server.** The
+  block's server is stopped and its directory removed however the block ends.
+  (#142)
+
 ## 0.1.2 — 2026-11-01
 
 No entries for `libtmux-kotlin`.

@@ -18,3 +18,5 @@ CI, and release tooling, are in the [main changelog](../CHANGELOG.md).
   maps and vectors, native collection queries, explicit tmux operations, and
   owned tasks and streams. Error data preserves dispatch certainty and
   possible partial effects. (#20)
+- **`libtmux.core/start!` starts a private tmux server for `with-open`.** Closing
+  it stops tmux and removes its directory. (#142)

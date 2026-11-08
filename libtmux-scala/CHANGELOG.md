@@ -14,6 +14,11 @@ changelog](../CHANGELOG.md).
 
 ## Unreleased
 
+### Added
+
+- **`Server.start` starts a private tmux server for `Using.resource`.** Closing
+  it stops tmux and removes its directory. (#142)
+
 ## 0.1.2 — 2026-11-01
 
 No entries for `libtmux-scala`.

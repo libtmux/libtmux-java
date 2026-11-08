@@ -14,6 +14,11 @@ changelog](../CHANGELOG.md).
 
 ## Unreleased
 
+### Added
+
+- **`Server.start[F]` is a `Resource` over a private tmux server.** Releasing it
+  stops tmux and removes its directory. (#142)
+
 ## 0.1.2 — 2026-11-01
 
 No entries for `libtmux-scala-cats`.

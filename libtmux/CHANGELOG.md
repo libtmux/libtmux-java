@@ -26,6 +26,15 @@ changelog](../CHANGELOG.md).
   created a moment ago.** It waits only when `current` is `tmux`, up to two
   seconds, and returns whether it waited, so the caller reads the pane's command
   again. `Pane.run` and the MCP server's `run_shell_command` use it. (#156)
+- **`Server.start` starts a private tmux server that the handle owns.** The
+  server has a directory of its own under `ServerLaunch.root`
+  (`/tmp/libtmux-java-dev` by default), reads an empty config unless
+  `ServerLaunch.configFile` names one, and gets none of the caller's `TMUX`,
+  `TMUX_PANE` or `LIBTMUX_SOCKET*`. `close()` on that server now stops tmux,
+  waits until it no longer answers, removes the directory, and throws
+  `IllegalStateException` if the server still answers or a program left another
+  one under the directory. A start under a root also ends servers there whose
+  JVM was killed. (#142)
 
 ### Changed
 
