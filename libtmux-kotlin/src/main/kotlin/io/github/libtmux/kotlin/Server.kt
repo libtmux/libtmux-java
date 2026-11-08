@@ -2,6 +2,7 @@ package io.github.libtmux.kotlin
 
 import io.github.libtmux.Channel
 import io.github.libtmux.ServerConfig
+import io.github.libtmux.ServerLaunch
 import io.github.libtmux.ServerIdentity
 import io.github.libtmux.exception.CardinalityException
 import io.github.libtmux.exception.DispatchException
@@ -234,7 +235,10 @@ public class Server private constructor(
             }
         }
 
-    /** Releases an owned transport. Idempotent, and never kills tmux. */
+    /**
+     * Releases an owned transport. Idempotent, and never kills tmux, except on a server from [start],
+     * whose close ends the tmux server it owns.
+     */
     override fun close() {
         java.close()
     }
@@ -246,6 +250,16 @@ public class Server private constructor(
             config: ServerConfig,
             policy: ExecutionPolicy = ExecutionPolicy.default(config),
         ): Server = runInterruptible(policy.commands) { Server(JavaServer.open(config), policy) }
+
+        /**
+         * Starts a private tmux server that the result owns: closing it ends tmux, removes the
+         * server's directory, and throws if the server still answers. See
+         * [io.github.libtmux.Server.start]. [withPrivateServer] scopes one to a block.
+         */
+        public suspend fun start(
+            launch: ServerLaunch = ServerLaunch.builder().build(),
+            policy: ExecutionPolicy = ExecutionPolicy.default(ServerConfig.builder().build()),
+        ): Server = runInterruptible(policy.commands) { Server(JavaServer.start(launch), policy) }
 
         /**
          * A wrapper over a server opened in Java, such as a test fixture's. It takes the server as
