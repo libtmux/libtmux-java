@@ -176,6 +176,7 @@ public final class Server implements AutoCloseable {
     private final ServerConfig config;
     private final TmuxTransport transport;
     private final boolean owned;
+    private final @Nullable PrivateDaemon daemon;
     private final AtomicBoolean closed = new AtomicBoolean();
 
     private final IncarnationFence fence;
@@ -193,6 +194,16 @@ public final class Server implements AutoCloseable {
     }
 
     private Server(ServerConfig config, TmuxTransport transport, boolean owned, PaneEcho echo) {
+        this(config, transport, owned, echo, null);
+    }
+
+    private Server(
+            ServerConfig config,
+            TmuxTransport transport,
+            boolean owned,
+            PaneEcho echo,
+            @Nullable PrivateDaemon daemon) {
+        this.daemon = daemon;
         this.config = config;
         this.transport = transport;
         this.owned = owned;
@@ -849,6 +860,44 @@ public final class Server implements AutoCloseable {
         return new Server(config, transport, true);
     }
 
+    /**
+     * Starts a private tmux server that this handle owns, and returns a client of it.
+     *
+     * <p>The server has a directory of its own, reads an empty config unless the launch names one,
+     * and gets none of the caller's {@code TMUX}, {@code TMUX_PANE} or {@code LIBTMUX_SOCKET*}. It has
+     * no session, and keeps running with none. Unlike any other server, closing this one ends the
+     * tmux server: {@link #close()} waits until it no longer answers, removes the directory, and
+     * throws if the server still answers or a program left another one under the directory.
+     *
+     * @param launch which tmux to run, and where
+     * @throws io.github.libtmux.exception.ServerUnavailableException if tmux could not be started or
+     *     did not answer in time; nothing is left behind
+     */
+    @Operation(Kind.LIFECYCLE)
+    public static Server start(ServerLaunch launch) {
+        Objects.requireNonNull(launch, "launch");
+        PrivateDaemon daemon = PrivateDaemon.start(launch);
+        try {
+            ServerConfig config = daemon.config();
+            ProcessTransport transport = new ProcessTransport(config.maxConcurrentCommands());
+            transport.observe(config.observer());
+            return new Server(config, transport, true, new PaneEcho(), daemon);
+        } catch (RuntimeException failure) {
+            try {
+                daemon.close();
+            } catch (RuntimeException cleanup) {
+                failure.addSuppressed(cleanup);
+            }
+            throw failure;
+        }
+    }
+
+    /** As {@link #start(ServerLaunch)}, with tmux from {@code PATH} and the default root. */
+    @Operation(Kind.LIFECYCLE)
+    public static Server start() {
+        return start(ServerLaunch.builder().build());
+    }
+
     /** A server over a transport the caller owns. Closing this server never closes it. */
     @Operation(Kind.LIFECYCLE)
     public static Server using(ServerConfig config, TmuxTransport transport) {
@@ -1495,7 +1544,13 @@ public final class Server implements AutoCloseable {
         return new Builder(config.toBuilder(), owned ? null : transport);
     }
 
-    /** Releases an owned transport. Idempotent, and never kills tmux. */
+    /**
+     * Releases an owned transport. Idempotent, and never kills tmux, except on a server made by
+     * {@link #start(ServerLaunch)}, whose close ends the tmux server it owns.
+     *
+     * @throws IllegalStateException on a started server, if it still answers afterwards or a program
+     *     left another tmux server under its directory
+     */
     @Operation(Kind.LIFECYCLE)
     @Override
     public void close() {
@@ -1504,6 +1559,9 @@ public final class Server implements AutoCloseable {
         }
         if (owned) {
             transport.close();
+        }
+        if (daemon != null) {
+            daemon.close();
         }
     }
 

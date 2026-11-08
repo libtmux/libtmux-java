@@ -1,4 +1,4 @@
-package io.github.libtmux.junit5;
+package io.github.libtmux;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 /**
  * Teardown that survives its own process being killed.
  *
- * <p>A finalizer — this extension's {@code afterEach}, or Python libtmux's {@code addfinalizer} —
+ * <p>A finalizer — a test's {@code afterEach}, or Python libtmux's {@code addfinalizer} —
  * runs only if the process lives long enough to run it. A test JVM killed outright leaves a tmux
  * server with nobody holding it, and once the host's temporary-file cleaner removes the directory
  * the socket cannot even be reached to kill it. Nineteen such servers were found on this machine.
@@ -29,9 +29,11 @@ import org.junit.jupiter.api.Test;
  */
 final class AbandonedServerTest {
 
+    private static final Path FIXTURE_ROOT = Path.of("/tmp/libtmux-java-test");
+
     private static Path testRoot() throws IOException {
-        Files.createDirectories(TmuxExtension.fixtureRoot());
-        return Files.createTempDirectory(TmuxExtension.fixtureRoot(), "reaper-");
+        Files.createDirectories(FIXTURE_ROOT);
+        return Files.createTempDirectory(FIXTURE_ROOT, "reaper-");
     }
 
     private static Path socketFor(Path root, long owner) throws IOException {
@@ -50,9 +52,9 @@ final class AbandonedServerTest {
         return socketFor(root, owner, Long.toString(startMillis));
     }
 
-    /** This JVM's start as the extension records it. */
+    /** This JVM's start as a started server records it. */
     private static String thisStart() {
-        return TmuxExtension.startOf(ProcessHandle.current().pid())
+        return PrivateDaemon.startOf(ProcessHandle.current().pid())
                 .orElseThrow(() -> new AssertionError("this platform reports no start"));
     }
 
@@ -128,7 +130,7 @@ final class AbandonedServerTest {
                 server.onExit().get(30, TimeUnit.SECONDS);
             }
         }
-        TmuxExtension.deleteTree(root);
+        PrivateDaemon.deleteTree(root);
     }
 
     /**
@@ -172,7 +174,7 @@ final class AbandonedServerTest {
         Path root = testRoot();
         Path socket = socketFor(root, deadPid());
         try {
-            int reaped = TmuxExtension.reap(Stream.of(tmuxProcess(socket), tmuxProcess(socket)), root);
+            int reaped = PrivateDaemon.reap(Stream.of(tmuxProcess(socket), tmuxProcess(socket)), root);
 
             assertEquals(1, reaped);
         } finally {
@@ -187,7 +189,7 @@ final class AbandonedServerTest {
         Path first = socketFor(root, deadPid());
         Path second = socketFor(root, deadPid());
         try {
-            int reaped = TmuxExtension.reap(Stream.of(tmuxProcess(first), tmuxProcess(second)), root);
+            int reaped = PrivateDaemon.reap(Stream.of(tmuxProcess(first), tmuxProcess(second)), root);
 
             assertEquals(2, reaped);
         } finally {
@@ -203,7 +205,7 @@ final class AbandonedServerTest {
             startServer(socket);
             assertTrue(alive(socket), "the fixture for this test must actually be running");
 
-            int reaped = TmuxExtension.reapAbandoned(root);
+            int reaped = PrivateDaemon.reapAbandoned(root);
 
             assertEquals(1, reaped);
             assertFalse(alive(socket), "a server nobody owns must not outlive the sweep");
@@ -222,7 +224,7 @@ final class AbandonedServerTest {
             startServer(socket);
             ProcessHandle server = serverOn(socket).orElseThrow(() -> new AssertionError("no server to reap"));
 
-            int reaped = TmuxExtension.reapAbandoned(root);
+            int reaped = PrivateDaemon.reapAbandoned(root);
 
             assertEquals(1, reaped);
             assertFalse(server.isAlive(), "the sweep counted a server it had only asked to stop");
@@ -243,7 +245,7 @@ final class AbandonedServerTest {
         try {
             startServer(socket);
 
-            int reaped = TmuxExtension.reapAbandoned(root);
+            int reaped = PrivateDaemon.reapAbandoned(root);
 
             assertEquals(0, reaped);
             assertTrue(alive(socket), "this JVM is still running, so this server is still owned");
@@ -265,7 +267,7 @@ final class AbandonedServerTest {
             startServer(socket);
             assertTrue(alive(socket), "the fixture for this test must actually be running");
 
-            int reaped = TmuxExtension.reapAbandoned(root);
+            int reaped = PrivateDaemon.reapAbandoned(root);
 
             assertEquals(1, reaped);
             assertFalse(alive(socket), "a directory naming a stale start instant for a live pid must be reaped");
@@ -293,7 +295,7 @@ final class AbandonedServerTest {
         try {
             startServer(socket);
 
-            int reaped = TmuxExtension.reapAbandoned(root);
+            int reaped = PrivateDaemon.reapAbandoned(root);
 
             assertEquals(0, reaped);
             assertTrue(alive(socket), "a live run's server was reaped over a few seconds of clock drift");
@@ -311,7 +313,7 @@ final class AbandonedServerTest {
         try {
             startServer(socket);
 
-            int reaped = TmuxExtension.reapAbandoned(root);
+            int reaped = PrivateDaemon.reapAbandoned(root);
 
             assertEquals(0, reaped);
             assertTrue(alive(socket));

@@ -165,6 +165,8 @@ Generated from `@Operation`-annotated methods by the operation-catalog Doclet; d
 | `io.github.libtmux.Server` | `requireCompatibleTmux()` | READ | Requires a compatible daemon, or a compatible executable when this endpoint is unused. |
 | `io.github.libtmux.Server` | `identity()` | CAPTURED | Which server this is. |
 | `io.github.libtmux.Server` | `open(io.github.libtmux.ServerConfig)` | LIFECYCLE | A server over a transport it owns and closes. |
+| `io.github.libtmux.Server` | `start(io.github.libtmux.ServerLaunch)` | LIFECYCLE | Starts a private tmux server that this handle owns, and returns a client of it. |
+| `io.github.libtmux.Server` | `start()` | LIFECYCLE | As {@link #start(ServerLaunch)}, with tmux from {@code PATH} and the default root. |
 | `io.github.libtmux.Server` | `using(io.github.libtmux.ServerConfig, io.github.libtmux.transport.TmuxTransport)` | LIFECYCLE | A server over a transport the caller owns. |
 | `io.github.libtmux.Server` | `within(java.time.Duration)` | LIFECYCLE | This server, with every command bounded by a deadline of the caller's choosing. |
 | `io.github.libtmux.Server` | `builder()` | LIFECYCLE | A builder holding the documented defaults. |
