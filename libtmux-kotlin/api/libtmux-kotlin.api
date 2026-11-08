@@ -329,6 +329,8 @@ public final class io/github/libtmux/kotlin/RetryKt {
 public final class io/github/libtmux/kotlin/ScopesKt {
 	public static final fun withControl-1Y68eR8 (Lio/github/libtmux/kotlin/Server;Lio/github/libtmux/kotlin/Session;JLkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun withControl-1Y68eR8$default (Lio/github/libtmux/kotlin/Server;Lio/github/libtmux/kotlin/Session;JLkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun withPrivateServer (Lio/github/libtmux/ServerLaunch;Lio/github/libtmux/kotlin/ExecutionPolicy;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun withPrivateServer$default (Lio/github/libtmux/ServerLaunch;Lio/github/libtmux/kotlin/ExecutionPolicy;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static final fun withServer (Lio/github/libtmux/ServerConfig;Lio/github/libtmux/kotlin/ExecutionPolicy;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun withServer$default (Lio/github/libtmux/ServerConfig;Lio/github/libtmux/kotlin/ExecutionPolicy;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
@@ -369,6 +371,8 @@ public final class io/github/libtmux/kotlin/Server$Companion {
 	public static synthetic fun fromJava$default (Lio/github/libtmux/kotlin/Server$Companion;Lio/github/libtmux/Server;Lio/github/libtmux/kotlin/ExecutionPolicy;ILjava/lang/Object;)Lio/github/libtmux/kotlin/Server;
 	public final fun open (Lio/github/libtmux/ServerConfig;Lio/github/libtmux/kotlin/ExecutionPolicy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun open$default (Lio/github/libtmux/kotlin/Server$Companion;Lio/github/libtmux/ServerConfig;Lio/github/libtmux/kotlin/ExecutionPolicy;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun start (Lio/github/libtmux/ServerLaunch;Lio/github/libtmux/kotlin/ExecutionPolicy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun start$default (Lio/github/libtmux/kotlin/Server$Companion;Lio/github/libtmux/ServerLaunch;Lio/github/libtmux/kotlin/ExecutionPolicy;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class io/github/libtmux/kotlin/ServerOperationsKt {
