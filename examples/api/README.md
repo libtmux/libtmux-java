@@ -16,22 +16,16 @@ $ ./gradlew :examples:test --tests '*ApiProgramsTest'
 
 ## Server ownership
 
-[`run.sh`](run.sh) creates a private tmux server under
-`/tmp/libtmux-java-dev/`. It starts `work-one` with an `editor` window containing
-two panes and a `logs` window containing one pane. It also starts `work-two`
-with one `editor` pane. Every fixture pane runs `/bin/cat`.
+Each program starts its own private tmux server with `Server.start`, in a
+directory of its own under `/tmp/libtmux-java-dev/`, and ends it when its scope
+closes. The server reads an empty config and gets none of the caller's `TMUX`,
+`TMUX_PANE` or `LIBTMUX_SOCKET*`. Closing the handle stops the server, waits
+until it no longer answers, removes the directory, and throws if the server
+still answers or the program left another one under the directory.
 
-The program starts without `TMUX`, `TMUX_PANE` or `LIBTMUX_SOCKET*`, and with a
-`TMUX_TMPDIR` of its own, so a client that names no socket cannot reach another
-server. The run fails, after stopping it, when the program leaves a server
-running there.
-
-Each program receives the tmux executable, socket path, and configuration file
-as three arguments. It opens an ordinary client connected to that server.
-Closing the client releases its transport; the launcher owns server shutdown.
-The launcher stops the server on success or failure and waits for its liveness
-probe to fail before removing the directory. A shutdown failure retains the
-directory and returns a nonzero status.
+The programs that read existing state create it first: `work-one` with an
+`editor` window containing two panes and a `logs` window containing one pane,
+and `work-two` with one `editor` pane. Every fixture pane runs `/bin/cat`.
 
 Lists returned by a server read capture its state at that read. A session's
 windows and a window's panes are captured properties. `NewWindow` reads the
@@ -42,9 +36,9 @@ their effects through `IOApp`; constructing an `IO` alone does not run it.
 
 Use JDK 25, Git, and tmux 3.3a through 3.7c on Linux. The source checkout
 supplies the Gradle wrapper and library dependencies. Save the chosen variant's
-`settings.gradle.kts` and `build.gradle.kts`, the shared `gradle.properties` and
-`run.sh`, and one complete program under `src/main/java`, `src/main/kotlin`,
-or `src/main/scala`. The manifest records those destination paths and each
+`settings.gradle.kts` and `build.gradle.kts`, the shared `gradle.properties`,
+and one complete program under `src/main/java`, `src/main/kotlin`, or
+`src/main/scala`. The manifest records those destination paths and each
 program's main class.
 
 For example, prepare the Java capture program in an empty directory:
@@ -53,18 +47,17 @@ For example, prepare the Java capture program in an empty directory:
 $ git clone https://github.com/libtmux/libtmux-java libtmux-source && \
   cp libtmux-source/examples/api/java/*.gradle.kts . && \
   cp libtmux-source/examples/api/gradle.properties . && \
-  cp libtmux-source/examples/api/run.sh . && \
   mkdir -p src/main/java && \
   cp libtmux-source/examples/src/main/java/io/github/libtmux/examples/api/java/Capture.java \
     src/main/java/
 ```
 
-Build the consumer and run it against the launcher's private server:
+Build the consumer and run it; the program starts and stops its own server:
 
 ```console
 $ ./libtmux-source/gradlew --project-dir . --console=plain --quiet \
     installDist -PexampleMain=io.github.libtmux.examples.api.java.Capture && \
-  sh run.sh build/install/api-example/bin/api-example
+  build/install/api-example/bin/api-example
 ```
 
 The program waits for each printed marker before capturing and checking it:
@@ -74,10 +67,8 @@ api-keys
 api-line
 ```
 
-Set `TMUX_BIN` to an absolute executable path to choose a particular tmux
-release. Set `API_RUN_ROOT` to move the runner's directories from
-`/tmp/libtmux-java-dev`; the default socket path under it must fit in 100
-bytes. Each invocation starts a fresh fixture, so none of the programs requires
+Put the tmux release you want first on `PATH`; the program runs the `tmux` it
+finds there. Each run starts a fresh server, so none of the programs requires
 an earlier example to run first.
 
 ## Clojure programs

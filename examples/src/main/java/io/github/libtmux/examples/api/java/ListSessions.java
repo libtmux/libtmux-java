@@ -1,9 +1,8 @@
 package io.github.libtmux.examples.api.java;
 
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerConfig;
-import io.github.libtmux.ServerEndpoint;
-import java.nio.file.Path;
+import io.github.libtmux.SessionSpec;
+import io.github.libtmux.WindowSpec;
 import java.util.stream.Collectors;
 
 /** List the sessions returned by a server read. */
@@ -12,15 +11,23 @@ public final class ListSessions {
 
     public static void main(String[] args) {
         try {
-            if (args.length != 3) {
-                throw new IllegalArgumentException("expected: tmux-binary socket-path config-file");
-            }
-            var config = ServerConfig.builder()
-                    .binary(args[0])
-                    .endpoint(ServerEndpoint.socketPath(Path.of(args[1])))
-                    .configFile(Path.of(args[2]))
-                    .build();
-            try (Server server = Server.open(config)) {
+            try (Server server = Server.start()) {
+                var workOne = server.newSession(SessionSpec.builder()
+                        .named("work-one")
+                        .firstWindowNamed("editor")
+                        .running("/bin/cat")
+                        .build());
+                workOne.windows().getFirst().split(split -> split.toRight().running("/bin/cat"));
+                workOne.newWindow(WindowSpec.builder()
+                        .named("logs")
+                        .running("/bin/cat")
+                        .detached()
+                        .build());
+                server.newSession(SessionSpec.builder()
+                        .named("work-two")
+                        .firstWindowNamed("editor")
+                        .running("/bin/cat")
+                        .build());
                 System.out.println("sessions="
                         + server.sessions().stream()
                                 .map(session -> session.name())

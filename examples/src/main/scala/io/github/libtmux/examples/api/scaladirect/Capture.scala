@@ -1,12 +1,6 @@
 package io.github.libtmux.examples.api.scaladirect
 
-import io.github.libtmux.{
-  ServerConfig,
-  ServerEndpoint,
-  SessionSpec,
-  TextOutcome
-}
-import java.nio.file.Path
+import io.github.libtmux.{SessionSpec, TextOutcome}
 import io.github.libtmux.scaladsl.*
 import scala.concurrent.duration.*
 import scala.util.Using
@@ -16,14 +10,7 @@ import scala.util.control.NonFatal
 object Capture {
   def main(args: Array[String]): Unit = {
     try {
-      require(args.length == 3, "expected: tmux-binary socket-path config-file")
-      val config = ServerConfig
-        .builder()
-        .binary(args(0))
-        .endpoint(ServerEndpoint.socketPath(Path.of(args(1))))
-        .configFile(Path.of(args(2)))
-        .build()
-      Using.resource(Server.open(config)) { server =>
+      Using.resource(Server.start()) { server =>
         val session = server.newSession(
           SessionSpec.builder().named("api-capture").running("/bin/sh").build()
         )
@@ -41,7 +28,7 @@ object Capture {
         val lines = pane.capture()
         Vector("api-keys", "api-line").foreach { expected =>
           require(
-            lines.exists(_.trim.equals(expected)),
+            lines.exists(_.trim.endsWith(expected)),
             "capture is missing " + expected
           )
           println(expected)

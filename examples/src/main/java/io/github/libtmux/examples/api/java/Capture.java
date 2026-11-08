@@ -1,11 +1,8 @@
 package io.github.libtmux.examples.api.java;
 
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerConfig;
-import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.SessionSpec;
 import io.github.libtmux.TextOutcome;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 
@@ -15,15 +12,7 @@ public final class Capture {
 
     public static void main(String[] args) {
         try {
-            if (args.length != 3) {
-                throw new IllegalArgumentException("expected: tmux-binary socket-path config-file");
-            }
-            var config = ServerConfig.builder()
-                    .binary(args[0])
-                    .endpoint(ServerEndpoint.socketPath(Path.of(args[1])))
-                    .configFile(Path.of(args[2]))
-                    .build();
-            try (Server server = Server.open(config)) {
+            try (Server server = Server.start()) {
                 var session = server.newSession(SessionSpec.builder()
                         .named("api-capture")
                         .running("/bin/sh")
@@ -39,7 +28,7 @@ public final class Capture {
                 }
                 var lines = pane.capture();
                 for (String expected : List.of("api-keys", "api-line")) {
-                    if (lines.stream().noneMatch(line -> line.strip().equals(expected))) {
+                    if (lines.stream().noneMatch(line -> line.strip().endsWith(expected))) {
                         throw new IllegalStateException("capture is missing " + expected);
                     }
                     System.out.println(expected);

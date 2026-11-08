@@ -1,7 +1,6 @@
 package io.github.libtmux.examples.api.scaladirect
 
-import io.github.libtmux.{ServerConfig, ServerEndpoint, WindowSpec}
-import java.nio.file.Path
+import io.github.libtmux.{SessionSpec, SplitSpec, WindowSpec}
 import io.github.libtmux.scaladsl.*
 import scala.util.Using
 import scala.util.control.NonFatal
@@ -10,14 +9,34 @@ import scala.util.control.NonFatal
 object NewWindow {
   def main(args: Array[String]): Unit = {
     try {
-      require(args.length == 3, "expected: tmux-binary socket-path config-file")
-      val config = ServerConfig
-        .builder()
-        .binary(args(0))
-        .endpoint(ServerEndpoint.socketPath(Path.of(args(1))))
-        .configFile(Path.of(args(2)))
-        .build()
-      Using.resource(Server.open(config)) { server =>
+      Using.resource(Server.start()) { server =>
+        val workOne = server.newSession(
+          SessionSpec
+            .builder()
+            .named("work-one")
+            .firstWindowNamed("editor")
+            .running("/bin/cat")
+            .build()
+        )
+        workOne.windows.head.split(
+          SplitSpec.builder().toRight().running("/bin/cat").build()
+        )
+        workOne.newWindow(
+          WindowSpec
+            .builder()
+            .named("logs")
+            .running("/bin/cat")
+            .detached()
+            .build()
+        )
+        server.newSession(
+          SessionSpec
+            .builder()
+            .named("work-two")
+            .firstWindowNamed("editor")
+            .running("/bin/cat")
+            .build()
+        )
         val session =
           server.session("work-one").getOrElse(sys.error("missing work-one"))
         val window = session.newWindow(
