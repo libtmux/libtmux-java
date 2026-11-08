@@ -109,7 +109,10 @@ reference.
 
 `(close! server)`
 
-Releases the supplied Server's local resources without killing tmux.
+Releases the supplied Server's local resources without killing tmux, except for
+a
+server from [`start!`][api:libtmux.core/start!], whose close stops the tmux
+server it owns.
 Local closure remains available after
 [`libtmux.async/cancel!`][api:libtmux.async/cancel!].
 [`open!`][api:libtmux.core/open!] creates another client.
@@ -256,12 +259,14 @@ for one explicit
 `:socket-path` or `:socket-name`, which `with-open` closes.
 [`close!`][api:libtmux.core/close!]
 releases only that client and never kills tmux.
-[`libtmux.control/attach!`][api:libtmux.control/attach!] attaches a separate
-control connection to a
-captured session.
+[`start!`][api:libtmux.core/start!] starts a private
+tmux server instead, and closing that Server stops tmux and removes its
+directory. [`libtmux.control/attach!`][api:libtmux.control/attach!] attaches a
+separate control connection
+to a captured session.
 
 - Open and close: [`open!`][api:libtmux.core/open!],
-[`close!`][api:libtmux.core/close!]
+[`start!`][api:libtmux.core/start!], [`close!`][api:libtmux.core/close!]
 - Control: [`libtmux.control/attach!`][api:libtmux.control/attach!]
 
 **Listing everything.** [`snapshot!`][api:libtmux.core/snapshot!] acquires every
@@ -606,6 +611,25 @@ exclusive),
 A single argv element is executed literally, without shell interpolation.
 Use [`apply-layout!`][api:libtmux.core/apply-layout!] to arrange the resulting
 window.
+
+### [`libtmux.core/start!`][libtmux.core]
+
+`(start!)`
+
+`(start! options)`
+
+Starts a private tmux server that the returned Server owns.
+The server has a directory of its own, an empty config unless `:config-file`
+names one,
+and none of the caller's TMUX, TMUX_PANE or LIBTMUX_SOCKET*. Optional `:binary`
+is a
+command name or path, `:root` a directory to make it under, `:timeout` a
+positive
+java.time.Duration for startup and shutdown. Unknown keys are rejected.
+Returns a Server for with-open; closing it stops tmux, removes the directory,
+and
+throws if the server still answers or a program left another one in it.
+Unlike [`open!`][api:libtmux.core/open!], which owns only a client.
 
 ### [`libtmux.core/switch-client!`][libtmux.core]
 
@@ -1111,6 +1135,8 @@ deliveries have drained.
   #libtmuxcoresnapshot
 [api:libtmux.core/split-pane!]:
   #libtmuxcoresplit-pane
+[api:libtmux.core/start!]:
+  #libtmuxcorestart
 [api:libtmux.core/switch-client!]:
   #libtmuxcoreswitch-client
 [api:libtmux.core/unlink-window!]:
