@@ -43,8 +43,8 @@
                             (map #(str (.relativize (root) (.toPath ^File %)))))
                       (file-seq (.toFile source-root)))]
     (is (= 1 (.asInt (.path manifest "schemaVersion"))))
-    (is (= 2 (count setup)))
-    (is (= #{"deps.edn" "run.sh"} (set (map #(.asText (.path ^JsonNode % "path")) setup))))
+    (is (= 1 (count setup)))
+    (is (= #{"deps.edn"} (set (map #(.asText (.path ^JsonNode % "path")) setup))))
     (doseq [^JsonNode file setup]
       (is (.isFile (.toFile (.resolve (root) (.asText (.path file "sourceFile")))))))
     (is (= 13 (count examples)))
@@ -83,8 +83,7 @@
         output (.resolve directory "output.log")
         classpath (str (.resolve (root) "examples/src/main/clojure")
                        File/pathSeparator (System/getProperty "java.class.path"))
-        command ["sh" (str (.resolve (root) "examples/api/run.sh"))
-                 (str (System/getProperty "java.home") "/bin/java")
+        command [(str (System/getProperty "java.home") "/bin/java")
                  "-Xmx384m" "-XX:+UseSerialGC" "-XX:ActiveProcessorCount=2" "-XX:TieredStopAtLevel=1"
                  "-Dclojure.main.report=stderr"
                  "-cp" classpath "clojure.main" "-m" mainNamespace]
@@ -93,8 +92,10 @@
                   (.redirectErrorStream true)
                   (.redirectOutput (.toFile output)))
         environment (.environment builder)]
-    (.put environment "TMUX_BIN" (System/getProperty "libtmux.tmux" "tmux"))
-    (.put environment "API_RUN_ROOT" (str directory))
+    ;; The program starts its own server with the tmux first on PATH; the matrix names its build.
+    (let [tmux (Path/of (System/getProperty "libtmux.tmux" "tmux") (make-array String 0))]
+      (when (.isAbsolute tmux)
+        (.put environment "PATH" (str (.getParent tmux) File/pathSeparator (.get environment "PATH")))))
     (let [process (.start builder)]
       (.close (.getOutputStream process))
       (try

@@ -6,16 +6,13 @@
   (:import [io.github.libtmux Pane PaneRun PaneRun$Outcome]
            [java.time Duration]))
 
-(defn -main [& args]
-  (when-not (= 3 (count args))
-    (throw (IllegalArgumentException. "expected: tmux-binary socket-path config-file")))
-  (let [[binary socket config] args]
-    (with-open [server (tm/open! {:binary binary :socket-path socket :config-file config})]
-      (let [session (tm/new-session! server {:name "command-example" :command ["/bin/sh"]})
-            ^Pane pane (:tmux/ref (data/exactly-one (data/panes session)))
-            ^PaneRun result (.run pane "printf 'built\\n'; exit 3" (Duration/ofMillis 900))]
-        (assert (= PaneRun$Outcome/FINISHED (.outcome result)))
-        (assert (= 3 (.orElseThrow (.exitStatus result))))
-        (assert (= ["built"] (vec (.output result))))
-        (println (str "exit=" (.orElseThrow (.exitStatus result))
-                      " output=" (str/join " / " (.output result))))))))
+(defn -main [& _]
+  (with-open [server (tm/start!)]
+    (let [session (tm/new-session! server {:name "command-example" :command ["/bin/sh"]})
+          ^Pane pane (:tmux/ref (data/exactly-one (data/panes session)))
+          ^PaneRun result (.run pane "printf 'built\\n'; exit 3" (Duration/ofMillis 900))]
+      (assert (= PaneRun$Outcome/FINISHED (.outcome result)))
+      (assert (= 3 (.orElseThrow (.exitStatus result))))
+      (assert (= ["built"] (vec (.output result))))
+      (println (str "exit=" (.orElseThrow (.exitStatus result))
+                    " output=" (str/join " / " (.output result)))))))

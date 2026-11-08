@@ -4,17 +4,20 @@
             [libtmux.core :as tm]
             [libtmux.data :as data]))
 
-(defn -main [& args]
-  (when-not (= 3 (count args))
-    (throw (IllegalArgumentException. "expected: tmux-binary socket-path config-file")))
-  (let [[binary socket config] args]
-    (with-open [server (tm/open! {:binary binary :socket-path socket
-                                 :config-file config})]
-      (let [snapshot (tm/snapshot! server)
-            session (data/exactly-one
-                     (filter #(= "work-one" (:session/name %))
-                             (:tmux/sessions snapshot)))]
-        (println (str "windows="
-                      (str/join "," (sort (map :window/name (data/windows snapshot))))))
-        (println (str "session-windows="
-                      (str/join "," (sort (map :window/name (data/windows session))))))))))
+(defn -main [& _]
+  (with-open [server (tm/start!)]
+    (let [one (tm/new-session! server {:name "work-one" :window-name "editor"
+                                       :command ["/bin/cat"]})]
+      (tm/split-pane! (:tmux/ref (data/exactly-one (data/panes one)))
+                      {:direction :right :command ["/bin/cat"]})
+      (tm/new-window! (:tmux/ref one) {:name "logs" :detached? true :command ["/bin/cat"]})
+      (tm/new-session! server {:name "work-two" :window-name "editor"
+                               :command ["/bin/cat"]}))
+    (let [snapshot (tm/snapshot! server)
+          session (data/exactly-one
+                   (filter #(= "work-one" (:session/name %))
+                           (:tmux/sessions snapshot)))]
+      (println (str "windows="
+                    (str/join "," (sort (map :window/name (data/windows snapshot))))))
+      (println (str "session-windows="
+                    (str/join "," (sort (map :window/name (data/windows session)))))))))

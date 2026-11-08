@@ -211,11 +211,6 @@
           "sourceFile": "examples/api/clojure/deps.edn",
           "path": "deps.edn",
           "language": "clojure"
-        },
-        {
-          "sourceFile": "examples/api/run.sh",
-          "path": "run.sh",
-          "language": "bash"
         }
       ]
     }
