@@ -3,7 +3,7 @@
             [libtmux.core :as tmux])
   (:import [io.github.libtmux Server ServerConfig]
            [io.github.libtmux.transport TmuxTransport CommandRequest CommandResult DispatchOutcome]
-           [io.github.libtmux.exception DispatchException DispatchException$Failed]))
+           [io.github.libtmux.exception DispatchException DispatchException$Failed ServerClosedException]))
 
 (defn- version-probe?
   "The hook-free admission probe: run-shell -C '<marker>#{version}'."
@@ -20,7 +20,7 @@
                                (subs format 0 (- (count format) (count "#{version}")))
                                "3.7c")])))
 
-(defn- ^Server fake-server
+(defn ^Server fake-server
   "A server over a fake transport. Admission is answered, so `dispatch` sees only the
   requests a call itself makes."
   [dispatch]
@@ -86,6 +86,34 @@
           (is (= dispatch (:tmux/dispatch (ex-data error))))
           (is (= effects (:tmux/effects (ex-data error)))))))))
 
+(deftest typed-closure-preserves-structure-and-dispatch-certainty
+  (doseq [[message outcome dispatch effects]
+          [["server is closed" DispatchOutcome/NOT_DISPATCHED :not-dispatched :none]
+           ["transport is closed" DispatchOutcome/NOT_DISPATCHED :not-dispatched :none]
+           ["transport closed before dispatch" DispatchOutcome/NOT_DISPATCHED :not-dispatched :none]
+           ["transport closed while tmux was running" DispatchOutcome/UNKNOWN :unknown :possible]]]
+    (let [cause (ServerClosedException. message outcome)]
+      (with-open [server (fake-server (fn [_] (throw cause)))]
+        (let [error (try (tmux/raw! server ["set-buffer" "value"])
+                         (catch Exception failure failure))]
+          (is (instance? clojure.lang.ExceptionInfo error))
+          (is (identical? cause (.getCause ^Throwable error)))
+          (is (= {:tmux/error :tmux/closed :tmux/operation :raw
+                  :tmux/phase :unknown :tmux/dispatch dispatch :tmux/effects effects}
+                 (tmux/error-summary error)))))))
+  (let [calls (atom 0)]
+    (with-open [server (fake-server (fn [_] (swap! calls inc) (CommandResult. 0 [] [])))]
+      (let [closed (binding [tmux/*execution-check* (fn [_] (throw (ex-info "cancelled" {:tmux/error :cancelled})))]
+                     (try (tmux/close! server) :closed
+                          (catch clojure.lang.ExceptionInfo failure failure)))]
+        (is (= :closed closed)))
+      (.close server)
+      (let [error (failure #(tmux/snapshot! server))]
+        (is (= :tmux/closed (:tmux/error (ex-data error))))
+        (is (= :not-dispatched (:tmux/dispatch (ex-data error))))
+        (is (= :none (:tmux/effects (ex-data error)))))
+      (is (zero? @calls)))))
+
 (defn- run-group [kind server operations]
   ((ns-resolve 'libtmux.core kind) server operations))
 
@@ -128,11 +156,14 @@
 
 (deftest group-transport-errors-preserve-all-unresolved-positions
   (doseq [kind ['batch! 'chain!]
+          constructor [#(DispatchException$Failed. "transport failed" % nil)
+                       #(ServerClosedException. "transport is closed" %)]
           [outcome dispatch result-outcome] [[DispatchOutcome/NOT_DISPATCHED :not-dispatched :skipped]
                                               [DispatchOutcome/UNKNOWN :unknown :unknown]]]
-    (let [cause (DispatchException$Failed. "transport failed" outcome nil)]
+    (let [cause (constructor outcome)]
       (with-open [server (fake-server (fn [_] (throw cause)))]
-        (let [error (failure #(run-group kind server [["set-buffer" "a"] ["set-buffer" "b"]]))]
+        (let [error (try (run-group kind server [["set-buffer" "a"] ["set-buffer" "b"]])
+                         (catch Exception failure failure))]
           (is (identical? cause (.getCause ^Throwable error)))
           (is (= dispatch (:tmux/dispatch (ex-data error))))
           (is (= [result-outcome result-outcome]

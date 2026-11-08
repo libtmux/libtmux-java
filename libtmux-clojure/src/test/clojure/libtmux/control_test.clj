@@ -1,9 +1,11 @@
 (ns libtmux.control-test
   (:require [clojure.test :refer [deftest is]]
-            [libtmux.control :as control])
+            [libtmux.control :as control]
+            [libtmux.core :as core])
   (:import [io.github.libtmux PaneId]
            [io.github.libtmux.batch OperationOutcome]
            [io.github.libtmux.control ControlReply EventSubscription PaneOutput PaneOutputDecoder]
+           [java.io IOException]
            [java.lang AutoCloseable]
            [java.nio ByteBuffer]
            [java.time Duration]
@@ -46,6 +48,36 @@
   (let [method (.getDeclaredMethod EventSubscription "end" (into-array Class [Throwable]))]
     (.setAccessible method true)
     (.invoke method (.-subscription stream) (object-array [cause]))))
+
+(deftest local-close-remains-available-during-cancellation
+  (with-open [^libtmux.control.OutputStream stream (test-stream :bytes 1)]
+    (let [^EventSubscription subscription (.-subscription stream)]
+      (is (thrown? IllegalStateException (dosync (control/close! stream))))
+      (is (false? (.isClosed subscription)))
+      (let [result (binding [core/*execution-check* (fn [_] (throw (ex-info "cancelled" {:tmux/error :cancelled})))]
+                     (try (control/close! stream) :closed
+                          (catch clojure.lang.ExceptionInfo failure failure)))]
+        (is (= :closed result)))
+      (is (.isClosed subscription)))))
+
+(deftest timed-read-drains-output-that-arrives-at-termination
+  (with-open [^libtmux.control.OutputStream stream (test-stream :bytes 8)]
+    (let [cause (IOException. "transport ended")
+          reader #'libtmux.control/read-delivery!
+          read-fn @reader]
+      (with-redefs-fn
+        {reader (fn [subscription timeout]
+                  (let [delivery (read-fn subscription timeout)]
+                    (offer! stream "%1" "last")
+                    (end! stream cause)
+                    delivery))}
+        #(let [step (control/next! stream Duration/ZERO)]
+           (is (= :event (:stream/status step)))
+           (is (= [108 97 115 116] (vec (:output/bytes step))))))
+      (let [step (control/next! stream Duration/ZERO)]
+        (is (= :terminal (:stream/status step)))
+        (is (identical? cause (get-in step [:stream/terminal :cause]))))
+      (is (.isEmpty (.poll ^EventSubscription (.-subscription stream)))))))
 
 (deftest protocol-complete-does-not-claim-command-completion
   (doseq [[status expected] [[OperationOutcome/COMPLETE :complete]

@@ -24,6 +24,11 @@ The façade requires JDK 25 or newer. The project tests tmux 3.3a through
 `snapshot!` acquires one captured graph. The `data/windows` and `data/panes`
 walks below read that graph; they do not issue another tmux command.
 
+The example runner supplies `libtmux.docs.socket` for its private server. In a
+REPL, replace that property lookup with the path to your server's socket.
+The [complete programs][programs] include a launcher that sets up and removes
+an isolated server for you.
+
 <!-- clojure-snippet: fixture -->
 ```clojure
 (require '[libtmux.core :as tm]

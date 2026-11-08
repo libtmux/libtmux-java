@@ -287,6 +287,7 @@
   Runs on the runtime's bounded callback lane with the caller's dynamic
   bindings. Full callback admission throws `ex-info` with `:tmux/error` `:busy.`
   Closing the runtime cancels queued callbacks and interrupts active ones.
+  After [[close-runtime!]], callbacks cannot issue later tmux calls.
   [[completion-stage]] exposes ordinary Java stage scheduling instead."
   [^AsyncRuntime runtime ^Task task f]
   (when-not (and (instance? AsyncRuntime runtime) (instance? Task task) (ifn? f))
@@ -300,9 +301,16 @@
                        :tmux/phase :admission :tmux/dispatch :not-dispatched})))
     (try
       (let [bindings (get-thread-bindings)
+            parent-check (get bindings #'core/*execution-check*)
+            check (fn [request]
+                    (when @(.-closed runtime) (throw (failure :cancelled :unknown)))
+                    (when (and request parent-check) (parent-check request)))
             stage (.thenApplyAsync ^CompletableFuture (.-stage task)
                                    (reify Function
-                                     (apply [_ value] (with-bindings bindings (f value))))
+                                     (apply [_ value]
+                                       (with-bindings (assoc bindings #'core/*execution-check* check)
+                                         (check nil)
+                                         (f value))))
                                    ^Executor (.-callbacks runtime))]
         (swap! (.-callback-stages runtime) conj stage)
         (.whenComplete ^CompletableFuture stage

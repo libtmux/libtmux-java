@@ -110,6 +110,9 @@ reference.
 `(close! server)`
 
 Releases the supplied Server's local resources without killing tmux.
+Local closure remains available after
+[`libtmux.async/cancel!`][api:libtmux.async/cancel!].
+[`open!`][api:libtmux.core/open!] creates another client.
 
 ### [`libtmux.core/delete-buffer!`][libtmux.core]
 
@@ -698,6 +701,8 @@ Returns a read-only CompletionStage applying `f` after successful task cleanup.
 Runs on the runtime's bounded callback lane with the caller's dynamic
 bindings. Full callback admission throws `ex-info` with `:tmux/error` `:busy.`
 Closing the runtime cancels queued callbacks and interrupts active ones.
+After [`close-runtime!`][api:libtmux.async/close-runtime!], callbacks cannot
+issue later tmux calls.
 [`completion-stage`][api:libtmux.async/completion-stage] exposes ordinary Java
 stage scheduling instead.
 
@@ -730,6 +735,8 @@ connection.
 
 Closes a connection or subscription. Closing a subscription leaves its
 borrowed connection open; closing a connection affects all its subscribers.
+Local closure remains available after
+[`libtmux.async/cancel!`][api:libtmux.async/cancel!].
 [`terminal`][api:libtmux.control/terminal] inspects a drained subscription;
 [`attach!`][api:libtmux.control/attach!] opens another connection.
 
@@ -744,8 +751,8 @@ termination.
 A `:gap` names the events dropped since the previous read and precedes the
 events that remain. The optional nonnegative Duration includes waiting for
 another reader. Sequence numbers order the events of this stream. Close wakes
-a reader. Termination by the client keeps already delivered events readable;
-an intentional close discards them.
+a reader. Termination drains queued deliveries before the final outcome;
+intentionally closing this subscription discards its pending deliveries.
 [`subscribe!`][api:libtmux.control/subscribe!] sets bounds;
 [`close!`][api:libtmux.control/close!] wakes a blocked reader.
 

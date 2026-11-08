@@ -31,7 +31,7 @@
 
 (defn- perform! [operation f]
   (io!
-   (when tmux/*execution-check*
+   (when (and tmux/*execution-check* (not= :control/close operation))
      (tmux/*execution-check* {:operation operation :kind (if (= operation :control/next) :wait :mutation)}))
    (try (f)
         (catch LibTmuxException cause
@@ -204,13 +204,16 @@
           decoder (assoc :decoder/resets (.resetCount decoder))
           (and decoder (> (.resetCount decoder) before)) (assoc :decoder/reset :capacity))))))
 
+(defn- ^Optional read-delivery! [^EventSubscription subscription ^Duration timeout]
+  (if timeout (.next subscription timeout) (.next subscription)))
+
 (defn next!
   "Reads one event, gap, timeout, or terminal map; never uses `nil` for termination.
   A `:gap` names the events dropped since the previous read and precedes the
   events that remain. The optional nonnegative Duration includes waiting for
   another reader. Sequence numbers order the events of this stream. Close wakes
-  a reader. Termination by the client keeps already delivered events readable;
-  an intentional close discards them.
+  a reader. Termination drains queued deliveries before the final outcome;
+  intentionally closing this subscription discards its pending deliveries.
   [[subscribe!]] sets bounds; [[close!]] wakes a blocked reader."
   ([stream] (next! stream nil))
   ([stream timeout]
@@ -231,21 +234,25 @@
                       (if-let [outcome (terminal stream)]
                         {:stream/status :terminal :stream/terminal outcome}
                         (let [^EventSubscription subscription (.-subscription stream)
-                              ^Optional delivery (if budget
-                                                   (.next subscription
-                                                          (Duration/ofNanos
-                                                           (max 0 (- budget (- (System/nanoTime) started)))))
-                                                   (.next subscription))]
+                              ^Optional delivery (read-delivery!
+                                                  subscription
+                                                  (when budget
+                                                    (Duration/ofNanos
+                                                     (max 0 (- budget (- (System/nanoTime) started))))))]
                           (cond
                             (.isPresent delivery) (delivery-data stream (.get delivery))
-                            (.isClosed subscription) {:stream/status :terminal
-                                                      :stream/terminal (end! stream)}
+                            (.isClosed subscription)
+                            (let [^Optional pending (.poll subscription)]
+                              (if (.isPresent pending)
+                                (delivery-data stream (.get pending))
+                                {:stream/status :terminal :stream/terminal (end! stream)}))
                             :else {:stream/status :timeout})))
                       (finally (.unlock lock)))))))))
 
 (defn close!
   "Closes a connection or subscription. Closing a subscription leaves its
   borrowed connection open; closing a connection affects all its subscribers.
+  Local closure remains available after [[libtmux.async/cancel!]].
   [[terminal]] inspects a drained subscription; [[attach!]] opens another connection."
   [resource]
   (when-not (or (instance? Connection resource) (instance? OutputStream resource))

@@ -1,8 +1,10 @@
 (ns libtmux.async-test
   (:require [clojure.test :refer [deftest is testing]]
             [libtmux.async :as async]
-            [libtmux.core :as core])
-  (:import [java.util.concurrent CompletableFuture CompletionStage CountDownLatch Future FutureTask
+            [libtmux.core :as core]
+            [libtmux.core-test :as core-test])
+  (:import [io.github.libtmux.transport CommandResult]
+           [java.util.concurrent CompletableFuture CompletionStage CountDownLatch Future FutureTask
             ThreadPoolExecutor TimeUnit]))
 
 (def ^:dynamic *submitted-value* nil)
@@ -249,6 +251,38 @@
       (is (instance? clojure.lang.ExceptionInfo outcome))
       (is (= :cancelled (:tmux/error (ex-data outcome)))))
     (is (nil? (.close ^libtmux.async.AsyncRuntime runtime)))))
+
+(deftest closing-refuses-later-callback-io-without-losing-bindings
+  (let [runtime (async/runtime! {:close-timeout-ms 40})
+        entered (CountDownLatch. 1)
+        release (CountDownLatch. 1)
+        finished (CountDownLatch. 1)
+        result (promise)
+        calls (atom 0)]
+    (with-open [server (core-test/fake-server (fn [_] (swap! calls inc) (CommandResult. 0 ["effect"] [])))]
+      (let [task (async/submit! runtime (constantly :ready))]
+        (binding [*submitted-value* :callback]
+          (async/then! runtime task
+                       (fn [_]
+                         (.countDown entered)
+                         (await-uninterruptibly release)
+                         (try
+                           (core/raw! server ["display-message" "-p" "effect"])
+                           (deliver result {:binding *submitted-value* :error nil})
+                           (catch clojure.lang.ExceptionInfo failure
+                             (deliver result {:binding *submitted-value*
+                                              :error (:tmux/error (ex-data failure))}))
+                           (finally (.countDown finished))))))
+        (try
+          (is (.await entered 500 TimeUnit/MILLISECONDS))
+          (let [failure (try (async/close-runtime! runtime)
+                             (catch clojure.lang.ExceptionInfo error error))]
+            (is (= :cleanup-pending (:tmux/error (ex-data failure)))))
+          (finally (.countDown release)))
+        (is (.await finished 500 TimeUnit/MILLISECONDS))
+        (is (= {:binding :callback :error :cancelled} (deref result 500 ::timeout)))
+        (is (zero? @calls))
+        (is (nil? (async/close-runtime! runtime)))))))
 
 (deftest lifecycle-effects-are-rejected-inside-transactions
   (let [runtime (async/runtime!)
