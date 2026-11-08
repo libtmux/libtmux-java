@@ -22,6 +22,15 @@ changelog](../CHANGELOG.md).
 - **Control output preserves pane bytes and supports incremental text
   decoding.** Subscribers can distinguish output gaps, connection closure and
   transport failures while retaining the original termination cause. (#20)
+- **`Server.start` starts a private tmux server that the handle owns.** The
+  server has a directory of its own under `ServerLaunch.root`
+  (`/tmp/libtmux-java-dev` by default), reads an empty config unless
+  `ServerLaunch.configFile` names one, and gets none of the caller's `TMUX`,
+  `TMUX_PANE` or `LIBTMUX_SOCKET*`. `close()` on that server now stops tmux,
+  waits until it no longer answers, removes the directory, and throws
+  `IllegalStateException` if the server still answers or a program left another
+  one under the directory. A start under a root also ends servers there whose
+  JVM was killed. (#142)
 
 ### Changed
 
