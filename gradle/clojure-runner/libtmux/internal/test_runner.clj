@@ -3,8 +3,7 @@
             [clojure.string :as str]
             [clojure.test :as test])
   (:import [java.io File]
-           [java.lang.reflect Method]
-           [java.util.concurrent TimeUnit]))
+           [java.lang.reflect Method]))
 
 (defn- configured-namespaces [property]
   (let [names (some-> (System/getProperty property) (str/split #","))]
@@ -90,30 +89,12 @@
             (println "Namespace guard rejected:" probe)))
         (finally
           (if previous (System/setProperty property previous) (System/clearProperty property)))))
-    (doseq [probe ["fork-join" "virtual-executor" "thread" "virtual-thread"
-                   "client-socket" "datagram" "nio-socket"
-                   "unix-server-socket" "nio-datagram"]]
-      (let [^java.util.List argv
-            [(str (System/getProperty "java.home") "/bin/java")
-             "-XX:TieredStopAtLevel=1" "-Xshare:off" agent
-             "-cp" (System/getProperty "libtmux.clojure.guard.classpath")
-             "libtmux.internal.loadguard.ResourceProbe" probe]
-            process (.start (.redirectErrorStream (ProcessBuilder. argv) true))]
-        (try
-          (when-not (.waitFor process 900 TimeUnit/MILLISECONDS)
-            (throw (ex-info "Namespace guard probe did not finish within its budget" {:probe probe})))
-          (let [output (slurp (.getInputStream process))]
-            (when-not (and (zero? (.exitValue process))
-                           (str/includes? output "NAMESPACE_LOAD_EFFECTS"))
-              (throw (ex-info "Namespace guard did not reject the injected resource"
-                              {:probe probe :output output})))
-            (println "Namespace guard rejected:" probe
-                     (first (filter #(str/starts-with? % "NAMESPACE_LOAD_EFFECTS")
-                                    (str/split-lines output)))))
-          (finally
-            (when (.isAlive process)
-              (.destroyForcibly process)
-              (.waitFor process 900 TimeUnit/MILLISECONDS))))))))
+    (let [^Class probe (Class/forName "libtmux.internal.loadguard.ResourceProbe")
+          ^Method main (.getMethod probe "main" (into-array Class [(class (make-array String 0))]))
+          probes (into-array String ["fork-join" "virtual-executor" "thread" "virtual-thread"
+                                     "client-socket" "datagram" "nio-socket"
+                                     "unix-server-socket" "nio-datagram"])]
+      (.invoke main nil (object-array [probes])))))
 
 (defn -main [& [mode & roots]]
   (println "Clojure" (clojure-version) "on JDK" (System/getProperty "java.version"))

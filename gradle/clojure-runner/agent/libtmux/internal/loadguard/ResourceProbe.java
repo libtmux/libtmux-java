@@ -10,16 +10,25 @@ import java.nio.channels.SocketChannel;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 
-/** Isolates JDK class initialization while checking each additional interception path. */
+/** Initializes JDK classes so rejected operations cannot poison later probes. */
 public final class ResourceProbe {
     private ResourceProbe() {}
 
-    @SuppressWarnings("try") // Construction is the probe; close resources if interception fails.
     public static void main(String[] arguments) throws Exception {
+        for (String target : LoadGuard.coverage().keySet()) {
+            Class.forName(target.replace('/', '.'), true, null);
+        }
+        for (String probe : arguments) {
+            reject(probe);
+        }
+    }
+
+    @SuppressWarnings("try") // Construction is the probe; close resources if interception fails.
+    private static void reject(String probe) throws Exception {
         LoadGuard.begin();
         Throwable rejected = null;
         try {
-            switch (arguments[0]) {
+            switch (probe) {
                 case "fork-join" -> { try (var resource = new ForkJoinPool(1)) {} }
                 case "virtual-executor" -> { try (var resource = Executors.newVirtualThreadPerTaskExecutor()) {} }
                 case "thread" -> {
@@ -42,8 +51,9 @@ public final class ResourceProbe {
         }
         var effects = LoadGuard.end();
         if (effects.isEmpty()) {
-            throw new AssertionError("namespace guard did not reject " + arguments[0], rejected);
+            throw new AssertionError("namespace guard did not reject " + probe, rejected);
         }
         System.out.println("NAMESPACE_LOAD_EFFECTS " + effects);
+        System.out.println("Namespace guard rejected: " + probe);
     }
 }
