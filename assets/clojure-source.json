@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/libtmux/assets",
+  "revision": "ef6c550b8d1120fe6873e610ddbe550f95016a46",
+  "language": "clojure",
+  "primary": "#DB5855",
+  "githubLanguageColors": "https://github.com/github-linguist/linguist/blob/538da05f034fa5c83bd81df128d144e208898da3/lib/linguist/languages.yml",
+  "mcpArtwork": "https://github.com/modelcontextprotocol/modelcontextprotocol/blob/088176704a4e8f20e7f1d237de1de8484aa412fd/docs/logo/light.svg",
+  "files": [
+    {
+      "source": "assets/clojure/library/logo.svg",
+      "file": "libtmux-clojure/assets/logo.svg",
+      "bytes": 5888,
+      "sha256": "11ddff56de0ab2be46c0bee1c9ebbc00aa8fd39ec08e6d0af5d3f107a801ab98"
+    },
+    {
+      "source": "assets/clojure/library/logo-512.png",
+      "file": "libtmux-clojure/assets/logo.png",
+      "bytes": 16186,
+      "sha256": "f2c984aeed0f03d6d12aa356acd014b8bd4b9127380b70a8e1eac39ed4662d9c"
+    },
+    {
+      "source": "assets/clojure/library/logo.svg",
+      "file": "libtmux-clojure-core-async/assets/logo.svg",
+      "bytes": 5888,
+      "sha256": "11ddff56de0ab2be46c0bee1c9ebbc00aa8fd39ec08e6d0af5d3f107a801ab98"
+    },
+    {
+      "source": "assets/clojure/library/logo-512.png",
+      "file": "libtmux-clojure-core-async/assets/logo.png",
+      "bytes": 16186,
+      "sha256": "f2c984aeed0f03d6d12aa356acd014b8bd4b9127380b70a8e1eac39ed4662d9c"
+    }
+  ]
+}

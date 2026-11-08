@@ -1,8 +1,21 @@
+<!-- libtmux-logo -->
+<div align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Clojure">
+  </picture>
+</div>
+<!-- /libtmux-logo -->
+
+<div align="center">
+
 # libtmux-clojure-core-async
 
 Optional [core.async][core-async] integration for
 [libtmux-clojure](../libtmux-clojure/README.md). The base façade has no
 core.async dependency.
+
+</div>
 
 ## Install
 
