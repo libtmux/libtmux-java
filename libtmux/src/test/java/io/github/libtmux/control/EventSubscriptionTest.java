@@ -2,6 +2,7 @@ package io.github.libtmux.control;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -118,6 +119,91 @@ final class EventSubscriptionTest {
             assertEquals(Optional.of(new Delivery.Event<>("second")), subscription.next(Duration.ZERO));
             assertEquals(Optional.of(new Delivery.Event<>("third")), subscription.next(Duration.ZERO));
         }
+    }
+
+    @Test
+    void byteCapacityEvictsOldestValuesAndRejectsAnOversizedValue() throws Exception {
+        try (var subscription = new EventSubscription<String>(8, 4, String::length, ignored -> {})) {
+            subscription.offer("aa");
+            subscription.offer("bbb");
+            subscription.offer("cccc");
+            subscription.offer("12345");
+            assertEquals(0, subscription.retainedBytes());
+            subscription.offer("z");
+
+            assertEquals(1, subscription.retainedBytes());
+            assertEquals(4, subscription.droppedCount());
+            assertEquals(14, subscription.droppedBytes());
+            assertEquals(Optional.of(new Delivery.Gap<>(4)), subscription.next(Duration.ZERO));
+            assertEquals(Optional.of(new Delivery.Event<>("z")), subscription.next(Duration.ZERO));
+            assertEquals(0, subscription.retainedBytes());
+            assertEquals(Optional.empty(), subscription.poll());
+        }
+    }
+
+    @Test
+    void eventCapacityAlsoAccountsForDiscardedBytes() throws Exception {
+        var subscription = new EventSubscription<String>(1, 16, String::length, ignored -> {});
+        try {
+            subscription.offer("aa");
+            subscription.offer("bbb");
+            assertEquals(2, subscription.droppedBytes());
+            subscription.end(new ControlEndedException("", false, null));
+            assertEquals(3, subscription.retainedBytes());
+            assertEquals(Optional.of(new Delivery.Gap<>(1)), subscription.poll());
+            assertEquals(Optional.of(new Delivery.Event<>("bbb")), subscription.poll());
+            assertEquals(0, subscription.retainedBytes());
+        } finally {
+            subscription.close();
+        }
+    }
+
+    @Test
+    void intentionalCloseReleasesRetainedBytesWithoutCallingThemLost() {
+        var subscription = new EventSubscription<String>(2, 4, String::length, ignored -> {});
+        subscription.offer("abcd");
+        subscription.close();
+
+        assertEquals(0, subscription.retainedBytes());
+        assertEquals(0, subscription.droppedBytes());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new EventSubscription<String>(1, 0, String::length, ignored -> {}));
+    }
+
+    @Test
+    void theFirstTerminationKeepsItsClassificationCauseAndBufferedOutput() throws Exception {
+        try (var subscription = new EventSubscription<String>(2, ignored -> {})) {
+            var cause = new java.io.IOException("original failure");
+            subscription.offer("final");
+            subscription.end(cause, EventSubscription.EndReason.PROTOCOL_FAILURE);
+            var first = subscription.termination().orElseThrow();
+            subscription.end(new IllegalStateException("later"), EventSubscription.EndReason.TRANSPORT_FAILURE);
+
+            assertEquals(EventSubscription.EndReason.PROTOCOL_FAILURE, first.reason());
+            assertSame(cause, first.cause().orElseThrow());
+            assertSame(first, subscription.termination().orElseThrow());
+            assertEquals(Optional.of(new Delivery.Event<>("final")), subscription.next(Duration.ZERO));
+            assertEquals(Optional.empty(), subscription.next(Duration.ZERO));
+        }
+    }
+
+    @Test
+    void closingAnEndedSubscriptionDiscardsItsBufferWithoutReplacingItsCause() throws Exception {
+        var subscription = new EventSubscription<String>(1, 8, String::length, ignored -> {});
+        var cause = new java.io.IOException("ended");
+        subscription.offer("aaaa");
+        subscription.offer("bbb");
+        subscription.end(cause, EventSubscription.EndReason.PROTOCOL_FAILURE);
+        var first = subscription.termination().orElseThrow();
+        subscription.close();
+
+        assertEquals(0, subscription.retainedBytes());
+        assertEquals(4, subscription.droppedBytes());
+        assertSame(first, subscription.termination().orElseThrow());
+        assertSame(cause, subscription.cause().orElseThrow());
+        assertEquals(Optional.of(new Delivery.Gap<>(1)), subscription.next(Duration.ZERO));
+        assertEquals(Optional.empty(), subscription.next(Duration.ZERO));
     }
 
     @Test

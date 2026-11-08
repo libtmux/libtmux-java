@@ -9,6 +9,35 @@ full change history.
 A breaking type is named on its own `api-break:` line. Mentioning the type in
 the prose is not that line.
 
+### Create Clojure resources through ownership APIs
+
+The unreleased Clojure façade keeps raw task, runtime, adapter, and events-port
+constructor vars private. Use `libtmux.async/runtime!`, `submit!`, and
+`libtmux.core-async/observe!`; these establish bounded workers and cleanup.
+Returned resource classes remain usable in type hints and `with-open`.
+
+### Output subscriptions bound payload bytes
+
+`ControlClient.subscribeOutput(int)` now bounds queued unescaped payload at
+16 MiB as well as the requested event count. Use
+`ControlClient.subscribeOutput(int, long)` to choose another byte limit.
+Oldest events are discarded until both limits fit; a chunk larger than the
+byte limit discards the buffered prefix and itself. Read `Delivery.Gap`
+before processing the retained suffix. `droppedBytes()` counts payload loss,
+while `retainedBytes()` excludes JVM object overhead and bytes already read.
+
+For text that follows one subscriber's observed bytes, pass each `PaneOutput`
+to a `PaneOutputDecoder`, call `reset()` after every gap, and call `finish()`
+at termination. This prevents bytes on opposite sides of a subscriber gap
+from forming a character. Decoder capacity eviction increments `resetCount()`.
+The existing `PaneOutput.data()` remains the client's predecoded view.
+
+`EventSubscription.termination()` records the first end classification and
+original cause. A control exit describes that client, not daemon death;
+bare EOF remains unknown. Later close does not replace that record.
+Explicitly closing a subscription discards its queued payload even after a
+remote end; it preserves the recorded cause and loss counts.
+
 ### With no socket chosen, tmux picks the server
 
 The core, `tmux-workspace` and `libtmux-mcp` now take the same steps to find a
@@ -214,6 +243,15 @@ round. Gate a behaviour on the release that ships it, such as
 `next-3.9`), with numbers of up to four digits, and throws
 `IllegalArgumentException` for anything else, such as `3.3a garbage`,
 `next-3.9a` or `3.8-rc0`.
+
+### Version ordering and parsing
+
+`TmuxVersion.compareTo` now orders `next-X.Y < X.Y-rc < X.Y-rcN < X.Y < X.Ya`,
+so it agrees with `equals`; a candidate no longer compares equal to its release.
+Use `atLeast` for a feature gate, which counts a candidate as its release, and
+`sameRelease` for a gate on one release's own defect. `TmuxVersion.parse` accepts
+only what tmux has reported (`3.3a`, `3.8-rc2`, `next-3.9`) and throws
+`IllegalArgumentException` for anything else, such as `3.3a garbage`.
 
 ## 0.0.1-alpha.16
 

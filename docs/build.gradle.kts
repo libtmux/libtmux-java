@@ -33,6 +33,10 @@ val generateScalaDocumentationSuite =
         group = "build"
         root = rootProject.layout.projectDirectory
         outputDirectory = layout.buildDirectory.dir("generated/sources/documentation/scala")
+        mustRunAfter(
+            ":libtmux-clojure:updateClojureApiReference",
+            ":libtmux-clojure-core-async:updateClojureApiReference",
+        )
     }
 
 sourceSets.test { scala.srcDir(generateScalaDocumentationSuite.map { it.outputDirectory }) }
@@ -46,6 +50,10 @@ sourceSets.test { scala.srcDir(generateScalaDocumentationSuite.map { it.outputDi
 // Every document this reads is an input. Without that, editing a README leaves the task up to date
 // and the check silently stops happening.
 tasks.withType<Test>().configureEach {
+    mustRunAfter(
+        ":libtmux-clojure:updateClojureApiReference",
+        ":libtmux-clojure-core-async:updateClojureApiReference",
+    )
     val classpath = sourceSets.test.get().compileClasspath
     val root = rootProject.layout.projectDirectory
     val documents =
@@ -60,7 +68,7 @@ tasks.withType<Test>().configureEach {
     // build-logic's deeper tree included.
     val sources =
         rootProject.fileTree(root) {
-            include("**/*.java", "**/*.kt", "**/*.kts", "**/*.scala")
+            include("**/*.java", "**/*.kt", "**/*.kts", "**/*.scala", "**/*.clj")
             exclude("**/build/**", "**/target/**", ".gradle/**", "**/.gradle/**")
         }
 

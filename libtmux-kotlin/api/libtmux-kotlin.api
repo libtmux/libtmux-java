@@ -373,6 +373,7 @@ public final class io/github/libtmux/kotlin/Server$Companion {
 
 public final class io/github/libtmux/kotlin/ServerOperationsKt {
 	public static final fun attachedSessions (Lio/github/libtmux/kotlin/Server;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun captureServer (Lio/github/libtmux/kotlin/Server;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun clients (Lio/github/libtmux/kotlin/Server;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun cmd (Lio/github/libtmux/kotlin/Server;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun cmd (Lio/github/libtmux/kotlin/Server;[Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;

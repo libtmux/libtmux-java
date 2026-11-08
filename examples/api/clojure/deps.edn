@@ -1,0 +1,8 @@
+{:paths ["src/main/clojure"]
+ :mvn/local-repo "m2"
+ :deps {org.clojure/clojure {:mvn/version "1.12.6"}
+        io.github.libtmux/libtmux-clojure {:mvn/version "0.1.2-SNAPSHOT"}}
+ :aliases
+ {:core-async
+  {:extra-deps
+   {io.github.libtmux/libtmux-clojure-core-async {:mvn/version "0.1.2-SNAPSHOT"}}}}}

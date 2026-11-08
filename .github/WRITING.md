@@ -237,6 +237,13 @@ release — it buries the lede.
 
 ## API documentation
 
+Clojure docstrings use minimal Markdown. Put arguments and keyword options in
+backticks. Link related public vars with `[[same-namespace-var]]` or
+`[[fully.qualified.namespace/var]]`; link namespaces the same way, and never
+use an import alias in a link. Explain why a reader would follow the link.
+The native reference resolves these links in Markdown and offline HTML and
+rejects unknown targets. Its freshness check runs with the module checks.
+
 Javadoc on public API is a specification, not a programming guide. It states
 what a caller may rely on, which is the part the signature cannot state on its
 own.
@@ -357,7 +364,7 @@ Bad (Delete):
 Good (Keep):
 
 ```java
-// tmux < 3.2 reports the pane ID only after the command completes,
+// Some releases report the pane ID only after the command completes,
 // so this query must stay separate.
 ```
 

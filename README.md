@@ -375,6 +375,9 @@ Both use the Java API directly, because the core is annotated with
 - **[`libtmux-kotlin`](libtmux-kotlin/README.md)** adds what Java cannot
   express: absence as `null` where Java has [`Optional`][optional], and `!expr`
   on a filter.
+- **[`libtmux-clojure`](libtmux-clojure/README.md)** is a data-first façade:
+  captured maps and vectors for local Clojure processing, Java refs for
+  explicit tmux effects, and optional bounded async and control adapters.
 - **Scala** can consume the Java artifacts directly; the
   [direct Java guide](docs/guide/scala.md) shows how.
 - **[`libtmux-scala`](libtmux-scala/README.md)** is a Scala 3 facade with its
@@ -384,8 +387,9 @@ Both use the Java API directly, because the core is annotated with
 ## Modules
 
 Group `io.github.libtmux`. Each listed published directory is an artifact with
-its own README. They are [on Maven Central](https://central.sonatype.com/namespace/io.github.libtmux),
-the Scala artifacts suffixed `_3`.
+its own README. Published modules are [on Maven
+Central](https://central.sonatype.com/namespace/io.github.libtmux), with Scala
+artifacts suffixed `_3`; the Clojure modules below are pre-release.
 
 - **[`libtmux`](libtmux/)** — the library itself. Transport, snapshots,
   entities, options, hooks, batching, control mode, query model.
@@ -410,6 +414,14 @@ the Scala artifacts suffixed `_3`.
 - **[`libtmux-kotlin`](libtmux-kotlin/)** — Kotlin ergonomics. Optional: the core
   is already null-safe from Kotlin without it.
 [![libtmux-kotlin](https://img.shields.io/maven-central/v/io.github.libtmux/libtmux-kotlin?label=libtmux-kotlin)](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-kotlin)
+
+- **[`libtmux-clojure`](libtmux-clojure/)** — captured persistent maps and
+  vectors, explicit effects, bounded work, and control streams. Pre-release;
+  see its README before choosing a coordinate.
+
+- **[`libtmux-clojure-core-async`](libtmux-clojure-core-async/)** — optional
+  core.async ownership and backpressure over the Clojure control stream.
+  Pre-release with the façade.
 
 - **[`libtmux-scala`](libtmux-scala/)** — Scala 3 collections, opaque handles
   over the Java ones, and the typed query DSL.
@@ -568,6 +580,22 @@ withServer(config) { server ->
     session.windows.size                  // → 2
 }
 ```
+
+### [`libtmux-clojure`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-clojure): captured Clojure data and explicit effects
+
+The pre-release Clojure façade acquires persistent maps and vectors, preserves
+their Java references only for explicit tmux operations, and leaves captured
+data free for normal Clojure collection processing. Its
+[README](libtmux-clojure/README.md) has an isolated real-tmux quick start and
+links its control, core.async, MCP, and measurement boundaries.
+
+### [`libtmux-clojure-core-async`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-clojure-core-async): bounded core.async observation
+
+The optional adapter owns a bounded virtual worker, subscription, events
+channel, and terminal channel over a borrowed Clojure control connection. It
+does not close the connection that a caller supplies. Its
+[README](libtmux-clojure-core-async/README.md) names the ownership and loss
+contract.
 
 ### [`libtmux-scala`](https://github.com/libtmux/libtmux-java/tree/master/libtmux-scala): Scala 3 collections over the handles
 
@@ -788,7 +816,7 @@ current trunk; each released version's Javadoc is on
 | [Driving tmux from a model](docs/guide/mcp.md) | The `libtmux-mcp` server |
 | [Testing with real tmux](docs/guide/testing.md) | `libtmux-junit5` |
 | [`tmux-workspace`](docs/guide/workspace-cli.md) | The rules `load`, `convert` and `import` follow |
-| [Kotlin](docs/guide/kotlin.md) and [Scala](docs/guide/scala.md) | The facades |
+| [Kotlin](docs/guide/kotlin.md), [Clojure](docs/guide/clojure.md), and [Scala](docs/guide/scala.md) | The facades |
 | [`examples/`](examples/) | Whole programs, each run against a real tmux |
 | [`docs/decisions/`](docs/decisions/) | Short ADRs, each citing the tmux behaviour that forced it |
 | [`MIGRATION.md`](MIGRATION.md) | What to change when upgrading |

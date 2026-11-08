@@ -14,6 +14,23 @@ changelog](../CHANGELOG.md).
 
 ## Unreleased
 
+### Added
+
+- **`Server.captureServer()` exposes one captured tmux graph.** Sessions,
+  window links, pane occurrences and clients share the same observations and
+  remain local to traverse. (#20)
+- **Control output preserves pane bytes and supports incremental text
+  decoding.** Subscribers can distinguish output gaps, connection closure and
+  transport failures while retaining the original termination cause. (#20)
+
+### Changed
+
+- **Output subscriptions bound payload bytes by default.** The default limit
+  is 16 MiB; oversized output is reported as loss. `subscribeOutput` accepts
+  an explicit byte limit alongside its event limit. See the
+  [migration notes](../MIGRATION.md#output-subscriptions-bound-payload-bytes).
+  (#20)
+
 ## 0.1.2 — 2026-11-01
 
 No entries for `libtmux`.

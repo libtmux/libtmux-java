@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
+import java.util.function.ToLongFunction;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -52,17 +53,39 @@ import org.jspecify.annotations.Nullable;
  */
 public final class EventSubscription<T> implements AutoCloseable {
 
+    /** What was observed when the subscription ended; a control exit does not prove daemon death. */
+    public enum EndReason {
+        CLOSED,
+        COMPLETED,
+        CONTROL_EXIT,
+        TRANSPORT_FAILURE,
+        PROTOCOL_FAILURE,
+        UNKNOWN
+    }
+
+    /** The first observed end and its original failure, if any. */
+    public record Termination(EndReason reason, Optional<Throwable> cause) {
+        public Termination {
+            Objects.requireNonNull(reason, "reason");
+            Objects.requireNonNull(cause, "cause");
+        }
+    }
+
     private static final System.Logger LOG = System.getLogger(EventSubscription.class.getName());
 
     private final int capacity;
+    private final long maxBytes;
+    private final ToLongFunction<? super T> sizeOf;
     private final ArrayDeque<T> events = new ArrayDeque<>();
     private final ReentrantLock lock = new ReentrantLock();
     private final Condition available = lock.newCondition();
     private final Consumer<EventSubscription<T>> onClose;
     private long dropped;
+    private long droppedBytes;
+    private long retainedBytes;
     private long pendingGap;
     private boolean closed;
-    private @Nullable Throwable cause;
+    private @Nullable Termination termination;
     // A read is in progress, on a thread that may be waiting with the lock released.
     private boolean reading;
     // stream() or publisher() owns every read from now on.
@@ -72,10 +95,20 @@ public final class EventSubscription<T> implements AutoCloseable {
     private @Nullable Runnable ownerWake;
 
     EventSubscription(int capacity, Consumer<EventSubscription<T>> onClose) {
+        this(capacity, Long.MAX_VALUE, ignored -> 0, onClose);
+    }
+
+    EventSubscription(
+            int capacity, long maxBytes, ToLongFunction<? super T> sizeOf, Consumer<EventSubscription<T>> onClose) {
         if (capacity <= 0) {
             throw new IllegalArgumentException("capacity must be positive");
         }
+        if (maxBytes <= 0) {
+            throw new IllegalArgumentException("maxBytes must be positive");
+        }
         this.capacity = capacity;
+        this.maxBytes = maxBytes;
+        this.sizeOf = Objects.requireNonNull(sizeOf, "sizeOf");
         this.onClose = onClose;
     }
 
@@ -87,12 +120,22 @@ public final class EventSubscription<T> implements AutoCloseable {
                 return;
             }
             boolean wasReadable = readable();
-            if (events.size() == capacity) {
-                events.removeFirst();
+            long bytes = sizeOf.applyAsLong(event);
+            while (!events.isEmpty() && (events.size() == capacity || bytes > maxBytes - retainedBytes)) {
+                long removed = sizeOf.applyAsLong(events.removeFirst());
+                retainedBytes -= removed;
+                droppedBytes += removed;
                 dropped++;
                 pendingGap++;
             }
-            events.addLast(event);
+            if (bytes > maxBytes) {
+                dropped++;
+                droppedBytes += bytes;
+                pendingGap++;
+            } else {
+                events.addLast(event);
+                retainedBytes += bytes;
+            }
             available.signal();
             if (!wasReadable) {
                 wake = ready;
@@ -125,6 +168,28 @@ public final class EventSubscription<T> implements AutoCloseable {
         }
     }
 
+    /** Unescaped payload bytes discarded by the event or byte limit; excludes intentional close. */
+    @Operation(Kind.CAPTURED)
+    public long droppedBytes() {
+        lock.lock();
+        try {
+            return droppedBytes;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Unescaped payload bytes still queued, excluding JVM object overhead; zero for unweighted events. */
+    @Operation(Kind.CAPTURED)
+    public long retainedBytes() {
+        lock.lock();
+        try {
+            return retainedBytes;
+        } finally {
+            lock.unlock();
+        }
+    }
+
     /**
      * Why this subscription ended, when the control client ended it.
      *
@@ -135,7 +200,18 @@ public final class EventSubscription<T> implements AutoCloseable {
     public Optional<Throwable> cause() {
         lock.lock();
         try {
-            return Optional.ofNullable(cause);
+            return termination == null ? Optional.empty() : termination.cause();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** The first recorded terminal classification, empty while the subscription is open. */
+    @Operation(Kind.CAPTURED)
+    public Optional<Termination> termination() {
+        lock.lock();
+        try {
+            return Optional.ofNullable(termination);
         } finally {
             lock.unlock();
         }
@@ -342,6 +418,9 @@ public final class EventSubscription<T> implements AutoCloseable {
             return Optional.of(new Delivery.Gap<>(missed));
         }
         T value = events.pollFirst();
+        if (value != null) {
+            retainedBytes -= sizeOf.applyAsLong(value);
+        }
         return value == null ? Optional.empty() : Optional.of(new Delivery.Event<>(value));
     }
 
@@ -696,7 +775,7 @@ public final class EventSubscription<T> implements AutoCloseable {
     @Operation(Kind.LIFECYCLE)
     @Override
     public void close() {
-        end(null);
+        end(null, EndReason.CLOSED);
     }
 
     /**
@@ -704,26 +783,35 @@ public final class EventSubscription<T> implements AutoCloseable {
      * #close()}, events already delivered stay readable.
      */
     void end(@Nullable Throwable failure) {
-        end(failure, failure == null);
+        end(failure, failure == null ? EndReason.CLOSED : EndReason.UNKNOWN);
+    }
+
+    void end(@Nullable Throwable failure, EndReason reason) {
+        end(failure, reason == EndReason.CLOSED, reason);
     }
 
     /** Ends this subscription as a producer with nothing more to send: not a failure, and nothing is discarded. */
     void finish() {
-        end(null, false);
+        end(null, false, EndReason.COMPLETED);
     }
 
-    private void end(@Nullable Throwable failure, boolean discard) {
+    private void end(@Nullable Throwable failure, boolean discard, EndReason reason) {
         @Nullable Runnable wake;
         @Nullable Runnable owner;
         lock.lock();
         try {
             if (closed) {
+                if (discard) {
+                    events.clear();
+                    retainedBytes = 0;
+                }
                 return;
             }
-            cause = failure;
+            termination = new Termination(reason, Optional.ofNullable(failure));
             closed = true;
             if (discard) {
                 events.clear();
+                retainedBytes = 0;
             }
             available.signalAll();
             wake = ready;

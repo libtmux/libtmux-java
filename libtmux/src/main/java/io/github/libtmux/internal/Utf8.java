@@ -148,6 +148,18 @@ public final class Utf8 {
             held = java.util.Arrays.copyOfRange(bytes, in.position(), bytes.length);
             return text.toString();
         }
+
+        /** Whether this stream holds an incomplete character. */
+        public boolean hasPending() {
+            return held.length != 0;
+        }
+
+        /** Escapes and releases an incomplete final character. */
+        public String finish() {
+            String text = backslashReplace(held);
+            held = new byte[0];
+            return text;
+        }
     }
 
     private static void escape(StringBuilder text, byte value) {

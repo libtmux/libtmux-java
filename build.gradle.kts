@@ -99,11 +99,65 @@ val kotlinStaysDownstream =
 
 apply(from = "build-logic/conventions/src/main/kotlin/libtmux.tmux-quarantine-gate.gradle.kts")
 
+val clojureDependencyMetadata =
+    tasks.register("clojureDependencyMetadata") {
+        group = "verification"
+        description = "Checks deps.edn against the checked-in development dependency baseline."
+        val depsEdn = layout.projectDirectory.file("deps.edn")
+        val exampleDepsEdn = layout.projectDirectory.file("examples/api/clojure/deps.edn")
+        val gradleProperties = layout.projectDirectory.file("gradle.properties")
+        inputs.files(depsEdn, exampleDepsEdn, gradleProperties)
+        doLast {
+            val clojureVersion = libs.versions.clojure.get()
+            val coreAsyncVersion = libs.versions.core.async.get()
+            val developmentVersion =
+                gradleProperties.asFile.useLines { lines ->
+                    lines.first { it.startsWith("libtmuxVersion=") }.substringAfter('=')
+                }
+            val expected =
+                mapOf(
+                    "org.clojure/clojure" to clojureVersion,
+                    "org.clojure/core.async" to coreAsyncVersion,
+                    "io.github.libtmux/libtmux" to developmentVersion,
+                    "io.github.libtmux/libtmux-junit5" to developmentVersion,
+                )
+            val examplesExpected =
+                mapOf(
+                    "org.clojure/clojure" to clojureVersion,
+                    "io.github.libtmux/libtmux-clojure" to developmentVersion,
+                    "io.github.libtmux/libtmux-clojure-core-async" to developmentVersion,
+                )
+            listOf(depsEdn to expected, exampleDepsEdn to examplesExpected).forEach { (source, baseline) ->
+                val declared = source.asFile.readText()
+                val location = source.asFile.relativeTo(projectDir)
+                baseline.forEach { (coordinate, version) ->
+                    val declaredVersions =
+                        Regex("${Regex.escape(coordinate)}\\s+\\{:mvn/version\\s+\"([^\"]+)\"")
+                            .findAll(declared)
+                            .map { it.groupValues[1] }
+                            .toList()
+                    require(declaredVersions.isNotEmpty()) {
+                        "$location must declare $coordinate at the development baseline $version"
+                    }
+                    require(declaredVersions.all { it == version }) {
+                        "every declaration of $coordinate in $location must use " +
+                            "the development baseline $version; found $declaredVersions"
+                    }
+                }
+            }
+        }
+    }
+
 tasks.register("check") {
     group = "verification"
     description = "Every gate that must hold before publication."
     dependsOn(subprojects.filter { it.buildFile.exists() }.map { "${it.path}:check" })
-    dependsOn(platformCoversEveryPublishedModule, kotlinStaysDownstream, "everyTestModuleIsQuarantined")
+    dependsOn(
+        platformCoversEveryPublishedModule,
+        kotlinStaysDownstream,
+        clojureDependencyMetadata,
+        "everyTestModuleIsQuarantined",
+    )
     // An included build's tasks are not this build's subprojects, so its tests would otherwise
     // never run in the gate: the generators every facade compiles against, the conventions' own
     // helpers, the Doclet's lint, and the refusal every module's tests start under.

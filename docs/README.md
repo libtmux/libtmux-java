@@ -36,6 +36,8 @@ Task-oriented. Start here.
   and the machine output follow.
 - [Kotlin](guide/kotlin.md) — why the core is already null-safe from Kotlin, and
   what `libtmux-kotlin` adds.
+- [Clojure](guide/clojure.md) — captured persistent values, explicit effects,
+  bounded asynchronous work, control streams, and optional core.async.
 - [Scala](guide/scala.md) — the direct-Java path and the separate Scala facade,
   with their runnable examples.
 
@@ -45,6 +47,9 @@ Generated; do not edit by hand.
 
 - [Operation catalog](reference/operations.md) — every `@Operation`, generated
   from its annotation.
+- [Clojure API](guide/clojure-api.md) and
+  [core.async API](guide/clojure-core-async-api.md) — native namespaces,
+  var arities, docstrings, and current source links.
 - [Operation costs](benchmarks/operation-costs.md) — measured wall-clock and
   tmux-process cost for one-at-a-time, batched, and chained calls; regenerated
   by `./gradlew operationBenchmark`.
@@ -52,6 +57,20 @@ Generated; do not edit by hand.
   blocking and Cats Effect facades against the Java core on one live tmux, as
   raw samples with allocation and latency percentiles; a run describes its
   machine, so none is committed.
+
+Regenerate the Clojure references after editing public arities or docstrings:
+
+```console
+$ ./gradlew :libtmux-clojure:updateClojureApiReference \
+    :libtmux-clojure-core-async:updateClojureApiReference
+```
+
+Each Clojure module also generates native HTML and an offline source browser
+for its Maven `javadoc` classifier. Module checks build that archive; the
+reference generator is build tooling and does not ship in the runtime JAR.
+Docstrings use Clojure `[[var]]` and `[[namespace/var]]` links. Both reference
+formats validate public targets; HTML bundles linked dependency namespaces for
+offline navigation.
 
 ## Decisions
 

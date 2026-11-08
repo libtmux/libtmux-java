@@ -90,8 +90,12 @@ jobs:
           echo "PYTHONPATH=$RUNNER_TEMP/python-libtmux-core/src" >> "$GITHUB_ENV"
           echo "TMUX_WORKSPACE_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
 
-      # Runs every check task instead of stopping at the first failure, so one run names them all.
-      - run: ./gradlew :libtmux-mcp:test check --stacktrace --continue -Plibtmux.testJdk=${{ matrix.java }}
+      # Continue past failures so one run names each failed check.
+      # Clojure's live suite runs in its endpoint-only compatibility workflow.
+      - run: >-
+          ./gradlew :libtmux-mcp:test check --stacktrace --continue
+          -Plibtmux.testJdk=${{ matrix.java }}
+          -x :integration-tests:clojureIntegrationTest
 
       # A real-tmux suite that leaves servers running would be invisible here and expensive on a
       # developer's machine. The runner is discarded either way, so this is the only place the
