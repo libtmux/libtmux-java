@@ -19,6 +19,14 @@ CI, and release tooling, are in the [main changelog](../CHANGELOG.md).
 
 ### Fixed
 
+- **Closed-client errors preserve dispatch certainty.** Single operations and
+  command groups retain the Java outcome and cause in structured error data;
+  a failed recapture after mutation still reports possible effects.
+- **Managed callbacks reject tmux calls after runtime closure.** Local client
+  and subscription closure remains available during cancellation, so resource
+  scopes can release their workers.
+- **Timed control reads drain final buffered output before termination.**
+  Output arriving between timeout and connection termination remains readable.
 - **Text subscriptions reset their own decoder after reported gaps.**
   Decoder eviction is visible, trailing incomplete bytes survive in the
   terminal outcome, and malformed bytes remain recoverable as `\\xHH`.

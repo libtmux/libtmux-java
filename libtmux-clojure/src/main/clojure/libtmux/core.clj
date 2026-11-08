@@ -55,6 +55,12 @@
   (let [refused? (and (not composed?) (instance? UnsupportedFeatureException cause))
         dispatch (cond
                    refused? :not-dispatched
+                   (and (not composed?) (instance? ServerClosedException cause)
+                        (or (not mutation?) (single-effect-operations operation)))
+                   (case (.name (.outcome ^ServerClosedException cause))
+                     "NOT_DISPATCHED" :not-dispatched
+                     "COMPLETE" :complete
+                     :unknown)
                    (and (not composed?) (single-effect-operations operation)
                         (instance? DispatchException cause))
                    (case (.name (.outcome ^DispatchException cause))
@@ -79,7 +85,8 @@
 
 (defn- execute! [operation kind f]
   (io!
-   (when *execution-check* (*execution-check* {:operation operation :kind kind}))
+   (when (and *execution-check* (not= :close operation))
+     (*execution-check* {:operation operation :kind kind}))
    (try (f)
         (catch LibTmuxException failure
           (throw (translate operation (= kind :mutation) failure)))
@@ -93,10 +100,8 @@
                              :tmux/phase :validation :tmux/dispatch :not-dispatched
                              :tmux/effects :none} failure))
             (throw failure)))
-        (catch IllegalStateException failure
-          (if (= "server is closed" (.getMessage failure))
-            (throw (translate operation (= kind :mutation) failure))
-            (throw failure))))))
+        (catch ServerClosedException failure
+          (throw (translate operation (= kind :mutation) failure))))))
 
 (defn error-summary
   "Returns fixed error metadata without arguments or cause messages.
@@ -228,6 +233,7 @@
 (defn- capture-after-mutation! [operation reference & [context]]
   (try (refresh-reference! reference context)
        (catch LibTmuxException failure (throw (translate operation true failure true)))
+       (catch ServerClosedException failure (throw (translate operation true failure true)))
        (catch clojure.lang.ExceptionInfo failure
          (if (:tmux/error (ex-data failure))
            (throw (translate operation true failure true))
@@ -292,7 +298,11 @@
   (let [^Server server (ref! :kill-server server [Server])]
     (execute! :kill-server :mutation #(.killServer server))))
 
-(defn close! "Releases the supplied Server's local resources without killing tmux." [server]
+(defn close!
+  "Releases the supplied Server's local resources without killing tmux.
+  Local closure remains available after [[libtmux.async/cancel!]].
+  [[open!]] creates another client."
+  [server]
   (let [^Server server (ref! :close server [Server])]
     (execute! :close :read #(.close server))))
 
@@ -552,18 +562,20 @@
                   (doseq [argv operations] (.then builder ^java.util.List argv))
                   (.run builder)))]
           (mapv operation-result (range) (.operations result)))
-        (catch DispatchException cause
-          (let [error (translate operation true cause)
-                outcome (if (= :not-dispatched (:tmux/dispatch (ex-data error)))
-                          :skipped :unknown)]
-            (throw (ex-info "tmux command group failed"
-                            (assoc (ex-data error) :tmux/results
-                                   (mapv (fn [index argv]
-                                           {:operation/index index :operation/argv argv
-                                            :operation/outcome outcome
-                                            :operation/stdout [] :operation/stderr []})
-                                         (range) operations))
-                            cause))))))))
+        (catch Exception cause
+          (if (or (instance? DispatchException cause) (instance? ServerClosedException cause))
+            (let [error (translate operation true cause)
+                  outcome (if (= :not-dispatched (:tmux/dispatch (ex-data error)))
+                            :skipped :unknown)]
+              (throw (ex-info "tmux command group failed"
+                              (assoc (ex-data error) :tmux/results
+                                     (mapv (fn [index argv]
+                                             {:operation/index index :operation/argv argv
+                                              :operation/outcome outcome
+                                              :operation/stdout [] :operation/stderr []})
+                                           (range) operations))
+                              cause)))
+            (throw cause)))))))
 
 (defn batch!
   "Runs independent argv commands using a fresh Java Batch and returns positions.
