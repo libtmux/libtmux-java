@@ -1,6 +1,6 @@
 package io.github.libtmux.scaladsl
 
-import io.github.libtmux.{Server => JavaServer, ServerConfig}
+import io.github.libtmux.{Server => JavaServer, ServerConfig, ServerLaunch}
 import io.github.libtmux.control.ControlClient
 import scala.concurrent.duration.FiniteDuration
 import scala.jdk.DurationConverters._
@@ -113,6 +113,14 @@ object Server {
 
   /** Opens an owned client for `config`. */
   def open(config: ServerConfig): Server = JavaServer.open(config)
+
+  /** Starts a private tmux server that the result owns. Unlike any other
+    * server, closing it ends tmux, removes its directory and throws if the
+    * server still answers, so `Using.resource(Server.start()) { ... }` leaves
+    * nothing behind.
+    */
+  def start(launch: ServerLaunch = ServerLaunch.builder().build()): Server =
+    JavaServer.start(launch)
 
   /** Borrows a Java client this facade did not open; closing it closes that
     * client too.

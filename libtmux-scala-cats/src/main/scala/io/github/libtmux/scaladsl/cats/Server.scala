@@ -1,7 +1,7 @@
 package io.github.libtmux.scaladsl.cats
 
 import _root_.cats.effect.{Async, Resource}
-import io.github.libtmux.{Server => JavaServer, ServerConfig}
+import io.github.libtmux.{Server => JavaServer, ServerConfig, ServerLaunch}
 import io.github.libtmux.scaladsl as direct
 
 /** A tmux server whose operations run in the effect type `F`.
@@ -49,6 +49,31 @@ object Server {
         )
       )
       server <- Resource.make(F.interruptible(direct.Server.open(config)))(
+        server => F.interruptible(server.close())
+      )
+      execution <- Execution.resource[F](maxConcurrentCalls)
+    } yield new Server(server, execution)
+  }
+
+  /** Starts a private tmux server and owns it: release ends tmux, removes its
+    * directory and fails if the server still answers. As [[resource]] for the
+    * facade's operation bound and cancellation.
+    */
+  def start[F[_]: Async](
+      launch: ServerLaunch = ServerLaunch.builder().build(),
+      maxConcurrentCalls: Int = 4
+  ): Resource[F, Server[F]] = {
+    val F = Async[F]
+    for {
+      _ <- Resource.eval(
+        F.delay(
+          require(
+            maxConcurrentCalls >= 1 && maxConcurrentCalls <= 4,
+            "owned client capacity must be between one and four calls"
+          )
+        )
+      )
+      server <- Resource.make(F.interruptible(direct.Server.start(launch)))(
         server => F.interruptible(server.close())
       )
       execution <- Execution.resource[F](maxConcurrentCalls)
