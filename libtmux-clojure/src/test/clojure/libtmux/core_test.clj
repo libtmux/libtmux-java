@@ -185,3 +185,18 @@
                (ex-data (failure #((ns-resolve 'libtmux.core kind)
                                     server [["wait-for" "blocked"]] {:kind :wait})))))))
       (is (zero? @calls)))))
+
+(deftest a-failed-start-reports-possible-effects
+  (let [root (java.nio.file.Files/createTempDirectory
+              (java.nio.file.Path/of (System/getProperty "java.io.tmpdir") (make-array String 0))
+              "c-" (make-array java.nio.file.attribute.FileAttribute 0))
+        binary (.resolve root "tmux-exits")]
+    (try
+      (java.nio.file.Files/writeString binary "#!/bin/sh\nexit 3\n"
+                                       (make-array java.nio.file.OpenOption 0))
+      (.setExecutable (.toFile binary) true)
+      (let [error (failure #(tmux/start! {:binary (str binary) :root (.resolve root "r")}))]
+        (is (= :start (:tmux/operation (ex-data error))))
+        (is (= :possible (:tmux/effects (ex-data error)))))
+      (finally
+        (doseq [f (reverse (file-seq (.toFile root)))] (.delete ^java.io.File f))))))

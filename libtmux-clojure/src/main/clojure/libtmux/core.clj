@@ -156,7 +156,7 @@
   ([] (start! {}))
   ([options]
    (closed! :start options {:binary string? :config-file path? :root path? :timeout duration?})
-   (execute! :start :read
+   (execute! :start :mutation
              #(let [builder (ServerLaunch/builder)]
                 (when-let [x (:binary options)] (.binary builder x))
                 (when-let [x (:config-file options)] (.configFile builder (path x)))
