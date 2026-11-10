@@ -63,8 +63,9 @@ To have a server of your own instead, `(tm/start!)` starts a private one whose
 ```
 
 Use `with-open` for every client, runtime, control connection, and
-subscription that this program owns. Closing a `Server` releases client
-resources; it does not kill the tmux server.
+subscription that this program owns. Closing a `Server` from `open!` releases
+client resources; it does not kill the tmux server. Closing one from `start!`
+also stops the tmux server it started and removes that server's directory.
 
 ## Namespaces
 
