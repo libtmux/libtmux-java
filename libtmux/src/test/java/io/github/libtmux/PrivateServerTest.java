@@ -246,6 +246,33 @@ final class PrivateServerTest {
         assertEquals(0, count(root));
     }
 
+    @Test
+    void anInterruptedStartLeavesNeitherADaemonNorADirectory() throws Exception {
+        Thread.currentThread().interrupt();
+        try {
+            assertThrows(RuntimeException.class, () -> Server.start(launch().build()));
+        } finally {
+            Thread.interrupted();
+            List<ProcessHandle> survivors = ProcessHandle.allProcesses()
+                    .filter(handle -> {
+                        String[] argv = handle.info().arguments().orElse(new String[0]);
+                        for (int index = 0; index + 1 < argv.length; index++) {
+                            if ("-S".equals(argv[index]) && argv[index + 1].startsWith(root.toString())) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    })
+                    .toList();
+            survivors.forEach(ProcessHandle::destroyForcibly);
+            for (ProcessHandle survivor : survivors) {
+                survivor.onExit().get(10, TimeUnit.SECONDS);
+            }
+            assertEquals(0, survivors.size(), "a daemon the failed start owned was left running");
+        }
+        assertEquals(0, count(root));
+    }
+
     /** Starts a private server and reports which variables select a server in the daemon's environment. */
     public static final class Probe {
         public static void main(String[] args) {

@@ -91,6 +91,7 @@ final class PrivateDaemon {
         } catch (IOException e) {
             throw new ServerUnavailableException("could not make a directory for the tmux server under " + root);
         }
+        PrivateDaemon daemon = null;
         try {
             Path tmpdir = Files.createDirectory(directory.resolve("tmp"));
             Path socket = directory.resolve("s");
@@ -111,20 +112,27 @@ final class PrivateDaemon {
             } catch (IOException e) {
                 throw new ServerUnavailableException("could not start " + launch.binary() + ": " + e.getMessage());
             }
-            PrivateDaemon daemon = new PrivateDaemon(config, process, directory, launch.timeout());
+            daemon = new PrivateDaemon(config, process, directory, launch.timeout());
             try {
                 daemon.awaitReady();
             } catch (RuntimeException failure) {
+                // The daemon exists now, so the directory is no longer this method's to delete: close
+                // removes it once nothing answers, and keeps it while something does.
+                boolean interrupted = Thread.interrupted();
                 try {
                     daemon.close();
                 } catch (RuntimeException cleanup) {
                     failure.addSuppressed(cleanup);
+                } finally {
+                    if (interrupted) Thread.currentThread().interrupt();
                 }
                 throw failure;
             }
             return daemon;
         } catch (IOException | RuntimeException failure) {
-            deleteTree(directory);
+            if (daemon == null) {
+                deleteTree(directory);
+            }
             if (failure instanceof RuntimeException unchecked) throw unchecked;
             throw new ServerUnavailableException(
                     "could not prepare the tmux server directory: " + failure.getMessage());
