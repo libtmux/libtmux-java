@@ -146,11 +146,19 @@
 (defn- evaluate-snippet! [{:keys [document line code expected]} ^Path socket]
   (with-fixture-properties socket
     #(let [name (symbol (str "libtmux.docs.generated." (UUID/randomUUID)))
-           namespace (create-ns name)]
+           namespace (create-ns name)
+           warnings (java.io.StringWriter.)]
        (try
-         (binding [*ns* namespace]
+         (binding [*ns* namespace
+                   *warn-on-reflection* true
+                   *err* warnings]
            (refer 'clojure.core)
            (let [actual (eval (read-string (str "(do\n" code "\n)")))]
+             (when (str/includes? (str warnings) "Reflection warning")
+               (throw (ex-info "Clojure documentation emitted reflection warnings"
+                               {:docs/error :compiler-warning
+                                :document document :line line
+                                :warnings (str warnings)})))
              (when-not (= expected actual)
                (throw (ex-info "Clojure documentation output differs from the evaluated result"
                                {:docs/error :output-mismatch
@@ -229,7 +237,11 @@
   (let [root (document-root)
         snippet (first (filter #(= "fixture" (:directive %))
                                (documented-snippets root)))
-        renamed (assoc snippet :code "(require '[libtmux.missing :as tm])")]
+        renamed (assoc snippet :code "(require '[libtmux.missing :as tm])")
+        reflective (assoc snippet :expected 2
+                          :code "(with-open [server (identity (java.io.StringReader. \"\"))] 2)")]
     (is (thrown? Throwable (run-snippet! renamed)))
+    (is (= :compiler-warning
+           (:docs/error (failure-data #(run-snippet! reflective)))))
     (is (= :output-mismatch
            (:docs/error (failure-data #(run-snippet! (assoc snippet :expected ::wrong))))))))

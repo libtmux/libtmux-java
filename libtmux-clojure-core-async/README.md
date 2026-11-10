@@ -56,9 +56,9 @@ an existing session. Applications supply their own socket path and tmux binary.
   (with-open [server (tm/open! {:socket-path socket-path
                                 :binary (System/getProperty
                                          "libtmux.docs.binary")})
-              connection (control/attach!
-                          (:tmux/ref (first (tm/sessions! server)))
-                          (Duration/ofSeconds 2))
+              ^java.lang.AutoCloseable connection
+              (control/attach! (:tmux/ref (first (tm/sessions! server)))
+                               (Duration/ofSeconds 2))
               ^java.lang.AutoCloseable owner (adapter/observe! connection)]
     (let [pane (first (:reply/lines
                        (control/send! connection
