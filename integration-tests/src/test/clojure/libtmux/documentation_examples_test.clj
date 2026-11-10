@@ -14,6 +14,7 @@
   #"(?ms)(?:<!--\s*clojure-snippet:\s*([^>\s]+)\s*-->\s*\n)?^```clojure\s*\n(.*?)^```")
 (def ^:private output-line #"(?m)^\s*;;\s*=>\s*(.+?)\s*$")
 (def ^:private required-documents ["libtmux-clojure/README.md"
+                                  "libtmux-clojure-core-async/README.md"
                                   "docs/guide/clojure.md"
                                   "docs/guide/clojure-reference.md"])
 (def ^:private socket-property "libtmux.docs.socket")
@@ -181,7 +182,9 @@
   (let [root (document-root)
         snippets (documented-snippets root)]
     (is (seq snippets))
-    (is (= #{"libtmux-clojure/README.md" "docs/guide/clojure.md"}
+    (is (= #{"libtmux-clojure/README.md"
+             "libtmux-clojure-core-async/README.md"
+             "docs/guide/clojure.md"}
            (set (map :document snippets))))))
 
 (deftest clojure-readme-has-first-visit-navigation
@@ -224,7 +227,8 @@
 
 (deftest renamed-imports-and-wrong-displayed-output-fail-the-documentation-gate
   (let [root (document-root)
-        snippet (first (documented-snippets root))
+        snippet (first (filter #(= "fixture" (:directive %))
+                               (documented-snippets root)))
         renamed (assoc snippet :code "(require '[libtmux.missing :as tm])")]
     (is (thrown? Throwable (run-snippet! renamed)))
     (is (= :output-mismatch
