@@ -28,6 +28,11 @@ release that first shipped the module.
 
 ### Documented
 
+- **Clojure package READMEs show local installation and observation.** Both
+  packages link their native APIs, and the optional core.async example owns
+  its observer. Documentation checks reject reflection warnings in resource
+  scopes. (#149)
+
 - **Clojure has native API references and runnable examples.** The module
   READMEs and guides cover captured data, tmux operations, cancellation and
   streaming, with source links and examples checked against real tmux. (#20)
