@@ -1,6 +1,7 @@
 package io.github.libtmux.kotlin
 
 import io.github.libtmux.ServerConfig
+import io.github.libtmux.ServerLaunch
 import kotlin.time.Duration
 import kotlin.time.toKotlinDuration
 import kotlinx.coroutines.NonCancellable
@@ -19,6 +20,23 @@ public suspend fun <R> withServer(
     block: suspend (Server) -> R,
 ): R {
     val server = Server.open(config, policy)
+    try {
+        return block(server)
+    } finally {
+        withContext(NonCancellable + policy.commands) { server.close() }
+    }
+}
+
+/**
+ * Starts a private tmux server, runs [block], and ends the server — even if [block] throws or is
+ * cancelled. Closing it removes the server's directory and throws if the server still answers.
+ */
+public suspend fun <R> withPrivateServer(
+    launch: ServerLaunch = ServerLaunch.builder().build(),
+    policy: ExecutionPolicy = ExecutionPolicy.default(ServerConfig.builder().build()),
+    block: suspend (Server) -> R,
+): R {
+    val server = Server.start(launch, policy)
     try {
         return block(server)
     } finally {

@@ -1,13 +1,9 @@
 (ns libtmux.examples.api.connect
-  "Connect to the private server supplied by run.sh."
+  "Connect to a private tmux server that the program starts and stops."
   (:require [libtmux.core :as tm]))
 
-(defn -main [& args]
-  (when-not (= 3 (count args))
-    (throw (IllegalArgumentException. "expected: tmux-binary socket-path config-file")))
-  (let [[binary socket config] args]
-    (with-open [server (tm/open! {:binary binary :socket-path socket
-                                 :config-file config})]
-      (let [snapshot (tm/snapshot! server)]
-        (assert (seq (:tmux/sessions snapshot)))
-        (println "connected=true")))))
+(defn -main [& _]
+  (with-open [server (tm/start!)]
+    (let [snapshot (tm/snapshot! server)]
+      (assert (contains? snapshot :tmux/sessions))
+      (println "connected=true"))))

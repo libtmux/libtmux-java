@@ -1,7 +1,6 @@
 package io.github.libtmux.examples;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -128,21 +127,6 @@ final class MainsTest {
         assertTrue(String.valueOf(failure.getMessage()).contains("did not exit"), failure.getMessage());
     }
 
-    @Test
-    void aTimedOutApiProgramStillCleansUpItsServer() {
-        AssertionError failure = assertThrows(
-                AssertionError.class,
-                () -> assertTimeoutPreemptively(
-                        Duration.ofSeconds(10), () -> launchApiProgram(Duration.ofSeconds(1), "MainsTest$Hangs")));
-        String output = String.valueOf(failure.getMessage());
-        assertTrue(output.contains("did not exit"), output);
-        String socket = output.lines()
-                .filter(line -> line.startsWith("/tmp/libtmux-java-dev/api.") && line.endsWith("/tmux.sock"))
-                .findFirst()
-                .orElseThrow();
-        assertFalse(Files.exists(Path.of(socket).getParent()), "the timed-out fixture must be removed");
-    }
-
     /** Never exits, and never closes its output. */
     static final class Hangs {
         public static void main(String[] args) throws InterruptedException {
@@ -156,13 +140,7 @@ final class MainsTest {
     }
 
     static String launchApiProgram(String program) throws Exception {
-        return launchApiProgram(Duration.ofSeconds(60), program);
-    }
-
-    private static String launchApiProgram(Duration deadline, String program) throws Exception {
-        List<String> fixture =
-                List.of("env", "TMUX_BIN=" + System.getProperty("libtmux.tmux", "tmux"), "sh", "api/run.sh");
-        return launch(deadline, false, fixture, program);
+        return launch(Duration.ofSeconds(60), false, List.of(), program);
     }
 
     /** Runs the example's {@code main} in a fresh JVM and returns what it printed. */
@@ -181,6 +159,11 @@ final class MainsTest {
                 program.startsWith("io.github.") ? program : "io.github.libtmux.examples." + program));
         command.addAll(List.of(args));
         ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(combineError);
+        // A program that starts its own server runs the tmux on its PATH; the matrix names its build.
+        Path tmux = Path.of(System.getProperty("libtmux.tmux", "tmux"));
+        if (tmux.isAbsolute()) {
+            builder.environment().merge("PATH", "", (path, none) -> tmux.getParent() + ":" + path);
+        }
         if (!combineError) builder.redirectError(ProcessBuilder.Redirect.INHERIT);
         Process process = builder.start();
         process.getOutputStream().close();

@@ -3,7 +3,7 @@
   Captured maps retain opaque Java references; [[libtmux.data]] traverses them locally."
   (:require [libtmux.data :as data])
   (:import [io.github.libtmux Server ServerEndpoint Session Window Pane Client
-            SessionSpec SessionSpec$Builder WindowSpec WindowSpec$Builder
+            ServerLaunch SessionSpec SessionSpec$Builder WindowSpec WindowSpec$Builder
             SplitSpec SplitSpec$Builder CaptureSpec Dimensions Options Environment Hooks BufferInfo]
            [io.github.libtmux.exception LibTmuxException TargetGoneException ServerUnavailableException
             UnsupportedFeatureException ServerClosedException]
@@ -143,6 +143,26 @@
                (when-let [x (:config-file options)] (.configFile builder (path x)))
                (when-let [x (:timeout options)] (.defaultTimeout builder x))
                (.build builder)))))
+
+(defn ^Server start!
+  "Starts a private tmux server that the returned Server owns.
+  The server has a directory of its own, an empty config unless `:config-file` names one,
+  and none of the caller's TMUX, TMUX_PANE or LIBTMUX_SOCKET*. Optional `:binary` is a
+  command name or path, `:root` a directory to make it under, `:timeout` a positive
+  java.time.Duration for startup and shutdown. Unknown keys are rejected.
+  Returns a Server for with-open; closing it stops tmux, removes the directory, and
+  throws if the server still answers or a program left another one in it.
+  Unlike [[open!]], which owns only a client."
+  ([] (start! {}))
+  ([options]
+   (closed! :start options {:binary string? :config-file path? :root path? :timeout duration?})
+   (execute! :start :mutation
+             #(let [builder (ServerLaunch/builder)]
+                (when-let [x (:binary options)] (.binary builder x))
+                (when-let [x (:config-file options)] (.configFile builder (path x)))
+                (when-let [x (:root options)] (.root builder (path x)))
+                (when-let [x (:timeout options)] (.timeout builder x))
+                (Server/start (.build builder))))))
 
 (defn snapshot! "Acquires an eager captured graph from an explicit server.
   Traverse one observation with [[libtmux.data/windows]] and [[libtmux.data/panes]]."
@@ -299,7 +319,8 @@
     (execute! :kill-server :mutation #(.killServer server))))
 
 (defn close!
-  "Releases the supplied Server's local resources without killing tmux.
+  "Releases the supplied Server's local resources without killing tmux, except for a
+  server from [[start!]], whose close stops the tmux server it owns.
   Local closure remains available after [[libtmux.async/cancel!]].
   [[open!]] creates another client."
   [server]

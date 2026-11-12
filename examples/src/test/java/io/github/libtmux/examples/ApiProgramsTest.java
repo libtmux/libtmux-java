@@ -19,7 +19,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
-/** Complete common API programs, executed by their displayed {@code api/run.sh} launcher. */
+/** Complete common API programs, each starting its own private server. */
 final class ApiProgramsTest {
     private static final Path ROOT = Path.of("..");
 
@@ -89,8 +89,7 @@ final class ApiProgramsTest {
                         ROOT.resolve(file.required("sourceFile").asText())));
                 assertTrue(destinations.add(file.required("path").asText()), "duplicate setup file");
             }
-            assertEquals(
-                    Set.of("settings.gradle.kts", "build.gradle.kts", "gradle.properties", "run.sh"), destinations);
+            assertEquals(Set.of("settings.gradle.kts", "build.gradle.kts", "gradle.properties"), destinations);
         }
     }
 

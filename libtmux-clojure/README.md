@@ -39,8 +39,9 @@ walks below read that graph; they do not issue another tmux command.
 
 The example runner supplies `libtmux.docs.socket` for its private server. In a
 REPL, replace that property lookup with the path to your server's socket.
-The [complete programs][programs] include a launcher that sets up and removes
-an isolated server for you.
+To have a server of your own instead, `(tm/start!)` starts a private one whose
+`with-open` close stops it and removes its directory; the
+[complete programs][programs] do this.
 
 <!-- clojure-snippet: fixture -->
 ```clojure
@@ -62,8 +63,9 @@ an isolated server for you.
 ```
 
 Use `with-open` for every client, runtime, control connection, and
-subscription that this program owns. Closing a `Server` releases client
-resources; it does not kill the tmux server.
+subscription that this program owns. Closing a `Server` from `open!` releases
+client resources; it does not kill the tmux server. Closing one from `start!`
+also stops the tmux server it started and removes that server's directory.
 
 ## Namespaces
 
@@ -79,7 +81,7 @@ resources; it does not kill the tmux server.
 ## Run complete programs
 
 The [Clojure API programs][programs] include their imports, entry points,
-consumer dependencies, and private-server launcher. Start with captured
+consumer dependencies, and a private server of their own. Start with captured
 session/window/pane traversal, then compare native and Java predicates, create
 a detached window, or send literal input and verify its captured output.
 The capability programs add layout/movement, bounded capture and cancellation,
