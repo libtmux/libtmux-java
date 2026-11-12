@@ -98,8 +98,6 @@ checks its displayed result.
   projection.
 - **No implicit asynchronous runtime.** `libtmux.async` is bounded and
   closeable. The `core.async` bridge is a separate optional artifact.
-- **No Clojure MCP server.** Model-facing tools belong to
-  [libtmux-mcp][mcp-guide]; this façade remains a JVM library.
 - **No ClojureScript, Babashka, or native-image target.** The operational API
   depends on Java handles and the Java transport.
 
