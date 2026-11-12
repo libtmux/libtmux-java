@@ -31,6 +31,14 @@ changelog](../CHANGELOG.md).
   [migration notes](../MIGRATION.md#output-subscriptions-bound-payload-bytes).
   (#20)
 
+### Fixed
+
+- **`Pane.run` waits for the shell of a pane created a moment ago.** tmux names
+  such a pane `tmux` until its shell starts, and `Pane.run` refused it with
+  `IllegalStateException` on the first read. It now waits up to two seconds for
+  another name. A pane still named `tmux` after that is refused as before.
+  (#156)
+
 ## 0.1.2 — 2026-11-01
 
 No entries for `libtmux`.
