@@ -93,6 +93,15 @@ through a client's key table and a clock takes no such commands.
 `display-panes` and `display-popup` require an attached client on every lane
 and are not exposed for that reason, the same as `new-session -A` above.
 
+## A pane is named `tmux` until its shell starts
+
+Between fork and exec the process in a pane's terminal is the server's own
+copy, so `#{pane_current_command}` reads `tmux`. Reading it straight after
+`new-session -d` returned `tmux` in 3 of 150 attempts on tmux 3.8a, one tmux
+invocation per read on an idle host, and a loaded CI runner widens the window.
+A caller that must know the pane's program, as `Pane.run` must to check for a
+POSIX shell, waits for another name rather than trusting the first read.
+
 ## run-shell output is missing on 3.3a and 3.4 only
 
 Reading what `run-shell` printed silently reports nothing on 3.3a and 3.4, and

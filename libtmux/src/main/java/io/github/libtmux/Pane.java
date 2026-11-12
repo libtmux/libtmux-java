@@ -448,7 +448,8 @@ public final class Pane {
      *
      * <p>It runs in the shell a person set up — its directory, its environment, a virtualenv someone
      * activated — which is the reason to type it there rather than start a process of your own. The
-     * pane has to be running a POSIX shell for the typed line to mean what it says.
+     * pane has to be running a POSIX shell for the typed line to mean what it says. A pane created a
+     * moment ago, whose shell has not started yet, is waited for briefly.
      *
      * <p>A command still running at the deadline keeps running; the answer carries what it had printed
      * by then, and {@link PaneRun#exact()} is false.
@@ -466,8 +467,14 @@ public final class Pane {
             Objects.requireNonNull(timeout, "timeout");
             // What the pane is running and where its server listens, read together: one command, and the
             // same moment, so the shell checked is the shell the line is typed into.
-            Map<String, String> here = variables(List.of("pane_current_command", "socket_path"));
+            List<String> read = List.of("pane_current_command", "socket_path");
+            Map<String, String> here = variables(read);
             String running = here.getOrDefault("pane_current_command", "");
+            if (running.equals(PaneCommand.FORKED_SERVER)) {
+                await(fresh -> !fresh.currentCommand().equals(PaneCommand.FORKED_SERVER), PaneCommand.EXEC_GRACE);
+                here = variables(read);
+                running = here.getOrDefault("pane_current_command", "");
+            }
             PaneCommand.requirePosixShell(running.isEmpty() ? state.currentCommand() : running);
             PaneCommand frame = PaneCommand.fresh();
             List<String> tmux = List.of(server.config().binaryPath(), "-S", here.getOrDefault("socket_path", ""));

@@ -2,6 +2,7 @@ package io.github.libtmux;
 
 import io.github.libtmux.catalog.Advanced;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
@@ -40,6 +41,12 @@ public final class PaneCommand {
 
     /** The shells whose syntax the typed line is written in. */
     private static final Set<String> POSIX_SHELLS = Set.of("sh", "ash", "bash", "dash", "ksh", "mksh", "pdksh", "zsh");
+
+    /** What a pane reports between fork and exec, while its foreground process is still the server. */
+    static final String FORKED_SERVER = "tmux";
+
+    /** How long a pane named {@link #FORKED_SERVER} is given to exec its shell before it counts as running tmux. */
+    static final Duration EXEC_GRACE = Duration.ofSeconds(2);
 
     private final String startMark;
     private final String endMark;

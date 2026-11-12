@@ -12,11 +12,14 @@ import io.github.libtmux.Server;
 import io.github.libtmux.TextOutcome;
 import io.github.libtmux.Window;
 import io.github.libtmux.junit5.TmuxExtension;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.OptionalInt;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Running a command in a pane to its end: the status is the shell's, and the output is only the
@@ -125,6 +128,31 @@ final class PaneRunIntegrationTest {
         assertEquals(OptionalInt.empty(), ran.exitStatus());
         assertFalse(ran.exact());
         assertEquals(List.of("started"), ran.output(), "what it had printed by the deadline");
+    }
+
+    /**
+     * Between fork and exec the process in a pane's terminal is the server's own copy, and tmux
+     * names the pane {@code tmux}. A command run in a pane created a moment ago must wait for the
+     * shell to start, not refuse the pane as a program that is not one.
+     */
+    @Test
+    void aPaneThatHasNotStartedItsShellYetIsWaitedFor(Server server, @TempDir Path directory) throws Exception {
+        Path named = Files.createSymbolicLink(directory.resolve("tmux"), Path.of("/bin/sh"));
+        Pane pane = server.newSession(session -> session.named("forking")
+                        .running(named.toString(), "-c", "sleep 0.7; exec env PS1='$ ' ENV= /bin/sh"))
+                .windows()
+                .get(0)
+                .panes()
+                .get(0);
+        assertEquals(
+                "tmux",
+                pane.variables(List.of("pane_current_command")).get("pane_current_command"),
+                "the pane still carries the name of the process that has not exec'd yet");
+
+        PaneRun ran = pane.run("printf 'started\\n'", GENEROUS);
+
+        assertEquals(List.of("started"), ran.output());
+        assertEquals(OptionalInt.of(0), ran.exitStatus());
     }
 
     @Test
