@@ -14,6 +14,7 @@
   #"(?ms)(?:<!--\s*clojure-snippet:\s*([^>\s]+)\s*-->\s*\n)?^```clojure\s*\n(.*?)^```")
 (def ^:private output-line #"(?m)^\s*;;\s*=>\s*(.+?)\s*$")
 (def ^:private required-documents ["libtmux-clojure/README.md"
+                                  "libtmux-clojure-core-async/README.md"
                                   "docs/guide/clojure.md"
                                   "docs/guide/clojure-reference.md"])
 (def ^:private socket-property "libtmux.docs.socket")
@@ -145,11 +146,19 @@
 (defn- evaluate-snippet! [{:keys [document line code expected]} ^Path socket]
   (with-fixture-properties socket
     #(let [name (symbol (str "libtmux.docs.generated." (UUID/randomUUID)))
-           namespace (create-ns name)]
+           namespace (create-ns name)
+           warnings (java.io.StringWriter.)]
        (try
-         (binding [*ns* namespace]
+         (binding [*ns* namespace
+                   *warn-on-reflection* true
+                   *err* warnings]
            (refer 'clojure.core)
            (let [actual (eval (read-string (str "(do\n" code "\n)")))]
+             (when (str/includes? (str warnings) "Reflection warning")
+               (throw (ex-info "Clojure documentation emitted reflection warnings"
+                               {:docs/error :compiler-warning
+                                :document document :line line
+                                :warnings (str warnings)})))
              (when-not (= expected actual)
                (throw (ex-info "Clojure documentation output differs from the evaluated result"
                                {:docs/error :output-mismatch
@@ -181,7 +190,9 @@
   (let [root (document-root)
         snippets (documented-snippets root)]
     (is (seq snippets))
-    (is (= #{"libtmux-clojure/README.md" "docs/guide/clojure.md"}
+    (is (= #{"libtmux-clojure/README.md"
+             "libtmux-clojure-core-async/README.md"
+             "docs/guide/clojure.md"}
            (set (map :document snippets))))))
 
 (deftest clojure-readme-has-first-visit-navigation
@@ -224,8 +235,13 @@
 
 (deftest renamed-imports-and-wrong-displayed-output-fail-the-documentation-gate
   (let [root (document-root)
-        snippet (first (documented-snippets root))
-        renamed (assoc snippet :code "(require '[libtmux.missing :as tm])")]
+        snippet (first (filter #(= "fixture" (:directive %))
+                               (documented-snippets root)))
+        renamed (assoc snippet :code "(require '[libtmux.missing :as tm])")
+        reflective (assoc snippet :expected 2
+                          :code "(with-open [server (identity (java.io.StringReader. \"\"))] 2)")]
     (is (thrown? Throwable (run-snippet! renamed)))
+    (is (= :compiler-warning
+           (:docs/error (failure-data #(run-snippet! reflective)))))
     (is (= :output-mismatch
            (:docs/error (failure-data #(run-snippet! (assoc snippet :expected ::wrong))))))))

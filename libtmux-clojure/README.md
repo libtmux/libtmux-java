@@ -11,10 +11,9 @@
 
 # libtmux-clojure
 
-**libtmux for Clojure:** a data-first façade over
-[libtmux-java][java-core]. It acquires tmux state as persistent maps and
-vectors, retains a Java handle at `:tmux/ref` for an explicit operation, and
-leaves ordinary Clojure collection processing local and unconstrained.
+Drive tmux from Clojure: capture sessions, windows, and panes as persistent
+maps, filter them with ordinary collection functions, and keep an explicit
+Java handle at `:tmux/ref` for operations through [libtmux-java][java-core].
 
 </div>
 
@@ -22,20 +21,28 @@ leaves ordinary Clojure collection processing local and unconstrained.
 
 The Clojure façade has not shipped. Its Maven coordinate is
 `io.github.libtmux:libtmux-clojure`; there is no public release to install yet.
-Build and verify it from this checkout:
+From the repository root, install the Java core and façade into your local
+Maven repository:
 
 ```console
-$ ./gradlew :libtmux-clojure:check :integration-tests:clojureIntegrationTest
+$ ./gradlew \
+    :libtmux:publishToMavenLocal \
+    :libtmux-clojure:publishToMavenLocal
 ```
 
-The façade requires JDK 25 or newer. The project tests tmux 3.3a through
-3.7c; [control streaming][guide-streaming] requires tmux 3.7 or newer.
+The [consumer setup][programs] includes a `deps.edn`, matching source version,
+and instructions for using an isolated Maven repository.
+
+The façade requires JDK 25 or newer. CI tests Clojure 1.12.6 on JDK 25 and 27
+with tmux 3.3a and 3.7c. [Control streaming][guide-streaming] requires tmux
+3.7 or newer.
 
 ## Quick start
 
-`open!` connects to an explicit socket and owns only the local client.
-`snapshot!` acquires one captured graph. The `data/windows` and `data/panes`
-walks below read that graph; they do not issue another tmux command.
+[`open!`][open] connects to an explicit socket and owns only the local client.
+[`snapshot!`][snapshot] acquires one captured graph. The
+[`data/windows`][windows] and [`data/panes`][panes] walks read that graph
+without another tmux command.
 
 The example runner supplies `libtmux.docs.socket` for its private server. In a
 REPL, replace that property lookup with the path to your server's socket.
@@ -127,6 +134,9 @@ with the tmux version, endpoint choice, and the smallest reproducer.
 - [Benchmarking guide][benchmarks] — how the Java operation measurements are
   run. It does not yet claim a façade-specific benchmark.
 - [Changelog](CHANGELOG.md) — module-visible changes once this façade ships.
+- [Contributing][contributing] — building, executable documentation, and
+  owned tmux fixtures.
+- [License][license] — MIT.
 
 Every Clojure snippet in this README and the guide runs against an isolated
 tmux server in `:integration-tests:clojureIntegrationTest`; no snippet is
@@ -147,6 +157,11 @@ the generated site starts at `build/docs/clojure/index.html` in this module.
 [guide]: ../docs/guide/clojure.md
 [guide-streaming]: ../docs/guide/clojure.md
 [java-core]: ../libtmux/README.md
+[license]: ../LICENSE
 [mcp-guide]: ../docs/guide/mcp.md
+[open]: ../docs/guide/clojure-api.md#libtmuxcoreopen
+[panes]: ../docs/guide/clojure-api.md#libtmuxdatapanes
 [programs]: ../examples/api/README.md#clojure-programs
 [reference]: ../docs/guide/clojure-reference.md
+[snapshot]: ../docs/guide/clojure-api.md#libtmuxcoresnapshot
+[windows]: ../docs/guide/clojure-api.md#libtmuxdatawindows

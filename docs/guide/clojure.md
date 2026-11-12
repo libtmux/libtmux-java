@@ -141,7 +141,7 @@ submission does not add another tmux transport or alter the captured values.
                    (System/getProperty "libtmux.docs.socket")
                    (make-array String 0))]
   (with-open [server (tm/open! {:socket-path socket-path})
-              runtime (async/runtime! {:max-running 3})]
+              ^java.lang.AutoCloseable runtime (async/runtime! {:max-running 3})]
     (tm/new-session! server {:name "docs-parallel"})
     (let [tasks (mapv (fn [_] (async/submit! runtime #(tm/snapshot! server)))
                       (range 2))]
@@ -166,7 +166,7 @@ started. Use a separate `:wait` task for operations that wait for a release.
                    (System/getProperty "libtmux.docs.socket")
                    (make-array String 0))]
   (with-open [server (tm/open! {:socket-path socket-path})
-              runtime (async/runtime! {})]
+              ^java.lang.AutoCloseable runtime (async/runtime! {})]
     (let [started (promise)
           task (async/submit! runtime {:kind :wait}
                               #(do (deliver started true)
@@ -309,11 +309,11 @@ remains readable from the same owned stream.
   (with-open [server (tm/open! {:socket-path socket-path
                                 :binary (System/getProperty
                                          "libtmux.docs.binary")})
-              connection (control/attach!
-                          (:tmux/ref (first (tm/sessions! server)))
-                          (Duration/ofSeconds 2))
-              stream (control/subscribe! connection {:capacity 64
-                                                      :max-bytes 65536})]
+              ^java.lang.AutoCloseable connection
+              (control/attach! (:tmux/ref (first (tm/sessions! server)))
+                               (Duration/ofSeconds 2))
+              ^AutoCloseable stream
+              (control/subscribe! connection {:capacity 64 :max-bytes 65536})]
     (let [initial (control/next! stream (Duration/ofMillis 25))
           pane (first (:reply/lines
                        (control/send! connection
@@ -340,9 +340,9 @@ remains readable from the same owned stream.
   (with-open [server (tm/open! {:socket-path socket-path
                                 :binary (System/getProperty
                                          "libtmux.docs.binary")})
-              connection (control/attach!
-                          (:tmux/ref (first (tm/sessions! server)))
-                          (Duration/ofSeconds 2))]
+              ^java.lang.AutoCloseable connection
+              (control/attach! (:tmux/ref (first (tm/sessions! server)))
+                               (Duration/ofSeconds 2))]
     (let [owner (adapter/observe! connection)
           pane (first (:reply/lines
                        (control/send! connection
@@ -378,7 +378,7 @@ explicitly when ownership requires it.
                    (System/getProperty "libtmux.docs.socket")
                    (make-array String 0))]
   (with-open [server (tm/open! {:socket-path socket-path})
-              runtime (async/runtime! {})]
+              ^java.lang.AutoCloseable runtime (async/runtime! {})]
     (tm/new-session! server {:name "docs-manifold"})
     (let [task (async/submit! runtime #(tm/snapshot! server))
           stage (async/then! runtime task
