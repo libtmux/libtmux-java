@@ -303,7 +303,7 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
     private static Fixture fixture(ExtensionContext context) {
         // The aggregate is stored while it still owns nothing, so a failure during startup is still
         // reachable by teardown.
-        Fixture fixture = context.getStore(NAMESPACE).getOrComputeIfAbsent(KEY, key -> new Fixture(), Fixture.class);
+        Fixture fixture = context.getStore(NAMESPACE).computeIfAbsent(KEY, key -> new Fixture(), Fixture.class);
         fixture.start();
         return fixture;
     }
