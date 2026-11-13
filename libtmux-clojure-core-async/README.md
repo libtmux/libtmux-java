@@ -21,7 +21,8 @@ core.async dependency.
 
 This adapter has not shipped. Its Maven coordinate is
 `io.github.libtmux:libtmux-clojure-core-async`; there is no public release to
-install yet. Build and verify it from this checkout:
+install yet. To build and verify it from source, run this from the root of a
+libtmux-java clone:
 
 ```console
 $ ./gradlew :libtmux-clojure-core-async:check
@@ -47,8 +48,9 @@ The [complete core.async program][program] includes imports, a CLI entry point,
 the optional dependency alias, private-server setup and cleanup. It closes its
 events consumer, reads the terminal outcome, and reuses the borrowed connection.
 
-The `javadoc` classifier contains native reference HTML and an offline source
-browser, generated from this module's var metadata.
+The `javadoc` classifier of the `libtmux-clojure-core-async` artifact contains
+native reference HTML and an offline source browser, generated from the
+adapter's var metadata.
 
 [api]: ../docs/guide/clojure-core-async-api.md
 [core-async]: https://clojure.github.io/core.async/clojure.core.async.html

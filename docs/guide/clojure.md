@@ -4,10 +4,10 @@
 encoding, transport, server identity and compatibility in Java, while exposing
 captured persistent Clojure values and ordinary collection operations.
 
-Start with the package [README](../../libtmux-clojure/README.md) for the
-install boundary and one capture. This guide explains the choices that matter
-after the first program: what is captured, what can perform I/O, who owns
-workers and streams, and where model-facing MCP tooling begins.
+Start with the [install and quick start](../../libtmux-clojure/README.md) for
+the install boundary and one capture. This guide explains the choices that
+matter after the first program: what is captured, what can perform I/O, who
+owns workers and streams, and where model-facing MCP tooling begins.
 
 The native API references list every documented public var in
 [the core façade](clojure-api.md) and
@@ -134,16 +134,16 @@ submission does not add another tmux transport or alter the captured values.
 
 <!-- clojure-snippet: fixture -->
 ```clojure
-(require '[libtmux.async :as async]
+(require '[libtmux.async :as tm-async]
          '[libtmux.core :as tm])
 
 (let [socket-path (java.nio.file.Path/of
                    (System/getProperty "libtmux.docs.socket")
                    (make-array String 0))]
   (with-open [server (tm/open! {:socket-path socket-path})
-              runtime (async/runtime! {:max-running 3})]
+              runtime (tm-async/runtime! {:max-running 3})]
     (tm/new-session! server {:name "docs-parallel"})
-    (let [tasks (mapv (fn [_] (async/submit! runtime #(tm/snapshot! server)))
+    (let [tasks (mapv (fn [_] (tm-async/submit! runtime #(tm/snapshot! server)))
                       (range 2))]
       (mapv #(boolean (some (fn [session]
                               (= "docs-parallel" (:session/name session)))
@@ -158,7 +158,7 @@ started. Use a separate `:wait` task for operations that wait for a release.
 
 <!-- clojure-snippet: fixture -->
 ```clojure
-(require '[libtmux.async :as async]
+(require '[libtmux.async :as tm-async]
          '[libtmux.core :as tm])
 (import '[java.time Duration])
 
@@ -166,14 +166,14 @@ started. Use a separate `:wait` task for operations that wait for a release.
                    (System/getProperty "libtmux.docs.socket")
                    (make-array String 0))]
   (with-open [server (tm/open! {:socket-path socket-path})
-              runtime (async/runtime! {})]
+              runtime (tm-async/runtime! {})]
     (let [started (promise)
-          task (async/submit! runtime {:kind :wait}
-                              #(do (deliver started true)
-                                   (tm/await-channel! server "docs-cancel"
-                                      (Duration/ofSeconds 20))))]
+          task (tm-async/submit! runtime {:kind :wait}
+                                 #(do (deliver started true)
+                                      (tm/await-channel! server "docs-cancel"
+                                         (Duration/ofSeconds 20))))]
       @started
-      (async/cancel! task)
+      (tm-async/cancel! task)
       (try
         @task
         (catch clojure.lang.ExceptionInfo failure
@@ -369,7 +369,7 @@ explicitly when ownership requires it.
 
 <!-- clojure-snippet: fixture -->
 ```clojure
-(require '[libtmux.async :as async]
+(require '[libtmux.async :as tm-async]
          '[libtmux.core :as tm]
          '[manifold.deferred :as deferred])
 (import '[java.util.concurrent CompletionStage])
@@ -378,14 +378,14 @@ explicitly when ownership requires it.
                    (System/getProperty "libtmux.docs.socket")
                    (make-array String 0))]
   (with-open [server (tm/open! {:socket-path socket-path})
-              runtime (async/runtime! {})]
+              runtime (tm-async/runtime! {})]
     (tm/new-session! server {:name "docs-manifold"})
-    (let [task (async/submit! runtime #(tm/snapshot! server))
-          stage (async/then! runtime task
-                             #(boolean (some (fn [session]
-                                               (= "docs-manifold"
-                                                  (:session/name session)))
-                                             (:tmux/sessions %))))
+    (let [task (tm-async/submit! runtime #(tm/snapshot! server))
+          stage (tm-async/then! runtime task
+                                #(boolean (some (fn [session]
+                                                  (= "docs-manifold"
+                                                     (:session/name session)))
+                                                (:tmux/sessions %))))
           observed (deferred/->deferred stage)]
       [(instance? CompletionStage stage) @observed])))
 ;; => [true true]
