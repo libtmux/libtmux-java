@@ -22,6 +22,10 @@ changelog](../CHANGELOG.md).
 - **Control output preserves pane bytes and supports incremental text
   decoding.** Subscribers can distinguish output gaps, connection closure and
   transport failures while retaining the original termination cause. (#20)
+- **`PaneCommand.awaitShellStart(pane, current)` waits for the shell of a pane
+  created a moment ago.** It waits only when `current` is `tmux`, up to two
+  seconds, and returns whether it waited, so the caller reads the pane's command
+  again. `Pane.run` and the MCP server's `run_shell_command` use it. (#156)
 
 ### Changed
 
