@@ -43,10 +43,10 @@ public final class PaneCommand {
     private static final Set<String> POSIX_SHELLS = Set.of("sh", "ash", "bash", "dash", "ksh", "mksh", "pdksh", "zsh");
 
     /** What a pane reports between fork and exec, while its foreground process is still the server. */
-    static final String FORKED_SERVER = "tmux";
+    private static final String FORKED_SERVER = "tmux";
 
     /** How long a pane named {@link #FORKED_SERVER} is given to exec its shell before it counts as running tmux. */
-    static final Duration EXEC_GRACE = Duration.ofSeconds(2);
+    private static final Duration EXEC_GRACE = Duration.ofSeconds(2);
 
     private final String startMark;
     private final String endMark;
@@ -208,6 +208,27 @@ public final class PaneCommand {
         public Framed {
             lines = List.copyOf(lines);
         }
+    }
+
+    /**
+     * Waits for a pane that was just created to start its shell, and says whether it had to.
+     *
+     * <p>Between fork and exec the process in a pane's terminal is the server's own copy, so tmux
+     * names the pane {@code tmux} until its shell starts. A read of the pane's command taken in that
+     * window is out of date once this returns {@code true}, and has to be taken again. A pane still
+     * named {@code tmux} after the wait is left for the caller's shell check to refuse.
+     *
+     * @param pane the pane to wait for
+     * @param current the command the pane was last read to be running
+     * @return whether the pane was waited for, so that {@code current} is stale
+     * @throws InterruptedException if the waiting thread is interrupted
+     */
+    public static boolean awaitShellStart(Pane pane, String current) throws InterruptedException {
+        if (!current.equals(FORKED_SERVER)) {
+            return false;
+        }
+        pane.await(fresh -> !fresh.currentCommand().equals(FORKED_SERVER), EXEC_GRACE);
+        return true;
     }
 
     /** Refuses a pane whose shell would not read the typed line as written. */

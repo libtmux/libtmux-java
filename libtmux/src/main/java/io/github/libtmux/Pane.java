@@ -470,8 +470,7 @@ public final class Pane {
             List<String> read = List.of("pane_current_command", "socket_path");
             Map<String, String> here = variables(read);
             String running = here.getOrDefault("pane_current_command", "");
-            if (running.equals(PaneCommand.FORKED_SERVER)) {
-                await(fresh -> !fresh.currentCommand().equals(PaneCommand.FORKED_SERVER), PaneCommand.EXEC_GRACE);
+            if (PaneCommand.awaitShellStart(this, running)) {
                 here = variables(read);
                 running = here.getOrDefault("pane_current_command", "");
             }
