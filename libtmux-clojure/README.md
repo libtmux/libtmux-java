@@ -22,7 +22,8 @@ leaves ordinary Clojure collection processing local and unconstrained.
 
 The Clojure façade has not shipped. Its Maven coordinate is
 `io.github.libtmux:libtmux-clojure`; there is no public release to install yet.
-Build and verify it from this checkout:
+To build and verify it from source, run this from the root of a
+libtmux-java clone:
 
 ```console
 $ ./gradlew :libtmux-clojure:check :integration-tests:clojureIntegrationTest
@@ -128,13 +129,14 @@ with the tmux version, endpoint choice, and the smallest reproducer.
   run. It does not yet claim a façade-specific benchmark.
 - [Changelog](CHANGELOG.md) — module-visible changes once this façade ships.
 
-Every Clojure snippet in this README and the guide runs against an isolated
-tmux server in `:integration-tests:clojureIntegrationTest`; no snippet is
-illustrative pseudocode.
+Every Clojure snippet on this page and in the [guide][guide] runs against an
+isolated tmux server in `:integration-tests:clojureIntegrationTest`; no snippet
+is illustrative pseudocode.
 
-The module's `javadoc` classifier contains native Clojure reference HTML and
-an offline source browser. Build it with `:libtmux-clojure:clojureApiJar`;
-the generated site starts at `build/docs/clojure/index.html` in this module.
+The `javadoc` classifier of the `libtmux-clojure` artifact contains native
+Clojure reference HTML and an offline source browser. To build it from source,
+run `:libtmux-clojure:clojureApiJar`; the generated site starts at
+`libtmux-clojure/build/docs/clojure/index.html`.
 
 [benchmarks]: ../benchmarks/README.md
 [api]: ../docs/guide/clojure-api.md
@@ -145,7 +147,7 @@ the generated site starts at `build/docs/clojure/index.html` in this module.
 [core-async]: ../libtmux-clojure-core-async/README.md
 [data-api]: ../docs/guide/clojure-api.md#libtmuxdata
 [guide]: ../docs/guide/clojure.md
-[guide-streaming]: ../docs/guide/clojure.md
+[guide-streaming]: ../docs/guide/clojure.md#lifecycle-streaming-and-optional-adapters
 [java-core]: ../libtmux/README.md
 [mcp-guide]: ../docs/guide/mcp.md
 [programs]: ../examples/api/README.md#clojure-programs
