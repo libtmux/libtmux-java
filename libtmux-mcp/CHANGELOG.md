@@ -14,6 +14,13 @@ changelog](../CHANGELOG.md).
 
 ## Unreleased
 
+### Fixed
+
+- **`run_shell_command` waits for the shell of a pane created a moment ago.**
+  tmux names such a pane `tmux` until its shell starts, and the tool refused it
+  as not running a POSIX shell. It now waits up to two seconds for another
+  name. A pane still named `tmux` after that is refused as before. (#156)
+
 ## 0.1.2 — 2026-11-01
 
 No entries for `libtmux-mcp`.

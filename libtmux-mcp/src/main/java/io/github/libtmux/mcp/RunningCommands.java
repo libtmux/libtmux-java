@@ -81,6 +81,14 @@ final class RunningCommands {
         boolean suppressHistory = call.flag("suppress_history", true);
         PaneInputCohort.Resolution initial = PaneInputCohort.resolve(pane, call.caller());
         String currentCommand = initial.requireSingularCommandPane("run_shell_command");
+        try {
+            if (PaneCommand.awaitShellStart(pane, currentCommand)) {
+                initial = PaneInputCohort.resolve(pane, call.caller());
+                currentCommand = initial.requireSingularCommandPane("run_shell_command");
+            }
+        } catch (InterruptedException cancelled) {
+            throw Waits.cancelled(cancelled);
+        }
         requirePosixShell(currentCommand);
         PaneInputReservations.Lease lease = PaneInputReservations.run(pane, initial, "run_shell_command");
         boolean retained = false;

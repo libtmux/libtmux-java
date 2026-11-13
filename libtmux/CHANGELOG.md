@@ -22,6 +22,10 @@ changelog](../CHANGELOG.md).
 - **Control output preserves pane bytes and supports incremental text
   decoding.** Subscribers can distinguish output gaps, connection closure and
   transport failures while retaining the original termination cause. (#20)
+- **`PaneCommand.awaitShellStart(pane, current)` waits for the shell of a pane
+  created a moment ago.** It waits only when `current` is `tmux`, up to two
+  seconds, and returns whether it waited, so the caller reads the pane's command
+  again. `Pane.run` and the MCP server's `run_shell_command` use it. (#156)
 
 ### Changed
 
@@ -30,6 +34,14 @@ changelog](../CHANGELOG.md).
   an explicit byte limit alongside its event limit. See the
   [migration notes](../MIGRATION.md#output-subscriptions-bound-payload-bytes).
   (#20)
+
+### Fixed
+
+- **`Pane.run` waits for the shell of a pane created a moment ago.** tmux names
+  such a pane `tmux` until its shell starts, and `Pane.run` refused it with
+  `IllegalStateException` on the first read. It now waits up to two seconds for
+  another name. A pane still named `tmux` after that is refused as before.
+  (#156)
 
 ## 0.1.2 — 2026-11-01
 

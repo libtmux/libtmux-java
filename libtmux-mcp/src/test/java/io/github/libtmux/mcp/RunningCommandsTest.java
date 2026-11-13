@@ -513,6 +513,32 @@ final class RunningCommandsTest {
     }
 
     /**
+     * Between fork and exec the process in a new pane is the server's own copy, and tmux names the
+     * pane {@code tmux}. A run in a pane created a moment ago waits for the shell to start rather
+     * than refusing the pane as another program.
+     */
+    @Test
+    void aPaneThatHasNotStartedItsShellYetIsWaitedFor(Server server, @TempDir Path temporary) throws Exception {
+        Path named = Files.createSymbolicLink(temporary.resolve("tmux"), Path.of("/bin/sh"));
+        Pane pane = server.newSession(session -> session.named("forking")
+                        .running(named.toString(), "-c", "sleep 0.7; exec env PS1='$ ' ENV= /bin/sh"))
+                .windows()
+                .get(0)
+                .panes()
+                .get(0);
+        assertEquals(
+                "tmux",
+                pane.variables(List.of("pane_current_command")).get("pane_current_command"),
+                "the pane still carries the name of the process that has not exec'd yet");
+
+        RunningCommands.Ran ran = RunningCommands.run(
+                TestCalls.on(server, "pane_id", pane.id().value(), "command", "printf 'started\\n'", "timeout", 20));
+
+        assertCompleted(ran, 0);
+        assertEquals(List.of("started"), ran.output());
+    }
+
+    /**
      * The reason this tool exists rather than send-then-look: a failure is a number, not something to
      * infer from what the screen says.
      */
