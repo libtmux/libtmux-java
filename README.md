@@ -125,6 +125,9 @@ try (Server server = Server.open(config)) {
 
 [`Server.killServer`][server-killserver] stops tmux itself. Closing a client
 leaves the tmux server running, and tmux leaves its socket file behind.
+[`Session.kill`][session-kill], [`Window.kill`][window-kill] and
+[`Pane.kill`][pane-kill] close one thing, and
+[`Server.killSession`][server-killsession] closes a session by name.
 
 Later examples start from a `server` you already have, as their `// Given:`
 line says:
@@ -321,6 +324,48 @@ PaneRun ran = pane.run("printf 'built\\n'; exit 3", Duration.ofSeconds(30));
 ran.exitStatus().getAsInt();   // → 3
 ran.output();                  // → [built]
 ```
+
+### [`Pane.resize`][pane-resize]: change a size
+
+[`Pane.resize`][pane-resize] grows a pane by a number of cells toward a
+[`Direction`][direction]. [`Pane.resizeTo`][pane-resizeto] and
+[`Window.resizeTo`][window-resizeto] set a size in [`Dimensions`][dimensions]:
+
+```java
+import io.github.libtmux.Dimensions;
+import io.github.libtmux.Direction;
+import io.github.libtmux.Pane;
+
+// Given: Window window
+window.resizeTo(new Dimensions(100, 30));
+Pane top = window.panes().get(0);
+Pane bottom = window.split();
+
+top.resizeTo(new Dimensions(100, 20));
+bottom.resize(Direction.UP, 3);
+
+top.refresh().size();                // → 100x17
+bottom.refresh().size();             // → 100x12
+```
+
+### [`Session.options()`][session-options]: set and read an option
+
+[`Options`][options] reaches the options of a [`Session`][session], a
+[`Window`][window] or a [`Pane`][pane], and [`Hooks`][hooks] binds a tmux
+command to an event at the same scopes:
+
+```java
+import io.github.libtmux.OptionKey;
+
+// Given: Session session
+session.options().set(OptionKey.HISTORY_LIMIT, 50_000);
+session.hooks().set("after-new-window", "display-message created");
+
+session.options().get(OptionKey.HISTORY_LIMIT).orElseThrow();   // → 50000
+session.hooks().all().get("after-new-window");   // → [display-message created]
+```
+
+More: [Options and hooks](docs/guide/options-and-hooks.md).
 
 ### [`Server.cmd`][server]: any tmux command
 
@@ -949,6 +994,8 @@ MIT. See [`LICENSE`](LICENSE).
 [command-chain]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-commandchain-commandchain/
 [commandresult]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-transport-commandresult-commandresult/
 [controlclient]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-control-controlclient-controlclient/
+[dimensions]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-dimensions-dimensions/
+[direction]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-direction-direction/
 [environment]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-environment-environment/
 [fake-tmux]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-junit5-faketmux-faketmux/
 [filter-json]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-jackson-filterjson-filterjson/
@@ -973,6 +1020,9 @@ MIT. See [`LICENSE`](LICENSE).
 [optional]: https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/Optional.html
 [options]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-options-options/
 [pane]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-pane-pane/
+[pane-kill]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-pane-pane-kill/
+[pane-resize]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-pane-pane-resize/
+[pane-resizeto]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-pane-pane-resizeto/
 [pane-run]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-pane-pane-run/
 [panerun]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-panerun-panerun/
 [processtransport]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-transport-processtransport-processtransport/
@@ -985,11 +1035,14 @@ MIT. See [`LICENSE`](LICENSE).
 [server]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server/
 [server-control]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server-control/
 [server-killserver]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server-killserver/
+[server-killsession]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server-killsession/
 [server-newsession]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server-newsession/
 [server-windows]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server-windows/
 [serverconfig]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-serverconfig-serverconfig/
 [serversnapshot]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-snapshot-serversnapshot-serversnapshot/
 [session]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-session-session/
+[session-kill]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-session-session-kill/
+[session-options]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-session-session-options/
 [system-logger]: https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/System.Logger.html
 [tmux-extension]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-junit5-tmuxextension-tmuxextension/
 [tmux-release-candidates]: https://libtmux.org/en/tmux/guides/tmux-support/#release-candidates
@@ -997,6 +1050,8 @@ MIT. See [`LICENSE`](LICENSE).
 [tmuxfilters]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-query-tmuxfilters-tmuxfilters/
 [tmuxtransport]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-transport-tmuxtransport-tmuxtransport/
 [window]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-window-window/
+[window-kill]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-window-window-kill/
+[window-resizeto]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-window-window-resizeto/
 [window_]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-window_-window_/
 [workspace-builder]: https://libtmux.org/en/java/latest/workspace/reference/io-github-libtmux-workspace-workspacebuilder-workspacebuilder-parse/
 [workspace-reference]: https://libtmux.org/en/java/latest/workspace/reference/
