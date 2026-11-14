@@ -247,6 +247,190 @@ Returns a Server for with-open; closing it does not kill tmux.
 Use [`snapshot!`][api:libtmux.core/snapshot!] to acquire state and
 [`close!`][api:libtmux.core/close!] to release this client.
 
+#### What is on here
+
+The functions of `libtmux.core` fall into these groups:
+
+**Connecting and closing.** [`open!`][api:libtmux.core/open!] returns a Server
+for one explicit
+`:socket-path` or `:socket-name`, which `with-open` closes.
+[`close!`][api:libtmux.core/close!]
+releases only that client and never kills tmux.
+[`libtmux.control/attach!`][api:libtmux.control/attach!] attaches a separate
+control connection to a
+captured session.
+
+- Open and close: [`open!`][api:libtmux.core/open!],
+[`close!`][api:libtmux.core/close!]
+- Control: [`libtmux.control/attach!`][api:libtmux.control/attach!]
+
+**Listing everything.** [`snapshot!`][api:libtmux.core/snapshot!] acquires every
+session, window, pane
+and client as one eager captured graph.
+[`sessions!`][api:libtmux.core/sessions!],
+[`windows!`][api:libtmux.core/windows!],
+[`panes!`][api:libtmux.core/panes!] and [`clients!`][api:libtmux.core/clients!]
+each take a fresh snapshot and return one
+collection, and a failed acquisition throws.
+[`refresh!`][api:libtmux.core/refresh!] reacquires one
+reference. [`libtmux.data/windows`][api:libtmux.data/windows] and
+[`libtmux.data/panes`][api:libtmux.data/panes] traverse a
+capture locally without asking tmux again.
+
+- Acquire: [`snapshot!`][api:libtmux.core/snapshot!],
+[`refresh!`][api:libtmux.core/refresh!]
+- One collection: [`sessions!`][api:libtmux.core/sessions!],
+[`windows!`][api:libtmux.core/windows!], [`panes!`][api:libtmux.core/panes!],
+[`clients!`][api:libtmux.core/clients!]
+- Traverse a capture: [`libtmux.data/windows`][api:libtmux.data/windows],
+[`libtmux.data/panes`][api:libtmux.data/panes],
+[`libtmux.data/active-window`][api:libtmux.data/active-window],
+[`libtmux.data/active-pane`][api:libtmux.data/active-pane]
+- Plain EDN: [`libtmux.data/data`][api:libtmux.data/data]
+
+**Finding one thing.** [`find-session!`][api:libtmux.core/find-session!] looks a
+session up by exact name and
+returns `nil` when tmux has none. For anything else, filter a capture with an
+ordinary Clojure predicate or with
+[`libtmux.data/matching`][api:libtmux.data/matching], which takes a
+Java `FilterExpr`, then take the result with
+[`libtmux.data/exactly-one`][api:libtmux.data/exactly-one],
+which throws for none or several, or
+[`libtmux.data/one-or-none`][api:libtmux.data/one-or-none], which
+returns `nil` for none and throws for several.
+
+- By name: [`find-session!`][api:libtmux.core/find-session!]
+- Filter: [`libtmux.data/matching`][api:libtmux.data/matching],
+[`libtmux.data/predicate`][api:libtmux.data/predicate]
+- Take one: [`libtmux.data/exactly-one`][api:libtmux.data/exactly-one],
+[`libtmux.data/one-or-none`][api:libtmux.data/one-or-none]
+
+**Creating and removing.** [`new-session!`][api:libtmux.core/new-session!],
+[`new-window!`][api:libtmux.core/new-window!] and
+[`split-pane!`][api:libtmux.core/split-pane!] each create one thing from an
+options map, reject unknown
+keys, and return a fresh capture of it. [`kill!`][api:libtmux.core/kill!]
+removes one session, window
+or pane. [`kill-server!`][api:libtmux.core/kill-server!] ends the whole tmux
+server, which [`close!`][api:libtmux.core/close!] does
+not.
+
+- Create: [`new-session!`][api:libtmux.core/new-session!],
+[`new-window!`][api:libtmux.core/new-window!],
+[`split-pane!`][api:libtmux.core/split-pane!]
+- Remove: [`kill!`][api:libtmux.core/kill!],
+[`kill-server!`][api:libtmux.core/kill-server!]
+
+**Acting on objects.** [`rename!`][api:libtmux.core/rename!] renames a session
+or window and [`select!`][api:libtmux.core/select!]
+selects a window or pane. [`link-window!`][api:libtmux.core/link-window!],
+[`unlink-window!`][api:libtmux.core/unlink-window!] and
+[`move-window!`][api:libtmux.core/move-window!] change which session holds a
+window, and [`join-pane!`][api:libtmux.core/join-pane!] moves
+a pane into a window. [`resize!`][api:libtmux.core/resize!] sets cell dimensions
+and [`apply-layout!`][api:libtmux.core/apply-layout!]
+applies a tmux layout string.
+[`detach-client!`][api:libtmux.core/detach-client!] and
+[`switch-client!`][api:libtmux.core/switch-client!] act on
+a client from [`clients!`][api:libtmux.core/clients!].
+
+- Rename and select: [`rename!`][api:libtmux.core/rename!],
+[`select!`][api:libtmux.core/select!]
+- Windows and panes: [`link-window!`][api:libtmux.core/link-window!],
+[`unlink-window!`][api:libtmux.core/unlink-window!],
+[`move-window!`][api:libtmux.core/move-window!],
+[`join-pane!`][api:libtmux.core/join-pane!]
+- Size and layout: [`resize!`][api:libtmux.core/resize!],
+[`apply-layout!`][api:libtmux.core/apply-layout!]
+- Clients: [`detach-client!`][api:libtmux.core/detach-client!],
+[`switch-client!`][api:libtmux.core/switch-client!]
+
+**Typing into panes and reading them.**
+[`send-literal!`][api:libtmux.core/send-literal!] sends text as
+written and [`send-keys!`][api:libtmux.core/send-keys!] sends a vector of tmux
+key names; a completed send
+does not mean the application is ready. [`capture!`][api:libtmux.core/capture!]
+returns a pane's lines,
+with scrollback when `:from` is `:history`.
+[`await-text!`][api:libtmux.core/await-text!] waits within a
+positive Duration for text in a pane. [`expand!`][api:libtmux.core/expand!]
+evaluates a tmux format at
+the scope of the value it is given.
+
+- Type: [`send-literal!`][api:libtmux.core/send-literal!],
+[`send-keys!`][api:libtmux.core/send-keys!]
+- Read: [`capture!`][api:libtmux.core/capture!],
+[`await-text!`][api:libtmux.core/await-text!]
+- Formats: [`expand!`][api:libtmux.core/expand!]
+
+**Options, hooks, and environment.** [`options!`][api:libtmux.core/options!]
+reads the options set
+locally on a server, session, window or pane, or the effective inherited ones;
+[`set-option!`][api:libtmux.core/set-option!] sets an override and
+[`unset-option!`][api:libtmux.core/unset-option!] restores inheritance.
+[`hooks!`][api:libtmux.core/hooks!] returns hook names with their ordered
+command vectors, which
+[`set-hook!`][api:libtmux.core/set-hook!] replaces,
+[`append-hook!`][api:libtmux.core/append-hook!] extends and
+[`unset-hook!`][api:libtmux.core/unset-hook!] removes.
+[`environment!`][api:libtmux.core/environment!] returns the values and the names
+marked removed;
+[`set-environment!`][api:libtmux.core/set-environment!] sets a value,
+[`unset-environment!`][api:libtmux.core/unset-environment!] drops the local
+entry so the name is inherited, and
+[`remove-environment!`][api:libtmux.core/remove-environment!] masks the name
+from new processes.
+
+- Options: [`options!`][api:libtmux.core/options!],
+[`set-option!`][api:libtmux.core/set-option!],
+[`unset-option!`][api:libtmux.core/unset-option!]
+- Hooks: [`hooks!`][api:libtmux.core/hooks!],
+[`set-hook!`][api:libtmux.core/set-hook!],
+[`append-hook!`][api:libtmux.core/append-hook!],
+[`unset-hook!`][api:libtmux.core/unset-hook!]
+- Environment: [`environment!`][api:libtmux.core/environment!],
+[`set-environment!`][api:libtmux.core/set-environment!],
+[`unset-environment!`][api:libtmux.core/unset-environment!],
+[`remove-environment!`][api:libtmux.core/remove-environment!]
+
+**Buffers and channels.** [`set-buffer!`][api:libtmux.core/set-buffer!] stores
+literal contents under a
+name, [`show-buffer!`][api:libtmux.core/show-buffer!] reads them back and
+[`delete-buffer!`][api:libtmux.core/delete-buffer!] removes the
+buffer. [`buffers!`][api:libtmux.core/buffers!] lists names and byte sizes
+without reading contents, and
+[`paste-buffer!`][api:libtmux.core/paste-buffer!] sends one to a pane.
+[`await-channel!`][api:libtmux.core/await-channel!] waits on a tmux
+channel until [`signal-channel!`][api:libtmux.core/signal-channel!] releases it.
+
+- Buffers: [`buffers!`][api:libtmux.core/buffers!],
+[`set-buffer!`][api:libtmux.core/set-buffer!],
+[`show-buffer!`][api:libtmux.core/show-buffer!],
+[`delete-buffer!`][api:libtmux.core/delete-buffer!],
+[`paste-buffer!`][api:libtmux.core/paste-buffer!]
+- Channels: [`await-channel!`][api:libtmux.core/await-channel!],
+[`signal-channel!`][api:libtmux.core/signal-channel!]
+
+**Running a command.** Anything tmux can do that is not above is reachable by
+running a command directly. [`raw!`][api:libtmux.core/raw!] runs one tmux argv
+with no shell and
+returns its exit status and streams, and
+[`run-shell!`][api:libtmux.core/run-shell!] runs a shell command
+on the server. [`batch!`][api:libtmux.core/batch!] runs independent argv
+commands with explicit
+targets and [`chain!`][api:libtmux.core/chain!] runs dependent ones, which share
+tmux's implicit
+target; failed or skipped commands come back as data, and a transport failure
+throws. [`error-summary`][api:libtmux.core/error-summary] reduces a thrown
+failure to fixed metadata, without
+arguments or cause messages.
+
+- One command: [`raw!`][api:libtmux.core/raw!],
+[`run-shell!`][api:libtmux.core/run-shell!]
+- Several commands: [`batch!`][api:libtmux.core/batch!],
+[`chain!`][api:libtmux.core/chain!]
+- Failures: [`error-summary`][api:libtmux.core/error-summary]
+
 ### [`libtmux.core/options!`][libtmux.core]
 
 `(options! value)`
@@ -855,20 +1039,34 @@ deliveries have drained.
   #libtmuxcoreclients
 [api:libtmux.core/close!]:
   #libtmuxcoreclose
+[api:libtmux.core/delete-buffer!]:
+  #libtmuxcoredelete-buffer
 [api:libtmux.core/detach-client!]:
   #libtmuxcoredetach-client
 [api:libtmux.core/environment!]:
   #libtmuxcoreenvironment
 [api:libtmux.core/error-summary]:
   #libtmuxcoreerror-summary
+[api:libtmux.core/expand!]:
+  #libtmuxcoreexpand
+[api:libtmux.core/find-session!]:
+  #libtmuxcorefind-session
 [api:libtmux.core/hooks!]:
   #libtmuxcorehooks
+[api:libtmux.core/join-pane!]:
+  #libtmuxcorejoin-pane
+[api:libtmux.core/kill!]:
+  #libtmuxcorekill
 [api:libtmux.core/kill-server!]:
   #libtmuxcorekill-server
+[api:libtmux.core/link-window!]:
+  #libtmuxcorelink-window
 [api:libtmux.core/move-window!]:
   #libtmuxcoremove-window
 [api:libtmux.core/new-session!]:
   #libtmuxcorenew-session
+[api:libtmux.core/new-window!]:
+  #libtmuxcorenew-window
 [api:libtmux.core/open!]:
   #libtmuxcoreopen
 [api:libtmux.core/options!]:
@@ -883,8 +1081,12 @@ deliveries have drained.
   #libtmuxcorerefresh
 [api:libtmux.core/remove-environment!]:
   #libtmuxcoreremove-environment
+[api:libtmux.core/rename!]:
+  #libtmuxcorerename
 [api:libtmux.core/resize!]:
   #libtmuxcoreresize
+[api:libtmux.core/run-shell!]:
+  #libtmuxcorerun-shell
 [api:libtmux.core/select!]:
   #libtmuxcoreselect
 [api:libtmux.core/send-keys!]:
@@ -895,6 +1097,8 @@ deliveries have drained.
   #libtmuxcoresessions
 [api:libtmux.core/set-buffer!]:
   #libtmuxcoreset-buffer
+[api:libtmux.core/set-environment!]:
+  #libtmuxcoreset-environment
 [api:libtmux.core/set-hook!]:
   #libtmuxcoreset-hook
 [api:libtmux.core/set-option!]:
@@ -923,6 +1127,8 @@ deliveries have drained.
   #libtmuxdata
 [api:libtmux.data/active-pane]:
   #libtmuxdataactive-pane
+[api:libtmux.data/active-window]:
+  #libtmuxdataactive-window
 [api:libtmux.data/data]:
   #libtmuxdatadata
 [api:libtmux.data/entity-key]:

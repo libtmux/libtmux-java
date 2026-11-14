@@ -1,5 +1,6 @@
 (ns libtmux.internal.package-test
   (:require [clojure.java.io :as io]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :as test :refer [deftest is]]
             [libtmux.core :as tmux]
@@ -67,6 +68,35 @@
           (if value (System/setProperty key value) (System/clearProperty key)))
         (doseq [^File file (reverse (file-seq directory))]
           (Files/deleteIfExists (.toPath file)))))))
+
+(defn- directory-rows
+  "The capability directory of a docstring as [title references] rows. libtmux.org draws
+  a row only from a bold-led paragraph followed by a list of `Label: [[reference]]` items."
+  [doc]
+  (let [text (str/replace (str/trim doc) #"\n  " "\n")
+        [_ directory] (str/split text #"(?m)^#### What is on here$" 2)
+        [_intro & blocks] (str/split (str/trim (or directory "")) #"\n\n")]
+    (vec
+     (for [[guidance items] (partition 2 blocks)
+           :let [title (second (re-find #"^\*\*([^*]+)\*\*" guidance))
+                 entries (mapv second (re-seq #"(?m)^- [^:\[`]{1,40}: (.+(?:\n  .+)*)$" items))]]
+       (do (is (some? title) (str "Row without a bold lead: " guidance))
+           (is (seq entries) (str "Row without labelled references: " title))
+           (doseq [listed entries]
+             (is (empty? (str/replace listed #"\[\[[^\]]+\]\]|\band\b|[\s,]" ""))
+                 (str "Prose among references in " title ": " listed)))
+           [title (into [] (mapcat #(map second (re-seq #"\[\[([^\]]+)\]\]" %))) entries)])))))
+
+(deftest server-directory-names-every-core-function
+  (let [rows (directory-rows (:doc (meta #'tmux/open!)))
+        listed (into #{} (comp (mapcat second)
+                               (map #(if (str/includes? % "/") % (str "libtmux.core/" %))))
+                     rows)
+        public (into #{} (comp (map val) (map meta) (filter :file) (remove :no-doc)
+                               (map #(str "libtmux.core/" (:name %))))
+                     (ns-publics 'libtmux.core))]
+    (is (<= 3 (count rows)))
+    (is (= #{} (set/difference public listed)) "Every libtmux.core function is in the directory")))
 
 (defn- with-test-sources [body]
   (let [directory (.toFile (Files/createTempDirectory "clj-runner-"
