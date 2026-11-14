@@ -40,6 +40,95 @@ import kotlin.annotations.jvm.ReadOnly;
  *
  * <p>A method named for a captured field returns what {@link #info()} holds and does no I/O;
  * {@link #refresh()} reads again. Every other method asks tmux now.
+ *
+ * <h2>What is on here</h2>
+ *
+ * <p>The methods fall into a few groups:
+ *
+ * <p><strong>Reading the capture.</strong> Read what this capture stored about the pane, and the
+ * {@link Server} and {@link Window} it sits in, with no call to tmux. The id is stable and the index
+ * is state, since panes renumber as neighbours come and go. {@link #floating} is empty when the
+ * running tmux cannot say, which before 3.7 is always, and {@link #pid} is empty when tmux reported no
+ * process. {@link #currentPath} throws {@link LibTmuxException} when this JVM cannot represent the
+ * directory's name; {@link #currentPathText} is what tmux reported and never throws.
+ *
+ * <p>{@link #info}, {@link #id}, {@link #index}, {@link #active}, {@link #currentCommand},
+ * {@link #floating}, {@link #size}, {@link #position}, {@link #edges}, {@link #title},
+ * {@link #currentPath}, {@link #currentPathText}, {@link #pid}, {@link #server()}, {@link #window()}
+ *
+ * <p><strong>Sending input.</strong> {@link #send} types keys without pressing Enter and
+ * {@link #sendLine} presses it, which is how a command gets run. {@link #sendKeys} resolves each entry
+ * through tmux's key table and types an unknown name as text; {@link #sendLiteral} types every entry
+ * as the characters it spells, so {@code C-c} is three characters. {@link #paste} delivers text as one
+ * block through a private buffer that is removed afterwards, throws {@link IllegalArgumentException}
+ * for text containing NUL, and throws {@link io.github.libtmux.exception.UnsupportedFeatureException}
+ * before tmux 3.4. {@link #noteTyped} tells a later wait about text that reached the pane without
+ * passing through this handle.
+ *
+ * <ul>
+ *   <li>Keys and lines: {@link #send}, {@link #sendLine}, {@link #sendKeys}, {@link #sendLiteral}
+ *   <li>Pasting: {@link #paste}, {@link #pasteBuffer}
+ *   <li>Outside input: {@link #noteTyped}
+ * </ul>
+ *
+ * <p><strong>Reading output.</strong> {@link #capture()} returns the visible content, one element per
+ * line, read from tmux now rather than from the capture. Hand it a builder callback or a
+ * {@link CaptureSpec}, which may be reused across panes, to read part of the history; that throws
+ * {@link io.github.libtmux.exception.UnsupportedFeatureException} when the spec asks for something
+ * this server does not have. {@link #pipeTo} sends everything the pane prints to a shell command
+ * until {@link #stopPiping}.
+ *
+ * <p>{@link #capture}, {@link #pipeTo}, {@link #stopPiping}, {@link #clearHistory}
+ *
+ * <p><strong>Running and waiting.</strong> {@link #run} runs a shell command to its end and answers
+ * with its exit status and output, and throws {@link IllegalStateException} when the pane is not
+ * running a POSIX shell. Reach for it first when the command is yours. When it is not, the waits poll
+ * the screen or the pane's state on a timer and answer with why they ended, which tells text that
+ * appeared from text that was already there; a pane killed mid-wait ends {@link #watchText} as an
+ * answer rather than an exception. A signal on a {@link Server#channel} is the one exact wait.
+ * {@link #dead} reads fresh whether the pane's process has exited, and throws
+ * {@link TargetGoneException} when the pane is gone from a server that still answers.
+ *
+ * <ul>
+ *   <li>Run: {@link #run}
+ *   <li>Wait: {@link #awaitText}, {@link #watchText}, {@link #await}
+ *   <li>Process state: {@link #dead}
+ * </ul>
+ *
+ * <p><strong>Splitting and arranging.</strong> Splitting divides this pane in half, from a builder
+ * callback or a reusable {@link SplitSpec}, and returns the pane that appeared. Break the pane out
+ * into a window of its own, join it into another window, swap it with another pane, resize it by a
+ * number of cells in one direction or to exact dimensions, or make it the active pane. An unnamed
+ * {@link #breakOut()} throws {@link io.github.libtmux.exception.UnsupportedFeatureException} on exact
+ * tmux 3.7, which a named break or 3.7a avoids.
+ *
+ * <ul>
+ *   <li>Divide: {@link #split}
+ *   <li>Move: {@link #breakOut}, {@link #joinTo}, {@link #swapWith}, {@link #select}
+ *   <li>Size: {@link #resize}, {@link #resizeTo}
+ * </ul>
+ *
+ * <p><strong>Modes.</strong> Put the pane into copy mode, read live which mode it is in, as an
+ * {@link Optional} that is empty when it is showing its program, or leave whichever mode it is in.
+ *
+ * <p>{@link #copyMode}, {@link #mode}, {@link #exitMode}
+ *
+ * <p><strong>Changing the pane.</strong> Retitle it, which returns a replacement capture because this
+ * handle keeps its original state; kill what runs here and start the pane's default command, a
+ * command in a directory, or a command you give; or close it.
+ *
+ * <p>{@link #retitle}, {@link #respawn}, {@link #respawnIn}, {@link #kill}
+ *
+ * <p><strong>Options and hooks.</strong> These reach what is set on this pane alone.
+ *
+ * <p>{@link #options}, {@link #hooks}
+ *
+ * <p><strong>Formats and refreshing.</strong> Expand a tmux format, or read several named variables,
+ * in this pane's context; or take a new capture to see the pane as it is now. Refreshing leaves this
+ * handle unchanged and returns the new one, and throws {@link TargetGoneException} if the pane is
+ * gone from a server that still answers.
+ *
+ * <p>{@link #expand}, {@link #variables}, {@link #refresh}
  */
 public final class Pane {
 
