@@ -207,8 +207,11 @@ Two consequences worth knowing:
 - A snippet may show only the interesting line, but one that leans on setup it
   does not show cannot be pasted and run.
 - So the harness offers nothing by default.
+- A snippet may open with `import` lines. With any, the shared imports are
+  withdrawn and the snippet compiles on what it shows, so a missing import fails
+  the build instead of the reader.
 - A snippet that needs one declares it, visibly, as the first line inside the
-  fence:
+  fence, after any imports:
 
 ```java
 // Given: Server server

@@ -16,6 +16,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -70,6 +71,57 @@ final class SnippetCompiler {
             """;
 
     /**
+     * What a snippet that opens with its own {@code import} lines is compiled against: nothing the
+     * shared {@link #PREAMBLE} offers, so the imports a reader sees are the ones the code needs.
+     */
+    private static final String STRICT_PREAMBLE = """
+            import static org.junit.jupiter.api.Assertions.*;
+
+            """;
+
+    /** The types a {@code // Given:} line can name, and where each lives. */
+    private static final Map<String, String> FIXTURE_TYPES = Map.of(
+            "Server", "io.github.libtmux.Server",
+            "ServerConfig", "io.github.libtmux.ServerConfig",
+            "Session", "io.github.libtmux.Session",
+            "Window", "io.github.libtmux.Window",
+            "Pane", "io.github.libtmux.Pane",
+            "Options", "io.github.libtmux.Options",
+            "Path", "java.nio.file.Path",
+            "Duration", "java.time.Duration");
+
+    /** A line that is an import, which is how a snippet starts when it shows what it needs. */
+    private static final Pattern IMPORT_LINE =
+            Pattern.compile("^\\s*import\\s+(?:static\\s+)?[\\w.]+(?:\\.\\*)?\\s*;\\s*$");
+
+    /**
+     * A snippet split into the imports it opens with and everything after them.
+     *
+     * @param imports the snippet's opening lines that import, in order; empty when it shows none
+     * @param code the rest, which starts at the {@code // Given:} line when there is one
+     */
+    private record Opening(List<String> imports, String code) {
+
+        static Opening of(String code) {
+            List<String> imports = new ArrayList<>();
+            List<String> lines = code.lines().toList();
+            int next = 0;
+            while (next < lines.size()
+                    && (lines.get(next).isBlank()
+                            || IMPORT_LINE.matcher(lines.get(next)).matches())) {
+                if (!lines.get(next).isBlank()) {
+                    imports.add(lines.get(next).strip());
+                }
+                next++;
+            }
+            if (imports.isEmpty()) {
+                return new Opening(List.of(), code);
+            }
+            return new Opening(List.copyOf(imports), String.join("\n", lines.subList(next, lines.size())) + "\n");
+        }
+    }
+
+    /**
      * A binding a snippet reads but does not create, declared by a {@code // Given:} line: {@code
      * Session session, Window window}. Named for the type a reader would already have to hand, so a
      * reader who has never seen the harness still knows what to build.
@@ -115,15 +167,17 @@ final class SnippetCompiler {
         if (compiler == null) {
             throw new IllegalStateException("no system java compiler; run these tests on a JDK");
         }
+        Opening opening = Opening.of(snippet.code());
+        String code = opening.code();
         List<Given> given = List.of();
         String unit;
         if (snippet.shape() == Snippet.Shape.TYPE) {
-            unit = PREAMBLE + "\n@SuppressWarnings(\"all\")\n" + snippet.code();
+            unit = imports(opening, given) + "\n@SuppressWarnings(\"all\")\n" + code;
         } else {
-            given = parseGiven(snippet.code());
-            unit = PREAMBLE
+            given = parseGiven(code);
+            unit = imports(opening, given)
                     + harnessHeader(given)
-                    + assertShownResults(snippet.code()).stripTrailing()
+                    + assertShownResults(code).stripTrailing()
                     + HARNESS_TAIL;
         }
 
@@ -143,9 +197,28 @@ final class SnippetCompiler {
                 .map(diagnostic -> diagnostic.getMessage(Locale.ROOT))
                 .toList();
         if (errors.isEmpty() && !given.isEmpty()) {
-            errors = unusedGivenErrors(given, snippet.code());
+            errors = unusedGivenErrors(given, code);
         }
         return new Compiled(errors, classes);
+    }
+
+    /**
+     * The imports a compilation unit starts with. A snippet that shows none gets the shared
+     * {@link #PREAMBLE}; one that shows some gets only those, plus the types its own {@code Given:}
+     * line names, so a missing import fails here rather than for a reader who pastes it.
+     */
+    private static String imports(Opening opening, List<Given> given) {
+        if (opening.imports().isEmpty()) {
+            return PREAMBLE;
+        }
+        StringBuilder imports = new StringBuilder(STRICT_PREAMBLE);
+        given.stream()
+                .map(binding -> FIXTURE_TYPES.get(binding.type()))
+                .filter(Objects::nonNull)
+                .distinct()
+                .forEach(type -> imports.append("import ").append(type).append(";\n"));
+        opening.imports().forEach(line -> imports.append(line).append('\n'));
+        return imports.toString();
     }
 
     /**

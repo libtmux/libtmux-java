@@ -55,6 +55,49 @@ final class SnippetCompilerTest {
         SnippetCompiler.discard(compiled.classes());
     }
 
+    @Test
+    void aSnippetThatShowsItsImportsCompilesOnThemAlone() {
+        SnippetCompiler.Compiled compiled = COMPILER.compile(statementSnippet("""
+                import io.github.libtmux.PaneId;
+
+                // Given: Server server
+                PaneId id = server.sessions().get(0).windows().get(0).panes().get(0).id();
+                """));
+
+        assertTrue(compiled.succeeded(), "imports shown with the snippet must be enough: " + compiled.errors());
+        SnippetCompiler.discard(compiled.classes());
+    }
+
+    @Test
+    void aSnippetThatShowsImportsButUsesAnotherTypeFailsAsCannotFindSymbol() {
+        SnippetCompiler.Compiled compiled = COMPILER.compile(statementSnippet("""
+                import io.github.libtmux.PaneId;
+
+                // Given: Server server
+                TextOutcome seen = TextOutcome.APPEARED;
+                PaneId id = server.sessions().get(0).windows().get(0).panes().get(0).id();
+                """));
+
+        assertFalse(compiled.succeeded(), "a type the shown imports do not reach must not compile");
+        assertTrue(
+                compiled.errors().stream().anyMatch(error -> error.contains("cannot find symbol")),
+                "the failure must be javac's own, not something else: " + compiled.errors());
+        SnippetCompiler.discard(compiled.classes());
+    }
+
+    @Test
+    void anImportThatNamesNothingFails() {
+        SnippetCompiler.Compiled compiled = COMPILER.compile(statementSnippet("""
+                import io.github.libtmux.NoSuchType;
+
+                // Given: Server server
+                server.version();
+                """));
+
+        assertFalse(compiled.succeeded(), "an import of a type that does not exist must not compile");
+        SnippetCompiler.discard(compiled.classes());
+    }
+
     private static Snippet statementSnippet(String code) {
         return new Snippet(
                 Path.of("SnippetCompilerTest.java"), 1, Snippet.Expectation.RUNS, "", Snippet.Shape.STATEMENTS, code);
