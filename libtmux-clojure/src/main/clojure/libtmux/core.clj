@@ -126,7 +126,115 @@
   Optional `:binary` is a command name or path; `:config-file` is a path;
   `:timeout` is a positive java.time.Duration. Unknown keys are rejected.
   Returns a Server for with-open; closing it does not kill tmux.
-  Use [[snapshot!]] to acquire state and [[close!]] to release this client."
+  Use [[snapshot!]] to acquire state and [[close!]] to release this client.
+
+  #### What is on here
+
+  The functions of `libtmux.core` fall into these groups:
+
+  **Connecting and closing.** [[open!]] returns a Server for one explicit
+  `:socket-path` or `:socket-name`, which `with-open` closes. [[close!]]
+  releases only that client and never kills tmux.
+  [[libtmux.control/attach!]] attaches a separate control connection to a
+  captured session.
+
+  - Open and close: [[open!]], [[close!]]
+  - Control: [[libtmux.control/attach!]]
+
+  **Listing everything.** [[snapshot!]] acquires every session, window, pane
+  and client as one eager captured graph. [[sessions!]], [[windows!]],
+  [[panes!]] and [[clients!]] each take a fresh snapshot and return one
+  collection, and a failed acquisition throws. [[refresh!]] reacquires one
+  reference. [[libtmux.data/windows]] and [[libtmux.data/panes]] traverse a
+  capture locally without asking tmux again.
+
+  - Acquire: [[snapshot!]], [[refresh!]]
+  - One collection: [[sessions!]], [[windows!]], [[panes!]], [[clients!]]
+  - Traverse a capture: [[libtmux.data/windows]], [[libtmux.data/panes]],
+    [[libtmux.data/active-window]], [[libtmux.data/active-pane]]
+  - Plain EDN: [[libtmux.data/data]]
+
+  **Finding one thing.** [[find-session!]] looks a session up by exact name and
+  returns `nil` when tmux has none. For anything else, filter a capture with an
+  ordinary Clojure predicate or with [[libtmux.data/matching]], which takes a
+  Java `FilterExpr`, then take the result with [[libtmux.data/exactly-one]],
+  which throws for none or several, or [[libtmux.data/one-or-none]], which
+  returns `nil` for none and throws for several.
+
+  - By name: [[find-session!]]
+  - Filter: [[libtmux.data/matching]], [[libtmux.data/predicate]]
+  - Take one: [[libtmux.data/exactly-one]], [[libtmux.data/one-or-none]]
+
+  **Creating and removing.** [[new-session!]], [[new-window!]] and
+  [[split-pane!]] each create one thing from an options map, reject unknown
+  keys, and return a fresh capture of it. [[kill!]] removes one session, window
+  or pane. [[kill-server!]] ends the whole tmux server, which [[close!]] does
+  not.
+
+  - Create: [[new-session!]], [[new-window!]], [[split-pane!]]
+  - Remove: [[kill!]], [[kill-server!]]
+
+  **Acting on objects.** [[rename!]] renames a session or window and [[select!]]
+  selects a window or pane. [[link-window!]], [[unlink-window!]] and
+  [[move-window!]] change which session holds a window, and [[join-pane!]] moves
+  a pane into a window. [[resize!]] sets cell dimensions and [[apply-layout!]]
+  applies a tmux layout string. [[detach-client!]] and [[switch-client!]] act on
+  a client from [[clients!]].
+
+  - Rename and select: [[rename!]], [[select!]]
+  - Windows and panes: [[link-window!]], [[unlink-window!]], [[move-window!]],
+    [[join-pane!]]
+  - Size and layout: [[resize!]], [[apply-layout!]]
+  - Clients: [[detach-client!]], [[switch-client!]]
+
+  **Typing into panes and reading them.** [[send-literal!]] sends text as
+  written and [[send-keys!]] sends a vector of tmux key names; a completed send
+  does not mean the application is ready. [[capture!]] returns a pane's lines,
+  with scrollback when `:from` is `:history`. [[await-text!]] waits within a
+  positive Duration for text in a pane. [[expand!]] evaluates a tmux format at
+  the scope of the value it is given.
+
+  - Type: [[send-literal!]], [[send-keys!]]
+  - Read: [[capture!]], [[await-text!]]
+  - Formats: [[expand!]]
+
+  **Options, hooks, and environment.** [[options!]] reads the options set
+  locally on a server, session, window or pane, or the effective inherited ones;
+  [[set-option!]] sets an override and [[unset-option!]] restores inheritance.
+  [[hooks!]] returns hook names with their ordered command vectors, which
+  [[set-hook!]] replaces, [[append-hook!]] extends and [[unset-hook!]] removes.
+  [[environment!]] returns the values and the names marked removed;
+  [[set-environment!]] sets a value, [[unset-environment!]] drops the local
+  entry so the name is inherited, and [[remove-environment!]] masks the name
+  from new processes.
+
+  - Options: [[options!]], [[set-option!]], [[unset-option!]]
+  - Hooks: [[hooks!]], [[set-hook!]], [[append-hook!]], [[unset-hook!]]
+  - Environment: [[environment!]], [[set-environment!]], [[unset-environment!]],
+    [[remove-environment!]]
+
+  **Buffers and channels.** [[set-buffer!]] stores literal contents under a
+  name, [[show-buffer!]] reads them back and [[delete-buffer!]] removes the
+  buffer. [[buffers!]] lists names and byte sizes without reading contents, and
+  [[paste-buffer!]] sends one to a pane. [[await-channel!]] waits on a tmux
+  channel until [[signal-channel!]] releases it.
+
+  - Buffers: [[buffers!]], [[set-buffer!]], [[show-buffer!]],
+    [[delete-buffer!]], [[paste-buffer!]]
+  - Channels: [[await-channel!]], [[signal-channel!]]
+
+  **Running a command.** Anything tmux can do that is not above is reachable by
+  running a command directly. [[raw!]] runs one tmux argv with no shell and
+  returns its exit status and streams, and [[run-shell!]] runs a shell command
+  on the server. [[batch!]] runs independent argv commands with explicit
+  targets and [[chain!]] runs dependent ones, which share tmux's implicit
+  target; failed or skipped commands come back as data, and a transport failure
+  throws. [[error-summary]] reduces a thrown failure to fixed metadata, without
+  arguments or cause messages.
+
+  - One command: [[raw!]], [[run-shell!]]
+  - Several commands: [[batch!]], [[chain!]]
+  - Failures: [[error-summary]]"
   [options]
   (closed! :open options {:socket-path path? :socket-name string? :binary string?
                           :config-file path? :timeout duration?})
