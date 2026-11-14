@@ -69,6 +69,10 @@ windows:
 [`Server`][server]:
 
 ```java
+import io.github.libtmux.Session;
+import io.github.libtmux.workspace.Workspace;
+import io.github.libtmux.workspace.WorkspaceBuilder;
+
 // Given: Server server
 Workspace workspace = WorkspaceBuilder.parse("""
         session_name: built
@@ -92,6 +96,10 @@ Session session = WorkspaceBuilder.build(server, workspace);
 `build` returns the session it made, so there is nothing to look up afterwards:
 
 ```java
+import io.github.libtmux.Session;
+import io.github.libtmux.workspace.Workspace;
+import io.github.libtmux.workspace.WorkspaceBuilder;
+
 // Given: Server server
 Workspace workspace = WorkspaceBuilder.parse("""
         session_name: built
@@ -119,6 +127,9 @@ session.windows().get(0).panes().size();          // → 2
 It adds a session; it does not take over the one you had:
 
 ```java
+import io.github.libtmux.workspace.Workspace;
+import io.github.libtmux.workspace.WorkspaceBuilder;
+
 // Given: Server server
 Workspace workspace = WorkspaceBuilder.parse("session_name: added\nwindows:\n  - window_name: w\n");
 
@@ -138,6 +149,8 @@ exists:
 
 <!-- snippet: throws: IllegalArgumentException -->
 ```java
+import io.github.libtmux.workspace.WorkspaceBuilder;
+
 WorkspaceBuilder.parse("session_name: s\nwindows:\n  - window_name: w\n    layout: sideways");
 // IllegalArgumentException — tmux has no layout called "sideways"
 ```

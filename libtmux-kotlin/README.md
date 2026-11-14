@@ -64,6 +64,8 @@ over the matching Java handle. `withServer` closes the server even if the block
 throws or is cancelled:
 
 ```kotlin
+import io.github.libtmux.kotlin.withServer
+
 // Given: config: ServerConfig
 withServer(config) { server ->
     val session = server.newSession("build")
@@ -72,8 +74,6 @@ withServer(config) { server ->
     server.admissionBound > 0             // → true
 }
 ```
-
-It runs against a real tmux, and every value after a `→` is asserted.
 
 - Each class answers its Java handle as `asJava`, and `Server.fromJava` wraps a
   server opened in Java.
@@ -91,6 +91,8 @@ It runs against a real tmux, and every value after a `→` is asserted.
 [`SplitBuilder`][split-builder] nest, so the code reads like the layout:
 
 ```kotlin
+import io.github.libtmux.kotlin.withServer
+
 // Given: config: ServerConfig
 withServer(config) { server ->
     val session = server.newSession {
@@ -122,10 +124,11 @@ command to its end. `orNull` turns the exit status's [`OptionalInt`][ornull]
 into a Kotlin nullable:
 
 ```kotlin
-// Given: config: ServerConfig
 import io.github.libtmux.kotlin.orNull
+import io.github.libtmux.kotlin.withServer
 import kotlin.time.Duration.Companion.seconds
 
+// Given: config: ServerConfig
 withServer(config) { server ->
     val session = server.newSession("keys-demo")
     val pane = session.activeWindow?.activePane ?: error("no active pane")
@@ -149,10 +152,12 @@ static `Pane_.command()`. They are generated from the same `field-catalog.tsv`
 that generates the Java metamodel, so the two cannot disagree:
 
 ```kotlin
-// Given: config: ServerConfig
+import io.github.libtmux.kotlin.Pane
 import io.github.libtmux.kotlin.query.active
 import io.github.libtmux.kotlin.query.command
+import io.github.libtmux.kotlin.withServer
 
+// Given: config: ServerConfig
 withServer(config) { server ->
     server.newSession("query-demo")
     val editors = server.panes(Pane.command startsWith "nvim")
@@ -214,6 +219,9 @@ compiler rejects it.
 ### [`retryIfSafe`][retry-if-safe]: retry only when it is safe
 
 ```kotlin
+import io.github.libtmux.kotlin.retryIfSafe
+import io.github.libtmux.kotlin.withServer
+
 // Given: config: ServerConfig
 withServer(config) { server ->
     val version = retryIfSafe(times = 3) { server.version() }
@@ -238,10 +246,12 @@ Ordinary suspend operations retain the core 3.3a minimum.
 
 <!-- snippet: control: subscriptions require managed control -->
 ```kotlin
-// Given: config: ServerConfig
 import io.github.libtmux.control.Delivery
+import io.github.libtmux.kotlin.withControl
+import io.github.libtmux.kotlin.withServer
 import kotlinx.coroutines.flow.first
 
+// Given: config: ServerConfig
 withServer(config) { server ->
     val session = server.newSession("flow-demo")
     withControl(server, session) { control ->
@@ -270,9 +280,11 @@ withServer(config) { server ->
 
 <!-- snippet: control: subscriptions require managed control -->
 ```kotlin
-// Given: config: ServerConfig
+import io.github.libtmux.kotlin.withLiveState
+import io.github.libtmux.kotlin.withServer
 import kotlinx.coroutines.flow.first
 
+// Given: config: ServerConfig
 withServer(config) { server ->
     val session = server.newSession("live-demo")
     server.withLiveState(session) { live ->
@@ -302,15 +314,7 @@ withServer(config) { server ->
 
 ## Support and status
 
-- **Kotlin 2.1 or later.** The module is compiled for Kotlin 2.2 metadata and
-  the 2.2 standard library, the level kotlinx-coroutines 1.11 is compiled for.
-  A Kotlin compiler reads metadata up to one minor version newer than itself.
-- **A guarded floor.** `ConsumerBaselineTest` fails if a build raises that
-  level.
-- **Examples run.** Every Kotlin example above is executed against a real tmux
-  server by
-  [`ReadmeExamplesTest`](src/test/kotlin/io/github/libtmux/kotlin/ReadmeExamplesTest.kt),
-  one test per section.
+- **Kotlin 2.1 or newer.**
 - **Releases.** Releases are numbered `0.1.N`, and each release increments
   `N`. The API is not settled: any release may change or remove exported
   identifiers, and the changelog marks each break. Pin an exact version to

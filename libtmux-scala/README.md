@@ -70,8 +70,7 @@ Using.resource(Server.open(config)) { server =>
 }
 ```
 
-It runs against a real tmux. The operation closes its owned client and leaves
-the daemon running.
+The operation closes its client and leaves tmux running.
 
 - [`Server.panes()`][server] acquires state. Reading `info`, traversing
   [`Pane.window`][pane], or filtering the captured vector performs no further
@@ -92,8 +91,7 @@ the daemon running.
 ## Support and status
 
 - **Scala 3.9 and JDK 25 or newer.**
-- **tmux 3.3a through 3.7c**, which the Java library supports and every tmux
-  lane in CI runs these suites against.
+- **tmux 3.3a through 3.7c**, the Java library's range.
   [Compatibility](../docs/guide/scala/compatibility.md) has the detail.
 - **Releases.** Releases are numbered `0.1.N`, and each release increments
   `N`. The API is not settled: any release may change or remove exported

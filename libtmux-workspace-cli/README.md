@@ -21,7 +21,7 @@
 [Load][cli-load] a [tmuxp][tmuxp]-style file into a session,
 [capture][cli-freeze] a session back into a file, [convert][cli-convert] it
 between YAML and JSON, or [import][cli-import] a tmuxinator or Teamocil project.
-Flags follow tmuxp 1.74.0, and every command can answer in JSON or NDJSON.
+Flags follow tmuxp, and every command can answer in JSON or NDJSON.
 
 `io.github.libtmux:libtmux-workspace-cli` — [on Maven
 Central](https://central.sonatype.com/artifact/io.github.libtmux/libtmux-workspace-cli).
@@ -207,7 +207,7 @@ Then the agent can:
 | `ls` | lists the local project and global workspaces | [`ls`][cli-ls] |
 | `search` | searches names, paths, sessions, windows and pane commands | [`search`][cli-search] |
 | `edit` | resolves a workspace and opens it in `EDITOR` | [`edit`][cli-edit] |
-| `shell` | opens a Python shell on a session; needs Python with tmuxp 1.74.0 | [`shell`][cli-shell] |
+| `shell` | opens a Python shell on a session; needs Python with tmuxp | [`shell`][cli-shell] |
 | `debug-info` | reports runtime and configuration diagnostics | [`debug-info`][cli-debug-info] |
 | `--generate` | writes the command schema or Bash, Zsh or Fish completion | [completion][cli-completion] |
 
@@ -230,8 +230,8 @@ Then the agent can:
 ## Support and status
 
 - **JDK 25 or newer**, and **tmux 3.3a or newer**.
-- **Linux, including WSL.** CI runs on Ubuntu. macOS is supported on a
-  best-effort basis, and CI coverage for it is highly limited.
+- **Linux, including WSL.** macOS is supported on a best-effort basis, with
+  limited CI coverage.
 - **Releases.** Releases are numbered `0.1.N`, and each release increments
   `N`. The API is not settled: any release may change or remove exported
   identifiers, and the changelog marks each break. Pin an exact version to
@@ -241,11 +241,8 @@ Then the agent can:
   line. A failure names one `code`, and the exit status is `0`, `1`, `2` or
   `130`. [Output][ref-output] has the full contract.
 - **Optional Python.** Only `shell`, tmuxp plugins and custom builders need
-  Python with tmuxp 1.74.0, named by `TMUX_WORKSPACE_PYTHON`, and a Python
-  libtmux whose `TMUX_OPTIONAL_FEATURE_POLICY_VERSION` is 2 or more. No
-  released libtmux has that yet; it comes with
-  [tmux-python/libtmux#780](https://github.com/tmux-python/libtmux/pull/780),
-  so install libtmux from that source or skip those features.
+  Python with tmuxp, named by `TMUX_WORKSPACE_PYTHON`. [Python][ref-python]
+  says which tmuxp and libtmux they need.
 
 ## Documentation
 

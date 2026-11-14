@@ -54,6 +54,15 @@ Ask for a [`Server`][server] and you get one that is already running, with a
 session in it:
 
 ```java
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.github.libtmux.Pane;
+import io.github.libtmux.Server;
+import io.github.libtmux.Session;
+import io.github.libtmux.junit5.TmuxExtension;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
 @ExtendWith(TmuxExtension.class)
 class MyToolTest {
 
@@ -69,13 +78,18 @@ class MyToolTest {
 }
 ```
 
-The documentation suite compiles this class.
-
 ### [`TmuxSocketPath`][socket-path]: the socket, for code that takes a path
 
 Ask for a `TmuxSocketPath` and you get the socket:
 
 ```java
+import io.github.libtmux.ServerConfig;
+import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.junit5.TmuxExtension;
+import io.github.libtmux.junit5.TmuxSocketPath;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
 @ExtendWith(TmuxExtension.class)
 class MyOtherTest {
 
@@ -166,6 +180,11 @@ does:
   a shell, so keys sent to a pane are only recorded.
 
 ```java
+import io.github.libtmux.Pane;
+import io.github.libtmux.PaneId;
+import io.github.libtmux.Server;
+import io.github.libtmux.junit5.FakeTmux;
+
 FakeTmux tmux = new FakeTmux();
 PaneId editor = tmux.addSession("work");
 tmux.show(editor, "$ make", "make: Nothing to be done.");
@@ -186,6 +205,15 @@ pushes what a pane wrote, so code that reads an
 [`EventSubscription`][subscription] can be tested without tmux:
 
 ```java
+import io.github.libtmux.PaneId;
+import io.github.libtmux.Server;
+import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.Delivery;
+import io.github.libtmux.control.EventSubscription;
+import io.github.libtmux.control.PaneOutput;
+import io.github.libtmux.junit5.FakeTmux;
+import java.time.Duration;
+
 FakeTmux tmux = new FakeTmux();
 PaneId pane = tmux.addSession("work");
 

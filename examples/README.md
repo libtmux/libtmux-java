@@ -5,10 +5,6 @@
 The README and the guides carry snippets. These are the other thing: complete
 programs with a `main`, short enough to read in one go and real enough to run.
 
-**Every one is executed by this module's own suite against a real tmux**, so an
-example that stopped working fails the build. Examples rot silently otherwise —
-they are the part of a project nobody compiles and everybody reads first.
-
 | example | shows |
 | --- | --- |
 | [`BuildAWorkspace`](src/main/java/io/github/libtmux/examples/BuildAWorkspace.java) | making a session, a window, a split, and choosing a layout |
@@ -49,14 +45,8 @@ $ java -cp examples/build/classes/java/main:libtmux/build/classes/java/main \
     io.github.libtmux.examples.FindPanesRunning /tmp/libtmux-java-dev/demo/s nvim
 ```
 
-The suite launches each program's own `main` in a fresh JVM and checks what it
-prints, so what it runs is exactly what you run. A new program without a launch
-there fails the build.
-
 The Scala programs take the tmux executable, socket path and configuration file
-as their three arguments, and each runs against a fresh server of its own that
-must still have its original sessions and clients when the program returns. The
-Cats programs run their `IO` in `main`: building the value alone does nothing.
+as their arguments. The Cats programs run their `IO` in `main`.
 
 ## Next
 

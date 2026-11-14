@@ -41,7 +41,7 @@ API reference: [libtmux.org][reference] for the current trunk,
 
 ## Quick start
 
-Add it through the BOM. It needs JDK 25 and a tmux between 3.3a and 3.7c:
+Add it through the BOM. It needs JDK 25 or newer and tmux 3.3a through 3.7c:
 
 <!-- snippet: skip: build configuration, not library code -->
 ```kotlin
@@ -75,32 +75,53 @@ dependencies {
 </details>
 
 [`Server.open`][server] connects to the tmux server a
-[`ServerConfig`][serverconfig] describes, and
-[`Server.newSession(String)`][server-newsession] creates a [`Session`][session].
-A session makes [`Window`][window]s, and a window splits into [`Pane`][pane]s:
-
-These API previews use independent documentation fixtures and shared imports.
-Each `// Given:` names an input the fixture supplies. The [common API
-programs](../examples/api/README.md) include imports and owned server setup.
+[`ServerConfig`][serverconfig] describes. This program starts a tmux server of
+its own, makes a [`Session`][session], a [`Window`][window] and a split
+[`Pane`][pane], runs a command, and removes the server:
 
 ```java
-// Given: Path socket
+import io.github.libtmux.Pane;
+import io.github.libtmux.PaneRun;
+import io.github.libtmux.Server;
+import io.github.libtmux.ServerConfig;
+import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.Session;
+import io.github.libtmux.Window;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+
+Path directory = Files.createTempDirectory("demo-");
+Path socket = directory.resolve("tmux.sock");
 ServerConfig config = ServerConfig.builder()
-        .endpoint(ServerEndpoint.socketPath(socket))   // wherever you want the server to live
+        .endpoint(ServerEndpoint.socketPath(socket))
         .build();
 
 try (Server server = Server.open(config)) {
-    Session session = server.newSession("demo");
-    Window window = session.newWindow("build");
-    Pane pane = window.split();
+    try {
+        Session session = server.newSession("demo");
+        Window window = session.newWindow("build");
+        Pane pane = window.split();
 
-    pane.sendLine("echo hello from libtmux");
-    List<String> shown = pane.capture();
+        PaneRun ran = pane.run("echo hello from libtmux", Duration.ofSeconds(30));
+
+        ran.output();                      // → [hello from libtmux]
+        ran.exitStatus().getAsInt();       // → 0
+    } finally {
+        server.killServer();
+    }
+} finally {
+    Files.deleteIfExists(socket);
+    Files.delete(directory);
 }
 ```
 
-This separate example uses a fresh fixture; it creates `demo` again before
-reading it back:
+Closing a [`Server`][server] closes your client and leaves tmux running.
+[`Server.killServer`][server-killserver] stops tmux itself, and tmux leaves its
+socket file behind.
+
+Later examples start from a `server` you already have, as their `// Given:`
+line says:
 
 ```java
 // Given: Server server
@@ -113,9 +134,6 @@ window.name();                             // → build
 window.refresh().panes().size();           // → 2
 ```
 
-Closing a [`Server`][server] closes your client. The tmux server and its
-sessions keep running after your program exits.
-
 ## Read what tmux has
 
 ### [`server.sessions()`][server]: one read, then handles
@@ -125,6 +143,8 @@ from a session to its windows to their panes and back issues **no further
 commands**, so a traversal can never observe a half-changed server.
 
 ```java
+import io.github.libtmux.Session;
+
 // Given: Server server
 Session session = server.sessions().get(0);
 
@@ -147,6 +167,10 @@ stream unchanged — and because the capture is already in hand, filtering costs
 nothing.
 
 ```java
+import io.github.libtmux.Window;
+import io.github.libtmux.Window_;
+import java.util.List;
+
 // Given: Server server
 server.sessions().get(0).newWindow("logs");
 
@@ -195,6 +219,8 @@ Full guide: **[Filtering](../docs/guide/filtering.md)**.
 invocation:
 
 ```java
+import io.github.libtmux.batch.BatchResult;
+
 // Given: Server server
 BatchResult result = server.batch()
         .add("new-window", "-d", "-n", "one")
@@ -219,6 +245,8 @@ commands for tmux events; the [options and hooks topic][options-and-hooks]
 covers the scopes:
 
 ```java
+import io.github.libtmux.Options;
+
 // Given: Server server
 Options options = server.sessions().get(0).options();
 
@@ -236,6 +264,10 @@ the [transport][tmuxtransport] reports which of the two happened, and
 [`DispatchException`][dispatchexception] says how far a command got:
 
 ```java
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.transport.DispatchOutcome;
+import java.util.List;
+
 // Given: Server server
 try {
     server.cmd(List.of("kill-session", "-t", "=gone"));
@@ -266,9 +298,8 @@ try {
 
 ## Packages
 
-Each heading below links to its directory on GitHub. The module exports the nine
-packages above and no others; `io.github.libtmux.internal` is public only
-because they share it.
+Each heading below links to its directory on GitHub. The module exports the
+packages above and no others.
 
 Kotlin, Scala, Jackson, JUnit 5, MCP and the workspace tools are modules of
 their own, under [Modules][modules] in the root README.
@@ -286,6 +317,9 @@ and [libtmux.org][libtmux-org-en-java-latest-reference].
 exit status comes back in the result and throws nothing:
 
 ```java
+import io.github.libtmux.PaneRun;
+import java.time.Duration;
+
 // Given: Pane pane
 PaneRun ran = pane.run("printf 'built\\n'; exit 3", Duration.ofSeconds(30));
 
@@ -300,6 +334,10 @@ and [`Selections`][selections] says how many matches a caller expects.
 Reference: [javadoc.io][javadoc-query] and [libtmux.org][filterexpr].
 
 ```java
+import io.github.libtmux.Window;
+import io.github.libtmux.Window_;
+import io.github.libtmux.query.FilterExpr;
+
 // Given: Server server
 server.newSession("build").newWindow("editor");
 
@@ -318,6 +356,9 @@ asks tmux nothing. [`ServerMirror`][servermirror] keeps one current. Reference:
 and [libtmux.org][serversnapshot].
 
 ```java
+import io.github.libtmux.snapshot.ServerSnapshot;
+import io.github.libtmux.snapshot.SessionState;
+
 // Given: Server server
 ServerSnapshot snapshot = server.snapshot();
 SessionState first = snapshot.sessions().get(0);
@@ -335,6 +376,8 @@ Reference:
 and [libtmux.org][commandresult].
 
 ```java
+import io.github.libtmux.transport.CommandResult;
+
 // Given: Server server
 CommandResult listed = server.cmd("list-sessions", "-F", "#{session_name}");
 
@@ -355,6 +398,12 @@ operations retain the core 3.3a minimum.
 
 <!-- snippet: control: subscriptions require managed control -->
 ```java
+import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.Delivery;
+import io.github.libtmux.control.EventSubscription;
+import io.github.libtmux.control.PaneOutput;
+import java.time.Duration;
+
 // Given: Server server, Session session
 try (ControlClient client = server.control(session);
         EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
@@ -377,6 +426,8 @@ try (ControlClient client = server.control(session);
 and [libtmux.org][batch].
 
 ```java
+import io.github.libtmux.batch.BatchResult;
+
 // Given: Server server
 BatchResult result = server.batch()
         .add("new-window", "-d", "-n", "one")
@@ -397,6 +448,9 @@ separator cannot shift the fields after it. Reference:
 and [libtmux.org][rowformat].
 
 ```java
+import io.github.libtmux.format.RowFormat;
+import io.github.libtmux.transport.CommandResult;
+
 // Given: Server server
 RowFormat format = RowFormat.of("session_name", "session_windows");
 
@@ -415,6 +469,18 @@ compile when a new kind of failure appears. Reference:
 and [libtmux.org][libtmuxexception].
 
 ```java
+import io.github.libtmux.exception.CardinalityException;
+import io.github.libtmux.exception.CommandRejectedException;
+import io.github.libtmux.exception.ControlEndedException;
+import io.github.libtmux.exception.DispatchException;
+import io.github.libtmux.exception.LibTmuxException;
+import io.github.libtmux.exception.MalformedResponseException;
+import io.github.libtmux.exception.ServerUnavailableException;
+import io.github.libtmux.exception.TargetGoneException;
+import io.github.libtmux.exception.UnencodableTextException;
+import io.github.libtmux.exception.UnsupportedFeatureException;
+import java.util.function.Function;
+
 Function<LibTmuxException, String> nextStep = failure -> switch (failure) {
     case TargetGoneException gone -> "look it up again";
     case ServerUnavailableException unavailable -> "start a server";
@@ -440,6 +506,8 @@ facades and the generated reference are built from one list. Reference:
 and [libtmux.org][operation].
 
 ```java
+import io.github.libtmux.Session;
+
 var rename = Session.class.getMethod("rename", String.class);
 
 rename.getAnnotation(io.github.libtmux.catalog.Operation.class).value();   // → MUTATION
@@ -455,18 +523,15 @@ rename.getAnnotation(io.github.libtmux.catalog.Operation.class).value();   // �
 
 ## Support and status
 
-- **JDK 25 or newer**, and **tmux 3.3a through 3.7c**. tmux release candidates
-  are not supported: a feature can require one only until its release ships,
-  and a candidate such as `X.Y-rcN` parses and ranks below `X.Y`. See
-  [Release candidates][tmux-release-candidates].
-- **Linux, including WSL.** CI runs on Ubuntu. macOS is supported on a
-  best-effort basis, and CI coverage for it is highly limited.
+- **JDK 25 or newer**, and **tmux 3.3a through 3.7c.**
+- **No release candidates.** A candidate such as `X.Y-rcN` ranks below `X.Y`.
+  See [Release candidates][tmux-release-candidates].
+- **Linux, including WSL.** macOS is supported on a best-effort basis, with
+  limited CI coverage.
 - **Releases.** Releases are numbered `0.1.N`, and each release increments
   `N`. The API is not settled: any release may change or remove exported
   identifiers, and the changelog marks each break. Pin an exact version to
   avoid one.
-- **Reference.** [libtmux.org][reference] for the current trunk,
-  [javadoc.io][javadoc-libtmux] for a released version.
 
 ## Documentation
 
@@ -520,6 +585,7 @@ rename.getAnnotation(io.github.libtmux.catalog.Operation.class).value();   // �
 [rowformat]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-format-rowformat-rowformat/
 [selections]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-query-selections-selections/
 [server]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server/
+[server-killserver]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server-killserver/
 [server-newsession]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server-newsession/
 [serverconfig]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-serverconfig-serverconfig/
 [servermirror]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-snapshot-servermirror-servermirror/

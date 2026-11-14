@@ -63,8 +63,7 @@ Server.resource[IO](config).use { server =>
 }
 ```
 
-It compiles for Scala 3.9 and runs against a real tmux in the documentation
-suite. It prints the current command of each active pane.
+It prints the current command of each active pane.
 
 ## Observe tmux change
 

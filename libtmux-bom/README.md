@@ -61,10 +61,6 @@ dependencies {
 ```
 </details>
 
-Mixing two releases of these artifacts is the failure a platform exists to
-prevent, and it is easy to do by hand when three coordinates each carry their
-own version string.
-
 ### `./gradlew dependencies`: check it took
 
 After adding the platform, the coordinates need no version. If one still does,
@@ -97,12 +93,8 @@ platform doing its job.
 [`libtmux-scala-cats`](../libtmux-scala-cats/) ·
 [`libtmux-scala-ox`](../libtmux-scala-ox/)
 
-A test checks that list:
-
-- `platformCoversEveryPublishedModule` fails the build when the set of published
-  artifacts stops matching this one.
-- The Scala artifacts carry the `_3` suffix in their coordinates, as every
-  Scala 3 artifact does.
+The Scala artifacts carry the `_3` suffix in their coordinates, as every Scala
+3 artifact does.
 
 ## What it leaves out
 
@@ -114,8 +106,6 @@ A test checks that list:
 - **Releases.** Releases are numbered `0.1.N`, and each release increments
   `N`. Pin an exact version, not a range: any release may change or remove
   exported identifiers.
-- **Checked.** The version in every install block is held to the version this
-  build publishes.
 
 ## Documentation
 

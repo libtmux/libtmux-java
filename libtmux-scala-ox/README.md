@@ -71,8 +71,7 @@ supervised {
 }
 ```
 
-It runs against a real tmux in the documentation suite. Both flows are cold:
-nothing is read until the flow runs.
+Both flows are cold: nothing is read until the flow runs.
 
 [`WatchWithOx`][example] is a runnable program: a supervised fork collects a
 live view's flow while the main body adds a window.

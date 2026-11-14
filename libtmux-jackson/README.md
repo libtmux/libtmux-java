@@ -57,6 +57,10 @@ It takes the expression and the model that gives its fields their identity.
 [`LibTmuxModels.pane()`][models] is the model for a [`Pane`][pane] filter:
 
 ```java
+import io.github.libtmux.Pane_;
+import io.github.libtmux.jackson.FilterJson;
+import io.github.libtmux.jackson.LibTmuxModels;
+
 String json = FilterJson.writeString(
         Pane_.command().startsWith("nvim"), LibTmuxModels.pane());
 
@@ -67,6 +71,12 @@ json.contains("pane_current_command");    // → true
 ### [`FilterJson.readString`][filter-json]: a document as an expression
 
 ```java
+import io.github.libtmux.Pane;
+import io.github.libtmux.Pane_;
+import io.github.libtmux.jackson.FilterJson;
+import io.github.libtmux.jackson.LibTmuxModels;
+import io.github.libtmux.query.FilterExpr;
+
 String json = FilterJson.writeString(
         Pane_.command().startsWith("nvim"), LibTmuxModels.pane());
 
@@ -81,6 +91,12 @@ It is a `Predicate`, so it drops straight into a stream over a capture you
 already hold. Reading it from JSON changes nothing about how it is applied:
 
 ```java
+import io.github.libtmux.Pane;
+import io.github.libtmux.Pane_;
+import io.github.libtmux.jackson.FilterJson;
+import io.github.libtmux.jackson.LibTmuxModels;
+import io.github.libtmux.query.FilterExpr;
+
 // Given: Server server
 String json = FilterJson.writeString(Pane_.active().isTrue(), LibTmuxModels.pane());
 FilterExpr<Pane> active = FilterJson.readString(json, LibTmuxModels.pane());
@@ -139,6 +155,12 @@ Only the exact handles the supplied model declares have wire identity:
 
 <!-- snippet: throws: SchemaException -->
 ```java
+import io.github.libtmux.Session;
+import io.github.libtmux.jackson.FilterJson;
+import io.github.libtmux.jackson.LibTmuxModels;
+import io.github.libtmux.query.Fields;
+import io.github.libtmux.query.FilterExpr;
+
 FilterExpr<Session> mine = Fields.text("session_name", (Session s) -> s.name().toLowerCase())
         .is("demo");
 

@@ -323,8 +323,8 @@ long-lived event stream; the [streaming guide][streaming] covers it.
   answer reports the ceiling it enforced.
 - A waiting call holds the agent's turn for up to the cap. The server keeps
   answering other calls meanwhile.
-- A client's request deadline is separate. The Java SDK 2.0.1 client defaults
-  to 20 seconds, so configure it above any longer wait you request.
+- A client's request deadline is separate. The Java SDK client defaults to 20
+  seconds, so configure it above any longer wait you request.
 - With that SDK, cancelling or timing out abandons the answer but does not stop
   the handler or undo tmux changes it already dispatched. Inspect state before
   retrying.
@@ -548,6 +548,9 @@ before closing the library's [`Server`][server]:
 
 <!-- snippet: compile-only: the embedding host owns the process lifetime and closes both servers -->
 ```java
+import io.github.libtmux.Server;
+import io.github.libtmux.mcp.TmuxMcpServer;
+
 // Given: ServerConfig config
 Server server = Server.open(config);
 
