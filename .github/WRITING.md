@@ -20,24 +20,54 @@ and what contract you are buying into — in that order, and then it stops.
 Anything a reader does not need in order to run the package belongs on
 libtmux.org or under `docs/`, with a link from here.
 
+## README shape
+
 Readers skim it, so it follows one shape:
 
+- **The header is a logo, a centred title and a badge row.** CI, Maven Central,
+  libtmux.org and the license. A badge or link for a page that does not return
+  200 does not go in.
 - **The quick start comes first.** Install, then one example that runs.
 - **Sections are tasks, in the reader's words.** A `##` heading says what the
   reader is doing, such as `Find sessions, windows, and panes`. A `###` beneath
   it links the call and gives its job in plain words, as in
   `` ### [`Server.sessions()`][server]: what tmux has now ``.
 - **Each subsection builds up the same way.** One sentence names the call and
-  links its siblings, a short example follows, then one line says where it runs
-  or what it prints. A note, if any, is a single short one.
-- **No paragraph runs past four lines.** A list of three or more is bullets with
-  a bold lead, and a long contract is a link to the page that holds it.
+  links its siblings, a short example follows, then one line says what it
+  prints. A note, if any, is a single short one, and a `More:` link goes to the
+  guide.
+- **No paragraph runs past three lines.** A list of three or more is bullets
+  with a bold lead, and a long contract is a link to the page that holds it.
 - **Every API, tool, and command named in prose is a link** to its libtmux.org
   page, written as a reference-style link whose definitions sit at the bottom of
   the file. A link never sits inside a code fence, where it would render as
   text.
 - **An index stays an index.** The module list, the package map, and a heading
-  for each directory keep their place; sections are added beside them.
+  for each directory keep their place; sections are added beside them. Under a
+  module heading: one line saying what it is, then a link line for its API
+  reference, registry page and changelog.
+- **No feature inventory.** A list of what is "implemented" is replaced by
+  sections and examples that show it.
+- **Requirements are floors a reader can act on.** "JDK 25 or newer", not the
+  patch version of the toolchain someone happened to use. No CI matrix
+  narration, and no kernel or libc trivia: link the page that holds it.
+- **Leave out what a reader assumes.** That examples are tested, how the docs
+  are built, what the checks cover, and "evidence", "qualification" or
+  "contract" boilerplate.
+- **Examples start with their imports.** A reader can paste one into a file and
+  run it. A later block in the same section may continue from an earlier one,
+  and its `// Given:` line names what it assumes.
+- **Examples start and clean up their own tmux server through the library.**
+  The program starts a private server, stops it with `Server.killServer`, and
+  removes its directory. A `tmux` or `rm` command around an example marks a
+  missing API call, not a step to document.
+- **Every displayed example comes from a file CI runs.** Java and Scala fences
+  run in the `docs` module, Kotlin fences in `libtmux-kotlin`. A fence CI does
+  not run carries a directive that says why.
+- **The README shows the features the port has.** Each of these gets a section
+  with an API-linked heading and an example: queries and filters, the planner
+  (`TmuxFilters.format` shows what tmux filters and what stays local), chaining
+  and batching, and control mode. A feature the port lacks gets no section.
 
 Four things near the top are compatibility claims, and they move together:
 
@@ -72,9 +102,9 @@ under a heading called something clever, and neither does an agent. What the
 package leaves out is a bulleted list with a bold lead on each item, so that
 the contract is read before it is relied on.
 
-Badges are metadata, not an introduction. Each of the five present — CI, tmux
-matrix, Maven Central, license, status — answers a question a reader would
-otherwise have to go and ask. A sixth needs the same defence.
+Badges are metadata, not an introduction. Each of the four present — CI, Maven
+Central, libtmux.org, license — answers a question a reader would otherwise have
+to go and ask. A fifth needs the same defence.
 
 No screenshot carries information that exists only in the screenshot. Images go
 stale, do not survive grep, and reach a screen reader as nothing.
