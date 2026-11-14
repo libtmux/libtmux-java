@@ -1,7 +1,5 @@
 # Options and hooks
 
-Every snippet here is executed by `DocumentationSnippetsTest`.
-
 tmux keeps options and hooks at four scopes, and the same name can exist at more
 than one. A scope is chosen when the view is taken, so a caller cannot read one
 and write another:
@@ -21,6 +19,8 @@ options. tmux omits inherited user-option names from that listing; `get(name)`
 still reads their effective values:
 
 ```java
+import io.github.libtmux.Options;
+
 // Given: Session session
 Options options = session.options();
 
@@ -42,6 +42,8 @@ That star never reaches you: the name you look up is the name you get back, and
 an `Integer` and a flag as a `Boolean` rather than as `"on"`:
 
 ```java
+import io.github.libtmux.OptionKey;
+
 // Given: Session session
 session.options().set(OptionKey.HISTORY_LIMIT, 50_000);
 
@@ -57,6 +59,8 @@ type fails naming the option rather than guessing.
 ## Writing without replacing
 
 ```java
+import io.github.libtmux.Options;
+
 // Given: Session session
 Options options = session.options();
 
@@ -82,6 +86,8 @@ Every hook is a list of commands tmux runs in order, so a hook set once is a lis
 of one rather than a special case:
 
 ```java
+import io.github.libtmux.Hooks;
+
 // Given: Session session
 Hooks hooks = session.hooks();
 

@@ -53,7 +53,6 @@ Using.resource(Server.open(config)) { server =>
 acquired Java handles is local. A failed live read still throws; it does not
 become an empty Scala collection or `None`.
 
-The documentation suite compiles and runs this example against a real tmux.
 See the [query guide](scala/query.md) for facade predicate adapters and strict
 cardinality, and the [ownership guide](scala/ownership.md) before borrowing
 Java clients.

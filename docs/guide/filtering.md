@@ -5,6 +5,11 @@ unchanged, and — unlike a lambda — it can also be printed, stored, or transl
 into another system's filter language.
 
 ```java
+import io.github.libtmux.Window;
+import io.github.libtmux.Window_;
+import io.github.libtmux.query.Selections;
+import java.util.List;
+
 // Given: Server server
 server.newSession("build").newWindow("editor");
 
@@ -70,6 +75,9 @@ Every field and relation these four classes expose, generated from
 `and`, `or` and `negate` compose expressions. Relations quantify:
 
 ```java
+import io.github.libtmux.Pane_;
+import io.github.libtmux.Window_;
+
 var busy = Window_.panes().any(Pane_.command().startsWith("nv"));
 ```
 
@@ -80,6 +88,9 @@ windows are zoomed".
 ## Saying what it is
 
 ```java
+import io.github.libtmux.Pane_;
+import io.github.libtmux.Window_;
+
 var busy = Window_.panes().any(Pane_.command().startsWith("nv"));
 
 busy.describe();                     // → panes any (pane_current_command starts-with nv)
@@ -116,11 +127,15 @@ Filtering a list already in hand still issues no commands.
 
 ## Writing an expression down
 
-The optional `libtmux-jackson` module gives an expression a versioned wire form.
-This snippet is exercised by `FilterJsonTest` rather than
-`DocumentationSnippetsTest`, since the core suite does not depend on Jackson:
+The optional `libtmux-jackson` module gives an expression a versioned wire form:
 
 ```java
+import io.github.libtmux.Pane;
+import io.github.libtmux.Pane_;
+import io.github.libtmux.jackson.FilterJson;
+import io.github.libtmux.jackson.LibTmuxModels;
+import io.github.libtmux.query.FilterExpr;
+
 String json = FilterJson.writeString(
         Pane_.command().startsWith("nv"), LibTmuxModels.pane());
 FilterExpr<Pane> restored = FilterJson.readString(json, LibTmuxModels.pane());

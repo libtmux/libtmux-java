@@ -1,8 +1,5 @@
 # Driving tmux from a model
 
-Every Java snippet here is run by `DocumentationSnippetsTest`, except one
-marked compile-only, which says why.
-
 [`libtmux-mcp`](../../libtmux-mcp/) serves a tmux server to any MCP client. The
 [module README](../../libtmux-mcp/README.md) is how to run it; this page is why
 it is shaped the way it is, and what was measured to decide.
@@ -183,6 +180,12 @@ applications directly:
 
 <!-- snippet: compile-only: a watch reports a format when its value changes -->
 ```java
+import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.ControlEvent;
+import io.github.libtmux.control.Delivery;
+import io.github.libtmux.control.EventSubscription;
+import java.time.Duration;
+
 // Given: Server server, Session session
 try (ControlClient client = server.control(session);
         EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {

@@ -16,6 +16,11 @@ Threads are the ordinary way to do several reads at once, and virtual threads ar
 the cheap way:
 
 ```java
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
 // Given: Server server
 server.newSession("left");
 server.newSession("right");

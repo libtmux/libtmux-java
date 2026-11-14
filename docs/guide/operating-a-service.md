@@ -1,7 +1,5 @@
 # Failures, telemetry, and pane input
 
-Every snippet here is run by `DocumentationSnippetsTest`.
-
 This guide is for a service that drives tmux on behalf of something else: it has
 to decide whether a failed command may be sent again, see what every command
 cost, and keep two threads from typing into the same pane.
@@ -16,6 +14,8 @@ Otherwise tmux may already have applied it; read the state back before deciding,
 and never send a mutation again blindly:
 
 ```java
+import io.github.libtmux.exception.DispatchException;
+
 // Given: Server server
 try {
     server.globalOptions().set("@deployed", "yes");
@@ -44,6 +44,11 @@ An `OperationObserver` on the configuration hears about every command after it
 ends, on the thread that ran it:
 
 ```java
+import io.github.libtmux.Server;
+import io.github.libtmux.transport.OperationReport;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+
 // Given: ServerConfig config
 List<OperationReport> reports = new CopyOnWriteArrayList<>();
 try (Server observed = Server.open(config.toBuilder().observer(reports::add).build())) {
@@ -100,6 +105,9 @@ same time gets an `IllegalStateException` instead of interleaved input. To keep
 the pane across several calls, hold it:
 
 ```java
+import io.github.libtmux.PaneInput;
+import java.util.List;
+
 // Given: Pane pane
 try (PaneInput.Lease held = PaneInput.hold(pane)) {
     pane.sendKeys(List.of("echo", "Space", "one", "Enter"));

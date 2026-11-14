@@ -23,6 +23,8 @@ a small Kotlin class over the Java handle, whose own operations are `suspend`
 in turn.
 
 ```kotlin
+import io.github.libtmux.kotlin.withServer
+
 // Given: config: ServerConfig
 withServer(config) { server ->
     val session = server.newSession("guide-demo")
@@ -85,7 +87,7 @@ The suspend `Channel.await` and `awaitReservingCapacity` extensions take their
 own dispatcher, defaulting to `Dispatchers.IO`, independently of
 `ExecutionPolicy`. Closing a wrapper is synchronous too.
 
-## The DSL, and the compile error the first draft had
+## The DSL
 
 `@DslMarker` marks `SessionBuilder`, `WindowBuilder`, and `SplitBuilder` so an
 inner block cannot reach an outer block's receiver by accident. Directory is
@@ -94,6 +96,8 @@ inside a nested `split { }` resolves to the innermost builder, and reaching
 the outer one on purpose needs `this@newSession.directory = x` written out.
 
 ```kotlin
+import io.github.libtmux.kotlin.withServer
+
 // Given: config: ServerConfig
 withServer(config) { server ->
     val session = server.newSession {

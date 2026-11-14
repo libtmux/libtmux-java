@@ -1,8 +1,5 @@
 # Watching output as it happens
 
-Every snippet here is run by `DocumentationSnippetsTest`, except one marked
-compile-only, which says why.
-
 ## Waiting for one thing, cheapest first
 
 Streaming is for watching continuously. To wait for a single thing and carry on,
@@ -17,6 +14,9 @@ failure.
 
 <!-- snippet: compile-only: the signal comes from a shell inside a pane, whose readiness this fixture cannot establish -->
 ```java
+import io.github.libtmux.Channel;
+import java.time.Duration;
+
 // Given: Server server, Pane pane, Path socket
 Channel done = server.channel("build-finished");
 done.drain();
@@ -32,11 +32,6 @@ pane.sendLine("sleep 1; " + tmux + " -S " + socket + " wait-for -S build-finishe
 
 done.await(Duration.ofSeconds(20));   // SIGNALLED, once the command reaches it
 ```
-
-That block is compiled but not executed here: the signal comes from a shell
-inside a pane, and this fixture cannot establish that the shell is reading yet.
-Which is the honest caveat for the idiom too — see the note at the end of this
-section.
 
 `drain()` first, always. tmux remembers a signal sent while nobody was waiting
 and hands it to the next waiter — possibly one in a later run of a different
@@ -100,6 +95,12 @@ output as tmux produces it:
 
 <!-- snippet: control: this example acquires managed control -->
 ```java
+import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.Delivery;
+import io.github.libtmux.control.EventSubscription;
+import io.github.libtmux.control.PaneOutput;
+import java.time.Duration;
+
 // Given: Server server, Session session
 try (ControlClient client = server.control(session);
         EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
@@ -231,6 +232,13 @@ renamed, a session switched, a layout moved — without asking. Each arrives as 
 
 <!-- snippet: control: this example acquires managed control -->
 ```java
+import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.ControlEvent;
+import io.github.libtmux.control.Delivery;
+import io.github.libtmux.control.EventSubscription;
+import io.github.libtmux.control.Notification;
+import java.time.Duration;
+
 // Given: Server server, Session session
 try (ControlClient client = server.control(session);
         EventSubscription<ControlEvent> events = client.subscribeEvents(32)) {
@@ -262,6 +270,9 @@ numbered view:
 
 <!-- snippet: control: a mirror acquires managed control -->
 ```java
+import io.github.libtmux.snapshot.ServerMirror;
+import java.time.Duration;
+
 // Given: Session session
 try (ServerMirror mirror = ServerMirror.open(session)) {
     session.newWindow("mirrored");

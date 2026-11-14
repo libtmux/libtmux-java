@@ -1,7 +1,5 @@
 # Batching and chaining
 
-Every snippet here is executed by `DocumentationSnippetsTest`.
-
 The first request to a daemon also starts a tmux process to check its version;
 after that an ordinary request starts one tmux process to run its commands. A
 batch and a chain put several commands into that one invocation.
@@ -25,6 +23,8 @@ has the measured rows.
 ## A batch: several commands, each with its own outcome
 
 ```java
+import io.github.libtmux.batch.BatchResult;
+
 // Given: Server server
 BatchResult result = server.batch()
         .add("new-window", "-d", "-n", "one")

@@ -1,36 +1,53 @@
 # Getting started
 
-Every snippet here is run by `DocumentationSnippetsTest`, except one marked
-compile-only, which says why. If one stops working the build fails, rather
-than the page quietly going stale.
-
-These API previews use independent fixtures and shared imports. Each
-`// Given:` names an input the fixture supplies. The [common API
-programs](../../examples/api/README.md) include imports and owned server setup.
-Every value shown after a `→` is asserted.
-
 ## Reaching a server
 
 A `Server` is a client, not the tmux process. Closing one closes your connection;
 it never ends anybody's sessions.
 
+This program starts a tmux server of its own, makes a session, a window and a
+split pane, runs a command, and removes the server:
+
 ```java
-// Given: Path socket
+import io.github.libtmux.Pane;
+import io.github.libtmux.PaneRun;
+import io.github.libtmux.Server;
+import io.github.libtmux.ServerConfig;
+import io.github.libtmux.ServerEndpoint;
+import io.github.libtmux.Session;
+import io.github.libtmux.Window;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+
+Path directory = Files.createTempDirectory("demo-");
+Path socket = directory.resolve("tmux.sock");
 ServerConfig config = ServerConfig.builder()
         .endpoint(ServerEndpoint.socketPath(socket))
         .build();
 
 try (Server server = Server.open(config)) {
-    Session session = server.newSession("demo");
-    Window window = session.newWindow("build");
-    Pane pane = window.split();
+    try {
+        Session session = server.newSession("demo");
+        Window window = session.newWindow("build");
+        Pane pane = window.split();
 
-    pane.sendLine("echo hello from libtmux");
+        PaneRun ran = pane.run("echo hello from libtmux", Duration.ofSeconds(30));
+
+        ran.output();                      // → [hello from libtmux]
+        ran.exitStatus().getAsInt();       // → 0
+    } finally {
+        server.killServer();
+    }
+} finally {
+    Files.deleteIfExists(socket);
+    Files.delete(directory);
 }
 ```
 
-This separate example uses a fresh fixture; it creates `demo` again before
-reading it back:
+tmux leaves its socket file behind when it exits, so the program deletes it.
+Later examples start from a `server` you already have, as their `// Given:` line
+says:
 
 ```java
 // Given: Server server
@@ -65,6 +82,9 @@ Sessions, windows and panes are all made the same way: call it plainly, describe
 it with a lambda, or hand it a description you built earlier.
 
 ```java
+import io.github.libtmux.Session;
+import io.github.libtmux.Window;
+
 // Given: Server server
 Session build = server.newSession(s -> s.named("build").firstWindowNamed("editor"));
 Window logs = build.newWindow(w -> w.named("logs").running("sleep", "30"));
@@ -86,6 +106,8 @@ does not have.
 builder:
 
 ```java
+import io.github.libtmux.Pane;
+
 // Given: Pane pane, Path directory
 Pane side = pane.split(s -> s.toRight().percent(30));
 Pane app = pane.split(s -> s.running("sleep", "30").in(directory));
@@ -149,6 +171,10 @@ Accessors read tmux once and hand back handles over what they saw. Walking the
 hierarchy afterwards issues no commands at all:
 
 ```java
+import io.github.libtmux.Pane;
+import io.github.libtmux.Session;
+import io.github.libtmux.Window;
+
 // Given: Server server
 for (Session session : server.sessions()) {
     for (Window window : session.windows()) {
@@ -200,6 +226,8 @@ it. `all()` answers the narrower question — what this scope sets itself.
 A batch is one tmux invocation, and every operation gets its own outcome:
 
 ```java
+import io.github.libtmux.batch.BatchResult;
+
 // Given: Server server
 BatchResult result = server.batch()
         .add("new-window", "-d", "-n", "one")
@@ -240,6 +268,12 @@ its socket. It stays attached and pushes terminal output as it happens:
 
 <!-- snippet: control: output subscriptions require managed control acquisition -->
 ```java
+import io.github.libtmux.control.ControlClient;
+import io.github.libtmux.control.Delivery;
+import io.github.libtmux.control.EventSubscription;
+import io.github.libtmux.control.PaneOutput;
+import java.time.Duration;
+
 // Given: Server server, Session session
 try (ControlClient client = server.control(session);
         EventSubscription<PaneOutput> output = client.subscribeOutput(32)) {
@@ -270,6 +304,12 @@ A run that reads the developer's own `.tmux.conf` is a run whose behaviour nobod
 can predict. Pin one:
 
 ```java
+import io.github.libtmux.Server;
+import io.github.libtmux.ServerConfig;
+import io.github.libtmux.ServerEndpoint;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 // Given: Path directory
 Path tmuxConf = Files.writeString(directory.resolve("tmux.conf"), "set -g base-index 5\n");
 

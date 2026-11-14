@@ -1,13 +1,17 @@
 # Snapshots and handles
 
-Every snippet here is executed by `DocumentationSnippetsTest`.
-
 ## A capture is a moment
 
 An accessor reads tmux once and hands back handles over what it saw. Walking the
 hierarchy afterwards issues no commands at all:
 
 ```java
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import io.github.libtmux.Pane;
+import io.github.libtmux.Session;
+import io.github.libtmux.Window;
+
 // Given: Server server
 for (Session session : server.sessions()) {
     for (Window window : session.windows()) {
@@ -62,6 +66,8 @@ named formats for one target. `paneFields` reads named formats for every pane.
 Those three are the supported way out of the table above.
 
 ```java
+import io.github.libtmux.Session;
+
 // Given: Server server
 Session session = server.newSession("captured");
 
@@ -77,6 +83,8 @@ a window linked into two sessions is one window at two positions, and tmux
 orders and addresses those separately.
 
 ```java
+import io.github.libtmux.Session;
+
 // Given: Server server
 Session before = server.sessions().get(0);
 String originalName = before.name();
@@ -155,6 +163,8 @@ range — lines count from the top of the visible area, and negatives climb into
 the history:
 
 ```java
+import java.util.List;
+
 // Given: Pane pane
 pane.sendLine("echo captured");
 
