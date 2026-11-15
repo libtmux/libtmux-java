@@ -150,7 +150,7 @@ final class NativeClient implements AutoCloseable {
     }
 
     private static String helper() {
-        try (var source = NativeClient.class.getResourceAsStream("/io/github/libtmux/fixtures/pty.py")) {
+        try (var source = NativeClient.class.getResourceAsStream("/io/github/libtmux/fixtures/pty_helper.py")) {
             if (source == null) throw new IllegalStateException("missing PTY test helper");
             return new String(source.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException failure) {

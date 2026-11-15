@@ -31,7 +31,7 @@ final class ProcessTest {
     private static final String PTY = ptyHelper();
 
     private static String ptyHelper() {
-        try (var source = ProcessTest.class.getResourceAsStream("/io/github/libtmux/fixtures/pty.py")) {
+        try (var source = ProcessTest.class.getResourceAsStream("/io/github/libtmux/fixtures/pty_helper.py")) {
             if (source == null) throw new IllegalStateException("missing PTY test helper");
             return new String(source.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException failure) {

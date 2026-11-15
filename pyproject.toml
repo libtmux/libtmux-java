@@ -28,6 +28,7 @@ pythonpath = [
   "scripts/build-tmux-matrix",
   "scripts/ci-check",
   "scripts/ci-plan",
+  "scripts/pty-helper",
   "scripts/reap-stale-servers",
   "scripts/verify-staged-release",
 ]
@@ -49,6 +50,7 @@ src = [
   "scripts/build-tmux-matrix",
   "scripts/ci-check",
   "scripts/ci-plan",
+  "scripts/pty-helper",
   "scripts/reap-stale-servers",
   "scripts/verify-staged-release",
 ]
@@ -62,6 +64,7 @@ extra-paths = [
   "scripts/build-tmux-matrix",
   "scripts/ci-check",
   "scripts/ci-plan",
+  "scripts/pty-helper",
   "scripts/reap-stale-servers",
   "scripts/verify-staged-release",
 ]

@@ -90,5 +90,7 @@ tasks.register<JavaExec>("runDevelopment") {
     jvmArgs("-XX:TieredStopAtLevel=1")
 }
 
-// Shared native terminal driver; test resources never enter a published artifact.
-sourceSets.test { resources.srcDir(rootProject.file("gradle/test-fixtures")) }
+// The PTY helper is a checked script under scripts/; test resources never enter a published artifact.
+tasks.processTestResources {
+    from(rootProject.file("scripts/pty-helper/pty_helper.py")) { into("io/github/libtmux/fixtures") }
+}
