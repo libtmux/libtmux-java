@@ -23,7 +23,8 @@ one:
 - a published module has no `CHANGELOG.md` with its `## Unreleased` section, its
   README does not link it, or the publication convention does not put it in the
   jar;
-- a workflow calls `apt-get` directly instead of through `tools/apt-get.sh`.
+- a workflow calls `apt-get` directly instead of through the shared `apt-get`
+  action of `libtmux/.github`.
 
 `--root` points the check at another checkout. The tests copy the files it
 reads, break one thing at a time, and expect the guard for that thing to say so:

@@ -332,19 +332,21 @@ class CheckTest(unittest.TestCase):
                 )
                 self.assertFlags(f"{path}:")
                 self.assertFlags(
-                    f"(job raw, step Install) runs {tool} directly; run it through tools/apt-get.sh"
+                    f"(job raw, step Install) runs {tool} directly; use the libtmux/.github apt-get action"
                 )
                 (self.root / path).write_text(original)
 
-    def test_the_apt_wrapper_and_comments_are_not_flagged(self) -> None:
-        """The wrapper is the fix, and a comment is not a call."""
+    def test_the_apt_action_and_comments_are_not_flagged(self) -> None:
+        """The shared action is the fix, and a comment is not a call."""
         self.append(
             ".github/workflows/ci.yml",
             "\n  wrapped:\n    runs-on: ubuntu-latest\n    steps:\n"
-            "      - run: ./tools/apt-get.sh update\n"
+            "      - uses: libtmux/.github/actions/apt-get@" + SHA + "\n"
+            "        with:\n"
+            "          args: install --yes tmux\n"
             "      - run: |\n"
             "          # sudo apt-get update\n"
-            "          ./tools/apt-get.sh install -y tmux\n",
+            "          tmux -V\n",
         )
         assert self.problems() == []
 
@@ -358,7 +360,7 @@ class CheckTest(unittest.TestCase):
         )
         self.assertFlags(
             ".github/actions/setup/action.yml:6 (step Install) runs apt-get "
-            "directly; run it through tools/apt-get.sh"
+            "directly; use the libtmux/.github apt-get action"
         )
 
     def test_every_published_module_is_checked_for_a_changelog(self) -> None:

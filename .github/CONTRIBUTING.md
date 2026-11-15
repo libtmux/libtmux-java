@@ -326,39 +326,31 @@ $ uv run scripts/ci-plan/ci_plan.py matrix \
 
 ### Native tmux in CI
 
-Each lane builds the tmux it is named after with `.github/scripts/tmux_build.py`.
-A release uses the official archive and the SHA256 pin in
-`.github/tmux-releases.toml`; the selected checksum is part of its cache
-identity. To add a release to the plugin's lists, add its pin there first: the
-script refuses a release with none. Any other ref resolves once to a commit,
-and the build fetches that exact commit. Only the installed prefix,
-`~/tmux-builds/<name>`, is cached. Each build uses a fresh source tree and up to
-four available processors.
+Each lane builds the tmux it is named after with the
+[`build-tmux`](https://github.com/libtmux/.github/tree/30f81842b1e639ea4e25f93f1f2543504178e228/actions/build-tmux)
+action of `libtmux/.github`, pinned to a full commit, into `~/tmux-builds/<name>`.
+A release uses the official archive and the SHA256 pin in the action's
+`tmux-releases.json`, and the action refuses a release with none, so a new one
+is pinned there first. Any other ref resolves once to a commit, and the build
+fetches that exact commit. Only the installed prefix is cached.
 
-Cache keys include the actual runner image and image version, architecture,
-compiler and dependency versions, source identity, and the build script.
-Dependencies are installed before validation on hits and misses. Every restored
-executable must match its recorded hash and version, start a private daemon,
-and report the same connected version. A failed check discards that job's
-prefix and rebuilds it.
+The cache key includes the runner image and its version, the architecture, the
+compiler, the versions of the build packages, the source identity and the
+action's build script. Every restored executable must match its recorded hash
+and version, start a private daemon, and report the same connected version. A
+failed check discards that job's prefix and rebuilds it, and the workflow saves
+a validated installation before the suite runs. GitHub caches are immutable, so
+a repaired exact hit fixes the current job only, and a change to the build
+script is what invalidates the key for later jobs. Never add a broad restore-key
+fallback for native binaries. The action's README has the rest.
 
-The workflow saves a validated installation before the suite runs. GitHub
-caches are immutable: repairing an invalid exact hit fixes the current job, but
-cannot overwrite that entry. A build-script change invalidates its key for later
-jobs. Never add a broad restore-key fallback for native binaries.
-
-The script needs Python 3.11 for the standard-library TOML reader, which the
-runner's `python3` has. Run its regressions against an installed tmux:
-
-```console
-$ python3 -m venv /tmp/tmux-build-test
-$ /tmp/tmux-build-test/bin/python -m pip install pytest==8.4.2
-$ /tmp/tmux-build-test/bin/python -m pytest .github/scripts/test_tmux_build.py
-```
+Every `apt-get` call goes through the [`apt-get`](https://github.com/libtmux/.github/tree/30f81842b1e639ea4e25f93f1f2543504178e228/actions/apt-get)
+action of the same repository, which retries on another mirror when one hangs.
 
 [`scripts/ci-check`](../scripts/ci-check/README.md) fails when the README, this
-page or the workflows disagree with `gradle/tmux-lanes.json`. Each dispatch is its own run: it does not
-cancel the push run on its branch, and another dispatch does not cancel it.
+page or the workflows disagree with `gradle/tmux-lanes.json`. Each dispatch is
+its own run: it does not cancel the push run on its branch, and another dispatch
+does not cancel it.
 `ci.yml` has no tmux axis, so it takes no inputs.
 
 ## Compatibility

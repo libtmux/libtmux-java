@@ -70,9 +70,10 @@ jobs:
           echo "ci.yml passed on $GITHUB_SHA"
 
       - name: Install tmux
-        run: |
-          ./tools/apt-get.sh update
-          ./tools/apt-get.sh install --no-install-recommends -y tmux
+        uses: libtmux/.github/actions/apt-get@30f81842b1e639ea4e25f93f1f2543504178e228
+        with:
+          update: "true"
+          args: install --no-install-recommends --yes tmux
 
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:

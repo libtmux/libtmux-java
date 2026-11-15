@@ -113,88 +113,22 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      # The runner's own libraries decide whether a built tmux starts: a build restored from another
-      # image failed on `NCURSES6_TINFO_6.4.current`. Every dependency the script records in a
-      # build's identity is installed before it plans, so a hit and a miss see the same packages.
-      - name: Build dependencies
-        run: |
-          ./tools/apt-get.sh update
-          ./tools/apt-get.sh install --no-install-recommends -y \
-            autoconf automake bison build-essential libevent-dev libncurses-dev \
-            libutempter-dev pkg-config
-
-      # `tmux_build.py` needs Python 3.11 for the standard-library TOML reader, which the runner's
-      # `python3` has. A release is pinned by checksum in `.github/tmux-releases.toml`; any other
-      # ref is resolved to the commit it names. The key names the runner image, so a build made on
-      # one image is not restored onto another, and `prepare` rebuilds a restore that fails to start.
-      - name: Identify tmux ${{ matrix.tmux }} and its build environment
-        id: tmux-build
-        env:
-          TMUX_REF: ${{ matrix.tmux }}
-          SLUG: ${{ matrix.slug }}
-        run: python3 -B .github/scripts/tmux_build.py plan "$TMUX_REF" --prefix "$HOME/tmux-builds/$SLUG"
-
-      - name: Restore tmux ${{ matrix.tmux }}
-        id: tmux-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # A release is pinned by checksum in the action; any other ref is resolved to the commit it
+      # names. The action keys its cache on the runner image, so a build made on one image is not
+      # restored onto another, and it rebuilds a restore that fails to start.
+      - name: Build tmux ${{ matrix.tmux }}
+        uses: libtmux/.github/actions/build-tmux@30f81842b1e639ea4e25f93f1f2543504178e228
         with:
-          path: ~/tmux-builds/${{ matrix.slug }}
-          key: ${{ steps.tmux-build.outputs.key }}
-
-      - name: Validate or rebuild tmux ${{ matrix.tmux }}
-        env:
-          TMUX_REF: ${{ matrix.tmux }}
-          SLUG: ${{ matrix.slug }}
-          CACHE_HIT: ${{ steps.tmux-cache.outputs.cache-hit }}
-        run: python3 -B .github/scripts/tmux_build.py prepare "$TMUX_REF" --prefix "$HOME/tmux-builds/$SLUG"
-
-      - name: Save validated tmux ${{ matrix.tmux }}
-        if: steps.tmux-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/tmux-builds/${{ matrix.slug }}
-          key: ${{ steps.tmux-build.outputs.key }}
-
-      # The script's own regressions run against the tmux this lane just validated, in a venv so
-      # pytest stays off the system Python.
-      - name: Test native cache recovery
-        env:
-          SLUG: ${{ matrix.slug }}
-        run: |
-          python3 -m venv "$RUNNER_TEMP/tmux-build-test"
-          "$RUNNER_TEMP/tmux-build-test/bin/python" -m pip install --quiet pytest==8.4.2
-          PATH="$HOME/tmux-builds/$SLUG/bin:$PATH" \
-            "$RUNNER_TEMP/tmux-build-test/bin/python" -m pytest .github/scripts/test_tmux_build.py
+          ref: ${{ matrix.tmux }}
+          prefix: ~/tmux-builds/${{ matrix.slug }}
 
       # The daemon of a 3.0a or 3.1c lane is reached by this client.
-      - name: Identify tmux ${{ matrix.client }} for the client
+      - name: Build tmux ${{ matrix.client }} for the client
         if: matrix.client
-        id: client-build
-        env:
-          CLIENT: ${{ matrix.client }}
-        run: python3 -B .github/scripts/tmux_build.py plan "$CLIENT" --prefix "$HOME/tmux-builds/$CLIENT"
-
-      - name: Restore tmux ${{ matrix.client }} for the client
-        if: matrix.client
-        id: client-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: libtmux/.github/actions/build-tmux@30f81842b1e639ea4e25f93f1f2543504178e228
         with:
-          path: ~/tmux-builds/${{ matrix.client }}
-          key: ${{ steps.client-build.outputs.key }}
-
-      - name: Validate or rebuild tmux ${{ matrix.client }} for the client
-        if: matrix.client
-        env:
-          CLIENT: ${{ matrix.client }}
-          CACHE_HIT: ${{ steps.client-cache.outputs.cache-hit }}
-        run: python3 -B .github/scripts/tmux_build.py prepare "$CLIENT" --prefix "$HOME/tmux-builds/$CLIENT"
-
-      - name: Save validated tmux ${{ matrix.client }} for the client
-        if: matrix.client && steps.client-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/tmux-builds/${{ matrix.client }}
-          key: ${{ steps.client-build.outputs.key }}
+          ref: ${{ matrix.client }}
+          prefix: ~/tmux-builds/${{ matrix.client }}
 
       - name: The lane runs the tmux it is named after
         env:

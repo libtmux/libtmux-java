@@ -74,45 +74,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Build tmux dependencies
-        run: |
-          ./tools/apt-get.sh update
-          ./tools/apt-get.sh install --no-install-recommends -y \
-            autoconf automake bison build-essential libevent-dev libncurses-dev \
-            libutempter-dev pkg-config
-
-      - name: Identify tmux ${{ matrix.tmux }} and its build environment
-        id: tmux-build
-        env:
-          LANE: ${{ matrix.tmux }}
-        run: python3 -B .github/scripts/tmux_build.py plan "$LANE" --prefix "$HOME/tmux-builds/$LANE"
-
-      - name: Restore tmux ${{ matrix.tmux }}
-        id: tmux-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Build tmux ${{ matrix.tmux }}
+        uses: libtmux/.github/actions/build-tmux@30f81842b1e639ea4e25f93f1f2543504178e228
         with:
-          path: ~/tmux-builds/${{ matrix.tmux }}
-          key: ${{ steps.tmux-build.outputs.key }}
-
-      - name: Validate or rebuild tmux ${{ matrix.tmux }}
-        env:
-          LANE: ${{ matrix.tmux }}
-          CACHE_HIT: ${{ steps.tmux-cache.outputs.cache-hit }}
-        run: python3 -B .github/scripts/tmux_build.py prepare "$LANE" --prefix "$HOME/tmux-builds/$LANE"
-
-      - name: Save validated tmux ${{ matrix.tmux }}
-        if: steps.tmux-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/tmux-builds/${{ matrix.tmux }}
-          key: ${{ steps.tmux-build.outputs.key }}
+          ref: ${{ matrix.tmux }}
+          prefix: ~/tmux-builds/${{ matrix.tmux }}
+          add-to-path: "true"
 
       - name: The lane runs the tmux it is named after
-        env:
-          LANE: ${{ matrix.tmux }}
-        run: |
-          "$HOME/tmux-builds/$LANE/bin/tmux" -V
-          echo "$HOME/tmux-builds/$LANE/bin" >> "$GITHUB_PATH"
+        run: tmux -V
 
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:

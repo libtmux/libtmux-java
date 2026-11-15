@@ -52,7 +52,7 @@ QUOTED_RELEASE = re.compile(r"'\d+\.\d+[a-z]?'")
 APT_CALL = re.compile(r"(?:^|[;&|(`]|\$\()\s*(?:sudo\s+(?:-\S+\s+)*)?(apt-get|apt)(?=\s|$)")
 STEP_START = re.compile(r"^( *)- [\w-]+:")
 JOB_START = re.compile(r"^  ([\w-]+):\s*$")
-APT_FIX = "run it through tools/apt-get.sh"
+APT_FIX = "use the libtmux/.github apt-get action"
 
 
 def _squash(text: str) -> str:
@@ -124,7 +124,7 @@ def _where(lines: list[str], number: int) -> str:
 def check_apt(name: str, text: str) -> list[str]:
     """Return each `run` script line that calls apt-get or apt directly.
 
-    The wrapper bounds a hung mirror only while every call goes through it.
+    The shared action bounds a hung mirror only while every call goes through it.
     """
     lines = text.splitlines()
     problems: list[str] = []

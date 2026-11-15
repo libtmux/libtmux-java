@@ -53,10 +53,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install tmux
-        run: |
-          ./tools/apt-get.sh update
-          ./tools/apt-get.sh install --no-install-recommends -y tmux
-          tmux -V
+        uses: libtmux/.github/actions/apt-get@30f81842b1e639ea4e25f93f1f2543504178e228
+        with:
+          update: "true"
+          args: install --no-install-recommends --yes tmux
+
+      - run: tmux -V
 
       # Gradle itself runs on the baseline in every lane: its plugins, the formatter among them,
       # reach into javac internals a newer JDK is free to change. The lane's JDK runs the tests.
@@ -153,9 +155,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install tmux
-        run: |
-          ./tools/apt-get.sh update
-          ./tools/apt-get.sh install --no-install-recommends -y tmux
+        uses: libtmux/.github/actions/apt-get@30f81842b1e639ea4e25f93f1f2543504178e228
+        with:
+          update: "true"
+          args: install --no-install-recommends --yes tmux
 
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
