@@ -14,7 +14,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -59,9 +58,6 @@ final class DocumentationFactsTest {
             "libtmux-scala",
             "libtmux-scala-cats",
             "libtmux-scala-ox");
-
-    /** The parity inventories, whose every row names the contract test that row will need. */
-    private static final List<String> PARITY = List.of("docs/parity/python-api.md", "docs/parity/test-map.md");
 
     /**
      * Every way a document spells a coordinate, since a version only checked in one of them is a
@@ -368,84 +364,6 @@ final class DocumentationFactsTest {
             throw new UncheckedIOException("could not list the guides", e);
         }
         return found;
-    }
-
-    /**
-     * Those documents name tests in the scheme the tests will use, which is a plan and not a
-     * citation. Once the class exists, every name beside it that does not resolve becomes a claim.
-     */
-    @Test
-    void everyContractTestTheParityDocumentsNameIsUnwrittenOrReal() {
-        List<String> wrong = new ArrayList<>();
-        claimedContractTests()
-                .forEach((type, methods) -> sourceOf(type).ifPresent(source -> {
-                    String declared = read(ROOT.relativize(source).toString());
-                    methods.stream()
-                            .filter(method -> !declared.contains(method))
-                            .forEach(method -> wrong.add(type + "#" + method));
-                }));
-
-        assertEquals(List.of(), wrong, "the parity documents cite a test its own class does not declare");
-    }
-
-    /** While those tests are unwritten, each document has to keep saying so where a reader will look. */
-    @Test
-    void theParityDocumentsCallTheirTestsPlannedWhileTheyAre() {
-        for (String document : PARITY) {
-            if (!anyContractTestStillUnwritten(claimedContractTests(List.of(document)))) {
-                continue;
-            }
-            assertTrue(read(document).contains("planned parity"), document + " no longer says its tests are planned");
-        }
-    }
-
-    /**
-     * One written contract test must not clear the document of naming the rest as planned.
-     *
-     * <p>{@code ServerTest} exists, so a document citing it alongside a still-unwritten class has to
-     * keep saying "planned parity" for the one that is; a check that stops at the first resolved
-     * class would miss that.
-     */
-    @Test
-    void aWrittenContractTestDoesNotClearAStillPlannedSibling() {
-        Map<String, Set<String>> mixed = new TreeMap<>();
-        mixed.put("ServerTest", Set.of("liveReadsRejectAnAbsentDaemon"));
-        mixed.put("NoSuchDocsFixtureContract", Set.of("aPlannedMethod"));
-
-        assertTrue(anyContractTestStillUnwritten(mixed), "a real class must not mask an unwritten sibling");
-    }
-
-    /** The clean control: once every cited class is real, nothing is left to call planned. */
-    @Test
-    void everyContractTestBeingWrittenClearsThePlannedRequirement() {
-        Map<String, Set<String>> allWritten = new TreeMap<>();
-        allWritten.put("ServerTest", Set.of("liveReadsRejectAnAbsentDaemon"));
-
-        assertFalse(anyContractTestStillUnwritten(allWritten), "an all-real citation set still reads as unwritten");
-    }
-
-    /** Whether a contract test the map cites has no matching source yet. */
-    private static boolean anyContractTestStillUnwritten(Map<String, Set<String>> claimed) {
-        return claimed.keySet().stream().anyMatch(type -> sourceOf(type).isEmpty());
-    }
-
-    /** Every {@code Class#method} the parity documents name, grouped by the class that would hold it. */
-    private static Map<String, Set<String>> claimedContractTests() {
-        return claimedContractTests(PARITY);
-    }
-
-    /** As {@link #claimedContractTests()}, but read from only the given documents. */
-    private static Map<String, Set<String>> claimedContractTests(List<String> documents) {
-        Map<String, Set<String>> claimed = new TreeMap<>();
-        Pattern cited = Pattern.compile("<code>([A-Z][A-Za-z0-9]*)#([A-Za-z0-9_]+)</code>");
-        for (String document : documents) {
-            cited.matcher(read(document))
-                    .results()
-                    .forEach(found -> claimed.computeIfAbsent(found.group(1), type -> new TreeSet<>())
-                            .add(found.group(2)));
-        }
-        assertTrue(!claimed.isEmpty(), "the parity documents name no contract tests at all");
-        return claimed;
     }
 
     /** A tag can be moved to other code after review; a commit cannot. Dependabot keeps them current. */
@@ -802,18 +720,6 @@ final class DocumentationFactsTest {
                 Set.of(),
                 named(bullet, "### [`libtmux`](https://github.com/libtmux/libtmux-java/tree/master/libtmux)\n"));
         assertEquals(Set.of(), named(bullet, "- **[`libtmux`](libtmux-bom/)** — a link to another directory\n"));
-    }
-
-    /** Searched for by file name rather than loaded, since these will not be on this module's path. */
-    private static Optional<Path> sourceOf(String type) {
-        try (Stream<Path> tree = Files.walk(ROOT)) {
-            return tree.filter(path -> !path.toString().contains("/build/"))
-                    .filter(path -> path.getFileName().toString().equals(type + ".java")
-                            || path.getFileName().toString().equals(type + ".kt"))
-                    .findFirst();
-        } catch (IOException e) {
-            throw new UncheckedIOException("could not search for " + type, e);
-        }
     }
 
     private static Stream<String> documents() {

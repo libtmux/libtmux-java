@@ -102,13 +102,6 @@ Consequences.
 - [tmux behaviour](internals/tmux-behaviour.md) — version quirks and protocol
   facts cited from source comments, kept in one lean, reachable place.
 
-## Parity with Python libtmux
-
-- [Python API parity](parity/python-api.md) — every public Python declaration,
-  and what this port does with it.
-- [Python test parity map](parity/test-map.md) — every Python test, mapped to
-  the contract test that would port it.
-
 ## How these pages are tested
 
 This directory is also a build module. It compiles and runs the code in every
@@ -312,12 +305,9 @@ six months later, in the one place every reader starts. Those are checked too:
 | A fence in a source language nothing here builds carries a directive saying so | every reader-facing document |
 | Every link into this repository names a file or directory | every Markdown file: relative links, and absolute links to the `master` branch |
 | The root README heads each module, and `libtmux`'s README each exported package, with a link to its directory | those two READMEs against the published modules and `module-info.java` |
-| The contract tests the parity documents cite are unwritten or really declared | `docs/parity/python-api.md`, `docs/parity/test-map.md` |
-| Those documents keep saying "planned parity" while those tests are unwritten | the same two |
 
-The last two are why this module reads documents it takes no snippets from.
-`docs/parity/` holds no Java, and `RELEASING.md` is not a place snippets come
-from, but a coordinate in either is a claim like any other.
+`RELEASING.md` is not a place snippets come from, but a coordinate in it is a
+claim like any other, so this module reads it too.
 
 The snippet suite also asserts a floor on how much it found. A filter or a
 rename can reduce a parameterised suite to nothing without failing anything, and
