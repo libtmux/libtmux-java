@@ -2,50 +2,34 @@
 
 ## Reaching a server
 
-A `Server` is a client, not the tmux process. Closing one closes your connection;
-it never ends anybody's sessions.
+A `Server` is a client, not the tmux process. Closing one from `Server.open`
+closes your connection; it never ends anybody's sessions. `Server.start` is the
+exception: it starts a private tmux server that its `Server` owns, and closing
+that one stops tmux and removes the server's directory.
 
-This program starts a tmux server of its own, makes a session, a window and a
-split pane, runs a command, and removes the server:
+This program starts a private server, makes a session, a window and a split
+pane, runs a command, and leaves nothing behind:
 
 ```java
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneRun;
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerConfig;
-import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 
-Path directory = Files.createTempDirectory("demo-");
-Path socket = directory.resolve("tmux.sock");
-ServerConfig config = ServerConfig.builder()
-        .endpoint(ServerEndpoint.socketPath(socket))
-        .build();
+try (Server server = Server.start()) {
+    Session session = server.newSession("demo");
+    Window window = session.newWindow("build");
+    Pane pane = window.split();
 
-try (Server server = Server.open(config)) {
-    try {
-        Session session = server.newSession("demo");
-        Window window = session.newWindow("build");
-        Pane pane = window.split();
+    PaneRun ran = pane.run("echo hello from libtmux", Duration.ofSeconds(30));
 
-        PaneRun ran = pane.run("echo hello from libtmux", Duration.ofSeconds(30));
-
-        ran.output();                      // → [hello from libtmux]
-        ran.exitStatus().getAsInt();       // → 0
-    } finally {
-        server.killServer();
-    }
-} finally {
-    Files.deleteIfExists(socket);
-    Files.delete(directory);
+    ran.output();                      // → [hello from libtmux]
+    ran.exitStatus().getAsInt();       // → 0
 }
 ```
 
-tmux leaves its socket file behind when it exits, so the program deletes it.
 Later examples start from a `server` you already have, as their `// Given:` line
 says:
 
@@ -60,8 +44,9 @@ window.name();                             // → build
 
 A config with no `endpoint` reads `LIBTMUX_SOCKET_PATH` and then `LIBTMUX_SOCKET`
 when it is built. With neither set it passes tmux no socket, so tmux picks the
-server: the one in `TMUX` inside a pane, and its default socket otherwise. Name
-an endpoint, as above, wherever a program must not reach the wrong server.
+server: the one in `TMUX` inside a pane, and its default socket otherwise. Use
+`Server.start`, or name an endpoint, wherever a program must not reach the
+wrong server.
 
 Each command runs through one tmux process. Use a batch or chain when several
 commands should share an invocation.

@@ -80,51 +80,35 @@ dependencies {
 
 </details>
 
-A [`Server`][server] is a client for one tmux server, and
-[`Server.open`][server] takes a [`ServerConfig`][serverconfig] that says which.
-This program starts a tmux server of its own, makes a [`Session`][session], a
-[`Window`][window] and a split [`Pane`][pane], runs a command, and removes the
-server:
+A [`Server`][server] is a client for one tmux server.
+[`Server.start`][server-start] starts a private one that closing the `Server`
+stops. This program makes a [`Session`][session], a [`Window`][window] and a
+split [`Pane`][pane], runs a command, and leaves nothing behind:
 
 ```java
 import io.github.libtmux.Pane;
 import io.github.libtmux.PaneRun;
 import io.github.libtmux.Server;
-import io.github.libtmux.ServerConfig;
-import io.github.libtmux.ServerEndpoint;
 import io.github.libtmux.Session;
 import io.github.libtmux.Window;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 
-Path directory = Files.createTempDirectory("demo-");
-Path socket = directory.resolve("tmux.sock");
-ServerConfig config = ServerConfig.builder()
-        .endpoint(ServerEndpoint.socketPath(socket))
-        .build();
+try (Server server = Server.start()) {
+    Session session = server.newSession("demo");
+    Window window = session.newWindow("build");
+    Pane pane = window.split();
 
-try (Server server = Server.open(config)) {
-    try {
-        Session session = server.newSession("demo");
-        Window window = session.newWindow("build");
-        Pane pane = window.split();
+    PaneRun ran = pane.run("echo hello from libtmux", Duration.ofSeconds(30));
 
-        PaneRun ran = pane.run("echo hello from libtmux", Duration.ofSeconds(30));
-
-        ran.output();                      // → [hello from libtmux]
-        ran.exitStatus().getAsInt();       // → 0
-    } finally {
-        server.killServer();
-    }
-} finally {
-    Files.deleteIfExists(socket);
-    Files.delete(directory);
+    ran.output();                      // → [hello from libtmux]
+    ran.exitStatus().getAsInt();       // → 0
 }
 ```
 
-[`Server.killServer`][server-killserver] stops tmux itself. Closing a client
-leaves the tmux server running, and tmux leaves its socket file behind.
+Closing a `Server` from [`Server.start`][server-start] stops tmux and removes
+its directory. Closing one from [`Server.open`][server], which takes a
+[`ServerConfig`][serverconfig] naming a server that already runs, only closes
+your client; [`Server.killServer`][server-killserver] stops tmux itself.
 [`Session.kill`][session-kill], [`Window.kill`][window-kill] and
 [`Pane.kill`][pane-kill] close one thing, and
 [`Server.killSession`][server-killsession] closes a session by name.
@@ -1037,6 +1021,7 @@ MIT. See [`LICENSE`](LICENSE).
 [server-killserver]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server-killserver/
 [server-killsession]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server-killsession/
 [server-newsession]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server-newsession/
+[server-start]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server-start/
 [server-windows]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-server-server-windows/
 [serverconfig]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-serverconfig-serverconfig/
 [serversnapshot]: https://libtmux.org/en/java/latest/reference/io-github-libtmux-snapshot-serversnapshot-serversnapshot/

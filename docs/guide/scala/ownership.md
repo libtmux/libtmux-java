@@ -5,6 +5,11 @@ transport and local workers; it does not kill the tmux daemon. `killServer` is
 an explicit, separate operation. A borrowed facade leaves the original Java
 client under its existing owner's control.
 
+`Server.start()` is the exception: it starts a private tmux server, and closing
+it ends that server and removes its directory, so
+`Using.resource(Server.start()) { server => ... }` leaves nothing behind.
+`cats.Server.start` does the same as a `Resource`.
+
 ## Direct-style scopes
 
 [`Server.open`][server] returns an opaque `Server`, bounded by `AutoCloseable`,

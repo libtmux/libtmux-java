@@ -58,9 +58,9 @@ Readers skim it, so it follows one shape:
   run it. A later block in the same section may continue from an earlier one,
   and its `// Given:` line names what it assumes.
 - **Examples start and clean up their own tmux server through the library.**
-  The program starts a private server, stops it with `Server.killServer`, and
-  removes its directory. A `tmux` or `rm` command around an example marks a
-  missing API call, not a step to document.
+  The program starts a private server with `Server.start`, and closing it stops
+  the server and removes its directory. A `tmux` or `rm` command around an
+  example marks a missing API call, not a step to document.
 - **Every displayed example comes from a file CI runs.** Java and Scala fences
   run in the `docs` module, Kotlin fences in `libtmux-kotlin`. A fence CI does
   not run carries a directive that says why.
