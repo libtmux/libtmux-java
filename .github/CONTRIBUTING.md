@@ -204,7 +204,7 @@ module at the staged version, `kotlin/` and `scala/` resolve through the staged
 BOM, and all three run commands through tmux; `sbt/` resolves each artifact with
 the install line the documentation shows. CI runs them in its release
 rehearsal, against a staging signed at the version a tag would publish and
-checked by [`tools/verify-staged-release.sh`](../tools/verify-staged-release.sh);
+checked by [`scripts/verify-staged-release`](../scripts/verify-staged-release/README.md);
 locally, stage and run one:
 
 ```console
@@ -238,7 +238,7 @@ What a change is expected to carry:
   Nothing enforces that an entry exists, which is why it is written down. What
   is enforced is the file: `python3 -m tools.ci.check` fails when a published
   module loses its changelog or its `## Unreleased` section, and
-  `tools/verify-staged-release.sh` refuses a jar that does not carry it.
+  `scripts/verify-staged-release` refuses a jar that does not carry it.
 - **Nothing generated-looking.** Names that say what a thing is for, comments
   that say why rather than what, no abstraction without a second caller.
 

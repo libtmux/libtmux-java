@@ -18,6 +18,17 @@ updates:
     # never in such a hurry that it needs one.
     cooldown:
       default-days: 7
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      scripts:
+        patterns: ["*"]
+    commit-message:
+      prefix: "java(deps[dev]) "
+    cooldown:
+      default-days: 7
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

@@ -335,7 +335,7 @@ def check_changelogs(root: pathlib.Path) -> list[str]:
     should not have to read the others' history. Each keeps a `CHANGELOG.md`
     beside its README, opening with its own name and holding an Unreleased
     section, the README links it, and the publication convention puts it in the
-    jar, where `tools/verify-staged-release.sh` looks for it.
+    jar, where `scripts/verify-staged-release` looks for it.
     """
     problems = []
     modules = published_modules(root)

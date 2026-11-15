@@ -53,8 +53,8 @@ dated together. The `Tag v0.1.N` commit renames `## Unreleased` in every one of
 them to the version heading and keeps an empty `## Unreleased` above it; a
 module with nothing under the new heading says ``No entries for `<module>`.``
 Each jar carries its module's file, and
-[`tools/verify-staged-release.sh`](tools/verify-staged-release.sh) refuses a
-staged jar without it.
+[`scripts/verify-staged-release`](scripts/verify-staged-release/README.md)
+refuses a staged jar without it.
 
 ## Gate 1 — own the namespace — **done**
 

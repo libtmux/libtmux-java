@@ -120,6 +120,28 @@ jobs:
           path: '**/build/reports/**'
           retention-days: 7
 
+  # The support scripts under scripts/ are typed Python with tests. The jobs that call one only run
+  # it; this job formats, lints, type checks and tests them.
+  scripts:
+    name: scripts (ruff, ty, pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.12.0'
+          enable-cache: false
+
+      - name: Format, lint, type check and test the scripts
+        run: |
+          uv sync --locked
+          uv run --locked ruff format --check scripts
+          uv run --locked ruff check scripts
+          uv run --locked ty check scripts
+          uv run --locked pytest scripts
+
   # A release without the upload: the version a tag would publish, signed by a key made for this run,
   # checked against what the Central Portal refuses, then resolved by builds of their own that see
   # only those coordinates (module-tests/README.md). Nothing leaves the runner and no secret is read.
@@ -144,6 +166,11 @@ jobs:
         with:
           validate-wrappers: true
 
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.12.0'
+          enable-cache: false
+
       - name: Work out the version a release would publish
         run: |
           version="$(sed -n 's/^libtmuxVersion=//p' gradle.properties)"
@@ -161,7 +188,7 @@ jobs:
             ./gradlew publishAllPublicationsToStagingRepository -PlibtmuxVersion="$VERSION" --stacktrace
 
       - name: The staged release is what Central accepts
-        run: tools/verify-staged-release.sh "$VERSION"
+        run: uv run scripts/verify-staged-release/verify_staged_release.py "$VERSION"
 
       - name: Builds of their own resolve the staged release
         run: |
