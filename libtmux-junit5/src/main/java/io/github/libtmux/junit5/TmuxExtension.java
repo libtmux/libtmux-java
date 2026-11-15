@@ -9,8 +9,11 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -123,8 +126,13 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
      * ended. Runs while other runs are using the same root, so it may only touch abandoned servers.
      */
     static int reapAbandoned(Path root) {
+        return reap(ProcessHandle.allProcesses(), root);
+    }
+
+    /** The sweep over the processes it is given, so a test can describe them without starting any. */
+    static int reap(Stream<ProcessHandle> processes, Path root) {
         Path resolved = root.toAbsolutePath().normalize();
-        List<AbandonedServer> abandoned = ProcessHandle.allProcesses()
+        List<AbandonedServer> abandoned = processes
                 .map(handle -> abandonedServer(handle, resolved))
                 .flatMap(Optional::stream)
                 .toList();
@@ -132,10 +140,23 @@ public final class TmuxExtension implements ParameterResolver, BeforeEachCallbac
         // Asked together, waited for afterwards, so one slow server does not serialise the rest.
         abandoned.stream().map(AbandonedServer::process).forEach(ProcessHandle::destroy);
 
-        int reaped = 0;
+        // A server is its directory, not its process. Until a pane's child execs its shell it is a copy
+        // of the server with the server's arguments, so one server can show up as two processes.
+        Map<Path, List<ProcessHandle>> byDirectory = new LinkedHashMap<>();
         for (AbandonedServer server : abandoned) {
-            if (ended(server.process())) {
-                deleteTree(server.directory());
+            byDirectory
+                    .computeIfAbsent(server.directory(), directory -> new ArrayList<>())
+                    .add(server.process());
+        }
+
+        int reaped = 0;
+        for (Map.Entry<Path, List<ProcessHandle>> entry : byDirectory.entrySet()) {
+            boolean allEnded = true;
+            for (ProcessHandle process : entry.getValue()) {
+                allEnded &= ended(process);
+            }
+            if (allEnded) {
+                deleteTree(entry.getKey());
                 reaped++;
             }
         }

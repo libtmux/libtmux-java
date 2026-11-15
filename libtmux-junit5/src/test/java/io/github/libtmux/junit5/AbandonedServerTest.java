@@ -5,12 +5,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -126,6 +129,70 @@ final class AbandonedServerTest {
             }
         }
         TmuxExtension.deleteTree(root);
+    }
+
+    /**
+     * A {@code tmux} process as the platform reports one, without starting any: the executable and
+     * the arguments are all the sweep reads. {@code destroy} ends it at once.
+     */
+    private static ProcessHandle tmuxProcess(Path socket) {
+        ProcessHandle.Info info = (ProcessHandle.Info) Proxy.newProxyInstance(
+                ProcessHandle.Info.class.getClassLoader(),
+                new Class<?>[] {ProcessHandle.Info.class},
+                (self, method, arguments) -> {
+                    return switch (method.getName()) {
+                        case "command" -> Optional.of("/usr/bin/tmux");
+                        case "arguments" -> Optional.of(new String[] {"-S", socket.toString(), "new-session", "-d"});
+                        default -> Optional.empty();
+                    };
+                });
+        ProcessHandle[] handle = new ProcessHandle[1];
+        handle[0] = (ProcessHandle) Proxy.newProxyInstance(
+                ProcessHandle.class.getClassLoader(),
+                new Class<?>[] {ProcessHandle.class},
+                (self, method, arguments) -> {
+                    return switch (method.getName()) {
+                        case "info" -> info;
+                        case "destroy" -> true;
+                        case "isAlive" -> false;
+                        case "onExit" -> CompletableFuture.completedFuture(handle[0]);
+                        case "toString" -> "tmux for " + socket;
+                        default -> throw new UnsupportedOperationException(method.getName());
+                    };
+                });
+        return handle[0];
+    }
+
+    /**
+     * Until a pane's child execs its shell it is a copy of its server: the same executable and the
+     * same arguments, {@code -S} included. The sweep sees both, and they are one server.
+     */
+    @Test
+    void aServerAndAPaneChildCarryingItsArgumentsAreOneServer() throws Exception {
+        Path root = testRoot();
+        Path socket = socketFor(root, deadPid());
+        try {
+            int reaped = TmuxExtension.reap(Stream.of(tmuxProcess(socket), tmuxProcess(socket)), root);
+
+            assertEquals(1, reaped);
+        } finally {
+            cleanup(root, socket);
+        }
+    }
+
+    /** The control: processes under two directories are two servers, so the count is not pinned to one. */
+    @Test
+    void serversUnderTwoDirectoriesAreCountedSeparately() throws Exception {
+        Path root = testRoot();
+        Path first = socketFor(root, deadPid());
+        Path second = socketFor(root, deadPid());
+        try {
+            int reaped = TmuxExtension.reap(Stream.of(tmuxProcess(first), tmuxProcess(second)), root);
+
+            assertEquals(2, reaped);
+        } finally {
+            cleanup(root, first);
+        }
     }
 
     @Test
