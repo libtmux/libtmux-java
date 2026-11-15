@@ -42,3 +42,9 @@ inline (PEP 723) and run scripts with `uv run`.
 
 - GitHub Actions `run:` lines that call one command.
 - Test data that is not a comparison, such as workspace files a loader reads.
+- `tools/mcp-swap`, which is Java. It is a Gradle subproject that `check`
+  formats, compiles with Error Prone and tests like a library module, so it adds
+  no second build system, and it keeps a transaction and recovery contract that
+  its own suite covers. A Python copy would be a second implementation of that
+  contract. A tool of this size is a module, not a script. CONTRIBUTING names
+  the maintainer task that runs it.

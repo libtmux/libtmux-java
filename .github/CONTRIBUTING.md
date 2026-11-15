@@ -225,6 +225,34 @@ $ ./gradlew -p module-tests/java run \
     -PlibtmuxVersion="$(sed -n 's/^libtmuxVersion=//p' gradle.properties)"
 ```
 
+## Trying the MCP server in a real agent
+
+The MCP tests drive the server with an in-process client. A change to a tool's
+schema, a capability toolset or the launcher is also tried in the agent CLIs it
+is meant for before it is proposed. [`tools/mcp-swap`](../tools/mcp-swap/README.md)
+points the installed CLIs at this checkout's `libtmux-mcp` build and restores
+every config byte afterwards. Build it:
+
+```console
+$ ./gradlew :tools:mcp-swap:installDist
+```
+
+Point the CLIs at the build:
+
+```console
+$ tools/mcp-swap/build/install/mcp-swap/bin/mcp-swap use
+```
+
+Restore them when done:
+
+```console
+$ tools/mcp-swap/build/install/mcp-swap/bin/mcp-swap revert
+```
+
+It is a Gradle subproject of this build, so `./gradlew check` tests it, and it is
+Java rather than Python for the reason [`SCRIPTS.md`](SCRIPTS.md#what-stays)
+gives.
+
 ## Pull requests
 
 One subject per pull request. Unrelated cleanup found along the way belongs in
