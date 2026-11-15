@@ -26,6 +26,14 @@ release that first shipped the module.
 
 ## Unreleased
 
+### Fixed
+
+- **`tools/mcp-swap` adds a server inside an inline `mcp_servers` table.** A
+  config that held `mcp_servers = { ... }` on one line got a
+  `[mcp_servers.tmux]` section after it, which TOML does not allow. The entry
+  now goes inside the braces, and the rest of the line, a trailing comment
+  included, is kept.
+
 ### Documented
 
 - **Clojure has native API references and runnable examples.** The module
