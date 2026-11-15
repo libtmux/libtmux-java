@@ -34,6 +34,11 @@ release that first shipped the module.
   themselves where they read them, and take no arguments.
   `examples/api/run.sh` is removed. (#142)
 
+- **tmux 3.8 is in the supported range.** The range is tmux 3.3a through 3.8, a
+  failing 3.8 lane fails the matrix's `required` job, and 3.8 is the newest
+  release a push and a pull request test. `master` is the only preview lane.
+  (#173)
+
 ### Fixed
 
 - **`tools/mcp-swap` adds a server inside an inline `mcp_servers` table.** A
@@ -41,6 +46,12 @@ release that first shipped the module.
   `[mcp_servers.tmux]` section after it, which TOML does not allow. The entry
   now goes inside the braces, and the rest of the line, a trailing comment
   included, is kept.
+
+### Removed
+
+- **The Python parity ledgers are gone.** `docs/parity/python-api.md` and
+  `docs/parity/test-map.md` inventoried Python libtmux's declarations and tests,
+  and nothing built from them. (#170)
 
 ### Documented
 
@@ -58,7 +69,21 @@ release that first shipped the module.
 - **CI rebuilds incompatible cached tmux installations before running
   tests.** The tmux matrix restored a build made on another runner image and
   failed at `tmux -V` on Ubuntu 26.04 with `NCURSES6_TINFO_6.4.current` missing
-  (#137). Release downloads use checksum pins in `.github/tmux-releases.toml`.
+  (#137). Release downloads use the checksum pins of the shared `build-tmux`
+  action of `libtmux/.github`. (#170)
+
+- **CI runs `apt-get` through the shared `apt-get` action of
+  `libtmux/.github`.** The vendored `tools/apt-get.sh` and
+  `.github/scripts/tmux_build.py` are removed. The macOS Clojure lane still
+  builds its own tmux. (#170)
+
+- **Support scripts are typed Python under `scripts/`, checked in CI.** The tmux
+  matrix planner and drift guards, the staged release check, the tmux matrix
+  builder, the stale server reaper and the PTY test helper moved out of `tools/`
+  and `gradle/test-fixtures/`, each with a README and pytest tests, and CI runs
+  `ruff`, `ty` and `pytest` over them. The planner and the `libtmux.tmux-matrix`
+  plugin read one `gradle/tmux-lanes.json`. `tools/mcp-swap` stays Java; see
+  `.github/SCRIPTS.md`. (#170)
 
 ## 0.1.2 — 2026-11-01
 
