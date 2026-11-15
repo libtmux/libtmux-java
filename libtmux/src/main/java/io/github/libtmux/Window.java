@@ -27,6 +27,69 @@ import kotlin.annotations.jvm.ReadOnly;
  *
  * <p>A method named for a captured field returns what {@link #info()} holds and does no I/O;
  * {@link #refresh()} reads again. Every other method asks tmux now.
+ *
+ * <h2>What is on here</h2>
+ *
+ * <p>The methods fall into a few groups:
+ *
+ * <p><strong>Reading the capture.</strong> Read what this capture stored about the window, and the
+ * {@link Server} and {@link Session} it sits in, with no call to tmux. The id names the underlying
+ * window and the index names this link, so a window linked into two sessions has one id and two
+ * handles. A rename or a resize after the capture does not show in it.
+ *
+ * <p>{@link #info}, {@link #id}, {@link #index}, {@link #context}, {@link #name}, {@link #active},
+ * {@link #linked}, {@link #size}, {@link #layout}, {@link #server()}, {@link #session()}
+ *
+ * <p><strong>Panes.</strong> List this link's panes in tmux's order, or ask for the one tmux had
+ * active, as an {@link Optional}; both are pure reads of the capture and issue no command. Splitting
+ * divides the active pane in half, from a callback that fills in a builder or from a
+ * {@link SplitSpec} that can be reused across windows, and returns the pane that appeared. It throws
+ * {@link io.github.libtmux.exception.UnsupportedFeatureException} when the spec asks for something
+ * this server does not have.
+ *
+ * <ul>
+ *   <li>Read: {@link #panes}, {@link #activePane}
+ *   <li>Split: {@link #split}
+ * </ul>
+ *
+ * <p><strong>Layout and size.</strong> Rearrange the panes into one of tmux's built-in layouts, step
+ * to the next or previous one, or rotate them. Read the arrangement with {@link #layout()} and hand it
+ * back to {@link #applyLayout}, which checks the string before tmux sees it and throws
+ * {@link IllegalArgumentException} for one tmux did not write. Resizing takes terminal cells.
+ * Synchronizing panes copies input typed into one pane into every pane of the window until it is
+ * stopped.
+ *
+ * <ul>
+ *   <li>Arrange: {@link #selectLayout}, {@link #nextLayout}, {@link #previousLayout},
+ *       {@link #applyLayout}, {@link #rotate}
+ *   <li>Size: {@link #resizeTo}
+ *   <li>Input: {@link #synchronizePanes}, {@link #stopSynchronizingPanes}
+ * </ul>
+ *
+ * <p><strong>Moving and linking.</strong> Make the window the active one in its session, link it
+ * into another session so one window sits in both, move it to another session or to an exact index
+ * there, or remove one link. {@link #unlink} throws {@link LibTmuxException} when this is the
+ * window's only link, which tmux refuses to remove.
+ *
+ * <p>{@link #select}, {@link #linkTo}, {@link #unlink}, {@link #moveTo}
+ *
+ * <p><strong>Changing the window.</strong> Rename it, which returns a replacement capture because
+ * this handle keeps its original state; kill what is running in it and start it again; show a popup
+ * over it, which needs an attached client; or close it.
+ *
+ * <p>{@link #rename}, {@link #respawn}, {@link #displayPopup}, {@link #kill}
+ *
+ * <p><strong>Options and hooks.</strong> These reach what is set on this window alone, and every link
+ * to the window shares them.
+ *
+ * <p>{@link #options}, {@link #hooks}
+ *
+ * <p><strong>Formats and refreshing.</strong> Expand a tmux format in this window's context, or take
+ * a new capture to see the window as it is now. Refreshing leaves this handle unchanged and returns
+ * the new one, and throws {@link TargetGoneException} if the window is no longer linked here, from a
+ * server that still answers.
+ *
+ * <p>{@link #expand}, {@link #refresh}
  */
 public final class Window {
 
