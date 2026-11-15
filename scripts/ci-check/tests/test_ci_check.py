@@ -82,7 +82,7 @@ class CheckTest(unittest.TestCase):
 
     def test_a_new_lane_in_the_manifest_reaches_every_page(self) -> None:
         """Adding a release to `lanes` without editing the docs names each page."""
-        self.edit(check.MANIFEST, '"3.7c"],', '"3.7c", "3.9"],')
+        self.edit(check.MANIFEST, '"3.8"],', '"3.8", "3.9"],')
         problems = self.problems()
         for page in ("README.md", check.CONTRIBUTING):
             assert any(page in p and "3.9" in p for p in problems), page
@@ -93,22 +93,22 @@ class CheckTest(unittest.TestCase):
         assert check.main(["--root", str(self.root)]) == 1
 
     def test_a_page_with_another_range_is_flagged(self) -> None:
-        """A README that still says 3.7b is the newest is caught."""
-        self.edit("README.md", "tmux 3.3a through 3.7c", "tmux 3.3a through 3.7b")
-        self.assertFlags("README.md says tmux 3.3a through 3.7b")
+        """A README that still says 3.7c is the newest is caught."""
+        self.edit("README.md", "tmux 3.3a through 3.8", "tmux 3.3a through 3.7c")
+        self.assertFlags("README.md says tmux 3.3a through 3.7c")
 
     def test_a_page_without_the_range_is_flagged(self) -> None:
         """A page must state the range at all."""
         self.edit(
             check.CONTRIBUTING,
-            "**tmux 3.3a through 3.7c is the supported range**",
+            "**tmux 3.3a through 3.8 is the supported range**",
             "**tmux 3.3a and newer is the supported range**",
         )
-        self.assertFlags(".github/CONTRIBUTING.md does not say tmux 3.3a through 3.7c")
+        self.assertFlags(".github/CONTRIBUTING.md does not say tmux 3.3a through 3.8")
 
     def test_a_page_without_the_edges_is_flagged(self) -> None:
         """The page must say what a push tests."""
-        self.edit("README.md", "3.3a and 3.7c on every push", "3.3a on every push")
+        self.edit("README.md", "3.3a and 3.8 on every push", "3.3a on every push")
         self.assertFlags("README.md does not say a push tests the edges")
 
     def test_contributing_must_show_the_dispatch_command(self) -> None:

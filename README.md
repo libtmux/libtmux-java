@@ -886,9 +886,9 @@ $ tmux-workspace load \
   named module `io.github.libtmux`.
 - **Linux, including WSL.** macOS is supported on a best-effort basis, with
   limited CI coverage.
-- **tmux 3.3a through 3.7c.** The real-tmux suite runs on
-  3.3a and 3.7c on every push, and on every release between weekly. tmux 3.8 and
-  master are non-blocking lanes. Managed control needs 3.7 or newer and JSON
+- **tmux 3.3a through 3.8.** The real-tmux suite runs on
+  3.3a and 3.8 on every push, and on every release between weekly. master is a
+  non-blocking lane. Managed control needs 3.7 or newer and JSON
   layouts need 3.8; the [migration notes](MIGRATION.md#optional-tmux-requirements)
   list the rest. To run the suite against your own tmux builds:
 

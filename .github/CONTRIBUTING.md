@@ -282,7 +282,7 @@ to do things in — is in [`RELEASING.md`](../RELEASING.md).
 ## Running CI against any tmux
 
 A push and a pull request run the oldest and newest supported tmux, 3.3a and
-3.7c. Any other tmux runs on demand: dispatch `tmux-matrix.yml` from any branch
+3.8. Any other tmux runs on demand: dispatch `tmux-matrix.yml` from any branch
 with `scope=custom` and a comma-separated `tmux-ref`, each item a release, a
 tag, a branch or a 40-hex commit from
 [github.com/tmux/tmux](https://github.com/tmux/tmux).
@@ -361,9 +361,9 @@ toolchain and `options.release` in
 version matrix in the CI workflow, which builds on 25 and 27, and the claim
 `README.md` makes under `Requirements`.
 
-**tmux 3.3a through 3.7c is the supported range**, and it is not a claim: the
+**tmux 3.3a through 3.8 is the supported range**, and it is not a claim: the
 whole real-tmux suite runs against every one of those releases each week and
-before a release, and against the oldest and newest of them, 3.3a and 3.7c, on
+before a release, and against the oldest and newest of them, 3.3a and 3.8, on
 every push and pull request. Each lane checks it really ran the tmux it is
 named after. The range is the `lanes` list in `gradle/tmux-lanes.json`, which
 the Gradle plugin `libtmux.tmux-matrix` and the workflow's plan both read, so

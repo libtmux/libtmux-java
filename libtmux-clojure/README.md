@@ -30,7 +30,7 @@ $ ./gradlew :libtmux-clojure:check :integration-tests:clojureIntegrationTest
 ```
 
 The façade requires JDK 25 or newer. The project tests tmux 3.3a through
-3.7c; [control streaming][guide-streaming] requires tmux 3.7 or newer.
+3.8; [control streaming][guide-streaming] requires tmux 3.7 or newer.
 
 ## Quick start
 
@@ -112,7 +112,7 @@ changelog marks each break. Pin an exact version to avoid one.
 
 Only the newest release is supported, with no backports. The Clojure façade
 is currently pre-release; CI tests Clojure 1.12.6 on JDK 25 and 27 against
-the supported tmux endpoints, 3.3a and 3.7c. [Report a defect][contributing]
+the supported tmux endpoints, 3.3a and 3.8. [Report a defect][contributing]
 with the tmux version, endpoint choice, and the smallest reproducer.
 
 ## Documentation

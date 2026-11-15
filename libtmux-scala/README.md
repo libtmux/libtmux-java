@@ -91,7 +91,7 @@ The operation closes its client and leaves tmux running.
 ## Support and status
 
 - **Scala 3.9 and JDK 25 or newer.**
-- **tmux 3.3a through 3.7c**, the Java library's range.
+- **tmux 3.3a through 3.8**, the Java library's range.
   [Compatibility](../docs/guide/scala/compatibility.md) has the detail.
 - **Releases.** Releases are numbered `0.1.N`, and each release increments
   `N`. The API is not settled: any release may change or remove exported

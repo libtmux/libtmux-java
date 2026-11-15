@@ -394,7 +394,7 @@ explicitly when ownership requires it.
 ## Compatibility and Java interop
 
 The façade supports JDK 25 or newer, the floor of the Java core it wraps, and
-the repository's tmux 3.3a through 3.7c matrix; control needs tmux 3.7 or
+the repository's tmux 3.3a through 3.8 matrix; control needs tmux 3.7 or
 newer. It is JVM-only: it does not run in ClojureScript, Babashka, or a native
 image. Existing Java handles, `FilterExpr`, the optional Jackson codec, and
 Java async types remain directly usable when the Clojure functions do not cover
