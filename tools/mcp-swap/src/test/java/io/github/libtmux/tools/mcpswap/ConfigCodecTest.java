@@ -189,6 +189,17 @@ final class ConfigCodecTest {
     }
 
     @Test
+    void addsAnEntryToAnEmptyInlineTomlServerTable() {
+        var client = client("codex", ConfigFormat.TOML, false);
+
+        var updated = new String(
+                ConfigCodec.update(client, "mcp_servers = {}\n".getBytes(StandardCharsets.UTF_8), "tmux", SERVER),
+                StandardCharsets.UTF_8);
+
+        assertEquals(SERVER.command(), Toml.parse(updated).getString("mcp_servers.tmux.command"));
+    }
+
+    @Test
     void replacesInterleavedTomlChildTablesAndKeepsUnrelatedSections() {
         var client = client("codex", ConfigFormat.TOML, false);
         var original = """

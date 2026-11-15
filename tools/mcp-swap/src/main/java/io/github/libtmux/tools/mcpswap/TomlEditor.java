@@ -25,9 +25,19 @@ final class TomlEditor {
                 .map(ServerSpec::environment)
                 .orElseGet(Map::of);
         var merged = mergeEnvironment ? server.withEnvironment(existing) : server;
-        var inline = inlineValue(text, parsed, tableName, serverName);
+        var inline = inlineValue(text, parsed, List.of(tableName, serverName));
         if (inline != null) {
             var updated = text.substring(0, inline.start()) + inlineEntry(merged) + text.substring(inline.end());
+            requireValid(updated);
+            return updated.getBytes(StandardCharsets.UTF_8);
+        }
+        // An inline table is complete where its brace closes, so a [table.server] section after it is
+        // not valid TOML; the new server has to go inside the braces.
+        var inlineTable = inlineValue(text, parsed, List.of(tableName));
+        if (inlineTable != null) {
+            var updated = text.substring(0, inlineTable.start())
+                    + withInlineServer(text.substring(inlineTable.start(), inlineTable.end()), serverName, merged)
+                    + text.substring(inlineTable.end());
             requireValid(updated);
             return updated.getBytes(StandardCharsets.UTF_8);
         }
@@ -127,15 +137,14 @@ final class TomlEditor {
         return result;
     }
 
-    private static @Nullable Range inlineValue(
-            String text, TomlParseResult parsed, String tableName, String serverName) {
-        var position = parsed.inputPositionOf(List.of(tableName, serverName));
+    private static @Nullable Range inlineValue(String text, TomlParseResult parsed, List<String> path) {
+        var position = parsed.inputPositionOf(path);
         if (position == null) {
             return null;
         }
         var start = offset(text, position.line(), position.column());
         var keyEnd = simpleKeyEnd(text, start);
-        if (keyEnd == start || !decodeKey(text.substring(start, keyEnd)).equals(serverName)) {
+        if (keyEnd == start || !decodeKey(text.substring(start, keyEnd)).equals(path.getLast())) {
             return null;
         }
         var equals = skipWhitespace(text, keyEnd);
@@ -361,6 +370,18 @@ final class TomlEditor {
             entry.append(" }");
         }
         return entry.append(" }").toString();
+    }
+
+    /** Adds {@code serverName} after the last entry of an inline table, written as {@code { ... }}. */
+    private static String withInlineServer(String table, String serverName, ServerSpec server) {
+        var entries = table.substring(1, table.length() - 1);
+        var end = entries.stripTrailing().length();
+        var entry = string(serverName) + " = " + inlineEntry(server);
+        if (end == 0) {
+            return "{ " + entry + " }";
+        }
+        var separator = entries.charAt(end - 1) == ',' ? " " : ", ";
+        return "{" + entries.substring(0, end) + separator + entry + entries.substring(end) + "}";
     }
 
     private static List<Section> sections(String text) {
