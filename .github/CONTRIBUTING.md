@@ -148,14 +148,15 @@ $ ./gradlew testTmuxMatrix -PlibtmuxMatrix=/path/to/tmux/builds
 ```
 
 The matrix is a local tree of built tmuxes, one directory per lane, each with
-`bin/tmux`. Build one:
+`bin/tmux`. [`scripts/build-tmux-matrix`](../scripts/build-tmux-matrix/README.md)
+builds one:
 
 ```console
-$ ./tools/tmux-matrix.sh ~/tmux-builds
+$ uv run scripts/build-tmux-matrix/build_tmux_matrix.py ~/tmux-builds
 ```
 
-It reads the lane list out of the build, so it cannot drift from what the matrix
-actually runs.
+It reads the lane list from `gradle/tmux-lanes.json`, so it cannot drift from
+what the matrix actually runs.
 
 ## Checks that must pass
 

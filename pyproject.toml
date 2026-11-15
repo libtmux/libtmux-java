@@ -25,6 +25,7 @@ exclude-newer = "3 days"
 # Each script is a plain module in its own directory, so tests import it by
 # directory.
 pythonpath = [
+  "scripts/build-tmux-matrix",
   "scripts/ci-check",
   "scripts/ci-plan",
   "scripts/reap-stale-servers",
@@ -45,6 +46,7 @@ addopts = [
 target-version = "py312"
 line-length = 100
 src = [
+  "scripts/build-tmux-matrix",
   "scripts/ci-check",
   "scripts/ci-plan",
   "scripts/reap-stale-servers",
@@ -57,6 +59,7 @@ extend-select = ["ANN", "B", "C4", "I", "PT", "PTH", "RUF", "SIM", "UP"]
 [tool.ty.environment]
 python-version = "3.12"
 extra-paths = [
+  "scripts/build-tmux-matrix",
   "scripts/ci-check",
   "scripts/ci-plan",
   "scripts/reap-stale-servers",

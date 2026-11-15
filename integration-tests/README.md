@@ -14,7 +14,7 @@ $ ./gradlew :integration-tests:test
 Against every supported tmux release:
 
 ```console
-$ ./tools/tmux-matrix.sh ~/tmux-builds
+$ uv run scripts/build-tmux-matrix/build_tmux_matrix.py ~/tmux-builds
 ```
 
 ```console
