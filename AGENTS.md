@@ -29,6 +29,8 @@ being made:
   file and the one beside each module), release notes, commit messages, CLI and
   help text, API documentation, and source comments:
   [`.github/WRITING.md`](.github/WRITING.md)
+- Support scripts: what may stay, their language, layout and checks:
+  [`.github/SCRIPTS.md`](.github/SCRIPTS.md)
 - Contribution workflow, building, testing, and pull requests:
   [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)
 - Security-sensitive changes: [`SECURITY.md`](SECURITY.md)
