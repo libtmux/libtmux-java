@@ -124,7 +124,7 @@ $ for p in $(pgrep tmux); do tr '\0' ' ' < /proc/$p/cmdline | rg -o '\-S [^ ]+';
 ```
 
 Kill only sockets under this port's roots. Another port's servers are not yours
-to reap, however much they cost us. This lists the servers
+to reap. This lists the servers
 [`scripts/reap-stale-servers`](../scripts/reap-stale-servers/README.md) would end:
 
 ```console
@@ -156,7 +156,7 @@ $ uv run scripts/build-tmux-matrix/build_tmux_matrix.py ~/tmux-builds
 ```
 
 It reads the lane list from `gradle/tmux-lanes.json`, so it cannot drift from
-what the matrix actually runs.
+what the matrix runs.
 
 ## Checks that must pass
 

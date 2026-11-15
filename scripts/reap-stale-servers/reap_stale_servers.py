@@ -6,16 +6,16 @@
 """End tmux servers this port abandoned, and report what belongs to somebody else.
 
     uv run scripts/reap-stale-servers/reap_stale_servers.py          # say what would be reaped
-    uv run scripts/reap-stale-servers/reap_stale_servers.py --reap   # actually reap it
+    uv run scripts/reap-stale-servers/reap_stale_servers.py --reap   # reap them
 
 The suite reaps for itself, but a server whose test JVM was killed and whose
-socket the temporary-file cleaner has since removed is reachable by nothing
-except its own argv, and nothing reaps it until the next run. This is that, by
-hand.
+socket the temporary-file cleaner has since removed is reachable only through
+its own argv, and nothing reaps it until the next run. This script reaps it on
+demand.
 
 Only sockets under this port's roots are ever touched. Sibling libtmux ports run
-on this machine and their leftovers are not ours to reap, however much they cost
-us; `.github/CONTRIBUTING.md` explains why.
+on this machine and their leftover servers are reported, never ended;
+`.github/CONTRIBUTING.md` explains why.
 """
 
 from __future__ import annotations

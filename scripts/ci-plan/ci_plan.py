@@ -42,8 +42,8 @@ TMATE_MODES = ("off", "before-tests", "on-failure")
 
 # The JDK the tests run on when a dispatch names none: the one the library compiles against.
 DEFAULT_JDK = "25"
-# The full table is 15 lanes, and a second JDK doubles it. A dispatch that asks for more than this
-# is a typo or a loop.
+# A second JDK doubles the full table. A dispatch that asks for more legs than this is a
+# typo or a loop.
 MAX_LEGS = 32
 
 
