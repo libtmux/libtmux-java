@@ -7,8 +7,8 @@ import io.github.libtmux.scaladsl.query.Expr
   * equality is an extension, generated from the operation catalog or
   * handwritten where the catalog marks it `WAIT`, `STREAM` or `LIFECYCLE`.
   *
-  * A pure read of the capture issues no command; every other operation asks tmux
-  * now, blocking the calling thread.
+  * A pure read of the capture issues no command; every other operation asks
+  * tmux now, blocking the calling thread.
   *
   * # What is on here
   *
@@ -36,19 +36,20 @@ import io.github.libtmux.scaladsl.query.Expr
   * [[Session.selectWindow]], [[Session.nextWindow]], [[Session.previousWindow]]
   * and [[Session.lastWindow]]
   *
-  * **Changing the session.** [[Session.newWindow]] creates a window from a name,
-  * a callback on a builder, or a `WindowSpec`, and returns the window tmux made.
-  * [[Session.rename]] returns a replacement capture, because this handle keeps
-  * its original state. [[Session.setHistoryLimit]] sets the scrollback retained
-  * by panes created in this session afterwards. [[Session.detachClients]] leaves
-  * the session running, and [[Session.kill]] takes every window with it.
+  * **Changing the session.** [[Session.newWindow]] creates a window from a
+  * name, a callback on a builder, or a `WindowSpec`, and returns the window
+  * tmux made. [[Session.rename]] returns a replacement capture, because this
+  * handle keeps its original state. [[Session.setHistoryLimit]] sets the
+  * scrollback retained by panes created in this session afterwards.
+  * [[Session.detachClients]] leaves the session running, and [[Session.kill]]
+  * takes every window with it.
   *
   * [[Session.newWindow]], [[Session.rename]], [[Session.setHistoryLimit]],
   * [[Session.detachClients]] and [[Session.kill]]
   *
   * **Options, environment, and hooks.** These reach what is set on this session
-  * alone: its own options, its own environment, which a process started in it is
-  * given on top of the server's, and its own hooks. The [[Server]] holds the
+  * alone: its own options, its own environment, which a process started in it
+  * is given on top of the server's, and its own hooks. The [[Server]] holds the
   * global ones, which a session inherits.
   *
   * [[Session.options]], [[Session.environment]] and [[Session.hooks]]
