@@ -124,10 +124,17 @@ $ for p in $(pgrep tmux); do tr '\0' ' ' < /proc/$p/cmdline | rg -o '\-S [^ ]+';
 ```
 
 Kill only sockets under this port's roots. Another port's servers are not yours
-to reap, however much they cost us:
+to reap, however much they cost us. This lists the servers
+[`scripts/reap-stale-servers`](../scripts/reap-stale-servers/README.md) would end:
 
 ```console
-$ ./tools/reap-stale-servers.sh
+$ uv run scripts/reap-stale-servers/reap_stale_servers.py
+```
+
+Then end them:
+
+```console
+$ uv run scripts/reap-stale-servers/reap_stale_servers.py --reap
 ```
 
 A unix socket path cannot exceed about 104 bytes, and tmux reports a longer one

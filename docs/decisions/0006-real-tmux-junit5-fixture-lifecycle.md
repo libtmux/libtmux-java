@@ -73,5 +73,5 @@ A leaked server is a loud test failure, not a quietly unlinked socket: when a
 fixture's tmux will not die, the test fails rather than proceeding. Gradle's
 per-module workers and the tmux version matrix's parallel lanes can share one
 root safely, because only a server whose owner is provably gone is ever
-touched. `scripts/reap-stale-servers.sh` runs the same sweep by hand for a
+touched. `scripts/reap-stale-servers` runs the same sweep by hand for a
 server that outlived a run in some other way.

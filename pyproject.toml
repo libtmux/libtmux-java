@@ -27,6 +27,7 @@ exclude-newer = "3 days"
 pythonpath = [
   "scripts/ci-check",
   "scripts/ci-plan",
+  "scripts/reap-stale-servers",
   "scripts/verify-staged-release",
 ]
 testpaths = ["scripts"]
@@ -46,6 +47,7 @@ line-length = 100
 src = [
   "scripts/ci-check",
   "scripts/ci-plan",
+  "scripts/reap-stale-servers",
   "scripts/verify-staged-release",
 ]
 
@@ -57,6 +59,7 @@ python-version = "3.12"
 extra-paths = [
   "scripts/ci-check",
   "scripts/ci-plan",
+  "scripts/reap-stale-servers",
   "scripts/verify-staged-release",
 ]
 

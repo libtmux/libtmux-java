@@ -27,7 +27,7 @@ This host may carry hundreds of tmux servers belonging to sibling ports. Count
 first:
 
 ```console
-$ ./tools/reap-stale-servers.sh
+$ uv run scripts/reap-stale-servers/reap_stale_servers.py
 ```
 
 [`CONTRIBUTING.md`](../.github/CONTRIBUTING.md) explains why their debris

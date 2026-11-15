@@ -1,0 +1,154 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+"""End tmux servers this port abandoned, and report what belongs to somebody else.
+
+    uv run scripts/reap-stale-servers/reap_stale_servers.py          # say what would be reaped
+    uv run scripts/reap-stale-servers/reap_stale_servers.py --reap   # actually reap it
+
+The suite reaps for itself, but a server whose test JVM was killed and whose
+socket the temporary-file cleaner has since removed is reachable by nothing
+except its own argv, and nothing reaps it until the next run. This is that, by
+hand.
+
+Only sockets under this port's roots are ever touched. Sibling libtmux ports run
+on this machine and their leftovers are not ours to reap, however much they cost
+us; `.github/CONTRIBUTING.md` explains why.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import os
+import re
+import signal
+import subprocess
+import sys
+from collections.abc import Callable
+from pathlib import Path
+from typing import NamedTuple
+
+ROOTS = ("/tmp/libtmux-java-test/", "/tmp/libtmux-java-dev/")
+# The last `-S <socket>` on the command line, which is the one the server uses.
+SOCKET = re.compile(r".*-S ([^ ]*)")
+
+
+class Server(NamedTuple):
+    """A tmux process and the socket named on its command line."""
+
+    pid: int
+    socket: str
+
+
+def socket_of(command_line: str) -> str:
+    """Return the socket a tmux command line names, or an empty string.
+
+    >>> socket_of("tmux -S /tmp/libtmux-java-test/a/s new-session -d")
+    '/tmp/libtmux-java-test/a/s'
+    >>> socket_of("tmux new-session -d")
+    ''
+    >>> socket_of("tmux -S /first -S /second")
+    '/second'
+    """
+    found = SOCKET.match(command_line)
+    return found[1] if found else ""
+
+
+def is_ours(socket: str) -> bool:
+    """Return whether a socket lies under one of this port's roots.
+
+    >>> is_ours("/tmp/libtmux-java-test/run-1/s")
+    True
+    >>> is_ours("/tmp/libtmux-java-testing/s")
+    False
+    >>> is_ours("/tmp/libtmux-rs-test/s")
+    False
+    """
+    return socket.startswith(ROOTS)
+
+
+def find_servers(proc: Path = Path("/proc")) -> list[Server]:
+    """Return every process whose name contains tmux and whose command line names a socket."""
+    found: list[Server] = []
+    for entry in sorted(proc.iterdir(), key=lambda path: path.name):
+        if not entry.name.isdigit():
+            continue
+        try:
+            name = (entry / "comm").read_text().strip()
+            command_line = (
+                (entry / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+            )
+        except OSError:
+            continue
+        if "tmux" not in name:
+            continue
+        socket = socket_of(command_line)
+        if socket:
+            found.append(Server(int(entry.name), socket))
+    return found
+
+
+def kill_server(socket: str) -> bool:
+    """Ask the server on a socket to exit, and say whether tmux accepted."""
+    done = subprocess.run(["tmux", "-S", socket, "kill-server"], capture_output=True, check=False)
+    return done.returncode == 0
+
+
+def terminate(pid: int) -> None:
+    """Send SIGTERM to a process that may already be gone."""
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.kill(pid, signal.SIGTERM)
+
+
+def reap_one(
+    server: Server,
+    *,
+    stop: Callable[[str], bool] = kill_server,
+    kill: Callable[[int], None] = terminate,
+) -> None:
+    """End one server: `kill-server` while its socket exists, a signal when it does not.
+
+    A server whose socket was unlinked cannot be reached any other way.
+    """
+    if not (Path(server.socket).is_socket() and stop(server.socket)):
+        kill(server.pid)
+
+
+def report(servers: list[Server], *, reap: bool, out: list[str]) -> None:
+    """Append what is done to each of our servers, and the totals, to `out`."""
+    ours = [server for server in servers if is_ours(server.socket)]
+    theirs = len(servers) - len(ours)
+    for server in ours:
+        verb = "reaped" if reap else "would reap"
+        out.append(f"{verb}  {server.pid}  {server.socket}")
+    out.append("")
+    out.append(f"ours: {len(ours)}")
+    out.append(f"other ports': {theirs}  (not this script's to touch)")
+    if not reap and ours:
+        out.append("")
+        out.append("re-run with --reap to end them")
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Report this port's abandoned servers, and end them with `--reap`."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--reap", action="store_true", help="end the servers instead of listing them"
+    )
+    options = parser.parse_args(argv)
+    servers = find_servers()
+    if options.reap:
+        for server in servers:
+            if is_ours(server.socket):
+                reap_one(server)
+    lines: list[str] = []
+    report(servers, reap=options.reap, out=lines)
+    print("\n".join(lines))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
